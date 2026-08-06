@@ -1,0 +1,37 @@
+        <a class="back-link" href="/stock/$slug">&larr; К остаткам $store_name</a>
+
+        <div class="store-header">
+            <div class="store-avatar" style="background:$store_color;color:$store_text;">$store_initials</div>
+            <h2>Перемещение стока — $store_name</h2>
+        </div>
+        <p class="page-subtitle">Все движения остатков: поставки на фулфилмент, перемещения и отгрузки. Показаны последние $limit операций.</p>
+
+        <section class="panel">
+            <div class="panel-header-row">
+                <div class="ops-filters">
+$kind_tabs
+                </div>
+                <a class="btn-secondary" href="/stock/$slug/operations/xlsx?kind=$kind">Выгрузить в Excel</a>
+            </div>
+
+            <div class="table-wrap">
+                <table class="data-table data-table--ops" data-table-filter>
+                    <thead>
+                        <tr>
+                            <th>Когда</th>
+                            <th>Тип</th>
+                            <th>Откуда</th>
+                            <th>Куда</th>
+                            <th>Позиций</th>
+                            <th>Единиц</th>
+                            <th>Примечание</th>
+                            <th>Сотрудник</th>
+                            <th>Файл</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+$rows
+                    </tbody>
+                </table>
+            </div>
+        </section>

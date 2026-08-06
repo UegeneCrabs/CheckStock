@@ -1,0 +1,186 @@
+        <h2>Остатки</h2>
+        <p class="page-subtitle">Выберите магазин, чтобы посмотреть остатки</p>
+
+        <div class="sync-panel" id="sync-wb-panel">
+            <div class="sync-bar">
+                <button class="btn-primary btn-sync" type="button" id="sync-wb-btn">Обновить остатки со всех маркетплейсов</button>
+                <span class="sync-status" id="sync-wb-status"></span>
+            </div>
+
+            <p class="sync-last">
+                <svg class="sync-last-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <polyline points="12 7 12 12 15 14"></polyline>
+                </svg>
+                <span>Последняя выгрузка:</span>
+                <strong id="sync-wb-last">$last_sync</strong>
+            </p>
+
+            <div class="sync-results" id="sync-wb-results"></div>
+        </div>
+
+        <div class="store-grid">
+            <a class="store-card" href="/stock/rimili" style="--g1:#ff416c; --g2:#ff4b2b;">
+                <div class="store-avatar" style="background:#E63946">RI</div>
+                <div class="store-name">RIMILI</div>
+            </a>
+            <a class="store-card" href="/stock/tris" style="--g1:#43e97b; --g2:#38f9d7;">
+                <div class="store-avatar" style="background:#2A9D8F">TR</div>
+                <div class="store-name">TRIS</div>
+            </a>
+            <a class="store-card" href="/stock/rockkiddo" style="--g1:#f7971e; --g2:#ffd200;">
+                <div class="store-avatar" style="background:#E9C46A;color:#1f2a44">RK</div>
+                <div class="store-name">ROCKKIDDO</div>
+            </a>
+            <a class="store-card" href="/stock/trusthome" style="--g1:#a18cd1; --g2:#fbc2eb;">
+                <div class="store-avatar" style="background:#8338EC">TH</div>
+                <div class="store-name">TRUSTHOME</div>
+            </a>
+            <a class="store-card" href="/stock/sokoloff" style="--g1:#4facfe; --g2:#00f2fe;">
+                <div class="store-avatar" style="background:#3A86FF">SO</div>
+                <div class="store-name">SOKOLOFF</div>
+            </a>
+            <a class="store-card" href="/stock/gogol" style="--g1:#00c9ff; --g2:#92fe9d;">
+                <div class="store-avatar" style="background:#06D6A0">GO</div>
+                <div class="store-name">GOGOL</div>
+            </a>
+            <a class="store-card" href="/stock/toyka" style="--g1:#f83600; --g2:#f9d423;">
+                <div class="store-avatar" style="background:#FF6D00">TO</div>
+                <div class="store-name">TOYKA</div>
+            </a>
+        </div>
+
+        <script>
+            /* Возврат к списку магазинов = конец визита в кабинет. Снимаем
+               отметки о показанных предупреждениях, чтобы при следующем заходе
+               в магазин окно появилось снова. */
+            (function () {
+                try {
+                    var storage = window.sessionStorage;
+                    for (var i = storage.length - 1; i >= 0; i--) {
+                        var key = storage.key(i);
+                        if (key && key.indexOf('paketa.access.') === 0) storage.removeItem(key);
+                    }
+                } catch (e) {
+                    /* приватный режим — отметок и не было */
+                }
+            })();
+
+            (function () {
+                var panel = document.getElementById('sync-wb-panel');
+                var btn = document.getElementById('sync-wb-btn');
+                var status = document.getElementById('sync-wb-status');
+                var results = document.getElementById('sync-wb-results');
+                var lastSync = document.getElementById('sync-wb-last');
+                if (!btn) return;
+
+                var AUTO_HIDE_MS = 60000;
+                var hideTimer = null;
+
+                function badge(label, state, text) {
+                    return '<span class="sync-badge sync-badge--' + state + '">' + label + (text ? ': ' + text : '') + '</span>';
+                }
+
+                function renderEndpoint(label, entry) {
+                    if (!entry) return badge(label, 'muted', '—');
+                    if (entry.ok) return badge(label, 'ok', String(entry.count));
+                    return badge(label, 'error', entry.error);
+                }
+
+                /* Блок одного маркетплейса внутри карточки магазина.
+                   У площадок разный набор данных: у WB это две схемы, у Ozon —
+                   каталог и общий итог по остаткам, поэтому строки разные. */
+                function mpBlock(title, hasToken, body) {
+                    if (!hasToken) {
+                        return '<div class="sync-mp sync-mp--off">'
+                            + '<div class="sync-mp-title">' + title + '</div>'
+                            + badge('нет токена', 'muted', '')
+                            + '</div>';
+                    }
+                    return '<div class="sync-mp">'
+                        + '<div class="sync-mp-title">' + title + '</div>'
+                        + '<div class="sync-mp-badges">' + body + '</div>'
+                        + '</div>';
+                }
+
+                /* Каталог показываем, только когда есть что сказать:
+                   «товаров столько-то» полезно, «0 изменений» — шум.
+                   Один и тот же вид у Ozon и Яндекса: обе площадки отдают
+                   свой каталог, и читаться они должны одинаково. */
+                function catalogBadge(cat) {
+                    if (cat && cat.ok === false) return badge('каталог', 'error', cat.error);
+                    if (!cat || !cat.total) return '';
+
+                    var changes = [];
+                    if (cat.added) changes.push('+' + cat.added);
+                    if (cat.removed) changes.push('−' + cat.removed);
+                    return badge('товаров', 'ok',
+                        cat.total + (changes.length ? ' (' + changes.join(', ') + ')' : ''));
+                }
+
+                function ozonBody(entry) {
+                    return catalogBadge(entry.ozon_catalog) + renderEndpoint('остатки', entry.ozon);
+                }
+
+                function renderResults(report) {
+                    var slugs = Object.keys(report || {});
+                    if (!slugs.length) {
+                        results.innerHTML = '';
+                        return;
+                    }
+                    results.innerHTML = slugs.map(function (slug) {
+                        var entry = report[slug] || {};
+                        var name = slug.toUpperCase();
+
+                        var wb = mpBlock('WB', entry.token,
+                            renderEndpoint('FBS', entry.fbs) + renderEndpoint('FBO', entry.fbo));
+                        var ozon = mpBlock('OZON', entry.ozon_token, ozonBody(entry));
+                        var yandex = mpBlock('ЯНДЕКС', entry.yandex_token,
+                            catalogBadge(entry.yandex_catalog) + renderEndpoint('остатки', entry.yandex));
+
+                        return '<div class="sync-card">'
+                            + '<div class="sync-card-title">' + name + '</div>'
+                            + wb + ozon + yandex
+                            + '</div>';
+                    }).join('');
+                }
+
+                function scheduleAutoHide() {
+                    if (hideTimer) clearTimeout(hideTimer);
+                    hideTimer = setTimeout(function () {
+                        panel.classList.add('is-fading');
+                        setTimeout(function () {
+                            status.textContent = '';
+                            results.innerHTML = '';
+                            panel.classList.remove('is-fading');
+                        }, 600);
+                    }, AUTO_HIDE_MS);
+                }
+
+                btn.addEventListener('click', function () {
+                    if (hideTimer) clearTimeout(hideTimer);
+                    panel.classList.remove('is-fading');
+                    btn.disabled = true;
+                    status.textContent = 'Синхронизация...';
+                    results.innerHTML = '';
+                    fetch('/admin/sync-stock', { method: 'POST' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            status.textContent = 'Готово';
+                            renderResults(data.report);
+                            if (data.last_sync && lastSync) {
+                                lastSync.textContent = data.last_sync;
+                            }
+                        })
+                        .catch(function (err) {
+                            status.textContent = 'Ошибка синхронизации: ' + err;
+                        })
+                        .finally(function () {
+                            btn.disabled = false;
+                            scheduleAutoHide();
+                        });
+                });
+            })();
+        </script>

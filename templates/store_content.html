@@ -1,0 +1,1034 @@
+        <a class="back-link" href="/stock">&larr; Все магазины</a>
+
+        <div class="store-header">
+            <div class="store-avatar" style="background:$store_color;color:$store_text;">$store_initials</div>
+            <h2>Остатки — $store_name</h2>
+        </div>
+
+        <div class="mp-tabs" role="tablist">
+$mp_tabs
+        </div>
+
+        <section class="panel mp-placeholder" id="mp-placeholder" data-ready="$mp_ready">
+            <p class="mp-placeholder-title">Данных пока нет</p>
+            <p class="mp-placeholder-text">Информация по $marketplace станет доступна после добавления ключа в систему.</p>
+        </section>
+
+        <div id="access-problems" data-problems="$access_problems"
+             data-can-edit="$can_edit_stock" hidden></div>
+
+        <div class="store-layout" id="store-layout" data-marketplace="$marketplace">
+            <section class="panel">
+                <div class="panel-header-row">
+                    <h3 class="panel-title">Выбор фулфилмента для работы</h3>
+                    <div class="panel-header-actions">
+                        <a class="btn-secondary" href="/stock/$slug/operations">Перемещение стока</a>
+                        <a class="btn-secondary" id="wh-link" href="/stock/$slug/warehouses?mp=$marketplace">Детализация склады</a>
+                    </div>
+                </div>
+
+                <select class="select-control" id="wh-select">
+                    <option value="">Общее (все склады)</option>
+$ff_options
+                </select>
+                <p class="ff-select-status" id="ff-select-status"></p>
+
+                <div class="table-wrap table-wrap--scroll">
+                    <table class="data-table data-table--stock" id="stock-table" data-color-filter data-schemes="$scheme_list" data-scheme-count="$scheme_count">
+                        <thead>
+$stock_head
+$stock_totals
+                        </thead>
+                        <tbody>
+$stock_rows
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <div class="side-panels">
+                <section class="panel panel--collapsible" data-collapse-id="ff-upload">
+                    <h3 class="panel-title">Загрузка остатков на фулфилмент</h3>
+
+                    <div class="panel-body">
+                    <p class="panel-desc">Остатки, которые приходят на фулфилмент. Количество прибавляется к тому, что уже лежит на складе.</p>
+
+                    <select class="select-control" id="ff-upload-select">
+                        <option value="">Фулфилмент назначения</option>
+$ff_options
+                    </select>
+
+                    <div class="io-block" id="ff-io">
+                        <div class="io-block-head">
+                            <span class="io-block-title">Товары и количества</span>
+                            <div class="io-tabs" role="tablist">
+                                <button type="button" class="io-tab is-active" data-method="manual">Вручную</button>
+                                <button type="button" class="io-tab" data-method="sheet">Ссылкой</button>
+                                <button type="button" class="io-tab" data-method="file">Файлом</button>
+                            </div>
+                        </div>
+
+                        <div class="io-method" data-method="manual">
+                            <p class="io-method-desc">Если в поставке товар ушёл с минусом — допишите его здесь, не создавая второй файл.</p>
+                            <div id="ff-manual-rows"></div>
+                            <button class="btn-link" type="button" id="ff-manual-add-row">+ ещё позицию</button>
+                        </div>
+
+                        <div class="io-method is-hidden" data-method="sheet">
+                            <input type="text" class="select-control" id="ff-upload-url"
+                                   placeholder="https://docs.google.com/spreadsheets/...">
+                        </div>
+
+                        <div class="io-method is-hidden" data-method="file">
+                            <p class="io-method-desc">Колонки: <b>BARCODE</b> и <b>ARTICLE</b>, плюс колонка с количеством — <b>WB</b>, <b>OZON</b>, <b>YANDEX</b> или <b>КОЛИЧЕСТВО</b>.</p>
+                            <label class="file-drop">
+                                <input type="file" accept=".xlsx" hidden id="ff-upload-file">
+                                <span class="file-drop-text">Выбрать файл .xlsx</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" type="button" id="ff-upload-btn">Загрузить</button>
+                    <p class="ff-select-status" id="ff-upload-status"></p>
+
+                    </div>
+                </section>
+
+                <section class="panel panel--collapsible" data-collapse-id="ff-move">
+                    <h3 class="panel-title">Перемещение остатков</h3>
+
+                    <div class="panel-body">
+                    <p class="panel-desc">Перенос между фулфилментами, между маркетплейсами или и то и другое сразу. Откуда — вычитаем, куда — прибавляем.</p>
+
+                    <div class="route">
+                        <div class="route-side">
+                            <span class="route-label">Откуда</span>
+                            <select class="select-control" id="mv-from-ff">
+                                <option value="">Фулфилмент</option>
+$ff_options
+                            </select>
+                            <select class="select-control" id="mv-from-mp">
+$mp_move_options
+                            </select>
+                        </div>
+
+                        <div class="route-arrow" aria-hidden="true">&rarr;</div>
+
+                        <div class="route-side">
+                            <span class="route-label">Куда</span>
+                            <select class="select-control" id="mv-to-ff">
+                                <option value="">Фулфилмент</option>
+$ff_options
+                            </select>
+                            <select class="select-control" id="mv-to-mp">
+$mp_move_options
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="io-block" id="mv-io">
+                        <div class="io-block-head">
+                            <span class="io-block-title">Товары и количества</span>
+                            <div class="io-tabs" role="tablist">
+                                <button type="button" class="io-tab is-active" data-method="manual">Вручную</button>
+                                <button type="button" class="io-tab" data-method="sheet">Ссылкой</button>
+                                <button type="button" class="io-tab" data-method="file">Файлом</button>
+                            </div>
+                        </div>
+
+                        <div class="io-method" data-method="manual">
+                            <div id="mv-rows"></div>
+                            <button class="btn-link" type="button" id="mv-add-row">+ ещё позицию</button>
+                        </div>
+
+                        <div class="io-method is-hidden" data-method="sheet">
+                            <input type="text" class="select-control" id="mv-url"
+                                   placeholder="https://docs.google.com/spreadsheets/...">
+                        </div>
+
+                        <div class="io-method is-hidden" data-method="file">
+                            <p class="io-method-desc">Колонки: <b>BARCODE</b> или <b>ARTICLE</b> и <b>КОЛИЧЕСТВО</b>. Маршрут берётся из полей выше.</p>
+                            <label class="file-drop">
+                                <input type="file" accept=".xlsx" hidden id="mv-file">
+                                <span class="file-drop-text">Выбрать файл .xlsx</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" type="button" id="mv-btn">Переместить</button>
+                    <p class="ff-select-status" id="mv-status"></p>
+                    </div>
+                </section>
+
+                <section class="panel panel--collapsible" data-collapse-id="ff-ship">
+                    <h3 class="panel-title">Отгрузки стока</h3>
+
+                    <div class="panel-body">
+                    <p class="panel-desc">Товар уходит с фулфилмента наружу — количество вычитается. Если остатка не хватит хотя бы по одной позиции, отгрузка не проведётся целиком.</p>
+
+                    <div class="route route--single">
+                        <div class="route-side">
+                            <span class="route-label">Откуда уходит</span>
+                            <select class="select-control" id="sh-ff">
+                                <option value="">Фулфилмент</option>
+$ff_options
+                            </select>
+                            <select class="select-control" id="sh-mp">
+$mp_move_options
+                            </select>
+                        </div>
+                    </div>
+
+                    <input type="text" class="select-control" id="sh-note"
+                           placeholder="Примечание: номер отгрузки, получатель" maxlength="200">
+
+                    <label class="check-line">
+                        <input type="checkbox" id="sh-trash">
+                        <span>
+                            <b>В мусорку</b> — товар у нас числится, а фулфилмент говорит, что его нет.
+                            Количество не исчезнет: оно ляжет в мусорку вместе со складом, на котором потерялось.
+                        </span>
+                    </label>
+
+                    <div class="io-block" id="sh-io">
+                        <div class="io-block-head">
+                            <span class="io-block-title">Товары и количества</span>
+                            <div class="io-tabs" role="tablist">
+                                <button type="button" class="io-tab is-active" data-method="manual">Вручную</button>
+                                <button type="button" class="io-tab" data-method="sheet">Ссылкой</button>
+                                <button type="button" class="io-tab" data-method="file">Файлом</button>
+                            </div>
+                        </div>
+
+                        <div class="io-method" data-method="manual">
+                            <div id="sh-rows"></div>
+                            <button class="btn-link" type="button" id="sh-add-row">+ ещё позицию</button>
+                        </div>
+
+                        <div class="io-method is-hidden" data-method="sheet">
+                            <input type="text" class="select-control" id="sh-url"
+                                   placeholder="https://docs.google.com/spreadsheets/...">
+                        </div>
+
+                        <div class="io-method is-hidden" data-method="file">
+                            <p class="io-method-desc">Колонки: <b>BARCODE</b> или <b>ARTICLE</b> и <b>КОЛИЧЕСТВО</b>. Откуда уходит товар берётся из полей выше.</p>
+                            <label class="file-drop">
+                                <input type="file" accept=".xlsx" hidden id="sh-file">
+                                <span class="file-drop-text">Выбрать файл .xlsx</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" type="button" id="sh-btn">Отгрузить</button>
+                    <p class="ff-select-status" id="sh-status"></p>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <script>
+            document.querySelectorAll('.file-drop input[type=file]').forEach(function (input) {
+                input.addEventListener('change', function () {
+                    var label = input.closest('.file-drop').querySelector('.file-drop-text');
+                    label.textContent = input.files.length ? input.files[0].name : 'Выбрать файл .xlsx';
+                });
+            });
+
+            // Общий помощник для таблицы остатков: и переключатель ФФ, и
+            // загрузка остатков на ФФ обновляют одни и те же колонки, поэтому
+            // логика живёт в одном месте (window.stockTable).
+            window.stockTable = (function () {
+                var whSelect = document.getElementById('wh-select');
+                var status = document.getElementById('ff-select-status');
+                var table = document.getElementById('stock-table');
+
+                var storeSlug = '$slug';
+                var requestSeq = 0;
+
+                function currentFf() {
+                    return whSelect ? whSelect.value : '';
+                }
+
+                function currentMp() {
+                    var layout = document.getElementById('store-layout');
+                    return layout ? layout.getAttribute('data-marketplace') : '';
+                }
+
+                function applyValues(cellClass, stock) {
+                    if (!table) return;
+                    table.querySelectorAll('tbody tr[data-article]').forEach(function (row) {
+                        var article = row.getAttribute('data-article');
+                        var cell = row.querySelector(cellClass);
+                        if (!cell) return;
+                        var value = Object.prototype.hasOwnProperty.call(stock, article) ? stock[article] : 0;
+                        cell.textContent = value === 0 ? '—' : String(value);
+                    });
+                }
+
+                function query(path, params) {
+                    var qs = Object.keys(params)
+                        .filter(function (k) { return params[k]; })
+                        .map(function (k) { return k + '=' + encodeURIComponent(params[k]); })
+                        .join('&');
+                    return '/stock/' + storeSlug + '/' + path + (qs ? '?' + qs : '');
+                }
+
+                /* Набор схем зависит от маркетплейса (у WB нет rFBS),
+                   поэтому берём его из атрибута, а не зашиваем в код. */
+                var SCHEMES = ((table && table.getAttribute('data-schemes')) || 'fbs,fbo').split(',');
+
+                function num(cell) {
+                    if (!cell) return 0;
+                    var t = cell.textContent.replace(/[\s ]/g, '');
+                    if (!t || t === '—') return 0;
+                    var n = parseInt(t, 10);
+                    return isNaN(n) ? 0 : n;
+                }
+
+                function fmt(value) {
+                    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+                }
+
+                /* Пересчитывает тотал по строке (после «Название») и итоги по
+                   столбцам в закреплённой строке под шапкой. Считаем только по
+                   видимым строкам, чтобы итоги совпадали с тем, что на экране
+                   после фильтрации. */
+                function recalcTotals() {
+                    if (!table) return;
+                    var ff = 0, saleTotals = {};
+                    SCHEMES.forEach(function (scheme) { saleTotals[scheme] = 0; });
+
+                    table.querySelectorAll('tbody tr[data-article]').forEach(function (row) {
+                        var rowFf = num(row.querySelector('.col-ff-available'));
+                        var rowSale = 0;
+                        var rowByScheme = {};
+                        SCHEMES.forEach(function (scheme) {
+                            var v = num(row.querySelector('.col-' + scheme));
+                            rowByScheme[scheme] = v;
+                            rowSale += v;
+                        });
+                        var rowTotal = rowFf + rowSale;
+
+                        var totalCell = row.querySelector('.col-row-total');
+                        if (totalCell) totalCell.textContent = rowTotal === 0 ? '—' : fmt(rowTotal);
+
+                        // товар лежит на ФФ, но ни по одной схеме не продаётся — подсвечиваем
+                        row.classList.toggle('row-alert', rowFf > 0 && rowSale === 0);
+
+                        if (row.style.display === 'none') return; // скрыта фильтром — в итоги не идёт
+                        ff += rowFf;
+                        SCHEMES.forEach(function (scheme) { saleTotals[scheme] += rowByScheme[scheme]; });
+                    });
+
+                    var set = function (sel, v) {
+                        var el = table.querySelector(sel);
+                        if (el) el.textContent = fmt(v);
+                    };
+                    var grand = ff;
+                    set('.tot-ff', ff);
+                    SCHEMES.forEach(function (scheme) {
+                        set('.tot-' + scheme, saleTotals[scheme]);
+                        grand += saleTotals[scheme];
+                    });
+                    set('.tot-grand', grand);
+                }
+
+                /* Строка итогов липнет сразу под шапкой, а высота шапки зависит
+                   от вёрстки (перенос текста, иконки фильтров), поэтому меряем
+                   её в рантайме и отдаём в CSS переменной. */
+                function syncStickyOffset() {
+                    if (!table) return;
+                    // Строк шапки может быть несколько (группы + названия колонок),
+                    // поэтому суммируем всё, что идёт до строки итогов
+                    var headRow = table.querySelector('thead tr');
+                    if (headRow) table.style.setProperty('--thead-h', headRow.offsetHeight + 'px');
+                }
+
+                /* Перечитывает обе "переключаемые" колонки под выбранный ФФ:
+                   остаток на самом ФФ и текущий сток FBS этого же склада. */
+                function refresh() {
+                    if (!table) return Promise.resolve();
+                    var ff = currentFf();
+                    var mp = currentMp();
+                    var seq = ++requestSeq;
+                    if (status) status.textContent = 'Загрузка...';
+
+                    return Promise.all([
+                        fetch(query('fbs', { ff: ff, mp: mp })).then(function (r) { return r.json(); }),
+                        fetch(query('ff-available', { ff: ff, mp: mp })).then(function (r) { return r.json(); })
+                    ])
+                        .then(function (results) {
+                            if (seq !== requestSeq) return; // устаревший ответ — игнорируем
+                            applyValues('.col-fbs', results[0].fbs || {});
+                            applyValues('.col-ff-available', results[1].ff_available || {});
+                            recalcTotals();
+                            if (status) {
+                                status.textContent =
+                                    (ff ? 'Показаны остатки по: ' + ff : 'Показано общее по всем складам') +
+                                    (mp ? ' · ' + mp : ' · все маркетплейсы');
+                            }
+                        })
+                        .catch(function (err) {
+                            if (seq !== requestSeq) return;
+                            if (status) status.textContent = 'Не удалось загрузить остатки: ' + err;
+                        });
+                }
+
+                if (whSelect) whSelect.addEventListener('change', refresh);
+
+                // Вкладки маркетплейсов: переключение перезагружает страницу.
+                // Так все колонки и итоги гарантированно от одного маркетплейса.
+                (function () {
+                    document.querySelectorAll('.mp-tab').forEach(function (tab) {
+                        tab.addEventListener('click', function () {
+                            if (tab.classList.contains('active')) return;
+                            window.location = '/stock/' + storeSlug + '?mp=' +
+                                encodeURIComponent(tab.getAttribute('data-mp'));
+                        });
+                    });
+
+                    // маркетплейс без синхронизации — вместо таблицы заглушка
+                    var placeholder = document.getElementById('mp-placeholder');
+                    var layout = document.getElementById('store-layout');
+                    if (placeholder && layout) {
+                        var ready = placeholder.getAttribute('data-ready') === '1';
+                        placeholder.classList.toggle('is-hidden', ready);
+                        layout.classList.toggle('is-hidden', !ready);
+                    }
+                })();
+
+                if (table) {
+                    // Фильтры (table-filter.js) прячут строки через style.display —
+                    // ловим это и пересчитываем итоги под то, что реально видно.
+                    var observer = new MutationObserver(recalcTotals);
+                    table.querySelectorAll('tbody tr[data-article]').forEach(function (row) {
+                        observer.observe(row, { attributes: true, attributeFilter: ['style'] });
+                    });
+
+                    // шапка обзаводится иконками фильтров уже после загрузки —
+                    // меряем её высоту после того, как всё отрисовалось
+                    window.addEventListener('load', syncStickyOffset);
+                    window.addEventListener('resize', syncStickyOffset);
+                    syncStickyOffset();
+                }
+
+                return { refresh: refresh, recalcTotals: recalcTotals, currentFf: currentFf };
+            })();
+
+            (function () {
+                var select = document.getElementById('ff-upload-select');
+                var fileInput = document.getElementById('ff-upload-file');
+                var urlInput = document.getElementById('ff-upload-url');
+                var btn = document.getElementById('ff-upload-btn');
+                var status = document.getElementById('ff-upload-status');
+                if (!btn) return;
+
+                var storeSlug = '$slug';
+
+                // Задаётся ниже, когда собран блок ручного ввода. Кнопка у
+                // блока одна, и она сама решает, что вызвать — способ ввода
+                // пользователь уже выбрал тем, что заполнил.
+                var submitManual = null;
+                var io = window.initIoBlock(document.getElementById('ff-io'));
+
+                function refreshFfAvailable() {
+                    // обновляем таблицу под тот ФФ, который сейчас выбран сверху
+                    if (window.stockTable) window.stockTable.refresh();
+                }
+
+                function hasManualInput() {
+                    var rowsBox = document.getElementById('ff-manual-rows');
+                    if (!rowsBox) return false;
+                    return Array.prototype.some.call(rowsBox.children, function (row) {
+                        var code = row.querySelector('.manual-code');
+                        var qty = row.querySelector('.manual-qty');
+                        return (code && code.value.trim()) || (qty && qty.value.trim());
+                    });
+                }
+
+                btn.addEventListener('click', function () {
+                    var fulfillment = select.value;
+                    if (!fulfillment) {
+                        status.textContent = 'Сначала выберите фулфилмент назначения';
+                        status.classList.add('ff-select-status--bad');
+                        return;
+                    }
+
+                    var method = io.current();
+                    var hasFile = fileInput.files && fileInput.files.length > 0;
+                    var url = urlInput.value.trim();
+
+                    status.classList.remove('ff-select-status--bad');
+
+                    if (method === 'manual') {
+                        if (!hasManualInput()) {
+                            status.textContent = 'Заполните хотя бы одну позицию';
+                            status.classList.add('ff-select-status--bad');
+                            return;
+                        }
+                        if (submitManual) submitManual();
+                        return;
+                    }
+
+                    if (method === 'sheet' && !url) {
+                        status.textContent = 'Вставьте ссылку на Google Таблицу';
+                        status.classList.add('ff-select-status--bad');
+                        return;
+                    }
+                    if (method === 'file' && !hasFile) {
+                        status.textContent = 'Прикрепите файл .xlsx';
+                        status.classList.add('ff-select-status--bad');
+                        return;
+                    }
+
+                    var formData = new FormData();
+                    formData.append('fulfillment', fulfillment);
+                    if (method === 'file') {
+                        formData.append('file', fileInput.files[0]);
+                    } else {
+                        formData.append('sheet_url', url);
+                    }
+
+                    btn.disabled = true;
+                    status.textContent = 'Загрузка...';
+
+                    fetch('/stock/' + storeSlug + '/upload-ff-stock', { method: 'POST', body: formData })
+                        .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+                        .then(function (result) {
+                            var data = result.data;
+                            if (!result.ok || !data.ok) {
+                                status.textContent = 'Ошибка: ' + (data.error || 'не удалось загрузить');
+                                return;
+                            }
+                            var r = data.report;
+                            var skipped = r.negative_skipped || [];
+                            var skippedText = skipped.length
+                                ? ' Пропущено (отрицательный остаток в WB): ' +
+                                  skipped.map(function (s) { return s.article + ' (' + s.quantity + ')'; }).join(', ') + '.'
+                                : '';
+                            status.textContent =
+                                'Готово: поставка «' + r.table_title + '» — обновлено ' + r.matched +
+                                ' из ' + r.total_rows + ' строк' +
+                                (r.unmatched ? ' (не найдено в каталоге: ' + r.unmatched + ')' : '') +
+                                '.' + skippedText;
+                            // повторно этот файл/ссылку всё равно не провести
+                            urlInput.value = '';
+                            fileInput.value = '';
+                            var drop = fileInput.closest('.file-drop');
+                            var lbl = drop && drop.querySelector('.file-drop-text');
+                            if (lbl) lbl.textContent = 'Выбрать файл .xlsx';
+                            refreshFfAvailable();
+                        })
+                        .catch(function (err) {
+                            status.textContent = 'Ошибка загрузки: ' + err;
+                        })
+                        .finally(function () {
+                            btn.disabled = false;
+                        });
+                });
+
+                // --- ручная докладка нескольких позиций ---
+                // Кнопка у блока одна; ручной ввод и таблица различаются только
+                // адресом запроса, поэтому статус тоже общий.
+                var manualRows = document.getElementById('ff-manual-rows');
+                var manualAddRow = document.getElementById('ff-manual-add-row');
+                var manualStatus = status;
+
+                if (manualRows) {
+                    var suggestTimer = null;
+
+                    function closeSuggest(row) {
+                        var box = row.querySelector('.suggest-box');
+                        if (box) box.classList.remove('open');
+                    }
+
+                    function renderSuggest(row, items) {
+                        var box = row.querySelector('.suggest-box');
+                        if (!items.length) {
+                            box.classList.remove('open');
+                            return;
+                        }
+                        box.innerHTML = items.map(function (it) {
+                            return '<button type="button" class="suggest-item" ' +
+                                'data-code="' + it.article + '">' +
+                                '<span class="suggest-code">' + it.article + '</span>' +
+                                '<span class="suggest-bc">' + it.barcode + '</span>' +
+                                '<span class="suggest-name">' + it.name + '</span>' +
+                                '</button>';
+                        }).join('');
+                        box.classList.add('open');
+
+                        box.querySelectorAll('.suggest-item').forEach(function (btn) {
+                            btn.addEventListener('mousedown', function (e) {
+                                e.preventDefault(); // не даём инпуту потерять фокус раньше времени
+                                row.querySelector('.manual-code').value = btn.getAttribute('data-code');
+                                box.classList.remove('open');
+                                row.querySelector('.manual-qty').focus();
+                            });
+                        });
+                    }
+
+                    function wireRow(row) {
+                        var code = row.querySelector('.manual-code');
+
+                        code.addEventListener('input', function () {
+                            var q = code.value.trim();
+                            if (suggestTimer) clearTimeout(suggestTimer);
+                            if (q.length < 2) {
+                                closeSuggest(row);
+                                return;
+                            }
+                            // не дёргаем сервер на каждый символ
+                            suggestTimer = setTimeout(function () {
+                                fetch('/stock/' + storeSlug + '/catalog-search?q=' + encodeURIComponent(q))
+                                    .then(function (r) { return r.json(); })
+                                    .then(function (d) { renderSuggest(row, d.items || []); })
+                                    .catch(function () { closeSuggest(row); });
+                            }, 200);
+                        });
+
+                        code.addEventListener('blur', function () {
+                            setTimeout(function () { closeSuggest(row); }, 120);
+                        });
+
+                        row.querySelector('.manual-remove').addEventListener('click', function () {
+                            if (manualRows.children.length > 1) {
+                                row.remove();
+                            } else {
+                                row.querySelector('.manual-code').value = '';
+                                row.querySelector('.manual-qty').value = '';
+                            }
+                        });
+                    }
+
+                    function addRow() {
+                        var row = document.createElement('div');
+                        row.className = 'manual-row';
+                        row.innerHTML =
+                            '<div class="manual-code-wrap">' +
+                            '<input class="select-control manual-code" type="text" ' +
+                            'placeholder="Артикул или баркод" autocomplete="off">' +
+                            '<div class="suggest-box"></div>' +
+                            '</div>' +
+                            '<input class="select-control manual-qty" type="number" placeholder="Кол-во" min="1">' +
+                            '<button type="button" class="manual-remove" title="Убрать строку">&times;</button>';
+                        manualRows.appendChild(row);
+                        wireRow(row);
+                        return row;
+                    }
+
+                    addRow();
+                    manualAddRow.addEventListener('click', function () {
+                        addRow().querySelector('.manual-code').focus();
+                    });
+
+                    submitManual = function () {
+                        var fulfillment = select.value;
+                        if (!fulfillment) {
+                            manualStatus.textContent = 'Сначала выбери фулфилмент назначения';
+                            return;
+                        }
+
+                        var items = [];
+                        Array.prototype.forEach.call(manualRows.children, function (row) {
+                            var code = row.querySelector('.manual-code').value.trim();
+                            var qty = row.querySelector('.manual-qty').value.trim();
+                            if (!code && !qty) return; // пустую строку просто пропускаем
+                            items.push({ code: code, quantity: parseInt(qty, 10) });
+                        });
+
+                        if (!items.length) {
+                            manualStatus.textContent = 'Заполни хотя бы одну позицию';
+                            return;
+                        }
+
+                        btn.disabled = true;
+                        manualStatus.textContent = 'Добавляю...';
+
+                        fetch('/stock/' + storeSlug + '/add-ff-items', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+                            body: JSON.stringify({ fulfillment: fulfillment, items: items })
+                        })
+                            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                            .then(function (res) {
+                                if (!res.ok || !res.data.ok) {
+                                    manualStatus.textContent = 'Ошибка: ' + (res.data.error || 'не удалось добавить');
+                                    return;
+                                }
+                                var list = res.data.results || [];
+                                manualStatus.textContent = 'Добавлено: ' + list.map(function (r) {
+                                    return r.article + ' +' + r.added;
+                                }).join(', ');
+
+                                manualRows.innerHTML = '';
+                                addRow();
+                                refreshFfAvailable();
+                            })
+                            .catch(function (e) { manualStatus.textContent = 'Ошибка: ' + e; })
+                            .finally(function () { btn.disabled = false; });
+                    };
+                }
+            })();
+
+            /* Допуск к изменению остатков.
+
+               Кнопки гасим на всех трёх блоках сразу и объясняем почему.
+               Сервер проверяет то же самое отдельно: спрятанная кнопка —
+               это удобство, а не защита. */
+            initBlock('допуск', 'ff-upload-status', function () {
+                var flag = document.getElementById('access-problems');
+                if (!flag || flag.getAttribute('data-can-edit') === '1') return;
+
+                var blocks = [
+                    { btn: 'ff-upload-btn', status: 'ff-upload-status' },
+                    { btn: 'mv-btn', status: 'mv-status' },
+                    { btn: 'sh-btn', status: 'sh-status' }
+                ];
+
+                blocks.forEach(function (item) {
+                    var btn = document.getElementById(item.btn);
+                    var status = document.getElementById(item.status);
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.title = 'Изменение остатков для вашей учётной записи закрыто';
+                    }
+                    if (status) {
+                        status.textContent = 'Изменение остатков для вашей учётной записи ' +
+                            'пока закрыто — обратитесь к администратору.';
+                        status.classList.add('ff-select-status--bad');
+                    }
+                });
+
+                /* Живая проверка строк снимает disabled, когда ошибок нет,
+                   поэтому возвращаем его обратно на каждое изменение формы. */
+                document.addEventListener('input', function () {
+                    blocks.forEach(function (item) {
+                        var btn = document.getElementById(item.btn);
+                        if (btn) btn.disabled = true;
+                    });
+                }, true);
+            });
+
+            /* Предупреждение о неработающих доступах.
+
+               Показывается при каждом заходе в магазин и закрывается кнопкой,
+               но НЕ запоминается: закрытое навсегда уведомление о том, что
+               остатки не обновляются, — это ровно тот случай, когда про
+               проблему забывают на месяц. Пока ключ не починили, напоминаем. */
+            initBlock('доступы', 'ff-upload-status', function () {
+                var box = document.getElementById('access-problems');
+                if (!box) return;
+
+                /* Окно показываем один раз за визит в кабинет. Внутри магазина
+                   страница перезагружается на каждое действие — переключение
+                   маркетплейса, загрузку остатков, — и без отметки окно
+                   выскакивало бы снова и снова.
+
+                   Отметку храним в sessionStorage, а снимает её страница со
+                   списком магазинов: вышел к списку и зашёл заново — значит
+                   это новый визит, и напомнить стоит. */
+                var VISIT_KEY = 'paketa.access.$slug';
+                try {
+                    if (window.sessionStorage.getItem(VISIT_KEY)) return;
+                } catch (e) {
+                    /* приватный режим — просто покажем окно как обычно */
+                }
+
+                var problems = [];
+                try {
+                    problems = JSON.parse(box.getAttribute('data-problems') || '[]');
+                } catch (e) {
+                    return;   // испорченные данные — молчим, это не повод ломать страницу
+                }
+                if (!problems.length) return;
+
+                function esc(value) {
+                    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+                        return { '&': '&amp;', '<': '&lt;', '>': '&gt;',
+                                 '"': '&quot;', "'": '&#39;' }[c];
+                    });
+                }
+
+                /* Блок на площадку: название, состояние ключа, следствие.
+                   Порядок задаёт сервер и он всегда одинаковый. */
+                var bodyHtml = problems.map(function (p) {
+                    return '<div class="mp-issue mp-issue--' + esc(p.kind) + '">' +
+                        '<div class="mp-issue-title">' + esc(p.title) + '</div>' +
+                        '<div class="mp-issue-status">' + esc(p.status) + '</div>' +
+                        '<div class="mp-issue-detail">' + esc(p.detail) + '</div>' +
+                        '</div>';
+                }).join('');
+
+                function show() {
+                    if (!window.Modal) {
+                        // modal.js подключён в конце body, а этот скрипт лежит
+                        // внутри контента и выполняется раньше. Ждём загрузки
+                        // страницы, иначе окно молча не показывалось бы.
+                        console.error('PAKETA: modal.js не загрузился, показать окно нечем');
+                        return;
+                    }
+                    try {
+                        window.sessionStorage.setItem(VISIT_KEY, '1');
+                    } catch (e) {
+                        /* не критично: без отметки окно покажется ещё раз */
+                    }
+
+                    Modal.alert({
+                        title: 'Доступ к маркетплейсам',
+                        bodyHtml: bodyHtml,
+                        confirmLabel: 'Понятно'
+                    });
+                }
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', show);
+                } else {
+                    show();
+                }
+            });
+
+            /* Каждый блок запускаем отдельно и в try/catch.
+               Раньше все блоки жили в одном скрипте: ошибка в первом обрывала
+               выполнение, и молча переставали работать все следующие — именно
+               так «+ ещё позицию» оказывался без обработчика. */
+            function initBlock(name, statusId, fn) {
+                try {
+                    fn();
+                } catch (e) {
+                    var box = document.getElementById(statusId);
+                    if (box) {
+                        box.textContent = 'Блок не запустился: ' + e.message +
+                            '. Обновите страницу с Ctrl+F5; если не помогло — покажите это разработчику.';
+                        box.classList.add('ff-select-status--bad');
+                    }
+                    console.error('PAKETA: блок «' + name + '» не запустился', e);
+                }
+            }
+
+            function requireRowEditor() {
+                if (typeof window.createRowEditor !== 'function') {
+                    throw new Error('не загрузился /static/stock-rows.js');
+                }
+                return window.createRowEditor;
+            }
+
+            /* --- Перемещение остатков между ФФ и маркетплейсами --- */
+            initBlock('перемещение', 'mv-status', function () {
+                var btn = document.getElementById('mv-btn');
+                var rowsBox = document.getElementById('mv-rows');
+                if (!btn || !rowsBox) return;
+
+                var storeSlug = '$slug';
+                var fromFf = document.getElementById('mv-from-ff');
+                var fromMp = document.getElementById('mv-from-mp');
+                var toFf = document.getElementById('mv-to-ff');
+                var toMp = document.getElementById('mv-to-mp');
+                var fileInput = document.getElementById('mv-file');
+                var urlInput = document.getElementById('mv-url');
+                var status = document.getElementById('mv-status');
+
+                var io = window.initIoBlock(document.getElementById('mv-io'));
+
+                var rows = requireRowEditor()({
+                    rowsBox: rowsBox, status: status, submitBtn: btn, storeSlug: storeSlug,
+                    getSource: function () { return { ff: fromFf.value, mp: fromMp.value }; },
+                    emptyHint: 'Сначала выберите, откуда перемещаем'
+                });
+
+                document.getElementById('mv-add-row').addEventListener('click', function () {
+                    rows.addRow().querySelector('.mv-code').focus();
+                });
+                fromFf.addEventListener('change', rows.onSourceChange);
+                fromMp.addEventListener('change', rows.onSourceChange);
+
+                btn.addEventListener('click', function () {
+                    var fd = new FormData();
+                    fd.append('from_fulfillment', fromFf.value);
+                    fd.append('from_marketplace', fromMp.value);
+                    fd.append('to_fulfillment', toFf.value);
+                    fd.append('to_marketplace', toMp.value);
+
+                    var method = io.current();
+                    var hasFile = fileInput.files && fileInput.files.length > 0;
+                    var url = urlInput.value.trim();
+
+                    if (method === 'file') {
+                        if (!hasFile) {
+                            status.textContent = 'Прикрепите файл .xlsx';
+                            status.classList.add('ff-select-status--bad');
+                            return;
+                        }
+                        fd.append('file', fileInput.files[0]);
+                    } else if (method === 'sheet') {
+                        if (!url) {
+                            status.textContent = 'Вставьте ссылку на Google Таблицу';
+                            status.classList.add('ff-select-status--bad');
+                            return;
+                        }
+                        fd.append('sheet_url', url);
+                    } else {
+                        if (rows.validateRows().length) return;  // дубли — дальше не идём
+
+                        var items = rows.collectItems();
+                        if (!items.length) {
+                            status.textContent = 'Заполните хотя бы одну позицию или приложите файл';
+                            return;
+                        }
+                        fd.append('items', JSON.stringify(items));
+                    }
+
+                    btn.disabled = true;
+                    status.textContent = 'Перемещаю...';
+
+                    fetch('/stock/' + storeSlug + '/transfer', {
+                        method: 'POST', body: fd, headers: { 'X-Requested-With': 'fetch' }
+                    })
+                        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                        .then(function (res) {
+                            if (!res.ok || !res.data.ok) {
+                                rows.showServerMessage(
+                                    'Ошибка: ' + (res.data.error || 'не удалось переместить'), true);
+                                return;
+                            }
+                            var list = res.data.results || [];
+                            rows.showServerMessage('Перемещено: ' + list.map(function (r) {
+                                return r.article + ' x' + r.quantity;
+                            }).join(', '), false);
+
+                            rows.reset();
+                            urlInput.value = '';
+                            // файл и ссылку сбрасываем: повторно их всё равно не проведёшь
+                            fileInput.value = '';
+                            var drop = fileInput.closest('.file-drop');
+                            var lbl = drop && drop.querySelector('.file-drop-text');
+                            if (lbl) lbl.textContent = 'Выбрать файл .xlsx';
+                            rows.loadSourceStock();
+                            if (window.stockTable) window.stockTable.refresh();
+                        })
+                        .catch(function (e) { rows.showServerMessage('Ошибка: ' + e, true); })
+                        .finally(function () {
+                            btn.disabled = false;
+                            rows.validateRows();
+                        });
+                });
+            });
+
+            /* --- Отгрузка стока с фулфилмента --- */
+            initBlock('отгрузка', 'sh-status', function () {
+                var btn = document.getElementById('sh-btn');
+                var rowsBox = document.getElementById('sh-rows');
+                if (!btn || !rowsBox) return;
+
+                var storeSlug = '$slug';
+                var ffSelect = document.getElementById('sh-ff');
+                var mpSelect = document.getElementById('sh-mp');
+                var noteInput = document.getElementById('sh-note');
+                var trashInput = document.getElementById('sh-trash');
+                var fileInput = document.getElementById('sh-file');
+                var urlInput = document.getElementById('sh-url');
+                var status = document.getElementById('sh-status');
+
+                var io = window.initIoBlock(document.getElementById('sh-io'));
+
+                var rows = requireRowEditor()({
+                    rowsBox: rowsBox, status: status, submitBtn: btn, storeSlug: storeSlug,
+                    getSource: function () { return { ff: ffSelect.value, mp: mpSelect.value }; },
+                    emptyHint: 'Сначала выберите, откуда отгружаем'
+                });
+
+                document.getElementById('sh-add-row').addEventListener('click', function () {
+                    rows.addRow().querySelector('.mv-code').focus();
+                });
+                ffSelect.addEventListener('change', rows.onSourceChange);
+                mpSelect.addEventListener('change', rows.onSourceChange);
+
+                // подпись кнопки под режим: списание в мусорку и отгрузка —
+                // разные по смыслу действия, и путать их нельзя
+                trashInput.addEventListener('change', function () {
+                    btn.textContent = trashInput.checked ? 'Списать в мусорку' : 'Отгрузить';
+                    // минус имеет смысл только в мусорке: это излишек,
+                    // когда фулфилмент отдал больше, чем числилось
+                    rows.setAllowNegative(trashInput.checked);
+                });
+
+                btn.addEventListener('click', function () {
+                    if (!ffSelect.value || !mpSelect.value) {
+                        status.textContent = 'Выберите фулфилмент и маркетплейс, с которых уходит товар';
+                        status.classList.add('ff-select-status--bad');
+                        return;
+                    }
+
+                    var fd = new FormData();
+                    fd.append('fulfillment', ffSelect.value);
+                    fd.append('marketplace', mpSelect.value);
+                    fd.append('note', noteInput.value.trim());
+                    fd.append('to_trash', trashInput.checked ? '1' : '');
+
+                    var method = io.current();
+                    var hasFile = fileInput.files && fileInput.files.length > 0;
+                    var url = urlInput.value.trim();
+
+                    if (method === 'file') {
+                        if (!hasFile) {
+                            status.textContent = 'Прикрепите файл .xlsx';
+                            status.classList.add('ff-select-status--bad');
+                            return;
+                        }
+                        fd.append('file', fileInput.files[0]);
+                    } else if (method === 'sheet') {
+                        if (!url) {
+                            status.textContent = 'Вставьте ссылку на Google Таблицу';
+                            status.classList.add('ff-select-status--bad');
+                            return;
+                        }
+                        fd.append('sheet_url', url);
+                    } else {
+                        if (rows.validateRows().length) return;
+
+                        var items = rows.collectItems();
+                        if (!items.length) {
+                            status.textContent = 'Заполните хотя бы одну позицию или приложите файл';
+                            return;
+                        }
+                        fd.append('items', JSON.stringify(items));
+                    }
+
+                    btn.disabled = true;
+                    status.textContent = trashInput.checked ? 'Списываю в мусорку...' : 'Отгружаю...';
+
+                    fetch('/stock/' + storeSlug + '/shipment', {
+                        method: 'POST', body: fd, headers: { 'X-Requested-With': 'fetch' }
+                    })
+                        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                        .then(function (res) {
+                            if (!res.ok || !res.data.ok) {
+                                rows.showServerMessage(
+                                    'Ошибка: ' + (res.data.error || 'не удалось отгрузить'), true);
+                                return;
+                            }
+                            var list = res.data.results || [];
+                            rows.showServerMessage(
+                                (trashInput.checked ? 'В мусорку: ' : 'Отгружено: ') +
+                                list.map(function (r) {
+                                    return r.article + ' x' + r.quantity;
+                                }).join(', '), false);
+
+                            rows.reset();
+                            urlInput.value = '';
+                            noteInput.value = '';
+                            fileInput.value = '';
+                            var drop = fileInput.closest('.file-drop');
+                            var lbl = drop && drop.querySelector('.file-drop-text');
+                            if (lbl) lbl.textContent = 'Выбрать файл .xlsx';
+                            rows.loadSourceStock();
+                            if (window.stockTable) window.stockTable.refresh();
+                        })
+                        .catch(function (e) { rows.showServerMessage('Ошибка: ' + e, true); })
+                        .finally(function () {
+                            btn.disabled = false;
+                            rows.validateRows();
+                        });
+                });
+            });
+        </script>

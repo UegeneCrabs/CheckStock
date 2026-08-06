@@ -1,0 +1,263 @@
+        <h2>Админка</h2>
+        <p class="page-subtitle">Сотрудники и журнал действий</p>
+
+        <div class="admin-layout">
+            <section class="panel">
+                <h3 class="panel-title">Новый сотрудник</h3>
+$create_hint
+                <p class="panel-desc">Пароль хранится только в виде хеша — восстановить его нельзя, можно только задать новый</p>
+
+                <input class="select-control" type="text" id="u-fio" placeholder="ФИО">
+                <input class="select-control" type="email" id="u-email" placeholder="Google почта">
+                <input class="select-control" type="text" id="u-login" placeholder="Логин" autocomplete="off">
+                <div class="pass-row">
+                    <input class="select-control" type="text" id="u-pass" placeholder="Пароль" autocomplete="new-password">
+                    <button class="pass-btn" type="button" id="u-gen" title="Сгенерировать пароль">Сгенерировать</button>
+                </div>
+                <p class="pass-hint" id="u-pass-hint">Пароль показан открыто — скопируйте и передайте сотруднику, потом его будет не восстановить</p>
+
+                <select class="select-control" id="u-role">
+$role_options
+                </select>
+
+                <button class="btn-primary" type="button" id="u-create"$form_disabled>Создать сотрудника</button>
+                <p class="ff-select-status" id="u-status"></p>
+            </section>
+
+            <section class="panel">
+                <h3 class="panel-title">Сотрудники</h3>
+                <div class="table-wrap">
+                    <table class="data-table data-table--users">
+                        <thead>
+                            <tr>
+                                <th>ФИО</th>
+                                <th>Google почта</th>
+                                <th>Логин</th>
+                                <th>Роль</th>
+                                <th>Статус</th>
+                                <th>Изменения остатков</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+$user_rows
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <section class="panel panel--wide">
+            <h3 class="panel-title">Журнал действий</h3>
+            <p class="panel-desc">Что делали сотрудники — последние 200 записей</p>
+            <div class="table-wrap table-wrap--scroll-10">
+                <table class="data-table data-table--log">
+                    <thead>
+                        <tr>
+                            <th>Когда</th>
+                            <th>Сотрудник</th>
+                            <th>Действие</th>
+                            <th>Подробности</th>
+                            <th>Файл</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+$log_rows
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <script>
+            (function () {
+                var btn = document.getElementById('u-create');
+                var status = document.getElementById('u-status');
+                if (!btn) return;
+
+                var fields = {
+                    full_name: document.getElementById('u-fio'),
+                    google_email: document.getElementById('u-email'),
+                    login: document.getElementById('u-login'),
+                    password: document.getElementById('u-pass'),
+                    role: document.getElementById('u-role')
+                };
+
+                // --- генератор пароля ---
+                var genBtn = document.getElementById('u-gen');
+                var passHint = document.getElementById('u-pass-hint');
+
+                // Без похожих друг на друга символов (0/O, 1/l/I) — пароль часто
+                // диктуют или переписывают руками, и это главный источник ошибок.
+                // Доллар в алфавите удвоен: страницы собираются через
+                // string.Template, и одиночный знак доллара там означает
+                // подстановку переменной. После сборки останется один.
+                var ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$$%*-_';
+                var LENGTH = 16;
+
+                function generatePassword() {
+                    // crypto, а не Math.random: пароль должен быть непредсказуемым
+                    var bytes = new Uint32Array(LENGTH);
+                    window.crypto.getRandomValues(bytes);
+                    var out = '';
+                    for (var i = 0; i < LENGTH; i++) {
+                        out += ALPHABET[bytes[i] % ALPHABET.length];
+                    }
+                    return out;
+                }
+
+                function copyToClipboard(text) {
+                    if (!navigator.clipboard) return Promise.reject();
+                    return navigator.clipboard.writeText(text);
+                }
+
+                genBtn.addEventListener('click', function () {
+                    var pass = generatePassword();
+                    fields.password.value = pass;
+
+                    copyToClipboard(pass).then(function () {
+                        passHint.textContent = 'Пароль сгенерирован и скопирован в буфер обмена';
+                    }).catch(function () {
+                        passHint.textContent = 'Пароль сгенерирован — скопируйте его вручную';
+                    });
+                });
+
+                // --- действия над сотрудниками ---
+                function post(url, body) {
+                    return fetch(url, {
+                        method: 'POST',
+                        body: body,
+                        headers: { 'X-Requested-With': 'fetch' }
+                    }).then(function (r) {
+                        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+                    });
+                }
+
+                document.querySelectorAll('.u-actions').forEach(function (box) {
+                    var id = box.getAttribute('data-user-id');
+                    var name = box.getAttribute('data-user-name');
+
+                    function run(promise, onSuccess) {
+                        box.querySelectorAll('.u-act').forEach(function (b) { b.disabled = true; });
+                        return promise
+                            .then(function (res) {
+                                if (!res.ok || !res.data.ok) {
+                                    return Modal.alert({
+                                        title: 'Не получилось',
+                                        text: res.data.error || 'не удалось выполнить действие',
+                                        danger: true
+                                    });
+                                }
+                                if (onSuccess) return onSuccess();
+                                window.location.reload();
+                            })
+                            .catch(function (e) {
+                                return Modal.alert({ title: 'Ошибка', text: String(e), danger: true });
+                            })
+                            .finally(function () {
+                                box.querySelectorAll('.u-act').forEach(function (b) { b.disabled = false; });
+                            });
+                    }
+
+                    box.querySelector('.u-act--delete').addEventListener('click', function () {
+                        Modal.confirm({
+                            title: 'Удалить сотрудника?',
+                            text: name + '\n' +
+                                  'Он сразу потеряет доступ к системе. Записи в журнале действий сохранятся.',
+                            confirmLabel: 'Удалить',
+                            danger: true
+                        }).then(function (ok) {
+                            if (ok) run(post('/admin/users/' + id + '/delete', new FormData()));
+                        });
+                    });
+
+                    box.querySelector('.u-act--toggle').addEventListener('click', function () {
+                        var active = box.getAttribute('data-active') === '1';
+                        Modal.confirm({
+                            title: (active ? 'Заблокировать' : 'Разблокировать') + ' сотрудника?',
+                            text: name + '\n' + (active
+                                ? 'Он выйдет из системы и не сможет войти, пока не разблокируете.'
+                                : 'Он снова сможет войти со своим паролем.'),
+                            confirmLabel: active ? 'Заблокировать' : 'Разблокировать',
+                            danger: active
+                        }).then(function (ok) {
+                            if (ok) run(post('/admin/users/' + id + '/toggle-active', new FormData()));
+                        });
+                    });
+
+                    var stockBtn = box.querySelector('.u-act--stock');
+                    if (stockBtn) {
+                        stockBtn.addEventListener('click', function () {
+                            var canEdit = box.getAttribute('data-can-edit') === '1';
+                            Modal.confirm({
+                                title: canEdit
+                                    ? 'Запретить изменения остатков?'
+                                    : 'Разрешить изменения остатков?',
+                                text: name + '\n' + (canEdit
+                                    ? 'Кнопки загрузки, перемещения и отгрузки станут неактивными.'
+                                    : 'Сотрудник сможет загружать поставки, перемещать и отгружать товар.'),
+                                confirmLabel: canEdit ? 'Запретить' : 'Разрешить',
+                                danger: canEdit
+                            }).then(function (ok) {
+                                if (ok) run(post('/admin/users/' + id + '/toggle-stock-edit', new FormData()));
+                            });
+                        });
+                    }
+
+                    box.querySelector('.u-act--reset').addEventListener('click', function () {
+                        var pass = generatePassword();
+                        Modal.confirm({
+                            title: 'Сбросить пароль?',
+                            text: name + '\n' +
+                                  'Сотрудник выйдет из системы на всех устройствах и сможет войти только с новым паролем.',
+                            copyText: pass,
+                            confirmLabel: 'Сбросить пароль',
+                            danger: true
+                        }).then(function (ok) {
+                            if (!ok) return;
+
+                            var fd = new FormData();
+                            fd.append('password', pass);
+
+                            run(post('/admin/users/' + id + '/reset-password', fd), function () {
+                                return Modal.alert({
+                                    title: 'Пароль изменён',
+                                    text: 'Передайте новый пароль сотруднику — восстановить его позже будет нельзя.',
+                                    copyText: pass
+                                }).then(function () { window.location.reload(); });
+                            });
+                        });
+                    });
+                });
+
+                btn.addEventListener('click', function () {
+                    var data = new FormData();
+                    var missing = false;
+                    Object.keys(fields).forEach(function (k) {
+                        var v = fields[k].value.trim();
+                        if (!v) missing = true;
+                        data.append(k, v);
+                    });
+
+                    if (missing) {
+                        status.textContent = 'Заполни все поля';
+                        return;
+                    }
+
+                    btn.disabled = true;
+                    status.textContent = 'Создаю...';
+
+                    fetch('/admin/users', { method: 'POST', body: data, headers: { 'X-Requested-With': 'fetch' } })
+                        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                        .then(function (res) {
+                            if (!res.ok || !res.data.ok) {
+                                status.textContent = 'Ошибка: ' + (res.data.error || 'не удалось создать');
+                                return;
+                            }
+                            status.textContent = 'Сотрудник создан';
+                            window.location.reload();
+                        })
+                        .catch(function (e) { status.textContent = 'Ошибка: ' + e; })
+                        .finally(function () { btn.disabled = false; });
+                });
+            })();
+        </script>

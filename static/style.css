@@ -1,0 +1,2867 @@
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* brand */
+    --navy: #12172a;
+    --navy-2: #232c4d;
+    --accent: #f7941d;
+    --bg: #030105;
+    --card: #16101f;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-hover: rgba(255, 255, 255, 0.16);
+    --text: #f5f4f8;
+    --text-muted: #a89fc2;
+
+    /* fluid spacing scale */
+    --space-2xs: clamp(0.4rem, 0.3rem + 0.3vw, 0.6rem);
+    --space-xs: clamp(0.6rem, 0.5rem + 0.4vw, 0.9rem);
+    --space-sm: clamp(0.9rem, 0.7rem + 0.6vw, 1.4rem);
+    --space-md: clamp(1.4rem, 1rem + 1.2vw, 2.2rem);
+    --space-lg: clamp(2.2rem, 1.5rem + 2.5vw, 3.8rem);
+    --space-xl: clamp(3rem, 2rem + 4vw, 5.5rem);
+
+    /* fluid type scale */
+    --fs-sm: clamp(0.82rem, 0.78rem + 0.2vw, 0.95rem);
+    --fs-base: clamp(0.95rem, 0.9rem + 0.2vw, 1.05rem);
+    --fs-md: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
+    --fs-lg: clamp(1.5rem, 1.2rem + 1.4vw, 2.1rem);
+    --fs-xl: clamp(2.1rem, 1.5rem + 2.8vw, 3.4rem);
+    --fs-logo: clamp(1.25rem, 1.05rem + 0.8vw, 1.6rem);
+
+    --radius-sm: 0.6rem;
+    --radius-md: 1rem;
+    --radius-lg: 1.4rem;
+
+    --container: 99%;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background:
+        radial-gradient(ellipse 140% 90% at 8% 115%, rgba(124, 58, 237, 0.7), transparent 65%),
+        radial-gradient(ellipse 110% 70% at 30% 125%, rgba(147, 51, 234, 0.55), transparent 60%),
+        radial-gradient(ellipse 90% 60% at -5% 60%, rgba(88, 28, 200, 0.3), transparent 60%),
+        var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    font-size: var(--fs-base);
+    line-height: 1.5;
+}
+
+/* ---------- Header ---------- */
+
+header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(3, 1, 5, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+}
+
+.header-inner {
+    width: var(--container);
+    margin-inline: auto;
+    padding-block: var(--space-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+}
+
+.logo {
+    font-size: var(--fs-logo);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #fff;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+}
+
+.logo:hover {
+    opacity: 0.8;
+}
+
+.logo .accent {
+    color: var(--accent);
+}
+
+nav ul {
+    list-style: none;
+    display: flex;
+    gap: var(--space-2xs);
+    flex-wrap: wrap;
+}
+
+nav a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.55em 1.3em;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    opacity: 0.85;
+    transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+nav a:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.09);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+}
+
+nav a.active {
+    opacity: 1;
+    background: var(--accent);
+    color: var(--navy);
+    border-color: var(--accent);
+    box-shadow: 0 0 16px rgba(247, 148, 29, 0.45);
+}
+
+nav a.active:hover {
+    transform: none;
+}
+
+/* ---------- Layout ---------- */
+
+main {
+    width: var(--container);
+    margin-inline: auto;
+    /* сверху заметно меньше, чем снизу: под липким хедером не нужен большой
+       воздух, а внизу отступ помогает не упираться в край страницы */
+    padding-block: var(--space-md) var(--space-xl);
+}
+
+main h2 {
+    font-size: var(--fs-lg);
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: var(--space-2xs);
+}
+
+.page-subtitle {
+    color: var(--text-muted);
+    font-size: var(--fs-base);
+    margin-bottom: var(--space-lg);
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    margin-bottom: var(--space-xs);
+    color: var(--text);
+    text-decoration: none;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    transition: gap 0.15s ease, color 0.15s ease;
+}
+
+.back-link:hover {
+    gap: 0.7em;
+    color: var(--accent);
+}
+
+/* ---------- Hero (home page) ---------- */
+
+.hero {
+    text-align: center;
+    padding-block: clamp(1.5rem, 4vw, 3rem) var(--space-lg);
+}
+
+.hero h1 {
+    font-size: var(--fs-xl);
+    font-weight: 800;
+    color: var(--text);
+    max-width: 46ch;
+    margin-inline: auto;
+    line-height: 1.15;
+}
+
+.hero p {
+    margin-top: var(--space-sm);
+    color: var(--text-muted);
+    font-size: var(--fs-md);
+    max-width: 55ch;
+    margin-inline: auto;
+}
+
+.hero-actions {
+    margin-top: var(--space-lg);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: var(--space-md);
+    max-width: 720px;
+    margin-inline: auto;
+}
+
+.hero-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    text-align: left;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md);
+    text-decoration: none;
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.hero-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    box-shadow: 0 20px 40px rgba(124, 58, 237, 0.25);
+}
+
+.hero-card-title {
+    font-size: var(--fs-md);
+    font-weight: 800;
+}
+
+.hero-card-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+/* ---------- Sync bar ---------- */
+
+.sync-panel {
+    max-width: 46rem;
+    margin: 0 auto var(--space-lg);
+    padding: var(--space-md);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    text-align: center;
+    transition: opacity 0.6s ease;
+}
+
+.sync-panel.is-fading {
+    opacity: 0;
+}
+
+.sync-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+}
+
+.btn-sync.btn-primary {
+    width: auto;
+    padding-inline: 1.4em;
+}
+
+.sync-status {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+.sync-last {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+    margin-top: var(--space-sm);
+    padding: 0.4em 0.9em;
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+
+.sync-last-icon {
+    flex-shrink: 0;
+    color: var(--accent);
+}
+
+.sync-last strong {
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sync-results {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-xs);
+    margin-top: var(--space-sm);
+}
+
+.sync-results:empty {
+    margin-top: 0;
+}
+
+.sync-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45em;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-xs) var(--space-sm);
+    min-width: 13rem;
+}
+
+.sync-card-title {
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.02em;
+    text-align: center;
+}
+
+/* Блок маркетплейса внутри карточки магазина. Название слева, значки
+   справа — так взгляд идёт по колонке площадок, а не по мешанине бейджей. */
+.sync-mp {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding-top: 0.35em;
+    border-top: 1px solid var(--border);
+}
+
+.sync-mp-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    min-width: 3.1rem;
+    flex-shrink: 0;
+}
+
+.sync-mp-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+    justify-content: flex-end;
+    flex: 1;
+}
+
+/* Площадка без доступов не должна перетягивать внимание */
+.sync-mp--off .sync-mp-title {
+    opacity: 0.55;
+}
+
+.sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.2em 0.6em;
+    border-radius: 999px;
+    line-height: 1.5;
+    max-width: 100%;
+}
+
+.sync-badge::before {
+    content: "";
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.sync-badge--ok {
+    color: #35d68f;
+    background: rgba(53, 214, 143, 0.12);
+}
+
+.sync-badge--ok::before {
+    background: #35d68f;
+}
+
+.sync-badge--error {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.12);
+    white-space: normal;
+    text-align: left;
+}
+
+.sync-badge--error::before {
+    background: #ff6b6b;
+}
+
+.sync-badge--muted {
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sync-badge--muted::before {
+    background: var(--text-muted);
+}
+
+/* ---------- Store grid ---------- */
+
+.store-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    gap: var(--space-md);
+    /* воздух по краям: карточки светятся рамкой, вплотную к границе окна
+       свечение обрезалось */
+    padding-inline: var(--space-xs);
+}
+
+.store-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    text-align: center;
+    background: var(--navy);
+    border: none;
+    border-radius: var(--radius-lg);
+    /* по вертикали просторнее, по горизонтали — как было: ширину задаёт
+       сетка, а высоту набирают отступы и промежуток внутри карточки */
+    padding: var(--space-lg) var(--space-sm);
+    text-decoration: none;
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.store-card::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    z-index: -2;
+    border-radius: calc(var(--radius-lg) + 3px);
+    background: linear-gradient(-45deg, var(--g1, #f7941d) 0%, var(--g2, #12172a) 100%);
+    opacity: 0.7;
+    transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+}
+
+.store-card::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    z-index: -3;
+    border-radius: calc(var(--radius-lg) + 3px);
+    background: linear-gradient(-45deg, var(--g1, #f7941d) 0%, var(--g2, #12172a) 100%);
+    filter: blur(14px);
+    opacity: 0.5;
+    transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+.store-card:hover {
+    transform: translateY(-4px);
+}
+
+.store-card:hover::before {
+    transform: rotate(-8deg) scale(1.06);
+    opacity: 0.9;
+}
+
+.store-card:hover::after {
+    filter: blur(20px);
+    opacity: 0.45;
+}
+
+.store-avatar {
+    width: clamp(3rem, 2.6rem + 1.4vw, 3.6rem);
+    height: clamp(3rem, 2.6rem + 1.4vw, 3.6rem);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-md);
+    font-weight: 800;
+    color: #fff;
+}
+
+.store-name {
+    font-size: var(--fs-base);
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: capitalize;
+}
+
+.store-cta {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: #fff;
+}
+
+/* ---------- Store detail page ---------- */
+
+.store-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+}
+
+.store-header .store-avatar {
+    width: clamp(2.6rem, 2.2rem + 1.2vw, 3.2rem);
+    height: clamp(2.6rem, 2.2rem + 1.2vw, 3.2rem);
+    font-size: var(--fs-sm);
+    flex-shrink: 0;
+}
+
+.store-header h2 {
+    margin-bottom: 0;
+}
+
+.store-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-md);
+    align-items: start;
+}
+
+@media (max-width: 960px) {
+    .store-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.side-panels {
+    display: grid;
+    gap: var(--space-md);
+}
+
+.panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.panel-title {
+    font-size: var(--fs-md);
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: var(--space-2xs);
+}
+
+.panel-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-sm);
+}
+
+.select-control {
+    width: 100%;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.65em 0.9em;
+    margin-bottom: var(--space-sm);
+    appearance: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.select-control:hover,
+.select-control:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+.select-control option {
+    background: var(--card);
+    color: var(--text);
+}
+
+.ff-select-status {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    margin-top: -0.4em;
+    min-height: 1.2em;
+}
+
+/* Статус сразу после кнопки (например, в блоке загрузки остатков на ФФ) —
+   без отрицательного отступа сверху, кнопка и так не даёт лишнего зазора. */
+.btn-primary + .ff-select-status {
+    margin-top: var(--space-xs);
+}
+
+.cs-native {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.cs-wrap {
+    position: relative;
+    margin-bottom: var(--space-sm);
+}
+
+.cs-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6em;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.65em 0.9em;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cs-trigger:hover {
+    border-color: var(--accent);
+}
+
+.cs-wrap.open .cs-trigger {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.cs-trigger.placeholder .cs-label {
+    color: var(--text-muted);
+}
+
+.cs-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+}
+
+.cs-wrap.open .cs-chevron {
+    transform: rotate(180deg);
+}
+
+.cs-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 60;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
+    max-height: 260px;
+    overflow-y: auto;
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.cs-wrap.open .cs-panel {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.cs-option {
+    padding: 0.6em 0.9em;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s ease;
+}
+
+.cs-option:last-child {
+    border-bottom: none;
+}
+
+.cs-option:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.cs-option.selected {
+    background: var(--accent);
+    color: var(--navy);
+    font-weight: 600;
+}
+
+.field-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: var(--space-xs);
+}
+
+.field-row .select-control,
+.field-row .cs-wrap {
+    margin-bottom: 0;
+}
+
+.field-row {
+    margin-bottom: var(--space-sm);
+}
+
+.file-drop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm);
+    margin-bottom: var(--space-sm);
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.file-drop:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    background: rgba(247, 148, 29, 0.08);
+}
+
+.or-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    margin: -0.2em 0 var(--space-sm);
+}
+
+.or-divider::before,
+.or-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.or-divider span {
+    padding: 0 0.8em;
+}
+
+.btn-primary {
+    width: 100%;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    color: var(--navy);
+    background: #dd8226;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.75em 1em;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.btn-primary:hover {
+    background: var(--accent);
+    transform: translateY(-1px);
+}
+
+.panel-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
+}
+
+.panel-header-row .panel-title {
+    margin-bottom: 0;
+}
+
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.55em 1em;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(247, 148, 29, 0.08);
+}
+
+.table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+/* Скроллбар в цвет блока (карточки), а не системный серый — во всех
+   внутренних областях прокрутки: таблицы, выпадающий cs-panel, список
+   значений фильтра. */
+.table-wrap,
+.table-wrap--scroll,
+.table-wrap--scroll-10,
+.cs-panel,
+.tf-values {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hover) var(--card);
+}
+
+.table-wrap::-webkit-scrollbar,
+.table-wrap--scroll::-webkit-scrollbar,
+.table-wrap--scroll-10::-webkit-scrollbar,
+.cs-panel::-webkit-scrollbar,
+.tf-values::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.table-wrap::-webkit-scrollbar-track,
+.table-wrap--scroll::-webkit-scrollbar-track,
+.table-wrap--scroll-10::-webkit-scrollbar-track,
+.cs-panel::-webkit-scrollbar-track,
+.tf-values::-webkit-scrollbar-track {
+    background: var(--card);
+}
+
+.table-wrap::-webkit-scrollbar-thumb,
+.table-wrap--scroll::-webkit-scrollbar-thumb,
+.table-wrap--scroll-10::-webkit-scrollbar-thumb,
+.cs-panel::-webkit-scrollbar-thumb,
+.tf-values::-webkit-scrollbar-thumb {
+    background-color: var(--border-hover);
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--card);
+}
+
+.table-wrap::-webkit-scrollbar-thumb:hover,
+.table-wrap--scroll::-webkit-scrollbar-thumb:hover,
+.table-wrap--scroll-10::-webkit-scrollbar-thumb:hover,
+.cs-panel::-webkit-scrollbar-thumb:hover,
+.tf-values::-webkit-scrollbar-thumb:hover {
+    background-color: var(--accent);
+}
+
+/* Основная таблица остатков — видно ~11 строк, дальше скролл внутри блока,
+   а не вниз по всей странице. Шапка таблицы остаётся закреплённой при скролле. */
+.table-wrap--scroll {
+    /* шапка + закреплённая строка итогов + ~11 строк товаров */
+    max-height: calc(3.2em + 2.8em + 11 * 3em);
+    overflow-y: auto;
+}
+
+.table-wrap--scroll .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--card);
+}
+
+/* Строка итогов по столбцам — липнет сразу под шапкой.
+   --thead-h выставляется из JS, потому что высота шапки зависит от переносов
+   текста и иконок фильтров; значение в fallback — на случай, если JS не успел. */
+.table-wrap--scroll .data-table thead tr.totals-row th {
+    top: var(--thead-h, 3.2em);
+    z-index: 2;
+}
+
+.data-table thead tr.totals-row th {
+    /* Непрозрачный фон обязателен: строка закреплена, и под неё уезжают
+       строки таблицы — сквозь полупрозрачный фон они просвечивали.
+       Слой градиента поверх var(--card) даёт оранжевый оттенок, но при этом
+       фон остаётся полностью непрозрачным. */
+    background:
+        linear-gradient(rgba(247, 148, 29, 0.10), rgba(247, 148, 29, 0.10)),
+        var(--card);
+    color: var(--text);
+    font-weight: 700;
+    border-bottom: 2px solid var(--border-hover);
+    white-space: nowrap;
+}
+
+.data-table thead tr.totals-row .totals-label {
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.85em;
+}
+
+.data-table thead tr.totals-row .tot-grand {
+    color: var(--accent);
+}
+
+/* Таблица детализации по складам — видно ~15 строк, дальше скролл внутри
+   блока (и вертикально, и горизонтально). */
+.table-wrap--scroll-10 {
+    max-height: calc(2.8em + 15 * 2.6em);
+    overflow-y: auto;
+}
+
+.table-wrap--scroll-10 .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--card);
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+    table-layout: fixed;
+}
+
+.data-table th,
+.data-table td {
+    padding: 0.75em 1em;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.data-table thead th {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+}
+
+/* Артикул / Баркод — компактные колонки с кодами */
+.data-table th:nth-child(1),
+.data-table td:nth-child(1) {
+    width: 20ch;
+}
+
+.data-table th:nth-child(2),
+.data-table td:nth-child(2) {
+    width: 26ch;
+}
+
+/* Название — фиксированная ширина под ~70 символов, длинные названия переносятся */
+.data-table th:nth-child(3),
+.data-table td:nth-child(3) {
+    width: 50ch;
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Количественные колонки */
+.data-table th:nth-child(4),
+.data-table td:nth-child(4),
+.data-table th:nth-child(5),
+.data-table td:nth-child(5),
+.data-table th:nth-child(6),
+.data-table td:nth-child(6) {
+    width: 20ch;
+    text-align: center;
+}
+
+.data-table tbody tr:not(:last-child) td {
+    border-bottom: 1px solid var(--border);
+}
+
+/* Разделительные полосы между столбцами — такие же, как между строк */
+.data-table th:not(:last-child),
+.data-table td:not(:last-child) {
+    border-right: 1px solid var(--border);
+}
+
+/* Распорная колонка — забирает остаток свободного места, реальные колонки остаются фиксированными */
+.data-table .col-filler {
+    width: auto;
+}
+
+/* ---------------------------------------------------------------
+   Таблица остатков магазина — 8 колонок:
+   Артикул | Баркод | Название | Тотал | ФФ | FBS | FBO | распорка
+
+   Ширины в процентах, а не в ch: сумма всегда 100%, поэтому таблица
+   подстраивается под любую ширину экрана и колонки не разъезжаются.
+   min-width держит её читаемой на узких экранах — там включится
+   горизонтальный скролл .table-wrap, а не сплющивание колонок.
+   --------------------------------------------------------------- */
+.data-table--stock {
+    min-width: 64rem;
+}
+
+.data-table--stock th:nth-child(1),
+.data-table--stock td:nth-child(1) {
+    width: 10%;
+}
+
+.data-table--stock th:nth-child(2),
+.data-table--stock td:nth-child(2) {
+    width: 13%;
+}
+
+.data-table--stock th:nth-child(3),
+.data-table--stock td:nth-child(3) {
+    width: 20%;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.data-table--stock th:nth-child(4),
+.data-table--stock td:nth-child(4) {
+    width: 8%;
+    text-align: center;
+}
+
+.data-table--stock th:nth-child(5),
+.data-table--stock td:nth-child(5) {
+    width: 12%;
+    text-align: center;
+}
+
+
+
+/* Сток ФФ по API — стоит рядом с «Доступно ФФ», обе про фулфилмент */
+.data-table--stock th:nth-child(6),
+.data-table--stock td:nth-child(6) {
+    width: 13%;
+    text-align: center;
+    white-space: normal;
+}
+
+/* Колонки «в продаже». Их число зависит от маркетплейса: у WB две
+   (FBS, FBO), у Ozon три (добавляется rFBS). Поэтому ширину задаём не по
+   nth-child, а по классу схемы, а конкретный процент — по data-schemes,
+   чтобы сумма колонок всегда оставалась ровно 100%. */
+.data-table--stock .col-fbs,
+.data-table--stock .col-rfbs,
+.data-table--stock .col-fbo {
+    text-align: center;
+}
+
+/* Ширина зависит от ЧИСЛА колонок, а не от их названий: у Яндекса имена
+   схем содержат идентификатор магазина (fbs_149217459), и перечислить их
+   в CSS заранее невозможно. Левая часть занимает 76%, остаток делим. */
+.data-table--stock[data-scheme-count="1"] .col-scheme {
+    width: 24%;
+}
+
+.data-table--stock[data-scheme-count="2"] .col-scheme {
+    width: 12%;
+}
+
+.data-table--stock[data-scheme-count="3"] .col-scheme {
+    width: 8%;
+}
+
+.data-table--stock[data-scheme-count="4"] .col-scheme {
+    width: 6%;
+}
+
+/* Больше четырёх схем — редкость, но таблица не должна разъезжаться */
+.data-table--stock[data-scheme-count="5"] .col-scheme {
+    width: 4.8%;
+}
+
+.data-table--stock[data-scheme-count="6"] .col-scheme {
+    width: 4%;
+}
+
+/* распорка больше не нужна — проценты уже занимают всю ширину */
+.data-table--stock .col-filler {
+    width: 0;
+    padding: 0;
+    border-right: none;
+}
+
+/* На экранах поменьше поджимаем отступы и шрифт, чтобы таблица
+   продолжала помещаться целиком, без горизонтального скролла */
+@media (max-width: 1500px) {
+    .data-table--stock th,
+    .data-table--stock td {
+        padding: 0.65em 0.6em;
+        font-size: 0.95em;
+    }
+}
+
+.data-table .empty-row td {
+    text-align: center;
+    color: var(--text-muted);
+    white-space: normal;
+    padding: var(--space-md);
+}
+
+/* Таблица детализации по складам — сводная: Баркод / Артикул / Название,
+   дальше по одной колонке на каждый склад (количество колонок динамическое).
+   Ширина не привязана к 100% контейнера — при большом числе складов таблица
+   шире экрана и скроллится горизонтально внутри .table-wrap, вместо того
+   чтобы сжимать текстовые колонки до "буква под буквой". */
+.data-table--warehouses {
+    table-layout: fixed;
+    /* Всегда ровно по ширине панели: ни пустоты справа, ни горизонтальной
+       прокрутки. Первые четыре колонки заданы в процентах, остаток поровну
+       делят колонки складов, а тесноту компенсируют классы is-dense. */
+    width: 100%;
+    font-size: 0.92rem;
+}
+
+.data-table--warehouses th,
+.data-table--warehouses td {
+    white-space: nowrap;
+    padding: 0.65em 0.35em;
+    /* всё по центру: колонок много и они узкие, выключка по левому краю
+       делала таблицу рваной */
+    text-align: center;
+}
+
+.data-table--warehouses th:nth-child(1),
+.data-table--warehouses td:nth-child(1) {
+    width: 7%;
+}
+
+.data-table--warehouses th:nth-child(2),
+.data-table--warehouses td:nth-child(2) {
+    width: 5%;
+}
+
+.data-table--warehouses th:nth-child(3),
+.data-table--warehouses td:nth-child(3) {
+    width: 11%;
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Тотал — 4-я колонка, перед складами */
+.data-table--warehouses th:nth-child(4),
+.data-table--warehouses td:nth-child(4) {
+    width: 7%;
+    text-align: center;
+}
+
+/* Колонки складов — 5-я и далее (кроме распорной) */
+.data-table--warehouses th:nth-child(n+5),
+.data-table--warehouses td:nth-child(n+5) {
+    width: auto;
+    text-align: center;
+    white-space: normal;
+}
+
+/* ---------- Фильтр по столбцам (как в Google Таблицах) ---------- */
+
+/* Значок фильтра — под текстом заголовка, а не рядом: рядом он ломал
+   ширину узких колонок (особенно в таблице складов) */
+.tf-th-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.tf-th-label {
+    width: 100%;
+    min-width: 0;
+}
+
+.tf-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6em;
+    height: 1.6em;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tf-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+}
+
+.tf-btn--active,
+.tf-btn--menu-open {
+    color: var(--accent);
+    background: rgba(247, 148, 29, 0.12);
+}
+
+.tf-popover {
+    display: none;
+    position: fixed;
+    z-index: 500;
+    width: 280px;
+    max-width: calc(100vw - 16px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.55);
+    padding: var(--space-xs);
+    font-size: var(--fs-sm);
+}
+
+.tf-popover.open {
+    display: block;
+}
+
+.tf-sort {
+    display: flex;
+    flex-direction: column;
+}
+
+.tf-sort-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-sm);
+    padding: 0.5em 0.6em;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.tf-sort-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.tf-divider {
+    height: 1px;
+    background: var(--border);
+    margin: var(--space-2xs) 0;
+}
+
+.tf-quick-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    padding: 0.3em 0.6em;
+}
+
+.tf-link {
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--fs-sm);
+    padding: 0;
+    cursor: pointer;
+}
+
+.tf-link:hover {
+    text-decoration: underline;
+}
+
+.tf-shown {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+}
+
+.tf-search-wrap {
+    padding: 0.3em 0.6em 0.5em;
+}
+
+.tf-search-input {
+    width: 100%;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.5em 0.7em;
+}
+
+.tf-search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.tf-values {
+    max-height: 220px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin: 0 0.2em;
+}
+
+.tf-value-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 0.45em 0.6em;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+
+.tf-value-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tf-value-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tf-value-item input[type="checkbox"] {
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.tf-values-empty {
+    padding: 0.8em 0.6em;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.tf-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    padding: 0.6em 0.4em 0.2em;
+}
+
+.tf-btn-cancel,
+.tf-btn-ok {
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    padding: 0.5em 1.1em;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tf-btn-cancel {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.tf-btn-cancel:hover {
+    border-color: var(--border-hover);
+}
+
+.tf-btn-ok {
+    background: #dd8226;
+    border: none;
+    color: var(--navy);
+}
+
+.tf-btn-ok:hover {
+    background: var(--accent);
+}
+
+/* Шапка — линия пожирнее, чтобы явно отделять её от строк */
+.data-table--warehouses thead th {
+    border-bottom: 2px solid var(--border-hover);
+}
+
+/* Блок Баркод/Артикул/Название/Тотал отделяется от складов линией пожирнее,
+   остальные разделители столбцов — обычные */
+.data-table--warehouses th:nth-child(4),
+.data-table--warehouses td:nth-child(4) {
+    width: 7%;
+    text-align: center;
+}
+
+
+/* --- Подсветка проблемных строк и фильтр по цвету --- */
+
+/* Есть остаток на ФФ, но в продаже (FBS и FBO) — ноль */
+.data-table tbody tr.row-alert td {
+    background: rgba(230, 57, 70, 0.14);
+}
+
+.data-table tbody tr.row-alert:hover td {
+    background: rgba(230, 57, 70, 0.20);
+}
+
+.tf-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-2xs);
+}
+
+.tf-btn--color {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    width: auto;
+    padding: 0.4em 0.8em;
+    font-size: var(--fs-sm);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.tf-btn--color:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+/* --- Вход --- */
+
+.login-body {
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-main {
+    width: 100%;
+    max-width: 24rem;
+    padding: var(--space-md);
+}
+
+.login-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    padding: var(--space-lg) var(--space-md);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.login-logo {
+    font-size: var(--fs-lg);
+    font-weight: 800;
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+
+.login-subtitle {
+    margin-bottom: var(--space-sm);
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+.login-field input {
+    font: inherit;
+    font-size: var(--fs-base);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.65em 0.9em;
+}
+
+.login-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.login-error {
+    padding: 0.6em 0.9em;
+    font-size: var(--fs-sm);
+    color: #ffb3b8;
+    background: rgba(230, 57, 70, 0.15);
+    border: 1px solid rgba(230, 57, 70, 0.4);
+    border-radius: var(--radius-sm);
+}
+
+.login-card .btn-primary {
+    margin-top: var(--space-xs);
+}
+
+/* --- Пользователь в шапке --- */
+
+.user-box {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    font-size: var(--fs-sm);
+}
+
+.user-name {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.user-role {
+    padding: 0.15em 0.6em;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    font-size: 0.85em;
+}
+
+.logout-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    border-bottom: 1px dashed currentColor;
+}
+
+.logout-link:hover {
+    color: var(--accent);
+}
+
+/* --- Админка --- */
+
+.admin-layout {
+    display: grid;
+    grid-template-columns: minmax(18rem, 24rem) 1fr;
+    gap: var(--space-md);
+    align-items: start;
+    margin-bottom: var(--space-md);
+}
+
+@media (max-width: 900px) {
+    .admin-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.panel--wide {
+    margin-bottom: var(--space-lg);
+}
+
+/* --- Ручная докладка позиции на ФФ --- */
+
+.manual-add {
+    margin-top: var(--space-sm);
+    padding-top: var(--space-sm);
+    border-top: 1px dashed var(--border);
+}
+
+.manual-add-title {
+    font-size: var(--fs-base);
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: var(--space-2xs);
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+    text-align: center;
+    cursor: pointer;
+}
+
+/* --- Переключатель таблиц на странице складов --- */
+
+.wh-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-sm);
+}
+
+.wh-tab {
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.55em 1.2em;
+    cursor: pointer;
+    opacity: 0.85;
+    transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.wh-tab:hover {
+    opacity: 1;
+    border-color: var(--border-hover);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.wh-tab.active {
+    opacity: 1;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--navy);
+}
+
+.is-hidden {
+    display: none;
+}
+
+/* --- Строки ручной докладки с подсказками --- */
+
+.manual-row {
+    display: grid;
+    grid-template-columns: 1fr 6.5rem 2rem;
+    gap: var(--space-2xs);
+    align-items: start;
+    margin-bottom: var(--space-2xs);
+}
+
+.manual-row .select-control {
+    margin-bottom: 0;
+}
+
+.manual-code-wrap {
+    position: relative;
+}
+
+.manual-remove {
+    font: inherit;
+    font-size: 1.2rem;
+    line-height: 1;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.45em 0;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.manual-remove:hover {
+    color: #ff8f98;
+    border-color: rgba(230, 57, 70, 0.5);
+}
+
+.btn-link {
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    margin-bottom: var(--space-xs);
+    cursor: pointer;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+/* Выпадающий список подсказок по каталогу */
+.suggest-box {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 70;
+    max-height: 15rem;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.55);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hover) var(--card);
+}
+
+.suggest-box.open {
+    display: block;
+}
+
+.suggest-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.1em 0.6em;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.5em 0.7em;
+    cursor: pointer;
+}
+
+.suggest-item:last-child {
+    border-bottom: none;
+}
+
+.suggest-item:hover {
+    background: rgba(247, 148, 29, 0.12);
+}
+
+.suggest-code {
+    font-weight: 700;
+}
+
+.suggest-bc {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+.suggest-name {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: 0.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Вкладки маркетплейсов над блоками --- */
+
+.mp-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-sm);
+}
+
+.mp-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.55em 1.3em;
+    cursor: pointer;
+    opacity: 0.85;
+    transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.mp-tab:hover {
+    opacity: 1;
+    border-color: var(--border-hover);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mp-tab.active {
+    opacity: 1;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--navy);
+}
+
+.mp-tab-soon {
+    font-size: 0.78em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 999px;
+    padding: 0.15em 0.6em;
+}
+
+.mp-tab.active .mp-tab-soon {
+    color: var(--navy);
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.mp-placeholder {
+    text-align: center;
+    padding-block: var(--space-lg);
+}
+
+.mp-placeholder-title {
+    font-size: var(--fs-md);
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: var(--space-2xs);
+}
+
+.mp-placeholder-text {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+/* --- Генератор пароля в админке --- */
+
+.pass-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-2xs);
+    align-items: start;
+    margin-bottom: var(--space-2xs);
+}
+
+.pass-row .select-control {
+    margin-bottom: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.pass-btn {
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.65em 1em;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.pass-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.pass-hint {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-sm);
+}
+
+/* --- Действия над сотрудниками в админке --- */
+
+.data-table--users td {
+    white-space: nowrap;
+}
+
+.u-status {
+    display: inline-block;
+    padding: 0.15em 0.7em;
+    border-radius: 999px;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.u-status--on {
+    color: #7ee0a8;
+    background: rgba(6, 214, 160, 0.14);
+}
+
+.u-status--off {
+    color: #ff9aa2;
+    background: rgba(230, 57, 70, 0.16);
+}
+
+.u-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em;
+}
+
+.u-act {
+    font: inherit;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.3em 0.8em;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.u-act:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--border-hover);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.u-act:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.u-act--delete:hover:not(:disabled) {
+    color: #ff8f98;
+    border-color: rgba(230, 57, 70, 0.55);
+    background: rgba(230, 57, 70, 0.12);
+}
+
+.u-act--reset:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(247, 148, 29, 0.10);
+}
+
+/* --- Модальные окна --- */
+
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-md);
+    background: rgba(3, 1, 5, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.modal-overlay.open {
+    display: flex;
+    animation: modal-fade 0.15s ease;
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
+@keyframes modal-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.modal-box {
+    width: 100%;
+    max-width: 28rem;
+    padding: var(--space-md);
+    background: var(--card);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    animation: modal-rise 0.18s ease;
+}
+
+@keyframes modal-rise {
+    from { transform: translateY(10px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+}
+
+.modal-box--danger {
+    border-color: rgba(230, 57, 70, 0.45);
+}
+
+.modal-title {
+    font-size: var(--fs-md);
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: var(--space-2xs);
+}
+
+.modal-text p {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    margin-bottom: 0.4em;
+}
+
+.modal-text p:first-child {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.modal-code {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    margin-top: var(--space-sm);
+    padding: 0.6em 0.8em;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.modal-code code {
+    flex: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--fs-sm);
+    color: var(--accent);
+    word-break: break-all;
+    user-select: all;
+}
+
+.modal-copy {
+    font: inherit;
+    font-size: 0.85em;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.35em 0.9em;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.modal-copy:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2xs);
+    margin-top: var(--space-md);
+}
+
+.modal-btn {
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    padding: 0.65em 1.3em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.modal-btn--ghost {
+    color: var(--text-muted);
+    background: transparent;
+    border-color: var(--border);
+}
+
+.modal-btn--ghost:hover {
+    color: var(--text);
+    border-color: var(--border-hover);
+}
+
+.modal-btn--primary {
+    color: var(--navy);
+    background: #dd8226;
+}
+
+.modal-btn--primary:hover {
+    background: var(--accent);
+}
+
+.modal-btn--danger {
+    color: #fff;
+    background: #c0392f;
+}
+
+.modal-btn--danger:hover {
+    background: #e0463a;
+}
+
+.u-note {
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+/* --- Общий поиск над таблицей --- */
+
+.tf-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-2xs);
+}
+
+.tf-search {
+    flex: 1;
+    max-width: 22rem;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.45em 1em;
+    transition: border-color 0.15s ease;
+}
+
+.tf-search::placeholder {
+    color: var(--text-muted);
+}
+
+.tf-search:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.tf-found {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.tf-toolbar .tf-btn--color {
+    margin-left: auto;
+}
+
+/* --- Предупреждение о сроке действия ключа WB --- */
+
+.token-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(247, 148, 29, 0.10);
+    border: 1px solid rgba(247, 148, 29, 0.45);
+    border-radius: var(--radius-md);
+}
+
+.token-banner-icon {
+    flex-shrink: 0;
+    width: 1.6rem;
+    height: 1.6rem;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    color: var(--navy);
+    background: var(--accent);
+    border-radius: 50%;
+}
+
+.token-banner-title {
+    font-size: var(--fs-base);
+    font-weight: 700;
+    color: var(--text);
+}
+
+.token-banner-text {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+/* --- Сворачиваемые панели --- */
+
+.panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-xs);
+    width: 100%;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+.panel-toggle .panel-title {
+    margin-bottom: 0;
+}
+
+.panel-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    transition: transform 0.2s ease, color 0.15s ease;
+}
+
+.panel-toggle:hover .panel-chevron {
+    color: var(--accent);
+}
+
+.panel--collapsible .panel-body {
+    margin-top: var(--space-2xs);
+}
+
+/* Свёрнутое состояние: прячем содержимое и разворачиваем стрелку */
+.panel--collapsible.is-collapsed .panel-body {
+    display: none;
+}
+
+.panel--collapsible.is-collapsed .panel-chevron {
+    transform: rotate(-90deg);
+}
+
+/* --- Маршрут перемещения: откуда -> куда --- */
+
+.route {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: var(--space-2xs);
+    align-items: center;
+    margin-bottom: var(--space-sm);
+}
+
+/* У отгрузки получателя нет, поэтому одна колонка вместо трёх:
+   пустая правая половина выглядела бы как незаполненное поле */
+.route--single {
+    grid-template-columns: 1fr;
+}
+
+.route-side {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    min-width: 0;
+}
+
+.route-side .select-control {
+    margin-bottom: 0;
+}
+
+.route-label {
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.route-arrow {
+    /* Центрируем по колонке, но со сдвигом вниз на высоту подписи
+       ОТКУДА/КУДА — иначе стрелка уезжает вверх относительно селектов */
+    align-self: center;
+    display: grid;
+    place-items: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    margin-top: 1.35em;
+    font-size: 0.95rem;
+    line-height: 1;
+    color: var(--accent);
+    background: rgba(247, 148, 29, 0.10);
+    border: 1px solid rgba(247, 148, 29, 0.35);
+    border-radius: 50%;
+}
+
+@media (max-width: 640px) {
+    .route {
+        grid-template-columns: 1fr;
+    }
+
+    .route-arrow {
+        justify-self: center;
+        margin-top: 0;
+        transform: rotate(90deg);
+    }
+}
+
+/* ---------- Подблок «Товары и количества» ----------
+   Во всех трёх операциях сверху идут параметры самой операции (склад,
+   маркетплейс, примечание), а ниже — способы задать позиции. Раньше они шли
+   вперемешку с параметрами, и было неочевидно, что файл и ссылка — это про
+   товары, а не про операцию целиком. Рамка отделяет одно от другого. */
+.io-block {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.02);
+    padding: var(--space-xs) var(--space-sm) var(--space-2xs);
+    margin-bottom: var(--space-sm);
+}
+
+.io-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-xs);
+}
+
+.io-block-title {
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+/* Переключатель способа ввода. Способы взаимоисключающие, поэтому вид как у
+   сегментов, а не как у чекбоксов: галочки намекали бы, что можно отметить
+   несколько сразу. */
+.io-tabs {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.io-tab {
+    font: inherit;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    padding: 0.35em 0.85em;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.io-tab + .io-tab {
+    border-left: 1px solid var(--border);
+}
+
+.io-tab:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.io-tab.is-active {
+    color: #2b1a05;
+    background: var(--accent);
+}
+
+/* Показан только выбранный способ — блок втрое компактнее */
+.io-method.is-hidden {
+    display: none;
+}
+
+.io-method-desc {
+    font-size: 0.82em;
+    color: var(--text-muted);
+    margin: 0 0 0.5em;
+    line-height: 1.45;
+}
+
+.io-method .select-control,
+.io-method .file-drop {
+    margin-bottom: var(--space-2xs);
+}
+
+.io-method .btn-block {
+    margin-top: var(--space-2xs);
+}
+
+/* строки товаров при перемещении — как в ручной докладке, плюс подсказка об остатке */
+.mv-row {
+    display: grid;
+    grid-template-columns: 1fr 6rem auto 2rem;
+    gap: var(--space-2xs);
+    align-items: center;
+    margin-bottom: var(--space-2xs);
+}
+
+.mv-row .select-control {
+    margin-bottom: 0;
+}
+
+.mv-hint {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* просят больше, чем есть — подсвечиваем сразу, не дожидаясь отправки */
+.mv-hint--bad {
+    color: #ff8f98;
+    font-weight: 700;
+}
+
+/* Продублированная строка при перемещении */
+.mv-row--dupe .mv-code {
+    border-color: rgba(230, 57, 70, 0.6);
+    background: rgba(230, 57, 70, 0.08);
+}
+
+/* Статус с ошибкой — заметнее обычного серого */
+.ff-select-status--bad {
+    color: #ff9aa2;
+    font-weight: 600;
+}
+
+/* Заблокированная кнопка перемещения — видно, что нажать нельзя */
+.btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary:disabled:hover {
+    background: #dd8226;
+    transform: none;
+}
+
+/* --- Адаптив: журнал действий в админке --- */
+
+.data-table--log th:nth-child(1),
+.data-table--log td:nth-child(1) {
+    width: 11rem;
+}
+
+.data-table--log th:nth-child(2),
+.data-table--log td:nth-child(2) {
+    width: 12rem;
+}
+
+.data-table--log th:nth-child(3),
+.data-table--log td:nth-child(3) {
+    width: 15rem;
+}
+
+.data-table--log th:nth-child(4),
+.data-table--log td:nth-child(4) {
+    white-space: normal;
+    word-break: break-word;
+}
+
+.data-table--log th:nth-child(5),
+.data-table--log td:nth-child(5) {
+    width: 5rem;
+    text-align: center;
+}
+
+.log-download {
+    display: inline-block;
+    padding: 0.2em 0.7em;
+    font-size: 0.85em;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--accent);
+    border: 1px solid rgba(247, 148, 29, 0.4);
+    border-radius: 999px;
+    transition: background 0.15s ease;
+}
+
+.log-download:hover {
+    background: rgba(247, 148, 29, 0.15);
+}
+
+/* На узких экранах таблица журнала превращается в карточки:
+   горизонтальная прокрутка длинных текстовых подробностей неудобна */
+@media (max-width: 800px) {
+    .data-table--log,
+    .data-table--log thead,
+    .data-table--log tbody,
+    .data-table--log tr,
+    .data-table--log td {
+        display: block;
+        width: auto;
+    }
+
+    .data-table--log thead {
+        display: none;
+    }
+
+    .data-table--log tr {
+        margin-bottom: var(--space-2xs);
+        padding: var(--space-2xs);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .data-table--log td {
+        display: grid;
+        grid-template-columns: 8rem 1fr;
+        gap: 0.6em;
+        padding: 0.25em 0;
+        border: none !important;
+        white-space: normal;
+        text-align: left !important;
+    }
+
+    /* подпись колонки берём из data-label — заголовки таблицы скрыты */
+    .data-table--log td::before {
+        content: attr(data-label);
+        color: var(--text-muted);
+        font-size: 0.85em;
+    }
+
+    .data-table--log tbody tr:not(:last-child) td {
+        border-bottom: none;
+    }
+}
+
+/* --- Обрамление таблиц детализации --- */
+
+/* Место под вертикальный скроллбар резервируем заранее: иначе он появляется
+   поверх последней колонки и та выглядит обрезанной. */
+.table-wrap--scroll-10 {
+    scrollbar-gutter: stable;
+    overflow-x: hidden;
+}
+
+
+/* Чем больше складов, тем теснее колонки: таблица обязана уместиться
+   в ширину панели на любом масштабе, поэтому ужимаем шрифт и отступы,
+   а не включаем горизонтальную прокрутку. */
+.data-table--warehouses.is-dense {
+    font-size: 0.82rem;
+}
+
+.data-table--warehouses.is-dense th,
+.data-table--warehouses.is-dense td {
+    padding: 0.45em 0.35em;
+}
+
+.data-table--warehouses.is-dense-2 {
+    font-size: 0.72rem;
+}
+
+.data-table--warehouses.is-dense-2 th,
+.data-table--warehouses.is-dense-2 td {
+    padding: 0.4em 0.2em;
+}
+
+/* Длинные названия складов в шапке переносим и разрешаем рвать слова —
+   иначе одна «Астана Карагандинское шоссе» раздувает всю колонку */
+.data-table--warehouses thead th:nth-child(n+5) {
+    white-space: normal;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+/* Узкие экраны: первым трём колонкам тоже нужно ужаться */
+@media (max-width: 1100px) {
+    .data-table--warehouses th:nth-child(1),
+    .data-table--warehouses td:nth-child(1) {
+        width: 8%;
+    }
+
+    .data-table--warehouses th:nth-child(3),
+    .data-table--warehouses td:nth-child(3) {
+        width: 12%;
+    }
+}
+
+/* При 20+ складах колонка получается очень узкой — уменьшаем ещё и шапку,
+   иначе длинные названия рвутся на десяток строк и раздувают её по высоте */
+.data-table--warehouses.is-dense-2 thead th {
+    font-size: 0.92em;
+    line-height: 1.15;
+    padding-inline: 0.15em;
+}
+
+.data-table--warehouses.is-dense-2 thead th:nth-child(n+5) {
+    /* длинные названия складов не должны растягивать шапку до бесконечности */
+    max-height: 7.5em;
+    overflow: hidden;
+}
+
+/* Заголовок с иконкой фильтра — тоже по центру */
+.data-table--warehouses .tf-th-inner {
+    align-items: center;
+}
+
+/* --- Акценты в таблице детализации --- */
+
+/* Опорные колонки (баркод, артикул, название, тотал) — жирнее:
+   по ним читают строку, а справа идут одни цифры по складам */
+.data-table--warehouses tbody td:nth-child(-n+4) {
+    font-weight: 600;
+}
+
+/* Тотал — оранжевым во всех трёх вкладках */
+.data-table--warehouses .col-total,
+.data-table--warehouses tbody td:nth-child(4) {
+    color: var(--accent);
+    font-weight: 700;
+}
+
+/* Полоса после Тотала отделяет «шапку строки» от цифр по складам */
+.data-table--warehouses th:nth-child(4),
+.data-table--warehouses td:nth-child(4) {
+    border-right: 3px solid var(--border-hover);
+}
+
+/* Опорные колонки крупнее остальных: цифры по складам могут быть мелкими,
+   а баркод/артикул/название/тотал читают глазами постоянно */
+.data-table--warehouses thead th:nth-child(-n+4),
+.data-table--warehouses tbody td:nth-child(-n+4) {
+    font-size: 1.1em;
+}
+
+/* Заголовок «Тотал» — тем же оранжевым, что и цифры под ним */
+.data-table--warehouses thead th:nth-child(4) {
+    color: var(--accent);
+}
+
+/* На плотных таблицах опорные колонки не ужимаем вместе со складами */
+.data-table--warehouses.is-dense thead th:nth-child(-n+4),
+.data-table--warehouses.is-dense tbody td:nth-child(-n+4) {
+    font-size: 1.15rem;
+}
+
+.data-table--warehouses.is-dense-2 thead th:nth-child(-n+4),
+.data-table--warehouses.is-dense-2 tbody td:nth-child(-n+4) {
+    font-size: 1rem;
+}
+
+/* --- Таблица остатков магазина: всё по центру --- */
+
+.data-table--stock th,
+.data-table--stock td {
+    text-align: center;
+}
+
+/* «ИТОГО» в закреплённой строке — тоже по центру, а не прижато влево */
+.data-table--stock thead tr.totals-row .totals-label {
+    text-align: center;
+}
+
+/* заголовки с иконкой фильтра выравниваем по центру колонки */
+.data-table--stock .tf-th-inner {
+    align-items: center;
+}
+
+/* Маркетплейс в заголовке детализации складов */
+.mp-badge {
+    display: inline-block;
+    margin-left: 0.5em;
+    padding: 0.15em 0.7em;
+    font-size: 0.5em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    vertical-align: middle;
+    color: var(--navy);
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+/* rFBS — 8-я колонка, между FBS и FBO */
+.data-table--stock th:nth-child(8),
+.data-table--stock td:nth-child(8) {
+    width: 11%;
+    text-align: center;
+}
+
+.data-table--stock th:nth-child(9),
+.data-table--stock td:nth-child(9) {
+    width: 11%;
+    text-align: center;
+    white-space: normal;
+}
+
+
+/* ---------- История движений стока ---------- */
+.panel-header-actions {
+    display: flex;
+    gap: var(--space-2xs);
+    flex-wrap: wrap;
+}
+
+.ops-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+}
+
+/* Вкладки-фильтры: обычные ссылки, чтобы выбранный вид оставался в адресе
+   и страницу можно было прислать коллеге уже отфильтрованной */
+.ops-filter {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.3em 0.8em;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.ops-filter:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.ops-filter.active {
+    color: #2b1a05;
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.data-table--ops th:nth-child(5),
+.data-table--ops td:nth-child(5),
+.data-table--ops th:nth-child(6),
+.data-table--ops td:nth-child(6),
+.data-table--ops th:nth-child(9),
+.data-table--ops td:nth-child(9) {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.data-table--ops td:nth-child(7) {
+    white-space: normal;
+    word-break: break-word;
+}
+
+
+/* Свёрнутый хвост складов: отделён и приглушён, чтобы не путать с обычной
+   колонкой склада — за ним стоит сумма по нескольким, а не один склад */
+.data-table--warehouses .col-other {
+    background: rgba(255, 255, 255, 0.04);
+    border-left: 2px solid var(--border-strong);
+    color: var(--text-muted);
+}
+
+.data-table--warehouses th.col-other {
+    color: var(--text);
+}
+
+
+/* Итоги по складам — числа крупнее и заметнее обычных ячеек */
+.data-table--warehouses thead tr.totals-row .tot-warehouse {
+    text-align: center;
+}
+
+/* Свёрнутый хвост в строке итогов не должен теряться на общем фоне */
+.data-table--warehouses thead tr.totals-row .col-other {
+    color: var(--text);
+}
+
+
+/* Строка с галочкой и пояснением — например «в мусорку» у отгрузки */
+.check-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55em;
+    font-size: 0.85em;
+    line-height: 1.45;
+    color: var(--text-muted);
+    margin-bottom: var(--space-sm);
+    cursor: pointer;
+}
+
+.check-line input[type="checkbox"] {
+    margin-top: 0.2em;
+    accent-color: var(--accent);
+    width: 1em;
+    height: 1em;
+    flex-shrink: 0;
+}
+
+.check-line b {
+    color: var(--text);
+}
+
+
+/* ---------- Блок площадки в окне о доступах ----------
+   Каждая площадка — отдельная карточка с полосой слева. Без неё блоки
+   сливались в сплошной текст, и понять, где кончается один маркетплейс и
+   начинается другой, было нельзя. */
+.mp-issue {
+    border-left: 3px solid var(--border-hover);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: 0.55em 0.8em;
+    margin-bottom: var(--space-xs);
+}
+
+.mp-issue:last-child {
+    margin-bottom: 0;
+}
+
+/* Незаполненный ключ — недосмотр, но не поломка: жёлтый, не красный */
+.mp-issue--missing {
+    border-left-color: var(--accent);
+}
+
+.mp-issue--invalid {
+    border-left-color: #ff6b6b;
+}
+
+.mp-issue-title {
+    font-size: 0.95em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    margin-bottom: 0.15em;
+}
+
+.mp-issue-status {
+    font-size: 0.9em;
+    color: var(--text);
+    margin-bottom: 0.1em;
+}
+
+.mp-issue--invalid .mp-issue-status {
+    color: #ff9aa2;
+}
+
+.mp-issue-detail {
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+
+/* Вкладка площадки без ключа: приглушена, но кликабельна — по ней видно,
+   что площадка есть в планах, и что именно её не хватает */
+.mp-tab--nokey {
+    opacity: 0.55;
+}
+
+.mp-tab--nokey:hover {
+    opacity: 0.85;
+}
+
+
+/* Предупреждение в шапке блока — например «режим просмотра» в админке */
+.panel-desc--warn {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* Кнопка допуска к операциям: не разрушающая, но и не рядовая */
+.u-act--stock {
+    border-color: rgba(247, 148, 29, 0.45);
+    color: var(--accent);
+}
+
+
+/* ---------- Мусорка ----------
+   Разобранная позиция приглушается, но остаётся на месте: убирать её из
+   таблицы нельзя — количество никуда не делось, просто с ним разобрались. */
+.data-table--trash tbody tr.is-checked {
+    opacity: 0.45;
+}
+
+.data-table--trash tbody tr.is-checked td {
+    text-decoration: line-through;
+    text-decoration-color: rgba(255, 255, 255, 0.25);
+}
+
+.trash-check {
+    display: flex;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.trash-check input {
+    width: 1.05em;
+    height: 1.05em;
+    accent-color: var(--accent);
+}
+
+.data-table--trash .trash-qty {
+    text-align: center;
+    font-weight: 700;
+}
+
+/* Излишек — фулфилмент отдал больше, чем числилось. Другой знак и смысл,
+   поэтому и цвет другой: путать его с недостачей нельзя. */
+.data-table--trash .trash-qty--surplus {
+    color: #35d68f;
+}

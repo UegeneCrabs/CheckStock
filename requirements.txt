@@ -1,0 +1,18 @@
+# PAKETA — зависимости.
+# Установка: pip install -r requirements.txt (внутри .venv проекта)
+
+# --- Обязательные (сервер не запустится без них) ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9   # нужен FastAPI для Form()/UploadFile (загрузка .xlsx)
+
+# --- Опциональные ---
+# Нужен только для загрузки остатков файлом .xlsx (ff_stock_import.py).
+# Без него доступна загрузка по ссылке на Google Таблицу.
+openpyxl>=3.1
+
+# Нужны только для чтения ПРИВАТНЫХ Google Таблиц через сервисный аккаунт
+# (google_service_account.py). Публичные таблицы ("Доступно всем, у кого
+# есть ссылка") читаются без этих пакетов, простым CSV-скачиванием.
+google-api-python-client>=2.130
+google-auth>=2.29

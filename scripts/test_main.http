@@ -1,0 +1,32 @@
+# Быстрые ручные проверки эндпоинтов PAKETA.
+# Запусти сервер (из корня проекта): uvicorn app.main:app --reload
+
+GET http://127.0.0.1:8000/
+Accept: text/html
+
+###
+
+GET http://127.0.0.1:8000/stock
+Accept: text/html
+
+###
+
+GET http://127.0.0.1:8000/stock/rimili
+Accept: text/html
+
+###
+
+GET http://127.0.0.1:8000/stock/rimili/warehouses
+Accept: text/html
+
+###
+
+GET http://127.0.0.1:8000/stock/rimili/fbs
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/admin/sync-stock
+Accept: application/json
+
+###

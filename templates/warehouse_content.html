@@ -1,0 +1,121 @@
+        <a class="back-link" href="/stock/$slug">&larr; К остаткам $store_name</a>
+
+        <div class="store-header">
+            <div class="store-avatar" style="background:$store_color;color:$store_text;">$store_initials</div>
+            <h2>Детализация по складам — $store_name <span class="mp-badge">$marketplace</span></h2>
+        </div>
+        <p class="page-subtitle">История не хранится — показаны последние данные на момент синхронизации.</p>
+
+        <section class="panel">
+            <div class="panel-header-row">
+                <div class="wh-tabs" role="tablist">
+                <button class="wh-tab active" type="button" role="tab" data-target="wh-fbo">FBO — склады маркетплейса</button>
+                <button class="wh-tab" type="button" role="tab" data-target="wh-fbs">FBS — склады продавца</button>
+                <button class="wh-tab" type="button" role="tab" data-target="wh-ff">ФФ — фулфилменты</button>
+                <button class="wh-tab" type="button" role="tab" data-target="wh-trash">Мусорка</button>
+                </div>
+                <a class="btn-secondary" href="/stock/$slug/warehouses/xlsx?mp=$marketplace">Выгрузить в Excel</a>
+            </div>
+
+            <div class="wh-pane" id="wh-fbo">
+                <div class="table-wrap table-wrap--scroll-10">
+$fbo_table
+                </div>
+            </div>
+
+            <div class="wh-pane is-hidden" id="wh-fbs">
+                <div class="table-wrap table-wrap--scroll-10">
+$fbs_table
+                </div>
+            </div>
+
+            <div class="wh-pane is-hidden" id="wh-ff">
+                <div class="table-wrap table-wrap--scroll-10">
+$ff_table
+                </div>
+            </div>
+
+            <div class="wh-pane is-hidden" id="wh-trash">
+                <p class="panel-desc">Товар, который числился у нас, но не нашёлся на фулфилменте. Склад в колонке — тот, с которого он потерялся.</p>
+                <div class="table-wrap table-wrap--scroll-10">
+$trash_table
+                </div>
+            </div>
+        </section>
+
+        <script>
+            /* Отметка «проконтролировано» в мусорке.
+               Сохраняем сразу по клику: отдельная кнопка «сохранить» здесь
+               лишняя, отметку ставят по одной по мере разбора. */
+            (function () {
+                var slug = '$slug';
+                var marketplace = '$marketplace';
+
+                document.querySelectorAll('.trash-checkbox').forEach(function (box) {
+                    box.addEventListener('change', function () {
+                        var row = box.closest('tr');
+                        if (row) row.classList.toggle('is-checked', box.checked);
+
+                        var fd = new FormData();
+                        fd.append('marketplace', marketplace);
+                        fd.append('article', box.getAttribute('data-article'));
+                        fd.append('fulfillment', box.getAttribute('data-warehouse'));
+                        fd.append('checked', box.checked ? '1' : '');
+
+                        fetch('/stock/' + slug + '/trash/checked', { method: 'POST', body: fd })
+                            .then(function (r) { return r.json(); })
+                            .then(function (d) {
+                                if (d && d.ok) return;
+                                // сервер отказал — возвращаем галочку как было,
+                                // иначе на экране будет одно, а в базе другое
+                                box.checked = !box.checked;
+                                if (row) row.classList.toggle('is-checked', box.checked);
+                                if (d && d.error) alert(d.error);
+                            })
+                            .catch(function () {
+                                box.checked = !box.checked;
+                                if (row) row.classList.toggle('is-checked', box.checked);
+                            });
+                    });
+                });
+            })();
+
+            /* Строка итогов закреплена сразу под шапкой, а высота шапки зависит
+               от длины названий складов и переносов — меряем её в рантайме и
+               отдаём в CSS переменной. Пересчитываем и при смене размера окна:
+               колонки перестраиваются, шапка меняет высоту. */
+            (function () {
+                function syncStickyOffsets() {
+                    document.querySelectorAll('.data-table--warehouses').forEach(function (table) {
+                        var headRow = table.querySelector('thead tr');
+                        if (headRow) table.style.setProperty('--thead-h', headRow.offsetHeight + 'px');
+                    });
+                }
+
+                syncStickyOffsets();
+                window.addEventListener('resize', syncStickyOffsets);
+                // вкладки показывают скрытые таблицы: у скрытой шапки высота
+                // измеряется только после показа
+                document.querySelectorAll('.wh-tab').forEach(function (tab) {
+                    tab.addEventListener('click', function () { setTimeout(syncStickyOffsets, 0); });
+                });
+            })();
+
+            (function () {
+                var tabs = document.querySelectorAll('.wh-tab');
+                if (!tabs.length) return;
+
+                tabs.forEach(function (tab) {
+                    tab.addEventListener('click', function () {
+                        var targetId = tab.getAttribute('data-target');
+
+                        tabs.forEach(function (t) { t.classList.remove('active'); });
+                        tab.classList.add('active');
+
+                        document.querySelectorAll('.wh-pane').forEach(function (pane) {
+                            pane.classList.toggle('is-hidden', pane.id !== targetId);
+                        });
+                    });
+                });
+            })();
+        </script>

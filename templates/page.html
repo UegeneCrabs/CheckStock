@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>$title</title>
+    <link rel="stylesheet" href="/static/style.css?v=53">
+
+    <!-- Только определение функций, без обращения к DOM — поэтому грузим
+         в head. Остальные скрипты идут в конце body, но этот нужен раньше:
+         встроенные скрипты страницы лежат внутри контента и выполняются
+         до конца body, а значит до всего, что подключено там. -->
+    <script src="/static/stock-rows.js?v=6"></script>
+</head>
+<body>
+$header
+    <main>
+$content
+    </main>
+    <script src="/static/modal.js?v=2"></script>
+    <script src="/static/collapse.js?v=1"></script>
+    <script src="/static/select.js?v=1"></script>
+    <script src="/static/table-filter.js?v=5"></script>
+</body>
+</html>
