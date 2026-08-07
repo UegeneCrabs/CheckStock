@@ -300,6 +300,7 @@ def _apply_entries(
     fulfillment: str,
     entries: list[tuple[str, str, int]],
     *,
+    marketplace: str,
     source_type: str,
     sheet_url: str | None,
     table_title: str,
@@ -308,7 +309,12 @@ def _apply_entries(
     table_title = (table_title or "").strip() or "(без названия)"
     negative_skipped = negative_skipped or []
 
-    catalog = db.get_catalog_items(store_slug)
+    # Каталог берём по маркетплейсу вкладки, с которой грузят. Раньше здесь
+    # всегда был WB, и поставка, загруженная на вкладке Ozon, искала товары в
+    # каталоге WB и прибавляла остаток к WB. Артикулы у площадок разные,
+    # поэтому чаще всего строки просто не находились, но там, где артикулы
+    # случайно совпадали, остаток уезжал не на ту площадку.
+    catalog = db.get_catalog_items(store_slug, marketplace)
     by_barcode = {item["barcode"]: item["article"] for item in catalog}
     known_articles = {item["article"] for item in catalog}
     meta_by_article = {item["article"]: item for item in catalog}
@@ -342,19 +348,18 @@ def _apply_entries(
 
     now = _now()
     with db.WRITE_LOCK:
-        existing = db.find_existing_delivery(store_slug, sheet_url, table_title)
+        existing = db.find_existing_delivery(store_slug, sheet_url, table_title, marketplace)
         if existing is not None:
             raise FFImportError(
                 f'поставка "{table_title}" уже была загружена {_format_dt(existing["created_at"])} '
-                f'на фулфилмент "{existing["fulfillment"]}" ({existing["matched"]} товаров) — '
-                "загрузка отменена, чтобы не прибавить остатки этой поставки повторно"
+                f'на фулфилмент "{existing["fulfillment"]}" по {marketplace} '
+                f'({existing["matched"]} товаров) — загрузка отменена, чтобы не прибавить '
+                "остатки этой поставки повторно"
             )
 
         for article, quantity in resolved.items():
-            # Пока все поставки на ФФ приходят по WB; другие маркетплейсы
-            # появятся, когда по ним пойдут отгрузки.
             db.increment_ff_stock(
-                store_slug, article, fulfillment, quantity, now, db.DEFAULT_MARKETPLACE
+                store_slug, article, fulfillment, quantity, now, marketplace
             )
 
         db.record_delivery(
@@ -367,6 +372,7 @@ def _apply_entries(
             matched=len(resolved),
             unmatched=unmatched,
             created_at=now,
+            marketplace=marketplace,
         )
 
     return {
@@ -388,7 +394,8 @@ def _apply_entries(
     }
 
 
-def import_ff_stock_from_sheet(store_slug: str, fulfillment: str, sheet_url: str) -> dict:
+def import_ff_stock_from_sheet(store_slug: str, fulfillment: str, sheet_url: str,
+                               marketplace: str = db.DEFAULT_MARKETPLACE) -> dict:
     # Сначала — публичный CSV-экспорт без авторизации (быстрее и не требует
     # настройки). Если таблица оказалась закрытой — пробуем через сервисный
     # аккаунт Google Sheets API (см. fetch_google_sheet_rows_via_api).
@@ -399,13 +406,14 @@ def import_ff_stock_from_sheet(store_slug: str, fulfillment: str, sheet_url: str
         rows, table_title = fetch_google_sheet_rows_via_api(sheet_url)
     entries, negative_skipped = _rows_to_entries(rows)
     return _apply_entries(
-        store_slug, fulfillment, entries,
+        store_slug, fulfillment, entries, marketplace=marketplace,
         source_type="sheet", sheet_url=sheet_url, table_title=table_title,
         negative_skipped=negative_skipped,
     )
 
 
-def add_items(store_slug: str, fulfillment: str, entries: list[dict]) -> list[dict]:
+def add_items(store_slug: str, fulfillment: str, entries: list[dict],
+              marketplace: str = db.DEFAULT_MARKETPLACE) -> list[dict]:
     """Ручная докладка нескольких позиций — когда в поставке товар ушёл с
     минусом и проще дописать пару строк, чем городить второй файл.
 
@@ -426,7 +434,7 @@ def add_items(store_slug: str, fulfillment: str, entries: list[dict]) -> list[di
     if not entries:
         raise FFImportError("добавьте хотя бы одну позицию")
 
-    catalog = db.get_catalog_items(store_slug)
+    catalog = db.get_catalog_items(store_slug, marketplace)
     by_barcode = {item["barcode"]: item for item in catalog}
     by_article = {item["article"]: item for item in catalog}
 
@@ -475,18 +483,20 @@ def add_items(store_slug: str, fulfillment: str, entries: list[dict]) -> list[di
     with db.WRITE_LOCK:
         for article, info in resolved.items():
             db.increment_ff_stock(
-                store_slug, article, fulfillment, info["added"], now, db.DEFAULT_MARKETPLACE
+                store_slug, article, fulfillment, info["added"], now, marketplace
             )
 
     return list(resolved.values())
 
 
-def import_ff_stock_from_xlsx(store_slug: str, fulfillment: str, file_bytes: bytes, file_name: str = "") -> dict:
+def import_ff_stock_from_xlsx(store_slug: str, fulfillment: str, file_bytes: bytes,
+                              file_name: str = "",
+                              marketplace: str = db.DEFAULT_MARKETPLACE) -> dict:
     rows = _parse_xlsx_rows(file_bytes)
     entries, negative_skipped = _rows_to_entries(rows)
     table_title = (file_name or "").strip() or "(файл без имени)"
     return _apply_entries(
-        store_slug, fulfillment, entries,
+        store_slug, fulfillment, entries, marketplace=marketplace,
         source_type="file", sheet_url=None, table_title=table_title,
         negative_skipped=negative_skipped,
     )

@@ -242,3 +242,57 @@ def build_warehouses_xlsx(store_slug: str, store_name: str, marketplace: str,
 
     name = _safe_filename(f"sklady_{store_slug}_{marketplace}")
     return buffer.getvalue(), f"{name}.xlsx"
+
+
+def build_stock_xlsx(store_slug: str, store_name: str, marketplace: str,
+                     columns: list[str], rows: list[list],
+                     totals: list, ff_label: str = "") -> tuple[bytes, str]:
+    """Основная таблица остатков магазина — как она сейчас на экране.
+
+    columns/rows приходят готовыми: набор колонок зависит от площадки (у WB их
+    две, у Ozon три, у Яндекса — по числу FBS-партнёров), и собирать его здесь
+    заново значило бы описать эту логику во второй раз.
+
+    Строка итогов идёт первой, сразу под шапкой, — так же, как в интерфейсе.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except ImportError as e:
+        raise RuntimeError(
+            "для выгрузки в .xlsx нужен пакет openpyxl — установи его в .venv "
+            "(pip install openpyxl)"
+        ) from e
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = _safe_filename(marketplace)[:31] or "Остатки"
+
+    ws.append(columns)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="DDEBF7")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+    ws.append(totals)
+    for cell in ws[2]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="FFF2CC")
+
+    for row in rows:
+        ws.append(row)
+
+    widths = [18, 18, 46] + [16] * (len(columns) - 3)
+    for idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = width
+    ws.freeze_panes = "A3"
+
+    # В имя файла кладём выбранный склад: иначе выгрузки по разным ФФ
+    # ложатся в загрузки одинаковыми именами и различить их нельзя.
+    parts = ["ostatki", store_slug, marketplace]
+    if ff_label:
+        parts.append(ff_label)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue(), _safe_filename("_".join(parts)) + ".xlsx"

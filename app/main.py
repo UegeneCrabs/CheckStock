@@ -2,6 +2,7 @@ import asyncio
 import html
 import json
 import logging
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -74,6 +75,22 @@ def render_stock_head(marketplace: str, store_slug: str = "") -> str:
     ]
     cells.append('<th class="col-filler"></th>')
     return "<tr>" + "".join(cells) + "</tr>"
+
+# Логи приложения — в stdout, откуда их забирает journald на сервере.
+#
+# Без этого сообщения синхронизации пропадали: uvicorn настраивает логирование
+# только для своих логгеров, а наши остаются без обработчика, и всё ниже
+# WARNING молча теряется. В журнале были видны запросы, но не было ни строчки
+# о том, выгрузились каталоги или нет, — разбирать сбои приходилось запросами
+# в базу.
+#
+# force=True обязателен: uvicorn к этому моменту уже трогал корневой логгер,
+# и обычный basicConfig не сделал бы ничего.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s: %(message)s",
+    force=True,
+)
 
 logger = logging.getLogger("checkstock.sync")
 
@@ -768,6 +785,7 @@ async def upload_ff_stock(
     request: Request,
     slug: str,
     fulfillment: str = Form(...),
+    marketplace: str = Form(db.DEFAULT_MARKETPLACE),
     sheet_url: str = Form(""),
     file: UploadFile | None = File(None),
 ):
@@ -785,12 +803,21 @@ async def upload_ff_stock(
     if not fulfillment:
         return JSONResponse({"ok": False, "error": "Выберите фулфилмент назначения"}, status_code=400)
 
+    # Маркетплейс — тот, на вкладке которого работают. Неизвестное значение не
+    # подменяем молча на WB: остаток, уехавший не на ту площадку, потом ищут
+    # руками по всему каталогу.
+    if marketplace not in db.MARKETPLACES:
+        return JSONResponse({"ok": False, "error": "неизвестный маркетплейс"}, status_code=400)
+
     file_bytes = await file.read() if (file is not None and file.filename) else None
     source_type, source_name = _source_of(file, file_bytes, sheet_url)
     label = source_name or sheet_url.strip() or "ручной ввод"
 
+    # Вид источника включает площадку: тот же файл, загруженный на вкладке WB
+    # и на вкладке Ozon, — две разные поставки, а не повтор.
+    source_kind = f"delivery:{marketplace}"
     fingerprint, used_error = await run_in_threadpool(
-        _guard_used_source, slug.lower(), "delivery", source_type,
+        _guard_used_source, slug.lower(), source_kind, source_type,
         sheet_url, file_bytes, label,
     )
     if used_error:
@@ -799,11 +826,13 @@ async def upload_ff_stock(
     try:
         if file_bytes is not None:
             report = await run_in_threadpool(
-                ff_stock_import.import_ff_stock_from_xlsx, slug.lower(), fulfillment, file_bytes, file.filename
+                ff_stock_import.import_ff_stock_from_xlsx, slug.lower(), fulfillment,
+                file_bytes, file.filename, marketplace,
             )
         elif sheet_url.strip():
             report = await run_in_threadpool(
-                ff_stock_import.import_ff_stock_from_sheet, slug.lower(), fulfillment, sheet_url.strip()
+                ff_stock_import.import_ff_stock_from_sheet, slug.lower(), fulfillment,
+                sheet_url.strip(), marketplace,
             )
         else:
             return JSONResponse(
@@ -830,16 +859,16 @@ async def upload_ff_stock(
             user_id=actor["id"], user_name=actor["full_name"], created_at=now,
             source_name=report.get("table_title"),
             sheet_url=sheet_url.strip() or None,
-            to_fulfillment=fulfillment, to_marketplace=db.DEFAULT_MARKETPLACE,
+            to_fulfillment=fulfillment, to_marketplace=marketplace,
         )
         db.log_action_for_operation(
             actor["id"], actor["full_name"], "Загружена поставка на ФФ",
-            f'{store["name"]} · {fulfillment} · «{report["table_title"]}» — '
+            f'{store["name"]} · {marketplace} · {fulfillment} · «{report["table_title"]}» — '
             f'обновлено {report["matched"]} из {report["total_rows"]} строк',
             now, operation_id,
         )
         db.record_used_source(
-            slug.lower(), "delivery", fingerprint,
+            slug.lower(), source_kind, fingerprint,
             report.get("table_title") or label, source_type,
             operation_id, actor["full_name"], now,
         )
@@ -1028,13 +1057,17 @@ async def add_ff_items(request: Request, slug: str):
     if not fulfillment:
         return JSONResponse({"ok": False, "error": "Выберите фулфилмент назначения"}, status_code=400)
 
+    marketplace = str(payload.get("marketplace") or db.DEFAULT_MARKETPLACE).strip()
+    if marketplace not in db.MARKETPLACES:
+        return JSONResponse({"ok": False, "error": "неизвестный маркетплейс"}, status_code=400)
+
     items = payload.get("items")
     if not isinstance(items, list):
         return JSONResponse({"ok": False, "error": "не переданы позиции"}, status_code=400)
 
     try:
         results = await run_in_threadpool(
-            ff_stock_import.add_items, slug.lower(), fulfillment, items
+            ff_stock_import.add_items, slug.lower(), fulfillment, items, marketplace
         )
     except ff_stock_import.FFImportError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
@@ -1055,7 +1088,7 @@ async def add_ff_items(request: Request, slug: str):
                 for r in results
             ],
             user_id=actor["id"], user_name=actor["full_name"], created_at=now,
-            to_fulfillment=fulfillment, to_marketplace=db.DEFAULT_MARKETPLACE,
+            to_fulfillment=fulfillment, to_marketplace=marketplace,
         )
         db.log_action_for_operation(
             actor["id"], actor["full_name"], "Добавлен остаток на ФФ вручную",
@@ -1100,6 +1133,20 @@ def _source_of(file: UploadFile | None, file_bytes: bytes | None,
     if sheet_url.strip():
         return "sheet", None
     return "manual", None
+
+
+def _download_headers(filename: str) -> dict:
+    """Заголовок скачивания, переживающий кириллицу в имени файла.
+
+    В filename= по стандарту допустим только ASCII, поэтому туда кладём
+    очищенный вариант, а настоящее имя отдаём в filename* — его понимают все
+    актуальные браузеры. Без этого файл «Остатки Чувашия.xlsx» сохранялся бы
+    с покорёженным именем, а часть серверов вообще отвергла бы заголовок.
+    """
+    ascii_name = filename.encode("ascii", "ignore").decode("ascii").strip() or "export.xlsx"
+    quoted = urllib.parse.quote(filename)
+    return {"Content-Disposition":
+            f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quoted}'}
 
 
 def _guard_used_source(store_slug: str, kind: str, source_type: str,
@@ -1156,8 +1203,11 @@ async def transfer_ff_stock(
     source_type, source_name = _source_of(file, file_bytes, sheet_url)
     label = source_name or sheet_url.strip() or "ручной ввод"
 
+    # Площадка-источник входит в вид источника: перемещение того же списка
+    # товаров с WB и с Ozon — разные операции по разным ячейкам склада.
+    source_kind = f"transfer:{from_marketplace}"
     fingerprint, used_error = await run_in_threadpool(
-        _guard_used_source, slug.lower(), "transfer", source_type,
+        _guard_used_source, slug.lower(), source_kind, source_type,
         sheet_url, file_bytes, label,
     )
     if used_error:
@@ -1210,7 +1260,7 @@ async def transfer_ff_stock(
         # источник помечаем использованным только сейчас, когда перемещение
         # уже проведено: упавшую попытку надо иметь возможность повторить
         db.record_used_source(
-            slug.lower(), "transfer", fingerprint, label, source_type,
+            slug.lower(), source_kind, fingerprint, label, source_type,
             operation_id, actor["full_name"], now,
         )
 
@@ -1250,13 +1300,15 @@ async def ship_ff_stock(
 
     trash = to_trash.strip().lower() in ("1", "true", "on", "yes")
     kind = "trash" if trash else "shipment"
+    # тот же файл может относиться к разным площадкам — см. transfer выше
+    source_kind = f"{kind}:{marketplace}"
 
     file_bytes = await file.read() if (file is not None and file.filename) else None
     source_type, source_name = _source_of(file, file_bytes, sheet_url)
     label = source_name or sheet_url.strip() or "ручной ввод"
 
     fingerprint, used_error = await run_in_threadpool(
-        _guard_used_source, slug.lower(), kind, source_type,
+        _guard_used_source, slug.lower(), source_kind, source_type,
         sheet_url, file_bytes, label,
     )
     if used_error:
@@ -1309,7 +1361,7 @@ async def ship_ff_stock(
             now, operation_id,
         )
         db.record_used_source(
-            slug.lower(), kind, fingerprint, label, source_type,
+            slug.lower(), source_kind, fingerprint, label, source_type,
             operation_id, actor["full_name"], now,
         )
 
@@ -1428,7 +1480,7 @@ async def stock_store_operations_xlsx(slug: str, kind: str = ""):
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_download_headers(filename),
     )
 
 
@@ -1441,6 +1493,74 @@ def _warehouse_tables(store_slug: str, marketplace: str) -> list[tuple[str, list
         ("ФФ фулфилменты", db.get_ff_warehouse_details_by_mp(store_slug, marketplace)),
         ("Мусорка", db.get_trash_details(store_slug, marketplace)),
     ]
+
+
+@app.get("/stock/{slug}/stock.xlsx")
+async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
+    """Основная таблица остатков магазина в .xlsx — ровно то, что на экране.
+
+    Учитываем выбранный склад: при выборе ФФ страница показывает остаток этого
+    склада и его же FBS, и выгрузка должна совпадать с тем, что видит человек.
+    Иначе файл и экран разойдутся, а доверять после этого будут файлу.
+    """
+    store = STORES.get(slug.lower())
+    if store is None:
+        raise HTTPException(status_code=404, detail="Магазин не найден")
+
+    marketplace = mp if mp in db.MARKETPLACES else db.DEFAULT_MARKETPLACE
+    store_slug = slug.lower()
+    schemes = schemes_for(marketplace, store_slug)
+
+    def _build():
+        items = db.get_stock_items(store_slug, marketplace, tuple(k for k, _ in schemes))
+
+        # переключаемые колонки — как в интерфейсе (см. refresh() на странице)
+        ff_map = db.get_ff_available_totals(store_slug, ff or None, marketplace)
+        fbs_map = (db.get_mp_stock_by_warehouse(store_slug, marketplace, "fbs", ff)
+                   if ff else None)
+
+        columns = ["АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ТОТАЛ",
+                   "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ"]
+        columns += [title.upper() for _scheme, title in schemes]
+
+        rows = []
+        totals = [0] * len(columns)
+        for item in items:
+            article = item["article"]
+            ff_available = ff_map.get(article, 0) or 0
+
+            by_scheme = []
+            for scheme, _title in schemes:
+                if scheme == "fbs" and fbs_map is not None:
+                    by_scheme.append(fbs_map.get(article, 0) or 0)
+                else:
+                    by_scheme.append(item[f"{scheme}_stock"] or 0)
+
+            row_total = ff_available + sum(by_scheme)
+            rows.append([article, item["barcode"], item["name"],
+                         row_total, ff_available, *by_scheme])
+
+            for index, value in enumerate([row_total, ff_available, *by_scheme], start=3):
+                totals[index] += value
+
+        totals[0] = "ИТОГО"
+        totals[1] = ""
+        totals[2] = f"позиций: {len(rows)}"
+
+        return ff_export.build_stock_xlsx(
+            store_slug, store["name"], marketplace, columns, rows, totals, ff,
+        )
+
+    try:
+        content, filename = await run_in_threadpool(_build)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=_download_headers(filename),
+    )
 
 
 @app.get("/stock/{slug}/warehouses/xlsx")
@@ -1464,7 +1584,7 @@ async def stock_store_warehouses_xlsx(slug: str, mp: str = ""):
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_download_headers(filename),
     )
 
 
@@ -1683,7 +1803,7 @@ async def download_operation(request: Request, operation_id: int):
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_download_headers(filename),
     )
 
 

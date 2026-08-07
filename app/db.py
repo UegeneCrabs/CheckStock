@@ -396,6 +396,8 @@ def init_db() -> None:
 
     _migrate_mp_updated_at(conn)
 
+    _migrate_delivery_marketplace(conn)
+
     conn.commit()
     conn.close()
 
@@ -411,6 +413,23 @@ def _migrate_mp_updated_at(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(stock_items)")}
     if "mp_updated_at" not in columns:
         conn.execute("ALTER TABLE stock_items ADD COLUMN mp_updated_at TEXT")
+
+
+def _migrate_delivery_marketplace(conn: sqlite3.Connection) -> None:
+    """Маркетплейс в журнале поставок.
+
+    Журнал ловит повторную загрузку одной и той же поставки по ссылке или
+    названию файла. Без площадки он ловил и то, что дублем не является:
+    остатки ФФ по WB и по Ozon обычно ведут в таблицах с одинаковыми
+    названиями, и вторая площадка отвергалась как «уже загружено».
+
+    Старые записи помечаем WB — до этой правки других поставок и не было.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(ff_stock_deliveries)")}
+    if "marketplace" not in columns:
+        conn.execute(
+            "ALTER TABLE ff_stock_deliveries ADD COLUMN marketplace TEXT NOT NULL DEFAULT 'WB'"
+        )
 
 
 def _migrate_stock_to_unified(conn: sqlite3.Connection) -> None:
@@ -1061,21 +1080,29 @@ def increment_ff_stock(
     conn.close()
 
 
-def find_existing_delivery(store_slug: str, sheet_url: str | None, table_title: str) -> dict | None:
+def find_existing_delivery(store_slug: str, sheet_url: str | None, table_title: str,
+                           marketplace: str = DEFAULT_MARKETPLACE) -> dict | None:
     """Ищет уже загруженную поставку — по ссылке на таблицу (если грузили по
     ссылке) или по названию таблицы/файла (обычно это номер поставки). Нужно,
-    чтобы не прибавить остатки одной и той же поставки дважды."""
+    чтобы не прибавить остатки одной и той же поставки дважды.
+
+    Площадка входит в поиск: одна и та же таблица, загруженная на вкладке WB и
+    на вкладке Ozon, — это две разные поставки на два разных склада, а не
+    повторная загрузка. Названия у таких файлов обычно совпадают.
+    """
     conn = get_connection()
     row = None
     if sheet_url:
         row = conn.execute(
-            "SELECT * FROM ff_stock_deliveries WHERE store_slug = ? AND sheet_url = ? LIMIT 1",
-            (store_slug, sheet_url),
+            "SELECT * FROM ff_stock_deliveries"
+            " WHERE store_slug = ? AND marketplace = ? AND sheet_url = ? LIMIT 1",
+            (store_slug, marketplace, sheet_url),
         ).fetchone()
     if row is None and table_title:
         row = conn.execute(
-            "SELECT * FROM ff_stock_deliveries WHERE store_slug = ? AND table_title = ? LIMIT 1",
-            (store_slug, table_title),
+            "SELECT * FROM ff_stock_deliveries"
+            " WHERE store_slug = ? AND marketplace = ? AND table_title = ? LIMIT 1",
+            (store_slug, marketplace, table_title),
         ).fetchone()
     conn.close()
     return dict(row) if row is not None else None
@@ -1179,16 +1206,19 @@ def record_delivery(
     matched: int,
     unmatched: int,
     created_at: str,
+    marketplace: str = DEFAULT_MARKETPLACE,
 ) -> None:
     """Записывает в журнал факт загрузки поставки (см. find_existing_delivery)."""
     conn = get_connection()
     conn.execute(
         """
         INSERT INTO ff_stock_deliveries
-            (store_slug, fulfillment, source_type, sheet_url, table_title, total_rows, matched, unmatched, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (store_slug, fulfillment, marketplace, source_type, sheet_url, table_title,
+             total_rows, matched, unmatched, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (store_slug, fulfillment, source_type, sheet_url, table_title, total_rows, matched, unmatched, created_at),
+        (store_slug, fulfillment, marketplace, source_type, sheet_url, table_title,
+         total_rows, matched, unmatched, created_at),
     )
     conn.commit()
     conn.close()

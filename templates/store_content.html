@@ -24,6 +24,7 @@ $mp_tabs
                     <div class="panel-header-actions">
                         <a class="btn-secondary" href="/stock/$slug/operations">Перемещение стока</a>
                         <a class="btn-secondary" id="wh-link" href="/stock/$slug/warehouses?mp=$marketplace">Детализация склады</a>
+                        <a class="btn-secondary" id="stock-xlsx-link" href="/stock/$slug/stock.xlsx?mp=$marketplace">Выгрузить в Excel</a>
                     </div>
                 </div>
 
@@ -374,7 +375,22 @@ $mp_move_options
                         });
                 }
 
-                if (whSelect) whSelect.addEventListener('change', refresh);
+                /* Ссылка выгрузки идёт за выбором склада: файл должен
+                   повторять то, что сейчас на экране, а не «общее». */
+                var xlsxLink = document.getElementById('stock-xlsx-link');
+                function syncXlsxLink() {
+                    if (!xlsxLink) return;
+                    var url = '/stock/' + storeSlug + '/stock.xlsx?mp=' + encodeURIComponent(currentMp());
+                    var ff = currentFf();
+                    if (ff) url += '&ff=' + encodeURIComponent(ff);
+                    xlsxLink.setAttribute('href', url);
+                }
+                syncXlsxLink();
+
+                if (whSelect) whSelect.addEventListener('change', function () {
+                    syncXlsxLink();
+                    refresh();
+                });
 
                 // Вкладки маркетплейсов: переключение перезагружает страницу.
                 // Так все колонки и итоги гарантированно от одного маркетплейса.
@@ -412,7 +428,10 @@ $mp_move_options
                     syncStickyOffset();
                 }
 
-                return { refresh: refresh, recalcTotals: recalcTotals, currentFf: currentFf };
+                /* currentMp нужен и блокам загрузки: они лежат в других
+                   замыканиях и напрямую до неё не дотянутся */
+                return { refresh: refresh, recalcTotals: recalcTotals,
+                         currentFf: currentFf, currentMp: currentMp };
             })();
 
             (function () {
@@ -483,6 +502,9 @@ $mp_move_options
 
                     var formData = new FormData();
                     formData.append('fulfillment', fulfillment);
+                    /* маркетплейс вкладки, на которой находимся: остаток должен
+                       лечь той площадке, чей каталог сейчас на экране */
+                    formData.append('marketplace', window.stockTable.currentMp());
                     if (method === 'file') {
                         formData.append('file', fileInput.files[0]);
                     } else {
@@ -648,7 +670,11 @@ $mp_move_options
                         fetch('/stock/' + storeSlug + '/add-ff-items', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
-                            body: JSON.stringify({ fulfillment: fulfillment, items: items })
+                            body: JSON.stringify({
+                                fulfillment: fulfillment,
+                                marketplace: window.stockTable.currentMp(),
+                                items: items
+                            })
                         })
                             .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
                             .then(function (res) {
