@@ -1604,7 +1604,7 @@ def get_ff_stock_one(store_slug: str, article: str, fulfillment: str, marketplac
 
 def apply_ff_transfer(
     store_slug: str,
-    entries: list[tuple[str, int]],
+    entries: list[tuple[str, str, int]],
     from_fulfillment: str,
     from_marketplace: str,
     to_fulfillment: str,
@@ -1626,14 +1626,14 @@ def apply_ff_transfer(
     try:
         conn.execute("BEGIN")
 
-        for article, quantity in entries:
+        for from_article, to_article, quantity in entries:
             # списываем с источника
             conn.execute(
                 """
                 UPDATE ff_stock SET quantity = quantity - ?, updated_at = ?
                 WHERE store_slug = ? AND article = ? AND fulfillment = ? AND marketplace = ?
                 """,
-                (quantity, created_at, store_slug, article, from_fulfillment, from_marketplace),
+                (quantity, created_at, store_slug, from_article, from_fulfillment, from_marketplace),
             )
             # зачисляем получателю (строки может ещё не быть)
             conn.execute(
@@ -1644,7 +1644,7 @@ def apply_ff_transfer(
                 DO UPDATE SET quantity = ff_stock.quantity + excluded.quantity,
                               updated_at = excluded.updated_at
                 """,
-                (store_slug, article, to_fulfillment, to_marketplace, quantity, created_at),
+                (store_slug, to_article, to_fulfillment, to_marketplace, quantity, created_at),
             )
             conn.execute(
                 """
@@ -1653,7 +1653,7 @@ def apply_ff_transfer(
                      to_fulfillment, to_marketplace, user_id, user_name, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (store_slug, article, quantity, from_fulfillment, from_marketplace,
+                (store_slug, to_article, quantity, from_fulfillment, from_marketplace,
                  to_fulfillment, to_marketplace, user_id, user_name, created_at),
             )
 

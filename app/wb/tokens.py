@@ -34,10 +34,10 @@ class TokenNotFoundError(Exception):
     pass
 
 
-@lru_cache(maxsize=1)
-def _load_tokens() -> dict:
+@lru_cache(maxsize=8)
+def _load_tokens_cached(signature: tuple[int, int] | None) -> dict:
     """См. ozon/tokens._load_tokens: пустой или битый файл — это «токенов нет»."""
-    if not TOKENS_PATH.exists():
+    if signature is None or not TOKENS_PATH.exists():
         return {}
     try:
         with open(TOKENS_PATH, "r", encoding="utf-8") as f:
@@ -61,9 +61,21 @@ def _load_tokens() -> dict:
     return data
 
 
+def _tokens_signature() -> tuple[int, int] | None:
+    try:
+        stat = TOKENS_PATH.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _load_tokens() -> dict:
+    return _load_tokens_cached(_tokens_signature())
+
+
 def reload_tokens() -> None:
     """Сбросить кэш — вызывать, если файл с токенами обновили без перезапуска сервера."""
-    _load_tokens.cache_clear()
+    _load_tokens_cached.cache_clear()
 
 
 def get_token(store_slug: str) -> str:

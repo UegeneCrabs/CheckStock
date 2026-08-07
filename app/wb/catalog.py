@@ -94,10 +94,20 @@ def build_items(cards: list[dict]) -> tuple[list[dict], dict]:
         if len(sizes) > 1:
             stats["multi_size"] += 1
 
-        name = clean_name(product["vendor_code"]) or product["title"]
+        vendor_code = (product["vendor_code"] or "").strip()
+
+        if vendor_code and not vendor_code.isdigit():
+            name = clean_name(vendor_code)
+        else:
+            name = product["title"]
 
         for size in sizes:
-            suffix = f" / {size['tech_size']}" if len(sizes) > 1 and size["tech_size"] else ""
+            suffix = (
+                f" / {size['tech_size']}"
+                if len(sizes) > 1 and size["tech_size"]
+                else ""
+            )
+
             items.append({
                 "article": f"{nm_id}{suffix}",
                 "barcode": size["barcode"],

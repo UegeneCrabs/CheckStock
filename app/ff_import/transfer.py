@@ -144,6 +144,41 @@ def check_availability(
         )
 
 
+def resolve_target_entries(
+    store_slug: str,
+    entries: list[tuple[str, int, str, str]],
+    to_marketplace: str,
+) -> tuple[list[tuple[str, str, int, str, str]], list[dict]]:
+    """Split entries into movable and skipped by target marketplace catalog.
+
+    The source article is what we subtract from the source cell. The target
+    article is what we add to the receiver cell. Today they must be the same
+    article in the target catalog; otherwise the receiver-side stock would be
+    invisible in the UI joins against stock_items.
+    """
+    target_articles = {
+        item["article"]
+        for item in db.get_catalog_items(store_slug, to_marketplace)
+    }
+
+    movable: list[tuple[str, str, int, str, str]] = []
+    skipped: list[dict] = []
+
+    for article, quantity, name, barcode in entries:
+        if article not in target_articles:
+            skipped.append({
+                "article": article,
+                "name": name,
+                "barcode": barcode,
+                "quantity": quantity,
+                "reason": f"артикул не найден в каталоге {to_marketplace}",
+            })
+            continue
+        movable.append((article, article, quantity, name, barcode))
+
+    return movable, skipped
+
+
 def transfer(
     store_slug: str,
     raw_entries: list[dict],
@@ -160,18 +195,40 @@ def transfer(
     # товары ищем в каталоге маркетплейса-источника: артикулы и баркоды
     # у площадок свои, и каталог Ozon с каталогом WB не пересекается
     entries = resolve_entries(store_slug, raw_entries, from_marketplace)
+    movable, skipped = resolve_target_entries(store_slug, entries, to_marketplace)
+
+    if not movable:
+        skipped_text = "; ".join(
+            f"{item['article']} x{item['quantity']}: {item['reason']}"
+            for item in skipped
+        )
+        raise FFImportError(
+            "ни один товар не переведен: " + skipped_text
+        )
 
     with db.WRITE_LOCK:
-        check_availability(store_slug, entries, from_fulfillment, from_marketplace)
+        check_availability(
+            store_slug,
+            [(from_article, quantity, name, barcode)
+             for from_article, _to_article, quantity, name, barcode in movable],
+            from_fulfillment, from_marketplace,
+        )
         db.apply_ff_transfer(
             store_slug,
-            [(article, quantity) for article, quantity, _n, _b in entries],
+            [(from_article, to_article, quantity)
+             for from_article, to_article, quantity, _n, _b in movable],
             from_fulfillment, from_marketplace,
             to_fulfillment, to_marketplace,
             user_id, user_name, _now(),
         )
 
-    return [{"article": a, "name": n, "barcode": b, "quantity": q} for a, q, n, b in entries]
+    return {
+        "moved": [
+            {"article": to_article, "name": name, "barcode": barcode, "quantity": quantity}
+            for _from_article, to_article, quantity, name, barcode in movable
+        ],
+        "skipped": skipped,
+    }
 
 
 # Как может называться колонка с количеством в файле перемещения.

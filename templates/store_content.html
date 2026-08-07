@@ -918,9 +918,16 @@ $mp_move_options
                                 return;
                             }
                             var list = res.data.results || [];
-                            rows.showServerMessage('Перемещено: ' + list.map(function (r) {
+                            var skipped = res.data.skipped || [];
+                            var message = 'Перемещено: ' + list.map(function (r) {
                                 return r.article + ' x' + r.quantity;
-                            }).join(', '), false);
+                            }).join(', ');
+                            if (skipped.length) {
+                                message += '. Не переведено: ' + skipped.map(function (r) {
+                                    return r.article + ' x' + r.quantity + ' — ' + r.reason;
+                                }).join('; ');
+                            }
+                            rows.showServerMessage(message, false);
 
                             rows.reset();
                             urlInput.value = '';

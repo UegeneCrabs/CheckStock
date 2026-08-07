@@ -1226,7 +1226,7 @@ async def transfer_ff_stock(
             if not isinstance(raw_entries, list):
                 return JSONResponse({"ok": False, "error": "неверный формат позиций"}, status_code=400)
 
-        results = await run_in_threadpool(
+        transfer_result = await run_in_threadpool(
             ff_transfer.transfer,
             slug.lower(), raw_entries,
             from_fulfillment.strip(), from_marketplace.strip(),
@@ -1239,7 +1239,12 @@ async def transfer_ff_stock(
         logger.exception("Перемещение остатков (%s) упало", slug)
         return JSONResponse({"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500)
 
+    results = transfer_result["moved"]
+    skipped = transfer_result.get("skipped", [])
     moved = ", ".join(f'{r["article"]} x{r["quantity"]}' for r in results)
+    skipped_note = "; ".join(
+        f'{r["article"]} x{r["quantity"]}: {r["reason"]}' for r in skipped
+    )
 
     def _record() -> None:
         now = _now_iso()
@@ -1250,11 +1255,13 @@ async def transfer_ff_stock(
             source_name=source_name, sheet_url=sheet_url.strip() or None,
             from_fulfillment=from_fulfillment.strip(), from_marketplace=from_marketplace.strip(),
             to_fulfillment=to_fulfillment.strip(), to_marketplace=to_marketplace.strip(),
+            note=(f"Не переведено: {skipped_note}" if skipped_note else None),
         )
         db.log_action_for_operation(
             actor["id"], actor["full_name"], "Перемещение между фулфилментами",
             f'{store["name"]} · {from_fulfillment}/{from_marketplace} -> '
-            f'{to_fulfillment}/{to_marketplace} · {moved}',
+            f'{to_fulfillment}/{to_marketplace} · {moved}'
+            + (f' · не переведено: {skipped_note}' if skipped_note else ''),
             now, operation_id,
         )
         # источник помечаем использованным только сейчас, когда перемещение
@@ -1266,7 +1273,7 @@ async def transfer_ff_stock(
 
     await run_in_threadpool(_record)
 
-    return JSONResponse({"ok": True, "results": results})
+    return JSONResponse({"ok": True, "results": results, "skipped": skipped})
 
 
 @app.post("/stock/{slug}/shipment")

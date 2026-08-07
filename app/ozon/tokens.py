@@ -31,8 +31,8 @@ class OzonCredentialsNotFoundError(Exception):
     pass
 
 
-@lru_cache(maxsize=1)
-def _load_tokens() -> dict:
+@lru_cache(maxsize=8)
+def _load_tokens_cached(signature: tuple[int, int] | None) -> dict:
     """Доступы из файла. Нечитаемый файл — это «доступов нет», а не авария.
 
     Пустой файл (0 байт) — обычное состояние: его создают заранее, а ключи
@@ -41,7 +41,7 @@ def _load_tokens() -> dict:
     при каждой отрисовке вкладок. Магазин без ключа Ozon должен показывать
     заглушку, а не 500.
     """
-    if not TOKENS_PATH.exists():
+    if signature is None or not TOKENS_PATH.exists():
         return {}
     try:
         with open(TOKENS_PATH, "r", encoding="utf-8") as f:
@@ -65,9 +65,21 @@ def _load_tokens() -> dict:
     return data
 
 
+def _tokens_signature() -> tuple[int, int] | None:
+    try:
+        stat = TOKENS_PATH.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _load_tokens() -> dict:
+    return _load_tokens_cached(_tokens_signature())
+
+
 def reload_tokens() -> None:
     """Сбросить кэш — если доступы обновили без перезапуска сервера."""
-    _load_tokens.cache_clear()
+    _load_tokens_cached.cache_clear()
 
 
 def is_listed(store_slug: str) -> bool:

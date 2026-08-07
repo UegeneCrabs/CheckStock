@@ -12,6 +12,8 @@
 там нужна другая.
 """
 
+from datetime import datetime, timezone
+
 from app import db
 from app.ozon import tokens as ozon_tokens
 from app.wb import tokens as wb_tokens
@@ -34,6 +36,45 @@ SCOPES = {
     "OZON": {"catalog": "каталог", "stocks": "остатки"},
     "YANDEX MARKET": {"catalog": "каталог", "stocks": "остатки"},
 }
+
+
+def _credentials_updated_at(marketplace: str) -> datetime | None:
+    if marketplace == "WB":
+        path = wb_tokens.TOKENS_PATH
+    elif marketplace == "OZON":
+        path = ozon_tokens.TOKENS_PATH
+    elif marketplace == "YANDEX MARKET":
+        path = ya_tokens.SECRETS_PATH
+    else:
+        return None
+
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
+
+
+def _checked_at(row: dict) -> datetime | None:
+    try:
+        value = datetime.fromisoformat(row["checked_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _fresh_health_rows(marketplace: str, rows: list[dict]) -> list[dict]:
+    updated_at = _credentials_updated_at(marketplace)
+    if updated_at is None:
+        return rows
+
+    fresh = []
+    for row in rows:
+        checked_at = _checked_at(row)
+        if checked_at is None or checked_at >= updated_at:
+            fresh.append(row)
+    return fresh
 
 
 def is_listed(marketplace: str, store_slug: str) -> bool:
@@ -90,7 +131,10 @@ def store_problems(store_slug: str) -> list[dict]:
         if not has_token(marketplace, store_slug):
             continue
 
-        rows = [r for r in health_rows if r["marketplace"] == marketplace]
+        rows = _fresh_health_rows(
+            marketplace,
+            [r for r in health_rows if r["marketplace"] == marketplace],
+        )
         if not rows:
             continue
 
