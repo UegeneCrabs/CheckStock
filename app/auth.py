@@ -1,173 +1,129 @@
-"""
-Авторизация сотрудников: хеширование паролей, сессии, роли.
+import logging
+from datetime import UTC, datetime, timedelta
 
-Пароли хешируются PBKDF2-HMAC-SHA256 из стандартной библиотеки — новых
-зависимостей не тянем, а стойкость для внутреннего инструмента достаточная
-(200k итераций, случайная соль на каждый пароль). Формат строки в БД:
+from pydantic import ValidationError
 
-    pbkdf2_sha256$<итерации>$<соль_hex>$<хеш_hex>
+from app.application.identity import IdentityService
+from app.config import settings
+from app.dto.identity import (
+    CreateUserCommand,
+    Credentials,
+    PasswordHashRequest,
+    PasswordVerification,
+    Role,
+    SessionToken,
+    SuperadminSeed,
+    User,
+    UserId,
+)
+from app.identity_policy import can_edit_stock as policy_can_edit_stock
+from app.identity_policy import can_manage_users as policy_can_manage_users
+from app.identity_policy import has_role as policy_has_role
+from app.infrastructure.database import database_for_path
+from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
+from app.repositories import core
+from app.security import Pbkdf2PasswordService
 
-Сессия — случайный токен в httponly-куке, сама сессия лежит в таблице
-sessions. Логаут удаляет строку, поэтому "разлогинить" можно и на сервере.
+logger = logging.getLogger(__name__)
 
-Первый суперадмин создаётся при старте из secrets/admin_seed.json (файл в
-.gitignore) — см. seed_superadmin(). Пароль в коде не хранится.
-"""
-
-import hashlib
-import hmac
-import json
-import secrets
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-
-from app import db
-
-SEED_PATH = Path(__file__).resolve().parent.parent / "secrets" / "admin_seed.json"
-
+SEED_PATH = settings.admin_seed_path
 SESSION_COOKIE = "paketa_session"
-SESSION_TTL_DAYS = 14
-
-PBKDF2_ITERATIONS = 200_000
-
-# Кто что может. Проверяется через has_role(user, "admin") и т.п.
-ROLE_LEVEL = {"user": 1, "admin": 2, "superadmin": 3}
+SESSION_TTL_DAYS = settings.session_ttl_days
+PBKDF2_ITERATIONS = settings.pbkdf2_iterations
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
+
+
+def _service() -> IdentityService:
+    return IdentityService(
+        unit_of_work_factory=lambda: SqlAlchemyIdentityUnitOfWork(
+            database_for_path(core.DB_PATH).session_factory
+        ),
+        password_service=Pbkdf2PasswordService(PBKDF2_ITERATIONS),
+        session_ttl=timedelta(days=SESSION_TTL_DAYS),
+    )
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}"
+    request = PasswordHashRequest(password=password)
+    return Pbkdf2PasswordService(PBKDF2_ITERATIONS).hash(request).root
 
 
 def verify_password(password: str, stored: str) -> bool:
     try:
-        algorithm, iterations, salt_hex, digest_hex = stored.split("$")
-        if algorithm != "pbkdf2_sha256":
-            return False
-        digest = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), int(iterations)
-        )
-    except (ValueError, AttributeError):
+        request = PasswordVerification(password=password, stored_hash=stored)
+    except ValidationError:
         return False
-    # сравнение с постоянным временем — чтобы по времени ответа нельзя было подбирать хеш
-    return hmac.compare_digest(digest.hex(), digest_hex)
+    return Pbkdf2PasswordService(PBKDF2_ITERATIONS).verify(request).root
 
 
-def authenticate(login: str, password: str) -> dict | None:
-    """Возвращает пользователя, если логин/пароль верны и он не заблокирован."""
-    user = db.get_user_by_login((login or "").strip())
-    if user is None or not user["is_active"]:
+def authenticate(login: str, password: str) -> User | None:
+    try:
+        credentials = Credentials(login=login, password=password)
+    except ValidationError:
         return None
-    if not verify_password(password or "", user["password_hash"]):
-        return None
-    return user
+    return _service().authenticate(credentials)
 
 
 def start_session(user_id: int) -> str:
-    token = secrets.token_urlsafe(32)
-    now = _now()
-    db.create_session(
-        token,
-        user_id,
-        now.isoformat(),
-        (now + timedelta(days=SESSION_TTL_DAYS)).isoformat(),
-    )
-    return token
+    return _service().start_session(UserId(user_id)).value
 
 
 def end_session(token: str) -> None:
     if token:
-        db.delete_session(token)
+        _service().end_session(SessionToken(value=token))
 
 
-def user_for_token(token: str) -> dict | None:
-    """Пользователь по куке сессии. Протухшая сессия удаляется сразу."""
+def user_for_token(token: str) -> User | None:
     if not token:
         return None
-    session = db.get_session(token)
-    if session is None:
-        return None
-
     try:
-        expires = datetime.fromisoformat(session["expires_at"])
+        session_token = SessionToken(value=token)
+    except ValidationError:
+        return None
+    return _service().user_for_token(session_token)
+
+
+def has_role(user: User | None, minimum: str) -> bool:
+    try:
+        required = Role(minimum)
     except ValueError:
-        db.delete_session(token)
-        return None
-
-    if expires < _now():
-        db.delete_session(token)
-        return None
-
-    user = db.get_user(session["user_id"])
-    if user is None or not user["is_active"]:
-        return None
-    return user
-
-
-def has_role(user: dict | None, minimum: str) -> bool:
-    if not user:
         return False
-    return ROLE_LEVEL.get(user["role"], 0) >= ROLE_LEVEL.get(minimum, 99)
+    return policy_has_role(user, required)
 
 
-def can_edit_stock(user: dict | None) -> bool:
-    """Можно ли этому сотруднику менять остатки.
-
-    Разрешение отдельно от роли: сотрудник может числиться пользователем и при
-    этом не иметь права проводить операции, пока его не допустили.
-    Отсутствие поля считаем разрешением — так ведут себя учётки, заведённые
-    до появления разрешений.
-    """
-    if not user:
-        return False
-    try:
-        return bool(user["can_edit_stock"])
-    except (KeyError, IndexError, TypeError):
-        return True
+def can_edit_stock(user: User | None) -> bool:
+    return policy_can_edit_stock(user)
 
 
-def can_manage_users(user: dict | None) -> bool:
-    """Можно ли заводить и править сотрудников.
-
-    Нужна и роль, и разрешение: у тестового стенда роль суперадмина, но
-    трогать живых сотрудников он не должен.
-    """
-    if not has_role(user, "admin"):
-        return False
-    try:
-        return bool(user["can_manage_users"])
-    except (KeyError, IndexError, TypeError):
-        return True
+def can_manage_users(user: User | None) -> bool:
+    return policy_can_manage_users(user)
 
 
 def seed_superadmin() -> None:
-    """Создаёт первого суперадмина из secrets/admin_seed.json, если в базе
-    ещё нет ни одного пользователя. Повторные запуски ничего не делают."""
-    if db.count_users() > 0:
+    service = _service()
+    if service.count_users().root > 0:
         return
     if not SEED_PATH.exists():
+        logger.warning("superadmin_seed_missing path=%s", SEED_PATH)
         return
-
     try:
-        data = json.loads(SEED_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        seed = SuperadminSeed.model_validate_json(SEED_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValidationError):
+        logger.exception("superadmin_seed_invalid path=%s", SEED_PATH)
         return
 
-    login = (data.get("login") or "").strip()
-    password = data.get("password") or ""
-    if not login or not password:
-        return
-
-    db.create_user(
-        full_name=(data.get("full_name") or "Суперадмин").strip(),
-        google_email=(data.get("google_email") or "").strip(),
-        login=login,
-        password_hash=hash_password(password),
-        role="superadmin",
-        created_at=_now().isoformat(),
+    password_hash = Pbkdf2PasswordService(PBKDF2_ITERATIONS).hash(PasswordHashRequest(password=seed.password))
+    user_id = service.create_user(
+        CreateUserCommand(
+            full_name=seed.full_name,
+            google_email=seed.google_email,
+            login=seed.login,
+            password_hash=password_hash.root,
+            role=Role.SUPERADMIN,
+            created_at=_now(),
+        )
     )
+    logger.info("superadmin_seeded user_id=%s login=%s", user_id.root, seed.login)

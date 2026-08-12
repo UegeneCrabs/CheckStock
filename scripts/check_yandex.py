@@ -1,24 +1,3 @@
-"""
-Разовый диагностический скрипт по Яндекс Маркету.
-
-Смотрим, что реально отдаёт API, прежде чем писать синхронизацию — с Ozon
-такой порядок трижды спас от неверных предположений по документации.
-
-Отвечает на вопросы, от которых зависит структура кода:
-  - какие магазины (campaignId) привязаны к ключу и по каким моделям работают;
-  - какой у них кабинет (businessId) — из него берётся каталог;
-  - сколько товаров в каталоге, у всех ли есть баркод;
-  - совпадают ли артикулы Маркета с нашим каталогом WB;
-  - какие типы остатков реально приходят и сколько в каждом;
-  - как называются склады и сколько их.
-
-Ничего не пишет в БД и никуда не отправляет — только печатает.
-
-Запуск (из корня проекта, в .venv проекта):
-    python scripts/check_yandex.py
-    python scripts/check_yandex.py rimili
-"""
-
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -37,7 +16,6 @@ def _check_store(slug: str) -> None:
     api_key = ya_tokens.get_api_key(slug)
     print(f"\n=== {slug} ({STORES.get(slug, {}).get('name', slug.upper())}) ===")
 
-    # 1. Магазины и кабинет
     try:
         raw_campaigns = ya_api.get_campaigns(api_key)
     except ya_api.YandexApiError as e:
@@ -47,8 +25,10 @@ def _check_store(slug: str) -> None:
     campaigns = [ya_api.normalize_campaign(row) for row in raw_campaigns]
     print(f"  магазинов по ключу: {len(campaigns)}")
     for c in campaigns:
-        print(f"    campaignId={c['campaign_id']}  businessId={c['business_id']}"
-              f"  модель={c['placement']} -> {c['scheme']}  {c['domain']}")
+        print(
+            f"    campaignId={c['campaign_id']}  businessId={c['business_id']}"
+            f"  модель={c['placement']} -> {c['scheme']}  {c['domain']}"
+        )
 
     if not campaigns:
         print("    ключ не привязан ни к одному магазину")
@@ -58,7 +38,6 @@ def _check_store(slug: str) -> None:
     if len(business_ids) > 1:
         print(f"    ВНИМАНИЕ: кабинетов несколько ({business_ids}) — каталог придётся брать из каждого")
 
-    # 2. Каталог
     business_id = ya_tokens.get_business_id(slug) or next(iter(business_ids), None)
     catalog = []
     if business_id:
@@ -73,16 +52,16 @@ def _check_store(slug: str) -> None:
         multi = [p for p in catalog if len(p["barcodes"]) > 1]
         archived = [p for p in catalog if p["archived"]]
         print(f"\n  каталог кабинета {business_id}: {len(catalog)} позиций")
-        print(f"    без баркода: {len(no_barcode)} | с несколькими баркодами: {len(multi)}"
-              f" | архивных: {len(archived)}")
+        print(
+            f"    без баркода: {len(no_barcode)} | с несколькими баркодами: {len(multi)}"
+            f" | архивных: {len(archived)}"
+        )
         dup = [k for k, n in Counter(p["article"] for p in catalog).items() if n > 1]
         print(f"    дубли артикулов: {len(dup)} {dup[:5]}")
         print(f"    примеры (до {SHOW}):")
         for p in catalog[:SHOW]:
-            print(f"      {p['article']:<18} bc={p['barcode']:<15} sku={p['market_sku']}"
-                  f"  {p['name'][:34]}")
+            print(f"      {p['article']:<18} bc={p['barcode']:<15} sku={p['market_sku']}  {p['name'][:34]}")
 
-        # сверка с нашим каталогом WB
         ours = db.get_catalog_items(slug, "WB")
         if ours:
             our_articles = {i["article"] for i in ours}
@@ -95,7 +74,6 @@ def _check_store(slug: str) -> None:
             print(f"      совпало по баркоду:  {len(by_barcode)}")
             print(f"      не совпало никак:    {len(rest) - len(by_barcode)}")
 
-    # 3. Остатки по каждому магазину
     for c in campaigns:
         cid = c["campaign_id"]
         print(f"\n  остатки campaignId={cid} ({c['scheme']}):")
@@ -116,17 +94,16 @@ def _check_store(slug: str) -> None:
                 by_type[key] += value
             by_warehouse[str(r["warehouse_id"])] += ya_api.available_quantity(r["stocks"])
 
-        print(f"    строк {len(rows)}, товаров {len({r['article'] for r in rows})},"
-              f" складов {len(by_warehouse)}")
+        print(
+            f"    строк {len(rows)}, товаров {len({r['article'] for r in rows})}, складов {len(by_warehouse)}"
+        )
         print("    по типам остатка:", dict(sorted(by_type.items())))
         print("    по складам (доступно):", dict(sorted(by_warehouse.items(), key=lambda x: -x[1])))
 
         print(f"    пример строк (до {SHOW}):")
         for r in rows[:SHOW]:
-            print(f"      {r['article']:<18} склад={r['warehouse_id']}"
-                  f"  {ya_api.stock_by_type(r['stocks'])}")
+            print(f"      {r['article']:<18} склад={r['warehouse_id']}  {ya_api.stock_by_type(r['stocks'])}")
 
-    # 4. Склады Маркета
     try:
         warehouses = ya_api.get_fulfillment_warehouses(api_key)
         print(f"\n  склады Маркета (FBY): {len(warehouses)}")
@@ -149,8 +126,7 @@ def main() -> None:
         _check_store(slug)
 
     if not checked:
-        print("Не найдено магазинов с ключами Яндекс Маркета "
-              f"({ya_tokens.SECRETS_PATH}). Проверять нечего.")
+        print(f"Не найдено магазинов с ключами Яндекс Маркета ({ya_tokens.SECRETS_PATH}). Проверять нечего.")
 
 
 if __name__ == "__main__":

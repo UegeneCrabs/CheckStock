@@ -3,23 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
     <title>$title</title>
-    <link rel="stylesheet" href="/static/style.css?v=53">
+    <link rel="stylesheet" href="/static/style.css?v=56">
+    <link rel="stylesheet" href="/static/skladno-theme.css?v=19">
+    <link rel="stylesheet" href="/static/decision-center.css?v=1">
+    <link rel="stylesheet" href="/static/rnp-dashboard.css?v=1">
 
-    <!-- Только определение функций, без обращения к DOM — поэтому грузим
-         в head. Остальные скрипты идут в конце body, но этот нужен раньше:
-         встроенные скрипты страницы лежат внутри контента и выполняются
-         до конца body, а значит до всего, что подключено там. -->
+
     <script src="/static/stock-rows.js?v=6"></script>
 </head>
 <body>
+    <div class="app-shell">
 $header
-    <main>
+        <div class="workspace">
+            <div class="topbar" role="banner">
+                <div class="topbar-heading">
+                    <p class="eyebrow">$page_kicker</p>
+                    <h1>$page_heading</h1>
+                </div>
+                <div class="topbar-state">
+                    <span class="live-dot" aria-hidden="true"></span>
+                    <span>Система работает</span>
+                </div>
+            </div>
+            <main class="content $content_class">
 $content
-    </main>
+            </main>
+        </div>
+    </div>
     <script src="/static/modal.js?v=2"></script>
     <script src="/static/collapse.js?v=1"></script>
     <script src="/static/select.js?v=1"></script>
     <script src="/static/table-filter.js?v=5"></script>
+    <script src="/static/stock-table.js?v=3"></script>
+    <script src="/static/sales-dashboard.js?v=3"></script>
+    <script src="/static/decision-center.js?v=1"></script>
+    <script src="/static/rnp-dashboard.js?v=2"></script>
+    <script src="/static/navigation.js?v=2"></script>
 </body>
 </html>

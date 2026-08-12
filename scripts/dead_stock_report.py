@@ -1,32 +1,3 @@
-"""
-Товары без движения: ни заказов за период, ни стока на площадке.
-
-Что считается «без движения» на WB:
-
-- за последние N недель (по умолчанию три) не было ни одного заказа;
-- остаток FBS = 0 и остаток FBO = 0.
-
-Остаток на нашем фулфилменте на отбор НЕ влияет — он показан отдельной
-колонкой, для сведения. Товар, который лежит у ФФ, но не отгружен в продажу и
-не продаётся, — как раз то, что важно увидеть: деньги лежат на складе, а на
-витрине товара нет.
-
-Отменённые заказы не считаются: отменённый заказ это не продажа.
-
-Заказы берутся из статистики WB (нужна категория токена «Статистика»),
-остатки — из нашей базы, той же, что показывает интерфейс. Отдельно ходить
-за остатками смысла нет: их синхронизация обновляет каждые полчаса.
-
-Запуск:
-
-    python scripts/dead_stock_report.py                      # все магазины, 3 недели
-    python scripts/dead_stock_report.py --store rimili       # один магазин
-    python scripts/dead_stock_report.py --weeks 6            # другой период
-    python scripts/dead_stock_report.py --out C:\\отчёт.xlsx  # своё имя файла
-
-Результат — .xlsx: лист «Сводка» и лист на каждый магазин.
-"""
-
 import argparse
 import sys
 from datetime import datetime, timedelta
@@ -34,10 +5,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import db                      # noqa: E402
-from app.stores import STORES           # noqa: E402
-from app.wb import api as wb_api        # noqa: E402
-from app.wb import tokens as wb_tokens  # noqa: E402
+from app import db
+from app.stores import STORES
+from app.wb import api as wb_api
+from app.wb import tokens as wb_tokens
 
 MARKETPLACE = "WB"
 
@@ -47,25 +18,19 @@ def _store_label(store_slug: str) -> str:
 
 
 def count_orders(orders: list[dict], since: datetime) -> tuple[dict, dict, int]:
-    """Заказы по штрихкоду и по nmID. Возвращает (по баркоду, по nmID, отменённых).
 
-    Считаем двумя способами, потому что связать заказ с каталогом нужно
-    наверняка: штрихкод точнее (у карточки с размерами он у каждого свой),
-    но у части заказов его может не быть — тогда выручает nmID.
-    """
     by_barcode: dict[str, int] = {}
     by_nm: dict[str, int] = {}
     cancelled = 0
 
     for order in orders:
-        # WB отдаёт «2026-07-16T12:33:41», часового пояса нет
         raw_date = str(order.get("date") or "")[:19]
         try:
             ordered_at = datetime.fromisoformat(raw_date)
         except ValueError:
             continue
         if ordered_at < since:
-            continue  # заказ старый, а в выборку попал из-за смены статуса
+            continue
 
         if order.get("isCancel"):
             cancelled += 1
@@ -82,12 +47,7 @@ def count_orders(orders: list[dict], since: datetime) -> tuple[dict, dict, int]:
 
 
 def orders_for_item(item: dict, by_barcode: dict, by_nm: dict) -> int:
-    """Сколько раз заказывали этот товар.
 
-    Сначала по штрихкоду. Если его нет в заказах вовсе — по nmID, но только
-    для позиций без размерной сетки: у карточки с размерами nmID общий, и
-    списать заказы 42-го размера на 44-й было бы ошибкой.
-    """
     barcode = str(item.get("barcode") or "").strip()
     if barcode in by_barcode:
         return by_barcode[barcode]
@@ -99,7 +59,7 @@ def orders_for_item(item: dict, by_barcode: dict, by_nm: dict) -> int:
 
 
 def analyze_store(store_slug: str, weeks: int) -> dict:
-    """Считает отчёт по одному магазину."""
+
     label = _store_label(store_slug)
     since = datetime.now() - timedelta(weeks=weeks)
 
@@ -108,8 +68,7 @@ def analyze_store(store_slug: str, weeks: int) -> dict:
         return {"store": store_slug, "label": label, "error": "каталог пуст — сначала синхронизация"}
 
     try:
-        orders = wb_api.get_orders(wb_tokens.get_token(store_slug),
-                                   since.strftime("%Y-%m-%dT%H:%M:%S"))
+        orders = wb_api.get_orders(wb_tokens.get_token(store_slug), since.strftime("%Y-%m-%dT%H:%M:%S"))
     except Exception as e:
         return {"store": store_slug, "label": label, "error": str(e)}
 
@@ -124,13 +83,15 @@ def analyze_store(store_slug: str, weeks: int) -> dict:
         if sold or fbs or fbo:
             continue
 
-        dead.append({
-            "article": item["article"],
-            "barcode": item["barcode"],
-            "name": item["name"],
-            "ff": item.get("ff_available") or 0,
-            "mp_updated_at": (item.get("mp_updated_at") or "")[:10],
-        })
+        dead.append(
+            {
+                "article": item["article"],
+                "barcode": item["barcode"],
+                "name": item["name"],
+                "ff": item.get("ff_available") or 0,
+                "mp_updated_at": (item.get("mp_updated_at") or "")[:10],
+            }
+        )
 
     return {
         "store": store_slug,
@@ -162,33 +123,33 @@ def build_xlsx(results: list[dict], weeks: int, path: Path) -> None:
 
     summary = book.active
     summary.title = "Сводка"
-    summary.append(["МАГАЗИН", "ПОЗИЦИЙ В КАТАЛОГЕ", f"ЗАКАЗОВ ЗА {weeks} НЕД.",
-                    "БЕЗ ДВИЖЕНИЯ", "ДОЛЯ", "ПРИМЕЧАНИЕ"])
+    summary.append(
+        ["МАГАЗИН", "ПОЗИЦИЙ В КАТАЛОГЕ", f"ЗАКАЗОВ ЗА {weeks} НЕД.", "БЕЗ ДВИЖЕНИЯ", "ДОЛЯ", "ПРИМЕЧАНИЕ"]
+    )
 
     for res in results:
         if res.get("error"):
             summary.append([res["label"], "", "", "", "", res["error"]])
             continue
         share = len(res["dead"]) / res["catalog"] if res["catalog"] else 0
-        summary.append([res["label"], res["catalog"], res["orders"],
-                        len(res["dead"]), round(share, 3), ""])
+        summary.append([res["label"], res["catalog"], res["orders"], len(res["dead"]), round(share, 3), ""])
 
-    for column, width in zip("ABCDEF", (24, 20, 20, 16, 10, 52)):
+    for column, width in zip("ABCDEF", (24, 20, 20, 16, 10, 52), strict=True):
         summary.column_dimensions[column].width = width
     style_head(summary)
 
     for res in results:
         if res.get("error"):
             continue
-        # имя листа: у Excel потолок 31 символ и запрет на часть знаков
+
         title = "".join(c for c in res["label"] if c not in "[]:*?/\\")[:31]
         sheet = book.create_sheet(title or res["store"][:31])
-        sheet.append(["АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ЗАКАЗОВ", "FBS", "FBO",
-                      "НА ФФ", "ИЗМЕНЕНА В ЛК"])
+        sheet.append(["АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ЗАКАЗОВ", "FBS", "FBO", "НА ФФ", "ИЗМЕНЕНА В ЛК"])
         for row in res["dead"]:
-            sheet.append([row["article"], row["barcode"], row["name"], 0, 0, 0,
-                          row["ff"], row["mp_updated_at"]])
-        for column, width in zip("ABCDEFGH", (18, 18, 46, 10, 8, 8, 10, 16)):
+            sheet.append(
+                [row["article"], row["barcode"], row["name"], 0, 0, 0, row["ff"], row["mp_updated_at"]]
+            )
+        for column, width in zip("ABCDEFGH", (18, 18, 46, 10, 8, 8, 10, 16), strict=True):
             sheet.column_dimensions[column].width = width
         style_head(sheet)
 
@@ -197,8 +158,7 @@ def build_xlsx(results: list[dict], weeks: int, path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Товары WB без заказов и без стока на площадке")
+    parser = argparse.ArgumentParser(description="Товары WB без заказов и без стока на площадке")
     parser.add_argument("--store", help="один магазин (slug), по умолчанию все")
     parser.add_argument("--weeks", type=int, default=3, help="период в неделях (по умолчанию 3)")
     parser.add_argument("--out", help="куда сохранить .xlsx")
@@ -220,12 +180,17 @@ def main() -> None:
             continue
 
         share = len(res["dead"]) / res["catalog"] if res["catalog"] else 0
-        print(f"  каталог {res['catalog']}, заказов {res['orders']}"
-              f" (отменённых {res['cancelled']}), без движения {len(res['dead'])}"
-              f" — {share:.0%}")
+        print(
+            f"  каталог {res['catalog']}, заказов {res['orders']}"
+            f" (отменённых {res['cancelled']}), без движения {len(res['dead'])}"
+            f" — {share:.0%}"
+        )
 
-    out = Path(args.out) if args.out else Path(
-        f"data/exports/без-движения-{args.weeks}нед-{datetime.now():%Y-%m-%d}.xlsx")
+    out = (
+        Path(args.out)
+        if args.out
+        else Path(f"data/exports/без-движения-{args.weeks}нед-{datetime.now():%Y-%m-%d}.xlsx")
+    )
     build_xlsx(results, args.weeks, out)
     print(f"\nОтчёт: {out.resolve()}")
 

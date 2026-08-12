@@ -18,38 +18,56 @@ $mp_tabs
              data-can-edit="$can_edit_stock" hidden></div>
 
         <div class="store-layout" id="store-layout" data-marketplace="$marketplace">
-            <section class="panel">
-                <div class="panel-header-row">
-                    <h3 class="panel-title">Выбор фулфилмента для работы</h3>
+            <section class="panel stock-table-panel">
+                <div class="stock-table-header">
+                    <div>
+                        <span class="section-kicker">ОСТАТКИ ПО АРТИКУЛАМ</span>
+                        <h3 class="panel-title">Все товары — $store_name</h3>
+                    </div>
                     <div class="panel-header-actions">
                         <a class="btn-secondary" href="/stock/$slug/operations">Перемещение стока</a>
-                        <a class="btn-secondary" id="wh-link" href="/stock/$slug/warehouses?mp=$marketplace">Детализация склады</a>
-                        <a class="btn-secondary" id="stock-xlsx-link" href="/stock/$slug/stock.xlsx?mp=$marketplace">Выгрузить в Excel</a>
+                        <a class="btn-secondary" id="wh-link" href="/stock/$slug/warehouses?mp=$marketplace">Склады FBS</a>
+                        <a class="btn-secondary" id="stock-xlsx-link" href="/stock/$slug/stock.xlsx?mp=$marketplace">Excel</a>
                     </div>
                 </div>
 
-                <select class="select-control" id="wh-select">
-                    <option value="">Общее (все склады)</option>
+                <div class="stock-warehouse-anchor">
+                    <label class="stock-warehouse-control">
+                        <span>Фулфилмент</span>
+                        <select class="select-control" id="wh-select">
+                            <option value="">Все склады</option>
 $ff_options
-                </select>
-                <p class="ff-select-status" id="ff-select-status"></p>
+                        </select>
+                    </label>
+                </div>
 
                 <div class="table-wrap table-wrap--scroll">
                     <table class="data-table data-table--stock" id="stock-table" data-color-filter data-schemes="$scheme_list" data-scheme-count="$scheme_count">
                         <thead>
 $stock_head
-$stock_totals
                         </thead>
                         <tbody>
 $stock_rows
                         </tbody>
                     </table>
                 </div>
+                <div class="stock-table-footer">
+                    <p class="ff-select-status" id="ff-select-status"></p>
+                    <span data-stock-visible-count></span>
+                </div>
             </section>
 
-            <div class="side-panels">
-                <section class="panel panel--collapsible" data-collapse-id="ff-upload">
+            <div class="side-panels stock-operations" id="stock-operations">
+                <div class="stock-operations-head">
+                    <div>
+                        <span class="section-kicker">ОПЕРАЦИИ С ОСТАТКАМИ</span>
+                        <h3>Движение товаров</h3>
+                    </div>
+                    <p>Пополнение, перенос и отгрузка собраны в одном рабочем блоке.</p>
+                </div>
+                <section class="panel panel--collapsible stock-operation-card stock-operation-card--upload" data-collapse-id="ff-upload" data-collapsed>
                     <h3 class="panel-title">Загрузка остатков на фулфилмент</h3>
+                    <p class="stock-operation-summary">Пополнить ФФ вручную, из Excel или Google Таблицы.</p>
 
                     <div class="panel-body">
                     <p class="panel-desc">Остатки, которые приходят на фулфилмент. Количество прибавляется к тому, что уже лежит на складе.</p>
@@ -95,8 +113,9 @@ $ff_options
                     </div>
                 </section>
 
-                <section class="panel panel--collapsible" data-collapse-id="ff-move">
+                <section class="panel panel--collapsible stock-operation-card stock-operation-card--move" data-collapse-id="ff-move" data-collapsed>
                     <h3 class="panel-title">Перемещение остатков</h3>
+                    <p class="stock-operation-summary">Перенести товар между ФФ и маркетплейсами.</p>
 
                     <div class="panel-body">
                     <p class="panel-desc">Перенос между фулфилментами, между маркетплейсами или и то и другое сразу. Откуда — вычитаем, куда — прибавляем.</p>
@@ -161,8 +180,9 @@ $mp_move_options
                     </div>
                 </section>
 
-                <section class="panel panel--collapsible" data-collapse-id="ff-ship">
+                <section class="panel panel--collapsible stock-operation-card stock-operation-card--ship" data-collapse-id="ff-ship" data-collapsed>
                     <h3 class="panel-title">Отгрузки стока</h3>
+                    <p class="stock-operation-summary">Отгрузить товар наружу или зафиксировать расхождение.</p>
 
                     <div class="panel-body">
                     <p class="panel-desc">Товар уходит с фулфилмента наружу — количество вычитается. Если остатка не хватит хотя бы по одной позиции, отгрузка не проведётся целиком.</p>
@@ -227,6 +247,49 @@ $mp_move_options
             </div>
         </div>
 
+        <div class="stock-drawer-backdrop" data-stock-drawer hidden>
+            <aside class="stock-drawer" role="dialog" aria-modal="true" aria-labelledby="stock-drawer-title" tabindex="-1">
+                <button class="stock-drawer-close" type="button" data-stock-drawer-close aria-label="Закрыть">×</button>
+                <span class="stock-drawer-kicker">КАРТОЧКА ТОВАРА · <span data-stock-drawer-marketplace>WB</span></span>
+
+                <div class="stock-drawer-product">
+                    <span class="stock-drawer-media" data-stock-drawer-media aria-hidden="true">
+                        <span data-stock-drawer-initial>Т</span>
+                        <img data-stock-drawer-image alt="" hidden>
+                    </span>
+                    <div>
+                        <h2 id="stock-drawer-title" data-stock-drawer-name>Товар</h2>
+                        <p><span data-stock-drawer-article></span><span aria-hidden="true"> · </span><span data-stock-drawer-barcode></span></p>
+                    </div>
+                </div>
+
+                <div class="stock-drawer-total">
+                    <span>Итого по товару</span>
+                    <strong><span data-stock-drawer-total>0</span> <small>шт.</small></strong>
+                </div>
+
+                <div class="stock-drawer-metrics">
+                    <article><span>Доступно ФФ</span><strong data-stock-drawer-available>0</strong></article>
+                    <article><span>В продаже FBS</span><strong data-stock-drawer-fbs>0</strong></article>
+                    <article><span>В продаже FBO</span><strong data-stock-drawer-fbo>0</strong></article>
+                </div>
+
+                <div class="stock-drawer-section-head">
+                    <div>
+                        <span class="section-kicker">ДЕТАЛИЗАЦИЯ FBS</span>
+                        <h3>Остатки по фулфилментам</h3>
+                    </div>
+                    <span data-stock-drawer-warehouse-count></span>
+                </div>
+                <div class="stock-drawer-warehouses" data-stock-drawer-warehouses>
+                    <div class="stock-drawer-loading">Загрузка складов...</div>
+                </div>
+                <p class="stock-drawer-note">«Доступно ФФ» — ручной остаток для распределения. FBS показывает товар, уже выставленный в продажу с выбранного склада.</p>
+
+                <button class="btn-primary stock-drawer-operation" type="button" data-stock-drawer-operation>Переместить остаток</button>
+            </aside>
+        </div>
+
         <script>
             document.querySelectorAll('.file-drop input[type=file]').forEach(function (input) {
                 input.addEventListener('change', function () {
@@ -235,9 +298,9 @@ $mp_move_options
                 });
             });
 
-            // Общий помощник для таблицы остатков: и переключатель ФФ, и
-            // загрузка остатков на ФФ обновляют одни и те же колонки, поэтому
-            // логика живёт в одном месте (window.stockTable).
+
+
+
             window.stockTable = (function () {
                 var whSelect = document.getElementById('wh-select');
                 var status = document.getElementById('ff-select-status');
@@ -274,8 +337,7 @@ $mp_move_options
                     return '/stock/' + storeSlug + '/' + path + (qs ? '?' + qs : '');
                 }
 
-                /* Набор схем зависит от маркетплейса (у WB нет rFBS),
-                   поэтому берём его из атрибута, а не зашиваем в код. */
+
                 var SCHEMES = ((table && table.getAttribute('data-schemes')) || 'fbs,fbo').split(',');
 
                 function num(cell) {
@@ -290,10 +352,7 @@ $mp_move_options
                     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
                 }
 
-                /* Пересчитывает тотал по строке (после «Название») и итоги по
-                   столбцам в закреплённой строке под шапкой. Считаем только по
-                   видимым строкам, чтобы итоги совпадали с тем, что на экране
-                   после фильтрации. */
+
                 function recalcTotals() {
                     if (!table) return;
                     var ff = 0, saleTotals = {};
@@ -313,10 +372,10 @@ $mp_move_options
                         var totalCell = row.querySelector('.col-row-total');
                         if (totalCell) totalCell.textContent = rowTotal === 0 ? '—' : fmt(rowTotal);
 
-                        // товар лежит на ФФ, но ни по одной схеме не продаётся — подсвечиваем
+
                         row.classList.toggle('row-alert', rowFf > 0 && rowSale === 0);
 
-                        if (row.style.display === 'none') return; // скрыта фильтром — в итоги не идёт
+                        if (row.style.display === 'none') return;
                         ff += rowFf;
                         SCHEMES.forEach(function (scheme) { saleTotals[scheme] += rowByScheme[scheme]; });
                     });
@@ -334,19 +393,16 @@ $mp_move_options
                     set('.tot-grand', grand);
                 }
 
-                /* Строка итогов липнет сразу под шапкой, а высота шапки зависит
-                   от вёрстки (перенос текста, иконки фильтров), поэтому меряем
-                   её в рантайме и отдаём в CSS переменной. */
+
                 function syncStickyOffset() {
                     if (!table) return;
-                    // Строк шапки может быть несколько (группы + названия колонок),
-                    // поэтому суммируем всё, что идёт до строки итогов
+
+
                     var headRow = table.querySelector('thead tr');
                     if (headRow) table.style.setProperty('--thead-h', headRow.offsetHeight + 'px');
                 }
 
-                /* Перечитывает обе "переключаемые" колонки под выбранный ФФ:
-                   остаток на самом ФФ и текущий сток FBS этого же склада. */
+
                 function refresh() {
                     if (!table) return Promise.resolve();
                     var ff = currentFf();
@@ -359,7 +415,7 @@ $mp_move_options
                         fetch(query('ff-available', { ff: ff, mp: mp })).then(function (r) { return r.json(); })
                     ])
                         .then(function (results) {
-                            if (seq !== requestSeq) return; // устаревший ответ — игнорируем
+                            if (seq !== requestSeq) return;
                             applyValues('.col-fbs', results[0].fbs || {});
                             applyValues('.col-ff-available', results[1].ff_available || {});
                             recalcTotals();
@@ -375,8 +431,7 @@ $mp_move_options
                         });
                 }
 
-                /* Ссылка выгрузки идёт за выбором склада: файл должен
-                   повторять то, что сейчас на экране, а не «общее». */
+
                 var xlsxLink = document.getElementById('stock-xlsx-link');
                 function syncXlsxLink() {
                     if (!xlsxLink) return;
@@ -392,8 +447,8 @@ $mp_move_options
                     refresh();
                 });
 
-                // Вкладки маркетплейсов: переключение перезагружает страницу.
-                // Так все колонки и итоги гарантированно от одного маркетплейса.
+
+
                 (function () {
                     document.querySelectorAll('.mp-tab').forEach(function (tab) {
                         tab.addEventListener('click', function () {
@@ -403,7 +458,7 @@ $mp_move_options
                         });
                     });
 
-                    // маркетплейс без синхронизации — вместо таблицы заглушка
+
                     var placeholder = document.getElementById('mp-placeholder');
                     var layout = document.getElementById('store-layout');
                     if (placeholder && layout) {
@@ -414,22 +469,21 @@ $mp_move_options
                 })();
 
                 if (table) {
-                    // Фильтры (table-filter.js) прячут строки через style.display —
-                    // ловим это и пересчитываем итоги под то, что реально видно.
+
+
                     var observer = new MutationObserver(recalcTotals);
                     table.querySelectorAll('tbody tr[data-article]').forEach(function (row) {
                         observer.observe(row, { attributes: true, attributeFilter: ['style'] });
                     });
 
-                    // шапка обзаводится иконками фильтров уже после загрузки —
-                    // меряем её высоту после того, как всё отрисовалось
+
+
                     window.addEventListener('load', syncStickyOffset);
                     window.addEventListener('resize', syncStickyOffset);
                     syncStickyOffset();
                 }
 
-                /* currentMp нужен и блокам загрузки: они лежат в других
-                   замыканиях и напрямую до неё не дотянутся */
+
                 return { refresh: refresh, recalcTotals: recalcTotals,
                          currentFf: currentFf, currentMp: currentMp };
             })();
@@ -444,14 +498,14 @@ $mp_move_options
 
                 var storeSlug = '$slug';
 
-                // Задаётся ниже, когда собран блок ручного ввода. Кнопка у
-                // блока одна, и она сама решает, что вызвать — способ ввода
-                // пользователь уже выбрал тем, что заполнил.
+
+
+
                 var submitManual = null;
                 var io = window.initIoBlock(document.getElementById('ff-io'));
 
                 function refreshFfAvailable() {
-                    // обновляем таблицу под тот ФФ, который сейчас выбран сверху
+
                     if (window.stockTable) window.stockTable.refresh();
                 }
 
@@ -502,8 +556,7 @@ $mp_move_options
 
                     var formData = new FormData();
                     formData.append('fulfillment', fulfillment);
-                    /* маркетплейс вкладки, на которой находимся: остаток должен
-                       лечь той площадке, чей каталог сейчас на экране */
+
                     formData.append('marketplace', window.stockTable.currentMp());
                     if (method === 'file') {
                         formData.append('file', fileInput.files[0]);
@@ -533,7 +586,7 @@ $mp_move_options
                                 ' из ' + r.total_rows + ' строк' +
                                 (r.unmatched ? ' (не найдено в каталоге: ' + r.unmatched + ')' : '') +
                                 '.' + skippedText;
-                            // повторно этот файл/ссылку всё равно не провести
+
                             urlInput.value = '';
                             fileInput.value = '';
                             var drop = fileInput.closest('.file-drop');
@@ -549,9 +602,9 @@ $mp_move_options
                         });
                 });
 
-                // --- ручная докладка нескольких позиций ---
-                // Кнопка у блока одна; ручной ввод и таблица различаются только
-                // адресом запроса, поэтому статус тоже общий.
+
+
+
                 var manualRows = document.getElementById('ff-manual-rows');
                 var manualAddRow = document.getElementById('ff-manual-add-row');
                 var manualStatus = status;
@@ -582,7 +635,7 @@ $mp_move_options
 
                         box.querySelectorAll('.suggest-item').forEach(function (btn) {
                             btn.addEventListener('mousedown', function (e) {
-                                e.preventDefault(); // не даём инпуту потерять фокус раньше времени
+                                e.preventDefault();
                                 row.querySelector('.manual-code').value = btn.getAttribute('data-code');
                                 box.classList.remove('open');
                                 row.querySelector('.manual-qty').focus();
@@ -600,7 +653,7 @@ $mp_move_options
                                 closeSuggest(row);
                                 return;
                             }
-                            // не дёргаем сервер на каждый символ
+
                             suggestTimer = setTimeout(function () {
                                 fetch('/stock/' + storeSlug + '/catalog-search?q=' + encodeURIComponent(q))
                                     .then(function (r) { return r.json(); })
@@ -655,7 +708,7 @@ $mp_move_options
                         Array.prototype.forEach.call(manualRows.children, function (row) {
                             var code = row.querySelector('.manual-code').value.trim();
                             var qty = row.querySelector('.manual-qty').value.trim();
-                            if (!code && !qty) return; // пустую строку просто пропускаем
+                            if (!code && !qty) return;
                             items.push({ code: code, quantity: parseInt(qty, 10) });
                         });
 
@@ -697,11 +750,7 @@ $mp_move_options
                 }
             })();
 
-            /* Допуск к изменению остатков.
 
-               Кнопки гасим на всех трёх блоках сразу и объясняем почему.
-               Сервер проверяет то же самое отдельно: спрятанная кнопка —
-               это удобство, а не защита. */
             initBlock('допуск', 'ff-upload-status', function () {
                 var flag = document.getElementById('access-problems');
                 if (!flag || flag.getAttribute('data-can-edit') === '1') return;
@@ -726,8 +775,7 @@ $mp_move_options
                     }
                 });
 
-                /* Живая проверка строк снимает disabled, когда ошибок нет,
-                   поэтому возвращаем его обратно на каждое изменение формы. */
+
                 document.addEventListener('input', function () {
                     blocks.forEach(function (item) {
                         var btn = document.getElementById(item.btn);
@@ -736,36 +784,24 @@ $mp_move_options
                 }, true);
             });
 
-            /* Предупреждение о неработающих доступах.
 
-               Показывается при каждом заходе в магазин и закрывается кнопкой,
-               но НЕ запоминается: закрытое навсегда уведомление о том, что
-               остатки не обновляются, — это ровно тот случай, когда про
-               проблему забывают на месяц. Пока ключ не починили, напоминаем. */
             initBlock('доступы', 'ff-upload-status', function () {
                 var box = document.getElementById('access-problems');
                 if (!box) return;
 
-                /* Окно показываем один раз за визит в кабинет. Внутри магазина
-                   страница перезагружается на каждое действие — переключение
-                   маркетплейса, загрузку остатков, — и без отметки окно
-                   выскакивало бы снова и снова.
 
-                   Отметку храним в sessionStorage, а снимает её страница со
-                   списком магазинов: вышел к списку и зашёл заново — значит
-                   это новый визит, и напомнить стоит. */
                 var VISIT_KEY = 'paketa.access.$slug';
                 try {
                     if (window.sessionStorage.getItem(VISIT_KEY)) return;
                 } catch (e) {
-                    /* приватный режим — просто покажем окно как обычно */
+
                 }
 
                 var problems = [];
                 try {
                     problems = JSON.parse(box.getAttribute('data-problems') || '[]');
                 } catch (e) {
-                    return;   // испорченные данные — молчим, это не повод ломать страницу
+                    return;
                 }
                 if (!problems.length) return;
 
@@ -776,8 +812,7 @@ $mp_move_options
                     });
                 }
 
-                /* Блок на площадку: название, состояние ключа, следствие.
-                   Порядок задаёт сервер и он всегда одинаковый. */
+
                 var bodyHtml = problems.map(function (p) {
                     return '<div class="mp-issue mp-issue--' + esc(p.kind) + '">' +
                         '<div class="mp-issue-title">' + esc(p.title) + '</div>' +
@@ -788,16 +823,16 @@ $mp_move_options
 
                 function show() {
                     if (!window.Modal) {
-                        // modal.js подключён в конце body, а этот скрипт лежит
-                        // внутри контента и выполняется раньше. Ждём загрузки
-                        // страницы, иначе окно молча не показывалось бы.
-                        console.error('PAKETA: modal.js не загрузился, показать окно нечем');
+
+
+
+                        console.error('CheckStock: modal.js не загрузился, показать окно нечем');
                         return;
                     }
                     try {
                         window.sessionStorage.setItem(VISIT_KEY, '1');
                     } catch (e) {
-                        /* не критично: без отметки окно покажется ещё раз */
+
                     }
 
                     Modal.alert({
@@ -814,10 +849,7 @@ $mp_move_options
                 }
             });
 
-            /* Каждый блок запускаем отдельно и в try/catch.
-               Раньше все блоки жили в одном скрипте: ошибка в первом обрывала
-               выполнение, и молча переставали работать все следующие — именно
-               так «+ ещё позицию» оказывался без обработчика. */
+
             function initBlock(name, statusId, fn) {
                 try {
                     fn();
@@ -828,7 +860,7 @@ $mp_move_options
                             '. Обновите страницу с Ctrl+F5; если не помогло — покажите это разработчику.';
                         box.classList.add('ff-select-status--bad');
                     }
-                    console.error('PAKETA: блок «' + name + '» не запустился', e);
+                    console.error('CheckStock: блок «' + name + '» не запустился', e);
                 }
             }
 
@@ -839,7 +871,7 @@ $mp_move_options
                 return window.createRowEditor;
             }
 
-            /* --- Перемещение остатков между ФФ и маркетплейсами --- */
+
             initBlock('перемещение', 'mv-status', function () {
                 var btn = document.getElementById('mv-btn');
                 var rowsBox = document.getElementById('mv-rows');
@@ -894,7 +926,7 @@ $mp_move_options
                         }
                         fd.append('sheet_url', url);
                     } else {
-                        if (rows.validateRows().length) return;  // дубли — дальше не идём
+                        if (rows.validateRows().length) return;
 
                         var items = rows.collectItems();
                         if (!items.length) {
@@ -931,7 +963,7 @@ $mp_move_options
 
                             rows.reset();
                             urlInput.value = '';
-                            // файл и ссылку сбрасываем: повторно их всё равно не проведёшь
+
                             fileInput.value = '';
                             var drop = fileInput.closest('.file-drop');
                             var lbl = drop && drop.querySelector('.file-drop-text');
@@ -947,7 +979,7 @@ $mp_move_options
                 });
             });
 
-            /* --- Отгрузка стока с фулфилмента --- */
+
             initBlock('отгрузка', 'sh-status', function () {
                 var btn = document.getElementById('sh-btn');
                 var rowsBox = document.getElementById('sh-rows');
@@ -976,12 +1008,12 @@ $mp_move_options
                 ffSelect.addEventListener('change', rows.onSourceChange);
                 mpSelect.addEventListener('change', rows.onSourceChange);
 
-                // подпись кнопки под режим: списание в мусорку и отгрузка —
-                // разные по смыслу действия, и путать их нельзя
+
+
                 trashInput.addEventListener('change', function () {
                     btn.textContent = trashInput.checked ? 'Списать в мусорку' : 'Отгрузить';
-                    // минус имеет смысл только в мусорке: это излишек,
-                    // когда фулфилмент отдал больше, чем числилось
+
+
                     rows.setAllowNegative(trashInput.checked);
                 });
 

@@ -1,15 +1,3 @@
-"""
-Разовый диагностический скрипт: показывает структуру Google Таблицы с
-остатками на фулфилментах — список всех листов и превью первых строк каждого.
-
-Нужен, чтобы понять, как в таблице разложены магазины и фулфилменты
-(отдельными листами? колонками?), прежде чем писать импорт в БД.
-Никуда данные не пишет, только печатает в консоль.
-
-Запуск (из корня проекта, в .venv проекта):
-    python scripts/inspect_ff_sheet.py <ссылка на таблицу>
-"""
-
 import re
 import sys
 from pathlib import Path
@@ -22,7 +10,7 @@ DEFAULT_SHEET = "1rJdvA6ASic31W456eRyprqPCvNS6iBiEr-vOpqVb_KY"
 
 
 def sheet_id_from(value: str) -> str:
-    """Принимает и голый идентификатор, и полную ссылку на таблицу."""
+
     value = (value or "").strip()
     match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", value)
     return match.group(1) if match else value
@@ -50,10 +38,14 @@ def main() -> None:
     service = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
     try:
-        meta = service.spreadsheets().get(
-            spreadsheetId=SHEET_ID,
-            fields="properties.title,sheets.properties(sheetId,title,gridProperties)",
-        ).execute()
+        meta = (
+            service.spreadsheets()
+            .get(
+                spreadsheetId=SHEET_ID,
+                fields="properties.title,sheets.properties(sheetId,title,gridProperties)",
+            )
+            .execute()
+        )
     except HttpError as e:
         status = getattr(getattr(e, "resp", None), "status", None)
         if status == 403:
@@ -73,14 +65,22 @@ def main() -> None:
         props = sheet.get("properties", {})
         title = props.get("title")
         grid = props.get("gridProperties", {})
-        print(f"--- Лист: {title!r}  (gid={props.get('sheetId')}, "
-              f"{grid.get('rowCount')}x{grid.get('columnCount')}) ---")
+        print(
+            f"--- Лист: {title!r}  (gid={props.get('sheetId')}, "
+            f"{grid.get('rowCount')}x{grid.get('columnCount')}) ---"
+        )
 
         try:
-            values = service.spreadsheets().values().get(
-                spreadsheetId=SHEET_ID,
-                range=f"'{title}'!A1:Z{PREVIEW_ROWS}",
-            ).execute().get("values", [])
+            values = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=SHEET_ID,
+                    range=f"'{title}'!A1:Z{PREVIEW_ROWS}",
+                )
+                .execute()
+                .get("values", [])
+            )
         except HttpError as e:
             print(f"  не удалось прочитать: {e}")
             print()

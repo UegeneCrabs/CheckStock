@@ -18,21 +18,15 @@
             </div>
 
             <div class="wh-pane" id="wh-fbo">
-                <div class="table-wrap table-wrap--scroll-10">
 $fbo_table
-                </div>
             </div>
 
             <div class="wh-pane is-hidden" id="wh-fbs">
-                <div class="table-wrap table-wrap--scroll-10">
 $fbs_table
-                </div>
             </div>
 
             <div class="wh-pane is-hidden" id="wh-ff">
-                <div class="table-wrap table-wrap--scroll-10">
 $ff_table
-                </div>
             </div>
 
             <div class="wh-pane is-hidden" id="wh-trash">
@@ -44,9 +38,7 @@ $trash_table
         </section>
 
         <script>
-            /* Отметка «проконтролировано» в мусорке.
-               Сохраняем сразу по клику: отдельная кнопка «сохранить» здесь
-               лишняя, отметку ставят по одной по мере разбора. */
+
             (function () {
                 var slug = '$slug';
                 var marketplace = '$marketplace';
@@ -66,8 +58,8 @@ $trash_table
                             .then(function (r) { return r.json(); })
                             .then(function (d) {
                                 if (d && d.ok) return;
-                                // сервер отказал — возвращаем галочку как было,
-                                // иначе на экране будет одно, а в базе другое
+
+
                                 box.checked = !box.checked;
                                 if (row) row.classList.toggle('is-checked', box.checked);
                                 if (d && d.error) alert(d.error);
@@ -77,27 +69,6 @@ $trash_table
                                 if (row) row.classList.toggle('is-checked', box.checked);
                             });
                     });
-                });
-            })();
-
-            /* Строка итогов закреплена сразу под шапкой, а высота шапки зависит
-               от длины названий складов и переносов — меряем её в рантайме и
-               отдаём в CSS переменной. Пересчитываем и при смене размера окна:
-               колонки перестраиваются, шапка меняет высоту. */
-            (function () {
-                function syncStickyOffsets() {
-                    document.querySelectorAll('.data-table--warehouses').forEach(function (table) {
-                        var headRow = table.querySelector('thead tr');
-                        if (headRow) table.style.setProperty('--thead-h', headRow.offsetHeight + 'px');
-                    });
-                }
-
-                syncStickyOffsets();
-                window.addEventListener('resize', syncStickyOffsets);
-                // вкладки показывают скрытые таблицы: у скрытой шапки высота
-                // измеряется только после показа
-                document.querySelectorAll('.wh-tab').forEach(function (tab) {
-                    tab.addEventListener('click', function () { setTimeout(syncStickyOffsets, 0); });
                 });
             })();
 

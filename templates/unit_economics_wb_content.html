@@ -1,0 +1,178 @@
+        <section class="ue-page" id="unit-economics-wb">
+            <div class="ue-command-panel">
+                <div class="ue-command-head">
+                    <div>
+                        <p class="section-kicker">КАБИНЕТ И УСЛОВИЯ</p>
+                        <h2>Расчет WB FBS</h2>
+                    </div>
+                </div>
+
+                <div class="ue-cabinet-tabs" id="ue-cabinet-tabs" role="tablist" aria-label="Кабинеты WB"></div>
+
+                <div class="ue-condition-bar">
+                    <label class="ue-control ue-control--wide">
+                        <span>Фулфилмент</span>
+                        <select id="ue-fulfillment"></select>
+                    </label>
+                    <div class="ue-condition-metric">
+                        <span>Хранение</span>
+                        <strong id="ue-ff-storage">—</strong>
+                    </div>
+                    <div class="ue-condition-metric">
+                        <span>Приемка</span>
+                        <strong id="ue-ff-accept">—</strong>
+                    </div>
+                    <div class="ue-condition-metric">
+                        <span>Обработка</span>
+                        <strong id="ue-ff-cost">—</strong>
+                    </div>
+                    <label class="ue-control ue-control--tax">
+                        <span>Налог кабинета</span>
+                        <span class="ue-input-suffix"><input id="ue-tax" type="number" min="0" max="40" step="0.1"><b>%</b></span>
+                    </label>
+                </div>
+
+                <details class="ue-settings ue-ff-settings" open>
+                    <summary>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16"></path><path d="M4 12h16"></path><path d="M4 19h16"></path></svg>
+                        Тарифы фулфилментов
+                    </summary>
+                    <div class="ue-ff-rates-editor">
+                        <div class="ue-ff-rates-actions">
+                            <span id="ue-ff-rates-status" aria-live="polite">Данные из БД</span>
+                            <button class="btn-secondary ue-ff-rates-save" id="ue-ff-rates-save" type="button">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5Z"></path><path d="M8 4v6h8V4"></path><path d="M8 20v-6h8v6"></path></svg>
+                                <span>Сохранить тарифы</span>
+                            </button>
+                        </div>
+                        <div class="ue-ff-rates-scroll">
+                            <table class="ue-ff-rates-table">
+                                <thead>
+                                    <tr>
+                                        <th>Фулфилмент</th>
+                                        <th>Хранение, ₽/м³/сутки</th>
+                                        <th>Приёмка на 1 шт., ₽</th>
+                                        <th>Fulfillment на 1 шт., ₽</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ue-ff-rates-rows"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="ue-settings" id="ue-settings">
+                    <summary>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34A1.7 1.7 0 0 0 14 20.92V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
+                        Параметры формулы
+                    </summary>
+                    <div class="ue-settings-grid">
+                        <label><span>СПП</span><span class="ue-input-suffix"><input data-setting="spp" type="number" min="0" max="90" step="0.1"><b>%</b></span></label>
+                        <label><span>Эквайринг</span><span class="ue-input-suffix"><input data-setting="acquiring" type="number" min="0" max="30" step="0.1"><b>%</b></span></label>
+                        <label><span>Реклама</span><span class="ue-input-suffix"><input data-setting="advertising" type="number" min="0" max="100" step="0.1"><b>%</b></span></label>
+                        <label><span>Накладные</span><span class="ue-input-suffix"><input data-setting="overhead" type="number" min="0" max="100" step="0.1"><b>%</b></span></label>
+                        <label><span>Команда</span><span class="ue-input-suffix"><input data-setting="team" type="number" min="0" max="100" step="0.1"><b>%</b></span></label>
+                        <label><span>Contib</span><span class="ue-input-suffix"><input data-setting="contribution" type="number" min="0" max="100" step="0.1"><b>%</b></span></label>
+                        <label><span>Плата за сток</span><span class="ue-input-suffix"><input data-setting="stock_rate" type="number" min="0" max="100" step="0.1"><b>%</b></span></label>
+                        <label><span>Дней в стоке</span><input data-setting="stock_days" type="number" min="0" max="365" step="1"></label>
+                    </div>
+                </details>
+
+                <div class="ue-recalculate-bar">
+                    <span class="ue-refresh-status" id="ue-refresh-status">Расчет еще не обновлялся</span>
+                    <button class="btn-primary ue-refresh" id="ue-refresh" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5"></path><path d="M20 4v7h-7"></path></svg>
+                        <span>Обновить расчет</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="ue-start-state" id="ue-start-state">
+                <span class="ue-start-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M22 19H2"></path></svg>
+                </span>
+                <h3>Выберите кабинет и обновите расчет</h3>
+                <p>Таблица появится после получения актуальных данных WB.</p>
+            </div>
+
+            <div class="ue-results" id="ue-results" hidden>
+                <div class="ue-source-note" id="ue-source-note"></div>
+
+                <div class="ue-kpis">
+                    <div class="ue-kpi"><span>Товаров в выборке</span><strong id="ue-count">0</strong></div>
+                    <div class="ue-kpi"><span>Средний ROI</span><strong id="ue-average-roi">—</strong></div>
+                    <div class="ue-kpi ue-kpi--danger"><span>Отрицательный ROI</span><strong id="ue-negative-count">0</strong></div>
+                    <div class="ue-kpi ue-kpi--muted"><span>Нужны данные</span><strong id="ue-incomplete-count">0</strong></div>
+                </div>
+
+                <div class="ue-workspace">
+                    <div class="ue-table-panel">
+                        <div class="ue-table-toolbar">
+                            <label class="ue-search">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                                <input id="ue-search" type="search" placeholder="Поиск по артикулу или названию" autocomplete="off">
+                            </label>
+                            <label class="ue-filter-control">
+                                <span>Фильтр по цвету</span>
+                                <select id="ue-color-filter">
+                                    <option value="all">Все строки</option>
+                                    <option value="negative">Красные: ROI ниже 0</option>
+                                    <option value="positive">Положительный ROI</option>
+                                    <option value="incomplete">Без расчета</option>
+                                </select>
+                            </label>
+                            <label class="ue-stock-toggle">
+                                <input id="ue-stock-only" type="checkbox" checked>
+                                <span>Только со стоком на WB</span>
+                            </label>
+                            <button class="icon-action" id="ue-export" type="button" title="Выгрузить видимые строки в CSV" aria-label="Выгрузить CSV">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                            </button>
+                        </div>
+
+                        <div class="ue-table-scroll">
+                            <table class="ue-table">
+                                <thead>
+                                    <tr>
+                                        <th>Артикул</th>
+                                        <th>Название</th>
+                                        <th class="ue-num">Цена с СПП</th>
+                                        <th class="ue-num">Фулфилмент</th>
+                                        <th class="ue-num">Чистая прибыль</th>
+                                        <th class="ue-num">RBE/TO</th>
+                                        <th class="ue-num">ROI</th>
+                                        <th><span class="sr-only">Детали</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ue-product-rows"></tbody>
+                            </table>
+                            <div class="ue-empty" id="ue-empty" hidden>По выбранным условиям товаров нет.</div>
+                        </div>
+                    </div>
+
+                    <aside class="ue-simulator" id="ue-simulator">
+                        <div class="ue-simulator-head">
+                            <div>
+                                <p class="section-kicker">СИМУЛЯЦИЯ ЦЕНЫ</p>
+                                <h3>Цена под ROI</h3>
+                            </div>
+                            <span class="status-pill" id="ue-selected-article">—</span>
+                        </div>
+                        <label class="ue-target-roi">
+                            <span>Необходимый ROI</span>
+                            <span class="ue-input-suffix"><input id="ue-target-roi" type="number" min="-100" max="1000" step="1" value="45"><b>%</b></span>
+                        </label>
+                        <dl class="ue-simulator-results">
+                            <div><dt>Текущая цена с СПП</dt><dd id="ue-current-price">—</dd></div>
+                            <div class="ue-simulator-primary"><dt>Цена с СПП под условие</dt><dd id="ue-target-price">—</dd></div>
+                            <div><dt>Изменение цены</dt><dd id="ue-price-delta">—</dd></div>
+                            <div><dt>Цена до СПП</dt><dd id="ue-target-retail">—</dd></div>
+                        </dl>
+                        <p class="ue-simulator-hint" id="ue-simulator-hint">Выберите строку и заполните закупочную цену с литражом.</p>
+                    </aside>
+                </div>
+            </div>
+        </section>
+
+        <script type="application/json" id="ue-config">$unit_config</script>
+        <script src="/static/unit-economics-wb.js?v=8"></script>

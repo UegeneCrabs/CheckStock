@@ -1,11 +1,4 @@
-/**
- * Сворачиваемые панели.
- *
- * Любая секция с классом .panel--collapsible получает кликабельный заголовок,
- * который прячет/показывает .panel-body. Состояние запоминается в localStorage
- * по data-collapse-id, чтобы после перезагрузки страницы панель осталась в том
- * же виде — иначе свёрнутое каждый раз раскрывалось бы заново.
- */
+
 (function () {
     'use strict';
 
@@ -21,7 +14,7 @@
         try {
             return window.localStorage.getItem(STORAGE_PREFIX + id);
         } catch (e) {
-            return null; // приватный режим — просто не запоминаем
+            return null;
         }
     }
 
@@ -30,7 +23,7 @@
         try {
             window.localStorage.setItem(STORAGE_PREFIX + id, collapsed ? '1' : '0');
         } catch (e) {
-            /* не критично */
+
         }
     }
 
@@ -41,7 +34,7 @@
 
         var id = panel.getAttribute('data-collapse-id');
 
-        // Заголовок делаем кнопкой, чтобы работали клавиатура и скринридеры
+
         var toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'panel-toggle';

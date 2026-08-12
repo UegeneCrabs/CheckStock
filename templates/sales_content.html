@@ -1,0 +1,198 @@
+        <section class="sales-dashboard"
+                 data-sales-dashboard
+                 data-default-from="$default_from"
+                 data-default-to="$default_to">
+            <div class="sales-head">
+                <div>
+                    <p class="section-kicker">ПРОДАЖИ</p>
+                    <h2>Продажи по магазинам и схемам</h2>
+                    <p class="page-subtitle">WB, Ozon и Яндекс Маркет · данные кабинетов</p>
+                </div>
+                <div class="sales-period-badge">
+                    <span class="sales-sync-dot" data-sales-sync-dot></span>
+                    <div>
+                        <span>Данные в базе</span>
+                        <strong data-sales-sync-label>Проверяем...</strong>
+                    </div>
+                </div>
+            </div>
+
+            <form class="sales-filter-panel" data-sales-filters>
+                <div class="sales-range-field">
+                    <span class="sales-filter-caption">Период</span>
+                    <div class="sales-date-range">
+                        <label>
+                            <span>С</span>
+                            <input class="sales-date-input" type="date" name="date_from"
+                                   value="$default_from" max="$date_max" required>
+                        </label>
+                        <span class="sales-date-separator" aria-hidden="true">→</span>
+                        <label>
+                            <span>По</span>
+                            <input class="sales-date-input" type="date" name="date_to"
+                                   value="$default_to" max="$date_max" required>
+                        </label>
+                    </div>
+                    <div class="sales-presets" aria-label="Быстрый выбор периода">
+                        <button type="button" data-sales-preset="7">7 дней</button>
+                        <button type="button" class="is-active" data-sales-preset="30">30 дней</button>
+                        <button type="button" data-sales-preset="90">90 дней</button>
+                    </div>
+                </div>
+                <label class="sales-field">
+                    <span>Магазин</span>
+                    <select class="select-control" name="store">$sales_store_options</select>
+                </label>
+                <label class="sales-field">
+                    <span>Маркетплейс</span>
+                    <select class="select-control" name="marketplace">
+                        <option value="WB" selected>Wildberries</option>
+                        <option value="OZON">Ozon</option>
+                        <option value="YANDEX MARKET">Яндекс Маркет</option>
+                    </select>
+                </label>
+                <div class="sales-filter-actions">
+                    <button class="btn-primary sales-apply" type="submit" data-sales-apply>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 1-2.34-5.66"></path><path d="M20 4v7h-7"></path></svg>
+                        <span>Обновить</span>
+                    </button>
+                    <a class="sales-export" href="#" data-sales-export title="Выгрузить заказы в XLSX">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                        <span>XLSX</span>
+                    </a>
+                </div>
+                <p class="sales-filter-error" data-sales-error role="alert" hidden></p>
+            </form>
+
+            <div class="sales-chart-panel" data-sales-chart-panel>
+                <div class="sales-chart-toolbar">
+                    <div>
+                        <h3>Динамика заказов</h3>
+                        <p data-sales-chart-subtitle>Все магазины · Wildberries</p>
+                    </div>
+                    <div class="sales-legend" aria-label="Показатели графика">
+                        <button class="sales-legend-toggle" type="button" data-sales-toggle="orders" aria-pressed="true" title="Показать или скрыть заказы"><i class="line-total"></i>Заказы</button>
+                        <button class="sales-legend-toggle" type="button" data-sales-toggle="fbo" aria-pressed="true" title="Показать или скрыть FBO"><i class="line-fbo"></i>FBO</button>
+                        <button class="sales-legend-toggle" type="button" data-sales-toggle="fbs" aria-pressed="true" title="Показать или скрыть FBS"><i class="line-fbs"></i>FBS</button>
+                        <button class="sales-legend-toggle" type="button" data-sales-toggle="cancellations" aria-pressed="true" title="Показать или скрыть отмены"><i class="line-cancellations"></i>Отмены</button>
+                        <button class="sales-legend-toggle" type="button" data-sales-toggle="sales" aria-pressed="true" title="Показать или скрыть продажи"><i class="line-sales"></i>Продажи</button>
+                    </div>
+                </div>
+
+                <div class="sales-chart-wrap">
+                    <svg class="sales-chart" viewBox="0 0 1020 410" role="img"
+                         aria-label="Динамика заказов, отмен и продаж по датам">
+                        <defs>
+                            <pattern id="salesDotGrid" x="72" y="48" width="24" height="24" patternUnits="userSpaceOnUse">
+                                <circle cx="1" cy="1" r="1" fill="#dbe2ee"></circle>
+                            </pattern>
+                            <linearGradient id="salesChartFill" x1="0" x2="0" y1="0" y2="1">
+                                <stop offset="0%" stop-color="#315efb" stop-opacity="0.13"></stop>
+                                <stop offset="100%" stop-color="#315efb" stop-opacity="0.01"></stop>
+                            </linearGradient>
+                            <filter id="salesTooltipShadow" x="-30%" y="-30%" width="160%" height="180%">
+                                <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#152032" flood-opacity="0.14"></feDropShadow>
+                            </filter>
+                        </defs>
+                        <rect class="sales-chart-dots" x="72" y="48" width="916" height="282" fill="url(#salesDotGrid)"></rect>
+                        <g class="sales-grid">
+                            <line x1="72" y1="48" x2="988" y2="48"></line>
+                            <line x1="72" y1="118.5" x2="988" y2="118.5"></line>
+                            <line x1="72" y1="189" x2="988" y2="189"></line>
+                            <line x1="72" y1="259.5" x2="988" y2="259.5"></line>
+                            <line x1="72" y1="330" x2="988" y2="330"></line>
+                        </g>
+                        <g class="sales-y-labels">
+                            <text x="18" y="52" data-y-label="4">—</text>
+                            <text x="18" y="122.5" data-y-label="3">—</text>
+                            <text x="18" y="193" data-y-label="2">—</text>
+                            <text x="18" y="263.5" data-y-label="1">—</text>
+                            <text x="18" y="334" data-y-label="0">0</text>
+                        </g>
+                        <path class="sales-area" data-sales-area d=""></path>
+                        <path class="sales-line sales-line--total" data-sales-line="orders" d=""></path>
+                        <path class="sales-line sales-line--fbo" data-sales-line="fbo" d=""></path>
+                        <path class="sales-line sales-line--fbs" data-sales-line="fbs" d=""></path>
+                        <path class="sales-line sales-line--cancellations" data-sales-line="cancellations" d=""></path>
+                        <path class="sales-line sales-line--sales" data-sales-line="sales" d=""></path>
+                        <g class="sales-x-labels" data-sales-x-labels></g>
+                        <g class="sales-chart-hover" data-sales-hover aria-hidden="true">
+                            <line class="sales-reference-line" data-sales-reference-line x1="72" y1="48" x2="72" y2="330"></line>
+                            <g class="sales-points" data-sales-points></g>
+                            <g class="sales-chart-tooltip" data-sales-tooltip>
+                                <rect width="250" height="178" rx="8"></rect>
+                                <text class="sales-tooltip-period" x="14" y="23" data-sales-tooltip-period></text>
+                                <g data-sales-tooltip-series="orders">
+                                    <circle class="sales-tooltip-key sales-tooltip-key--total" cx="18" cy="48" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="52">Заказы</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="52" data-sales-tooltip-orders></text>
+                                </g>
+                                <g data-sales-tooltip-series="fbo">
+                                    <circle class="sales-tooltip-key sales-tooltip-key--fbo" cx="18" cy="76" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="80">FBO</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="80" data-sales-tooltip-fbo></text>
+                                </g>
+                                <g data-sales-tooltip-series="fbs">
+                                    <circle class="sales-tooltip-key sales-tooltip-key--fbs" cx="18" cy="104" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="108">FBS</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="108" data-sales-tooltip-fbs></text>
+                                </g>
+                                <g data-sales-tooltip-series="cancellations">
+                                    <circle class="sales-tooltip-key sales-tooltip-key--cancellations" cx="18" cy="132" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="136">Отмены</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="136" data-sales-tooltip-cancellations></text>
+                                </g>
+                                <g data-sales-tooltip-series="sales">
+                                    <circle class="sales-tooltip-key sales-tooltip-key--sales" cx="18" cy="160" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="164">Продажи</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="164" data-sales-tooltip-sales></text>
+                                </g>
+                            </g>
+                        </g>
+                        <rect class="sales-chart-hitarea" data-sales-chart-hitarea x="72" y="48" width="916" height="282"
+                              tabindex="0" role="slider" aria-valuemin="1" aria-valuenow="1"
+                              aria-label="Данные графика продаж"></rect>
+                    </svg>
+                    <div class="sales-chart-state" data-sales-chart-state aria-live="polite">
+                        <span class="sales-loader"></span>
+                        <strong>Загружаем данные</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sales-summary-grid">
+                <article class="sales-kpi">
+                    <span>ТО заказов без отмен</span>
+                    <strong data-sales-kpi="orders">—</strong>
+                    <small data-sales-kpi-note="orders">—</small>
+                </article>
+                <article class="sales-kpi sales-kpi--sales">
+                    <span>Продажи</span>
+                    <strong data-sales-kpi="sales">—</strong>
+                    <small data-sales-kpi-note="sales">—</small>
+                </article>
+                <article class="sales-kpi sales-kpi--warning">
+                    <span>Отмены</span>
+                    <strong data-sales-kpi="cancellations">—</strong>
+                    <small data-sales-kpi-note="cancellations">—</small>
+                </article>
+                <article class="sales-kpi">
+                    <span>Заказы</span>
+                    <strong data-sales-kpi="count">—</strong>
+                    <small data-sales-kpi-note="count">—</small>
+                </article>
+            </div>
+
+            <div class="sales-module-grid sales-module-grid--compact">
+                <a class="sales-module" href="/sales/ephemerides">
+                    <span class="sales-module-icon">ЭФ</span>
+                    <strong>Эфемериды</strong>
+                    <small>Динамика и события по дням</small>
+                </a>
+                <a class="sales-module" href="/sales/rnp">
+                    <span class="sales-module-icon">РНП</span>
+                    <strong>РНП</strong>
+                    <small>Контроль отчетных показателей</small>
+                </a>
+            </div>
+        </section>

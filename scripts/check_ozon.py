@@ -1,19 +1,3 @@
-"""
-Разовый диагностический скрипт по Ozon: показывает, что реально возвращает
-API по твоим магазинам, прежде чем писать синхронизацию.
-
-Отвечает на вопросы, которые нельзя угадать по документации:
-  - есть ли вообще активные склады продавца (FBS/rFBS) или магазин только на FBO;
-  - совпадает ли item_code из остатков с артикулами в нашем каталоге;
-  - какие названия у складов FBO и как они группируются по кластерам;
-  - сходятся ли суммы по складам с тоталами из /v4/product/info/stocks.
-
-Никуда данные не отправляет и ничего не пишет в БД — только печатает.
-
-Запуск (из корня проекта, в .venv проекта):
-    python scripts/check_ozon.py
-"""
-
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -29,7 +13,7 @@ PREVIEW_ROWS = 8
 
 
 def _print_warehouses(client_id: str, api_key: str) -> dict[str, bool]:
-    """Печатает склады продавца, возвращает {название: это_rFBS}."""
+
     try:
         warehouses = ozon_api.get_own_warehouses(client_id, api_key)
     except ozon_api.OzonApiError as e:
@@ -49,10 +33,12 @@ def _print_warehouses(client_id: str, api_key: str) -> dict[str, bool]:
         is_rfbs = bool(w.get("is_rfbs"))
         rfbs_by_name[name] = is_rfbs
         scheme = "rFBS" if is_rfbs else "FBS"
-        # выключенные склады показываем компактно — их обычно большинство
+
         if w in active:
-            print(f"    [{scheme:4}] id={w.get('warehouse_id')}  {name!r}"
-                  f"  status={w.get('status')!r}  <- АКТИВЕН")
+            print(
+                f"    [{scheme:4}] id={w.get('warehouse_id')}  {name!r}"
+                f"  status={w.get('status')!r}  <- АКТИВЕН"
+            )
 
     if not active:
         print("    все склады продавца выключены — схема FBS/rFBS сейчас не используется")
@@ -94,7 +80,7 @@ def _print_fbo(client_id: str, api_key: str) -> None:
 
 
 def _check_catalog_match(store_slug: str, client_id: str, api_key: str) -> None:
-    """Главный вопрос: сойдётся ли item_code с нашими артикулами."""
+
     try:
         rows = ozon_api.get_fbo_stock_by_warehouse(client_id, api_key)
     except ozon_api.OzonApiError as e:
@@ -110,8 +96,10 @@ def _check_catalog_match(store_slug: str, client_id: str, api_key: str) -> None:
     codes = {str(r.get("item_code") or "").strip() for r in rows if r.get("item_code")}
     matched = codes & articles
 
-    print(f"  сверка с каталогом: в каталоге {len(articles)}, "
-          f"уникальных item_code {len(codes)}, совпало {len(matched)}")
+    print(
+        f"  сверка с каталогом: в каталоге {len(articles)}, "
+        f"уникальных item_code {len(codes)}, совпало {len(matched)}"
+    )
 
     if not matched and codes:
         print("    ВНИМАНИЕ: не совпало ничего — значит артикулы в Ozon")
@@ -124,7 +112,7 @@ def _check_catalog_match(store_slug: str, client_id: str, api_key: str) -> None:
 
 
 def _print_analytics(client_id: str, api_key: str, skus: list[int]) -> None:
-    """Расширенная аналитика остатков FBO: в пути, излишки, сроки, возвраты."""
+
     if not skus:
         print("  аналитика остатков: нет SKU для запроса")
         return
@@ -149,9 +137,11 @@ def _print_analytics(client_id: str, api_key: str, skus: list[int]) -> None:
             clusters[r["cluster_name"]] += r["available"]
 
     print(f"  аналитика остатков: строк {len(rows)}, кластеров {len(clusters)}")
-    print(f"    доступно={totals['available']}  в пути={totals['transit']}"
-          f"  излишки={totals['excess']}  истекает={totals['expiring']}"
-          f"  брак={totals['defect']}  возвраты={totals['returns']}")
+    print(
+        f"    доступно={totals['available']}  в пути={totals['transit']}"
+        f"  излишки={totals['excess']}  истекает={totals['expiring']}"
+        f"  брак={totals['defect']}  возвраты={totals['returns']}"
+    )
 
     if clusters:
         print("    по кластерам (топ-8 по доступному):")
@@ -160,7 +150,7 @@ def _print_analytics(client_id: str, api_key: str, skus: list[int]) -> None:
 
 
 def _print_totals(client_id: str, api_key: str) -> list[int]:
-    """Тоталы по схемам. Возвращает список SKU для запроса остатков FBS."""
+
     try:
         items = ozon_api.get_product_stocks(client_id, api_key)
     except ozon_api.OzonApiError as e:
@@ -203,7 +193,7 @@ def main() -> None:
         _check_catalog_match(slug, client_id, api_key)
 
     if not any_store:
-        print(f"Ни для одного магазина нет доступов Ozon.")
+        print("Ни для одного магазина нет доступов Ozon.")
         print(f"Добавь их в {ozon_tokens.TOKENS_PATH} по образцу")
         print(f"{ozon_tokens.TOKENS_PATH.with_name('ozon_tokens.example.json')}")
 

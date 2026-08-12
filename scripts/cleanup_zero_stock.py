@@ -1,25 +1,3 @@
-"""
-Разовая чистка: удаляет из таблиц остатков строки с нулевым количеством.
-
-Отсутствие строки и строка с нулём означают ровно одно и то же — товара на
-этом складе/ФФ нет. Основная таблица остатков построена на LEFT JOIN и
-трактует пропуск как ноль, поэтому она не меняется вообще, а база худеет в
-несколько раз (нулей там было около 90%).
-
-Что визуально изменится: на странице «Детализация склады» во вкладке ФФ
-пропадут колонки фулфилментов, где по всем товарам ноль, и строки товаров,
-которых нет ни на одном ФФ. Вкладка FBO так работала и раньше — теперь все
-три вкладки ведут себя одинаково и показывают только то, где реально есть
-остаток.
-
-Само приложение нули больше не пишет (см. app/db.py), этот скрипт нужен
-только чтобы разобрать то, что накопилось раньше.
-
-Запуск (из корня проекта, сервер лучше остановить):
-    python scripts/cleanup_zero_stock.py            # только показать, что будет удалено
-    python scripts/cleanup_zero_stock.py --apply    # удалить и сжать базу
-"""
-
 import sys
 from pathlib import Path
 
@@ -64,35 +42,29 @@ def main() -> None:
         conn.close()
         return
 
-    # Контрольные суммы: после чистки цифры в интерфейсе меняться не должны
-    before = {
-        t: conn.execute(f"SELECT COALESCE(SUM(quantity), 0) FROM {t}").fetchone()[0]
-        for t in TABLES
-    }
+    before = {t: conn.execute(f"SELECT COALESCE(SUM(quantity), 0) FROM {t}").fetchone()[0] for t in TABLES}
 
     with db.WRITE_LOCK:
         for table in TABLES:
             conn.execute(f"DELETE FROM {table} WHERE quantity = 0")
         conn.commit()
 
-    after = {
-        t: conn.execute(f"SELECT COALESCE(SUM(quantity), 0) FROM {t}").fetchone()[0]
-        for t in TABLES
-    }
+    after = {t: conn.execute(f"SELECT COALESCE(SUM(quantity), 0) FROM {t}").fetchone()[0] for t in TABLES}
 
     print("Проверка сумм (должны совпасть — удалялись только нули):")
     ok = True
     for table in TABLES:
         same = before[table] == after[table]
         ok = ok and same
-        print(f"  {table:24} было {before[table]:>9}  стало {after[table]:>9}  {'OK' if same else 'РАСХОЖДЕНИЕ'}")
+        print(
+            f"  {table:24} было {before[table]:>9}  стало {after[table]:>9}  {'OK' if same else 'РАСХОЖДЕНИЕ'}"
+        )
 
     if not ok:
         print("\nВНИМАНИЕ: суммы разошлись — откатывать вручную!")
         conn.close()
         return
 
-    # VACUUM пересобирает файл и реально освобождает место
     print("\nСжимаю файл базы (VACUUM)...")
     try:
         conn.isolation_level = None
@@ -105,8 +77,10 @@ def main() -> None:
     print(f"\nРазмер был : {size_before // 1024} КБ")
     print(f"Размер стал: {size_after // 1024} КБ")
     if size_before:
-        print(f"Освободилось: {(size_before - size_after) // 1024} КБ "
-              f"({100 - size_after * 100 // size_before}%)")
+        print(
+            f"Освободилось: {(size_before - size_after) // 1024} КБ "
+            f"({100 - size_after * 100 // size_before}%)"
+        )
 
 
 if __name__ == "__main__":

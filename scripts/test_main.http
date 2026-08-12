@@ -1,6 +1,3 @@
-# Быстрые ручные проверки эндпоинтов PAKETA.
-# Запусти сервер (из корня проекта): uvicorn app.main:app --reload
-
 GET http://127.0.0.1:8000/
 Accept: text/html
 

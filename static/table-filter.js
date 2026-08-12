@@ -7,7 +7,7 @@
         '<path d="M2 3h12l-4.6 5.4v4L7.6 14v-5.6z"/></svg>';
 
     var popover = null;
-    var current = null; // { table, colIndex, button }
+    var current = null;
 
     function ensurePopover() {
         if (popover) return popover;
@@ -28,8 +28,8 @@
         });
     }
 
-    // Псевдо-колонка «Цвет»: строки с подсветкой (.row-alert) можно фильтровать
-    // так же, как обычные значения. colIndex === COLOR_COL вместо номера ячейки.
+
+
     var COLOR_COL = 'color';
     var COLOR_RED = 'Красные (нет в продаже)';
     var COLOR_NONE = 'Без выделения';
@@ -67,7 +67,7 @@
                 out.push(v);
             }
         });
-        // Уникальные значения — всегда от меньшего к большему (числа — по величине, текст — по алфавиту)
+
         var numeric = isNumericSeries(out);
         out.sort(function (a, b) { return compareValues(a, b, numeric); });
         return out;
@@ -89,7 +89,7 @@
                 }
             }
 
-            // Общий поиск работает вместе с фильтрами колонок, а не вместо них
+
             if (visible && query) {
                 visible = row.textContent.toLowerCase().indexOf(query) !== -1;
             }
@@ -288,9 +288,7 @@
         th.appendChild(inner);
     }
 
-    /* Панель над таблицей: общий поиск по всем колонкам и (по желанию)
-       фильтр по цвету строки. Цвет вынесен сюда, а не в шапку колонки,
-       потому что это свойство всей строки, а не одного столбца. */
+
     function buildToolbar(table) {
         var wrap = table.closest('.table-wrap');
         if (!wrap || !wrap.parentNode) return;
@@ -307,8 +305,8 @@
         var found = document.createElement('span');
         found.className = 'tf-found';
 
-        // Поиск по подстроке в любой ячейке строки. toLowerCase корректно
-        // работает и с кириллицей, поэтому «гирлянд» найдёт «Гирлянда».
+
+
         search.addEventListener('input', function () {
             table._tfSearch = search.value.trim().toLowerCase();
             applyAllFilters(table);
@@ -366,8 +364,8 @@
     });
 
     window.addEventListener('scroll', function (e) {
-        // Скролл внутри самого попапа (например, списка значений) не должен его закрывать —
-        // закрываем только когда скроллится что-то снаружи (страница, обёртка таблицы).
+
+
         if (current && popover && !popover.contains(e.target)) closePopover();
     }, true);
 })();

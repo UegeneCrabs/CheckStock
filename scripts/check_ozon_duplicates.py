@@ -1,24 +1,3 @@
-"""
-Разовая проверка: есть ли на Ozon несколько карточек (offer_id) с одним SKU.
-
-Зачем. В выгрузке сопоставления по TRIS у 54 товаров из 58 старая и новая
-карточка имеют одинаковый SKU. Остаток на Ozon считается по SKU, а не по
-карточке, поэтому если это правда — две строки в интерфейсе покажут один и
-тот же остаток дважды. Прежде чем закладывать это в логику, надо увидеть,
-что реально отдаёт API.
-
-Скрипт отвечает на три вопроса:
-  1. Приходит ли один SKU под несколькими offer_id.
-  2. Одинаковые ли у них остатки (если да — сток общий, складывать нельзя).
-  3. Сколько всего товаров потеряется, если матчить строго по артикулу.
-
-Никуда ничего не пишет — только печатает.
-
-Запуск (из корня проекта, в .venv проекта):
-    python scripts/check_ozon_duplicates.py
-    python scripts/check_ozon_duplicates.py tris
-"""
-
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -34,7 +13,7 @@ SHOW_LIMIT = 15
 
 
 def _stock_rows(items: list[dict]) -> list[dict]:
-    """Разворачиваем ответ /v4/product/info/stocks в плоские строки."""
+
     rows = []
     for item in items:
         offer_id = str(item.get("offer_id") or "").strip()
@@ -42,26 +21,26 @@ def _stock_rows(items: list[dict]) -> list[dict]:
             sku = stock.get("sku")
             if not sku:
                 continue
-            rows.append({
-                "offer_id": offer_id,
-                "sku": int(sku),
-                "scheme": str(stock.get("type") or "?").lower(),
-                "present": int(stock.get("present") or 0),
-                "reserved": int(stock.get("reserved") or 0),
-            })
+            rows.append(
+                {
+                    "offer_id": offer_id,
+                    "sku": int(sku),
+                    "scheme": str(stock.get("type") or "?").lower(),
+                    "present": int(stock.get("present") or 0),
+                    "reserved": int(stock.get("reserved") or 0),
+                }
+            )
     return rows
 
 
 def _report_shared_skus(rows: list[dict]) -> None:
-    """Главный вопрос: один SKU под несколькими артикулами продавца."""
+
     by_sku: dict[int, dict[str, dict]] = defaultdict(dict)
     for r in rows:
-        # ключ — SKU + схема: у одного SKU остатки FBO и FBS считаются отдельно
         by_sku[r["sku"]].setdefault(r["scheme"], {})[r["offer_id"]] = r
 
     shared = {
-        sku: schemes for sku, schemes in by_sku.items()
-        if any(len(offers) > 1 for offers in schemes.values())
+        sku: schemes for sku, schemes in by_sku.items() if any(len(offers) > 1 for offers in schemes.values())
     }
 
     print(f"\n  SKU всего: {len(by_sku)} | под несколькими offer_id: {len(shared)}")
@@ -75,8 +54,8 @@ def _report_shared_skus(rows: list[dict]) -> None:
     equal_stock = 0
     differing = 0
 
-    for sku, schemes in shared.items():
-        for scheme, offers in schemes.items():
+    for _sku, schemes in shared.items():
+        for _scheme, offers in schemes.items():
             if len(offers) < 2:
                 continue
             values = {r["present"] for r in offers.values()}
@@ -103,14 +82,12 @@ def _report_shared_skus(rows: list[dict]) -> None:
             if len(offers) < 2 or shown >= SHOW_LIMIT:
                 continue
             shown += 1
-            parts = "  ".join(
-                f"{offer_id}={r['present']}" for offer_id, r in sorted(offers.items())
-            )
+            parts = "  ".join(f"{offer_id}={r['present']}" for offer_id, r in sorted(offers.items()))
             print(f"      sku={sku}  {scheme}:  {parts}")
 
 
 def _report_catalog_match(store_slug: str, rows: list[dict]) -> None:
-    """Сколько товаров потеряется, если матчить строго по артикулу."""
+
     catalog = db.get_catalog_items(store_slug)
     if not catalog:
         print("\n  каталог пуст — сверять не с чем")
@@ -160,8 +137,7 @@ def main() -> None:
         _report_catalog_match(slug, rows)
 
     if not checked:
-        print("Не найдено магазинов с доступами Ozon "
-              "(secrets/ozon_tokens.json). Проверять нечего.")
+        print("Не найдено магазинов с доступами Ozon (secrets/ozon_tokens.json). Проверять нечего.")
 
 
 if __name__ == "__main__":

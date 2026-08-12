@@ -1,0 +1,73 @@
+        <section class="stock2-shell">
+            <div class="stock2-hero">
+                <div>
+                    <h2>Остатки 2</h2>
+                    <p class="page-subtitle">Рабочая панель по запасам: риски, покрытие, детализация SKU и стоимость остатков.</p>
+                </div>
+                <div class="stock2-sync">
+                    <span>Последняя выгрузка</span>
+                    <strong>$last_sync</strong>
+                </div>
+            </div>
+
+            <div class="stock2-summary" role="list">
+$summary_cards
+            </div>
+
+            <div class="stock2-attention">
+$attention_cards
+            </div>
+
+            <div class="stock2-grid stock2-grid--main">
+                <section class="stock2-panel">
+                    <div class="stock2-panel-head">
+                        <div>
+                            <h3>Маркетплейсы</h3>
+                            <p>Остатки, покрытие и свежесть данных по каждой площадке.</p>
+                        </div>
+                    </div>
+                    <div class="stock2-market-grid">
+$marketplace_cards
+                    </div>
+                </section>
+
+                <section class="stock2-panel">
+                    <div class="stock2-panel-head">
+                        <div>
+                            <h3>Покрытие по магазинам</h3>
+                            <p>Дней продаж при текущем темпе за последние 30 дней.</p>
+                        </div>
+                    </div>
+                    <div class="stock2-bars">
+$coverage_bars
+                    </div>
+                </section>
+            </div>
+
+            <section class="stock2-panel">
+                <div class="stock2-panel-head">
+                    <div>
+                        <h3>Кабинеты</h3>
+                        <p>Текущий запас, товары, покрытие и риски по каждому магазину.</p>
+                    </div>
+                </div>
+                <div class="stock2-store-grid">
+$store_cards
+                </div>
+            </section>
+
+            <section class="stock2-panel">
+                <div class="stock2-panel-head">
+                    <div>
+                        <h3>Быстрый доступ к детализации</h3>
+                        <p>Полные списки открываются отдельными страницами без ограничения по количеству SKU.</p>
+                    </div>
+                </div>
+                <div class="stock2-detail-links">
+                    <a href="/stock-2/details/ending-7">Закончатся до 7 дней</a>
+                    <a href="/stock-2/details/zero">Нулевой остаток</a>
+                    <a href="/stock-2/details/excess">Избыточный запас</a>
+                    <a href="/stock-2/details/frozen">Замороженный запас</a>
+                </div>
+            </section>
+        </section>

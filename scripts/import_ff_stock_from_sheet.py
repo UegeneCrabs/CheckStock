@@ -1,33 +1,7 @@
-"""
-Разовая загрузка остатков на фулфилментах из Google Таблицы в таблицу ff_stock.
-
-Структура исходной таблицы: один лист = один магазин (название листа
-совпадает с названием магазина — TRUSTHOME, SOKOLOFF, RIMILI и т.д.),
-колонки: Артикул | Баркод | Наименование товара | <ФФ 1> | <ФФ 2> | ...
-На пересечении товара и фулфилмента — остаток.
-
-Это СНИМОК остатков, а не поставка, поэтому значения ПЕРЕЗАПИСЫВАЮТСЯ
-(db.upsert_ff_stock), а не прибавляются, и в журнал поставок
-(ff_stock_deliveries) ничего не пишется.
-
-Товар ищем в каталоге магазина (stock_items) сначала по баркоду, потом по
-артикулу. Чего нет в каталоге — не пишем, а показываем в отчёте.
-
-Маркетплейс задаётся ключом --mp: остатки на ФФ у площадок раздельные,
-и снимок по Ozon не должен затирать снимок по WB. Каталог для сопоставления
-берётся того же маркетплейса — артикулы и баркоды у площадок свои.
-
-Запуск (из корня проекта, в .venv проекта):
-    # посмотреть, что будет сделано
-    python scripts/import_ff_stock_from_sheet.py --sheet <ссылка> --mp OZON
-    # реально записать
-    python scripts/import_ff_stock_from_sheet.py --sheet <ссылка> --mp OZON --apply
-"""
-
 import argparse
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -37,18 +11,16 @@ from app.ff_import import google_service_account
 from app.ff_import.importer import _normalize_cell, _parse_quantity
 from app.stores import STORES
 
-# Таблица по умолчанию — та, с которой начинали. Ключ --sheet её перекрывает.
 DEFAULT_SHEET = "1rJdvA6ASic31W456eRyprqPCvNS6iBiEr-vOpqVb_KY"
 
 
 def sheet_id_from(value: str) -> str:
-    """Принимает и голый идентификатор, и полную ссылку на таблицу."""
+
     value = (value or "").strip()
     match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", value)
     return match.group(1) if match else value
 
 
-# Заголовки колонок с товаром — по ним находим строку заголовков
 ARTICLE_HEADERS = ("артикул",)
 BARCODE_HEADERS = ("баркод",)
 
@@ -62,14 +34,13 @@ def _build_service():
         raise SystemExit(f"Нет ключа сервисного аккаунта: {google_service_account.CREDENTIALS_PATH}")
     try:
         from googleapiclient.discovery import build
-    except ImportError:
-        raise SystemExit("Нет пакета google-api-python-client — pip install -r requirements.txt")
-    return build("sheets", "v4", credentials=google_service_account.get_credentials(),
-                 cache_discovery=False)
+    except ImportError as error:
+        raise SystemExit("Нет пакета google-api-python-client — pip install -r requirements.txt") from error
+    return build("sheets", "v4", credentials=google_service_account.get_credentials(), cache_discovery=False)
 
 
 def _store_slug_by_sheet_title(title: str) -> str | None:
-    """Лист 'SOKOLOFF' -> слаг 'sokoloff'."""
+
     target = _norm(title)
     for slug, store in STORES.items():
         if _norm(store["name"]) == target or _norm(slug) == target:
@@ -78,17 +49,7 @@ def _store_slug_by_sheet_title(title: str) -> str | None:
 
 
 def match_fulfillment(column: str, known_ffs: dict[str, str]) -> str | None:
-    """Сопоставляет заголовок колонки с фулфилментом из базы.
 
-    В таблицах пишут коротко — «Подольск», «Купавна», — а в базе названия
-    полные: «ФулСервис Подольск», «AFFLATUS Купавна». Требовать точного
-    совпадения бессмысленно: не сойдётся ни одна колонка.
-
-    Поэтому сначала пробуем точное совпадение, потом вхождение. Если короткое
-    имя подходит сразу к нескольким фулфилментам, считаем колонку
-    нераспознанной: угадывать, какой из них имелся в виду, опаснее, чем
-    сказать об этом вслух.
-    """
     name = _norm(column)
     if not name:
         return None
@@ -103,11 +64,7 @@ def match_fulfillment(column: str, known_ffs: dict[str, str]) -> str | None:
 
 
 def _parse_sheet(rows: list[list[str]], known_ffs: dict[str, str]) -> tuple[dict, list[str], list[str]]:
-    """Разбирает лист магазина.
 
-    Возвращает ({(barcode, article): {фулфилмент: количество}},
-    [распознанные ФФ], [нераспознанные заголовки колонок]).
-    """
     header_idx = None
     for idx, row in enumerate(rows[:10]):
         cells = [_norm(c) for c in row]
@@ -122,8 +79,6 @@ def _parse_sheet(rows: list[list[str]], known_ffs: dict[str, str]) -> tuple[dict
     ff_columns: dict[int, str] = {}
     unknown: list[str] = []
 
-    # Название товара и пустые колонки-разделители не трогаем: в таблице между
-    # описанием и фулфилментами часто стоит пустой столбец.
     SKIP = ("наименование товара", "наименование", "название", "")
 
     for i, raw in enumerate(header):
@@ -137,7 +92,7 @@ def _parse_sheet(rows: list[list[str]], known_ffs: dict[str, str]) -> tuple[dict
         else:
             matched = match_fulfillment(raw, known_ffs)
             if matched:
-                ff_columns[i] = matched      # каноничное имя ФФ из БД
+                ff_columns[i] = matched
             else:
                 unknown.append(raw)
 
@@ -147,7 +102,7 @@ def _parse_sheet(rows: list[list[str]], known_ffs: dict[str, str]) -> tuple[dict
         raise ValueError("в заголовках не нашлось ни одной колонки с известным фулфилментом")
 
     data: dict[tuple[str, str], dict[str, int]] = {}
-    for row in rows[header_idx + 1:]:
+    for row in rows[header_idx + 1 :]:
         if not row or all(not _normalize_cell(c) for c in row):
             continue
         article = _normalize_cell(row[col_article]) if col_article < len(row) else ""
@@ -159,7 +114,7 @@ def _parse_sheet(rows: list[list[str]], known_ffs: dict[str, str]) -> tuple[dict
         for col_idx, ff_name in ff_columns.items():
             raw = _normalize_cell(row[col_idx]) if col_idx < len(row) else ""
             qty = _parse_quantity(raw)
-            per_ff[ff_name] = max(qty, 0)  # отрицательные остатки в снимок не пускаем
+            per_ff[ff_name] = max(qty, 0)
         data[(barcode, article)] = per_ff
 
     return data, list(ff_columns.values()), unknown
@@ -168,8 +123,9 @@ def _parse_sheet(rows: list[list[str]], known_ffs: dict[str, str]) -> tuple[dict
 def main() -> None:
     parser = argparse.ArgumentParser(description="Загрузка снимка остатков ФФ из Google Таблицы")
     parser.add_argument("--sheet", default=DEFAULT_SHEET, help="ссылка на таблицу или её идентификатор")
-    parser.add_argument("--mp", default=db.DEFAULT_MARKETPLACE,
-                        help=f"маркетплейс: {', '.join(db.MARKETPLACES)}")
+    parser.add_argument(
+        "--mp", default=db.DEFAULT_MARKETPLACE, help=f"маркетплейс: {', '.join(db.MARKETPLACES)}"
+    )
     parser.add_argument("--apply", action="store_true", help="записать в БД, а не только показать")
     args = parser.parse_args()
 
@@ -194,19 +150,21 @@ def main() -> None:
     from googleapiclient.errors import HttpError
 
     try:
-        meta = service.spreadsheets().get(
-            spreadsheetId=sheet_id, fields="sheets.properties(sheetId,title)"
-        ).execute()
+        meta = (
+            service.spreadsheets()
+            .get(spreadsheetId=sheet_id, fields="sheets.properties(sheetId,title)")
+            .execute()
+        )
     except HttpError as e:
         status = getattr(getattr(e, "resp", None), "status", None)
         if status == 403:
             raise SystemExit(
                 "Нет доступа к таблице. Расшарь её на "
                 f"{google_service_account.get_service_account_email()} с правами «Читатель»."
-            )
-        raise SystemExit(f"Ошибка Google Sheets API: {e}")
+            ) from e
+        raise SystemExit(f"Ошибка Google Sheets API: {e}") from e
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     grand_written = 0
     grand_skipped = 0
 
@@ -218,9 +176,13 @@ def main() -> None:
             continue
 
         try:
-            values = service.spreadsheets().values().get(
-                spreadsheetId=sheet_id, range=f"'{title}'!A1:ZZ20000"
-            ).execute().get("values", [])
+            values = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=sheet_id, range=f"'{title}'!A1:ZZ20000")
+                .execute()
+                .get("values", [])
+            )
         except HttpError as e:
             print(f"\n--- Лист {title!r}: не удалось прочитать: {e}")
             continue
@@ -231,8 +193,6 @@ def main() -> None:
             print(f"\n--- Лист {title!r} ({slug}): {e}")
             continue
 
-        # каталог того же маркетплейса: на Ozon у товаров свои артикулы
-        # и баркоды, и сверять снимок с каталогом WB бессмысленно
         catalog = db.get_catalog_items(slug, marketplace)
         by_barcode = {item["barcode"]: item["article"] for item in catalog}
         known_articles = {item["article"] for item in catalog}
@@ -263,8 +223,10 @@ def main() -> None:
         print(f"    колонок ФФ      : {len(ff_names)} ({', '.join(ff_names)})")
         print(f"    записей ff_stock: {written} (суммарный остаток {total_qty})")
         if unknown_columns:
-            print(f"    НЕ РАСПОЗНАНЫ колонки: {', '.join(unknown_columns)}"
-                  " — такого фулфилмента нет в базе, остатки по нему пропущены")
+            print(
+                f"    НЕ РАСПОЗНАНЫ колонки: {', '.join(unknown_columns)}"
+                " — такого фулфилмента нет в базе, остатки по нему пропущены"
+            )
         if skipped_rows:
             preview = ", ".join(skipped_rows[:5])
             more = f" и ещё {len(skipped_rows) - 5}" if len(skipped_rows) > 5 else ""
