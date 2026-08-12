@@ -138,6 +138,12 @@ class WebRouteUnitTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200, response.text[:500])
                 self.assertTrue(response.content)
 
+    def test_unit_economics_is_hidden_from_sales_navigation(self) -> None:
+        response = self.client.get("/sales")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('href="/sales/unit-economics', response.text)
+
     def test_page_and_download_errors_are_reported(self) -> None:
         cases = (
             ("/stock/unknown", 404),
