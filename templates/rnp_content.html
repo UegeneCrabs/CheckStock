@@ -1,0 +1,98 @@
+        <section class="rnp-dashboard"
+                 data-rnp-dashboard
+                 data-default-month="$default_month"
+                 data-default-store="$default_store">
+            <div class="rnp-toolbar">
+                <label class="rnp-control rnp-control--month">
+                    <span>Месяц</span>
+                    <input type="month" name="month" value="$default_month" max="$max_month">
+                </label>
+                <label class="rnp-control rnp-control--search">
+                    <span>Поиск товара в РНП</span>
+                    <span class="rnp-search-box">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                        <input type="search" name="search" placeholder="Название, артикул или штрихкод" autocomplete="off">
+                    </span>
+                </label>
+                <label class="rnp-control rnp-control--store">
+                    <span>Магазин</span>
+                    <select name="store" class="select-control">$store_options</select>
+                </label>
+                <div class="rnp-marketplaces" role="group" aria-label="Маркетплейс">
+                    <button class="is-active" type="button" data-rnp-marketplace="WB">WB</button>
+                    <button type="button" data-rnp-marketplace="OZON">Ozon</button>
+                    <button type="button" data-rnp-marketplace="YANDEX MARKET">Яндекс</button>
+                </div>
+                <div class="rnp-toolbar-actions">
+                    <button class="rnp-tool is-active" type="button" data-rnp-forecast-toggle aria-pressed="true">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 5-5 4 4 7-8"></path><path d="M15 7h5v5"></path></svg>
+                        Прогнозы
+                    </button>
+                    <button class="rnp-tool" type="button" data-rnp-density-toggle>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+                        Вид <strong>1</strong>
+                    </button>
+                    <button class="rnp-tool" type="button" data-rnp-metrics-toggle aria-expanded="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h13M10 18h10"></path><circle cx="7" cy="6" r="1.5"></circle><circle cx="4" cy="12" r="1.5"></circle><circle cx="7" cy="18" r="1.5"></circle></svg>
+                        Показатели
+                    </button>
+                    <div class="rnp-metrics-menu" data-rnp-metrics-menu hidden></div>
+                    <button class="rnp-refresh" type="button" data-rnp-refresh title="Обновить данные на экране" aria-label="Обновить данные на экране">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 1-2.34-5.66"></path><path d="M20 4v7h-7"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="rnp-sync" data-rnp-sync hidden>
+                <span class="rnp-sync-dot"></span>
+                <div><strong data-rnp-sync-label></strong><p data-rnp-sync-message></p></div>
+            </div>
+
+            <div class="rnp-kpis" data-rnp-kpis aria-live="polite">
+                <article><span>Заказы, ₽</span><strong data-rnp-kpi="orders_amount">—</strong><small data-rnp-kpi-note="orders_amount">Прогноз месяца</small></article>
+                <article><span>Заказы, шт</span><strong data-rnp-kpi="orders_count">—</strong><small data-rnp-kpi-note="orders_count">Прогноз месяца</small></article>
+                <article><span>Продажи, ₽</span><strong data-rnp-kpi="sales_amount">—</strong><small data-rnp-kpi-note="sales_amount">Прогноз месяца</small></article>
+                <article><span>Продажи, шт</span><strong data-rnp-kpi="sales_count">—</strong><small data-rnp-kpi-note="sales_count">Прогноз месяца</small></article>
+                <article><span>Валовая прибыль</span><strong data-rnp-kpi="gross_profit">—</strong><small data-rnp-kpi-note="gross_profit">По заполненной себестоимости</small></article>
+            </div>
+
+            <div class="rnp-table-panel">
+                <div class="rnp-table-state" data-rnp-state>
+                    <span class="sales-loader"></span>
+                    <strong>Собираем РНП</strong>
+                </div>
+                <div class="rnp-table-scroll" data-rnp-scroll>
+                    <table class="rnp-table" data-rnp-table aria-label="РНП по товарам и дням месяца">
+                        <thead data-rnp-head></thead>
+                        <tbody data-rnp-body></tbody>
+                    </table>
+                </div>
+                <div class="rnp-empty" data-rnp-empty hidden>
+                    <strong>Товары не найдены</strong>
+                    <span>Измените поиск, магазин или маркетплейс.</span>
+                </div>
+                <div class="rnp-pagination" data-rnp-pagination hidden>
+                    <span data-rnp-page-label></span>
+                    <div>
+                        <button type="button" data-rnp-prev>← Назад</button>
+                        <button type="button" data-rnp-next>Вперёд →</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rnp-modal" data-rnp-modal hidden>
+                <div class="rnp-modal-backdrop" data-rnp-modal-close></div>
+                <form class="rnp-modal-card" data-rnp-modal-form>
+                    <div class="rnp-modal-head">
+                        <div><span data-rnp-modal-kicker>РНП</span><h3 data-rnp-modal-title></h3></div>
+                        <button type="button" data-rnp-modal-close aria-label="Закрыть">×</button>
+                    </div>
+                    <div class="rnp-modal-body" data-rnp-modal-body></div>
+                    <p class="rnp-modal-error" data-rnp-modal-error hidden></p>
+                    <div class="rnp-modal-actions">
+                        <button class="rnp-modal-cancel" type="button" data-rnp-modal-close>Отмена</button>
+                        <button class="btn-primary" type="submit" data-rnp-modal-submit>Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </section>

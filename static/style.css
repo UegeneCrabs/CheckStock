@@ -7,7 +7,7 @@
 }
 
 :root {
-    /* brand */
+
     --navy: #12172a;
     --navy-2: #232c4d;
     --accent: #f7941d;
@@ -18,7 +18,7 @@
     --text: #f5f4f8;
     --text-muted: #a89fc2;
 
-    /* fluid spacing scale */
+
     --space-2xs: clamp(0.4rem, 0.3rem + 0.3vw, 0.6rem);
     --space-xs: clamp(0.6rem, 0.5rem + 0.4vw, 0.9rem);
     --space-sm: clamp(0.9rem, 0.7rem + 0.6vw, 1.4rem);
@@ -26,7 +26,7 @@
     --space-lg: clamp(2.2rem, 1.5rem + 2.5vw, 3.8rem);
     --space-xl: clamp(3rem, 2rem + 4vw, 5.5rem);
 
-    /* fluid type scale */
+
     --fs-sm: clamp(0.82rem, 0.78rem + 0.2vw, 0.95rem);
     --fs-base: clamp(0.95rem, 0.9rem + 0.2vw, 1.05rem);
     --fs-md: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
@@ -59,7 +59,7 @@ body {
     line-height: 1.5;
 }
 
-/* ---------- Header ---------- */
+
 
 header {
     position: sticky;
@@ -141,13 +141,12 @@ nav a.active:hover {
     transform: none;
 }
 
-/* ---------- Layout ---------- */
+
 
 main {
     width: var(--container);
     margin-inline: auto;
-    /* сверху заметно меньше, чем снизу: под липким хедером не нужен большой
-       воздух, а внизу отступ помогает не упираться в край страницы */
+
     padding-block: var(--space-md) var(--space-xl);
 }
 
@@ -181,7 +180,7 @@ main h2 {
     color: var(--accent);
 }
 
-/* ---------- Hero (home page) ---------- */
+
 
 .hero {
     text-align: center;
@@ -245,7 +244,7 @@ main h2 {
     color: var(--text-muted);
 }
 
-/* ---------- Sync bar ---------- */
+
 
 .sync-panel {
     max-width: 46rem;
@@ -337,8 +336,7 @@ main h2 {
     text-align: center;
 }
 
-/* Блок маркетплейса внутри карточки магазина. Название слева, значки
-   справа — так взгляд идёт по колонке площадок, а не по мешанине бейджей. */
+
 .sync-mp {
     display: flex;
     align-items: center;
@@ -364,7 +362,7 @@ main h2 {
     flex: 1;
 }
 
-/* Площадка без доступов не должна перетягивать внимание */
+
 .sync-mp--off .sync-mp-title {
     opacity: 0.55;
 }
@@ -418,14 +416,13 @@ main h2 {
     background: var(--text-muted);
 }
 
-/* ---------- Store grid ---------- */
+
 
 .store-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
     gap: var(--space-md);
-    /* воздух по краям: карточки светятся рамкой, вплотную к границе окна
-       свечение обрезалось */
+
     padding-inline: var(--space-xs);
 }
 
@@ -439,8 +436,7 @@ main h2 {
     background: var(--navy);
     border: none;
     border-radius: var(--radius-lg);
-    /* по вертикали просторнее, по горизонтали — как было: ширину задаёт
-       сетка, а высоту набирают отступы и промежуток внутри карточки */
+
     padding: var(--space-lg) var(--space-sm);
     text-decoration: none;
     color: #fff;
@@ -510,7 +506,7 @@ main h2 {
     color: #fff;
 }
 
-/* ---------- Store detail page ---------- */
+
 
 .store-header {
     display: flex;
@@ -602,8 +598,7 @@ main h2 {
     min-height: 1.2em;
 }
 
-/* Статус сразу после кнопки (например, в блоке загрузки остатков на ФФ) —
-   без отрицательного отступа сверху, кнопка и так не даёт лишнего зазора. */
+
 .btn-primary + .ff-select-status {
     margin-top: var(--space-xs);
 }
@@ -828,9 +823,7 @@ main h2 {
     border-radius: var(--radius-sm);
 }
 
-/* Скроллбар в цвет блока (карточки), а не системный серый — во всех
-   внутренних областях прокрутки: таблицы, выпадающий cs-panel, список
-   значений фильтра. */
+
 .table-wrap,
 .table-wrap--scroll,
 .table-wrap--scroll-10,
@@ -875,10 +868,9 @@ main h2 {
     background-color: var(--accent);
 }
 
-/* Основная таблица остатков — видно ~11 строк, дальше скролл внутри блока,
-   а не вниз по всей странице. Шапка таблицы остаётся закреплённой при скролле. */
+
 .table-wrap--scroll {
-    /* шапка + закреплённая строка итогов + ~11 строк товаров */
+
     max-height: calc(3.2em + 2.8em + 11 * 3em);
     overflow-y: auto;
 }
@@ -890,19 +882,14 @@ main h2 {
     background: var(--card);
 }
 
-/* Строка итогов по столбцам — липнет сразу под шапкой.
-   --thead-h выставляется из JS, потому что высота шапки зависит от переносов
-   текста и иконок фильтров; значение в fallback — на случай, если JS не успел. */
+
 .table-wrap--scroll .data-table thead tr.totals-row th {
     top: var(--thead-h, 3.2em);
     z-index: 2;
 }
 
 .data-table thead tr.totals-row th {
-    /* Непрозрачный фон обязателен: строка закреплена, и под неё уезжают
-       строки таблицы — сквозь полупрозрачный фон они просвечивали.
-       Слой градиента поверх var(--card) даёт оранжевый оттенок, но при этом
-       фон остаётся полностью непрозрачным. */
+
     background:
         linear-gradient(rgba(247, 148, 29, 0.10), rgba(247, 148, 29, 0.10)),
         var(--card);
@@ -925,8 +912,7 @@ main h2 {
     color: var(--accent);
 }
 
-/* Таблица детализации по складам — видно ~15 строк, дальше скролл внутри
-   блока (и вертикально, и горизонтально). */
+
 .table-wrap--scroll-10 {
     max-height: calc(2.8em + 15 * 2.6em);
     overflow-y: auto;
@@ -961,7 +947,7 @@ main h2 {
     white-space: normal;
 }
 
-/* Артикул / Баркод — компактные колонки с кодами */
+
 .data-table th:nth-child(1),
 .data-table td:nth-child(1) {
     width: 20ch;
@@ -972,7 +958,7 @@ main h2 {
     width: 26ch;
 }
 
-/* Название — фиксированная ширина под ~70 символов, длинные названия переносятся */
+
 .data-table th:nth-child(3),
 .data-table td:nth-child(3) {
     width: 50ch;
@@ -980,7 +966,7 @@ main h2 {
     word-break: break-word;
 }
 
-/* Количественные колонки */
+
 .data-table th:nth-child(4),
 .data-table td:nth-child(4),
 .data-table th:nth-child(5),
@@ -995,26 +981,18 @@ main h2 {
     border-bottom: 1px solid var(--border);
 }
 
-/* Разделительные полосы между столбцами — такие же, как между строк */
+
 .data-table th:not(:last-child),
 .data-table td:not(:last-child) {
     border-right: 1px solid var(--border);
 }
 
-/* Распорная колонка — забирает остаток свободного места, реальные колонки остаются фиксированными */
+
 .data-table .col-filler {
     width: auto;
 }
 
-/* ---------------------------------------------------------------
-   Таблица остатков магазина — 8 колонок:
-   Артикул | Баркод | Название | Тотал | ФФ | FBS | FBO | распорка
 
-   Ширины в процентах, а не в ch: сумма всегда 100%, поэтому таблица
-   подстраивается под любую ширину экрана и колонки не разъезжаются.
-   min-width держит её читаемой на узких экранах — там включится
-   горизонтальный скролл .table-wrap, а не сплющивание колонок.
-   --------------------------------------------------------------- */
 .data-table--stock {
     min-width: 64rem;
 }
@@ -1050,7 +1028,7 @@ main h2 {
 
 
 
-/* Сток ФФ по API — стоит рядом с «Доступно ФФ», обе про фулфилмент */
+
 .data-table--stock th:nth-child(6),
 .data-table--stock td:nth-child(6) {
     width: 13%;
@@ -1058,19 +1036,14 @@ main h2 {
     white-space: normal;
 }
 
-/* Колонки «в продаже». Их число зависит от маркетплейса: у WB две
-   (FBS, FBO), у Ozon три (добавляется rFBS). Поэтому ширину задаём не по
-   nth-child, а по классу схемы, а конкретный процент — по data-schemes,
-   чтобы сумма колонок всегда оставалась ровно 100%. */
+
 .data-table--stock .col-fbs,
 .data-table--stock .col-rfbs,
 .data-table--stock .col-fbo {
     text-align: center;
 }
 
-/* Ширина зависит от ЧИСЛА колонок, а не от их названий: у Яндекса имена
-   схем содержат идентификатор магазина (fbs_149217459), и перечислить их
-   в CSS заранее невозможно. Левая часть занимает 76%, остаток делим. */
+
 .data-table--stock[data-scheme-count="1"] .col-scheme {
     width: 24%;
 }
@@ -1087,7 +1060,7 @@ main h2 {
     width: 6%;
 }
 
-/* Больше четырёх схем — редкость, но таблица не должна разъезжаться */
+
 .data-table--stock[data-scheme-count="5"] .col-scheme {
     width: 4.8%;
 }
@@ -1096,15 +1069,14 @@ main h2 {
     width: 4%;
 }
 
-/* распорка больше не нужна — проценты уже занимают всю ширину */
+
 .data-table--stock .col-filler {
     width: 0;
     padding: 0;
     border-right: none;
 }
 
-/* На экранах поменьше поджимаем отступы и шрифт, чтобы таблица
-   продолжала помещаться целиком, без горизонтального скролла */
+
 @media (max-width: 1500px) {
     .data-table--stock th,
     .data-table--stock td {
@@ -1120,16 +1092,10 @@ main h2 {
     padding: var(--space-md);
 }
 
-/* Таблица детализации по складам — сводная: Баркод / Артикул / Название,
-   дальше по одной колонке на каждый склад (количество колонок динамическое).
-   Ширина не привязана к 100% контейнера — при большом числе складов таблица
-   шире экрана и скроллится горизонтально внутри .table-wrap, вместо того
-   чтобы сжимать текстовые колонки до "буква под буквой". */
+
 .data-table--warehouses {
     table-layout: fixed;
-    /* Всегда ровно по ширине панели: ни пустоты справа, ни горизонтальной
-       прокрутки. Первые четыре колонки заданы в процентах, остаток поровну
-       делят колонки складов, а тесноту компенсируют классы is-dense. */
+
     width: 100%;
     font-size: 0.92rem;
 }
@@ -1138,8 +1104,7 @@ main h2 {
 .data-table--warehouses td {
     white-space: nowrap;
     padding: 0.65em 0.35em;
-    /* всё по центру: колонок много и они узкие, выключка по левому краю
-       делала таблицу рваной */
+
     text-align: center;
 }
 
@@ -1160,14 +1125,14 @@ main h2 {
     word-break: break-word;
 }
 
-/* Тотал — 4-я колонка, перед складами */
+
 .data-table--warehouses th:nth-child(4),
 .data-table--warehouses td:nth-child(4) {
     width: 7%;
     text-align: center;
 }
 
-/* Колонки складов — 5-я и далее (кроме распорной) */
+
 .data-table--warehouses th:nth-child(n+5),
 .data-table--warehouses td:nth-child(n+5) {
     width: auto;
@@ -1175,10 +1140,9 @@ main h2 {
     white-space: normal;
 }
 
-/* ---------- Фильтр по столбцам (как в Google Таблицах) ---------- */
 
-/* Значок фильтра — под текстом заголовка, а не рядом: рядом он ломал
-   ширину узких колонок (особенно в таблице складов) */
+
+
 .tf-th-inner {
     display: flex;
     flex-direction: column;
@@ -1390,13 +1354,12 @@ main h2 {
     background: var(--accent);
 }
 
-/* Шапка — линия пожирнее, чтобы явно отделять её от строк */
+
 .data-table--warehouses thead th {
     border-bottom: 2px solid var(--border-hover);
 }
 
-/* Блок Баркод/Артикул/Название/Тотал отделяется от складов линией пожирнее,
-   остальные разделители столбцов — обычные */
+
 .data-table--warehouses th:nth-child(4),
 .data-table--warehouses td:nth-child(4) {
     width: 7%;
@@ -1404,9 +1367,9 @@ main h2 {
 }
 
 
-/* --- Подсветка проблемных строк и фильтр по цвету --- */
 
-/* Есть остаток на ФФ, но в продаже (FBS и FBO) — ноль */
+
+
 .data-table tbody tr.row-alert td {
     background: rgba(230, 57, 70, 0.14);
 }
@@ -1441,7 +1404,7 @@ main h2 {
     color: var(--text);
 }
 
-/* --- Вход --- */
+
 
 .login-body {
     display: flex;
@@ -1517,7 +1480,7 @@ main h2 {
     margin-top: var(--space-xs);
 }
 
-/* --- Пользователь в шапке --- */
+
 
 .user-box {
     display: flex;
@@ -1549,7 +1512,7 @@ main h2 {
     color: var(--accent);
 }
 
-/* --- Админка --- */
+
 
 .admin-layout {
     display: grid;
@@ -1569,7 +1532,7 @@ main h2 {
     margin-bottom: var(--space-lg);
 }
 
-/* --- Ручная докладка позиции на ФФ --- */
+
 
 .manual-add {
     margin-top: var(--space-sm);
@@ -1591,7 +1554,7 @@ main h2 {
     cursor: pointer;
 }
 
-/* --- Переключатель таблиц на странице складов --- */
+
 
 .wh-tabs {
     display: flex;
@@ -1631,7 +1594,7 @@ main h2 {
     display: none;
 }
 
-/* --- Строки ручной докладки с подсказками --- */
+
 
 .manual-row {
     display: grid;
@@ -1682,7 +1645,7 @@ main h2 {
     text-decoration: underline;
 }
 
-/* Выпадающий список подсказок по каталогу */
+
 .suggest-box {
     display: none;
     position: absolute;
@@ -1746,7 +1709,7 @@ main h2 {
     white-space: nowrap;
 }
 
-/* --- Вкладки маркетплейсов над блоками --- */
+
 
 .mp-tabs {
     display: flex;
@@ -1819,7 +1782,7 @@ main h2 {
     color: var(--text-muted);
 }
 
-/* --- Генератор пароля в админке --- */
+
 
 .pass-row {
     display: grid;
@@ -1859,7 +1822,7 @@ main h2 {
     margin-bottom: var(--space-sm);
 }
 
-/* --- Действия над сотрудниками в админке --- */
+
 
 .data-table--users td {
     white-space: nowrap;
@@ -1925,7 +1888,7 @@ main h2 {
     background: rgba(247, 148, 29, 0.10);
 }
 
-/* --- Модальные окна --- */
+
 
 .modal-overlay {
     display: none;
@@ -2083,7 +2046,7 @@ body.modal-open {
     color: var(--text-muted);
 }
 
-/* --- Общий поиск над таблицей --- */
+
 
 .tf-toolbar {
     display: flex;
@@ -2124,7 +2087,7 @@ body.modal-open {
     margin-left: auto;
 }
 
-/* --- Предупреждение о сроке действия ключа WB --- */
+
 
 .token-banner {
     display: flex;
@@ -2160,7 +2123,7 @@ body.modal-open {
     color: var(--text-muted);
 }
 
-/* --- Сворачиваемые панели --- */
+
 
 .panel-toggle {
     display: flex;
@@ -2195,7 +2158,7 @@ body.modal-open {
     margin-top: var(--space-2xs);
 }
 
-/* Свёрнутое состояние: прячем содержимое и разворачиваем стрелку */
+
 .panel--collapsible.is-collapsed .panel-body {
     display: none;
 }
@@ -2204,7 +2167,7 @@ body.modal-open {
     transform: rotate(-90deg);
 }
 
-/* --- Маршрут перемещения: откуда -> куда --- */
+
 
 .route {
     display: grid;
@@ -2214,8 +2177,7 @@ body.modal-open {
     margin-bottom: var(--space-sm);
 }
 
-/* У отгрузки получателя нет, поэтому одна колонка вместо трёх:
-   пустая правая половина выглядела бы как незаполненное поле */
+
 .route--single {
     grid-template-columns: 1fr;
 }
@@ -2240,8 +2202,7 @@ body.modal-open {
 }
 
 .route-arrow {
-    /* Центрируем по колонке, но со сдвигом вниз на высоту подписи
-       ОТКУДА/КУДА — иначе стрелка уезжает вверх относительно селектов */
+
     align-self: center;
     display: grid;
     place-items: center;
@@ -2268,11 +2229,7 @@ body.modal-open {
     }
 }
 
-/* ---------- Подблок «Товары и количества» ----------
-   Во всех трёх операциях сверху идут параметры самой операции (склад,
-   маркетплейс, примечание), а ниже — способы задать позиции. Раньше они шли
-   вперемешку с параметрами, и было неочевидно, что файл и ссылка — это про
-   товары, а не про операцию целиком. Рамка отделяет одно от другого. */
+
 .io-block {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -2298,9 +2255,7 @@ body.modal-open {
     color: var(--accent);
 }
 
-/* Переключатель способа ввода. Способы взаимоисключающие, поэтому вид как у
-   сегментов, а не как у чекбоксов: галочки намекали бы, что можно отметить
-   несколько сразу. */
+
 .io-tabs {
     display: inline-flex;
     border: 1px solid var(--border);
@@ -2334,7 +2289,7 @@ body.modal-open {
     background: var(--accent);
 }
 
-/* Показан только выбранный способ — блок втрое компактнее */
+
 .io-method.is-hidden {
     display: none;
 }
@@ -2355,7 +2310,7 @@ body.modal-open {
     margin-top: var(--space-2xs);
 }
 
-/* строки товаров при перемещении — как в ручной докладке, плюс подсказка об остатке */
+
 .mv-row {
     display: grid;
     grid-template-columns: 1fr 6rem auto 2rem;
@@ -2374,25 +2329,25 @@ body.modal-open {
     white-space: nowrap;
 }
 
-/* просят больше, чем есть — подсвечиваем сразу, не дожидаясь отправки */
+
 .mv-hint--bad {
     color: #ff8f98;
     font-weight: 700;
 }
 
-/* Продублированная строка при перемещении */
+
 .mv-row--dupe .mv-code {
     border-color: rgba(230, 57, 70, 0.6);
     background: rgba(230, 57, 70, 0.08);
 }
 
-/* Статус с ошибкой — заметнее обычного серого */
+
 .ff-select-status--bad {
     color: #ff9aa2;
     font-weight: 600;
 }
 
-/* Заблокированная кнопка перемещения — видно, что нажать нельзя */
+
 .btn-primary:disabled {
     opacity: 0.45;
     cursor: not-allowed;
@@ -2404,7 +2359,7 @@ body.modal-open {
     transform: none;
 }
 
-/* --- Адаптив: журнал действий в админке --- */
+
 
 .data-table--log th:nth-child(1),
 .data-table--log td:nth-child(1) {
@@ -2449,8 +2404,7 @@ body.modal-open {
     background: rgba(247, 148, 29, 0.15);
 }
 
-/* На узких экранах таблица журнала превращается в карточки:
-   горизонтальная прокрутка длинных текстовых подробностей неудобна */
+
 @media (max-width: 800px) {
     .data-table--log,
     .data-table--log thead,
@@ -2483,7 +2437,7 @@ body.modal-open {
         text-align: left !important;
     }
 
-    /* подпись колонки берём из data-label — заголовки таблицы скрыты */
+
     .data-table--log td::before {
         content: attr(data-label);
         color: var(--text-muted);
@@ -2495,19 +2449,16 @@ body.modal-open {
     }
 }
 
-/* --- Обрамление таблиц детализации --- */
 
-/* Место под вертикальный скроллбар резервируем заранее: иначе он появляется
-   поверх последней колонки и та выглядит обрезанной. */
+
+
 .table-wrap--scroll-10 {
     scrollbar-gutter: stable;
     overflow-x: hidden;
 }
 
 
-/* Чем больше складов, тем теснее колонки: таблица обязана уместиться
-   в ширину панели на любом масштабе, поэтому ужимаем шрифт и отступы,
-   а не включаем горизонтальную прокрутку. */
+
 .data-table--warehouses.is-dense {
     font-size: 0.82rem;
 }
@@ -2526,15 +2477,14 @@ body.modal-open {
     padding: 0.4em 0.2em;
 }
 
-/* Длинные названия складов в шапке переносим и разрешаем рвать слова —
-   иначе одна «Астана Карагандинское шоссе» раздувает всю колонку */
+
 .data-table--warehouses thead th:nth-child(n+5) {
     white-space: normal;
     word-break: break-word;
     hyphens: auto;
 }
 
-/* Узкие экраны: первым трём колонкам тоже нужно ужаться */
+
 @media (max-width: 1100px) {
     .data-table--warehouses th:nth-child(1),
     .data-table--warehouses td:nth-child(1) {
@@ -2547,8 +2497,7 @@ body.modal-open {
     }
 }
 
-/* При 20+ складах колонка получается очень узкой — уменьшаем ещё и шапку,
-   иначе длинные названия рвутся на десяток строк и раздувают её по высоте */
+
 .data-table--warehouses.is-dense-2 thead th {
     font-size: 0.92em;
     line-height: 1.15;
@@ -2556,50 +2505,48 @@ body.modal-open {
 }
 
 .data-table--warehouses.is-dense-2 thead th:nth-child(n+5) {
-    /* длинные названия складов не должны растягивать шапку до бесконечности */
+
     max-height: 7.5em;
     overflow: hidden;
 }
 
-/* Заголовок с иконкой фильтра — тоже по центру */
+
 .data-table--warehouses .tf-th-inner {
     align-items: center;
 }
 
-/* --- Акценты в таблице детализации --- */
 
-/* Опорные колонки (баркод, артикул, название, тотал) — жирнее:
-   по ним читают строку, а справа идут одни цифры по складам */
+
+
 .data-table--warehouses tbody td:nth-child(-n+4) {
     font-weight: 600;
 }
 
-/* Тотал — оранжевым во всех трёх вкладках */
+
 .data-table--warehouses .col-total,
 .data-table--warehouses tbody td:nth-child(4) {
     color: var(--accent);
     font-weight: 700;
 }
 
-/* Полоса после Тотала отделяет «шапку строки» от цифр по складам */
+
 .data-table--warehouses th:nth-child(4),
 .data-table--warehouses td:nth-child(4) {
     border-right: 3px solid var(--border-hover);
 }
 
-/* Опорные колонки крупнее остальных: цифры по складам могут быть мелкими,
-   а баркод/артикул/название/тотал читают глазами постоянно */
+
 .data-table--warehouses thead th:nth-child(-n+4),
 .data-table--warehouses tbody td:nth-child(-n+4) {
     font-size: 1.1em;
 }
 
-/* Заголовок «Тотал» — тем же оранжевым, что и цифры под ним */
+
 .data-table--warehouses thead th:nth-child(4) {
     color: var(--accent);
 }
 
-/* На плотных таблицах опорные колонки не ужимаем вместе со складами */
+
 .data-table--warehouses.is-dense thead th:nth-child(-n+4),
 .data-table--warehouses.is-dense tbody td:nth-child(-n+4) {
     font-size: 1.15rem;
@@ -2610,24 +2557,24 @@ body.modal-open {
     font-size: 1rem;
 }
 
-/* --- Таблица остатков магазина: всё по центру --- */
+
 
 .data-table--stock th,
 .data-table--stock td {
     text-align: center;
 }
 
-/* «ИТОГО» в закреплённой строке — тоже по центру, а не прижато влево */
+
 .data-table--stock thead tr.totals-row .totals-label {
     text-align: center;
 }
 
-/* заголовки с иконкой фильтра выравниваем по центру колонки */
+
 .data-table--stock .tf-th-inner {
     align-items: center;
 }
 
-/* Маркетплейс в заголовке детализации складов */
+
 .mp-badge {
     display: inline-block;
     margin-left: 0.5em;
@@ -2641,7 +2588,7 @@ body.modal-open {
     border-radius: 999px;
 }
 
-/* rFBS — 8-я колонка, между FBS и FBO */
+
 .data-table--stock th:nth-child(8),
 .data-table--stock td:nth-child(8) {
     width: 11%;
@@ -2656,7 +2603,7 @@ body.modal-open {
 }
 
 
-/* ---------- История движений стока ---------- */
+
 .panel-header-actions {
     display: flex;
     gap: var(--space-2xs);
@@ -2669,8 +2616,7 @@ body.modal-open {
     gap: var(--space-2xs);
 }
 
-/* Вкладки-фильтры: обычные ссылки, чтобы выбранный вид оставался в адресе
-   и страницу можно было прислать коллеге уже отфильтрованной */
+
 .ops-filter {
     font-size: 0.85em;
     font-weight: 600;
@@ -2709,8 +2655,7 @@ body.modal-open {
 }
 
 
-/* Свёрнутый хвост складов: отделён и приглушён, чтобы не путать с обычной
-   колонкой склада — за ним стоит сумма по нескольким, а не один склад */
+
 .data-table--warehouses .col-other {
     background: rgba(255, 255, 255, 0.04);
     border-left: 2px solid var(--border-strong);
@@ -2722,18 +2667,18 @@ body.modal-open {
 }
 
 
-/* Итоги по складам — числа крупнее и заметнее обычных ячеек */
+
 .data-table--warehouses thead tr.totals-row .tot-warehouse {
     text-align: center;
 }
 
-/* Свёрнутый хвост в строке итогов не должен теряться на общем фоне */
+
 .data-table--warehouses thead tr.totals-row .col-other {
     color: var(--text);
 }
 
 
-/* Строка с галочкой и пояснением — например «в мусорку» у отгрузки */
+
 .check-line {
     display: flex;
     align-items: flex-start;
@@ -2758,10 +2703,7 @@ body.modal-open {
 }
 
 
-/* ---------- Блок площадки в окне о доступах ----------
-   Каждая площадка — отдельная карточка с полосой слева. Без неё блоки
-   сливались в сплошной текст, и понять, где кончается один маркетплейс и
-   начинается другой, было нельзя. */
+
 .mp-issue {
     border-left: 3px solid var(--border-hover);
     background: rgba(255, 255, 255, 0.03);
@@ -2774,7 +2716,7 @@ body.modal-open {
     margin-bottom: 0;
 }
 
-/* Незаполненный ключ — недосмотр, но не поломка: жёлтый, не красный */
+
 .mp-issue--missing {
     border-left-color: var(--accent);
 }
@@ -2807,8 +2749,7 @@ body.modal-open {
 }
 
 
-/* Вкладка площадки без ключа: приглушена, но кликабельна — по ней видно,
-   что площадка есть в планах, и что именно её не хватает */
+
 .mp-tab--nokey {
     opacity: 0.55;
 }
@@ -2818,22 +2759,20 @@ body.modal-open {
 }
 
 
-/* Предупреждение в шапке блока — например «режим просмотра» в админке */
+
 .panel-desc--warn {
     color: var(--accent);
     font-weight: 600;
 }
 
-/* Кнопка допуска к операциям: не разрушающая, но и не рядовая */
+
 .u-act--stock {
     border-color: rgba(247, 148, 29, 0.45);
     color: var(--accent);
 }
 
 
-/* ---------- Мусорка ----------
-   Разобранная позиция приглушается, но остаётся на месте: убирать её из
-   таблицы нельзя — количество никуда не делось, просто с ним разобрались. */
+
 .data-table--trash tbody tr.is-checked {
     opacity: 0.45;
 }
@@ -2860,8 +2799,639 @@ body.modal-open {
     font-weight: 700;
 }
 
-/* Излишек — фулфилмент отдал больше, чем числилось. Другой знак и смысл,
-   поэтому и цвет другой: путать его с недостачей нельзя. */
+
 .data-table--trash .trash-qty--surplus {
     color: #35d68f;
+}
+
+
+
+.workspace:has(.content--stock2) {
+    background: #f5f7fb;
+}
+
+.workspace:has(.content--stock2) .topbar {
+    border-bottom: 1px solid #dce3ec;
+    color: #172033;
+    background: #f5f7fb;
+}
+
+.workspace:has(.content--stock2) .topbar .eyebrow,
+.workspace:has(.content--stock2) .topbar-state {
+    color: #697586;
+}
+
+.content--stock2 {
+    color: #172033;
+    background: #f5f7fb;
+}
+
+.content--stock2 .page-subtitle {
+    color: #697586;
+}
+
+.stock2-shell {
+    display: grid;
+    gap: 1.1rem;
+}
+
+.stock2-hero,
+.stock2-panel,
+.stock2-kpi,
+.stock2-attention-card,
+.stock2-store,
+.stock2-market {
+    border: 1px solid #dce3ec;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+.stock2-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.15rem;
+}
+
+.stock2-hero h2,
+.stock2-panel h3,
+.stock2-store h3 {
+    margin: 0;
+    letter-spacing: 0;
+}
+
+.stock2-hero h2 {
+    font-size: 1.65rem;
+    line-height: 1.15;
+}
+
+.stock2-sync {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 12rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid #dce3ec;
+    border-radius: 8px;
+    color: #172033;
+    background: #f8fafc;
+    text-align: right;
+}
+
+.stock2-sync span,
+.stock2-kpi span,
+.stock2-kpi small,
+.stock2-attention-card small,
+.stock2-panel-head p,
+.stock2-market span,
+.stock2-store-meta,
+.stock2-product small {
+    color: #697586;
+}
+
+.stock2-summary {
+    display: grid;
+    grid-template-columns: 1.4fr repeat(4, minmax(8.5rem, 1fr));
+    gap: 0.75rem;
+}
+
+.stock2-kpi {
+    display: grid;
+    gap: 0.45rem;
+    min-height: 6.8rem;
+    padding: 0.9rem;
+}
+
+.stock2-kpi span,
+.stock2-attention-label {
+    font-size: 0.76rem;
+    font-weight: 760;
+}
+
+.stock2-kpi strong {
+    font-size: 1.55rem;
+    line-height: 1;
+}
+
+.stock2-kpi--blue {
+    border-color: #c9dcff;
+}
+
+.stock2-kpi--green {
+    border-color: #bfead7;
+}
+
+.stock2-kpi--violet {
+    border-color: #d9d3ff;
+}
+
+.stock2-kpi--warning {
+    border-color: #fde4b4;
+}
+
+.stock2-attention {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.stock2-attention-card {
+    display: grid;
+    align-content: start;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.95rem;
+    color: #172033;
+    text-decoration: none;
+    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.stock2-attention-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+}
+
+.stock2-attention-label {
+    color: #697586;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.stock2-attention-card > strong {
+    font-size: 1.8rem;
+    line-height: 1;
+}
+
+.stock2-attention-card--danger {
+    border-color: #fecaca;
+    background: #feeceb;
+}
+
+.stock2-attention-card--warning {
+    border-color: #fde4b4;
+    background: #fff3dc;
+}
+
+.stock2-attention-card--blue {
+    border-color: #c9dcff;
+    background: #eaf1ff;
+}
+
+.stock2-attention-card--violet {
+    border-color: #d9d3ff;
+    background: #f0edff;
+}
+
+.stock2-card-link,
+.stock2-detail-links a,
+.stock2-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.25rem;
+    width: max-content;
+    max-width: 100%;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid #dce3ec;
+    border-radius: 8px;
+    color: #172033;
+    background: #ffffff;
+    font-size: 0.85rem;
+    font-weight: 760;
+    text-decoration: none;
+}
+
+.stock2-back {
+    margin-bottom: 0.65rem;
+}
+
+.stock2-grid {
+    display: grid;
+    gap: 1.1rem;
+}
+
+.stock2-grid--main {
+    grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.75fr);
+}
+
+.stock2-panel {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.stock2-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid #dce3ec;
+}
+
+.stock2-panel-head p {
+    margin: 0.15rem 0 0;
+}
+
+.stock2-market-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+}
+
+.stock2-market {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0.9rem;
+    background: #f8fafc;
+    box-shadow: none;
+}
+
+.stock2-market-top,
+.stock2-market div:not(.stock2-market-top),
+.stock2-store-top,
+.stock2-store-meta,
+.stock2-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.stock2-market div:not(.stock2-market-top) {
+    padding-top: 0.5rem;
+    border-top: 1px solid #e7edf5;
+}
+
+.stock2-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.55rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.stock2-badge--ok {
+    color: #067647;
+    background: #e8f7f1;
+}
+
+.stock2-badge--warning {
+    color: #a15c00;
+    background: #fff3dc;
+}
+
+.stock2-badge--danger {
+    color: #b42318;
+    background: #feeceb;
+}
+
+.stock2-badge--info {
+    color: #175cd3;
+    background: #eaf1ff;
+}
+
+.stock2-badge--violet {
+    color: #6941c6;
+    background: #f0edff;
+}
+
+.stock2-badge--muted {
+    color: #697586;
+    background: #eef2f7;
+}
+
+.stock2-bars {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem;
+}
+
+.stock2-bar {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr) 5rem;
+    font-size: 0.88rem;
+}
+
+.stock2-track {
+    height: 0.6rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e8eef5;
+}
+
+.stock2-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+}
+
+.stock2-fill--ok {
+    background: #0f9f6e;
+}
+
+.stock2-fill--warning {
+    background: #d97706;
+}
+
+.stock2-fill--danger {
+    background: #dc2626;
+}
+
+.stock2-fill--info {
+    background: #2563eb;
+}
+
+.stock2-fill--violet {
+    background: #7c3aed;
+}
+
+.stock2-fill--muted {
+    background: #94a3b8;
+}
+
+.stock2-store-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(8.5rem, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+}
+
+.stock2-store {
+    min-width: 0;
+    padding: 0.85rem;
+    box-shadow: none;
+}
+
+.stock2-avatar {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
+    color: var(--store-text);
+    background: var(--store-color);
+    font-weight: 900;
+}
+
+.stock2-store-stock {
+    display: block;
+    margin-top: 0.55rem;
+    font-size: 1.45rem;
+    line-height: 1;
+}
+
+.stock2-store-meta {
+    margin-top: 0.6rem;
+}
+
+.stock2-store-chips,
+.stock2-detail-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.stock2-store-chips {
+    margin-top: 0.7rem;
+}
+
+.stock2-store-chips span {
+    padding: 0.2rem 0.48rem;
+    border-radius: 999px;
+    color: #475467;
+    background: #eef2f7;
+    font-size: 0.74rem;
+    font-weight: 760;
+}
+
+.stock2-detail-links {
+    padding: 1rem;
+}
+
+.stock2-detail-links a:hover,
+.stock2-back:hover {
+    border-color: #b9c4d3;
+    background: #f8fafc;
+}
+
+.stock2-table-wrap {
+    overflow-x: auto;
+}
+
+.stock2-table {
+    width: 100%;
+    min-width: 58rem;
+    border-collapse: collapse;
+    background: #ffffff;
+}
+
+.stock2-table th,
+.stock2-table td {
+    padding: 0.75rem 0.85rem;
+    border-bottom: 1px solid #dce3ec;
+    color: #172033;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.stock2-table th {
+    color: #697586;
+    background: #f8fafc;
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.stock2-table tbody tr:hover {
+    background: #fbfcff;
+}
+
+.stock2-table td:nth-child(4),
+.stock2-table td:nth-child(5),
+.stock2-table td:nth-child(6) {
+    font-variant-numeric: tabular-nums;
+}
+
+.stock2-product {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 16rem;
+}
+
+.stock2-product strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stock2-empty {
+    color: #697586;
+    text-align: center;
+}
+
+.stock2-pagination {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    border-top: 1px solid #dce3ec;
+}
+
+.stock2-pagination > span:not(.stock2-page-button) {
+    display: grid;
+    gap: 0.15rem;
+    color: #344054;
+    text-align: center;
+}
+
+.stock2-pagination small {
+    color: #697586;
+}
+
+.stock2-page-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.35rem;
+    width: max-content;
+    max-width: 100%;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid #cfd8e5;
+    border-radius: 6px;
+    color: #344054;
+    background: #ffffff;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.stock2-page-button:last-child {
+    justify-self: end;
+}
+
+.stock2-page-button:hover {
+    border-color: #9eb5d4;
+    background: #f8fafc;
+}
+
+.stock2-page-button.is-disabled {
+    color: #98a2b3;
+    background: #f8fafc;
+    pointer-events: none;
+}
+
+@media (max-width: 1500px) {
+    .stock2-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .stock2-attention {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stock2-store-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1100px) {
+    .stock2-hero,
+    .stock2-panel-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .stock2-sync {
+        text-align: left;
+    }
+
+    .stock2-grid--main,
+    .stock2-market-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stock2-store-grid,
+    .stock2-summary,
+    .stock2-attention {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    .stock2-store-grid,
+    .stock2-summary,
+    .stock2-attention {
+        grid-template-columns: 1fr;
+    }
+
+    .stock2-bar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .stock2-pagination {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .stock2-pagination > span:not(.stock2-page-button) {
+        grid-column: 1 / -1;
+        grid-row: 1;
+    }
+}
+.u-store-field {
+    display: grid;
+    gap: 8px;
+    margin: 4px 0 12px;
+}
+
+.u-store-field-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #667085;
+    text-transform: uppercase;
+}
+
+.u-store-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 180px;
+}
+
+.u-store-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+    line-height: 1.2;
+    color: #344054;
+    cursor: pointer;
+}
+
+.u-store-option input {
+    margin: 0;
+}
+
+.u-store-badge {
+    display: inline-flex;
+    align-items: center;
+    margin: 2px;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: #f2f4f7;
+    color: #344054;
+    font-size: 12px;
+    font-weight: 600;
 }

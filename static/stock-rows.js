@@ -1,17 +1,4 @@
-/* Редактор списка позиций — общий для перемещения и отгрузки.
- *
- * Оба блока делают одно и то же: строка «код товара + количество», поиск по
- * каталогу с подсказками, подсказка «есть N» из остатка ячейки-источника и
- * запрет дублей. Разница только в том, откуда берётся источник: у перемещения
- * это пара «откуда», у отгрузки — единственная пара полей.
- *
- * Раньше это было двумя копиями одного кода. Копии разъезжаются: правку
- * находят в одной и забывают в другой, и блоки начинают вести себя по-разному
- * на одинаковых действиях.
- *
- * Классы строк намеренно оставлены mv-*, чтобы не плодить одинаковые правила
- * в CSS — они описывают вид строки, а не принадлежность к блоку.
- */
+
 window.createRowEditor = function (options) {
     var rowsBox = options.rowsBox;
     var status = options.status;
@@ -20,26 +7,19 @@ window.createRowEditor = function (options) {
     var getSource = options.getSource;
     var emptyHint = options.emptyHint || 'Сначала выберите склад';
 
-    var sourceStock = {};   // {article: количество} в выбранной ячейке
+    var sourceStock = {};
     var suggestTimer = null;
 
-    /* Своё ли сообщение сейчас в строке состояния.
-       Без этого проверка строк затирала ответ сервера: операция падала,
-       текст ошибки появлялся, а следующий же пересчёт строк его стирал —
-       и выглядело так, будто ничего не произошло. */
+
     var ownMessage = false;
 
-    /* Разрешён ли минус в количестве. По умолчанию нет: отрицательное
-       количество осмысленно только в мусорке (излишек), в остальных
-       операциях это опечатка. */
+
     var allowNegative = false;
 
     function loadSourceStock() {
         var src = getSource();
         if (!src.ff || !src.mp) { sourceStock = {}; refreshHints(); return; }
-        /* catch стоит ДО обработки ответа, а не после: иначе он ловил бы и
-           ошибки самой отрисовки, молча обнуляя остатки склада — подсказки
-           «есть N» тогда просто исчезали, и понять почему было нельзя. */
+
         fetch('/stock/' + storeSlug + '/ff-cell?ff=' + encodeURIComponent(src.ff) +
               '&mp=' + encodeURIComponent(src.mp))
             .then(function (r) { return r.json(); })
@@ -47,7 +27,7 @@ window.createRowEditor = function (options) {
             .then(function (d) {
                 sourceStock = (d && d.stock) || {};
                 refreshHints();
-                /* склад сменили — то, что было допустимо, могло стать перебором */
+
                 validateRows();
             });
     }
@@ -56,9 +36,7 @@ window.createRowEditor = function (options) {
         rowsBox.querySelectorAll('.mv-row').forEach(updateHint);
     }
 
-    /* Сколько лежит на выбранном складе по введённому коду.
-       null — если код не введён или это баркод: в остатках ключ артикул,
-       баркод разрешает уже сервер, и до ответа мы честно не знаем остаток. */
+
     function availableFor(row) {
         var code = row.querySelector('.mv-code').value.trim();
         if (!code) return null;
@@ -78,9 +56,7 @@ window.createRowEditor = function (options) {
             return;
         }
 
-        /* max подсказывает стрелкам поля и мобильной клавиатуре предел,
-           но сам по себе ввод не запрещает — руками вписать больше можно,
-           поэтому ниже ещё и проверка перед отправкой */
+
         qtyInput.setAttribute('max', String(available));
         qtyInput.setAttribute('min', allowNegative ? '-999999' : '1');
 
@@ -94,9 +70,7 @@ window.createRowEditor = function (options) {
         if (box) box.classList.remove('open');
     }
 
-    /* Живая проверка строк: дубли и перебор остатка.
-       Обе ошибки видно сразу и обе гасят кнопку — отправлять заведомо
-       неверные данные, чтобы получить отказ от сервера, незачем. */
+
     function validateRows() {
         var seen = {};
         var dupes = [];
@@ -135,14 +109,14 @@ window.createRowEditor = function (options) {
         }
 
         if (problems.length) {
-            /* с большой буквы, потому что это единственный текст в поле */
+
             var text = problems.join('. ');
             status.textContent = text.charAt(0).toUpperCase() + text.slice(1);
             status.classList.add('ff-select-status--bad');
             ownMessage = true;
             submitBtn.disabled = true;
         } else {
-            /* убираем только СВОЁ сообщение: ошибку от сервера трогать нельзя */
+
             if (ownMessage) {
                 status.textContent = '';
                 status.classList.remove('ff-select-status--bad');
@@ -178,7 +152,7 @@ window.createRowEditor = function (options) {
                 code.value = b.getAttribute('data-code');
                 box.classList.remove('open');
                 updateHint(row);
-                validateRows();   /* подстановка тоже может создать дубль */
+                validateRows();
                 qty.focus();
             });
         });
@@ -199,8 +173,7 @@ window.createRowEditor = function (options) {
 
             suggestTimer = setTimeout(function () {
                 var src = getSource();
-                /* ff и mp -> сервер отдаст только то, что реально лежит
-                   в этой ячейке, вместе с количеством */
+
                 var url = '/stock/' + storeSlug + '/catalog-search?q=' + encodeURIComponent(q) +
                     '&ff=' + encodeURIComponent(src.ff || '') +
                     '&mp=' + encodeURIComponent(src.mp || '');
@@ -216,7 +189,7 @@ window.createRowEditor = function (options) {
         });
         qty.addEventListener('input', function () {
             updateHint(row);
-            validateRows();   /* перебор гасит кнопку так же, как дубль */
+            validateRows();
         });
 
         row.querySelector('.mv-remove').addEventListener('click', function () {
@@ -225,7 +198,7 @@ window.createRowEditor = function (options) {
             } else {
                 code.value = ''; qty.value = ''; updateHint(row);
             }
-            validateRows();   /* после удаления дубля кнопка снова оживает */
+            validateRows();
         });
     }
 
@@ -261,7 +234,7 @@ window.createRowEditor = function (options) {
         addRow();
     }
 
-    /* При смене склада подсказки относятся к прежней ячейке — закрываем */
+
     function onSourceChange() {
         rowsBox.querySelectorAll('.mv-row').forEach(closeSuggest);
         loadSourceStock();
@@ -269,8 +242,7 @@ window.createRowEditor = function (options) {
 
     addRow();
 
-    /* Сообщение от сервера: помечаем как чужое, чтобы проверка строк
-       его не стёрла при ближайшем пересчёте. */
+
     function showServerMessage(text, isError) {
         status.textContent = text;
         status.classList.toggle('ff-select-status--bad', !!isError);
@@ -298,14 +270,7 @@ window.createRowEditor = function (options) {
 };
 
 
-/* Переключатель способа ввода в подблоке «Товары и количества».
- *
- * Три способа — альтернативы, поэтому показываем только выбранный: так блок
- * занимает втрое меньше места и не остаётся сомнений, что именно уйдёт на
- * сервер. При переключении поля остальных способов очищаются: иначе забытая
- * в скрытом поле ссылка ушла бы вместе с выбранным файлом, и попробуй пойми,
- * почему провелось не то.
- */
+
 window.initIoBlock = function (root) {
     if (!root) return { current: function () { return 'manual'; } };
 
@@ -323,8 +288,7 @@ window.initIoBlock = function (root) {
                        && !input.classList.contains('manual-code')
                        && !input.classList.contains('mv-qty')
                        && !input.classList.contains('manual-qty')) {
-                /* строки товаров не трогаем: их пользователь набирал руками,
-                   и потерять их при случайном клике по вкладке обиднее всего */
+
                 input.value = '';
             }
         });

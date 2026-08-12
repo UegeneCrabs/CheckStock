@@ -1,14 +1,4 @@
-/**
- * Модальные окна вместо нативных confirm()/alert().
- *
- * Нативные диалоги нельзя оформить, они выглядят чужеродно и блокируют
- * поток выполнения. Здесь — обычный оверлей с промисом наружу:
- *
- *     Modal.confirm({ title: '...', text: '...' }).then(function (ok) { ... });
- *     Modal.alert({ title: '...', text: '...', copyText: 'пароль' });
- *
- * Закрывается по Esc, клику по фону и кнопке отмены.
- */
+
 window.Modal = (function () {
     'use strict';
 
@@ -23,7 +13,7 @@ window.Modal = (function () {
         document.body.appendChild(overlay);
 
         overlay.addEventListener('mousedown', function (e) {
-            // клик мимо окна = отмена
+
             if (e.target === overlay && closeCurrent) closeCurrent(false);
         });
 
@@ -52,9 +42,9 @@ window.Modal = (function () {
               '</div>'
             : '';
 
-        // Обычный текст разбиваем на абзацы по переносам. Если вызывающему
-        // коду нужна структура сложнее — он передаёт готовую разметку в
-        // bodyHtml и сам отвечает за экранирование.
+
+
+
         var textHtml = opts.bodyHtml || String(opts.text || '')
             .split('\n')
             .filter(function (line) { return line.trim() !== ''; })
@@ -118,7 +108,7 @@ window.Modal = (function () {
         confirm: open,
         alert: function (options) {
             var opts = options || {};
-            opts.cancelLabel = null;              // у уведомления кнопка отмены не нужна
+            opts.cancelLabel = null;
             opts.confirmLabel = opts.confirmLabel || 'Понятно';
             return open(opts);
         }

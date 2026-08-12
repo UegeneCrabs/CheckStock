@@ -20,6 +20,11 @@ $create_hint
 $role_options
                 </select>
 
+                <div class="u-store-field" id="u-stores">
+                    <span class="u-store-field-title">Магазины</span>
+$store_options
+                </div>
+
                 <button class="btn-primary" type="button" id="u-create"$form_disabled>Создать сотрудника</button>
                 <p class="ff-select-status" id="u-status"></p>
             </section>
@@ -36,6 +41,7 @@ $role_options
                                 <th>Роль</th>
                                 <th>Статус</th>
                                 <th>Изменения остатков</th>
+                                <th>Магазины</th>
                                 <th>Действия</th>
                             </tr>
                         </thead>
@@ -81,21 +87,28 @@ $log_rows
                     password: document.getElementById('u-pass'),
                     role: document.getElementById('u-role')
                 };
+                var storeBox = document.getElementById('u-stores');
 
-                // --- генератор пароля ---
+                function selectedStores(root) {
+                    if (!root) return [];
+                    return Array.prototype.slice.call(root.querySelectorAll('input[name="stores"]:checked'))
+                        .map(function (input) { return input.value; });
+                }
+
+
                 var genBtn = document.getElementById('u-gen');
                 var passHint = document.getElementById('u-pass-hint');
 
-                // Без похожих друг на друга символов (0/O, 1/l/I) — пароль часто
-                // диктуют или переписывают руками, и это главный источник ошибок.
-                // Доллар в алфавите удвоен: страницы собираются через
-                // string.Template, и одиночный знак доллара там означает
-                // подстановку переменной. После сборки останется один.
+
+
+
+
+
                 var ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$$%*-_';
                 var LENGTH = 16;
 
                 function generatePassword() {
-                    // crypto, а не Math.random: пароль должен быть непредсказуемым
+
                     var bytes = new Uint32Array(LENGTH);
                     window.crypto.getRandomValues(bytes);
                     var out = '';
@@ -121,7 +134,7 @@ $log_rows
                     });
                 });
 
-                // --- действия над сотрудниками ---
+
                 function post(url, body) {
                     return fetch(url, {
                         method: 'POST',
@@ -203,6 +216,24 @@ $log_rows
                         });
                     }
 
+                    var storesBtn = box.querySelector('.u-act--stores');
+                    if (storesBtn) {
+                        storesBtn.addEventListener('click', function () {
+                            var row = box.closest('tr');
+                            var stores = selectedStores(row);
+                            if (!stores.length) {
+                                return Modal.alert({
+                                    title: 'Магазины не выбраны',
+                                    text: 'Выберите хотя бы один магазин для сотрудника.',
+                                    danger: true
+                                });
+                            }
+                            var fd = new FormData();
+                            stores.forEach(function (slug) { fd.append('stores', slug); });
+                            run(post('/admin/users/' + id + '/stores', fd));
+                        });
+                    }
+
                     box.querySelector('.u-act--reset').addEventListener('click', function () {
                         var pass = generatePassword();
                         Modal.confirm({
@@ -237,9 +268,12 @@ $log_rows
                         if (!v) missing = true;
                         data.append(k, v);
                     });
+                    var stores = selectedStores(storeBox);
+                    if (!stores.length) missing = true;
+                    stores.forEach(function (slug) { data.append('stores', slug); });
 
                     if (missing) {
-                        status.textContent = 'Заполни все поля';
+                        status.textContent = 'Заполни все поля и выбери магазины';
                         return;
                     }
 

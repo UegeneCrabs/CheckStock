@@ -3,17 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PAKETA — Вход</title>
+    <title>РАКЕТА — Вход</title>
     <link rel="stylesheet" href="/static/style.css?v=53">
+    <link rel="stylesheet" href="/static/skladno-theme.css?v=1">
 </head>
 <body class="login-body">
-    <main class="login-main">
-        <form class="login-card" method="post" action="/login">
-            <div class="login-logo">PAKE<span class="accent">TA</span></div>
-            <p class="login-subtitle">Снабжение и остатки</p>
+    <main class="admin-login-shell">
+        <form class="admin-login-card" method="post" action="/login">
+            <div class="login-brand">
+                <span class="login-brand-mark">Р</span>
+                <span>РАКЕТА</span>
+            </div>
+            <span class="login-kicker">СИСТЕМА УПРАВЛЕНИЯ ЗАПАСАМИ</span>
+            <h1>Вход в РАКЕТУ</h1>
+            <p>Остатки, склады и перемещения доступны только сотрудникам.</p>
 
             $error
 
+            <div class="admin-login-form">
             <label class="login-field">
                 <span>Логин</span>
                 <input type="text" name="login" autocomplete="username" autofocus required>
@@ -24,7 +31,9 @@
                 <input type="password" name="password" autocomplete="current-password" required>
             </label>
 
-            <button class="btn-primary" type="submit">Войти</button>
+                <button class="btn-primary" type="submit">Войти</button>
+            </div>
+            <span class="login-security-note">Защищённый вход · рабочие данные остаются внутри системы</span>
         </form>
     </main>
 </body>

@@ -1,12 +1,20 @@
         <h2>Остатки</h2>
-        <p class="page-subtitle">Выберите магазин, чтобы посмотреть остатки</p>
+        <p class="page-subtitle">Сводка по кабинетам, маркетплейсам и текущему запасу</p>
 
-        <div class="sync-panel" id="sync-wb-panel">
-            <div class="sync-bar">
-                <button class="btn-primary btn-sync" type="button" id="sync-wb-btn">Обновить остатки со всех маркетплейсов</button>
-                <span class="sync-status" id="sync-wb-status"></span>
+$stock_summary
+
+        <div class="sync-panel stock-sync-panel" id="sync-wb-panel">
+            <div class="stock-sync-main">
+                <span class="stock-sync-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3"></path><path d="M4 4v5h5"></path><path d="M4 13a8 8 0 0 0 14.9 3"></path><path d="M20 20v-5h-5"></path></svg>
+                </span>
+                <span class="stock-sync-copy">
+                    <strong>Синхронизация остатков</strong>
+                    <small>WB, Ozon и Яндекс Маркет по всем магазинам</small>
+                </span>
             </div>
 
+            <div class="stock-sync-actions">
             <p class="sync-last">
                 <svg class="sync-last-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
@@ -17,45 +25,20 @@
                 <span>Последняя выгрузка:</span>
                 <strong id="sync-wb-last">$last_sync</strong>
             </p>
+                <button class="btn-primary btn-sync" type="button" id="sync-wb-btn">Обновить данные</button>
+            </div>
+
+            <span class="sync-status" id="sync-wb-status"></span>
 
             <div class="sync-results" id="sync-wb-results"></div>
         </div>
 
-        <div class="store-grid">
-            <a class="store-card" href="/stock/rimili" style="--g1:#ff416c; --g2:#ff4b2b;">
-                <div class="store-avatar" style="background:#E63946">RI</div>
-                <div class="store-name">RIMILI</div>
-            </a>
-            <a class="store-card" href="/stock/tris" style="--g1:#43e97b; --g2:#38f9d7;">
-                <div class="store-avatar" style="background:#2A9D8F">TR</div>
-                <div class="store-name">TRIS</div>
-            </a>
-            <a class="store-card" href="/stock/rockkiddo" style="--g1:#f7971e; --g2:#ffd200;">
-                <div class="store-avatar" style="background:#E9C46A;color:#1f2a44">RK</div>
-                <div class="store-name">ROCKKIDDO</div>
-            </a>
-            <a class="store-card" href="/stock/trusthome" style="--g1:#a18cd1; --g2:#fbc2eb;">
-                <div class="store-avatar" style="background:#8338EC">TH</div>
-                <div class="store-name">TRUSTHOME</div>
-            </a>
-            <a class="store-card" href="/stock/sokoloff" style="--g1:#4facfe; --g2:#00f2fe;">
-                <div class="store-avatar" style="background:#3A86FF">SO</div>
-                <div class="store-name">SOKOLOFF</div>
-            </a>
-            <a class="store-card" href="/stock/gogol" style="--g1:#00c9ff; --g2:#92fe9d;">
-                <div class="store-avatar" style="background:#06D6A0">GO</div>
-                <div class="store-name">GOGOL</div>
-            </a>
-            <a class="store-card" href="/stock/toyka" style="--g1:#f83600; --g2:#f9d423;">
-                <div class="store-avatar" style="background:#FF6D00">TO</div>
-                <div class="store-name">TOYKA</div>
-            </a>
+        <div class="store-grid stock-store-grid">
+$store_cards
         </div>
 
         <script>
-            /* Возврат к списку магазинов = конец визита в кабинет. Снимаем
-               отметки о показанных предупреждениях, чтобы при следующем заходе
-               в магазин окно появилось снова. */
+
             (function () {
                 try {
                     var storage = window.sessionStorage;
@@ -64,7 +47,7 @@
                         if (key && key.indexOf('paketa.access.') === 0) storage.removeItem(key);
                     }
                 } catch (e) {
-                    /* приватный режим — отметок и не было */
+
                 }
             })();
 
@@ -89,9 +72,7 @@
                     return badge(label, 'error', entry.error);
                 }
 
-                /* Блок одного маркетплейса внутри карточки магазина.
-                   У площадок разный набор данных: у WB это две схемы, у Ozon —
-                   каталог и общий итог по остаткам, поэтому строки разные. */
+
                 function mpBlock(title, hasToken, body) {
                     if (!hasToken) {
                         return '<div class="sync-mp sync-mp--off">'
@@ -105,10 +86,7 @@
                         + '</div>';
                 }
 
-                /* Каталог показываем, только когда есть что сказать:
-                   «товаров столько-то» полезно, «0 изменений» — шум.
-                   Один и тот же вид у Ozon и Яндекса: обе площадки отдают
-                   свой каталог, и читаться они должны одинаково. */
+
                 function catalogBadge(cat) {
                     if (cat && cat.ok === false) return badge('каталог', 'error', cat.error);
                     if (!cat || !cat.total) return '';

@@ -1,0 +1,118 @@
+        <section class="dc" data-decision-center>
+            <div class="dc-head">
+                <div>
+                    <div class="dc-headline-row">
+                        <span class="dc-wb-badge" aria-label="Wildberries">WB</span>
+                        <p class="section-kicker">ЦЕНТР РЕШЕНИЙ</p>
+                    </div>
+                    <h2>Что сделать сегодня, чтобы увеличить продажи</h2>
+                    <p class="page-subtitle">Wildberries · спрос, воронка, реклама, выкуп и остатки в одном приоритизированном списке</p>
+                </div>
+                <div class="dc-head-actions">
+                    <label class="dc-store-field">
+                        <span>Магазин</span>
+                        <select class="select-control" data-dc-store>$store_options</select>
+                    </label>
+                    <button class="btn-primary dc-sync-button" type="button" data-dc-sync>
+                        <span class="dc-sync-icon" aria-hidden="true">↻</span>
+                        <span data-dc-sync-label>Обновить WB</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="dc-status-line" role="status" aria-live="polite">
+                <span class="dc-live-dot" data-dc-live-dot></span>
+                <span data-dc-status>Загружаем аналитику Wildberries…</span>
+            </div>
+
+            <article class="dc-priority-banner">
+                <div class="dc-priority-mark" aria-hidden="true">01</div>
+                <div class="dc-priority-copy">
+                    <span>НАЧАТЬ С ПРИОРИТЕТА</span>
+                    <h3 data-dc-potential-title>Считаем потенциал решений</h3>
+                    <p>Потенциал — модельная оценка. Каждое изменение подтверждайте экспериментом и контрольной метрикой.</p>
+                </div>
+                <a href="#dc-queue" class="dc-priority-link">К очереди <span>↓</span></a>
+            </article>
+
+            <div class="dc-kpis" data-dc-kpis aria-label="Ключевые показатели"></div>
+
+            <article class="dc-panel dc-funnel-panel">
+                <div class="dc-section-head">
+                    <div>
+                        <p class="section-kicker">ВОРОНКА ЗА 28 ДНЕЙ</p>
+                        <h3>Где портфель теряет покупателей</h3>
+                    </div>
+                    <span class="dc-panel-note">Конверсия относительно предыдущего этапа</span>
+                </div>
+                <div class="dc-funnel" data-dc-funnel></div>
+                <div class="dc-reading-note"><strong>Как читать:</strong> расчётный охват помогает увидеть масштаб, но не является прямым числом органических показов WB. Решение принимается по связке охвата, переходов, корзин, заказов и выкупов.</div>
+            </article>
+
+            <section class="dc-workspace" id="dc-queue">
+                <article class="dc-panel dc-queue-panel">
+                    <div class="dc-section-head dc-section-head--queue">
+                        <div>
+                            <p class="section-kicker">ОЧЕРЕДЬ РЕШЕНИЙ</p>
+                            <h3>Сначала — максимальный эффект на прибыль</h3>
+                        </div>
+                        <span class="dc-count" data-dc-count>0</span>
+                    </div>
+                    <div class="dc-filters" data-dc-filters>
+                        <div class="dc-filter-group" data-dc-domain-filters></div>
+                        <div class="dc-filter-group dc-filter-group--status" data-dc-status-filters></div>
+                    </div>
+                    <div class="dc-queue" data-dc-queue></div>
+                    <button class="dc-more" type="button" data-dc-more hidden>Показать ещё</button>
+                </article>
+
+                <aside class="dc-panel dc-side-panel">
+                    <div class="dc-section-head">
+                        <div>
+                            <p class="section-kicker">ПЕРЕРАСПРЕДЕЛЕНИЕ</p>
+                            <h3>Больше результата с того же рубля</h3>
+                        </div>
+                    </div>
+                    <div class="dc-reallocations" data-dc-reallocations></div>
+                    <div class="dc-model-note">
+                        <strong>Что уже учтено</strong>
+                        <span>Заказы и продажи</span>
+                        <span>Цены и себестоимость</span>
+                        <span>Сток WB и ФФ</span>
+                        <span>Воронка, поиск и реклама WB</span>
+                    </div>
+                </aside>
+            </section>
+
+            <article class="dc-panel dc-portfolio-panel">
+                <div class="dc-section-head">
+                    <div>
+                        <p class="section-kicker">ПОРТФЕЛЬ</p>
+                        <h3>Здоровье товаров и следующий шаг</h3>
+                    </div>
+                    <span class="dc-panel-note">Только Wildberries</span>
+                </div>
+                <div class="dc-table-wrap">
+                    <table class="dc-table">
+                        <thead><tr><th>Товар</th><th>Магазин</th><th>Решение</th><th>Здоровье</th><th>Динамика</th><th>Выкуп</th><th>Запас</th><th>ДРР</th></tr></thead>
+                        <tbody data-dc-portfolio></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="dc-panel dc-playbooks-panel">
+                <div class="dc-section-head">
+                    <div>
+                        <p class="section-kicker">УНИВЕРСАЛЬНЫЕ ПЛЕЙБУКИ</p>
+                        <h3>Одинаковая диагностика для любого товара WB</h3>
+                    </div>
+                </div>
+                <div class="dc-playbooks" data-dc-playbooks></div>
+            </article>
+
+            <div class="dc-loading" data-dc-loading aria-live="polite">
+                <span class="sales-loader"></span>
+                <strong>Собираем решения</strong>
+            </div>
+            <div class="dc-error" data-dc-error hidden role="alert"></div>
+        </section>

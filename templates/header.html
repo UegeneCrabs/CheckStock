@@ -1,18 +1,60 @@
-    <header>
-        <div class="header-inner">
-            <a class="logo" href="/">PAKE<span class="accent">TA</span></a>
-            <nav>
-                <ul>
-                    <li><a href="/supply" class="$supply_active">Снабжение</a></li>
-                    <li><a href="/stock" class="$stock_active">Остатки</a></li>
-$admin_link
-                </ul>
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="РАКЕТА — на главную">
+                <span class="brand-mark">Р</span>
+                <span>РАКЕТА</span>
+            </a>
+
+            <nav class="side-nav" aria-label="Основная навигация">
+                <div class="nav-group $sales_open" data-nav-group>
+                    <div class="nav-group-head">
+                        <a class="nav-item $sales_active" href="/sales">
+                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M22 19H2"></path></svg>
+                            <span>Продажи</span>
+                        </a>
+                        <button class="nav-group-toggle" type="button" aria-label="Показать разделы продаж"
+                                aria-expanded="$sales_expanded" data-nav-toggle>
+                            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                        </button>
+                    </div>
+                    <div class="nav-submenu" data-nav-submenu>
+                        <a class="nav-subitem $sales_decision_active" href="/sales/decision-center">Центр решений WB</a>
+                        <a class="nav-subitem $sales_ephemerides_active" href="/sales/ephemerides">Эфемериды</a>
+                        <a class="nav-subitem $sales_rnp_active" href="/sales/rnp">РНП</a>
+                        <a class="nav-subitem $sales_unit_active" href="/sales/unit-economics">Юнит-экономика</a>
+                        <a class="nav-subitem $sales_wb_fbs_active" href="/sales/unit-economics/wb-fbs">Юнит-экономика WB FBS</a>
+                        <a class="nav-subitem $sales_ozon_active" href="/sales/unit-economics/ozon">Юнит-экономика Ozon</a>
+                        <a class="nav-subitem $sales_yandex_active" href="/sales/unit-economics/yandex-market">Юнит-экономика Яндекс Маркет</a>
+                    </div>
+                </div>
+                <a class="nav-item $supply_active" href="/supply">
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17h4V5H2v12h3"></path><path d="M14 9h4l4 4v4h-3"></path><circle cx="7.5" cy="17.5" r="2.5"></circle><circle cx="16.5" cy="17.5" r="2.5"></circle></svg>
+                    <span>Снабжение</span>
+                </a>
+                <a class="nav-item $stock_active" href="/stock">
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
+                    <span>Остатки</span>
+                </a>
+                <a class="nav-item $stock2_active" href="/stock-2">
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16"></path><path d="M4 12h16"></path><path d="M4 19h16"></path><path d="M8 5v14"></path><path d="M16 5v14"></path></svg>
+                    <span>Остатки 2</span>
+                </a>
             </nav>
 
-            <div class="user-box">
-                <span class="user-name">$user_name</span>
-                <span class="user-role">$user_role</span>
-                <a class="logout-link" href="/logout" title="Выйти">Выйти</a>
+            <div class="sidebar-bottom">
+                <div class="nav-utility">$admin_link</div>
+                <div class="connection">
+                    <span class="live-dot" aria-hidden="true"></span>
+                    <span>Подключено</span>
+                </div>
+                <div class="profile">
+                    <span class="avatar">$user_initials</span>
+                    <span class="profile-copy">
+                        <strong>$user_name</strong>
+                        <small>$user_role</small>
+                    </span>
+                    <a class="profile-logout" href="/logout" title="Выйти" aria-label="Выйти">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path></svg>
+                    </a>
+                </div>
             </div>
-        </div>
-    </header>
+        </aside>
