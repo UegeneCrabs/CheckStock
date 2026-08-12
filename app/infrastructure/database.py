@@ -36,15 +36,19 @@ class DatabaseRow(Mapping[str, DatabaseScalar]):
 
 
 class DatabaseResult:
-    def __init__(self, result: CursorResult[tuple[DatabaseScalar, ...]]) -> None:
+    def __init__(self, result: CursorResult[tuple[DatabaseScalar, ...]] | None) -> None:
         self._result = result
 
     @property
     def lastrowid(self) -> int:
+        if self._result is None:
+            return 0
         return int(self._result.lastrowid or 0)
 
     @property
     def rowcount(self) -> int:
+        if self._result is None:
+            return 0
         return int(self._result.rowcount)
 
     def _row(self, row: object | None) -> DatabaseRow | None:
@@ -54,12 +58,18 @@ class DatabaseResult:
         return DatabaseRow(tuple(mapping.keys()), tuple(mapping.values()))
 
     def fetchone(self) -> DatabaseRow | None:
+        if self._result is None:
+            return None
         return self._row(self._result.fetchone())
 
     def fetchall(self) -> list[DatabaseRow]:
+        if self._result is None:
+            return []
         return [self._row(row) for row in self._result.fetchall()]
 
     def __iter__(self) -> Iterator[DatabaseRow]:
+        if self._result is None:
+            return
         for row in self._result:
             converted = self._row(row)
             if converted is not None:
@@ -76,6 +86,8 @@ class DatabaseConnection(AbstractContextManager["DatabaseConnection"]):
 
     def executemany(self, statement: str, parameters: Iterable[Sequence[DatabaseScalar]]) -> DatabaseResult:
         values = [tuple(row) for row in parameters]
+        if not values:
+            return DatabaseResult(None)
         return DatabaseResult(self._connection.exec_driver_sql(statement, values))
 
     def executescript(self, script: str) -> None:
