@@ -187,6 +187,14 @@ class RepositoryUnitTests(unittest.TestCase):
             "Москва",
         )
 
+        db.replace_mp_warehouse_stock(
+            "rimili",
+            "WB",
+            "fbo",
+            [("A-1", "Пустой", None, 0, NOW)],
+        )
+        self.assertEqual(db.get_mp_warehouse_details("rimili", "WB", "fbo"), [])
+
         self.assertEqual(db.save_warehouse_clusters("WB", {}, NOW), 0)
         self.assertEqual(db.save_warehouse_clusters("WB", {"Коледино": "Центр"}, NOW), 1)
         self.assertEqual(db.save_warehouse_clusters("WB", {"Коледино": "Москва"}, NOW), 0)
