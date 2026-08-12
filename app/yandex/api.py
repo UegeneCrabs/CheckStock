@@ -1,25 +1,3 @@
-"""
-Клиент Partner API Яндекс Маркета — только чтение каталога и остатков.
-
-Как и в клиентах WB и Ozon, работаем стандартным urllib, без зависимостей.
-
-Что здесь устроено иначе, чем у соседей:
-
-- авторизация одним заголовком `Api-Key`. Прежние OAuth-токены Яндекс
-  свернул, поэтому ничего, кроме ключа, не нужно;
-- два идентификатора вместо одного. Каталог живёт в кабинете (businessId),
-  остатки — в магазине (campaignId), и у одного кабинета магазинов может
-  быть несколько: по одному на модель работы. То есть «магазин» в нашем
-  понимании на Яндексе может оказаться набором из FBY, FBS и DBS сразу;
-- остатки приходят разложенными по типам: AVAILABLE, FIT, FREEZE, DEFECT,
-  QUARANTINE и другие. Нам нужен только доступный к продаже — остальное
-  либо резерв под заказы, либо брак, и в наличие его записывать нельзя;
-- пагинация курсорная (nextPageToken), но у некоторых методов лимит 200,
-  а не 1000, как у Ozon.
-
-Все методы возвращают уже развёрнутые данные, без обёртки {"status", "result"}.
-"""
-
 import json
 import logging
 import socket
@@ -28,26 +6,26 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-logger = logging.getLogger("checkstock.yandex_api")
+from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.partner.market.yandex.ru"
-REQUEST_TIMEOUT = 60
+REQUEST_TIMEOUT = settings.yandex_request_timeout_seconds
 
-MAX_ATTEMPTS = 4
-RETRY_BACKOFF_SECONDS = 5
+MAX_ATTEMPTS = settings.yandex_request_attempts
+RETRY_BACKOFF_SECONDS = settings.yandex_retry_backoff_seconds
 
-# У метода остатков лимит страницы 200, у каталога — 200. Больше не просим:
-# Маркет вернёт 400, а не «сколько сможет».
+
 PAGE_SIZE = 200
 
-# Модели работы. FBY — товар лежит на складе Маркета (аналог FBO у Ozon),
-# остальные — на складе продавца или партнёра.
+
 SCHEME_FBY = "fby"
 SCHEME_FBS = "fbs"
 SCHEME_DBS = "dbs"
 SCHEME_EXPRESS = "express"
 
-# Как называется модель в ответе Маркета -> как мы её храним
+
 CAMPAIGN_SCHEMES = {
     "FBY": SCHEME_FBY,
     "FBS": SCHEME_FBS,
@@ -55,9 +33,7 @@ CAMPAIGN_SCHEMES = {
     "EXPRESS": SCHEME_EXPRESS,
 }
 
-# Тип остатка, который считается доступным к продаже. Остальные типы — это
-# резерв под заказы (FREEZE), брак (DEFECT), просрочка (EXPIRED), карантин
-# и утилизация. Складывать их в «наличие» нельзя: продать это нельзя.
+
 AVAILABLE_STOCK_TYPE = "AVAILABLE"
 
 _FRIENDLY_BY_STATUS = {
@@ -74,8 +50,6 @@ _FRIENDLY_BY_STATUS = {
 
 
 class YandexApiError(Exception):
-    """Ошибка обращения к Маркету с понятным пользователю текстом."""
-
     def __init__(self, status: int | None, detail: str = ""):
         self.status = status
         self.detail = detail
@@ -92,7 +66,7 @@ class YandexApiError(Exception):
 
 
 def _parse_error_body(raw: str) -> str:
-    """Ошибки Маркета лежат в списке errors: [{code, message}]."""
+
     try:
         data = json.loads(raw)
     except ValueError:
@@ -115,14 +89,10 @@ def _parse_error_body(raw: str) -> str:
     return str(data.get("message") or raw[:200])
 
 
-def _request(path: str, api_key: str, payload: dict | None = None,
-             params: dict | None = None, method: str = "POST") -> dict:
-    """Запрос к Маркету с повторами на временных ошибках.
+def _request(
+    path: str, api_key: str, payload: dict | None = None, params: dict | None = None, method: str = "POST"
+) -> dict:
 
-    Возвращает содержимое поля result, а не весь ответ: обёртка
-    {"status": "OK", "result": ...} одинакова у всех методов и вызывающему
-    коду не нужна.
-    """
     url = BASE_URL + path
     if params:
         url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v not in (None, "")})
@@ -159,16 +129,15 @@ def _request(path: str, api_key: str, payload: dict | None = None,
             detail = _parse_error_body(e.read().decode("utf-8", errors="replace"))
             last_error = YandexApiError(e.code, detail)
 
-            # 420 у Маркета — это «слишком часто», аналог 429 у остальных
             if e.code in (420, 429) or 500 <= e.code < 600:
                 if attempt < MAX_ATTEMPTS:
                     pause = RETRY_BACKOFF_SECONDS * attempt
                     logger.warning("Яндекс %s: %s, повтор через %s с", path, last_error.friendly, pause)
                     time.sleep(pause)
                     continue
-            raise last_error
+            raise last_error from e
 
-        except (socket.timeout, TimeoutError) as e:
+        except TimeoutError as e:
             last_error = YandexApiError(None, "Маркет не ответил за отведённое время")
             if attempt < MAX_ATTEMPTS:
                 time.sleep(RETRY_BACKOFF_SECONDS * attempt)
@@ -184,18 +153,19 @@ def _request(path: str, api_key: str, payload: dict | None = None,
     raise last_error or YandexApiError(None, "не удалось выполнить запрос к Маркету")
 
 
-def get_campaigns(api_key: str) -> list[dict]:
-    """Магазины, доступные ключу: id, модель работы и кабинет.
+def request(
+    path: str, api_key: str, payload: dict | None = None, params: dict | None = None, method: str = "POST"
+) -> dict:
+    return _request(path, api_key, payload, params, method)
 
-    Именно отсюда берутся businessId и campaignId — руками их искать в
-    кабинете не нужно.
-    """
+
+def get_campaigns(api_key: str) -> list[dict]:
+
     campaigns: list[dict] = []
     page = 1
 
     while True:
-        data = _request("/v2/campaigns", api_key,
-                        params={"page": page, "pageSize": 50}, method="GET")
+        data = _request("/v2/campaigns", api_key, params={"page": page, "pageSize": 50}, method="GET")
         chunk = data.get("campaigns") or []
         campaigns.extend(chunk)
 
@@ -207,7 +177,7 @@ def get_campaigns(api_key: str) -> list[dict]:
 
 
 def normalize_campaign(row: dict) -> dict:
-    """Приводит магазин к плоскому виду: id, кабинет, модель, домен."""
+
     business = row.get("business") or {}
     placement = str(row.get("placementType") or "").upper()
     return {
@@ -220,19 +190,50 @@ def normalize_campaign(row: dict) -> dict:
     }
 
 
+def get_business_orders(api_key: str, business_id: int, date_from: str, date_to: str) -> list[dict]:
+
+    orders: list[dict] = []
+    page_token = ""
+
+    while True:
+        data = _request(
+            f"/v1/businesses/{business_id}/orders",
+            api_key,
+            payload={
+                "dates": {
+                    "creationDateFrom": date_from,
+                    "creationDateTo": date_to,
+                },
+                "fake": False,
+                "sourcePlatforms": ["MARKET"],
+            },
+            params={"limit": 50, "pageToken": page_token},
+        )
+        page = data.get("orders") or []
+        if not isinstance(page, list):
+            raise YandexApiError(None, f"неожиданный формат заказов Яндекса: {data!r}"[:300])
+        orders.extend(page)
+
+        paging = data.get("paging") or {}
+        page_token = str(paging.get("nextPageToken") or data.get("nextPageToken") or "")
+        if not page_token or not page:
+            return orders
+
+        if len(orders) > 500_000:
+            logger.warning(
+                "Яндекс: прервали обход заказов кабинета %s на %s строках", business_id, len(orders)
+            )
+            return orders
+
+
 def get_fulfillment_warehouses(api_key: str) -> list[dict]:
-    """Склады Маркета (для модели FBY) — id и название."""
+
     data = _request("/v2/warehouses", api_key, method="GET")
     return data.get("warehouses") or []
 
 
 def get_catalog(api_key: str, business_id: int) -> list[dict]:
-    """Каталог кабинета: артикул продавца, название, баркоды.
 
-    Метод страничный по nextPageToken. Тело запроса пустое — фильтры нам
-    не нужны, забираем всё, включая архивные позиции: по ним может
-    оставаться остаток.
-    """
     items: list[dict] = []
     page_token = ""
 
@@ -256,32 +257,37 @@ def get_catalog(api_key: str, business_id: int) -> list[dict]:
 
 
 def normalize_catalog_item(row: dict) -> dict:
-    """Плоская карточка: артикул продавца, название, баркод, SKU Маркета."""
+
     offer = row.get("offer") or {}
     mapping = row.get("mapping") or {}
 
     barcodes = [str(b).strip() for b in (offer.get("barcodes") or []) if str(b or "").strip()]
+    image_url = ""
+    for picture in offer.get("pictures") or []:
+        candidate = (
+            picture
+            if isinstance(picture, str)
+            else (picture.get("url", "") if isinstance(picture, dict) else "")
+        )
+        candidate = str(candidate or "").strip()
+        if candidate.startswith(("https://", "http://")):
+            image_url = candidate
+            break
 
     return {
         "article": str(offer.get("offerId") or "").strip(),
         "name": str(offer.get("name") or "").strip(),
         "barcode": barcodes[0] if barcodes else "",
+        "image_url": image_url,
         "barcodes": barcodes,
         "market_sku": mapping.get("marketSku"),
         "archived": bool(offer.get("archived")),
-        # когда карточку последний раз меняли в кабинете Маркета
         "updated_at": str(offer.get("updatedAt") or "").strip(),
     }
 
 
 def get_stocks(api_key: str, campaign_id: int, archived: bool = False) -> list[dict]:
-    """Остатки магазина по складам.
 
-    Отдаёт плоский список строк: артикул продавца, склад, количество по
-    каждому типу остатка. Разбирать типы — задача вызывающего кода, здесь
-    только раскладываем ответ из вложенной структуры
-    warehouses -> offers -> stocks.
-    """
     rows: list[dict] = []
     page_token = ""
 
@@ -297,12 +303,14 @@ def get_stocks(api_key: str, campaign_id: int, archived: bool = False) -> list[d
         for warehouse in warehouses:
             warehouse_id = warehouse.get("warehouseId")
             for offer in warehouse.get("offers") or []:
-                rows.append({
-                    "article": str(offer.get("offerId") or "").strip(),
-                    "warehouse_id": warehouse_id,
-                    "stocks": offer.get("stocks") or [],
-                    "updated_at": offer.get("updatedAt") or "",
-                })
+                rows.append(
+                    {
+                        "article": str(offer.get("offerId") or "").strip(),
+                        "warehouse_id": warehouse_id,
+                        "stocks": offer.get("stocks") or [],
+                        "updated_at": offer.get("updatedAt") or "",
+                    }
+                )
 
         page_token = (data.get("paging") or {}).get("nextPageToken") or ""
         if not page_token or not warehouses:
@@ -314,12 +322,7 @@ def get_stocks(api_key: str, campaign_id: int, archived: bool = False) -> list[d
 
 
 def available_quantity(stocks: list[dict]) -> int:
-    """Сколько реально доступно к продаже.
 
-    Берём только тип AVAILABLE. FIT включает и зарезервированное под заказы,
-    FREEZE — это уже проданное, DEFECT и EXPIRED продать нельзя вовсе.
-    Сложить всё вместе значит завысить наличие.
-    """
     for stock in stocks:
         if str(stock.get("type") or "").upper() == AVAILABLE_STOCK_TYPE:
             try:
@@ -330,7 +333,7 @@ def available_quantity(stocks: list[dict]) -> int:
 
 
 def stock_by_type(stocks: list[dict]) -> dict[str, int]:
-    """Все типы остатка по строке — для диагностики."""
+
     result: dict[str, int] = {}
     for stock in stocks:
         key = str(stock.get("type") or "?").upper()

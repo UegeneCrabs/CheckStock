@@ -1,34 +1,3 @@
-"""
-Тонкий клиент к API Wildberries для остатков FBS и FBO.
-
-Использует только стандартную библиотеку (urllib) — без сторонних
-пакетов вроде requests/httpx, чтобы не требовать pip install в venv.
-
-Документация (см. dev.wildberries.ru/openapi):
-- FBS (склад продавца), категория токена "Маркетплейс":
-    GET  /api/v3/warehouses            — список своих складов
-    POST /api/v3/stocks/{warehouseId}  — остатки по баркодам на складе
-    база: https://marketplace-api.wildberries.ru
-
-- FBO (склады WB), категория токена "Аналитика":
-    Старый метод GET /api/v1/supplier/stocks отключён Wildberries
-    (see release notes id=494) — заменён отчётом "Остатки на складах WB":
-        GET /api/v1/warehouse_remains                              — создать задачу
-        GET /api/v1/warehouse_remains/tasks/{task_id}/status        — статус
-        GET /api/v1/warehouse_remains/tasks/{task_id}/download      — скачать отчёт
-    база: https://seller-analytics-api.wildberries.ru
-    Отчёт возвращает по каждому баркоду список складов с остатками —
-    то, что нужно для детализации FBO по складам.
-
-- Заказы, категория токена "Статистика":
-    GET /api/v1/supplier/orders — заказы с указанной даты
-    база: https://statistics-api.wildberries.ru
-
-- Каталог карточек, категория токена "Контент":
-    POST /content/v2/get/cards/list  — карточки постранично, по курсору
-    база: https://content-api.wildberries.ru
-"""
-
 import json
 import logging
 import socket
@@ -37,37 +6,35 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-logger = logging.getLogger("checkstock.wb_api")
+from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 FBS_BASE = "https://marketplace-api.wildberries.ru"
 ANALYTICS_BASE = "https://seller-analytics-api.wildberries.ru"
 CONTENT_BASE = "https://content-api.wildberries.ru"
 STATISTICS_BASE = "https://statistics-api.wildberries.ru"
+PRICES_BASE = "https://discounts-prices-api.wildberries.ru"
+COMMON_BASE = "https://common-api.wildberries.ru"
 
-# Сколько карточек просить за раз. 100 — потолок метода.
+
 CARDS_PAGE_LIMIT = 100
 
-# Сколько штрихкодов помещается в один запрос остатков FBS. Потолок WB — 1000,
-# при превышении метод отвечает 400 «неверные параметры», не уточняя, чем
-# именно они неверны. До выгрузки каталога по API у магазинов было меньше
-# тысячи позиций, поэтому ограничение и не проявлялось.
+
 FBS_SKUS_PER_REQUEST = 1000
 
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = settings.wb_request_timeout_seconds
 
-# Псевдо-"склады" в ответе отчёта warehouse_remains — это не физические склады,
-# а служебные агрегаты (товар в пути, итоговая сумма и т.п.). Их нельзя
-# складывать вместе с реальными складами — иначе остаток задвоится.
+
 NON_WAREHOUSE_LABELS = {
     "В пути до получателей",
     "В пути возвраты на склад WB",
     "Всего находится на складах",
 }
 
-# Сколько раз повторить запрос при 429 (слишком много запросов) и с какой паузой
-# по умолчанию (если WB не прислал точную подсказку в заголовках)
-RATE_LIMIT_RETRIES = 2
-RATE_LIMIT_BACKOFF_SECONDS = 5
+
+REQUEST_ATTEMPTS = settings.wb_request_attempts
+RETRY_BACKOFF_SECONDS = settings.wb_retry_backoff_seconds
 
 _FRIENDLY_BY_STATUS = {
     400: "WB не принял запрос — неверные параметры",
@@ -84,8 +51,6 @@ _FRIENDLY_BY_STATUS = {
 
 
 class WBApiError(Exception):
-    """Ошибка обращения к WB API с человекочитаемым сообщением в .friendly."""
-
     def __init__(self, status: int | None, title: str = "", detail: str = ""):
         self.status = status
         self.title = title
@@ -113,9 +78,7 @@ def _parse_error_body(raw: str) -> tuple[str, str]:
 
 
 def _retry_after_seconds(http_error: urllib.error.HTTPError, attempt: int) -> float:
-    """Сколько ждать перед повтором после 429 — берём точную подсказку WB из
-    заголовков (X-Ratelimit-Retry/X-Ratelimit-Reset), если она есть, иначе —
-    свой запасной вариант с нарастающей паузой."""
+
     headers = getattr(http_error, "headers", None)
     if headers:
         for key in ("X-Ratelimit-Retry", "X-Ratelimit-Reset", "Retry-After"):
@@ -125,7 +88,7 @@ def _retry_after_seconds(http_error: urllib.error.HTTPError, attempt: int) -> fl
                     return max(float(val), 0.5)
                 except (TypeError, ValueError):
                     pass
-    return RATE_LIMIT_BACKOFF_SECONDS * attempt
+    return RETRY_BACKOFF_SECONDS * attempt
 
 
 def _request(method: str, url: str, token: str, params: dict | None = None, json_body=None):
@@ -138,8 +101,7 @@ def _request(method: str, url: str, token: str, params: dict | None = None, json
         data = json.dumps(json_body).encode("utf-8")
         headers["Content-Type"] = "application/json"
 
-    attempts = RATE_LIMIT_RETRIES + 1
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, REQUEST_ATTEMPTS + 1):
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
@@ -147,13 +109,19 @@ def _request(method: str, url: str, token: str, params: dict | None = None, json
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", errors="replace")
             title, detail = _parse_error_body(raw)
-            if e.code == 429 and attempt < attempts:
+            if e.code == 429 and attempt < REQUEST_ATTEMPTS:
                 wait = _retry_after_seconds(e, attempt)
-                logger.warning("WB 429 (попытка %s/%s), ждём %.1fс: %s", attempt, attempts, wait, url)
+                logger.warning(
+                    "WB 429 (попытка %s/%s), ждём %.1fс: %s",
+                    attempt,
+                    REQUEST_ATTEMPTS,
+                    wait,
+                    url,
+                )
                 time.sleep(wait)
                 continue
             raise WBApiError(e.code, title, detail) from e
-        except (socket.timeout, TimeoutError) as e:
+        except TimeoutError as e:
             raise WBApiError(None, detail=f"WB не ответил за {REQUEST_TIMEOUT}с (таймаут)") from e
         except urllib.error.URLError as e:
             if isinstance(e.reason, (socket.timeout, TimeoutError)):
@@ -170,23 +138,23 @@ def _request(method: str, url: str, token: str, params: dict | None = None, json
             ) from e
 
 
+def request(method: str, url: str, token: str, params: dict | None = None, json_body=None):
+    return _request(method, url, token, params, json_body)
+
+
 def _expect(value, *keys, context: str):
-    """Достаёт вложенные ключи из ответа WB и превращает KeyError/TypeError
-    (неожиданная форма ответа) в понятную WBApiError вместо сырого traceback."""
+
     cur = value
     try:
         for key in keys:
             cur = cur[key]
         return cur
     except (KeyError, TypeError, IndexError) as e:
-        raise WBApiError(
-            None, detail=f"неожиданный формат ответа от WB ({context}): {value!r}"[:300]
-        ) from e
+        raise WBApiError(None, detail=f"неожиданный формат ответа от WB ({context}): {value!r}"[:300]) from e
 
 
 def get_own_warehouses(token: str) -> list[dict]:
-    """Список складов продавца (нужен warehouseId для остатков FBS).
-    Требует токен с категорией 'Маркетплейс'."""
+
     data = _request("GET", f"{FBS_BASE}/api/v3/warehouses", token)
     if data is None:
         return []
@@ -196,13 +164,7 @@ def get_own_warehouses(token: str) -> list[dict]:
 
 
 def get_fbs_stock(token: str, warehouse_id: int, barcodes: list[str]) -> dict[str, int]:
-    """Остатки FBS по списку баркодов на складе продавца. Возвращает {barcode: quantity}.
 
-    Список режем на части по FBS_SKUS_PER_REQUEST: у метода есть потолок, а
-    каталог магазина его перерастает. Пустые и повторяющиеся баркоды убираем —
-    WB считает такой список некорректным целиком и не отвечает вообще ничего,
-    то есть один мусорный элемент стоил бы остатков по всему складу.
-    """
     unique: list[str] = []
     seen: set[str] = set()
     for barcode in barcodes:
@@ -216,7 +178,7 @@ def get_fbs_stock(token: str, warehouse_id: int, barcodes: list[str]) -> dict[st
 
     result: dict[str, int] = {}
     for start in range(0, len(unique), FBS_SKUS_PER_REQUEST):
-        chunk = unique[start:start + FBS_SKUS_PER_REQUEST]
+        chunk = unique[start : start + FBS_SKUS_PER_REQUEST]
         data = _request(
             "POST",
             f"{FBS_BASE}/api/v3/stocks/{warehouse_id}",
@@ -227,10 +189,8 @@ def get_fbs_stock(token: str, warehouse_id: int, barcodes: list[str]) -> dict[st
         try:
             for item in stocks:
                 result[str(item["sku"])] = item.get("amount", 0)
-        except (KeyError, TypeError) as e:
-            raise WBApiError(
-                None, detail=f"неожиданный формат остатков FBS: {stocks!r}"[:300]
-            ) from e
+        except (AttributeError, KeyError, TypeError) as e:
+            raise WBApiError(None, detail=f"неожиданный формат остатков FBS: {stocks!r}"[:300]) from e
 
     return result
 
@@ -246,27 +206,18 @@ def _create_warehouse_remains_task(token: str) -> str:
 
 
 def _get_warehouse_remains_status(token: str, task_id: str) -> str:
-    data = _request(
-        "GET", f"{ANALYTICS_BASE}/api/v1/warehouse_remains/tasks/{task_id}/status", token
-    )
+    data = _request("GET", f"{ANALYTICS_BASE}/api/v1/warehouse_remains/tasks/{task_id}/status", token)
     return _expect(data, "data", "status", context="статус отчёта FBO")
 
 
 def _download_warehouse_remains(token: str, task_id: str) -> list[dict]:
-    return (
-        _request("GET", f"{ANALYTICS_BASE}/api/v1/warehouse_remains/tasks/{task_id}/download", token)
-        or []
-    )
+    return _request("GET", f"{ANALYTICS_BASE}/api/v1/warehouse_remains/tasks/{task_id}/download", token) or []
 
 
 def get_fbo_stock_by_warehouse(
     token: str, poll_interval: float = 5.0, max_wait: float = 120.0
 ) -> dict[tuple[str, str], int]:
-    """
-    Остатки FBO по баркоду и складу WB: {(barcode, warehouseName): quantity}.
-    Через отчёт "Остатки на складах WB": создать задачу -> дождаться готовности -> скачать.
-    Требует токен с категорией 'Аналитика'.
-    """
+
     task_id = _create_warehouse_remains_task(token)
 
     waited = 0.0
@@ -277,9 +228,7 @@ def get_fbo_stock_by_warehouse(
         status = _get_warehouse_remains_status(token, task_id)
 
     if status != "done":
-        raise WBApiError(
-            None, detail=f"отчёт по остаткам не собрался за {max_wait:.0f} с (статус: {status})"
-        )
+        raise WBApiError(None, detail=f"отчёт по остаткам не собрался за {max_wait:.0f} с (статус: {status})")
 
     rows = _download_warehouse_remains(token, task_id)
     if not isinstance(rows, list):
@@ -303,22 +252,8 @@ def get_fbo_stock_by_warehouse(
     return by_warehouse
 
 
-# ----------------------------------------------------------------------
-# Каталог карточек
-# ----------------------------------------------------------------------
-
 def get_cards_list(token: str, page_limit: int = CARDS_PAGE_LIMIT) -> list[dict]:
-    """Все карточки продавца. Требует токен с категорией 'Контент'.
 
-    Метод страничный и курсорный: в ответе приходит cursor с updatedAt и nmID
-    последней карточки, их же нужно отправить в следующем запросе. Признак
-    конца — cursor.total меньше запрошенного лимита; по нему и останавливаемся,
-    а не по «пришло пусто», иначе последняя неполная страница стоила бы лишнего
-    запроса на каждой синхронизации.
-
-    Фильтр withPhoto = -1 означает «любые»: карточка без фото — обычная
-    карточка, и терять её остаток было бы нечем оправдать.
-    """
     cards: list[dict] = []
     cursor: dict = {"limit": page_limit}
     seen_nm: set[int] = set()
@@ -336,8 +271,7 @@ def get_cards_list(token: str, page_limit: int = CARDS_PAGE_LIMIT) -> list[dict]
 
         for card in page:
             nm_id = card.get("nmID")
-            # Страховка от зацикливания: если WB вернёт ту же страницу снова
-            # (курсор не сдвинулся), мы иначе крутились бы вечно.
+
             if nm_id in seen_nm:
                 continue
             seen_nm.add(nm_id)
@@ -354,105 +288,156 @@ def get_cards_list(token: str, page_limit: int = CARDS_PAGE_LIMIT) -> list[dict]
             "nmID": next_cursor.get("nmID"),
         }
         if not cursor["updatedAt"] or not cursor["nmID"]:
-            # без курсора следующая страница будет той же самой
             return cards
 
 
 def normalize_card(card: dict) -> dict:
-    """Карточка WB -> плоский вид для каталога.
 
-    sizes у WB это размеры одной карточки, и у КАЖДОГО свой баркод (skus).
-    Для одежды это разные физически товары на складе, поэтому размеры
-    возвращаем списком, а не схлопываем в один баркод: остатки считаются
-    по баркоду, и потерянный размер означал бы потерянный остаток.
-    """
     sizes = []
     for size in card.get("sizes") or []:
         skus = [str(sku).strip() for sku in (size.get("skus") or []) if str(sku).strip()]
         if not skus:
             continue
-        sizes.append({
-            "tech_size": str(size.get("techSize") or "").strip(),
-            "barcode": skus[0],
-            "extra_barcodes": skus[1:],
-        })
+        sizes.append(
+            {
+                "tech_size": str(size.get("techSize") or "").strip(),
+                "barcode": skus[0],
+                "extra_barcodes": skus[1:],
+            }
+        )
+
+    image_url = ""
+    for photo in card.get("photos") or []:
+        if isinstance(photo, str) and photo.startswith(("https://", "http://")):
+            image_url = photo
+            break
+        if isinstance(photo, dict):
+            image_url = next(
+                (
+                    str(photo.get(key) or "").strip()
+                    for key in ("c246x328", "big", "square", "tm")
+                    if str(photo.get(key) or "").strip().startswith(("https://", "http://"))
+                ),
+                "",
+            )
+            if image_url:
+                break
 
     return {
         "nm_id": str(card.get("nmID") or "").strip(),
         "vendor_code": str(card.get("vendorCode") or "").strip(),
         "title": str(card.get("title") or "").strip(),
-        # когда карточку последний раз меняли в кабинете WB
+        "subject_id": card.get("subjectID"),
+        "subject_name": str(card.get("subjectName") or "").strip(),
+        "image_url": image_url,
         "updated_at": str(card.get("updatedAt") or "").strip(),
         "sizes": sizes,
     }
 
 
-# ----------------------------------------------------------------------
-# Заказы (статистика)
-# ----------------------------------------------------------------------
+def get_products_with_prices(token: str, nm_ids: list[int]) -> list[dict]:
 
-# Сколько строк WB отдаёт за один запрос заказов. Если пришло ровно столько,
-# значит это не весь ответ и надо просить продолжение.
+    unique = list(dict.fromkeys(int(nm_id) for nm_id in nm_ids if int(nm_id) > 0))
+    result: list[dict] = []
+
+    for start in range(0, len(unique), 1000):
+        data = _request(
+            "POST",
+            f"{PRICES_BASE}/api/v2/list/goods/filter",
+            token,
+            json_body={"nmList": unique[start : start + 1000]},
+        )
+        rows = _expect(data or {}, "data", "listGoods", context="цены товаров")
+        if not isinstance(rows, list):
+            raise WBApiError(None, detail=f"неожиданный формат цен WB: {rows!r}"[:300])
+        result.extend(rows)
+
+    return result
+
+
+def get_category_commissions(token: str) -> list[dict]:
+
+    data = _request(
+        "GET",
+        f"{COMMON_BASE}/api/v1/tariffs/commission",
+        token,
+        params={"locale": "ru"},
+    )
+    rows = (data or {}).get("report") or []
+    if not isinstance(rows, list):
+        raise WBApiError(None, detail=f"неожиданный формат комиссий WB: {rows!r}"[:300])
+    return rows
+
+
 ORDERS_PAGE_SIZE = 80000
 
-# Ограничение метода — один запрос в минуту. Постранично ходим редко (три
-# недели заказов в одну страницу помещаются с запасом), но если понадобится,
-# пауза обязательна, иначе WB ответит 429 и следующая страница потеряется.
+
 ORDERS_PAGE_PAUSE_SECONDS = 61
 
 
-def get_orders(token: str, date_from: str, max_pages: int = 10) -> list[dict]:
-    """Заказы начиная с date_from (формат «2026-07-16T00:00:00»).
+def _get_statistics_rows(
+    token: str, path: str, date_from: str, label: str, max_pages: int = 10
+) -> list[dict]:
 
-    Требует токен с категорией 'Статистика'.
-
-    flag=0 означает «всё, что изменилось с этой даты», а не «создано с этой
-    даты»: в выборку попадут и старые заказы, у которых поменялся статус.
-    Отсекать по дате создания приходится уже у себя — для отчёта важно, когда
-    заказ сделали, а не когда его последний раз трогали.
-
-    Постраничность у метода своя: следующий кусок просят, подставив самую
-    позднюю lastChangeDate из предыдущего ответа.
-    """
-    orders: list[dict] = []
+    rows_all: list[dict] = []
     cursor = date_from
-    seen_srids: set[str] = set()
+    seen: set[str] = set()
 
     for page in range(max_pages):
         if page:
             time.sleep(ORDERS_PAGE_PAUSE_SECONDS)
 
-        rows = _request(
-            "GET",
-            f"{STATISTICS_BASE}/api/v1/supplier/orders",
-            token,
-            params={"dateFrom": cursor, "flag": 0},
-        ) or []
+        rows = (
+            _request(
+                "GET",
+                f"{STATISTICS_BASE}{path}",
+                token,
+                params={"dateFrom": cursor, "flag": 0},
+            )
+            or []
+        )
 
         if not isinstance(rows, list):
-            raise WBApiError(None, detail=f"неожиданный формат заказов WB: {rows!r}"[:300])
+            raise WBApiError(None, detail=f"неожиданный формат {label} WB: {rows!r}"[:300])
 
-        fresh = []
-        for row in rows:
-            # srid — идентификатор заказа. Страницы у WB перекрываются по
-            # секунде, и без этого пограничные заказы посчитались бы дважды.
-            srid = str(row.get("srid") or "")
-            if srid and srid in seen_srids:
+        for index, row in enumerate(rows):
+            key = str(row.get("saleID") or row.get("srid") or "")
+            if not key:
+                key = f"{row.get('lastChangeDate')}:{row.get('gNumber')}:{index}"
+            if key in seen:
                 continue
-            if srid:
-                seen_srids.add(srid)
-            fresh.append(row)
-
-        orders.extend(fresh)
+            seen.add(key)
+            rows_all.append(row)
 
         if len(rows) < ORDERS_PAGE_SIZE:
-            return orders
+            return rows_all
 
         next_cursor = max((str(r.get("lastChangeDate") or "") for r in rows), default="")
         if not next_cursor or next_cursor == cursor:
-            return orders
+            return rows_all
         cursor = next_cursor
 
-    logger.warning("WB: заказы оборваны на %s страницах — данных больше, чем ожидалось",
-                   max_pages)
-    return orders
+    logger.warning("WB: %s оборваны на %s страницах — данных больше, чем ожидалось", label, max_pages)
+    return rows_all
+
+
+def get_orders(token: str, date_from: str, max_pages: int = 10) -> list[dict]:
+
+    return _get_statistics_rows(
+        token,
+        "/api/v1/supplier/orders",
+        date_from,
+        "заказы",
+        max_pages,
+    )
+
+
+def get_sales(token: str, date_from: str, max_pages: int = 10) -> list[dict]:
+
+    return _get_statistics_rows(
+        token,
+        "/api/v1/supplier/sales",
+        date_from,
+        "продажи",
+        max_pages,
+    )
