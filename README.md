@@ -1,0 +1,54 @@
+# CheckStock
+
+FastAPI-приложение для синхронизации каталогов, остатков, продаж и аналитики WB, Ozon и Яндекс Маркета.
+
+## Локальный запуск
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+make run
+```
+
+Перед запуском положите реальные файлы доступов в `secrets/` по образцам из `secrets/example/`. `.env`, база и реальные секреты исключены из Git.
+
+## Проверки
+
+```text
+make format
+make lint
+make test-unit
+make test-integration
+make test-e2e
+make coverage-unit
+make coverage
+make check
+```
+
+`coverage-unit` требует минимум 90% покрытия строк и ветвлений кода из `app`. Integration-тесты поднимают временную SQLite, проверяют успешные и ошибочные сценарии сервисов и контролируют принадлежность всех HTTP-маршрутов тестовым группам. E2E-тесты запускают настоящий Uvicorn на свободном локальном порту и проходят полные цепочки складского сервиса, RNP и администрирования. `check` последовательно запускает lint, unit coverage, integration и E2E.
+
+## Docker
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build -d
+docker compose logs --follow app
+```
+
+Приложение доступно на `http://localhost:8000`. База хранится в именованном volume `checkstock-data`, секреты подключаются read-only из локального каталога `secrets/`. `/healthz` проверяет процесс, `/readyz` дополнительно проверяет соединение с SQLite.
+
+Остановка:
+
+```text
+docker compose down
+```
+
+Для удаления данных требуется отдельное явное действие `docker compose down --volumes`; обычная остановка volume не удаляет.
+
+## Конфигурация и логи
+
+Все изменяемые пути, интервалы, лимиты, retry-параметры и таймауты собраны в `app/config.py` и настраиваются переменными из `.env.example`. Некорректные значения останавливают запуск с понятной ошибкой вместо неявного fallback. Логи пишутся в stdout с уровнем, временем, именем модуля и `request_id`. Успешные обычные GET-запросы видны на `DEBUG`, изменения состояния и длительность задач — на `INFO`, клиентские ошибки — на `WARNING`, серверные ошибки со стеком — на `ERROR`. Полные payload и результаты фоновых синхронизаций в логи не выводятся.
+
+При публикации за HTTPS установите `CHECKSTOCK_SESSION_COOKIE_SECURE=1`.
