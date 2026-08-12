@@ -1,23 +1,3 @@
-"""
-Разовая проверка каталога Ozon перед тем, как выгружать товары к нам в базу.
-
-Мы уже трижды ошибались, предполагая поведение методов Ozon по документации,
-поэтому сначала смотрим, что реально приходит, и только потом пишем импорт.
-
-Скрипт отвечает на вопросы, от которых зависит структура таблицы:
-  - сколько карточек в кабинете и сколько из них архивные;
-  - у всех ли есть SKU и баркод, бывает ли несколько баркодов на карточку;
-  - совпадают ли баркоды Ozon с нашими;
-  - сколько карточек — служебные позиции («Инструкция ...»), не товары;
-  - какие поля вообще есть в ответе (печатает ключи первой карточки).
-
-Ничего не пишет в БД — только печатает.
-
-Запуск (из корня проекта, в .venv проекта):
-    python scripts/check_ozon_catalog.py
-    python scripts/check_ozon_catalog.py tris
-"""
-
 import sys
 from collections import Counter
 from pathlib import Path
@@ -31,8 +11,7 @@ from app.stores import STORES
 
 SHOW_LIMIT = 10
 
-# Позиции, которые лежат в каталоге, но товаром не являются. Список тут не
-# зашиваем — просто показываем кандидатов, чтобы решить правило фильтрации.
+
 SERVICE_HINTS = ("инструкция", "пакет", "наклейка", "вкладыш")
 
 
@@ -79,8 +58,9 @@ def _check_store(slug: str) -> None:
     archived = [p for p in products if p["archived"]]
     service = [p for p in products if _looks_service(p["name"], p["offer_id"])]
 
-    print(f"\n  без SKU: {len(no_sku)} | без баркода: {len(no_bc)}"
-          f" | с несколькими баркодами: {len(multi_bc)}")
+    print(
+        f"\n  без SKU: {len(no_sku)} | без баркода: {len(no_bc)} | с несколькими баркодами: {len(multi_bc)}"
+    )
     print(f"  архивных: {len(archived)} | похожих на служебные: {len(service)}")
 
     if multi_bc:
@@ -93,13 +73,11 @@ def _check_store(slug: str) -> None:
         for p in service[:SHOW_LIMIT]:
             print(f"      {p['offer_id']:<14} {p['name'][:44]}")
 
-    # уникальность: на чём можно строить ключ
     for field in ("offer_id", "sku"):
         values = [str(p[field]) for p in products if p[field]]
         dup = [k for k, c in Counter(values).items() if c > 1]
         print(f"  дубли {field}: {len(dup)} {dup[:5]}")
 
-    # сверка с нашим каталогом
     catalog = db.get_catalog_items(slug)
     if not catalog:
         print("  наш каталог пуст — сверять не с чем")
@@ -127,8 +105,10 @@ def _check_store(slug: str) -> None:
         print(f"    новые для нас (до {SHOW_LIMIT}):")
         for p in nowhere[:SHOW_LIMIT]:
             flag = " [служебное]" if _looks_service(p["name"], p["offer_id"]) else ""
-            print(f"      ozon={p['offer_id']:<14} sku={p['sku']}"
-                  f"  bc={p['barcodes'][:1]}  {p['name'][:30]}{flag}")
+            print(
+                f"      ozon={p['offer_id']:<14} sku={p['sku']}"
+                f"  bc={p['barcodes'][:1]}  {p['name'][:30]}{flag}"
+            )
 
 
 def main() -> None:
@@ -144,8 +124,7 @@ def main() -> None:
         _check_store(slug)
 
     if not checked:
-        print("Не найдено магазинов с доступами Ozon "
-              "(secrets/ozon_tokens.json). Проверять нечего.")
+        print("Не найдено магазинов с доступами Ozon (secrets/ozon_tokens.json). Проверять нечего.")
 
 
 if __name__ == "__main__":
