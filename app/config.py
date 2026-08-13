@@ -41,6 +41,7 @@ class Settings(BaseModel):
 
     base_dir: Path
     database_path: Path
+    database_url: str | None = None
     database_timeout_seconds: int = Field(ge=1)
     database_busy_timeout_ms: int = Field(ge=1)
     templates_dir: Path
@@ -101,12 +102,16 @@ class Settings(BaseModel):
     def from_env(cls) -> "Settings":
         base_dir = Path(__file__).resolve().parent.parent
         database_path = Path(os.getenv("CHECKSTOCK_DB_PATH", base_dir / "data" / "checkstock.db"))
+        database_url = os.getenv("CHECKSTOCK_DATABASE_URL", "").strip() or None
+        if database_url and not database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise ValueError("CHECKSTOCK_DATABASE_URL must be a PostgreSQL URL")
         log_level = os.getenv("CHECKSTOCK_LOG_LEVEL", "INFO").upper()
         if log_level not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
             raise ValueError("CHECKSTOCK_LOG_LEVEL must be a standard logging level")
         return cls(
             base_dir=base_dir,
             database_path=database_path,
+            database_url=database_url,
             database_timeout_seconds=_env_int("CHECKSTOCK_DB_TIMEOUT_SECONDS", 30, minimum=1),
             database_busy_timeout_ms=_env_int("CHECKSTOCK_DB_BUSY_TIMEOUT_MS", 30_000, minimum=1),
             templates_dir=Path(os.getenv("CHECKSTOCK_TEMPLATES_DIR", base_dir / "templates")),

@@ -161,10 +161,11 @@ def record_used_source(
     conn = get_connection()
     conn.execute(
         """
-        INSERT OR IGNORE INTO used_sources
+        INSERT INTO used_sources
             (store_slug, kind, fingerprint, label, source_type,
              operation_id, user_name, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING
         """,
         (store_slug, kind, fingerprint, label, source_type, operation_id, user_name, created_at),
     )

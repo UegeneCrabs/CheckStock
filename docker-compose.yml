@@ -1,13 +1,32 @@
 services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-checkstock}
+      POSTGRES_USER: ${POSTGRES_USER:-checkstock}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-checkstock} -d ${POSTGRES_DB:-checkstock}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   app:
     build:
       context: .
     init: true
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      CHECKSTOCK_DB_PATH: /app/data/checkstock.db
+      CHECKSTOCK_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-checkstock}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-checkstock}
       CHECKSTOCK_DB_TIMEOUT_SECONDS: ${CHECKSTOCK_DB_TIMEOUT_SECONDS:-30}
       CHECKSTOCK_DB_BUSY_TIMEOUT_MS: ${CHECKSTOCK_DB_BUSY_TIMEOUT_MS:-30000}
       CHECKSTOCK_LOG_LEVEL: ${CHECKSTOCK_LOG_LEVEL:-INFO}
@@ -56,9 +75,8 @@ services:
       CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS: ${CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS:-18}
       CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS: ${CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS:-1}
     volumes:
-      - checkstock-data:/app/data
       - ./secrets:/app/secrets:ro
-    stop_grace_period: 30s
+    stop_grace_period: 60s
 
 volumes:
-  checkstock-data:
+  postgres-data:

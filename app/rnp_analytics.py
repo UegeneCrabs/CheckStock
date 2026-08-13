@@ -233,9 +233,7 @@ def init_schema() -> None:
                 )
                 """
             )
-            existing_columns = {
-                str(row["name"]) for row in conn.execute("PRAGMA table_info(rnp_daily_metrics)").fetchall()
-            }
+            existing_columns = conn.column_names("rnp_daily_metrics")
             for column, sql_type in DAILY_COLUMN_TYPES.items():
                 if column not in existing_columns:
                     conn.execute(f"ALTER TABLE rnp_daily_metrics ADD COLUMN {column} {sql_type}")
@@ -832,8 +830,10 @@ def _history_price_rows(
     conn = db.get_connection()
     rows = conn.execute(
         "SELECT article, substr(ordered_at,1,10) AS day, "
-        "SUM(MAX(order_amount-cancelled_amount,0)) AS amount, "
-        "SUM(MAX(quantity-cancelled_quantity,0)) AS units "
+        "SUM(CASE WHEN order_amount-cancelled_amount>0 "
+        "THEN order_amount-cancelled_amount ELSE 0 END) AS amount, "
+        "SUM(CASE WHEN quantity-cancelled_quantity>0 "
+        "THEN quantity-cancelled_quantity ELSE 0 END) AS units "
         "FROM sales_order_lines WHERE store_slug=? AND marketplace=? "
         "AND ordered_at>=? AND ordered_at<?" + article_sql + " GROUP BY article, substr(ordered_at,1,10)",
         params,

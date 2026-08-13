@@ -39,8 +39,10 @@ def get_rnp_catalog_page(
         f"""
         WITH activity AS (
             SELECT article,
-                   SUM(MAX(order_amount - cancelled_amount, 0)) AS orders_amount,
-                   SUM(MAX(quantity - cancelled_quantity, 0)) AS orders_count
+                   SUM(CASE WHEN order_amount - cancelled_amount > 0
+                            THEN order_amount - cancelled_amount ELSE 0 END) AS orders_amount,
+                   SUM(CASE WHEN quantity - cancelled_quantity > 0
+                            THEN quantity - cancelled_quantity ELSE 0 END) AS orders_count
               FROM sales_order_lines
              WHERE store_slug = ? AND marketplace = ?
                AND ordered_at >= ? AND ordered_at < ?
@@ -70,7 +72,7 @@ def get_rnp_catalog_page(
                {search_sql}
          ORDER BY COALESCE(a.orders_amount, 0) DESC,
                   COALESCE(a.orders_count, 0) DESC,
-                  si.name COLLATE NOCASE,
+                  lower(si.name),
                   si.article
          LIMIT ? OFFSET ?
         """,
@@ -101,8 +103,10 @@ def get_rnp_product_daily(
     order_rows = conn.execute(
         f"""
         SELECT article, substr(ordered_at, 1, 10) AS day,
-               SUM(MAX(order_amount - cancelled_amount, 0)) AS orders_amount,
-               SUM(MAX(quantity - cancelled_quantity, 0)) AS orders_count,
+               SUM(CASE WHEN order_amount - cancelled_amount > 0
+                        THEN order_amount - cancelled_amount ELSE 0 END) AS orders_amount,
+               SUM(CASE WHEN quantity - cancelled_quantity > 0
+                        THEN quantity - cancelled_quantity ELSE 0 END) AS orders_count,
                SUM(cancelled_amount) AS cancellations_amount,
                SUM(cancelled_quantity) AS cancellations_count
           FROM sales_order_lines
@@ -175,8 +179,10 @@ def get_rnp_daily_totals(store_slug: str, marketplace: str, date_from: str, date
     order_rows = conn.execute(
         """
         SELECT substr(ordered_at, 1, 10) AS day,
-               SUM(MAX(order_amount - cancelled_amount, 0)) AS orders_amount,
-               SUM(MAX(quantity - cancelled_quantity, 0)) AS orders_count,
+               SUM(CASE WHEN order_amount - cancelled_amount > 0
+                        THEN order_amount - cancelled_amount ELSE 0 END) AS orders_amount,
+               SUM(CASE WHEN quantity - cancelled_quantity > 0
+                        THEN quantity - cancelled_quantity ELSE 0 END) AS orders_count,
                SUM(cancelled_amount) AS cancellations_amount,
                SUM(cancelled_quantity) AS cancellations_count
           FROM sales_order_lines
@@ -335,6 +341,7 @@ def add_rnp_action_log(
                 (store_slug, marketplace, article, action_date, note,
                  user_id, user_name, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
             """,
             (store_slug, marketplace, article, action_date, note, user_id, user_name, created_at),
         )

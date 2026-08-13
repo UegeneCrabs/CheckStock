@@ -27,6 +27,7 @@ def create_user(
             """
             INSERT INTO users (full_name, google_email, login, password_hash, role, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id
             """,
             (full_name, google_email, login, password_hash, role, created_at),
         )
@@ -79,7 +80,8 @@ def set_user_store_access(
     try:
         conn.execute("DELETE FROM user_store_access WHERE user_id = ?", (user_id,))
         conn.executemany(
-            "INSERT OR IGNORE INTO user_store_access (user_id, store_slug) VALUES (?, ?)",
+            "INSERT INTO user_store_access (user_id, store_slug) VALUES (?, ?) "
+            "ON CONFLICT DO NOTHING",
             [(user_id, slug) for slug in slugs],
         )
         if owns_conn:

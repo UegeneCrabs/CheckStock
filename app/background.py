@@ -169,7 +169,7 @@ async def lifespan(application: FastAPI):
     logger.info(
         "application_started background_jobs=%s database=%s",
         len(tasks),
-        settings.database_path,
+        "postgresql" if settings.database_url else settings.database_path,
     )
     try:
         yield

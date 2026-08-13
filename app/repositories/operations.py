@@ -42,6 +42,7 @@ def record_operation(
                  from_fulfillment, from_marketplace, to_fulfillment, to_marketplace,
                  note, user_id, user_name, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
             """,
             (
                 store_slug,
