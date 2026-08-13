@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from types import TracebackType
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, inspect
 from sqlalchemy.engine import Connection, CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
@@ -43,6 +43,9 @@ class DatabaseResult:
     def lastrowid(self) -> int:
         if self._result is None:
             return 0
+        if self._result.returns_rows:
+            row = self._result.fetchone()
+            return int(row[0]) if row is not None else 0
         return int(self._result.lastrowid or 0)
 
     @property
@@ -76,24 +79,59 @@ class DatabaseResult:
                 yield converted
 
 
+def _postgresql_parameters(statement: str) -> str:
+    """Convert SQLite-style qmark parameters without touching quoted literals."""
+    converted: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(statement):
+        char = statement[index]
+        if quote is not None:
+            converted.append(char)
+            if char == quote:
+                if index + 1 < len(statement) and statement[index + 1] == quote:
+                    converted.append(statement[index + 1])
+                    index += 1
+                else:
+                    quote = None
+        elif char in {"'", '"'}:
+            quote = char
+            converted.append(char)
+        elif char == "?":
+            converted.append("%s")
+        else:
+            converted.append(char)
+        index += 1
+    return "".join(converted)
+
+
 class DatabaseConnection(AbstractContextManager["DatabaseConnection"]):
-    def __init__(self, connection: Connection) -> None:
+    def __init__(self, connection: Connection, dialect_name: str) -> None:
         self._connection = connection
+        self.dialect_name = dialect_name
+
+    def _statement(self, statement: str) -> str:
+        if self.dialect_name == "postgresql":
+            return _postgresql_parameters(statement)
+        return statement
 
     def execute(self, statement: str, parameters: SqlParameters = ()) -> DatabaseResult:
         normalized = parameters if isinstance(parameters, Mapping) else tuple(parameters)
-        return DatabaseResult(self._connection.exec_driver_sql(statement, normalized))
+        return DatabaseResult(self._connection.exec_driver_sql(self._statement(statement), normalized))
 
     def executemany(self, statement: str, parameters: Iterable[Sequence[DatabaseScalar]]) -> DatabaseResult:
         values = [tuple(row) for row in parameters]
         if not values:
             return DatabaseResult(None)
-        return DatabaseResult(self._connection.exec_driver_sql(statement, values))
+        return DatabaseResult(self._connection.exec_driver_sql(self._statement(statement), values))
 
     def executescript(self, script: str) -> None:
         for statement in script.split(";"):
             if statement.strip():
-                self._connection.exec_driver_sql(statement)
+                self._connection.exec_driver_sql(self._statement(statement))
+
+    def column_names(self, table: str) -> set[str]:
+        return {str(column["name"]) for column in inspect(self._connection).get_columns(table)}
 
     def commit(self) -> None:
         self._connection.commit()
@@ -152,10 +190,15 @@ class UnitOfWork(AbstractContextManager["UnitOfWork"]):
 
 
 class Database:
-    def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.path = path.resolve()
+    def __init__(self, path: Path | None = None, *, url: str | None = None) -> None:
+        if (path is None) == (url is None):
+            raise ValueError("exactly one of path or url must be provided")
+        self.path = path.resolve() if path is not None else None
+        self.url = url
+        if self.path is not None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self.engine = self._create_engine()
+        self.dialect_name = self.engine.dialect.name
         self.session_factory = sessionmaker(
             bind=self.engine,
             autoflush=False,
@@ -164,6 +207,11 @@ class Database:
         )
 
     def _create_engine(self) -> Engine:
+        if self.url is not None:
+            return create_engine(self.url, pool_pre_ping=True)
+
+        if self.path is None:
+            raise RuntimeError("SQLite path is missing")
         engine = create_engine(
             f"sqlite+pysqlite:///{self.path.as_posix()}",
             connect_args={
@@ -186,7 +234,7 @@ class Database:
         return engine
 
     def connect(self) -> DatabaseConnection:
-        return DatabaseConnection(self.engine.connect())
+        return DatabaseConnection(self.engine.connect(), self.dialect_name)
 
     def unit_of_work(self) -> UnitOfWork:
         return UnitOfWork(self.session_factory)
@@ -195,17 +243,30 @@ class Database:
         self.engine.dispose()
 
 
-_DATABASES: dict[Path, Database] = {}
+_DATABASES: dict[str, Database] = {}
 _DATABASES_LOCK = Lock()
 
 
 def database_for_path(path: Path) -> Database:
     resolved = path.resolve()
+    if settings.database_url and resolved == settings.database_path.resolve():
+        return database_for_url(settings.database_url)
+    key = f"sqlite:{resolved}"
     with _DATABASES_LOCK:
-        database = _DATABASES.get(resolved)
+        database = _DATABASES.get(key)
         if database is None:
             database = Database(resolved)
-            _DATABASES[resolved] = database
+            _DATABASES[key] = database
+        return database
+
+
+def database_for_url(url: str) -> Database:
+    key = f"url:{url}"
+    with _DATABASES_LOCK:
+        database = _DATABASES.get(key)
+        if database is None:
+            database = Database(url=url)
+            _DATABASES[key] = database
         return database
 
 

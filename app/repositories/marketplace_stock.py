@@ -207,11 +207,16 @@ def get_last_sync_at(marketplace: str | None = None) -> str | None:
 def get_stock_overview() -> dict[str, dict]:
 
     conn = get_connection()
+    marketplaces_aggregate = (
+        "STRING_AGG(DISTINCT marketplace, ',')"
+        if conn.dialect_name == "postgresql"
+        else "GROUP_CONCAT(DISTINCT marketplace)"
+    )
     catalog_rows = conn.execute(
-        """
+        f"""
         SELECT store_slug, COUNT(*) AS sku_count,
                COUNT(DISTINCT marketplace) AS marketplace_count,
-               GROUP_CONCAT(DISTINCT marketplace) AS marketplaces
+               {marketplaces_aggregate} AS marketplaces
         FROM stock_items
         WHERE is_service = 0
         GROUP BY store_slug

@@ -134,7 +134,8 @@ def init_schema() -> None:
 
             conn.execute("DROP INDEX IF EXISTS idx_wb_decision_metrics_store")
             conn.execute("DROP INDEX IF EXISTS idx_wb_decision_actions_status")
-            conn.execute("PRAGMA optimize")
+            if conn.dialect_name == "sqlite":
+                conn.execute("PRAGMA optimize")
             conn.commit()
         finally:
             conn.close()
@@ -594,19 +595,30 @@ def _local_products(store_slugs: list[str]) -> dict[tuple[str, int], dict]:
 
 
 def _sales_period(store_slugs: list[str], start: date, end: date) -> dict[tuple[str, int], dict]:
+    conn = db.get_connection()
+    try:
+        nm_id = (
+            "CAST(raw_json::jsonb ->> 'nmId' AS INTEGER)"
+            if conn.dialect_name == "postgresql"
+            else "CAST(json_extract(raw_json, '$.nmId') AS INTEGER)"
+        )
+    finally:
+        conn.close()
     rows = _select_in(
-        """
+        f"""
         SELECT store_slug,
-               CAST(json_extract(raw_json, '$.nmId') AS INTEGER) AS nm_id,
-               SUM(MAX(quantity - cancelled_quantity, 0)) AS orders,
+               {nm_id} AS nm_id,
+               SUM(CASE WHEN quantity - cancelled_quantity > 0
+                        THEN quantity - cancelled_quantity ELSE 0 END) AS orders,
                SUM(cancelled_quantity) AS cancels,
-               SUM(MAX(order_amount - cancelled_amount, 0)) AS revenue,
+               SUM(CASE WHEN order_amount - cancelled_amount > 0
+                        THEN order_amount - cancelled_amount ELSE 0 END) AS revenue,
                SUM(sold_quantity) AS sold,
                SUM(sale_amount) AS sales_revenue
           FROM sales_order_lines
          WHERE marketplace = 'WB' AND ordered_at >= ? AND ordered_at < ?
-           AND store_slug IN ({stores})
-         GROUP BY store_slug, CAST(json_extract(raw_json, '$.nmId') AS INTEGER)
+           AND store_slug IN ({{stores}})
+         GROUP BY store_slug, {nm_id}
         """,
         store_slugs,
         [start.isoformat(), end.isoformat()],

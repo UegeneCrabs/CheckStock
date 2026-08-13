@@ -12,6 +12,8 @@ from app.stores import STORES
 def init_db() -> None:
     database = database_for_path(core.DB_PATH)
     OrmBase.metadata.create_all(database.engine)
+    if database.dialect_name != "sqlite":
+        return
     with core.get_connection() as connection:
         connection.execute("PRAGMA journal_mode = WAL")
         _migrate_stock_to_unified(connection)
@@ -29,7 +31,7 @@ def init_db() -> None:
 
 
 def _column_names(connection: DatabaseConnection, table: str) -> set[str]:
-    return {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")}
+    return connection.column_names(table)
 
 
 def _migrate_mp_updated_at(connection: DatabaseConnection) -> None:

@@ -10,6 +10,7 @@ class SettingsTests(unittest.TestCase):
     def test_environment_overrides_runtime_values(self) -> None:
         environment = {
             "CHECKSTOCK_DB_PATH": "custom/checkstock.db",
+            "CHECKSTOCK_DATABASE_URL": "postgresql+psycopg://checkstock:secret@db/checkstock",
             "CHECKSTOCK_LOG_LEVEL": "debug",
             "CHECKSTOCK_DISABLE_BACKGROUND_SYNC": "true",
             "CHECKSTOCK_STOCK_DETAIL_PAGE_SIZE": "42",
@@ -20,6 +21,10 @@ class SettingsTests(unittest.TestCase):
             configured = Settings.from_env()
 
         self.assertEqual(configured.database_path, Path("custom/checkstock.db"))
+        self.assertEqual(
+            configured.database_url,
+            "postgresql+psycopg://checkstock:secret@db/checkstock",
+        )
         self.assertEqual(configured.log_level, "DEBUG")
         self.assertFalse(configured.background_sync_enabled)
         self.assertEqual(configured.stock_detail_page_size, 42)
@@ -33,6 +38,15 @@ class SettingsTests(unittest.TestCase):
             clear=True,
         ):
             with self.assertRaisesRegex(ValueError, "CHECKSTOCK_SESSION_TTL_DAYS"):
+                Settings.from_env()
+
+    def test_non_postgresql_database_url_is_rejected(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"CHECKSTOCK_DATABASE_URL": "sqlite:///unexpected.db"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "CHECKSTOCK_DATABASE_URL"):
                 Settings.from_env()
 
     def test_security_iterations_have_a_safe_minimum(self) -> None:

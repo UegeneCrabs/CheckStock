@@ -104,7 +104,9 @@ def record_sales_sync(
                 ok = excluded.ok,
                 error = excluded.error,
                 rows_received = excluded.rows_received,
-                lookback_days = MAX(sales_sync_state.lookback_days, excluded.lookback_days)
+                lookback_days = CASE
+                    WHEN sales_sync_state.lookback_days >= excluded.lookback_days
+                    THEN sales_sync_state.lookback_days ELSE excluded.lookback_days END
             """,
             (
                 store_slug,
@@ -149,13 +151,17 @@ def get_sales_daily(
     orders = conn.execute(
         f"""
         SELECT substr(ordered_at, 1, 10) AS day,
-               SUM(MAX(order_amount - cancelled_amount, 0)) AS orders_amount,
+               SUM(CASE WHEN order_amount - cancelled_amount > 0
+                        THEN order_amount - cancelled_amount ELSE 0 END) AS orders_amount,
                SUM(CASE WHEN scheme = 'fbo'
-                        THEN MAX(order_amount - cancelled_amount, 0) ELSE 0 END) AS fbo_amount,
+                         AND order_amount - cancelled_amount > 0
+                        THEN order_amount - cancelled_amount ELSE 0 END) AS fbo_amount,
                SUM(CASE WHEN scheme = 'fbs'
-                        THEN MAX(order_amount - cancelled_amount, 0) ELSE 0 END) AS fbs_amount,
+                         AND order_amount - cancelled_amount > 0
+                        THEN order_amount - cancelled_amount ELSE 0 END) AS fbs_amount,
                SUM(cancelled_amount) AS cancellations_amount,
-               SUM(MAX(quantity - cancelled_quantity, 0)) AS orders_count,
+               SUM(CASE WHEN quantity - cancelled_quantity > 0
+                        THEN quantity - cancelled_quantity ELSE 0 END) AS orders_count,
                SUM(cancelled_quantity) AS cancellations_count
           FROM sales_order_lines
          WHERE marketplace = ? AND ordered_at >= ? AND ordered_at < ?{store_sql}
