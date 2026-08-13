@@ -30,7 +30,10 @@ def _source_connection(path: Path) -> sqlite3.Connection:
     resolved = path.resolve()
     if not resolved.is_file():
         raise FileNotFoundError(f"SQLite database does not exist: {resolved}")
-    connection = sqlite3.connect(f"file:{resolved.as_posix()}?mode=ro", uri=True)
+    connection = sqlite3.connect(
+        f"file:{resolved.as_posix()}?mode=ro&immutable=1",
+        uri=True,
+    )
     connection.row_factory = sqlite3.Row
     integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
     if integrity != "ok":
