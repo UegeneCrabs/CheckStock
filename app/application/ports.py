@@ -26,6 +26,8 @@ from app.dto.identity import (
     UserCountQuery,
     UserId,
     UserPasswordChange,
+    UserRoleChange,
+    UserSectionAccessChange,
     UserStoreAccessChange,
     WbTokenInfoCollection,
     WbTokenInfoCommand,
@@ -72,6 +74,10 @@ class IdentityRepository(Protocol):
     def set_permission(self, command: PermissionChange) -> None: ...
 
     def set_store_access(self, command: UserStoreAccessChange) -> None: ...
+
+    def set_role(self, command: UserRoleChange) -> None: ...
+
+    def set_section_access(self, command: UserSectionAccessChange) -> None: ...
 
     def update_password(self, command: UserPasswordChange) -> None: ...
 

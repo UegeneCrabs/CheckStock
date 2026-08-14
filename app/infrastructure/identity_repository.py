@@ -19,6 +19,8 @@ from app.dto.identity import (
     LoginQuery,
     PermissionChange,
     Role,
+    SectionAccessLevel,
+    SectionName,
     SessionData,
     SessionToken,
     User,
@@ -27,6 +29,8 @@ from app.dto.identity import (
     UserCountQuery,
     UserId,
     UserPasswordChange,
+    UserRoleChange,
+    UserSectionAccessChange,
     UserStoreAccessChange,
     WbTokenInfo,
     WbTokenInfoCollection,
@@ -36,6 +40,7 @@ from app.infrastructure.orm import (
     ActivityLogRecord,
     SessionRecord,
     UserRecord,
+    UserSectionAccessRecord,
     UserStoreAccessRecord,
     WbTokenInfoRecord,
 )
@@ -64,6 +69,12 @@ def _user(record: UserRecord) -> User:
         can_manage_users=bool(record.can_manage_users),
         created_at=_as_datetime(record.created_at),
         store_slugs=tuple(access.store_slug for access in record.store_access) or tuple(STORES),
+        section_access={
+            SectionName(access.section): SectionAccessLevel(access.access_level)
+            for access in record.section_access
+            if access.section in SectionName._value2member_map_
+            and access.access_level in SectionAccessLevel._value2member_map_
+        },
     )
 
 
@@ -90,7 +101,10 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
     def get_user(self, query: UserId) -> User | None:
         record = self._session.scalar(
             select(UserRecord)
-            .options(selectinload(UserRecord.store_access))
+            .options(
+                selectinload(UserRecord.store_access),
+                selectinload(UserRecord.section_access),
+            )
             .where(UserRecord.id == query.root)
         )
         return _user(record) if record is not None else None
@@ -98,14 +112,22 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
     def get_user_by_login(self, query: LoginQuery) -> User | None:
         record = self._session.scalar(
             select(UserRecord)
-            .options(selectinload(UserRecord.store_access))
+            .options(
+                selectinload(UserRecord.store_access),
+                selectinload(UserRecord.section_access),
+            )
             .where(UserRecord.login == query.login)
         )
         return _user(record) if record is not None else None
 
     def list_users(self) -> UserCollection:
         records = self._session.scalars(
-            select(UserRecord).options(selectinload(UserRecord.store_access)).order_by(UserRecord.id)
+            select(UserRecord)
+            .options(
+                selectinload(UserRecord.store_access),
+                selectinload(UserRecord.section_access),
+            )
+            .order_by(UserRecord.id)
         )
         return UserCollection(tuple(_user(record) for record in records))
 
@@ -130,6 +152,21 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         record = self._session.get(UserRecord, command.user_id)
         if record is not None:
             setattr(record, command.permission.value, int(command.allowed))
+            if command.permission.value == "can_edit_stock":
+                section = self._session.get(
+                    UserSectionAccessRecord,
+                    (command.user_id, SectionName.STOCK.value),
+                )
+                level = SectionAccessLevel.WRITE if command.allowed else SectionAccessLevel.READ
+                if section is None:
+                    section = UserSectionAccessRecord(
+                        user_id=command.user_id,
+                        section=SectionName.STOCK.value,
+                        access_level=level.value,
+                    )
+                    self._session.add(section)
+                else:
+                    section.access_level = level.value
 
     def set_store_access(self, command: UserStoreAccessChange) -> None:
         record = self._session.scalar(
@@ -141,6 +178,27 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             record.store_access = [
                 UserStoreAccessRecord(store_slug=slug) for slug in _normalize_store_slugs(command.store_slugs)
             ]
+
+    def set_role(self, command: UserRoleChange) -> None:
+        record = self._session.get(UserRecord, command.user_id)
+        if record is not None:
+            record.role = command.role.value
+
+    def set_section_access(self, command: UserSectionAccessChange) -> None:
+        record = self._session.scalar(
+            select(UserRecord)
+            .options(selectinload(UserRecord.section_access))
+            .where(UserRecord.id == command.user_id)
+        )
+        if record is None:
+            return
+        record.section_access = [
+            UserSectionAccessRecord(section=section.value, access_level=level.value)
+            for section, level in command.section_access.items()
+        ]
+        stock_level = command.section_access.get(SectionName.STOCK)
+        if stock_level is not None:
+            record.can_edit_stock = int(stock_level is SectionAccessLevel.WRITE)
 
     def update_password(self, command: UserPasswordChange) -> None:
         record = self._session.get(UserRecord, command.user_id)

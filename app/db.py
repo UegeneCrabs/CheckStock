@@ -22,6 +22,7 @@ from app.repositories.fulfillment_rates import (
     upsert_wb_unit_references,
 )
 from app.repositories.fulfillment_stock import (
+    apply_ff_import_snapshot,
     apply_ff_shipment,
     apply_ff_surplus,
     apply_ff_transfer,
@@ -71,8 +72,10 @@ from app.repositories.identity import (
     upsert_wb_token_info,
 )
 from app.repositories.marketplace_stock import (
+    delete_mp_stock_scheme_variants,
     get_ff_warehouse_map,
     get_last_sync_at,
+    get_mp_fbs_warehouse_details,
     get_mp_stock_by_warehouse,
     get_mp_stock_totals,
     get_mp_warehouse_details,
@@ -125,6 +128,8 @@ __all__ = (
     "SOURCE_LABELS",
     "WRITE_LOCK",
     "add_rnp_action_log",
+    "delete_mp_stock_scheme_variants",
+    "apply_ff_import_snapshot",
     "apply_ff_shipment",
     "apply_ff_surplus",
     "apply_ff_transfer",
@@ -152,6 +157,7 @@ __all__ = (
     "get_fulfillments",
     "get_last_sync_at",
     "get_last_token_check",
+    "get_mp_fbs_warehouse_details",
     "get_mp_stock_by_warehouse",
     "get_mp_stock_totals",
     "get_mp_warehouse_details",

@@ -14,7 +14,10 @@ MARKETPLACE_SCHEMES = {
         ("rfbs", "Текущий сток в продаже rFBS"),
         ("fbo", "Текущий сток в продаже FBO"),
     ],
-    "YANDEX MARKET": [("fbo", "FBY — склады Маркета")],
+    "YANDEX MARKET": [
+        ("fbo", "FBY — склады Маркета"),
+        ("fbs", "FBS — склады продавца"),
+    ],
 }
 
 
@@ -25,6 +28,15 @@ def schemes_for(marketplace: str, store_slug: str = "") -> list[tuple[str, str]]
         if schemes:
             return schemes
     return MARKETPLACE_SCHEMES.get(marketplace, MARKETPLACE_SCHEMES["WB"])
+
+
+def fbs_schemes_for(marketplace: str, store_slug: str = "") -> list[str]:
+
+    return [
+        scheme
+        for scheme, _label in schemes_for(marketplace, store_slug)
+        if scheme == "fbs" or scheme.startswith("fbs_")
+    ]
 
 
 def render_stock_head(marketplace: str, store_slug: str = "") -> str:

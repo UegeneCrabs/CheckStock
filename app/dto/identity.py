@@ -18,6 +18,23 @@ class PermissionName(StrEnum):
     MANAGE_USERS = "can_manage_users"
 
 
+class SectionName(StrEnum):
+    SALES = "sales"
+    DECISION_CENTER = "decision_center"
+    EPHEMERIDES = "ephemerides"
+    RNP = "rnp"
+    UNIT_ECONOMICS = "unit_economics"
+    SUPPLY = "supply"
+    STOCK = "stock"
+    STOCK_OVERVIEW = "stock_overview"
+
+
+class SectionAccessLevel(StrEnum):
+    NONE = "none"
+    READ = "read"
+    WRITE = "write"
+
+
 class StoreAccess(RootModel[tuple[str, ...]]):
     root: tuple[str, ...] = ()
 
@@ -34,6 +51,7 @@ class User(DtoModel):
     can_manage_users: bool = True
     created_at: datetime
     store_slugs: tuple[str, ...] = ()
+    section_access: dict[SectionName, SectionAccessLevel] = Field(default_factory=dict)
 
 
 class UserCollection(RootModel[tuple[User, ...]]):
@@ -87,7 +105,7 @@ class CreateUserForm(DtoModel):
 
 
 class SuperadminSeed(DtoModel):
-    full_name: str = Field(default="Суперадмин", min_length=1, max_length=200)
+    full_name: str = Field(default="Суперадминистратор", min_length=1, max_length=200)
     google_email: str = Field(default="", max_length=320)
     login: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.@+-]+$")
     password: SecretStr = Field(min_length=1, max_length=1024)
@@ -102,6 +120,12 @@ class SessionData(DtoModel):
 
 class SessionToken(DtoModel):
     value: str = Field(min_length=1, max_length=256, repr=False)
+
+
+class ActivityHeartbeat(DtoModel):
+    path: str = Field(min_length=1, max_length=500)
+    active: bool = True
+    page_view: bool = False
 
 
 class UserId(RootModel[PositiveInt]):
@@ -140,6 +164,16 @@ class UserStoreAccessChange(DtoModel):
     store_slugs: tuple[str, ...]
 
 
+class UserRoleChange(DtoModel):
+    user_id: PositiveInt
+    role: Role
+
+
+class UserSectionAccessChange(DtoModel):
+    user_id: PositiveInt
+    section_access: dict[SectionName, SectionAccessLevel]
+
+
 class UserCountQuery(DtoModel):
     exclude_user_id: PositiveInt | None = None
 
@@ -162,6 +196,8 @@ class UserMutationKind(StrEnum):
     PERMISSION = "permission"
     STORES = "stores"
     PASSWORD = "password"
+    ROLE = "role"
+    SECTIONS = "sections"
 
 
 class AuditedUserMutation(DtoModel):
@@ -173,6 +209,8 @@ class AuditedUserMutation(DtoModel):
     allowed: bool | None = None
     store_slugs: tuple[str, ...] = ()
     password_hash: str | None = Field(default=None, repr=False)
+    role: Role | None = None
+    section_access: dict[SectionName, SectionAccessLevel] = Field(default_factory=dict)
 
 
 class AuditedCreateUser(DtoModel):
@@ -211,7 +249,7 @@ def coerce_user(value: object) -> User | None:
         raise TypeError("user must be a User DTO")
     raw = dict(value)
     raw.setdefault("id", 1)
-    raw.setdefault("full_name", raw.get("login") or "Пользователь")
+    raw.setdefault("full_name", raw.get("login") or "Сотрудник")
     raw.setdefault("google_email", "")
     raw.setdefault("login", f"user-{raw.get('id', 0)}")
     raw.setdefault("password_hash", "")
@@ -220,6 +258,7 @@ def coerce_user(value: object) -> User | None:
     raw.setdefault("can_manage_users", True)
     raw.setdefault("created_at", datetime(1970, 1, 1, tzinfo=UTC))
     raw.setdefault("store_slugs", ())
+    raw.setdefault("section_access", {})
     return User.model_validate(raw)
 
 

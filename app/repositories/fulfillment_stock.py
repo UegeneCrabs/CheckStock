@@ -211,6 +211,147 @@ def record_delivery(
     conn.close()
 
 
+def apply_ff_import_snapshot(
+    store_slug: str,
+    fulfillment: str,
+    marketplace: str,
+    source_type: str,
+    source_key: str,
+    quantities: dict[str, int],
+    updated_at: str,
+    *,
+    sheet_url: str | None,
+    table_title: str,
+    total_rows: int,
+    unmatched: int,
+) -> dict[str, int]:
+    conn = get_connection()
+    scope = (store_slug, fulfillment, marketplace, source_type, source_key)
+    try:
+        rows = conn.execute(
+            """
+            SELECT article, quantity
+            FROM ff_import_snapshots
+            WHERE store_slug = ? AND fulfillment = ? AND marketplace = ?
+              AND source_type = ? AND source_key = ?
+            """,
+            scope,
+        ).fetchall()
+        previous = {str(row["article"]): int(row["quantity"] or 0) for row in rows}
+        if not previous:
+            previous = _legacy_delivery_snapshot(
+                conn,
+                store_slug,
+                fulfillment,
+                marketplace,
+                source_type,
+                sheet_url,
+                table_title,
+            )
+
+        for article, quantity in quantities.items():
+            delta = quantity - previous.get(article, 0)
+            if delta <= 0:
+                continue
+            conn.execute(
+                """
+                INSERT INTO ff_stock
+                    (store_slug, article, fulfillment, marketplace, quantity, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(store_slug, article, fulfillment, marketplace)
+                DO UPDATE SET quantity = ff_stock.quantity + excluded.quantity,
+                              updated_at = excluded.updated_at
+                """,
+                (store_slug, article, fulfillment, marketplace, delta, updated_at),
+            )
+
+        conn.execute(
+            """
+            DELETE FROM ff_import_snapshots
+            WHERE store_slug = ? AND fulfillment = ? AND marketplace = ?
+              AND source_type = ? AND source_key = ?
+            """,
+            scope,
+        )
+        conn.executemany(
+            """
+            INSERT INTO ff_import_snapshots
+                (store_slug, fulfillment, marketplace, source_type, source_key,
+                 article, quantity, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (*scope, article, quantity, updated_at)
+                for article, quantity in quantities.items()
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ff_stock_deliveries
+                (store_slug, fulfillment, marketplace, source_type, sheet_url, table_title,
+                 total_rows, matched, unmatched, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                store_slug,
+                fulfillment,
+                marketplace,
+                source_type,
+                sheet_url,
+                table_title,
+                total_rows,
+                len(quantities),
+                unmatched,
+                updated_at,
+            ),
+        )
+        conn.commit()
+        return previous
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _legacy_delivery_snapshot(
+    conn,
+    store_slug: str,
+    fulfillment: str,
+    marketplace: str,
+    source_type: str,
+    sheet_url: str | None,
+    table_title: str,
+) -> dict[str, int]:
+    source_column = "sheet_url" if source_type == "sheet" else "source_name"
+    source_value = sheet_url if source_type == "sheet" else table_title
+    if not source_value:
+        return {}
+    operation = conn.execute(
+        f"""
+        SELECT id
+        FROM stock_operations
+        WHERE store_slug = ? AND kind = 'delivery' AND source_type = ?
+          AND to_fulfillment = ? AND to_marketplace = ? AND {source_column} = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (store_slug, source_type, fulfillment, marketplace, source_value),
+    ).fetchone()
+    if operation is None:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT article, SUM(quantity) AS quantity
+        FROM stock_operation_items
+        WHERE operation_id = ?
+        GROUP BY article
+        """,
+        (operation["id"],),
+    ).fetchall()
+    return {str(row["article"]): int(row["quantity"] or 0) for row in rows}
+
+
 def get_ff_available_totals(
     store_slug: str,
     fulfillment: str | None = None,

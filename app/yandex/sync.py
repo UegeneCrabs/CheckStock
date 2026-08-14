@@ -12,6 +12,26 @@ MARKETPLACE = "YANDEX MARKET"
 _DB_LOCK = db.WRITE_LOCK
 
 
+def _normalize_ff_name(name: str) -> str:
+    return "".join(char for char in (name or "").casefold() if char.isalnum())
+
+
+YANDEX_FBS_FF_ALIASES = {
+    "ФуллСервис": "ФулСервис Подольск",
+    "Фулл Сервис": "ФулСервис Подольск",
+    "Afflatus": "AFFLATUS Купавна",
+}
+
+
+def known_ff_by_campaign() -> dict[str, str]:
+    known = {_normalize_ff_name(name): name for name in db.get_fulfillments()}
+    for campaign_name, fulfillment_name in YANDEX_FBS_FF_ALIASES.items():
+        canonical = known.get(_normalize_ff_name(fulfillment_name))
+        if canonical:
+            known[_normalize_ff_name(campaign_name)] = canonical
+    return known
+
+
 def _store_label(store_slug: str) -> str:
     store = STORES.get(store_slug) or {}
     return store.get("name") or store_slug.upper()
@@ -98,16 +118,17 @@ def sync_store(store_slug: str) -> int:
         return 0
 
     warehouse_names = _warehouse_names(api_key)
+    fulfillment_by_campaign = known_ff_by_campaign()
     now = _now()
 
     totals: dict[str, dict[str, int]] = {}
-    warehouse_entries: dict[str, list[tuple]] = {}
+    warehouse_totals: dict[str, dict[tuple[str, str], int]] = {}
     covered: set[str] = set()
 
     for campaign in campaigns:
         key = campaign["scheme_key"]
         totals.setdefault(key, {})
-        warehouse_entries.setdefault(key, [])
+        warehouse_totals.setdefault(key, {})
 
         rows = ya_api.get_stocks(api_key, campaign["id"])
 
@@ -127,12 +148,22 @@ def sync_store(store_slug: str) -> int:
             if key == ya_tokens.FBY_SCHEME_KEY:
                 warehouse = warehouse_names.get(warehouse_id) or f"Склад {warehouse_id}"
             else:
-                warehouse = campaign["name"]
+                warehouse = fulfillment_by_campaign.get(
+                    _normalize_ff_name(campaign["name"]),
+                    campaign["name"],
+                )
 
-            warehouse_entries[key].append((article, warehouse, None, quantity, now))
+            warehouse_key = (article, warehouse)
+            warehouse_totals[key][warehouse_key] = (
+                warehouse_totals[key].get(warehouse_key, 0) + quantity
+            )
 
     with _DB_LOCK:
-        for key, entries in warehouse_entries.items():
+        for key, by_warehouse in warehouse_totals.items():
+            entries = [
+                (article, warehouse, None, quantity, now)
+                for (article, warehouse), quantity in by_warehouse.items()
+            ]
             db.replace_mp_warehouse_stock(store_slug, MARKETPLACE, key, entries)
 
         for key, scheme_totals in totals.items():
@@ -145,6 +176,12 @@ def sync_store(store_slug: str) -> int:
                     scheme_totals.get(item["article"], 0),
                     now,
                 )
+
+        db.delete_mp_stock_scheme_variants(
+            store_slug,
+            MARKETPLACE,
+            ya_tokens.FBS_SCHEME_KEY,
+        )
 
     logger.info(
         "Яндекс %s: товаров с остатками %s, схем %s",

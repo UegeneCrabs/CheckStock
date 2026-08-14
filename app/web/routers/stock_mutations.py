@@ -50,21 +50,7 @@ async def upload_ff_stock(
         return JSONResponse({"ok": False, "error": "Выберите фулфилмент назначения"}, status_code=400)
 
     file_bytes = await file.read() if (file is not None and file.filename) else None
-    source_type, source_name = _source_of(file, file_bytes, sheet_url)
-    label = source_name or sheet_url.strip() or "ручной ввод"
-
-    source_kind = f"delivery:{marketplace.value}"
-    fingerprint, used_error = await run_in_threadpool(
-        _guard_used_source,
-        slug.lower(),
-        source_kind,
-        source_type,
-        sheet_url,
-        file_bytes,
-        label,
-    )
-    if used_error:
-        return JSONResponse({"ok": False, "error": used_error}, status_code=400)
+    source_type, _ = _source_of(file, file_bytes, sheet_url)
 
     try:
         if file_bytes is not None:
@@ -120,19 +106,11 @@ async def upload_ff_stock(
             actor["full_name"],
             "Загружена поставка на ФФ",
             f"{store.name} · {marketplace.value} · {fulfillment} · «{report['table_title']}» — "
-            f"обновлено {report['matched']} из {report['total_rows']} строк",
+            f"добавлено {report.get('added_quantity', 0)} шт. в "
+            f"{report.get('applied', len(report.get('items', [])))} позициях; "
+            f"без изменений {len(report.get('unchanged', []))}",
             now,
             operation_id,
-        )
-        db.record_used_source(
-            slug.lower(),
-            source_kind,
-            fingerprint,
-            report.get("table_title") or label,
-            source_type,
-            operation_id,
-            actor["full_name"],
-            now,
         )
 
     await run_in_threadpool(_record)

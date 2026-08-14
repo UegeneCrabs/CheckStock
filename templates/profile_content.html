@@ -1,0 +1,79 @@
+        <section class="profile-page">
+            <div class="profile-page-head">
+                <div class="profile-page-avatar" aria-hidden="true">$user_initials</div>
+                <div>
+                    <p class="section-kicker">ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</p>
+                    <h2>$full_name</h2>
+                    <p>Ваши данные и текущие права доступа</p>
+                </div>
+            </div>
+
+            <div class="profile-overview-grid">
+                <article class="panel profile-info-card">
+                    <div class="profile-section-head">
+                        <div>
+                            <p class="section-kicker">УЧЁТНАЯ ЗАПИСЬ</p>
+                            <h3>Основная информация</h3>
+                        </div>
+                        <span class="profile-status profile-status--$status_class">$status_label</span>
+                    </div>
+                    <dl class="profile-details">
+                        <div><dt>ФИО</dt><dd>$full_name</dd></div>
+                        <div><dt>Электронная почта</dt><dd>$email</dd></div>
+                        <div><dt>Логин</dt><dd><code>$login</code></dd></div>
+                        <div><dt>Роль</dt><dd>$role</dd></div>
+                        <div><dt>Учётная запись создана</dt><dd>$created_at</dd></div>
+                    </dl>
+                </article>
+
+                <article class="panel profile-capabilities-card">
+                    <div class="profile-section-head">
+                        <div>
+                            <p class="section-kicker">ПОЛНОМОЧИЯ</p>
+                            <h3>Назначенные полномочия</h3>
+                        </div>
+                    </div>
+                    <div class="profile-capabilities">
+                        <div>
+                            <span class="profile-capability-icon profile-capability-icon--$stock_edit_class" aria-hidden="true"></span>
+                            <div><small>Редактирование остатков</small><strong>$stock_edit_label</strong></div>
+                        </div>
+                        <div>
+                            <span class="profile-capability-icon profile-capability-icon--$users_manage_class" aria-hidden="true"></span>
+                            <div><small>Управление сотрудниками</small><strong>$users_manage_label</strong></div>
+                        </div>
+                        <div>
+                            <span class="profile-capability-count">$writable_sections</span>
+                            <div><small>Разделы с правом изменения</small><strong>из 8 разделов</strong></div>
+                        </div>
+                    </div>
+                    <p class="profile-security-note">Права назначает суперадминистратор. Пароль, ключи API и другие секреты на этой странице не отображаются.</p>
+                </article>
+            </div>
+
+            <article class="panel profile-stores-panel">
+                <div class="profile-section-head">
+                    <div>
+                        <p class="section-kicker">КАБИНЕТЫ</p>
+                        <h3>Доступ к кабинетам</h3>
+                    </div>
+                    <span class="profile-count-badge">$store_count</span>
+                </div>
+                <div class="profile-store-grid">$store_cards</div>
+            </article>
+
+            <article class="panel profile-sections-panel">
+                <div class="profile-section-head">
+                    <div>
+                        <p class="section-kicker">ВКЛАДКИ</p>
+                        <h3>Права доступа по разделам</h3>
+                    </div>
+                    <div class="profile-access-legend" aria-label="Обозначения прав">
+                        <span class="is-write">Изменение</span>
+                        <span class="is-read">Чтение</span>
+                        <span class="is-none">Закрыто</span>
+                    </div>
+                </div>
+                <div class="profile-access-list">$section_rows</div>
+            </article>
+        </section>

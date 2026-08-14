@@ -577,15 +577,63 @@ $mp_move_options
                             }
                             var r = data.report;
                             var skipped = r.negative_skipped || [];
-                            var skippedText = skipped.length
-                                ? ' Пропущено (отрицательный остаток в WB): ' +
-                                  skipped.map(function (s) { return s.article + ' (' + s.quantity + ')'; }).join(', ') + '.'
-                                : '';
-                            status.textContent =
-                                'Готово: поставка «' + r.table_title + '» — обновлено ' + r.matched +
-                                ' из ' + r.total_rows + ' строк' +
-                                (r.unmatched ? ' (не найдено в каталоге: ' + r.unmatched + ')' : '') +
-                                '.' + skippedText;
+                            var unchanged = r.unchanged || [];
+                            var decreased = r.decreased || [];
+                            var removed = r.removed || [];
+                            var safe = function (value) {
+                                var node = document.createElement('span');
+                                node.textContent = String(value == null ? '' : value);
+                                return node.innerHTML;
+                            };
+                            var detail = function (title, items, tone, describe) {
+                                if (!items.length) return '';
+                                var visible = items.slice(0, 12).map(function (item) {
+                                    return '<li><strong>' + safe(item.article) + '</strong><span>' +
+                                        safe(describe(item)) + '</span></li>';
+                                }).join('');
+                                var tail = items.length > 12
+                                    ? '<p class="import-report-more">И ещё ' + (items.length - 12) + ' поз.</p>'
+                                    : '';
+                                return '<section class="import-report-group import-report-group--' + tone + '">' +
+                                    '<h4>' + safe(title) + '<span>' + items.length + '</span></h4><ul>' +
+                                    visible + '</ul>' + tail + '</section>';
+                            };
+                            status.textContent = r.added_quantity
+                                ? 'Готово: добавлено ' + r.added_quantity + ' шт. в ' + r.applied + ' позициях.'
+                                : 'Готово: изменений для добавления нет, остатки не начислены повторно.';
+                            if (window.Modal) {
+                                Modal.alert({
+                                    title: 'Результат сравнения выгрузки',
+                                    okText: 'Готово',
+                                    bodyHtml:
+                                        '<div class="import-report-summary">' +
+                                            '<span><strong>' + r.added_quantity + '</strong>шт. добавлено</span>' +
+                                            '<span><strong>' + r.applied + '</strong>поз. изменено</span>' +
+                                            '<span><strong>' + unchanged.length + '</strong>без изменений</span>' +
+                                        '</div>' +
+                                        detail('Новые товары', r.new_items || [], 'success', function (item) {
+                                            return '+' + item.quantity + ' шт.';
+                                        }) +
+                                        detail('Количество увеличилось', r.increased || [], 'success', function (item) {
+                                            return item.previous_quantity + ' → ' + item.source_quantity +
+                                                ' (добавлено ' + item.quantity + ')';
+                                        }) +
+                                        detail('Не добавлены — количество не изменилось', unchanged, 'muted', function (item) {
+                                            return item.source_quantity + ' шт. в обеих выгрузках';
+                                        }) +
+                                        detail('Количество уменьшилось — сток не списан', decreased, 'warning', function (item) {
+                                            return item.previous_quantity + ' → ' + item.source_quantity;
+                                        }) +
+                                        detail('Исчезли из новой выгрузки — сток не списан', removed, 'warning', function (item) {
+                                            return 'было ' + item.previous_quantity + ' шт.';
+                                        }) +
+                                        detail('Отрицательные значения пропущены', skipped, 'warning', function (item) {
+                                            return item.quantity + ' шт.';
+                                        }) +
+                                        (r.unmatched ? '<p class="import-report-note">Не найдено в каталоге: <strong>' +
+                                            r.unmatched + '</strong></p>' : '')
+                                });
+                            }
 
                             urlInput.value = '';
                             fileInput.value = '';
@@ -700,7 +748,7 @@ $mp_move_options
                     submitManual = function () {
                         var fulfillment = select.value;
                         if (!fulfillment) {
-                            manualStatus.textContent = 'Сначала выбери фулфилмент назначения';
+                            manualStatus.textContent = 'Сначала выберите фулфилмент назначения';
                             return;
                         }
 
@@ -713,7 +761,7 @@ $mp_move_options
                         });
 
                         if (!items.length) {
-                            manualStatus.textContent = 'Заполни хотя бы одну позицию';
+                            manualStatus.textContent = 'Заполните хотя бы одну позицию';
                             return;
                         }
 

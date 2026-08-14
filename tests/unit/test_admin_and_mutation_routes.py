@@ -8,7 +8,16 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from app import db, decision_center, rnp_analytics
-from app.dto.identity import ActivityEntry, ActivityLog, Role, User, UserCollection
+from app.dto.identity import (
+    ActivityEntry,
+    ActivityLog,
+    Role,
+    SectionAccessLevel,
+    SectionName,
+    User,
+    UserCollection,
+    UserId,
+)
 from app.dto.stock import (
     AddedFulfillmentItem,
     AddedFulfillmentItems,
@@ -398,11 +407,34 @@ class AdminAndMutationRouteTests(unittest.TestCase):
             self.client.post(f"/admin/users/{target_id}/stores", data={"stores": "rimili"}).status_code,
             200,
         )
+        self.assertEqual(
+            self.client.post(f"/admin/users/{target_id}/role", data={"role": "admin"}).status_code,
+            200,
+        )
+        section_data = {
+            section.value: (
+                SectionAccessLevel.READ.value
+                if section is SectionName.SUPPLY
+                else SectionAccessLevel.WRITE.value
+            )
+            for section in SectionName
+        }
+        self.assertEqual(
+            self.client.post(f"/admin/users/{target_id}/sections", data=section_data).status_code,
+            200,
+        )
+        saved = self.app.state.container.identity.get_user(UserId(target_id))
+        self.assertEqual(saved.role, Role.ADMIN)
+        self.assertEqual(saved.section_access[SectionName.SUPPLY], SectionAccessLevel.READ)
         self.assertEqual(self.client.post(f"/admin/users/{target_id}/delete").status_code, 200)
         self.assertIsNone(db.get_user(target_id))
 
     def test_admin_page_download_and_sync(self) -> None:
         self.assertEqual(self.client.get("/admin").status_code, 200)
+        self.assertEqual(self.client.get("/admin/activity").status_code, 200)
+        activity_data = self.client.get("/admin/activity/data").json()
+        self.assertTrue(activity_data["ok"])
+        self.assertIn("Онлайн сейчас", activity_data["html"])
         with mock.patch.object(admin.ff_export, "build_operation_xlsx", return_value=(b"xlsx", "file.xlsx")):
             response = self.client.get("/admin/operations/999/xlsx")
         self.assertEqual(response.status_code, 200)

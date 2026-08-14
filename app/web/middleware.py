@@ -8,10 +8,13 @@ from pydantic import ValidationError
 
 from app import auth
 from app.config import settings
-from app.dto.identity import SessionToken
+from app.dto.identity import SectionAccessLevel, SessionToken
 from app.logging_config import new_request_id, request_id_context
+from app.section_access import has_access as has_section_access
+from app.section_access import section_for_path
 from app.stores import STORES
 from app.web.access import has_store_access
+from app.web.templating import render_access_denied_page
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
 QUIET_PATH_PREFIXES = ("/static/",)
@@ -42,6 +45,30 @@ async def authentication_middleware(request: Request, call_next):
             return JSONResponse({"ok": False, "error": "Требуется вход в систему"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
 
+    section = section_for_path(path)
+    read_only_post_paths = {"/sales/unit-economics/wb-fbs/calculate"}
+    required_access = (
+        SectionAccessLevel.READ
+        if request.method in {"GET", "HEAD", "OPTIONS"} or path in read_only_post_paths
+        else SectionAccessLevel.WRITE
+    )
+    if section is not None and not has_section_access(user, section, required_access):
+        wants_json = "application/json" in request.headers.get("accept", "") or (
+            request.headers.get("x-requested-with") == "fetch"
+        )
+        message = (
+            "Раздел доступен только для просмотра"
+            if required_access is SectionAccessLevel.WRITE
+            and has_section_access(user, section, SectionAccessLevel.READ)
+            else "Нет доступа к этому разделу"
+        )
+        if wants_json or request.method != "GET":
+            return JSONResponse({"ok": False, "error": message}, status_code=403)
+        return HTMLResponse(
+            render_access_denied_page(user, section=section),
+            status_code=403,
+        )
+
     if path.startswith("/stock/"):
         parts = path.strip("/").split("/")
         store_slug = parts[1].lower() if len(parts) > 1 else ""
@@ -51,7 +78,18 @@ async def authentication_middleware(request: Request, call_next):
             )
             if wants_json or request.method != "GET":
                 return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину"}, status_code=403)
-            return HTMLResponse("Нет доступа к этому магазину", status_code=403)
+            store_name = STORES[store_slug]["name"]
+            return HTMLResponse(
+                render_access_denied_page(
+                    user,
+                    heading="Нет доступа к кабинету",
+                    description=(
+                        f"Кабинет «{store_name}» недоступен для вашей учётной записи. "
+                        "Если он нужен для работы, обратитесь к суперадминистратору."
+                    ),
+                ),
+                status_code=403,
+            )
 
     return await call_next(request)
 

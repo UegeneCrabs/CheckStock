@@ -7,6 +7,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import sales as sales_service
+from app.dto.identity import SectionName
+from app.section_access import has_access as has_section_access
+from app.section_access import landing_path
 from app.stores import STORES
 from app.web.access import (
     accessible_store_items,
@@ -23,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return RedirectResponse("/sales", status_code=303)
+    return RedirectResponse(landing_path(request.state.user), status_code=303)
 
 
 @router.get("/sales", response_class=HTMLResponse)
@@ -42,6 +45,11 @@ async def sales(request: Request):
         default_to=today.isoformat(),
         date_max=today.isoformat(),
         sales_store_options="".join(store_options),
+        ephemerides_hidden="" if has_section_access(request.state.user, SectionName.EPHEMERIDES) else " hidden",
+        rnp_hidden="" if has_section_access(request.state.user, SectionName.RNP) else " hidden",
+        unit_economics_hidden=(
+            "" if has_section_access(request.state.user, SectionName.UNIT_ECONOMICS) else " hidden"
+        ),
     )
     return render_page(
         "CheckStock — Продажи",

@@ -1,53 +1,116 @@
-        <aside class="sidebar">
-            <a class="brand" href="/" aria-label="РАКЕТА — на главную">
-                <span class="brand-mark">Р</span>
-                <span>РАКЕТА</span>
-            </a>
+        <aside class="sidebar" id="app-sidebar">
+            <div class="sidebar-brand-row">
+                <a class="brand" href="/" aria-label="РАКЕТА — на главную">
+                    <span class="brand-mark">Р</span>
+                    <span class="brand-label">РАКЕТА</span>
+                </a>
+                <button class="sidebar-collapse" id="sidebar-collapse" type="button"
+                        aria-label="Свернуть боковое меню" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l-6-6 6-6"></path><path d="M3 12h18"></path></svg>
+                </button>
+            </div>
 
             <nav class="side-nav" aria-label="Основная навигация">
-                <div class="nav-group $sales_open" data-nav-group>
+                <a class="nav-item nav-item--ai $decision_active" href="/sales/decision-center"$decision_hidden title="Центр решений">
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a5 5 0 0 0-3 9v3h6v-3a5 5 0 0 0-3-9Z"></path><path d="M9 19h6"></path><path d="M10 22h4"></path><path d="M4 10H2"></path><path d="m5.6 4.6-1.4-1.4"></path><path d="M20 10h2"></path><path d="m18.4 4.6 1.4-1.4"></path></svg>
+                    <span>Центр решений</span>
+                    <small class="ai-badge" title="Создано с помощью ИИ" aria-label="Создано с помощью ИИ">AI</small>
+                </a>
+
+                <div class="nav-group $sales_open" data-nav-group$sales_group_hidden>
                     <div class="nav-group-head">
-                        <a class="nav-item $sales_active" href="/sales">
+                        <a class="nav-item $sales_active" href="$sales_href" title="Продажи">
                             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M22 19H2"></path></svg>
                             <span>Продажи</span>
                         </a>
-                        <button class="nav-group-toggle" type="button" aria-label="Показать разделы продаж"
-                                aria-expanded="$sales_expanded" data-nav-toggle>
+                        <button class="nav-group-toggle" type="button" aria-label="Показать разделы продаж" aria-expanded="$sales_expanded" data-nav-toggle>
                             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
                         </button>
                     </div>
                     <div class="nav-submenu" data-nav-submenu>
-                        <a class="nav-subitem $sales_decision_active" href="/sales/decision-center">Центр решений WB</a>
-                        <a class="nav-subitem $sales_ephemerides_active" href="/sales/ephemerides">Эфемериды</a>
-                        <a class="nav-subitem $sales_rnp_active" href="/sales/rnp">РНП</a>
+                        <a class="nav-subitem $sales_overview_active" href="/sales"$sales_overview_hidden>Обзор продаж</a>
+                        <a class="nav-subitem $sales_ephemerides_active" href="/sales/ephemerides"$sales_ephemerides_hidden>Эфемериды</a>
+                        <a class="nav-subitem $sales_rnp_active" href="/sales/rnp"$sales_rnp_hidden>РНП</a>
                     </div>
                 </div>
-                <a class="nav-item $supply_active" href="/supply">
+
+                <div class="nav-group $stock_open" data-nav-group$stock_group_hidden>
+                    <div class="nav-group-head">
+                        <a class="nav-item $stock_group_active" href="$stock_href" title="Сток">
+                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
+                            <span>Сток</span>
+                        </a>
+                        <button class="nav-group-toggle" type="button" aria-label="Показать разделы стока" aria-expanded="$stock_expanded" data-nav-toggle>
+                            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                        </button>
+                    </div>
+                    <div class="nav-submenu" data-nav-submenu>
+                        <a class="nav-subitem $stock_active" href="/stock"$stock_hidden>Остатки</a>
+                        <a class="nav-subitem $stock2_active" href="/stock-2"$stock2_hidden>Аналитика остатков</a>
+                    </div>
+                </div>
+
+                <div class="nav-group $unit_open" data-nav-group$unit_group_hidden>
+                    <div class="nav-group-head">
+                        <a class="nav-item $unit_group_active" href="$unit_href" title="Юнит-экономика">
+                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path><path d="M12 8v8"></path></svg>
+                            <span>Юнит-экономика</span>
+                        </a>
+                        <button class="nav-group-toggle" type="button" aria-label="Показать юнит-экономику" aria-expanded="$unit_expanded" data-nav-toggle>
+                            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                        </button>
+                    </div>
+                    <div class="nav-submenu" data-nav-submenu>
+                        <a class="nav-subitem $sales_wb_fbs_active" href="/sales/unit-economics/wb-fbs">Wildberries</a>
+                        <a class="nav-subitem $sales_ozon_active" href="/sales/unit-economics/ozon">Ozon</a>
+                        <a class="nav-subitem $sales_yandex_active" href="/sales/unit-economics/yandex-market">Яндекс Маркет</a>
+                    </div>
+                </div>
+
+                <a class="nav-item $supply_active" href="/supply"$supply_hidden title="Снабжение">
                     <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17h4V5H2v12h3"></path><path d="M14 9h4l4 4v4h-3"></path><circle cx="7.5" cy="17.5" r="2.5"></circle><circle cx="16.5" cy="17.5" r="2.5"></circle></svg>
                     <span>Снабжение</span>
-                </a>
-                <a class="nav-item $stock_active" href="/stock">
-                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
-                    <span>Остатки</span>
-                </a>
-                <a class="nav-item $stock2_active" href="/stock-2">
-                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16"></path><path d="M4 12h16"></path><path d="M4 19h16"></path><path d="M8 5v14"></path><path d="M16 5v14"></path></svg>
-                    <span>Остатки 2</span>
                 </a>
             </nav>
 
             <div class="sidebar-bottom">
                 <div class="nav-utility">$admin_link</div>
-                <div class="connection">
-                    <span class="live-dot" aria-hidden="true"></span>
-                    <span>Подключено</span>
+                <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false"
+                        aria-label="Переключить цветовую тему">
+                    <svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+                    <span class="theme-toggle-label">Светлая тема</span>
+                    <span class="theme-switch" aria-hidden="true"><i></i></span>
+                </button>
+                <div class="notifications-wrap">
+                    <button class="notifications-trigger" id="notifications-trigger" type="button"
+                            aria-label="Открыть уведомления" aria-expanded="false" aria-controls="notifications-panel">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+                        <span>Уведомления</span>
+                    </button>
+                    <div class="notifications-panel" id="notifications-panel" role="dialog"
+                         aria-label="Уведомления" hidden>
+                        <div class="notifications-head">
+                            <div>
+                                <small>ЦЕНТР СОБЫТИЙ</small>
+                                <strong>Уведомления</strong>
+                            </div>
+                            <button type="button" class="notifications-close" aria-label="Закрыть уведомления">×</button>
+                        </div>
+                        <div class="notifications-empty">
+                            <span aria-hidden="true">
+                                <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+                            </span>
+                            <strong>Пока уведомлений нет</strong>
+                            <p>Здесь позже появятся важные события системы.</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="profile">
-                    <span class="avatar">$user_initials</span>
-                    <span class="profile-copy">
-                        <strong>$user_name</strong>
-                        <small>$user_role</small>
-                    </span>
+                <div class="connection"><span class="live-dot" aria-hidden="true"></span><span>Подключено</span></div>
+                <div class="profile $profile_active">
+                    <a class="profile-main" href="/profile" title="Открыть профиль пользователя" aria-label="Открыть профиль пользователя">
+                        <span class="avatar">$user_initials</span>
+                        <span class="profile-copy"><strong>$user_name</strong><small>$user_role</small></span>
+                    </a>
                     <a class="profile-logout" href="/logout" title="Выйти" aria-label="Выйти">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path></svg>
                     </a>

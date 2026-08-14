@@ -2559,6 +2559,35 @@ main h2,
     color: var(--text-muted);
 }
 
+.side-nav [hidden] {
+    display: none !important;
+}
+
+.access-denied-workspace {
+    min-height: min(560px, calc(100vh - 170px));
+}
+
+.access-denied-mark {
+    color: var(--red);
+    background: rgba(217, 87, 77, 0.1);
+    border: 1px solid rgba(217, 87, 77, 0.18);
+}
+
+.access-denied-mark svg {
+    width: 25px;
+    height: 25px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.status-pill--restricted {
+    color: #a33d36;
+    background: rgba(217, 87, 77, 0.1);
+}
+
 .status-pill {
     min-height: 25px;
     padding: 4px 8px;

@@ -6,9 +6,9 @@ ROLES = ["superadmin", "admin", "user"]
 
 
 ROLE_LABELS = {
-    "superadmin": "Суперадмин",
-    "admin": "Админ",
-    "user": "Пользователь",
+    "superadmin": "Суперадминистратор",
+    "admin": "Администратор",
+    "user": "Сотрудник",
 }
 
 

@@ -28,6 +28,8 @@ from app.dto.identity import (
     UserId,
     UserMutationKind,
     UserPasswordChange,
+    UserRoleChange,
+    UserSectionAccessChange,
     UserStoreAccessChange,
 )
 
@@ -157,6 +159,17 @@ class IdentityService:
                     UserPasswordChange(
                         user_id=command.user_id,
                         password_hash=command.password_hash,
+                    )
+                )
+            elif command.kind is UserMutationKind.ROLE:
+                if command.role is None:
+                    raise ValueError("role is required")
+                repository.set_role(UserRoleChange(user_id=command.user_id, role=command.role))
+            elif command.kind is UserMutationKind.SECTIONS:
+                repository.set_section_access(
+                    UserSectionAccessChange(
+                        user_id=command.user_id,
+                        section_access=command.section_access,
                     )
                 )
             repository.add_activity(command.activity)

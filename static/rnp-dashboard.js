@@ -3,6 +3,7 @@
 
     var root = document.querySelector('[data-rnp-dashboard]');
     if (!root) return;
+    var readOnly = document.body.dataset.accessLevel === 'read';
 
     var controls = {
         month: root.querySelector('[name="month"]'),
@@ -304,9 +305,10 @@
 
     function strategyCard(product) {
         var strategy = product.strategy;
+        var editButton = readOnly ? '' : '<button type="button" data-rnp-edit-strategy data-article="' +
+            escapeHtml(product.article) + '">' + (strategy ? 'Изменить' : 'Добавить') + '</button>';
         return '<div class="rnp-product-strategy">' +
-            '<div><span>СТРАТЕГИЯ</span><button type="button" data-rnp-edit-strategy data-article="' +
-            escapeHtml(product.article) + '">' + (strategy ? 'Изменить' : 'Добавить') + '</button></div>' +
+            '<div><span>СТРАТЕГИЯ</span>' + editButton + '</div>' +
             '<strong>' + escapeHtml(strategy ? strategy.strategy : 'Стратегия не задана') + '</strong>' +
             '<small>' + (strategy ? dateLabel.format(new Date(strategy.date_from + 'T00:00:00')) + ' — ' +
                 dateLabel.format(new Date(strategy.date_to + 'T00:00:00')) : 'Добавьте период и цель для товара') + '</small>' +
@@ -354,7 +356,7 @@
         var cells = state.data.period.days.map(function (day) {
             var entries = product.actions[day.date] || [];
             var note = entries.map(function (item) { return item.note; }).join('\n');
-            var disabled = day.future ? ' disabled' : '';
+            var disabled = day.future || readOnly ? ' disabled' : '';
             var classes = ['rnp-action-cell'];
             if (entries.length) classes.push('has-note');
             if (day.weekend) classes.push('is-weekend');
@@ -470,6 +472,7 @@
     }
 
     function openStrategy(article) {
+        if (readOnly) return;
         var product = productByArticle(article);
         if (!product) return;
         var strategy = product.strategy || {};
@@ -490,6 +493,7 @@
     }
 
     function openAction(article, actionDate) {
+        if (readOnly) return;
         var product = productByArticle(article);
         if (!product) return;
         var existing = (product.actions[actionDate] || []).map(function (item) { return item.note; });

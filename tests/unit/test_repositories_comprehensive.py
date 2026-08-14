@@ -171,6 +171,20 @@ class RepositoryUnitTests(unittest.TestCase):
         self.assertEqual(db.get_last_sync_at("WB"), NOW)
         self.assertEqual(db.get_last_sync_at(), NOW)
 
+        db.upsert_mp_stock("rimili", "A-1", "YANDEX MARKET", "fbs", 17, NOW)
+        db.upsert_mp_stock("rimili", "A-1", "YANDEX MARKET", "fbs_149217490", 17, NOW)
+        db.replace_mp_warehouse_stock(
+            "rimili",
+            "YANDEX MARKET",
+            "fbs_149217490",
+            [("A-1", "Afflatus", None, 17, NOW)],
+        )
+        db.delete_mp_stock_scheme_variants("rimili", "YANDEX MARKET", "fbs")
+        self.assertEqual(db.get_mp_stock_totals("rimili", "YANDEX MARKET", "fbs"), {"A-1": 17})
+        self.assertEqual(db.get_mp_stock_totals("rimili", "YANDEX MARKET", "fbs_149217490"), {})
+        self.assertEqual(db.get_mp_warehouse_details("rimili", "YANDEX MARKET", "fbs_149217490"), [])
+        db.upsert_mp_stock("rimili", "A-1", "YANDEX MARKET", "fbs", 0, NOW)
+
         db.replace_mp_warehouse_stock(
             "rimili",
             "WB",

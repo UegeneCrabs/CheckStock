@@ -92,6 +92,30 @@ class FulfillmentDeliveryRecord(OrmBase):
     marketplace: Mapped[str] = mapped_column(String, nullable=False, default="WB", server_default="WB")
 
 
+class FulfillmentImportSnapshotRecord(OrmBase):
+    __tablename__ = "ff_import_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "store_slug",
+            "fulfillment",
+            "marketplace",
+            "source_type",
+            "source_key",
+            "article",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_slug: Mapped[str] = mapped_column(String, nullable=False)
+    fulfillment: Mapped[str] = mapped_column(String, nullable=False)
+    marketplace: Mapped[str] = mapped_column(String, nullable=False)
+    source_type: Mapped[str] = mapped_column(String, nullable=False)
+    source_key: Mapped[str] = mapped_column(String, nullable=False)
+    article: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class TrashStockRecord(OrmBase):
     __tablename__ = "trash_stock"
     __table_args__ = (UniqueConstraint("store_slug", "article", "marketplace", "fulfillment"),)
@@ -152,6 +176,11 @@ class UserRecord(OrmBase):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    section_access: Mapped[list[UserSectionAccessRecord]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class UserStoreAccessRecord(OrmBase):
@@ -165,6 +194,18 @@ class UserStoreAccessRecord(OrmBase):
     user: Mapped[UserRecord] = relationship(back_populates="store_access")
 
 
+class UserSectionAccessRecord(OrmBase):
+    __tablename__ = "user_section_access"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    section: Mapped[str] = mapped_column(String, primary_key=True)
+    access_level: Mapped[str] = mapped_column(String, nullable=False)
+    user: Mapped[UserRecord] = relationship(back_populates="section_access")
+
+
 class SessionRecord(OrmBase):
     __tablename__ = "sessions"
 
@@ -172,6 +213,37 @@ class SessionRecord(OrmBase):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     expires_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UsageSessionRecord(OrmBase):
+    __tablename__ = "user_usage_sessions"
+    __table_args__ = (
+        Index("idx_user_usage_sessions_user_started", "user_id", "started_at"),
+        Index("idx_user_usage_sessions_last_seen", "last_seen_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_seen_at: Mapped[str] = mapped_column(String, nullable=False)
+    idle_at: Mapped[str | None] = mapped_column(String)
+    ended_at: Mapped[str | None] = mapped_column(String)
+    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_section: Mapped[str | None] = mapped_column(String)
+    last_path: Mapped[str | None] = mapped_column(String)
+
+
+class UserSectionUsageRecord(OrmBase):
+    __tablename__ = "user_section_usage"
+    __table_args__ = (Index("idx_user_section_usage_date", "usage_date"),)
+
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    section: Mapped[str] = mapped_column(String, primary_key=True)
+    usage_date: Mapped[str] = mapped_column(String, primary_key=True)
+    page_views: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_viewed_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class ActivityLogRecord(OrmBase):

@@ -205,12 +205,19 @@ async def stock_store_operations_xlsx(slug: str, kind: str = ""):
 
 def _warehouse_tables(store_slug: str, marketplace: str) -> list[tuple[str, list[dict]]]:
 
+    marketplace_tables = [
+        (label, db.get_mp_warehouse_details(store_slug, marketplace, scheme))
+        for scheme, label in schemes_for(marketplace, store_slug)
+    ]
     return [
-        (f"FBO {marketplace}", db.get_mp_warehouse_details(store_slug, marketplace, "fbo")),
-        ("FBS склады продавца", db.get_mp_warehouse_details(store_slug, marketplace, "fbs")),
+        *marketplace_tables,
         ("ФФ фулфилменты", db.get_ff_warehouse_details_by_mp(store_slug, marketplace)),
         ("Мусорка", db.get_trash_details(store_slug, marketplace)),
     ]
+
+
+def _fbs_warehouse_rows(store_slug: str, marketplace: str) -> list[dict]:
+    return db.get_mp_fbs_warehouse_details(store_slug, marketplace)
 
 
 @router.get("/stock/{slug}/stock.xlsx")
@@ -228,7 +235,11 @@ async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
         items = db.get_stock_items(store_slug, marketplace, tuple(k for k, _ in schemes))
 
         ff_map = db.get_ff_available_totals(store_slug, ff or None, marketplace)
-        fbs_map = db.get_mp_stock_by_warehouse(store_slug, marketplace, "fbs", ff) if ff else None
+        fbs_maps = {
+            scheme: db.get_mp_stock_by_warehouse(store_slug, marketplace, scheme, ff)
+            for scheme, _label in schemes
+            if ff and (scheme == "fbs" or scheme.startswith("fbs_"))
+        }
 
         columns = ["АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ТОТАЛ", "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ"]
         columns += [title.upper() for _scheme, title in schemes]
@@ -241,8 +252,8 @@ async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
 
             by_scheme = []
             for scheme, _title in schemes:
-                if scheme == "fbs" and fbs_map is not None:
-                    by_scheme.append(fbs_map.get(article, 0) or 0)
+                if scheme in fbs_maps:
+                    by_scheme.append(fbs_maps[scheme].get(article, 0) or 0)
                 else:
                     by_scheme.append(item[f"{scheme}_stock"] or 0)
 
@@ -354,7 +365,7 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
                 top_n=settings.warehouse_display_limit,
             ),
             fbs_table=render_warehouse_table(
-                db.get_mp_warehouse_details(slug.lower(), marketplace, "fbs"),
+                _fbs_warehouse_rows(slug.lower(), marketplace),
                 "Пока нет данных по складам продавца — запустите синхронизацию на странице «Остатки»",
             ),
             ff_table=render_warehouse_table(

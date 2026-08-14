@@ -112,7 +112,7 @@
         `).join("");
         const impact = item.expectedProfit > 0 ? `+${money(item.expectedProfit, true)}` : money(0);
         const statusClass = item.status === "in_progress" ? "is-progress" : item.status === "completed" ? "is-completed" : "";
-        const actionButtons = item.status === "new"
+        const actionButtons = document.body.dataset.accessLevel === "read" ? "" : item.status === "new"
             ? `<button class="dc-action-button is-primary" type="button" data-dc-set-status="in_progress">Взять в работу</button>`
             : item.status === "in_progress"
                 ? `<button class="dc-action-button is-success" type="button" data-dc-set-status="completed">Отметить готовым</button><button class="dc-action-button" type="button" data-dc-set-status="new">Вернуть в новые</button>`

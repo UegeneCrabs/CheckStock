@@ -431,7 +431,7 @@ class YandexSyncTests(unittest.TestCase):
         self.assertEqual(health.call_count, 3)
 
     def test_stock_helpers_sync_and_all(self) -> None:
-        configured = [{"id": 1, "scheme": "fbs", "name": "One", "scheme_key": "fbs-1"}]
+        configured = [{"id": 1, "scheme": "fbs", "name": "One", "scheme_key": "fbs"}]
         with mock.patch.object(yandex_sync.ya_tokens, "get_campaigns", return_value=configured):
             self.assertEqual(yandex_sync.resolve_campaigns("store", "key"), configured)
         with (
@@ -446,14 +446,29 @@ class YandexSyncTests(unittest.TestCase):
                 ],
             ),
         ):
-            self.assertEqual(yandex_sync.resolve_campaigns("store", "key")[0]["scheme_key"], "fbs_1")
+            self.assertEqual(yandex_sync.resolve_campaigns("store", "key")[0]["scheme_key"], "fbs")
 
         duplicate = [
-            {"scheme_key": "fbs-1", "scheme": "fbs", "name": "One", "id": 1},
-            {"scheme_key": "fbs-1", "scheme": "fbs", "name": "One", "id": 1},
+            {"scheme_key": "fbs", "scheme": "fbs", "name": "One", "id": 1},
+            {"scheme_key": "fbs", "scheme": "fbs", "name": "Two", "id": 2},
         ]
         with mock.patch.object(yandex_sync.ya_tokens, "get_campaigns", return_value=duplicate):
             self.assertEqual(len(yandex_sync.store_schemes("store")), 1)
+
+        with mock.patch.object(
+            yandex_sync.db,
+            "get_fulfillments",
+            return_value=["ФулСервис Подольск", "AFFLATUS Купавна"],
+        ):
+            known = yandex_sync.known_ff_by_campaign()
+        self.assertEqual(
+            known[yandex_sync._normalize_ff_name("Фулл Сервис")],
+            "ФулСервис Подольск",
+        )
+        self.assertEqual(
+            known[yandex_sync._normalize_ff_name("Afflatus")],
+            "AFFLATUS Купавна",
+        )
 
         with mock.patch.object(
             yandex_sync.ya_api,
@@ -467,7 +482,8 @@ class YandexSyncTests(unittest.TestCase):
         catalog = [{"article": "A"}, {"article": "B"}]
         campaigns = [
             {"id": 1, "scheme_key": yandex_sync.ya_tokens.FBY_SCHEME_KEY, "name": "FBY"},
-            {"id": 2, "scheme_key": "fbs-2", "name": "Shop"},
+            {"id": 2, "scheme_key": yandex_sync.ya_tokens.FBS_SCHEME_KEY, "name": "Afflatus"},
+            {"id": 3, "scheme_key": yandex_sync.ya_tokens.FBS_SCHEME_KEY, "name": "ФуллСервис"},
         ]
 
         def stocks(_key, campaign_id):
@@ -476,20 +492,48 @@ class YandexSyncTests(unittest.TestCase):
                     {"article": "A", "stocks": [{"type": "AVAILABLE", "count": 2}], "warehouse_id": 1},
                     {"article": "X", "stocks": [{"type": "AVAILABLE", "count": 3}], "warehouse_id": 1},
                 ]
-            return [{"article": "B", "stocks": [{"type": "AVAILABLE", "count": 1}], "warehouse_id": 2}]
+            quantity = 1 if campaign_id == 2 else 2
+            return [
+                {
+                    "article": "B",
+                    "stocks": [{"type": "AVAILABLE", "count": quantity}],
+                    "warehouse_id": campaign_id,
+                }
+            ]
 
         with (
             mock.patch.object(yandex_sync.ya_tokens, "get_api_key", return_value="key"),
             mock.patch.object(yandex_sync.db, "get_catalog_items", return_value=catalog),
             mock.patch.object(yandex_sync, "resolve_campaigns", return_value=campaigns),
             mock.patch.object(yandex_sync, "_warehouse_names", return_value={1: "WH"}),
+            mock.patch.object(
+                yandex_sync,
+                "known_ff_by_campaign",
+                return_value={
+                    yandex_sync._normalize_ff_name("Afflatus"): "AFFLATUS Купавна",
+                    yandex_sync._normalize_ff_name("ФуллСервис"): "ФулСервис Подольск",
+                },
+            ),
             mock.patch.object(yandex_sync.ya_api, "get_stocks", side_effect=stocks),
             mock.patch.object(yandex_sync.db, "replace_mp_warehouse_stock") as replace,
             mock.patch.object(yandex_sync.db, "upsert_mp_stock") as upsert,
+            mock.patch.object(yandex_sync.db, "delete_mp_stock_scheme_variants") as cleanup,
         ):
             self.assertEqual(yandex_sync.sync_store("store"), 2)
         self.assertEqual(replace.call_count, 2)
+        self.assertEqual(
+            replace.call_args_list[1].args[3],
+            [
+                ("B", "AFFLATUS Купавна", None, 1, mock.ANY),
+                ("B", "ФулСервис Подольск", None, 2, mock.ANY),
+            ],
+        )
         self.assertEqual(upsert.call_count, 4)
+        self.assertIn(
+            mock.call("store", "B", "YANDEX MARKET", "fbs", 3, mock.ANY),
+            upsert.call_args_list,
+        )
+        cleanup.assert_called_once_with("store", "YANDEX MARKET", "fbs")
 
         with (
             mock.patch.object(yandex_sync.ya_tokens, "get_api_key", return_value="key"),

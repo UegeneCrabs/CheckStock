@@ -5,15 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#ffffff">
     <title>$title</title>
-    <link rel="stylesheet" href="/static/style.css?v=56">
-    <link rel="stylesheet" href="/static/skladno-theme.css?v=19">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=1">
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('checkstock-theme');
+                if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+                if (localStorage.getItem('checkstock-sidebar') === 'collapsed') {
+                    document.documentElement.classList.add('sidebar-collapsed');
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="/static/style.css?v=57">
+    <link rel="stylesheet" href="/static/skladno-theme.css?v=20">
     <link rel="stylesheet" href="/static/decision-center.css?v=1">
     <link rel="stylesheet" href="/static/rnp-dashboard.css?v=1">
+    <link rel="stylesheet" href="/static/ui-preferences.css?v=2">
 
 
     <script src="/static/stock-rows.js?v=6"></script>
 </head>
-<body>
+<body data-section="$section" data-access-level="$access_level">
     <div class="app-shell">
 $header
         <div class="workspace">
@@ -38,8 +51,9 @@ $content
     <script src="/static/table-filter.js?v=5"></script>
     <script src="/static/stock-table.js?v=3"></script>
     <script src="/static/sales-dashboard.js?v=3"></script>
-    <script src="/static/decision-center.js?v=1"></script>
-    <script src="/static/rnp-dashboard.js?v=2"></script>
-    <script src="/static/navigation.js?v=2"></script>
+    <script src="/static/decision-center.js?v=2"></script>
+    <script src="/static/rnp-dashboard.js?v=3"></script>
+    <script src="/static/navigation.js?v=4"></script>
+    <script src="/static/activity-tracker.js?v=1"></script>
 </body>
 </html>

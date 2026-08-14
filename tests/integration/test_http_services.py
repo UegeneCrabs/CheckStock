@@ -348,7 +348,32 @@ class HttpServiceIntegrationTests(unittest.TestCase):
                 )
             },
         )
-        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(duplicate.status_code, 200, duplicate.text)
+        self.assertEqual(duplicate.json()["report"]["added_quantity"], 0)
+        self.assertEqual(len(duplicate.json()["report"]["unchanged"]), 1)
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB"), 4)
+
+        changed_workbook = openpyxl.Workbook()
+        changed_sheet = changed_workbook.active
+        changed_sheet.append(["BARCODE", "ARTICLE", "QTY"])
+        changed_sheet.append(["460000000001", "A-1", 7])
+        changed_output = io.BytesIO()
+        changed_workbook.save(changed_output)
+        changed_workbook.close()
+        changed = self.client.post(
+            "/stock/rimili/upload-ff-stock",
+            data={"fulfillment": "Imported FF", "marketplace": "WB"},
+            files={
+                "file": (
+                    "delivery.xlsx",
+                    changed_output.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["report"]["added_quantity"], 3)
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB"), 7)
         operations = self.client.get("/stock/rimili/operations")
         self.assertEqual(operations.status_code, 200)
         self.assertIn("delivery.xlsx", operations.text)
@@ -455,6 +480,9 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/",
             "/login",
             "/logout",
+            "/profile",
+            "/access-denied",
+            "/api/activity/heartbeat",
             "/sales",
             "/sales/ephemerides",
             "/sales/orders.xlsx",
@@ -495,16 +523,29 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/stock/{slug}/shipment",
             "/stock/{slug}/trash/checked",
             "/admin",
+            "/admin/activity",
+            "/admin/activity/data",
             "/admin/users",
             "/admin/users/{user_id}/delete",
             "/admin/users/{user_id}/reset-password",
             "/admin/users/{user_id}/toggle-stock-edit",
             "/admin/users/{user_id}/toggle-active",
             "/admin/users/{user_id}/stores",
+            "/admin/users/{user_id}/role",
+            "/admin/users/{user_id}/sections",
             "/admin/operations/{operation_id}/xlsx",
             "/admin/sync-stock",
         }
         self.assertEqual(schema_paths, owned)
+
+    def test_profile_shows_current_user_access(self) -> None:
+        response = self.client.get("/profile")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("Integration Admin", response.text)
+        self.assertIn("integration@test", response.text)
+        self.assertIn("integration-admin", response.text)
+        self.assertIn("Сток · Аналитика остатков", response.text)
+        self.assertIn('href="/profile"', response.text)
 
 
 if __name__ == "__main__":
