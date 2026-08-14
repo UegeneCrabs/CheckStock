@@ -45,13 +45,23 @@
     function isNumericSeries(values) {
         var real = values.filter(function (v) { return v !== '' && v !== '—'; });
         if (!real.length) return false;
-        return real.every(function (v) { return /^-?\d+([.,]\d+)?$/.test(v); });
+        return real.every(function (v) { return numericValue(v) !== null; });
+    }
+
+    function numericValue(value) {
+        var normalized = value
+            .replace(/[\s\u00a0\u202f]/g, '')
+            .replace(',', '.');
+        if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null;
+        return Number(normalized);
     }
 
     function compareValues(va, vb, numeric) {
         if (numeric) {
-            var na = va === '' || va === '—' ? -Infinity : parseFloat(va.replace(',', '.'));
-            var nb = vb === '' || vb === '—' ? -Infinity : parseFloat(vb.replace(',', '.'));
+            var na = numericValue(va);
+            var nb = numericValue(vb);
+            if (na === null) na = -Infinity;
+            if (nb === null) nb = -Infinity;
             return na - nb;
         }
         return (va === '—' ? '' : va).localeCompare(vb === '—' ? '' : vb, 'ru');
@@ -126,6 +136,9 @@
     function renderPopoverContent(table, colIndex) {
         var values = uniqueValues(table, colIndex);
         var existing = table._tfFilters ? table._tfFilters[colIndex] : null;
+        var numeric = isNumericSeries(values);
+        var ascLabel = numeric ? 'По возрастанию' : 'Сортировать А &rarr; Я';
+        var descLabel = numeric ? 'По убыванию' : 'Сортировать Я &rarr; А';
 
         var itemsHtml = values.map(function (v) {
             var checked = !existing || existing.has(v);
@@ -140,8 +153,8 @@
 
         popover.innerHTML =
             '<div class="tf-sort">' +
-            '<button type="button" class="tf-sort-btn" data-dir="asc">Сортировать А &rarr; Я</button>' +
-            '<button type="button" class="tf-sort-btn" data-dir="desc">Сортировать Я &rarr; А</button>' +
+            '<button type="button" class="tf-sort-btn" data-dir="asc">' + ascLabel + '</button>' +
+            '<button type="button" class="tf-sort-btn" data-dir="desc">' + descLabel + '</button>' +
             '</div>' +
             '<div class="tf-divider"></div>' +
             '<div class="tf-quick-row">' +
