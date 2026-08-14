@@ -154,7 +154,7 @@ def get_mp_fbs_warehouse_details(
 ) -> list[dict]:
 
     article_filter = " AND si.article = ?" if article else ""
-    params: list = [store_slug, marketplace, marketplace]
+    params: list = [store_slug, marketplace, marketplace, "fbs%"]
     if article:
         params.append(article)
 
@@ -167,7 +167,7 @@ def get_mp_fbs_warehouse_details(
         JOIN mp_warehouse_stock ws
             ON ws.store_slug = si.store_slug AND ws.article = si.article
         WHERE si.store_slug = ? AND si.marketplace = ? AND si.is_service = 0
-          AND ws.marketplace = ? AND ws.scheme LIKE 'fbs%'
+          AND ws.marketplace = ? AND ws.scheme LIKE ?
           {article_filter}
         GROUP BY si.id, ws.scheme, ws.warehouse
         ORDER BY si.id, ws.warehouse
