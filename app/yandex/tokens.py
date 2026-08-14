@@ -71,6 +71,7 @@ def get_campaigns(store_slug: str) -> list[dict]:
 
 
 FBY_SCHEME_KEY = "fbo"
+FBS_SCHEME_KEY = "fbs"
 
 
 def scheme_key(scheme: str, campaign_id: int) -> str:
@@ -78,14 +79,14 @@ def scheme_key(scheme: str, campaign_id: int) -> str:
     scheme = (scheme or "").lower()
     if scheme in ("fby", "fbo"):
         return FBY_SCHEME_KEY
-    return f"{scheme or 'fbs'}_{campaign_id}"
+    return FBS_SCHEME_KEY
 
 
 def scheme_label(campaign: dict) -> str:
 
     if campaign["scheme_key"] == FBY_SCHEME_KEY:
         return "FBY — склады Маркета"
-    return f"FBS {campaign['name']}"
+    return "FBS — склады продавца"
 
 
 def stores_with_credentials() -> list[str]:

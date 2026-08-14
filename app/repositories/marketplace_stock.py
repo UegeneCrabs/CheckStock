@@ -61,6 +61,27 @@ def replace_mp_warehouse_stock(
     conn.close()
 
 
+def delete_mp_stock_scheme_variants(
+    store_slug: str,
+    marketplace: str,
+    canonical_scheme: str,
+) -> None:
+
+    conn = get_connection()
+    params = (store_slug, marketplace, canonical_scheme, f"{canonical_scheme}%")
+    for table in ("mp_stock", "mp_warehouse_stock"):
+        conn.execute(
+            f"""
+            DELETE FROM {table}
+            WHERE store_slug = ? AND marketplace = ?
+              AND scheme <> ? AND scheme LIKE ?
+            """,
+            params,
+        )
+    conn.commit()
+    conn.close()
+
+
 def get_warehouse_clusters(marketplace: str) -> dict[str, str]:
 
     conn = get_connection()
@@ -124,6 +145,50 @@ def get_mp_warehouse_details(
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def get_mp_fbs_warehouse_details(
+    store_slug: str,
+    marketplace: str,
+    article: str | None = None,
+) -> list[dict]:
+
+    article_filter = " AND si.article = ?" if article else ""
+    params: list = [store_slug, marketplace, marketplace]
+    if article:
+        params.append(article)
+
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT si.article, si.barcode, si.name, si.image_url,
+               ws.scheme, ws.warehouse, SUM(ws.quantity) AS quantity
+        FROM stock_items si
+        JOIN mp_warehouse_stock ws
+            ON ws.store_slug = si.store_slug AND ws.article = si.article
+        WHERE si.store_slug = ? AND si.marketplace = ? AND si.is_service = 0
+          AND ws.marketplace = ? AND ws.scheme LIKE 'fbs%'
+          {article_filter}
+        GROUP BY si.id, ws.scheme, ws.warehouse
+        ORDER BY si.id, ws.warehouse
+        """,
+        params,
+    ).fetchall()
+    conn.close()
+
+    data = [dict(row) for row in rows]
+    canonical_articles = {str(row["article"]) for row in data if row["scheme"] == "fbs"}
+    merged: dict[tuple[str, str], dict] = {}
+    for row in data:
+        row_article = str(row["article"])
+        if row_article in canonical_articles and row["scheme"] != "fbs":
+            continue
+        key = (row_article, str(row["warehouse"]))
+        if key not in merged:
+            merged[key] = {field: value for field, value in row.items() if field != "scheme"}
+        else:
+            merged[key]["quantity"] = int(merged[key]["quantity"] or 0) + int(row["quantity"] or 0)
+    return list(merged.values())
 
 
 def get_mp_stock_by_warehouse(

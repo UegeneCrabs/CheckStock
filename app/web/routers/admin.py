@@ -1,7 +1,8 @@
 import html
+import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
@@ -19,6 +20,8 @@ from app.dto.identity import (
     PasswordHashRequest,
     PermissionName,
     Role,
+    SectionAccessLevel,
+    SectionName,
     User,
     UserCollection,
     UserCountQuery,
@@ -30,6 +33,7 @@ from app.formatting import format_dt
 from app.identity_policy import ROLE_LABELS
 from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
+from app.section_access import SECTION_LABELS, access_level
 from app.stores import STORES
 from app.wb import catalog as wb_catalog
 from app.wb import sync as wb_sync
@@ -60,7 +64,10 @@ def _guard_user_action(actor: User, target: User | None, what: str) -> str | Non
     if target.id == actor.id:
         return f"нельзя {what} самого себя"
     if not can_manage_user(actor, target):
-        return f"{what} можно только обычных пользователей — админов и суперадминов трогает суперадмин"
+        return (
+            f"{what} можно только для сотрудников — администраторов и "
+            "суперадминистраторов может изменять только суперадминистратор"
+        )
     return None
 
 
@@ -86,7 +93,7 @@ async def admin_delete_user(
         )
         if left.root == 0:
             return JSONResponse(
-                {"ok": False, "error": "это последний суперадмин — сначала назначьте другого"},
+                {"ok": False, "error": "это последний суперадминистратор — сначала назначьте другого"},
                 status_code=400,
             )
 
@@ -193,7 +200,7 @@ async def admin_toggle_active(
         )
         if left.root == 0:
             return JSONResponse(
-                {"ok": False, "error": "это последний суперадмин — сначала назначьте другого"},
+                {"ok": False, "error": "это последний суперадминистратор — сначала назначьте другого"},
                 status_code=400,
             )
 
@@ -222,14 +229,14 @@ async def admin_update_user_stores(
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
     target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "менять магазины")
+    error = _guard_user_action(actor, target, "изменять доступ к кабинетам")
     if error:
         return JSONResponse({"ok": False, "error": error}, status_code=403)
 
     form = await request.form()
     store_slugs = normalize_admin_store_selection(actor, tuple(form.getlist("stores")))
     if not store_slugs:
-        return JSONResponse({"ok": False, "error": "выберите хотя бы один магазин"}, status_code=400)
+        return JSONResponse({"ok": False, "error": "выберите хотя бы один кабинет"}, status_code=400)
 
     labels = ", ".join(STORES[slug].name for slug in store_slugs)
     command = AuditedUserMutation(
@@ -238,12 +245,96 @@ async def admin_update_user_stores(
         store_slugs=tuple(store_slugs),
         activity=_activity(
             actor,
-            "Изменены магазины сотрудника",
+            "Изменён доступ сотрудника к кабинетам",
             f"{target.full_name}: {labels}",
         ),
     )
     await run_in_threadpool(identities.mutate_user, command)
     return JSONResponse({"ok": True, "stores": store_slugs})
+
+
+@router.post("/admin/users/{user_id}/role")
+async def admin_update_user_role(
+    request: Request,
+    user_id: int,
+    identities: IdentityServiceDependency,
+    role: str = Form(...),
+):
+    actor = request.state.user
+    if not auth.has_role(actor, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    target = await run_in_threadpool(identities.get_user, UserId(user_id))
+    error = _guard_user_action(actor, target, "менять роль")
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    try:
+        new_role = Role(role)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "неизвестная роль"}, status_code=400)
+    if target.role is Role.SUPERADMIN and new_role is not Role.SUPERADMIN:
+        left = await run_in_threadpool(
+            identities.count_superadmins,
+            UserCountQuery(exclude_user_id=user_id),
+        )
+        if left.root == 0:
+            return JSONResponse(
+                {"ok": False, "error": "это последний суперадминистратор — сначала назначьте другого"},
+                status_code=400,
+            )
+    command = AuditedUserMutation(
+        kind=UserMutationKind.ROLE,
+        user_id=user_id,
+        role=new_role,
+        activity=_activity(
+            actor,
+            "Изменена роль сотрудника",
+            f"{target.full_name}: {ROLE_LABELS[target.role]} → {ROLE_LABELS[new_role]}",
+        ),
+    )
+    await run_in_threadpool(identities.mutate_user, command)
+    return JSONResponse({"ok": True, "role": new_role.value})
+
+
+@router.post("/admin/users/{user_id}/sections")
+async def admin_update_user_sections(
+    request: Request,
+    user_id: int,
+    identities: IdentityServiceDependency,
+):
+    actor = request.state.user
+    if not auth.has_role(actor, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    target = await run_in_threadpool(identities.get_user, UserId(user_id))
+    error = _guard_user_action(actor, target, "изменять права доступа по разделам")
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    if target.role is Role.SUPERADMIN:
+        return JSONResponse(
+            {"ok": False, "error": "суперадминистратору всегда предоставлен полный доступ"},
+            status_code=400,
+        )
+    form = await request.form()
+    permissions: dict[SectionName, SectionAccessLevel] = {}
+    try:
+        for section in SectionName:
+            permissions[section] = SectionAccessLevel(str(form.get(section.value) or ""))
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "проверьте права разделов"}, status_code=400)
+    details = ", ".join(
+        f"{SECTION_LABELS[section]}: {level.value}" for section, level in permissions.items()
+    )
+    command = AuditedUserMutation(
+        kind=UserMutationKind.SECTIONS,
+        user_id=user_id,
+        section_access=permissions,
+        activity=_activity(
+            actor,
+            "Изменены права доступа по разделам",
+            f"{target.full_name}: {details}",
+        ),
+    )
+    await run_in_threadpool(identities.mutate_user, command)
+    return JSONResponse({"ok": True})
 
 
 def creatable_roles(actor: User) -> tuple[Role, ...]:
@@ -274,6 +365,14 @@ def render_role_options(actor: User) -> str:
     return "\n".join(
         f'                    <option value="{role.value}">{html.escape(ROLE_LABELS[role])}</option>'
         for role in creatable_roles(actor)
+    )
+
+
+def render_user_role_options(user: User) -> str:
+    return "".join(
+        f'<option value="{role.value}"{" selected" if user.role is role else ""}>'
+        f"{html.escape(ROLE_LABELS[role])}</option>"
+        for role in Role
     )
 
 
@@ -343,16 +442,38 @@ def render_user_rows(actor: User, users: UserCollection) -> str:
         )
         if can_manage_user(actor, user):
             store_cell = render_store_checkboxes(actor, user.store_slugs)
+            superadmin_controls = ""
+            stock_control = (
+                f'<button type="button" class="u-act u-act--stock">'
+                f"{'Запретить изменения' if can_edit else 'Разрешить изменения'}</button>"
+            )
+            if auth.has_role(actor, "superadmin"):
+                permissions = {
+                    section.value: access_level(user, section).value for section in SectionName
+                }
+                superadmin_controls = (
+                    '<div class="u-role-editor">'
+                    f'<select class="select-control u-role-select">{render_user_role_options(user)}</select>'
+                    '<button type="button" class="u-act u-act--role">Сохранить роль</button>'
+                    "</div>"
+                )
+                if user.role is not Role.SUPERADMIN:
+                    superadmin_controls += (
+                        f'<button type="button" class="u-act u-act--sections" data-section-access="'
+                        f'{html.escape(json.dumps(permissions, ensure_ascii=False), quote=True)}">'
+                        "Права доступа</button>"
+                    )
+                stock_control = ""
             actions = (
                 f'<div class="u-actions" data-user-id="{user.id}" '
                 f'data-user-name="{html.escape(user.full_name, quote=True)}" '
                 f'data-active="{"1" if active else "0"}" '
                 f'data-can-edit="{"1" if can_edit else "0"}">'
-                '<button type="button" class="u-act u-act--stores">Сохранить магазины</button>'
+                '<button type="button" class="u-act u-act--stores">Сохранить доступ</button>'
                 '<button type="button" class="u-act u-act--reset">Сбросить пароль</button>'
                 f'<button type="button" class="u-act u-act--toggle">{"Заблокировать" if active else "Разблокировать"}</button>'
-                f'<button type="button" class="u-act u-act--stock">'
-                f"{'Запретить изменения' if can_edit else 'Разрешить изменения'}</button>"
+                f"{stock_control}"
+                f"{superadmin_controls}"
                 '<button type="button" class="u-act u-act--delete">Удалить</button>'
                 "</div>"
             )
@@ -415,6 +536,161 @@ def render_log_rows(user: User, activity: ActivityLog) -> str:
     return "".join(rows)
 
 
+def _format_duration(seconds: int) -> str:
+    total = max(0, int(seconds or 0))
+    hours, remainder = divmod(total, 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours} ч {minutes} мин"
+    if minutes:
+        return f"{minutes} мин"
+    return f"{total} сек"
+
+
+def _usage_location(section_key: str | None, path: str | None) -> str:
+    if section_key in SectionName._value2member_map_:
+        return str(SECTION_LABELS.get(SectionName(section_key), section_key))
+    if path == "/admin/activity":
+        return "Статистика использования"
+    if path and path.startswith("/admin"):
+        return "Админ-панель"
+    if path == "/access-denied":
+        return "Нет доступа"
+    return "—"
+
+
+def render_usage_dashboard(data: dict[str, object]) -> str:
+    people = data["people"]
+    sections = data["sections"]
+    sessions = data["sessions"]
+    people_rows = []
+    for person in people:
+        section_label = _usage_location(person["last_section"], person["last_path"])
+        status = (
+            '<span class="u-status u-status--on">онлайн</span>'
+            if person["online"]
+            else '<span class="u-status u-status--off">не онлайн</span>'
+        )
+        people_rows.append(
+            "<tr>"
+            f'<td>{html.escape(str(person["full_name"]))}<small class="usage-login">'
+            f'{html.escape(str(person["login"]))}</small></td>'
+            f"<td>{status}</td>"
+            f'<td>{html.escape(section_label)}</td>'
+            f'<td>{html.escape(format_dt(person["last_seen"]))}</td>'
+            f'<td>{html.escape(_format_duration(person["active_today"]))}</td>'
+            f'<td>{html.escape(_format_duration(person["active_period"]))}</td>'
+            f'<td>{person["page_views"]}</td>'
+            "</tr>"
+        )
+    if not people_rows:
+        people_rows.append('<tr class="empty-row"><td colspan="7">Пока нет пользователей</td></tr>')
+
+    max_section_seconds = max((int(item["active_seconds"]) for item in sections), default=0)
+    section_rows = []
+    for item in sections:
+        key = item["section"]
+        label = (
+            SECTION_LABELS.get(SectionName(key), key)
+            if key in SectionName._value2member_map_
+            else key
+        )
+        width = (
+            max(3, round(int(item["active_seconds"]) * 100 / max_section_seconds))
+            if max_section_seconds
+            else 0
+        )
+        section_rows.append(
+            '<div class="usage-section-row">'
+            '<div class="usage-section-copy">'
+            f"<strong>{html.escape(str(label))}</strong>"
+            f'<span>{item["page_views"]} открытий · {item["unique_users"]} пользователей · '
+            f'{html.escape(_format_duration(item["active_seconds"]))}</span>'
+            "</div>"
+            f'<div class="usage-section-bar"><span style="width:{width}%"></span></div>'
+            "</div>"
+        )
+    if not section_rows:
+        section_rows.append('<p class="panel-desc">Статистика появится после первых посещений.</p>')
+
+    session_rows = []
+    for item in sessions:
+        state = "онлайн" if item["online"] else ("вышел" if item["ended_at"] else "неактивен")
+        location = _usage_location(item["last_section"], item["last_path"])
+        session_rows.append(
+            "<tr>"
+            f'<td>{html.escape(str(item["full_name"]))}<small class="usage-login">'
+            f'{html.escape(str(item["login"]))}</small></td>'
+            f'<td>{html.escape(format_dt(item["started_at"]))}</td>'
+            f'<td>{html.escape(format_dt(item["last_seen_at"]))}</td>'
+            f'<td>{html.escape(_format_duration(item["active_seconds"]))}</td>'
+            f'<td>{html.escape(location)}</td>'
+            f'<td>{html.escape(state)}</td>'
+            "</tr>"
+        )
+    if not session_rows:
+        session_rows.append('<tr class="empty-row"><td colspan="6">Входов пока не зафиксировано</td></tr>')
+
+    return (
+        '<div class="usage-cards">'
+        f'<article><span>Онлайн сейчас</span><strong>{data["online_count"]}</strong><small>активность за последние 10 минут</small></article>'
+        f'<article><span>Активны сегодня</span><strong>{data["active_today_count"]}</strong><small>уникальные пользователи</small></article>'
+        f'<article><span>Время сегодня</span><strong>{html.escape(_format_duration(data["active_today_seconds"]))}</strong><small>суммарно по пользователям</small></article>'
+        f'<article><span>Открытий разделов</span><strong>{data["period_page_views"]}</strong><small>за выбранный период</small></article>'
+        "</div>"
+        '<div class="admin-layout usage-layout">'
+        '<section class="panel"><h3 class="panel-title">Использование разделов</h3>'
+        f'<p class="panel-desc">Популярность за последние {data["days"]} дней</p>'
+        f'<div class="usage-sections">{"".join(section_rows)}</div></section>'
+        '<section class="panel"><h3 class="panel-title">Пользователи</h3>'
+        '<p class="panel-desc">Статус обновляется автоматически каждые 30 секунд</p>'
+        '<div class="table-wrap"><table class="data-table"><thead><tr>'
+        '<th>Сотрудник</th><th>Статус</th><th>Сейчас</th><th>Последняя активность</th>'
+        '<th>Сегодня</th><th>За период</th><th>Открытий</th>'
+        f'</tr></thead><tbody>{"".join(people_rows)}</tbody></table></div></section></div>'
+        '<section class="panel panel--wide"><h3 class="panel-title">История входов</h3>'
+        '<p class="panel-desc">Последние 100 сессий. Время считается только пока пользователь активен.</p>'
+        '<div class="table-wrap table-wrap--scroll-10"><table class="data-table"><thead><tr>'
+        '<th>Сотрудник</th><th>Вошёл</th><th>Последняя активность</th><th>Был онлайн</th><th>Последний раздел</th><th>Статус</th>'
+        f'</tr></thead><tbody>{"".join(session_rows)}</tbody></table></div></section>'
+    )
+
+
+@router.get("/admin/activity", response_class=HTMLResponse)
+async def admin_activity_page(
+    request: Request,
+    container: ContainerDependency,
+    days: int = Query(30, ge=1, le=365),
+):
+    if not auth.has_role(request.state.user, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    dashboard = await run_in_threadpool(container.usage.dashboard, days)
+    content = fill_template(
+        "admin_activity_content.html",
+        days=str(days),
+        dashboard=render_usage_dashboard(dashboard),
+    )
+    return render_page(
+        "CheckStock — Статистика использования",
+        "admin_activity",
+        content,
+        request.state.user,
+        "content--usage",
+    )
+
+
+@router.get("/admin/activity/data")
+async def admin_activity_data(
+    request: Request,
+    container: ContainerDependency,
+    days: int = Query(30, ge=1, le=365),
+):
+    if not auth.has_role(request.state.user, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    dashboard = await run_in_threadpool(container.usage.dashboard, days)
+    return JSONResponse({"ok": True, "html": render_usage_dashboard(dashboard)})
+
+
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, identities: IdentityServiceDependency):
     user = request.state.user
@@ -439,7 +715,7 @@ async def admin_page(request: Request, identities: IdentityServiceDependency):
         ),
         form_disabled=" disabled" if read_only else "",
     )
-    return render_page("CheckStock — Админка", "admin", content, user)
+    return render_page("CheckStock — Админ-панель", "admin", content, user)
 
 
 @router.get("/admin/operations/{operation_id}/xlsx")
@@ -520,7 +796,7 @@ async def admin_create_user(
         activity=_activity(
             actor,
             "Создан сотрудник",
-            f"{payload.full_name} ({payload.login}), роль: {ROLE_LABELS[payload.role]}, магазины: {store_labels}",
+            f"{payload.full_name} ({payload.login}), роль: {ROLE_LABELS[payload.role]}, кабинеты: {store_labels}",
         ),
     )
     await run_in_threadpool(identities.create_user_with_activity, command)
@@ -528,7 +804,9 @@ async def admin_create_user(
 
 
 @router.post("/admin/sync-stock")
-async def sync_stock():
+async def sync_stock(request: Request):
+    if not auth.has_role(request.state.user, "admin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
 
     wb_catalog_report = await run_in_threadpool(wb_catalog.sync_all)
     report = await run_in_threadpool(wb_sync.sync_all)

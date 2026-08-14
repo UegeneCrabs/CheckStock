@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from app import db
 from app.config import settings
 from app.ff_import import google_service_account
-from app.formatting import format_dt
 
 CODE_COLUMNS = ("barcode", "article")
 QUANTITY_COLUMNS = ("wb", "ozon", "yandex", "ym", "количество", "кол-во", "колво", "qty")
@@ -27,9 +26,6 @@ class _SheetAccessDenied(FFImportError):
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
-
-
-_format_dt = format_dt
 
 
 def _normalize_cell(v) -> str:
@@ -296,31 +292,58 @@ def _apply_entries(
     ]
 
     now = _now()
+    source_key = _source_key(source_type, sheet_url, table_title)
     with db.WRITE_LOCK:
-        existing = db.find_existing_delivery(store_slug, sheet_url, table_title, marketplace)
-        if existing is not None:
-            raise FFImportError(
-                f'поставка "{table_title}" уже была загружена {_format_dt(existing["created_at"])} '
-                f'на фулфилмент "{existing["fulfillment"]}" по {marketplace} '
-                f"({existing['matched']} товаров) — загрузка отменена, чтобы не прибавить "
-                "остатки этой поставки повторно"
-            )
-
-        for article, quantity in resolved.items():
-            db.increment_ff_stock(store_slug, article, fulfillment, quantity, now, marketplace)
-
-        db.record_delivery(
-            store_slug=store_slug,
-            fulfillment=fulfillment,
-            source_type=source_type,
+        previous = db.apply_ff_import_snapshot(
+            store_slug,
+            fulfillment,
+            marketplace,
+            source_type,
+            source_key,
+            resolved,
+            now,
             sheet_url=sheet_url,
             table_title=table_title,
             total_rows=len(entries),
-            matched=len(resolved),
             unmatched=unmatched,
-            created_at=now,
-            marketplace=marketplace,
         )
+
+    new_items = []
+    increased = []
+    unchanged = []
+    decreased = []
+    applied_items = []
+    for article, quantity in resolved.items():
+        old_quantity = previous.get(article, 0)
+        delta = quantity - old_quantity
+        item = {
+            "article": article,
+            "barcode": meta_by_article.get(article, {}).get("barcode", ""),
+            "name": meta_by_article.get(article, {}).get("name", ""),
+            "previous_quantity": old_quantity,
+            "source_quantity": quantity,
+        }
+        if article not in previous and quantity > 0:
+            new_items.append({**item, "quantity": quantity})
+            applied_items.append({**item, "quantity": quantity})
+        elif delta > 0:
+            increased.append({**item, "quantity": delta})
+            applied_items.append({**item, "quantity": delta})
+        elif delta == 0:
+            unchanged.append(item)
+        else:
+            decreased.append({**item, "difference": delta})
+
+    removed = [
+        {
+            "article": article,
+            "previous_quantity": quantity,
+            "source_quantity": 0,
+            "difference": -quantity,
+        }
+        for article, quantity in previous.items()
+        if article not in resolved
+    ]
 
     return {
         "total_rows": len(entries),
@@ -328,16 +351,22 @@ def _apply_entries(
         "unmatched": unmatched,
         "table_title": table_title,
         "negative_skipped": skipped_labels,
-        "items": [
-            {
-                "article": article,
-                "barcode": meta_by_article.get(article, {}).get("barcode", ""),
-                "name": meta_by_article.get(article, {}).get("name", ""),
-                "quantity": quantity,
-            }
-            for article, quantity in resolved.items()
-        ],
+        "applied": len(applied_items),
+        "added_quantity": sum(int(item["quantity"]) for item in applied_items),
+        "new_items": new_items,
+        "increased": increased,
+        "unchanged": unchanged,
+        "decreased": decreased,
+        "removed": removed,
+        "items": applied_items,
     }
+
+
+def _source_key(source_type: str, sheet_url: str | None, table_title: str) -> str:
+    if source_type == "sheet" and sheet_url:
+        sheet_id, gid = _parse_sheet_id_and_gid(sheet_url)
+        return f"{sheet_id}:{gid or '0'}"
+    return table_title.strip().casefold()
 
 
 def import_ff_stock_from_sheet(

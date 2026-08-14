@@ -2,6 +2,7 @@
     var root = document.getElementById('unit-economics-wb');
     var configNode = document.getElementById('ue-config');
     if (!root || !configNode) return;
+    var readOnly = document.body.dataset.accessLevel === 'read';
 
     var config = JSON.parse(configNode.textContent);
     var money = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 });
@@ -265,6 +266,7 @@
     function rateInput(name, field, value, label) {
         return '<td><input type="number" min="0" max="1000000" step="0.01" inputmode="decimal"'
             + ' data-rate="' + field + '" value="' + escapeHtml(inputValue(finite(value))) + '"'
+            + (readOnly ? ' disabled' : '')
             + ' aria-label="' + escapeHtml(label + ', ' + name) + '"></td>';
     }
 

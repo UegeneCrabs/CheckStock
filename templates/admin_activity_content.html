@@ -1,0 +1,30 @@
+        <section class="usage-head">
+            <div>
+                <h2>Статистика использования</h2>
+                <p class="page-subtitle">Сеансы, активное время и востребованность рабочих разделов</p>
+            </div>
+            <nav class="usage-periods" aria-label="Период статистики">
+                <a href="/admin/activity?days=7">7 дней</a>
+                <a href="/admin/activity?days=30">30 дней</a>
+                <a href="/admin/activity?days=90">90 дней</a>
+            </nav>
+        </section>
+        <div id="usage-dashboard" data-days="$days">
+$dashboard
+        </div>
+        <script>
+            (function () {
+                var root = document.getElementById('usage-dashboard');
+                if (!root) return;
+                window.setInterval(function () {
+                    fetch('/admin/activity/data?days=' + encodeURIComponent(root.dataset.days), {
+                        headers: { 'Accept': 'application/json' }
+                    })
+                        .then(function (response) { return response.json(); })
+                        .then(function (payload) {
+                            if (payload.ok) root.innerHTML = payload.html;
+                        })
+                        .catch(function () {});
+                }, 30000);
+            })();
+        </script>

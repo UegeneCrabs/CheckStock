@@ -138,11 +138,51 @@ class WebRouteUnitTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200, response.text[:500])
                 self.assertTrue(response.content)
 
-    def test_unit_economics_is_hidden_from_sales_navigation(self) -> None:
+    def test_unit_economics_is_visible_in_sales_navigation(self) -> None:
         response = self.client.get("/sales")
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn('href="/sales/unit-economics', response.text)
+        self.assertIn('href="/sales/unit-economics', response.text)
+
+    def test_yandex_stock_shows_combined_fby_and_fbs(self) -> None:
+        db.replace_catalog(
+            "rimili",
+            "YANDEX MARKET",
+            [{"article": "YA-1", "barcode": "123", "name": "Яндекс товар"}],
+            NOW,
+        )
+        db.upsert_mp_stock("rimili", "YA-1", "YANDEX MARKET", "fbo", 19, NOW)
+        db.upsert_mp_stock("rimili", "YA-1", "YANDEX MARKET", "fbs", 17, NOW)
+        db.replace_mp_warehouse_stock(
+            "rimili",
+            "YANDEX MARKET",
+            "fbs_149217490",
+            [("YA-1", "Afflatus", None, 17, NOW)],
+        )
+
+        page = self.client.get("/stock/rimili", params={"mp": "YANDEX MARKET"})
+        self.assertEqual(page.status_code, 200, page.text[:500])
+        self.assertIn("FBY — склады Маркета", page.text)
+        self.assertIn("FBS — склады продавца", page.text)
+        self.assertIn('tot-grand">36</strong>', page.text)
+        self.assertIn('tot-fbo">19</strong>', page.text)
+        self.assertIn('tot-fbs">17</strong>', page.text)
+
+        fbs = self.client.get("/stock/rimili/fbs", params={"mp": "YANDEX MARKET"})
+        self.assertEqual(fbs.json(), {"fbs": {"YA-1": 17}})
+
+        detail = self.client.get(
+            "/stock/rimili/article-detail",
+            params={"mp": "YANDEX MARKET", "article": "YA-1"},
+        )
+        fulfillment = next(
+            row for row in detail.json()["warehouses"] if row["name"] == "AFFLATUS Купавна"
+        )
+        self.assertEqual(fulfillment["fbs"], 17)
+
+        warehouses = self.client.get("/stock/rimili/warehouses", params={"mp": "YANDEX MARKET"})
+        self.assertEqual(warehouses.status_code, 200, warehouses.text[:500])
+        self.assertIn("Afflatus", warehouses.text)
 
     def test_page_and_download_errors_are_reported(self) -> None:
         cases = (

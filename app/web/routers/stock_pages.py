@@ -12,6 +12,7 @@ from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num
 from app.web.stock_rendering import (
+    fbs_schemes_for,
     marketplace_ready,
     render_ff_options,
     render_mp_move_options,
@@ -21,9 +22,23 @@ from app.web.stock_rendering import (
     schemes_for,
 )
 from app.web.templating import fill_template, render_page
+from app.yandex import sync as ya_sync
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _get_fbs_stock(store_slug: str, marketplace: str, warehouse: str = "") -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for scheme in fbs_schemes_for(marketplace, store_slug):
+        rows = (
+            db.get_mp_stock_by_warehouse(store_slug, marketplace, scheme, warehouse)
+            if warehouse
+            else db.get_mp_stock_totals(store_slug, marketplace, scheme)
+        )
+        for article, quantity in rows.items():
+            totals[article] = totals.get(article, 0) + int(quantity or 0)
+    return totals
 
 
 @router.get("/stock", response_class=HTMLResponse)
@@ -150,10 +165,7 @@ async def stock_store_fbs_by_ff(slug: str, ff: str = "", mp: str = ""):
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp or db.DEFAULT_MARKETPLACE
-    if ff:
-        stock = await run_in_threadpool(db.get_mp_stock_by_warehouse, slug.lower(), marketplace, "fbs", ff)
-    else:
-        stock = await run_in_threadpool(db.get_mp_stock_totals, slug.lower(), marketplace, "fbs")
+    stock = await run_in_threadpool(_get_fbs_stock, slug.lower(), marketplace, ff)
 
     return JSONResponse({"fbs": stock})
 
@@ -183,17 +195,31 @@ async def stock_store_article_detail(slug: str, article: str = "", mp: str = "")
         raise HTTPException(status_code=400, detail="Неизвестный маркетплейс")
 
     def load_warehouses() -> list[dict]:
+        fulfillments = db.get_fulfillments()
+        fbs_by_warehouse: dict[str, int] = {}
+        yandex_names = ya_sync.known_ff_by_campaign() if marketplace == "YANDEX MARKET" else {}
+        for row in db.get_mp_fbs_warehouse_details(store_slug, marketplace, article):
+            warehouse = str(row["warehouse"])
+            if yandex_names:
+                warehouse = yandex_names.get(ya_sync._normalize_ff_name(warehouse), warehouse)
+            fbs_by_warehouse[warehouse] = fbs_by_warehouse.get(warehouse, 0) + int(
+                row["quantity"] or 0
+            )
+
         warehouses = []
-        for fulfillment in db.get_fulfillments():
+        for fulfillment in fulfillments:
             available = db.get_ff_available_totals(store_slug, fulfillment, marketplace).get(article, 0)
-            fbs = db.get_mp_stock_by_warehouse(store_slug, marketplace, "fbs", fulfillment).get(article, 0)
             warehouses.append(
                 {
                     "name": fulfillment,
                     "available": int(available or 0),
-                    "fbs": int(fbs or 0),
+                    "fbs": fbs_by_warehouse.pop(fulfillment, 0),
                 }
             )
+        warehouses.extend(
+            {"name": warehouse, "available": 0, "fbs": quantity}
+            for warehouse, quantity in sorted(fbs_by_warehouse.items())
+        )
         return warehouses
 
     warehouses = await run_in_threadpool(load_warehouses)

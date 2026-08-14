@@ -1532,6 +1532,165 @@ main h2 {
     margin-bottom: var(--space-lg);
 }
 
+.usage-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.usage-head h2 {
+    margin: 0 0 6px;
+}
+
+.usage-periods {
+    display: flex;
+    gap: 8px;
+}
+
+.usage-periods a {
+    padding: 8px 12px;
+    border: 1px solid var(--border, #dfe4ea);
+    border-radius: 10px;
+    background: #fff;
+    color: inherit;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.usage-cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.usage-cards article {
+    display: grid;
+    gap: 6px;
+    padding: 18px;
+    border: 1px solid var(--border, #e4e8ed);
+    border-radius: 16px;
+    background: #fff;
+}
+
+.usage-cards span,
+.usage-cards small,
+.usage-login {
+    color: #7a8491;
+}
+
+.usage-cards strong {
+    font-size: 26px;
+}
+
+.usage-login {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+}
+
+.usage-layout {
+    align-items: start;
+}
+
+.usage-sections {
+    display: grid;
+    gap: 16px;
+}
+
+.usage-section-row {
+    display: grid;
+    gap: 8px;
+}
+
+.usage-section-copy {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.usage-section-copy span {
+    color: #7a8491;
+    font-size: 12px;
+    text-align: right;
+}
+
+.usage-section-bar {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: #edf1f4;
+}
+
+.usage-section-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #5aa469, #9acb76);
+}
+
+.u-role-editor {
+    display: grid;
+    grid-template-columns: minmax(9rem, 1fr) auto;
+    gap: 6px;
+}
+
+.u-role-select {
+    min-width: 0;
+    margin: 0;
+}
+
+.section-access-editor {
+    display: grid;
+    gap: 10px;
+    min-width: min(28rem, 70vw);
+}
+
+.section-access-editor label {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) minmax(11rem, 1fr);
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+}
+
+.section-access-editor .select-control {
+    margin: 0;
+}
+
+body[data-access-level="read"] [data-dc-sync],
+body[data-access-level="read"] [data-dc-set-status],
+body[data-access-level="read"] [data-rnp-refresh],
+body[data-access-level="read"] [data-rnp-modal-submit],
+body[data-access-level="read"] #ue-ff-rates-save {
+    display: none !important;
+}
+
+@media (max-width: 1100px) {
+    .usage-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .usage-head,
+    .usage-section-copy {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .usage-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .usage-section-copy span {
+        text-align: left;
+    }
+}
+
 
 
 .manual-add {

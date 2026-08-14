@@ -1,9 +1,9 @@
 from app.dto.identity import Role, User, coerce_user
 
 ROLE_LABELS: dict[Role, str] = {
-    Role.SUPERADMIN: "Суперадмин",
-    Role.ADMIN: "Админ",
-    Role.USER: "Пользователь",
+    Role.SUPERADMIN: "Суперадминистратор",
+    Role.ADMIN: "Администратор",
+    Role.USER: "Сотрудник",
 }
 
 

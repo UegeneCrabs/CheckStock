@@ -35,7 +35,7 @@ class RnpCommandService:
             strategy = unit_of_work.repository.save_strategy(
                 SaveRnpStrategyCommand(
                     request=request,
-                    updated_by=user.full_name or "Пользователь",
+                    updated_by=user.full_name or "Сотрудник",
                     updated_at=self._clock(),
                 )
             )
@@ -57,7 +57,7 @@ class RnpCommandService:
                 AddRnpActionCommand(
                     request=request,
                     user_id=user.id,
-                    user_name=user.full_name or "Пользователь",
+                    user_name=user.full_name or "Сотрудник",
                     created_at=self._clock(),
                 )
             )

@@ -184,15 +184,25 @@
             </div>
 
             <div class="sales-module-grid sales-module-grid--compact">
-                <a class="sales-module" href="/sales/ephemerides">
+                <a class="sales-module" href="/sales/ephemerides"$ephemerides_hidden>
                     <span class="sales-module-icon">ЭФ</span>
                     <strong>Эфемериды</strong>
                     <small>Динамика и события по дням</small>
                 </a>
-                <a class="sales-module" href="/sales/rnp">
+                <a class="sales-module" href="/sales/rnp"$rnp_hidden>
                     <span class="sales-module-icon">РНП</span>
                     <strong>РНП</strong>
                     <small>Контроль отчетных показателей</small>
+                </a>
+                <a class="sales-module" href="/sales/unit-economics"$unit_economics_hidden>
+                    <span class="sales-module-icon">UE</span>
+                    <strong>Юнит-экономика</strong>
+                    <small>Все площадки в одном разделе</small>
+                </a>
+                <a class="sales-module sales-module--primary" href="/sales/unit-economics/wb-fbs"$unit_economics_hidden>
+                    <span class="sales-module-icon">WB</span>
+                    <strong>Юнит-экономика WB FBS</strong>
+                    <small>Прибыль, RBE/TO, ROI и целевая цена</small>
                 </a>
             </div>
         </section>

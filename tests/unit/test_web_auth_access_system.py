@@ -48,19 +48,26 @@ class WebAuthAccessSystemTests(unittest.TestCase):
         with (
             mock.patch.object(self.identities, "authenticate", return_value=self.user),
             mock.patch.object(self.identities, "start_session", return_value=SessionToken(value="session")),
+            mock.patch.object(self.client.app.state.container.usage, "start_session"),
         ):
             response = self.client.post(
                 "/login", data={"login": "good", "password": "password"}, follow_redirects=False
             )
         self.assertEqual(response.status_code, 303)
         self.assertIn(auth_routes.auth.SESSION_COOKIE, response.cookies)
-        with mock.patch.object(self.identities, "end_session") as end:
+        with (
+            mock.patch.object(self.identities, "end_session") as end,
+            mock.patch.object(self.client.app.state.container.usage, "end_session"),
+        ):
             self.client.cookies.set(auth_routes.auth.SESSION_COOKIE, "session")
             response = self.client.get("/logout", follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         end.assert_called_once_with(SessionToken(value="session"))
         self.client.cookies.clear()
-        with mock.patch.object(self.identities, "end_session") as end:
+        with (
+            mock.patch.object(self.identities, "end_session") as end,
+            mock.patch.object(self.client.app.state.container.usage, "end_session"),
+        ):
             self.client.get("/logout", follow_redirects=False)
         end.assert_not_called()
 

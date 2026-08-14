@@ -20,6 +20,7 @@ from app.infrastructure.rnp_repository import SqlAlchemyRnpUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.repositories import core
 from app.security import Pbkdf2PasswordService
+from app.usage_analytics import UsageAnalyticsService
 
 
 class ApplicationContainer:
@@ -32,6 +33,7 @@ class ApplicationContainer:
             password_service=self.passwords,
             session_ttl=timedelta(days=settings.session_ttl_days),
         )
+        self.usage = UsageAnalyticsService(self._usage_session)
         self.rnp_commands = RnpCommandService(
             unit_of_work_factory=self._rnp_unit_of_work,
             clock=lambda: datetime.now(MOSCOW_TIMEZONE),
@@ -68,3 +70,7 @@ class ApplicationContainer:
     def _fulfillment_rate_unit_of_work(self) -> SqlAlchemyFulfillmentRateUnitOfWork:
         database = database_for_path(self._database_path())
         return SqlAlchemyFulfillmentRateUnitOfWork(database.session_factory)
+
+    def _usage_session(self):
+        database = database_for_path(self._database_path())
+        return database.session_factory()

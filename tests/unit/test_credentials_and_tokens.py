@@ -122,10 +122,11 @@ class MarketplaceTokenTests(unittest.TestCase):
             campaigns = yandex_tokens.get_campaigns("good")
             self.assertEqual(len(campaigns), 2)
             self.assertEqual(campaigns[0]["scheme_key"], "fbo")
-            self.assertIn("Two", yandex_tokens.scheme_label(campaigns[1]))
+            self.assertEqual(campaigns[1]["scheme_key"], "fbs")
+            self.assertEqual(yandex_tokens.scheme_label(campaigns[1]), "FBS — склады продавца")
             self.assertEqual(yandex_tokens.get_campaigns("bad"), [])
             self.assertEqual(yandex_tokens.stores_with_credentials(), ["good"])
-            self.assertEqual(yandex_tokens.scheme_key("", 9), "fbs_9")
+            self.assertEqual(yandex_tokens.scheme_key("", 9), "fbs")
 
         for index, value in enumerate(("{bad", "[]")):
             invalid = self.root / f"ya-invalid-{index}.json"

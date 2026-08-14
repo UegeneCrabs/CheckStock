@@ -147,9 +147,11 @@ def test_import_delivery_application_and_wrappers() -> None:
     ]
     with (
         mock.patch.object(importer.db, "get_catalog_items", return_value=catalog),
-        mock.patch.object(importer.db, "find_existing_delivery", return_value=None),
-        mock.patch.object(importer.db, "increment_ff_stock") as increment,
-        mock.patch.object(importer.db, "record_delivery") as record,
+        mock.patch.object(
+            importer.db,
+            "apply_ff_import_snapshot",
+            return_value={"A": 5},
+        ) as apply_snapshot,
     ):
         result = importer._apply_entries(
             "store",
@@ -163,9 +165,31 @@ def test_import_delivery_application_and_wrappers() -> None:
         )
     assert result["matched"] == 1
     assert result["unmatched"] == 1
-    assert result["items"][0]["quantity"] == 5
-    increment.assert_called_once()
-    record.assert_called_once()
+    assert result["items"] == []
+    assert result["unchanged"][0]["article"] == "A"
+    assert result["negative_skipped"] == [{"article": "B", "quantity": -1}]
+    apply_snapshot.assert_called_once()
+
+    with (
+        mock.patch.object(importer.db, "get_catalog_items", return_value=catalog),
+        mock.patch.object(
+            importer.db,
+            "apply_ff_import_snapshot",
+            return_value={"A": 2},
+        ),
+    ):
+        changed = importer._apply_entries(
+            "store",
+            "FF",
+            [("bc", "", 5), ("bb", "", 3)],
+            marketplace="WB",
+            source_type="file",
+            sheet_url=None,
+            table_title="delivery.xlsx",
+        )
+    assert changed["added_quantity"] == 6
+    assert changed["increased"][0]["quantity"] == 3
+    assert changed["new_items"][0]["article"] == "B"
 
     rows = [["BARCODE", "ARTICLE", "QTY"], ["bc", "A", "2"]]
     with (
