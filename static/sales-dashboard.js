@@ -46,7 +46,7 @@
     var currentState = null;
     var activeIndex = 0;
     var requestNumber = 0;
-    var bounds = { left: 72, right: 988, top: 48, bottom: 330 };
+    var bounds = { left: 72, right: 988, top: 32, bottom: 208 };
     var marketplaceNames = {
         'WB': 'Wildberries',
         'OZON': 'Ozon',
@@ -282,15 +282,24 @@
 
     function renderLabels(series) {
         var count = series.length;
-        var desired = 11;
-        var step = Math.max(1, Math.ceil((count - 1) / desired));
+        if (!count) {
+            xLabels.innerHTML = '';
+            return;
+        }
+        var renderedWidth = Math.max(320, chart.getBoundingClientRect().width);
+        var desired = Math.max(2, Math.min(11, Math.floor(renderedWidth / 82)));
+        var intervals = Math.max(1, Math.min(count - 1, desired - 1));
         var indices = [];
-        for (var index = 0; index < count; index += step) indices.push(index);
-        if (indices[indices.length - 1] !== count - 1) indices.push(count - 1);
-        xLabels.innerHTML = indices.map(function (itemIndex) {
+        for (var index = 0; index <= intervals; index += 1) {
+            var itemIndex = Math.round(index * (count - 1) / intervals);
+            if (indices[indices.length - 1] !== itemIndex) indices.push(itemIndex);
+        }
+        xLabels.innerHTML = indices.map(function (itemIndex, labelIndex) {
             var x = count === 1 ? (bounds.left + bounds.right) / 2 :
                 bounds.left + (bounds.right - bounds.left) * itemIndex / (count - 1);
-            return '<text x="' + x.toFixed(1) + '" y="370">' + formatDate(series[itemIndex].date, false) + '</text>';
+            var anchor = labelIndex === 0 ? 'start' : labelIndex === indices.length - 1 ? 'end' : 'middle';
+            return '<text x="' + x.toFixed(1) + '" y="250" text-anchor="' + anchor + '">' +
+                formatDate(series[itemIndex].date, false) + '</text>';
         }).join('');
     }
 
@@ -493,6 +502,19 @@
         else activeIndex += 1;
         setActivePoint(activeIndex, true);
     });
+
+    var labelResizeFrame = 0;
+    function refreshDateLabels() {
+        if (!currentState || !currentState.data.series.length) return;
+        window.cancelAnimationFrame(labelResizeFrame);
+        labelResizeFrame = window.requestAnimationFrame(function () {
+            renderLabels(currentState.data.series);
+        });
+    }
+    window.addEventListener('resize', refreshDateLabels);
+    if ('ResizeObserver' in window) {
+        new ResizeObserver(refreshDateLabels).observe(chart);
+    }
 
     updateDateMinimum();
     updateExportLink();

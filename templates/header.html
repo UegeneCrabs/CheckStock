@@ -82,7 +82,7 @@
                     <span class="theme-switch" aria-hidden="true"><i></i></span>
                 </button>
                 <div class="notifications-wrap">
-                    <button class="notifications-trigger" id="notifications-trigger" type="button"
+                    <button class="notifications-trigger" id="notifications-trigger" type="button" title="Уведомления"
                             aria-label="Открыть уведомления" aria-expanded="false" aria-controls="notifications-panel">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
                         <span>Уведомления</span>
@@ -105,11 +105,14 @@
                         </div>
                     </div>
                 </div>
-                <div class="connection"><span class="live-dot" aria-hidden="true"></span><span>Подключено</span></div>
                 <div class="profile $profile_active">
                     <a class="profile-main" href="/profile" title="Открыть профиль пользователя" aria-label="Открыть профиль пользователя">
                         <span class="avatar">$user_initials</span>
-                        <span class="profile-copy"><strong>$user_name</strong><small>$user_role</small></span>
+                        <span class="profile-copy">
+                            <strong>$user_name</strong>
+                            <small>$user_role</small>
+                            <span class="profile-connection"><span class="live-dot" aria-hidden="true"></span><span>Подключено</span></span>
+                        </span>
                     </a>
                     <a class="profile-logout" href="/logout" title="Выйти" aria-label="Выйти">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path></svg>

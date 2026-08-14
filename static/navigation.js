@@ -30,6 +30,19 @@
         });
     });
 
+    var mobileNavigation = window.matchMedia('(max-width: 800px)');
+
+    function syncNavigationBreakpoint(event) {
+        if (!event.matches) return;
+        groups.forEach(function (group) { setOpen(group, false); });
+    }
+
+    if (mobileNavigation.addEventListener) {
+        mobileNavigation.addEventListener('change', syncNavigationBreakpoint);
+    } else if (mobileNavigation.addListener) {
+        mobileNavigation.addListener(syncNavigationBreakpoint);
+    }
+
     function setSidebarCollapsed(collapsed) {
         document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
         if (collapse) {

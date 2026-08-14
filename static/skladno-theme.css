@@ -5655,3 +5655,276 @@ body.stock-drawer-open {
         grid-template-columns: 1fr;
     }
 }
+
+/* Compact sales overview: keeps the primary workflow inside one desktop viewport. */
+body[data-section="sales"] .content {
+    padding-bottom: 8px;
+}
+
+.sales-dashboard {
+    min-width: 0;
+    gap: 10px;
+}
+
+.sales-head,
+.sales-filter-panel,
+.sales-chart-panel,
+.sales-summary-grid {
+    width: 100%;
+    min-width: 0;
+}
+
+.sales-head {
+    min-height: 74px;
+    padding: 12px 16px;
+}
+
+.sales-head h2 {
+    font-size: 1.2rem;
+}
+
+.sales-head .page-subtitle {
+    margin-top: 4px;
+    font-size: 0.75rem;
+}
+
+.sales-period-badge {
+    min-width: 196px;
+    height: 42px;
+    padding: 5px 10px;
+    grid-template-columns: 8px minmax(0, 1fr);
+    gap: 8px;
+}
+
+.sales-period-badge > div {
+    gap: 1px;
+    align-content: center;
+}
+
+.sales-period-badge span {
+    line-height: 12px;
+}
+
+.sales-period-badge strong {
+    overflow: hidden;
+    font-size: 0.6875rem;
+    line-height: 14px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.sales-period-badge .sales-sync-dot {
+    width: 8px;
+    height: 8px;
+    box-shadow: 0 0 0 3px rgba(170, 179, 194, 0.14);
+}
+
+.sales-filter-panel {
+    padding: 10px 12px;
+    grid-template-columns: minmax(0, 2.6fr) minmax(120px, 0.72fr) minmax(140px, 0.82fr) auto;
+    gap: 8px;
+}
+
+.sales-range-field {
+    grid-template-columns: minmax(230px, 1fr) minmax(128px, 0.45fr);
+    grid-template-rows: 16px 38px;
+    gap: 4px 8px;
+}
+
+.sales-filter-panel .sales-field {
+    height: 58px;
+    grid-template-rows: 16px 38px;
+    gap: 4px;
+    align-self: end;
+}
+
+.sales-filter-caption,
+.sales-filter-panel .sales-field > span {
+    line-height: 16px;
+}
+
+.sales-filter-panel .sales-field .cs-wrap,
+.sales-filter-panel .sales-field .cs-trigger {
+    height: 38px;
+    min-height: 38px;
+}
+
+.sales-date-range {
+    grid-template-columns: minmax(108px, 1fr) 12px minmax(108px, 1fr);
+    gap: 4px;
+}
+
+.sales-date-range label,
+.sales-presets,
+.sales-apply,
+.sales-export {
+    height: 38px;
+}
+
+.sales-date-range label {
+    padding-inline: 8px;
+    gap: 5px;
+}
+
+.sales-date-input {
+    font-size: 0.75rem;
+}
+
+.sales-presets button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 3px;
+    font-size: 0.625rem;
+    white-space: nowrap;
+}
+
+.sales-presets {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+}
+
+.sales-filter-actions {
+    gap: 6px;
+    align-self: end;
+}
+
+.sales-apply {
+    min-width: 108px;
+    min-height: 38px;
+    padding-inline: 12px;
+}
+
+.sales-export {
+    min-width: 66px;
+    padding-inline: 10px;
+}
+
+.sales-chart-toolbar {
+    min-height: 54px;
+    padding: 10px 14px 9px;
+    gap: 12px;
+}
+
+.sales-chart-toolbar h3 {
+    font-size: 0.9375rem;
+}
+
+.sales-chart-toolbar p {
+    margin-top: 2px;
+    font-size: 0.6875rem;
+}
+
+.sales-legend {
+    gap: 5px;
+}
+
+.sales-legend-toggle {
+    min-height: 26px;
+    padding-inline: 7px;
+    gap: 6px;
+}
+
+.sales-legend i {
+    width: 14px;
+}
+
+.sales-chart-wrap {
+    min-height: 0;
+    padding: 8px 12px 6px;
+    overflow-x: hidden;
+}
+
+.sales-chart {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+}
+
+.sales-x-labels text:first-child {
+    text-anchor: start;
+}
+
+.sales-x-labels text:last-child {
+    text-anchor: end;
+}
+
+.sales-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.sales-kpi {
+    min-height: 78px;
+    padding: 11px 13px;
+    gap: 4px;
+}
+
+.sales-kpi strong {
+    font-size: 1.2rem;
+}
+
+.sales-kpi small {
+    font-size: 0.6875rem;
+}
+
+@media (max-width: 1100px) {
+    .sales-filter-panel {
+        grid-template-columns: minmax(0, 1fr) minmax(140px, 0.5fr) auto;
+    }
+
+    .sales-range-field {
+        grid-column: 1 / -1;
+    }
+
+    .sales-filter-actions {
+        grid-column: auto;
+        justify-content: flex-end;
+    }
+
+    .sales-summary-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .sales-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .sales-filter-panel {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sales-range-field,
+    .sales-filter-actions {
+        grid-column: 1 / -1;
+    }
+
+    .sales-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 520px) {
+    .sales-filter-panel,
+    .sales-range-field,
+    .sales-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .sales-field,
+    .sales-range-field,
+    .sales-filter-actions {
+        grid-column: 1;
+    }
+
+    .sales-date-range {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .sales-date-separator {
+        display: none;
+    }
+}

@@ -4,7 +4,6 @@
                  data-default-to="$default_to">
             <div class="sales-head">
                 <div>
-                    <p class="section-kicker">ПРОДАЖИ</p>
                     <h2>Продажи по магазинам и схемам</h2>
                     <p class="page-subtitle">WB, Ozon и Яндекс Маркет · данные кабинетов</p>
                 </div>
@@ -80,10 +79,10 @@
                 </div>
 
                 <div class="sales-chart-wrap">
-                    <svg class="sales-chart" viewBox="0 0 1020 410" role="img"
+                    <svg class="sales-chart" viewBox="0 0 1020 264" role="img"
                          aria-label="Динамика заказов, отмен и продаж по датам">
                         <defs>
-                            <pattern id="salesDotGrid" x="72" y="48" width="24" height="24" patternUnits="userSpaceOnUse">
+                            <pattern id="salesDotGrid" x="72" y="32" width="24" height="24" patternUnits="userSpaceOnUse">
                                 <circle cx="1" cy="1" r="1" fill="#dbe2ee"></circle>
                             </pattern>
                             <linearGradient id="salesChartFill" x1="0" x2="0" y1="0" y2="1">
@@ -94,20 +93,20 @@
                                 <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#152032" flood-opacity="0.14"></feDropShadow>
                             </filter>
                         </defs>
-                        <rect class="sales-chart-dots" x="72" y="48" width="916" height="282" fill="url(#salesDotGrid)"></rect>
+                        <rect class="sales-chart-dots" x="72" y="32" width="916" height="176" fill="url(#salesDotGrid)"></rect>
                         <g class="sales-grid">
-                            <line x1="72" y1="48" x2="988" y2="48"></line>
-                            <line x1="72" y1="118.5" x2="988" y2="118.5"></line>
-                            <line x1="72" y1="189" x2="988" y2="189"></line>
-                            <line x1="72" y1="259.5" x2="988" y2="259.5"></line>
-                            <line x1="72" y1="330" x2="988" y2="330"></line>
+                            <line x1="72" y1="32" x2="988" y2="32"></line>
+                            <line x1="72" y1="76" x2="988" y2="76"></line>
+                            <line x1="72" y1="120" x2="988" y2="120"></line>
+                            <line x1="72" y1="164" x2="988" y2="164"></line>
+                            <line x1="72" y1="208" x2="988" y2="208"></line>
                         </g>
                         <g class="sales-y-labels">
-                            <text x="18" y="52" data-y-label="4">—</text>
-                            <text x="18" y="122.5" data-y-label="3">—</text>
-                            <text x="18" y="193" data-y-label="2">—</text>
-                            <text x="18" y="263.5" data-y-label="1">—</text>
-                            <text x="18" y="334" data-y-label="0">0</text>
+                            <text x="18" y="36" data-y-label="4">—</text>
+                            <text x="18" y="80" data-y-label="3">—</text>
+                            <text x="18" y="124" data-y-label="2">—</text>
+                            <text x="18" y="168" data-y-label="1">—</text>
+                            <text x="18" y="212" data-y-label="0">0</text>
                         </g>
                         <path class="sales-area" data-sales-area d=""></path>
                         <path class="sales-line sales-line--total" data-sales-line="orders" d=""></path>
@@ -117,7 +116,7 @@
                         <path class="sales-line sales-line--sales" data-sales-line="sales" d=""></path>
                         <g class="sales-x-labels" data-sales-x-labels></g>
                         <g class="sales-chart-hover" data-sales-hover aria-hidden="true">
-                            <line class="sales-reference-line" data-sales-reference-line x1="72" y1="48" x2="72" y2="330"></line>
+                            <line class="sales-reference-line" data-sales-reference-line x1="72" y1="32" x2="72" y2="208"></line>
                             <g class="sales-points" data-sales-points></g>
                             <g class="sales-chart-tooltip" data-sales-tooltip>
                                 <rect width="250" height="178" rx="8"></rect>
@@ -149,7 +148,7 @@
                                 </g>
                             </g>
                         </g>
-                        <rect class="sales-chart-hitarea" data-sales-chart-hitarea x="72" y="48" width="916" height="282"
+                        <rect class="sales-chart-hitarea" data-sales-chart-hitarea x="72" y="32" width="916" height="176"
                               tabindex="0" role="slider" aria-valuemin="1" aria-valuenow="1"
                               aria-label="Данные графика продаж"></rect>
                     </svg>
@@ -183,26 +182,4 @@
                 </article>
             </div>
 
-            <div class="sales-module-grid sales-module-grid--compact">
-                <a class="sales-module" href="/sales/ephemerides"$ephemerides_hidden>
-                    <span class="sales-module-icon">ЭФ</span>
-                    <strong>Эфемериды</strong>
-                    <small>Динамика и события по дням</small>
-                </a>
-                <a class="sales-module" href="/sales/rnp"$rnp_hidden>
-                    <span class="sales-module-icon">РНП</span>
-                    <strong>РНП</strong>
-                    <small>Контроль отчетных показателей</small>
-                </a>
-                <a class="sales-module" href="/sales/unit-economics"$unit_economics_hidden>
-                    <span class="sales-module-icon">UE</span>
-                    <strong>Юнит-экономика</strong>
-                    <small>Все площадки в одном разделе</small>
-                </a>
-                <a class="sales-module sales-module--primary" href="/sales/unit-economics/wb-fbs"$unit_economics_hidden>
-                    <span class="sales-module-icon">WB</span>
-                    <strong>Юнит-экономика WB FBS</strong>
-                    <small>Прибыль, RBE/TO, ROI и целевая цена</small>
-                </a>
-            </div>
         </section>
