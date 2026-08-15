@@ -4,7 +4,7 @@ import sys
 import uuid
 
 from app.config import Settings, settings
-from app.telegram_alerts import telegram_handler_from_env
+from app.bitrix_alerts import bitrix_handler_from_env
 
 request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
@@ -28,9 +28,9 @@ def configure_logging(app_settings: Settings = settings) -> None:
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
-    telegram_handler = telegram_handler_from_env()
-    if telegram_handler is not None:
-        root.addHandler(telegram_handler)
+    bitrix_handler = bitrix_handler_from_env()
+    if bitrix_handler is not None:
+        root.addHandler(bitrix_handler)
     root.setLevel(level)
     logging.captureWarnings(True)
     logging.getLogger("httpcore").setLevel(logging.WARNING)

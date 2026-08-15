@@ -5,7 +5,9 @@ import time
 from datetime import UTC, datetime
 from urllib import request
 
-from app.telegram_alerts import send_telegram_message
+from collections.abc import Callable
+
+from app.bitrix_alerts import send_bitrix_message
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -26,9 +28,18 @@ def check_ready(url: str, timeout_seconds: int) -> tuple[bool, str]:
         return False, f"{type(exc).__name__}: {exc}"
 
 
-def notify(bot_token: str, chat_id: str, message: str) -> bool:
+def notifier_from_env(environment: dict[str, str] | None = None) -> Callable[[str], None] | None:
+    values = environment or os.environ
+    bitrix_webhook_url = values.get("CHECKSTOCK_BITRIX_WEBHOOK_URL", "").strip()
+    bitrix_dialog_id = values.get("CHECKSTOCK_BITRIX_DIALOG_ID", "").strip()
+    if bitrix_webhook_url and bitrix_dialog_id:
+        return lambda message: send_bitrix_message(bitrix_webhook_url, bitrix_dialog_id, message)
+    return None
+
+
+def notify(sender: Callable[[str], None], message: str) -> bool:
     try:
-        send_telegram_message(bot_token, chat_id, message)
+        sender(message)
         return True
     except Exception as exc:
         print(f"watchdog notification failed: {type(exc).__name__}: {exc}", flush=True)
@@ -36,10 +47,9 @@ def notify(bot_token: str, chat_id: str, message: str) -> bool:
 
 
 def main() -> None:
-    bot_token = os.getenv("CHECKSTOCK_TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("CHECKSTOCK_TELEGRAM_CHAT_ID", "").strip()
-    if not bot_token or not chat_id:
-        print("watchdog disabled: Telegram credentials are not configured", flush=True)
+    sender = notifier_from_env()
+    if sender is None:
+        print("watchdog disabled: alert channel is not configured", flush=True)
         while True:
             time.sleep(3600)
 
@@ -67,7 +77,7 @@ def main() -> None:
                     f"Время UTC: {timestamp}\n"
                     f"Проверка: {detail}"
                 )
-                if notify(bot_token, chat_id, message):
+                if notify(sender, message):
                     outage_alerted = False
         else:
             failures += 1
@@ -80,7 +90,7 @@ def main() -> None:
                     f"Неудачных проверок подряд: {failures}\n"
                     f"Причина: {detail}"
                 )
-                if notify(bot_token, chat_id, message):
+                if notify(sender, message):
                     outage_alerted = True
         time.sleep(interval_seconds)
 
