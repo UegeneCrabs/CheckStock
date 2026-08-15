@@ -16,6 +16,7 @@ services:
       start_period: 10s
 
   app:
+    image: paketa-app
     build:
       context: .
     init: true
@@ -31,6 +32,9 @@ services:
       CHECKSTOCK_DB_BUSY_TIMEOUT_MS: ${CHECKSTOCK_DB_BUSY_TIMEOUT_MS:-30000}
       CHECKSTOCK_LOG_LEVEL: ${CHECKSTOCK_LOG_LEVEL:-INFO}
       CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS: ${CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS:-1000}
+      CHECKSTOCK_TELEGRAM_BOT_TOKEN: ${CHECKSTOCK_TELEGRAM_BOT_TOKEN:-}
+      CHECKSTOCK_TELEGRAM_CHAT_ID: ${CHECKSTOCK_TELEGRAM_CHAT_ID:-}
+      CHECKSTOCK_TELEGRAM_ALERT_COOLDOWN_SECONDS: ${CHECKSTOCK_TELEGRAM_ALERT_COOLDOWN_SECONDS:-300}
       CHECKSTOCK_ADMIN_SEED_PATH: ${CHECKSTOCK_ADMIN_SEED_PATH:-/app/secrets/admin_seed.json}
       CHECKSTOCK_WB_TOKENS_PATH: ${CHECKSTOCK_WB_TOKENS_PATH:-/app/secrets/wb_tokens.json}
       CHECKSTOCK_OZON_TOKENS_PATH: ${CHECKSTOCK_OZON_TOKENS_PATH:-/app/secrets/ozon_tokens.json}
@@ -77,6 +81,28 @@ services:
     volumes:
       - ./secrets:/app/secrets:ro
     stop_grace_period: 60s
+
+  watchdog:
+    image: paketa-app
+    restart: unless-stopped
+    init: true
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      CHECKSTOCK_TELEGRAM_BOT_TOKEN: ${CHECKSTOCK_TELEGRAM_BOT_TOKEN:-}
+      CHECKSTOCK_TELEGRAM_CHAT_ID: ${CHECKSTOCK_TELEGRAM_CHAT_ID:-}
+      CHECKSTOCK_WATCHDOG_URL: ${CHECKSTOCK_WATCHDOG_URL:-http://app:8000/readyz}
+      CHECKSTOCK_WATCHDOG_INTERVAL_SECONDS: ${CHECKSTOCK_WATCHDOG_INTERVAL_SECONDS:-60}
+      CHECKSTOCK_WATCHDOG_TIMEOUT_SECONDS: ${CHECKSTOCK_WATCHDOG_TIMEOUT_SECONDS:-10}
+      CHECKSTOCK_WATCHDOG_FAILURE_THRESHOLD: ${CHECKSTOCK_WATCHDOG_FAILURE_THRESHOLD:-3}
+    command: ["python", "-m", "scripts.health_watchdog"]
+    healthcheck:
+      disable: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 10s
 
 volumes:
   postgres-data:
