@@ -5928,3 +5928,499 @@ body[data-section="sales"] .content {
         display: none;
     }
 }
+
+/* Google Sheets export — visual refresh, scoped to the admin export page. */
+body[data-section="admin_google_export"] .content--google-export {
+    --export-border: var(--border, #e3e7ed);
+    --export-soft: color-mix(in srgb, var(--blue, #315efb) 4%, var(--card, #ffffff));
+    max-width: 1540px;
+    padding-top: 22px;
+}
+
+.content--google-export .export-page-head {
+    margin: 0 2px 14px;
+}
+
+.content--google-export .export-page-head .eyebrow {
+    margin-bottom: 5px;
+    color: var(--blue, #315efb);
+}
+
+.content--google-export .export-page-head h1 {
+    margin: 0;
+    font-size: 1.55rem;
+    line-height: 1.2;
+}
+
+.content--google-export .export-page-head h1 + p {
+    margin: 6px 0 0;
+    color: var(--text-muted, #778093);
+    font-size: 0.8125rem;
+}
+
+.content--google-export .export-help {
+    position: relative;
+    margin: 0 0 14px;
+    padding: 15px 18px 15px 58px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "title email"
+        "copy email"
+        "note note";
+    align-items: center;
+    gap: 5px 18px;
+    overflow: hidden;
+    border-color: color-mix(in srgb, var(--blue, #315efb) 18%, var(--export-border));
+    border-radius: 12px;
+    background:
+        linear-gradient(135deg, color-mix(in srgb, var(--blue, #315efb) 7%, var(--card, #ffffff)), var(--card, #ffffff) 52%);
+    box-shadow: 0 8px 24px rgba(30, 48, 78, 0.05);
+}
+
+.content--google-export .export-help::before {
+    content: "G";
+    position: absolute;
+    left: 17px;
+    top: 17px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: #ffffff;
+    background: var(--blue, #315efb);
+    font-size: 0.75rem;
+    font-weight: 800;
+    box-shadow: 0 6px 14px rgba(49, 94, 251, 0.2);
+}
+
+.content--google-export .export-help .panel-title {
+    grid-area: title;
+    margin: 0;
+    font-size: 0.9375rem;
+}
+
+.content--google-export .export-help p {
+    grid-area: copy;
+    margin: 0;
+    color: var(--ink, #152032);
+    font-size: 0.8125rem;
+}
+
+.content--google-export .export-help code {
+    grid-area: email;
+    max-width: 100%;
+    margin: 0;
+    padding: 9px 12px;
+    border: 1px solid color-mix(in srgb, var(--blue, #315efb) 16%, var(--export-border));
+    border-radius: 8px;
+    color: var(--blue, #315efb);
+    background: var(--card, #ffffff);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.content--google-export .export-help .panel-desc {
+    grid-area: note;
+    margin-top: 4px;
+    padding-top: 9px;
+    border-top: 1px solid color-mix(in srgb, var(--blue, #315efb) 10%, var(--export-border));
+    color: var(--text-muted, #778093);
+    font-size: 0.6875rem;
+}
+
+.content--google-export .export-store-tabs {
+    margin: 0 0 12px;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid var(--export-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--canvas, #f5f6f8) 74%, var(--card, #ffffff));
+    scrollbar-width: thin;
+}
+
+.content--google-export .export-store-tab {
+    min-height: 36px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--text-muted, #778093);
+    background: transparent;
+    font-size: 0.75rem;
+    transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.content--google-export .export-store-tab:hover {
+    color: var(--ink, #152032);
+    background: color-mix(in srgb, var(--card, #ffffff) 75%, transparent);
+}
+
+.content--google-export .export-store-tab.is-active {
+    color: var(--blue, #315efb);
+    background: var(--card, #ffffff);
+    box-shadow: 0 2px 8px rgba(30, 48, 78, 0.1);
+}
+
+.content--google-export .export-store-tab:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--blue, #315efb) 35%, transparent);
+    outline-offset: 1px;
+}
+
+.content--google-export .export-store-list {
+    gap: 14px;
+}
+
+.content--google-export .export-store-card {
+    min-width: 0;
+    padding: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(25, 38, 62, 0.055);
+}
+
+.content--google-export .export-card-head,
+.content--google-export .export-schedule-grid,
+.content--google-export .export-url-field,
+.content--google-export .export-status,
+.content--google-export .export-actions {
+    grid-column: 1 / -1;
+}
+
+.content--google-export .export-card-head {
+    min-height: 48px;
+    padding-bottom: 13px;
+    border-bottom: 1px solid var(--export-border);
+}
+
+.content--google-export .export-store-title {
+    gap: 10px;
+}
+
+.content--google-export .store-dot {
+    width: 7px;
+    height: 40px;
+    flex: 0 0 auto;
+}
+
+.content--google-export .export-store-title small,
+.content--google-export .export-marketplace-head > div > span {
+    color: var(--text-muted, #778093);
+    font-size: 0.625rem;
+}
+
+.content--google-export .export-store-title h2 {
+    margin-top: 1px;
+    font-size: 1.3rem;
+    line-height: 1.15;
+}
+
+.content--google-export .export-enabled {
+    padding: 8px 11px;
+    gap: 8px;
+    border: 1px solid color-mix(in srgb, #1b9b68 20%, var(--export-border));
+    border-radius: 999px;
+    color: #187352;
+    background: color-mix(in srgb, #1b9b68 8%, var(--card, #ffffff));
+    font-size: 0.75rem;
+}
+
+.content--google-export .export-enabled input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #1b9b68;
+}
+
+.content--google-export .export-schedule-grid {
+    padding: 13px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+    border: 1px solid var(--export-border);
+    border-radius: 11px;
+    background: var(--export-soft);
+}
+
+.content--google-export .export-schedule-grid label,
+.content--google-export .export-url-field,
+.content--google-export .export-key-field {
+    min-width: 0;
+    gap: 5px;
+}
+
+.content--google-export .export-schedule-grid label > span,
+.content--google-export .export-url-field > span,
+.content--google-export .export-key-field > span {
+    color: var(--text-muted, #778093);
+    font-size: 0.6875rem;
+}
+
+.content--google-export .input-control,
+.content--google-export .select-control,
+.content--google-export .cs-trigger {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+    min-height: 40px;
+    padding: 0 11px;
+    border: 1px solid #d6ddea;
+    border-radius: 8px;
+    outline: none;
+    color: var(--ink, #152032);
+    background: var(--card, #ffffff);
+    font: inherit;
+    font-size: 0.8125rem;
+    transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.content--google-export .cs-wrap {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+}
+
+.content--google-export .input-control:hover,
+.content--google-export .cs-trigger:hover {
+    border-color: #b9c5d8;
+}
+
+.content--google-export .input-control:focus,
+.content--google-export .cs-trigger:focus-visible {
+    border-color: #7f9df5;
+    box-shadow: 0 0 0 3px rgba(49, 94, 251, 0.1);
+}
+
+.content--google-export .export-url-field .input-control {
+    padding-left: 38px;
+    background-image: linear-gradient(90deg, color-mix(in srgb, var(--blue, #315efb) 8%, transparent) 30px, transparent 30px);
+    font-size: 0.75rem;
+}
+
+.content--google-export .export-marketplace {
+    min-width: 0;
+    padding: 14px;
+    gap: 10px;
+    border: 1px solid var(--export-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--canvas, #f5f6f8) 42%, var(--card, #ffffff));
+}
+
+.content--google-export .export-marketplace-head {
+    align-items: end;
+    gap: 12px;
+}
+
+.content--google-export .export-marketplace-head h3 {
+    margin-top: 1px;
+    font-size: 1rem;
+}
+
+.content--google-export .export-key-field {
+    width: min(100%, 250px);
+}
+
+.content--google-export .export-key-field .input-control {
+    height: 36px;
+    min-height: 36px;
+    font-weight: 700;
+}
+
+.content--google-export .export-marketplace .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--export-border);
+    border-radius: 9px;
+    background: var(--card, #ffffff);
+}
+
+.content--google-export .export-target-table {
+    width: 100%;
+    min-width: 560px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.content--google-export .export-target-table th {
+    padding: 8px 9px;
+    border-bottom: 1px solid var(--export-border);
+    color: var(--text-muted, #778093);
+    background: color-mix(in srgb, var(--canvas, #f5f6f8) 76%, var(--card, #ffffff));
+    font-size: 0.625rem;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.content--google-export .export-target-table th:nth-child(1) {
+    width: 32%;
+}
+
+.content--google-export .export-target-table th:nth-child(2) {
+    width: 26%;
+}
+
+.content--google-export .export-target-table th:nth-child(3) {
+    width: 42%;
+}
+
+.content--google-export .export-target-table td {
+    padding: 7px 9px;
+    border-bottom: 1px solid color-mix(in srgb, var(--export-border) 72%, transparent);
+    vertical-align: middle;
+}
+
+.content--google-export .export-target-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.content--google-export .export-target-table td:first-child strong {
+    display: block;
+    color: var(--ink, #152032);
+    font-size: 0.75rem;
+    line-height: 1.25;
+}
+
+.content--google-export .export-target-table td:first-child small {
+    margin-top: 2px;
+    color: var(--text-muted, #778093);
+    font-size: 0.625rem;
+    line-height: 1.25;
+}
+
+.content--google-export .export-target-table .input-control {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 0.6875rem;
+}
+
+.content--google-export .export-status {
+    position: relative;
+    padding: 10px 12px 10px 35px;
+    border: 1px solid color-mix(in srgb, #1b9b68 18%, transparent);
+    border-radius: 9px;
+    color: #187352;
+    background: color-mix(in srgb, #1b9b68 8%, var(--card, #ffffff));
+    font-size: 0.75rem;
+}
+
+.content--google-export .export-status::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+    transform: translateY(-50%);
+}
+
+.content--google-export .export-status--error {
+    border-color: color-mix(in srgb, #d9574d 18%, transparent);
+    color: #b13f3c;
+    background: color-mix(in srgb, #d9574d 8%, var(--card, #ffffff));
+}
+
+.content--google-export .export-actions {
+    justify-content: flex-end;
+    gap: 9px;
+}
+
+.content--google-export .export-actions .btn-primary,
+.content--google-export .export-actions .btn-secondary {
+    width: auto;
+    min-width: 172px;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 8px;
+}
+
+.content--google-export .export-actions .btn-primary {
+    min-width: 210px;
+}
+
+@media (max-width: 1200px) {
+    .content--google-export .export-store-card {
+        grid-template-columns: 1fr;
+    }
+
+    .content--google-export .export-marketplace {
+        grid-column: 1;
+    }
+}
+
+@media (max-width: 820px) {
+    body[data-section="admin_google_export"] .content--google-export {
+        padding-top: 16px;
+    }
+
+    .content--google-export .export-help {
+        padding: 14px;
+        grid-template-columns: 1fr;
+        grid-template-areas: "title" "copy" "email" "note";
+    }
+
+    .content--google-export .export-help::before {
+        display: none;
+    }
+
+    .content--google-export .export-help code {
+        justify-self: stretch;
+    }
+
+    .content--google-export .export-store-card {
+        padding: 14px;
+    }
+
+    .content--google-export .export-card-head,
+    .content--google-export .export-marketplace-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .content--google-export .export-enabled {
+        align-self: flex-start;
+    }
+
+    .content--google-export .export-schedule-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .content--google-export .export-key-field {
+        width: 100%;
+    }
+
+    .content--google-export .export-actions .btn-primary,
+    .content--google-export .export-actions .btn-secondary {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .content--google-export .export-page-head h1 {
+        font-size: 1.3rem;
+    }
+
+    .content--google-export .export-store-tab {
+        padding-inline: 11px;
+    }
+
+    .content--google-export .export-marketplace {
+        padding: 11px;
+    }
+
+    .content--google-export .export-actions {
+        flex-direction: column;
+    }
+
+    .content--google-export .export-actions .btn-primary,
+    .content--google-export .export-actions .btn-secondary {
+        width: 100%;
+    }
+}
