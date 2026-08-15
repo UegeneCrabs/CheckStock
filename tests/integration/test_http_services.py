@@ -535,6 +535,9 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/admin/users/{user_id}/sections",
             "/admin/operations/{operation_id}/xlsx",
             "/admin/sync-stock",
+            "/admin/google-export",
+            "/admin/google-export/{store_slug}",
+            "/admin/google-export/{store_slug}/run",
         }
         self.assertEqual(schema_paths, owned)
 

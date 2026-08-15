@@ -4,7 +4,7 @@ from functools import lru_cache
 from app.config import settings
 
 CREDENTIALS_PATH = settings.google_service_account_path
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 class CredentialsUnavailableError(Exception):

@@ -22,6 +22,7 @@ CARDS_PAGE_LIMIT = 100
 
 
 FBS_SKUS_PER_REQUEST = 1000
+FBS_ORDERS_PER_REQUEST = 1000
 
 REQUEST_TIMEOUT = settings.wb_request_timeout_seconds
 
@@ -192,6 +193,61 @@ def get_fbs_stock(token: str, warehouse_id: int, barcodes: list[str]) -> dict[st
         except (AttributeError, KeyError, TypeError) as e:
             raise WBApiError(None, detail=f"неожиданный формат остатков FBS: {stocks!r}"[:300]) from e
 
+    return result
+
+
+def get_fbs_orders(token: str, date_from: int, date_to: int) -> list[dict]:
+    orders: list[dict] = []
+    cursor = 0
+    seen_cursors: set[int] = set()
+
+    while cursor not in seen_cursors:
+        seen_cursors.add(cursor)
+        data = _request(
+            "GET",
+            f"{FBS_BASE}/api/v3/orders",
+            token,
+            params={
+                "limit": FBS_ORDERS_PER_REQUEST,
+                "next": cursor,
+                "dateFrom": date_from,
+                "dateTo": date_to,
+            },
+        ) or {}
+        page = data.get("orders")
+        if not isinstance(page, list):
+            raise WBApiError(None, detail=f"неожиданный формат FBS-заказов: {data!r}"[:300])
+        orders.extend(page)
+        next_cursor = data.get("next")
+        if not page or next_cursor in (None, cursor):
+            return orders
+        try:
+            cursor = int(next_cursor)
+        except (TypeError, ValueError) as error:
+            raise WBApiError(None, detail=f"неожиданный курсор FBS-заказов: {next_cursor!r}") from error
+
+    return orders
+
+
+def get_fbs_order_statuses(token: str, order_ids: list[int]) -> dict[int, dict]:
+    unique = list(dict.fromkeys(int(order_id) for order_id in order_ids if int(order_id) > 0))
+    result: dict[int, dict] = {}
+    for start in range(0, len(unique), FBS_ORDERS_PER_REQUEST):
+        chunk = unique[start : start + FBS_ORDERS_PER_REQUEST]
+        data = _request(
+            "POST",
+            f"{FBS_BASE}/api/v3/orders/status",
+            token,
+            json_body={"orders": chunk},
+        ) or {}
+        rows = data.get("orders")
+        if not isinstance(rows, list):
+            raise WBApiError(None, detail=f"неожиданный формат статусов FBS-заказов: {data!r}"[:300])
+        for row in rows:
+            try:
+                result[int(row["id"])] = row
+            except (KeyError, TypeError, ValueError) as error:
+                raise WBApiError(None, detail=f"неожиданная строка статуса FBS-заказа: {row!r}"[:300]) from error
     return result
 
 

@@ -6,7 +6,7 @@ from app.config import settings
 from app.container import ApplicationContainer
 from app.logging_config import configure_logging
 from app.web.middleware import authentication_middleware, request_logging_middleware
-from app.web.routers import activity, admin, auth, profile, sales, stock, stock_overview, system
+from app.web.routers import ROUTERS
 
 
 def create_app(container: ApplicationContainer | None = None) -> FastAPI:
@@ -16,14 +16,8 @@ def create_app(container: ApplicationContainer | None = None) -> FastAPI:
     application.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
     application.middleware("http")(authentication_middleware)
     application.middleware("http")(request_logging_middleware)
-    application.include_router(system.router)
-    application.include_router(auth.router)
-    application.include_router(profile.router)
-    application.include_router(activity.router)
-    application.include_router(sales.router)
-    application.include_router(stock_overview.router)
-    application.include_router(stock.router)
-    application.include_router(admin.router)
+    for router in ROUTERS:
+        application.include_router(router)
     return application
 
 

@@ -101,6 +101,14 @@ def render_page(
             '<path d="M16 19v-7"></path><path d="M22 19H2"></path>'
             "</svg><span>Статистика</span></a>"
         )
+        export_cls = "active" if active == "admin_google_export" else ""
+        admin_link += (
+            f'                <a class="nav-item {export_cls}" href="/admin/google-export" '
+            'title="Выгрузка в Google Таблицы" aria-label="Выгрузка в Google Таблицы">'
+            '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'
+            '<path d="M4 4h16v16H4Z"></path><path d="M4 9h16M9 4v16"></path>'
+            "</svg><span>Выгрузки</span></a>"
+        )
 
     full_name = user["full_name"] if user else ""
     name_parts = [part for part in full_name.split() if part]
@@ -119,6 +127,7 @@ def render_page(
         "stock2": "УПРАВЛЕНИЕ ЗАПАСАМИ",
         "admin": "НАСТРОЙКИ И ДОСТУПЫ",
         "admin_activity": "ИСПОЛЬЗОВАНИЕ СИСТЕМЫ",
+        "admin_google_export": "АВТОМАТИЗАЦИЯ / GOOGLE ТАБЛИЦЫ",
         "profile": "ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ",
         "access_denied": "ДОСТУП ОГРАНИЧЕН",
     }

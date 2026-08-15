@@ -440,6 +440,32 @@ class SalesSyncStateRecord(OrmBase):
     lookback_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90, server_default="90")
 
 
+class StockSheetExportSettingRecord(OrmBase):
+    __tablename__ = "stock_sheet_export_settings"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    schedule_kind: Mapped[str] = mapped_column(String, nullable=False, default="weekly", server_default="weekly")
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False, default=6, server_default="6")
+    run_time: Mapped[str] = mapped_column(String, nullable=False, default="01:00", server_default="01:00")
+    spreadsheet_url: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class StockSheetExportTargetRecord(OrmBase):
+    __tablename__ = "stock_sheet_export_targets"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    metric: Mapped[str] = mapped_column(String, primary_key=True)
+    sheet_name: Mapped[str] = mapped_column(String, nullable=False)
+    key_column_name: Mapped[str] = mapped_column(String, nullable=False)
+    value_column_name: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class RnpStrategyRecord(OrmBase):
     __tablename__ = "rnp_strategies"
 

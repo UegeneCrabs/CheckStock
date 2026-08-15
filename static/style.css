@@ -3594,3 +3594,185 @@ body.modal-open {
     font-size: 12px;
     font-weight: 600;
 }
+.content--google-export {
+    max-width: 1440px;
+}
+
+.export-page-head {
+    margin-bottom: 18px;
+}
+
+.export-help {
+    margin-bottom: 20px;
+}
+
+.export-help code {
+    display: inline-block;
+    margin: 8px 0 4px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--surface-soft, #f3f5f8);
+    color: var(--navy);
+    overflow-wrap: anywhere;
+}
+
+.export-store-list {
+    display: grid;
+    gap: 22px;
+}
+
+.export-store-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding-bottom: 4px;
+    overflow-x: auto;
+}
+
+.export-store-tab {
+    flex: 0 0 auto;
+    padding: 9px 14px;
+    border: 1px solid var(--border, #dfe4ea);
+    border-radius: 999px;
+    background: var(--card, #fff);
+    color: var(--text, #1f2937);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.export-store-tab.is-active {
+    border-color: var(--accent, #f7941d);
+    background: var(--accent, #f7941d);
+    color: #111827;
+}
+
+.export-store-card {
+    display: grid;
+    gap: 20px;
+}
+
+.export-store-card[hidden],
+[data-weekday-field][hidden] {
+    display: none;
+}
+
+.export-card-head,
+.export-marketplace-head,
+.export-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.export-store-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.export-store-title h2,
+.export-marketplace-head h3 {
+    margin: 2px 0 0;
+}
+
+.export-store-title small,
+.export-marketplace-head small,
+.export-marketplace-head > div > span {
+    color: var(--muted, #687386);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+}
+
+.store-dot {
+    width: 16px;
+    height: 42px;
+    border-radius: 999px;
+    background: var(--store-color);
+}
+
+.export-enabled {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 600;
+}
+
+.export-enabled input {
+    width: 18px;
+    height: 18px;
+}
+
+.export-schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.export-schedule-grid label,
+.export-url-field,
+.export-key-field {
+    display: grid;
+    gap: 7px;
+}
+
+.export-schedule-grid label > span,
+.export-url-field > span,
+.export-key-field > span {
+    color: var(--muted, #687386);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.export-marketplace {
+    display: grid;
+    gap: 12px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border, #dfe4ea);
+}
+
+.export-key-field {
+    width: min(100%, 360px);
+}
+
+.export-target-table td:first-child small {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted, #687386);
+}
+
+.export-target-table .input-control {
+    min-width: 210px;
+}
+
+.export-status {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: color-mix(in srgb, #2a9d8f 10%, transparent);
+    color: #187467;
+    overflow-wrap: anywhere;
+}
+
+.export-status--error {
+    background: color-mix(in srgb, #e63946 10%, transparent);
+    color: #b32631;
+}
+
+@media (max-width: 820px) {
+    .export-schedule-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .export-card-head,
+    .export-marketplace-head,
+    .export-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .export-key-field {
+        width: 100%;
+    }
+}

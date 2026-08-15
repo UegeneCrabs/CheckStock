@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
 
-from app import auth, db, rnp_analytics, unit_costs
+from app import auth, db, rnp_analytics, stock_sheet_export, unit_costs
 from app import decision_center as decision_service
 from app import sales as sales_service
 from app.config import settings
@@ -148,6 +148,12 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             startup_delay_seconds=settings.rnp_sync_startup_delay_seconds,
             ready_event=catalog_ready,
         ),
+        BackgroundJob(
+            "stock_sheet_export",
+            stock_sheet_export.run_due,
+            _fixed_delay(60),
+            ready_event=catalog_ready,
+        ),
     )
 
 
@@ -156,6 +162,7 @@ def _initialize_application() -> None:
     decision_service.init_schema()
     rnp_analytics.init_schema()
     db.seed_defaults()
+    stock_sheet_export.ensure_defaults()
     auth.seed_superadmin()
 
 

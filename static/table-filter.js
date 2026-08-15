@@ -350,6 +350,7 @@
     }
 
     function initTable(table) {
+        if (table.hasAttribute('data-no-filter')) return;
         if (isEmptyTable(table)) return;
         var headerRow = table.querySelector('thead tr');
         if (!headerRow) return;
