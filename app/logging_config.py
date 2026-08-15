@@ -3,8 +3,8 @@ import logging
 import sys
 import uuid
 
-from app.config import Settings, settings
 from app.bitrix_alerts import bitrix_handler_from_env
+from app.config import Settings, settings
 
 request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 

@@ -74,6 +74,7 @@ def test_default_rimili_schedule_is_daily_at_one() -> None:
     assert settings.run_time == "01:00"
     assert settings.spreadsheet_url == stock_sheet_export.RIMILI_SPREADSHEET_URL
     assert settings.target("WB", "fbs_orders").value_column_name == "Заказы по ФБС"
+    assert settings.target("YANDEX MARKET", "fbs_stock").sheet_name == "YANDEX MARKET"
 
 
 def test_schedule_due_uses_each_store_last_attempt() -> None:
@@ -140,6 +141,16 @@ def test_ozon_order_totals_include_only_active_fbs_statuses() -> None:
         assert stock_sheet_export._ozon_fbs_order_totals("rimili") == {"A": 2}
 
 
+def test_yandex_order_totals_use_open_fbs_orders_from_synced_data() -> None:
+    with mock.patch.object(
+        stock_sheet_export.db,
+        "get_open_fbs_order_totals",
+        return_value={"YA-1": 3},
+    ) as get_totals:
+        assert stock_sheet_export._yandex_fbs_order_totals("rimili") == {"YA-1": 3}
+    get_totals.assert_called_once_with("rimili", "YANDEX MARKET")
+
+
 def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> None:
     settings = stock_sheet_export.default_settings("rimili")
     service = _FakeService()
@@ -193,6 +204,17 @@ def test_size_variants_are_aggregated_for_base_article_row() -> None:
     aliases, _ = stock_sheet_export._catalog_aliases(catalog)
     assert aliases["123"] == {"123 / S", "123 / M"}
     assert sum(values["fbs_orders"][article] for article in aliases["123"]) == 5
+
+
+def test_yandex_metric_values_keep_catalog_rows_and_use_yandex_orders() -> None:
+    catalog = [{"article": "YA-1", "barcode": "ya-barcode"}]
+    with (
+        mock.patch.object(stock_sheet_export.db, "get_ff_available_totals", return_value={"YA-1": 4}),
+        mock.patch.object(stock_sheet_export.db, "get_mp_stock_totals", return_value={"YA-1": 5}),
+        mock.patch.object(stock_sheet_export, "_yandex_fbs_order_totals", return_value={"YA-1": 6}),
+    ):
+        values = stock_sheet_export._metric_values("rimili", "YANDEX MARKET", catalog)
+    assert values == {"ff_stock": {"YA-1": 4}, "fbs_stock": {"YA-1": 5}, "fbs_orders": {"YA-1": 6}}
 
 
 def test_duplicate_configured_header_is_rejected() -> None:

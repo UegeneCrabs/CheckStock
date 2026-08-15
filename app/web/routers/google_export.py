@@ -26,7 +26,8 @@ WEEKDAYS = (
     "Суббота",
     "Воскресенье",
 )
-MARKETPLACE_LABELS = {"WB": "Wildberries", "OZON": "Ozon"}
+MARKETPLACE_LABELS = {"WB": "Wildberries", "OZON": "Ozon", "YANDEX MARKET": "Яндекс Маркет"}
+MARKETPLACE_FORM_PREFIXES = {"WB": "wb", "OZON": "ozon", "YANDEX MARKET": "yandex"}
 METRIC_LABELS = {
     "ff_stock": "Остатки ФФ",
     "fbs_stock": "Текущий сток FBS",
@@ -54,7 +55,7 @@ def _render_target_rows(settings: StockSheetExportSettings, marketplace: str) ->
     rows = []
     for metric in stock_sheet_export.repository.METRICS:
         target = settings.target(marketplace, metric)
-        prefix = f"{marketplace.lower()}_{metric}"
+        prefix = f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}"
         rows.append(
             "<tr>"
             f"<td><strong>{html.escape(METRIC_LABELS[metric])}</strong>"
@@ -94,7 +95,7 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             f"<div class=\"export-marketplace-head\"><div><span>{marketplace}</span>"
             f"<h3>{html.escape(MARKETPLACE_LABELS[marketplace])}</h3></div>"
             '<label class="export-key-field"><span>Колонка с артикулом / SKU</span>'
-            f'<input class="input-control" name="{marketplace.lower()}_key_column" '
+            f'<input class="input-control" name="{MARKETPLACE_FORM_PREFIXES[marketplace]}_key_column" '
             f'value="{_input(key_columns[marketplace])}" maxlength="200" required></label></div>'
             '<div class="table-wrap"><table class="data-table export-target-table" data-no-filter><thead><tr>'
             "<th>Показатель</th><th>Название листа</th><th>Название колонки</th>"
@@ -145,9 +146,9 @@ def _settings_from_form(
         ExportTarget(
             marketplace=marketplace,
             metric=metric,
-            sheet_name=_value(form, f"{marketplace.lower()}_{metric}_sheet"),
-            key_column_name=_value(form, f"{marketplace.lower()}_key_column"),
-            value_column_name=_value(form, f"{marketplace.lower()}_{metric}_column"),
+            sheet_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}_sheet"),
+            key_column_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_key_column"),
+            value_column_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}_column"),
         )
         for marketplace in stock_sheet_export.repository.MARKETPLACES
         for metric in stock_sheet_export.repository.METRICS

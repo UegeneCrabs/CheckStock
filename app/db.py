@@ -108,6 +108,7 @@ from app.repositories.rnp import (
     save_rnp_strategy,
 )
 from app.repositories.sales import (
+    get_open_fbs_order_totals,
     get_sales_available_range,
     get_sales_daily,
     get_sales_export_rows,
@@ -163,6 +164,7 @@ __all__ = (
     "get_mp_warehouse_details",
     "get_operation",
     "get_operation_items",
+    "get_open_fbs_order_totals",
     "get_operations_with_items",
     "get_rnp_action_logs",
     "get_rnp_catalog_page",

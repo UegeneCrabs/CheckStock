@@ -6,6 +6,7 @@ from app import auth, stock_sheet_export
 from app.dto.identity import Role
 from app.main import create_app
 from app.repositories import stock_sheet_export as repository
+from app.web.routers import google_export
 
 
 def _form_data() -> dict[str, str]:
@@ -17,10 +18,11 @@ def _form_data() -> dict[str, str]:
         "spreadsheet_url": stock_sheet_export.RIMILI_SPREADSHEET_URL,
         "wb_key_column": "Артикул WB",
         "ozon_key_column": "Артикул Ozon",
+        "yandex_key_column": "Артикул Яндекс",
     }
     for marketplace in repository.MARKETPLACES:
         for metric in repository.METRICS:
-            prefix = f"{marketplace.lower()}_{metric}"
+            prefix = f"{google_export.MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}"
             data[f"{prefix}_sheet"] = marketplace
             data[f"{prefix}_column"] = stock_sheet_export.METRIC_LABELS[metric]
     return data
@@ -40,6 +42,7 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
 
     assert page.status_code == 200
     assert "Выгрузка остатков и FBS-заказов" in page.text
+    assert "Яндекс Маркет" in page.text
     assert response.status_code == 200
     saved = stock_sheet_export.get_settings("rimili")
     assert saved.schedule_kind == "daily"

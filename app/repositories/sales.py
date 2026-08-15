@@ -81,6 +81,39 @@ def sales_has_history(store_slug: str, marketplace: str) -> bool:
     return row is not None
 
 
+def get_open_fbs_order_totals(store_slug: str, marketplace: str) -> dict[str, int]:
+    """Количество ещё не отменённых и не выкупленных FBS-единиц по артикулу."""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT article,
+               SUM(
+                   CASE
+                       WHEN quantity - cancelled_quantity - sold_quantity > 0
+                       THEN quantity - cancelled_quantity - sold_quantity
+                       ELSE 0
+                   END
+               ) AS total
+          FROM sales_order_lines
+         WHERE store_slug = ?
+           AND marketplace = ?
+           AND scheme = 'fbs'
+           AND article <> ''
+         GROUP BY article
+        HAVING SUM(
+                   CASE
+                       WHEN quantity - cancelled_quantity - sold_quantity > 0
+                       THEN quantity - cancelled_quantity - sold_quantity
+                       ELSE 0
+                   END
+               ) > 0
+        """,
+        (store_slug, marketplace),
+    ).fetchall()
+    conn.close()
+    return {str(row["article"]): int(row["total"] or 0) for row in rows}
+
+
 def record_sales_sync(
     store_slug: str,
     marketplace: str,

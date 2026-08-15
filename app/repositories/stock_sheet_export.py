@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from app.repositories.core import WRITE_LOCK, get_connection
 
-MARKETPLACES = ("WB", "OZON")
+MARKETPLACES = ("WB", "OZON", "YANDEX MARKET")
 METRICS = ("ff_stock", "fbs_stock", "fbs_orders")
 
 

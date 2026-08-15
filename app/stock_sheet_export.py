@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 
 from app import db
@@ -53,14 +54,8 @@ class StockSheetExportError(RuntimeError):
     pass
 
 
-def _now_iso(now: datetime | None = None) -> str:
-    return (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE).isoformat(
-        timespec="seconds"
-    )
-
-
-def default_settings(store_slug: str, now: datetime | None = None) -> StockSheetExportSettings:
-    targets = tuple(
+def _default_targets() -> tuple[ExportTarget, ...]:
+    return tuple(
         ExportTarget(
             marketplace=marketplace,
             metric=metric,
@@ -71,6 +66,15 @@ def default_settings(store_slug: str, now: datetime | None = None) -> StockSheet
         for marketplace in repository.MARKETPLACES
         for metric in repository.METRICS
     )
+
+
+def _now_iso(now: datetime | None = None) -> str:
+    return (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE).isoformat(
+        timespec="seconds"
+    )
+
+
+def default_settings(store_slug: str, now: datetime | None = None) -> StockSheetExportSettings:
     return StockSheetExportSettings(
         store_slug=store_slug,
         enabled=store_slug == "rimili",
@@ -82,20 +86,32 @@ def default_settings(store_slug: str, now: datetime | None = None) -> StockSheet
         last_attempt_at=None,
         last_success_at=None,
         last_error=None,
-        targets=targets,
+        targets=_default_targets(),
     )
+
+
+def _with_missing_targets(settings: StockSheetExportSettings) -> StockSheetExportSettings:
+    configured = {(target.marketplace, target.metric): target for target in settings.targets}
+    targets = tuple(
+        configured.get((target.marketplace, target.metric), target)
+        for target in _default_targets()
+    )
+    return settings if targets == settings.targets else replace(settings, targets=targets)
 
 
 def ensure_defaults() -> None:
     for store_slug in STORES:
-        if repository.get_settings(store_slug) is None:
-            repository.save_settings(default_settings(store_slug))
+        existing = repository.get_settings(store_slug)
+        settings = _with_missing_targets(existing) if existing is not None else default_settings(store_slug)
+        if settings != existing:
+            repository.save_settings(settings)
 
 
 def get_settings(store_slug: str) -> StockSheetExportSettings:
     if store_slug not in STORES:
         raise ValueError("Неизвестный магазин")
-    return repository.get_settings(store_slug) or default_settings(store_slug)
+    existing = repository.get_settings(store_slug)
+    return _with_missing_targets(existing) if existing is not None else default_settings(store_slug)
 
 
 def list_settings() -> list[StockSheetExportSettings]:
@@ -121,7 +137,7 @@ def validate_settings(settings: StockSheetExportSettings) -> None:
     }
     actual = {(target.marketplace, target.metric) for target in settings.targets}
     if actual != expected or len(settings.targets) != len(expected):
-        raise ValueError("Нужно заполнить все настройки WB и Ozon")
+        raise ValueError("Нужно заполнить настройки для всех маркетплейсов")
     for target in settings.targets:
         values = (target.sheet_name, target.key_column_name, target.value_column_name)
         if any(not value.strip() for value in values):
@@ -252,6 +268,10 @@ def _ozon_fbs_order_totals(store_slug: str) -> dict[str, int]:
     return dict(totals)
 
 
+def _yandex_fbs_order_totals(store_slug: str) -> dict[str, int]:
+    return db.get_open_fbs_order_totals(store_slug, "YANDEX MARKET")
+
+
 def _spreadsheet_id(url: str) -> str:
     match = SPREADSHEET_ID_RE.search(url.strip())
     if not match:
@@ -361,11 +381,11 @@ def _metric_values(
             result[target] = result.get(target, 0) + int(quantity or 0)
         return result
 
-    order_totals = (
-        _wb_fbs_order_totals(store_slug)
-        if marketplace == "WB"
-        else _ozon_fbs_order_totals(store_slug)
-    )
+    order_totals = {
+        "WB": _wb_fbs_order_totals,
+        "OZON": _ozon_fbs_order_totals,
+        "YANDEX MARKET": _yandex_fbs_order_totals,
+    }[marketplace](store_slug)
     return {
         "ff_stock": with_zeroes(
             db.get_ff_available_totals(store_slug, marketplace=marketplace)
