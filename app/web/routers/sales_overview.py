@@ -11,6 +11,8 @@ from app.dto.identity import SectionName
 from app.section_access import has_access as has_section_access
 from app.section_access import landing_path
 from app.stores import STORES
+from app.wb import api as wb_api
+from app.wb import sales_funnel as wb_sales_funnel
 from app.web.access import (
     accessible_store_items,
     accessible_store_slugs,
@@ -86,6 +88,31 @@ async def sales_data(
         return JSONResponse(
             {"ok": False, "error": "Не удалось прочитать данные продаж из базы"},
             status_code=500,
+        )
+
+
+@router.get("/api/sales/wb-funnel")
+async def wb_funnel_data(request: Request, date_from: str = "", date_to: str = "", store: str = ""):
+    store_slug = store.strip().lower()
+    if not store_slug:
+        return JSONResponse(
+            {"ok": False, "error": "Выберите магазин WB для просмотра воронки"}, status_code=400
+        )
+    if not has_store_access(request.state.user, store_slug):
+        return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину"}, status_code=403)
+    try:
+        return JSONResponse(
+            await run_in_threadpool(wb_sales_funnel.dashboard, store_slug, date_from, date_to)
+        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    except wb_api.WBApiError as exc:
+        logger.warning("Не удалось загрузить воронку WB для %s: %s", store_slug, exc)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+    except Exception:
+        logger.exception("Не удалось загрузить воронку WB для %s", store_slug)
+        return JSONResponse(
+            {"ok": False, "error": "Не удалось загрузить воронку карточек WB"}, status_code=500
         )
 
 

@@ -487,6 +487,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/sales/ephemerides",
             "/sales/orders.xlsx",
             "/api/sales",
+            "/api/sales/wb-funnel",
             "/sales/decision-center",
             "/api/decision-center",
             "/api/decision-center/sync",

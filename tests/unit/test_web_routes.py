@@ -16,6 +16,7 @@ from app.dto.system import ReadinessStatus
 from app.main import create_app
 from app.repositories import core
 from app.stores import STORES
+from app.wb import sales_funnel as wb_sales_funnel
 from app.web import middleware
 from app.web.routers import decision_center as decision_routes
 from app.web.routers import rnp as rnp_routes
@@ -340,6 +341,18 @@ class WebRouteUnitTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         with mock.patch.object(
+            wb_sales_funnel,
+            "dashboard",
+            return_value={"ok": True, "marketplace": "WB", "products": [], "totals": {}},
+        ):
+            response = self.client.get(
+                "/api/sales/wb-funnel?store=rimili&date_from=2026-08-01&date_to=2026-08-12"
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get("/api/sales/wb-funnel").status_code, 400)
+        with mock.patch.object(wb_sales_funnel, "dashboard", side_effect=ValueError("bad period")):
+            self.assertEqual(self.client.get("/api/sales/wb-funnel?store=rimili").status_code, 400)
+        with mock.patch.object(
             sales_overview.sales_service, "dashboard", side_effect=ValueError("bad period")
         ):
             response = self.client.get("/api/sales?store=rimili")
@@ -426,6 +439,7 @@ class WebRouteUnitTests(unittest.TestCase):
                 403,
             )
             self.assertEqual(self.client.get("/api/sales?store=rimili").status_code, 403)
+            self.assertEqual(self.client.get("/api/sales/wb-funnel?store=rimili").status_code, 403)
             self.assertEqual(self.client.get("/api/rnp?store=rimili").status_code, 403)
             self.assertEqual(
                 self.client.post(

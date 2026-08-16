@@ -182,4 +182,39 @@
                 </article>
             </div>
 
+            <section class="sales-funnel-panel" data-sales-funnel hidden aria-live="polite">
+                <div class="sales-funnel-head">
+                    <div>
+                        <div class="sales-funnel-kicker">WILDBERRIES · КАРТОЧКИ ТОВАРОВ</div>
+                        <h3>Воронка за выбранный период</h3>
+                        <p data-sales-funnel-subtitle>Выберите магазин WB</p>
+                    </div>
+                    <span class="sales-funnel-updated" data-sales-funnel-updated></span>
+                </div>
+                <div class="sales-funnel-state" data-sales-funnel-state>
+                    <span class="sales-loader"></span>
+                    <strong>Загружаем воронку WB...</strong>
+                    <p>Статистика доступна отдельно по каждому кабинету.</p>
+                </div>
+                <div class="sales-funnel-content" data-sales-funnel-content hidden>
+                    <div class="sales-funnel-steps" data-sales-funnel-steps></div>
+                    <div class="sales-funnel-table-wrap">
+                        <table class="sales-funnel-table">
+                            <thead>
+                                <tr>
+                                    <th>Товар</th>
+                                    <th>Просмотры</th>
+                                    <th>Корзины</th>
+                                    <th>Заказы</th>
+                                    <th>Выкупы</th>
+                                    <th>Конверсия</th>
+                                </tr>
+                            </thead>
+                            <tbody data-sales-funnel-products></tbody>
+                        </table>
+                    </div>
+                    <p class="sales-funnel-note" data-sales-funnel-note></p>
+                </div>
+            </section>
+
         </section>

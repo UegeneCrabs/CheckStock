@@ -7,10 +7,11 @@ class ApplicationIntegrationTests(unittest.TestCase):
     def test_openapi_contains_all_public_contracts(self) -> None:
         paths = create_app().openapi()["paths"]
 
-        self.assertEqual(len(paths), 63)
+        self.assertEqual(len(paths), 64)
         self.assertIn("/login", paths)
         self.assertIn("/stock/{slug}/transfer", paths)
         self.assertIn("/api/sales", paths)
+        self.assertIn("/api/sales/wb-funnel", paths)
         self.assertIn("/admin/users", paths)
 
     def test_every_operation_has_a_unique_identifier(self) -> None:

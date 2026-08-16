@@ -29,6 +29,14 @@
     var tooltipGroups = {};
     var kpiElements = {};
     var kpiNotes = {};
+    var funnelPanel = root.querySelector('[data-sales-funnel]');
+    var funnelState = root.querySelector('[data-sales-funnel-state]');
+    var funnelContent = root.querySelector('[data-sales-funnel-content]');
+    var funnelSubtitle = root.querySelector('[data-sales-funnel-subtitle]');
+    var funnelUpdated = root.querySelector('[data-sales-funnel-updated]');
+    var funnelSteps = root.querySelector('[data-sales-funnel-steps]');
+    var funnelProducts = root.querySelector('[data-sales-funnel-products]');
+    var funnelNote = root.querySelector('[data-sales-funnel-note]');
 
     seriesKeys.forEach(function (key) {
         lineElements[key] = root.querySelector('[data-sales-line="' + key + '"]');
@@ -46,6 +54,7 @@
     var currentState = null;
     var activeIndex = 0;
     var requestNumber = 0;
+    var funnelRequestNumber = 0;
     var bounds = { left: 72, right: 988, top: 32, bottom: 208 };
     var marketplaceNames = {
         'WB': 'Wildberries',
@@ -134,6 +143,20 @@
             return (value / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' тыс. ₽';
         }
         return money(value);
+    }
+
+    function integer(value) {
+        return number(value).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+    }
+
+    function percent(value) {
+        return number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
+    }
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>'"]/g, function (character) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character];
+        });
     }
 
     function axisMoney(value) {
@@ -233,6 +256,93 @@
         });
         if (form.elements.store.value) params.set('store', form.elements.store.value);
         exportLink.href = '/sales/orders.xlsx?' + params.toString();
+    }
+
+    function setFunnelState(title, detail, loading) {
+        funnelPanel.hidden = false;
+        funnelContent.hidden = true;
+        funnelState.hidden = false;
+        funnelState.classList.toggle('is-loading', Boolean(loading));
+        funnelState.querySelector('strong').textContent = title;
+        funnelState.querySelector('p').textContent = detail || '';
+        funnelUpdated.textContent = '';
+    }
+
+    function renderFunnel(data) {
+        var totals = data.totals || {};
+        var steps = [
+            { key: 'views', label: 'Просмотры карточек', rate: '100%' },
+            { key: 'carts', label: 'Добавили в корзину', rate: percent(totals.view_to_cart) + ' от просмотров' },
+            { key: 'orders', label: 'Заказы', rate: percent(totals.cart_to_order) + ' от корзин' },
+            { key: 'buyouts', label: 'Выкупы', rate: percent(totals.order_to_buyout) + ' от заказов' }
+        ];
+        funnelSteps.innerHTML = steps.map(function (step) {
+            return '<article class="sales-funnel-step">' +
+                '<span>' + step.label + '</span><strong>' + integer(totals[step.key]) + '</strong>' +
+                '<small>' + step.rate + '</small></article>';
+        }).join('');
+        var products = (data.products || []).slice(0, 100);
+        funnelProducts.innerHTML = products.length ? products.map(function (product) {
+            return '<tr><td><strong>' + escapeHtml(product.name) + '</strong><small>Арт. ' +
+                escapeHtml(product.article || product.nm_id) + '</small></td><td>' + integer(product.views) +
+                '</td><td>' + integer(product.carts) + '</td><td><strong>' + integer(product.orders) +
+                '</strong></td><td>' + integer(product.buyouts) + '</td><td><span class="sales-funnel-rate">' +
+                percent(product.view_to_cart) + ' → ' + percent(product.cart_to_order) + '</span></td></tr>';
+        }).join('') : '<tr><td class="sales-funnel-empty" colspan="6">За выбранный период WB не вернул данных по карточкам.</td></tr>';
+        var note = 'Показаны ' + integer(products.length) + ' из ' + integer((data.products || []).length) +
+            ' карточек, отсортированных по заказам.';
+        if (number(totals.favorites)) note += ' В избранное добавили: ' + integer(totals.favorites) + '.';
+        if (data.truncated) note += ' Не все карточки поместились в ответ WB.';
+        funnelNote.textContent = note;
+        funnelSubtitle.textContent = form.elements.store.options[form.elements.store.selectedIndex].text + ' · ' +
+            formatDate(data.period.from, false) + ' — ' + formatDate(data.period.to, false);
+        funnelUpdated.textContent = 'WB обновляет отчёт примерно раз в час';
+        funnelState.hidden = true;
+        funnelContent.hidden = false;
+        funnelPanel.hidden = false;
+    }
+
+    async function loadFunnel(expectedSalesRequest) {
+        var marketplace = form.elements.marketplace.value;
+        var store = form.elements.store.value;
+        var thisRequest = ++funnelRequestNumber;
+        if (marketplace !== 'WB') {
+            funnelPanel.hidden = true;
+            return;
+        }
+        if (!store) {
+            setFunnelState('Выберите магазин WB', 'Воронка WB доступна отдельно для каждого кабинета.', false);
+            return;
+        }
+        setFunnelState('Загружаем воронку WB...', 'Получаем статистику карточек за выбранный период.', true);
+        var params = new URLSearchParams({
+            date_from: form.elements.date_from.value,
+            date_to: form.elements.date_to.value,
+            store: store
+        });
+        try {
+            var response = await fetch('/api/sales/wb-funnel?' + params.toString(), { headers: { Accept: 'application/json' } });
+            var data = await response.json();
+            if (!response.ok || data.ok === false) throw new Error(data.error || 'Не удалось загрузить воронку WB');
+            if (thisRequest !== funnelRequestNumber || expectedSalesRequest !== requestNumber) return;
+            renderFunnel(data);
+        } catch (error) {
+            if (thisRequest !== funnelRequestNumber || expectedSalesRequest !== requestNumber) return;
+            setFunnelState('Воронка WB временно недоступна', error.message || 'Повторите попытку немного позже.', false);
+        }
+    }
+
+    function resetFunnelForFilterChange() {
+        funnelRequestNumber += 1;
+        if (form.elements.marketplace.value !== 'WB') {
+            funnelPanel.hidden = true;
+            return;
+        }
+        if (!form.elements.store.value) {
+            setFunnelState('Выберите магазин WB', 'Воронка WB доступна отдельно для каждого кабинета.', false);
+        } else {
+            setFunnelState('Обновите данные', 'Воронка будет построена за выбранный период.', false);
+        }
     }
 
     function deltaText(value) {
@@ -442,6 +552,7 @@
             renderChart(data);
             renderKpi(data);
             renderSync(data);
+            loadFunnel(thisRequest);
         } catch (error) {
             if (thisRequest !== requestNumber) return;
             showError(error.message || 'Не удалось загрузить данные');
@@ -474,8 +585,12 @@
         updateDateMinimum();
         showError(validateRange());
         updateExportLink();
+        resetFunnelForFilterChange();
     });
-    form.elements.store.addEventListener('change', updateExportLink);
+    form.elements.store.addEventListener('change', function () {
+        updateExportLink();
+        resetFunnelForFilterChange();
+    });
     form.addEventListener('submit', function (event) {
         event.preventDefault();
         loadData();
