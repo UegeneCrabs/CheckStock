@@ -2264,6 +2264,10 @@ main h2,
     background: var(--blue);
 }
 
+.line-funnel-orders {
+    background: #7c3aed;
+}
+
 .line-fbs {
     background: var(--green);
 }
@@ -2321,6 +2325,12 @@ main h2,
     stroke-width: 3.5;
 }
 
+.sales-line--funnel-orders {
+    stroke: #7c3aed;
+    stroke-width: 2.5;
+    stroke-dasharray: 5 6;
+}
+
 .sales-line--fbs {
     stroke: var(--green);
     stroke-width: 2.25;
@@ -2359,6 +2369,10 @@ main h2,
     stroke-width: 3;
 }
 
+.sales-dot--funnel-orders {
+    stroke: #7c3aed;
+}
+
 .sales-dot--fbs {
     stroke: var(--green);
 }
@@ -2383,6 +2397,21 @@ main h2,
     font-weight: 650;
 }
 
+.sales-tooltip-header {
+    fill: #98a3b6;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-anchor: end;
+    text-transform: uppercase;
+}
+
+.sales-tooltip-header-divider,
+.sales-tooltip-column-divider {
+    stroke: #e4eaf3;
+    stroke-width: 1;
+}
+
 .sales-tooltip-label {
     fill: #5f6a7e;
     font-size: 11px;
@@ -2401,6 +2430,10 @@ main h2,
 
 .sales-tooltip-key--fbo {
     fill: var(--amber);
+}
+
+.sales-tooltip-key--funnel-orders {
+    fill: #7c3aed;
 }
 
 .sales-tooltip-row {
@@ -6007,36 +6040,47 @@ body[data-section="sales"] .content {
     padding: 12px;
 }
 
-.sales-funnel-steps {
+.sales-funnel-diagram {
+    min-height: 290px;
+    padding: 14px 12px 16px;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    align-content: center;
+    justify-items: center;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background:
+        radial-gradient(circle at 16% 20%, color-mix(in srgb, var(--blue) 8%, transparent) 0 2px, transparent 3px) 0 0 / 26px 26px,
+        color-mix(in srgb, var(--blue) 2%, var(--card));
 }
 
 .sales-funnel-step {
     position: relative;
+    width: var(--funnel-width);
     min-width: 0;
-    min-height: 78px;
-    padding: 11px 13px;
-    display: grid;
-    align-content: center;
-    gap: 3px;
-    border: 1px solid var(--border);
+    min-height: 52px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--border));
     border-radius: 7px;
-    background: color-mix(in srgb, var(--blue) 3%, var(--card));
+    background: color-mix(in srgb, var(--blue) 8%, var(--card));
+    box-shadow: 0 6px 12px rgba(32, 58, 110, 0.05);
 }
 
 .sales-funnel-step::after {
-    content: "→";
+    content: "↓";
     position: absolute;
-    top: 50%;
-    right: -14px;
+    top: calc(100% + 1px);
+    left: 50%;
     z-index: 1;
-    width: 18px;
-    height: 18px;
+    width: 17px;
+    height: 17px;
     display: grid;
     place-items: center;
-    transform: translateY(-50%);
+    transform: translateX(-50%);
     border: 1px solid var(--border);
     border-radius: 50%;
     color: var(--blue);
@@ -6050,6 +6094,7 @@ body[data-section="sales"] .content {
 }
 
 .sales-funnel-step span {
+    display: block;
     overflow: hidden;
     color: var(--text-muted);
     font-size: 0.6875rem;
@@ -6059,15 +6104,74 @@ body[data-section="sales"] .content {
 }
 
 .sales-funnel-step strong {
+    display: block;
+    margin-top: 2px;
     color: var(--ink);
     font-size: 1.15rem;
     line-height: 1.05;
 }
 
 .sales-funnel-step small {
+    flex: 0 0 auto;
     color: var(--blue);
     font-size: 0.625rem;
     font-weight: 700;
+}
+
+.sales-funnel-step:nth-child(2) {
+    border-color: color-mix(in srgb, #557cf6 28%, var(--border));
+    background: color-mix(in srgb, #557cf6 8%, var(--card));
+}
+
+.sales-funnel-step:nth-child(3) {
+    border-color: color-mix(in srgb, #2a9d8f 28%, var(--border));
+    background: color-mix(in srgb, #2a9d8f 8%, var(--card));
+}
+
+.sales-funnel-step:nth-child(4) {
+    border-color: color-mix(in srgb, #1b9b68 28%, var(--border));
+    background: color-mix(in srgb, #1b9b68 8%, var(--card));
+}
+
+.sales-funnel-table-head {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sales-funnel-table-head > div {
+    display: grid;
+    gap: 2px;
+}
+
+.sales-funnel-table-head strong {
+    color: var(--ink);
+    font-size: 0.8125rem;
+}
+
+.sales-funnel-table-head span {
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+}
+
+.sales-funnel-search input {
+    width: min(260px, 34vw);
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--ink);
+    background: var(--card);
+    font: inherit;
+    font-size: 0.75rem;
+}
+
+.sales-funnel-search input:focus {
+    outline: 2px solid color-mix(in srgb, var(--blue) 25%, transparent);
+    outline-offset: 1px;
+    border-color: var(--blue);
 }
 
 .sales-funnel-table-wrap {
@@ -6162,12 +6266,8 @@ body[data-section="sales"] .content {
         text-align: left;
     }
 
-    .sales-funnel-steps {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .sales-funnel-step:nth-child(2)::after {
-        display: none;
+    .sales-funnel-diagram {
+        min-height: 266px;
     }
 }
 
@@ -6176,12 +6276,23 @@ body[data-section="sales"] .content {
         padding: 9px;
     }
 
-    .sales-funnel-steps {
-        grid-template-columns: 1fr;
+    .sales-funnel-diagram {
+        min-height: 240px;
+        padding-inline: 8px;
     }
 
-    .sales-funnel-step::after {
-        display: none;
+    .sales-funnel-step {
+        width: max(var(--funnel-width), 76%);
+        padding-inline: 11px;
+    }
+
+    .sales-funnel-table-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .sales-funnel-search input {
+        width: 100%;
     }
 }
 
@@ -6290,13 +6401,15 @@ body[data-section="admin_google_export"] .content--google-export {
     margin: 0 0 12px;
     padding: 4px;
     gap: 4px;
+    flex-wrap: wrap;
+    overflow-x: visible;
     border: 1px solid var(--export-border);
     border-radius: 12px;
     background: color-mix(in srgb, var(--canvas, #f5f6f8) 74%, var(--card, #ffffff));
-    scrollbar-width: thin;
 }
 
 .content--google-export .export-store-tab {
+    flex: 1 1 140px;
     min-height: 36px;
     padding: 0 14px;
     border: 0;
@@ -6330,7 +6443,7 @@ body[data-section="admin_google_export"] .content--google-export {
 .content--google-export .export-store-card {
     min-width: 0;
     padding: 18px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 14px;
     border-radius: 14px;
     box-shadow: 0 10px 30px rgba(25, 38, 62, 0.055);
@@ -6391,7 +6504,8 @@ body[data-section="admin_google_export"] .content--google-export {
 
 .content--google-export .export-schedule-grid {
     padding: 13px;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
     gap: 10px;
     border: 1px solid var(--export-border);
     border-radius: 11px;
@@ -6402,6 +6516,7 @@ body[data-section="admin_google_export"] .content--google-export {
 .content--google-export .export-url-field,
 .content--google-export .export-key-field {
     min-width: 0;
+    align-content: start;
     gap: 5px;
 }
 
@@ -6435,6 +6550,7 @@ body[data-section="admin_google_export"] .content--google-export {
     width: 100%;
     min-width: 0;
     height: 40px;
+    margin: 0;
 }
 
 .content--google-export .input-control:hover,
@@ -6456,6 +6572,7 @@ body[data-section="admin_google_export"] .content--google-export {
 
 .content--google-export .export-marketplace {
     min-width: 0;
+    grid-column: 1 / -1;
     padding: 14px;
     gap: 10px;
     border: 1px solid var(--export-border);
@@ -6473,18 +6590,15 @@ body[data-section="admin_google_export"] .content--google-export {
     font-size: 1rem;
 }
 
-.content--google-export .export-key-field {
-    width: min(100%, 250px);
-}
-
-.content--google-export .export-key-field .input-control {
-    height: 36px;
-    min-height: 36px;
-    font-weight: 700;
+.content--google-export .export-add-row {
+    min-height: 34px;
+    padding: 0 11px;
+    font-size: 0.7rem;
+    white-space: nowrap;
 }
 
 .content--google-export .export-marketplace .table-wrap {
-    overflow-x: auto;
+    overflow-x: visible;
     border: 1px solid var(--export-border);
     border-radius: 9px;
     background: var(--card, #ffffff);
@@ -6492,7 +6606,7 @@ body[data-section="admin_google_export"] .content--google-export {
 
 .content--google-export .export-target-table {
     width: 100%;
-    min-width: 560px;
+    min-width: 0;
     table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
@@ -6509,21 +6623,34 @@ body[data-section="admin_google_export"] .content--google-export {
 }
 
 .content--google-export .export-target-table th:nth-child(1) {
-    width: 32%;
+    width: 20%;
 }
 
 .content--google-export .export-target-table th:nth-child(2) {
-    width: 26%;
+    width: 20%;
 }
 
 .content--google-export .export-target-table th:nth-child(3) {
-    width: 42%;
+    width: 25%;
+}
+
+.content--google-export .export-target-table th:nth-child(4) {
+    width: 29%;
+}
+
+.content--google-export .export-target-table th:nth-child(5) {
+    width: 6%;
 }
 
 .content--google-export .export-target-table td {
     padding: 7px 9px;
     border-bottom: 1px solid color-mix(in srgb, var(--export-border) 72%, transparent);
     vertical-align: middle;
+}
+
+.content--google-export .export-target-table th:last-child,
+.content--google-export .export-target-table td:last-child {
+    padding-inline: 0;
 }
 
 .content--google-export .export-target-table tbody tr:last-child td {
@@ -6551,6 +6678,44 @@ body[data-section="admin_google_export"] .content--google-export {
     min-height: 34px;
     padding: 0 8px;
     font-size: 0.6875rem;
+}
+
+.content--google-export .export-target-table .select-control {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 24px 0 8px;
+    font-size: 0.6875rem;
+}
+
+.content--google-export .export-target-table .cs-wrap,
+.content--google-export .export-target-table .cs-trigger {
+    height: 34px;
+    min-height: 34px;
+}
+
+.content--google-export .export-target-table .cs-trigger {
+    padding: 0 24px 0 8px;
+    font-size: 0.6875rem;
+}
+
+.content--google-export .export-target-table .cs-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.content--google-export .export-remove-row {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    margin: 0 auto;
+    border-color: color-mix(in srgb, #df5661 25%, var(--export-border));
+    color: #c94752;
+    font-size: 1.1rem;
+    line-height: 1;
 }
 
 .content--google-export .export-status {
@@ -6601,12 +6766,9 @@ body[data-section="admin_google_export"] .content--google-export {
 }
 
 @media (max-width: 1200px) {
-    .content--google-export .export-store-card {
-        grid-template-columns: 1fr;
-    }
-
-    .content--google-export .export-marketplace {
-        grid-column: 1;
+    .content--google-export .export-target-table th,
+    .content--google-export .export-target-table td {
+        padding-inline: 7px;
     }
 }
 
@@ -6655,6 +6817,87 @@ body[data-section="admin_google_export"] .content--google-export {
     .content--google-export .export-actions .btn-secondary {
         flex: 1 1 0;
         min-width: 0;
+    }
+
+    .content--google-export .export-marketplace .table-wrap {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    .content--google-export .export-target-table,
+    .content--google-export .export-target-table tbody,
+    .content--google-export .export-target-table tr,
+    .content--google-export .export-target-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .content--google-export .export-target-table thead {
+        display: none;
+    }
+
+    .content--google-export .export-target-table tbody {
+        display: grid;
+        gap: 9px;
+    }
+
+    .content--google-export .export-target-table tr {
+        position: relative;
+        padding: 10px;
+        border: 1px solid var(--export-border);
+        border-radius: 9px;
+        background: var(--card, #ffffff);
+    }
+
+    .content--google-export .export-target-table td {
+        padding: 0;
+        border: 0;
+    }
+
+    .content--google-export .export-target-table td + td {
+        margin-top: 8px;
+    }
+
+    .content--google-export .export-target-table td::before {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--text-muted, #778093);
+        font-size: 0.625rem;
+        font-weight: 750;
+        line-height: 1.2;
+    }
+
+    .content--google-export .export-target-table td:nth-child(1)::before {
+        content: "Что выгружать";
+    }
+
+    .content--google-export .export-target-table td:nth-child(2)::before {
+        content: "Лист";
+    }
+
+    .content--google-export .export-target-table td:nth-child(3)::before {
+        content: "Колонка с артикулом / SKU";
+    }
+
+    .content--google-export .export-target-table td:nth-child(4)::before {
+        content: "Колонка для значения";
+    }
+
+    .content--google-export .export-target-table td:nth-child(5) {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 28px;
+        margin: 0;
+    }
+
+    .content--google-export .export-target-table td:nth-child(5)::before {
+        content: none;
+    }
+
+    .content--google-export .export-target-table td:first-child {
+        padding-right: 38px;
     }
 }
 

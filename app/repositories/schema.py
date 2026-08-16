@@ -1,8 +1,8 @@
 import ast
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
-from app.infrastructure.database import DatabaseConnection, database_for_path
+from app.infrastructure.database import Database, DatabaseConnection, database_for_path
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord
 from app.repositories import core
 from app.repositories.seed_data import FULFILLMENTS, STOCK_ITEMS
@@ -11,7 +11,11 @@ from app.stores import STORES
 
 def init_db() -> None:
     database = database_for_path(core.DB_PATH)
+    _preserve_legacy_wb_funnel_daily_orders(database)
+    target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
+    if target_table_was_rebuilt:
+        _finish_stock_sheet_export_target_migration(database)
     if database.dialect_name != "sqlite":
         return
     with core.get_connection() as connection:
@@ -27,6 +31,124 @@ def init_db() -> None:
         _migrate_delivery_marketplace(connection)
         _migrate_activity_log_operation(connection)
         connection.execute("PRAGMA optimize")
+        connection.commit()
+
+
+def _preserve_legacy_wb_funnel_daily_orders(database: Database) -> None:
+    """Keep the pre-product aggregate table instead of silently losing its data.
+
+    The first local prototype stored one total per store and day. Product-level
+    export requires a separate row for every WB nmId, so the primary key and
+    product columns are different. This one-time rename lets metadata.create_all
+    create the correct table on both SQLite and PostgreSQL.
+    """
+
+    inspector = inspect(database.engine)
+    table_name = "wb_funnel_daily_orders"
+    legacy_name = "wb_funnel_daily_orders_legacy"
+    if not inspector.has_table(table_name):
+        return
+    columns = {str(column["name"]) for column in inspector.get_columns(table_name)}
+    required = {"article", "vendor_code", "product_name"}
+    if required.issubset(columns):
+        return
+    if inspector.has_table(legacy_name):
+        raise RuntimeError(
+            "Найдена устаревшая таблица воронки. Сохраните её резервную копию и переименуйте "
+            "wb_funnel_daily_orders_legacy перед обновлением."
+        )
+    with database.connect() as connection:
+        connection.execute(f"ALTER TABLE {table_name} RENAME TO {legacy_name}")
+        connection.commit()
+
+
+def _prepare_stock_sheet_export_target_migration(database: Database) -> bool:
+    """Allow more than one export target for the same metric.
+
+    Earlier versions used (store, marketplace, metric) as the primary key.  A
+    separate export row needs its own article column, so the replacement table
+    has an autoincrementing id instead.  The old configuration is copied after
+    SQLAlchemy creates the new table.
+    """
+    inspector = inspect(database.engine)
+    table_name = "stock_sheet_export_targets"
+    pending_name = "stock_sheet_export_targets_migration_v1"
+    backup_name = "stock_sheet_export_targets_backup_v1"
+    if not inspector.has_table(table_name):
+        if inspector.has_table(pending_name):
+            return True
+        if inspector.has_table(backup_name):
+            raise RuntimeError(
+                "Не найдена рабочая таблица настроек выгрузки, но сохранена её резервная копия. "
+                "Остановите приложение и восстановите stock_sheet_export_targets."
+            )
+        return False
+    columns = {str(column["name"]) for column in inspector.get_columns(table_name)}
+    if "id" in columns:
+        return inspector.has_table(pending_name)
+    if inspector.has_table(pending_name) or inspector.has_table(backup_name):
+        raise RuntimeError(
+            "Найдена незавершённая миграция настроек выгрузки. "
+            "Сделайте резервную копию базы и обратитесь в поддержку."
+        )
+    with database.connect() as connection:
+        connection.execute(f"ALTER TABLE {table_name} RENAME TO {pending_name}")
+        connection.commit()
+    return True
+
+
+def _finish_stock_sheet_export_target_migration(database: Database) -> None:
+    table_name = "stock_sheet_export_targets"
+    pending_name = "stock_sheet_export_targets_migration_v1"
+    backup_name = "stock_sheet_export_targets_backup_v1"
+    columns = (
+        "store_slug",
+        "marketplace",
+        "metric",
+        "sheet_name",
+        "key_column_name",
+        "value_column_name",
+    )
+    selected_columns = ", ".join(columns)
+    order_by = ", ".join(columns)
+    inspector = inspect(database.engine)
+    if not inspector.has_table(pending_name):
+        raise RuntimeError("Не найдена исходная таблица для переноса настроек Google-выгрузки")
+    if inspector.has_table(backup_name):
+        raise RuntimeError(
+            "Резервная таблица stock_sheet_export_targets_backup_v1 уже существует; "
+            "автоматическая миграция остановлена."
+        )
+    with database.connect() as connection:
+        table_columns = connection.column_names(table_name)
+        if table_columns and "id" not in table_columns:
+            raise RuntimeError("Новая таблица настроек выгрузки создана в неожиданном формате")
+
+        source_rows = connection.execute(
+            f"SELECT {selected_columns} FROM {pending_name} ORDER BY {order_by}"
+        ).fetchall()
+        target_rows = connection.execute(
+            f"SELECT {selected_columns} FROM {table_name} ORDER BY {order_by}"
+        ).fetchall()
+        if not target_rows:
+            connection.execute(
+                f"""
+                INSERT INTO {table_name} ({selected_columns})
+                SELECT {selected_columns} FROM {pending_name}
+                """
+            )
+            target_rows = connection.execute(
+                f"SELECT {selected_columns} FROM {table_name} ORDER BY {order_by}"
+            ).fetchall()
+
+        source_values = [tuple(row[column] for column in columns) for row in source_rows]
+        target_values = [tuple(row[column] for column in columns) for row in target_rows]
+        if target_values != source_values:
+            raise RuntimeError(
+                "Проверка переноса настроек Google-выгрузки не пройдена; "
+                "исходная таблица сохранена, миграция отменена."
+            )
+        connection.execute(f"ALTER TABLE {pending_name} RENAME TO {backup_name}")
         connection.commit()
 
 

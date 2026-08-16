@@ -499,6 +499,8 @@ def _daily_map(start: date, end: date, rows: list[dict]) -> list[dict]:
                 "cancellations": round(_number(source.get("cancellations_amount")), 2),
                 "sales": round(_number(source.get("sales_amount")), 2),
                 "orders_count": _integer(source.get("orders_count")),
+                "fbo_count": _integer(source.get("fbo_count")),
+                "fbs_count": _integer(source.get("fbs_count")),
                 "cancellations_count": _integer(source.get("cancellations_count")),
                 "sales_count": _integer(source.get("sales_count")),
             }

@@ -5,7 +5,20 @@ from dataclasses import dataclass
 from app.repositories.core import WRITE_LOCK, get_connection
 
 MARKETPLACES = ("WB", "OZON", "YANDEX MARKET")
-METRICS = ("ff_stock", "fbs_stock", "fbs_orders")
+STOCK_METRICS = ("ff_stock", "fbs_stock", "fbo_stock")
+METRICS = (*STOCK_METRICS, "fbs_orders")
+METRICS_BY_MARKETPLACE = {
+    "WB": (*STOCK_METRICS, "fbs_orders"),
+    "OZON": (*STOCK_METRICS, "fbs_orders"),
+    "YANDEX MARKET": STOCK_METRICS,
+}
+
+
+def allowed_metrics(marketplace: str) -> tuple[str, ...]:
+    try:
+        return METRICS_BY_MARKETPLACE[marketplace]
+    except KeyError as error:
+        raise ValueError(f"Неизвестный маркетплейс: {marketplace}") from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +28,7 @@ class ExportTarget:
     sheet_name: str
     key_column_name: str
     value_column_name: str
+    id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,10 +63,10 @@ def get_settings(store_slug: str) -> StockSheetExportSettings | None:
         return None
     target_rows = conn.execute(
         """
-        SELECT marketplace, metric, sheet_name, key_column_name, value_column_name
+        SELECT id, marketplace, metric, sheet_name, key_column_name, value_column_name
         FROM stock_sheet_export_targets
         WHERE store_slug = ?
-        ORDER BY marketplace, metric
+        ORDER BY marketplace, metric, id
         """,
         (store_slug,),
     ).fetchall()
@@ -75,6 +89,7 @@ def get_settings(store_slug: str) -> StockSheetExportSettings | None:
                 sheet_name=str(target["sheet_name"]),
                 key_column_name=str(target["key_column_name"]),
                 value_column_name=str(target["value_column_name"]),
+                id=int(target["id"]),
             )
             for target in target_rows
         ),
@@ -83,9 +98,7 @@ def get_settings(store_slug: str) -> StockSheetExportSettings | None:
 
 def list_settings() -> list[StockSheetExportSettings]:
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT store_slug FROM stock_sheet_export_settings ORDER BY store_slug"
-    ).fetchall()
+    rows = conn.execute("SELECT store_slug FROM stock_sheet_export_settings ORDER BY store_slug").fetchall()
     conn.close()
     return [settings for row in rows if (settings := get_settings(str(row["store_slug"]))) is not None]
 

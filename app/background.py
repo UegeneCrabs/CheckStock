@@ -16,6 +16,7 @@ from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
 from app.scheduling import BackgroundJob, run_background_job
 from app.wb import catalog as wb_catalog
+from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import sync as wb_sync
 from app.wb import token_watch
 from app.wb import unit_economics as wb_unit_economics
@@ -92,6 +93,17 @@ def _fixed_delay(seconds: int) -> Callable[[], float]:
     return lambda: seconds
 
 
+def _funnel_jobs() -> tuple[BackgroundJob, ...]:
+    return (
+        BackgroundJob(
+            "wb_funnel_orders_sync",
+            wb_funnel_orders.sync_all,
+            _fixed_delay(settings.wb_funnel_orders_sync_interval_seconds),
+            startup_delay_seconds=5,
+        ),
+    )
+
+
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -134,6 +146,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             _fixed_delay(settings.sales_sync_interval_seconds),
             startup_delay_seconds=settings.sales_sync_startup_delay_seconds,
         ),
+        *_funnel_jobs(),
         BackgroundJob(
             "decision_center_sync",
             decision_service.sync_all,
@@ -170,7 +183,13 @@ def _initialize_application() -> None:
 async def lifespan(application: FastAPI):
     await run_in_threadpool(_initialize_application)
     catalog_ready = asyncio.Event()
-    jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
+    jobs = (
+        _jobs(catalog_ready)
+        if settings.background_sync_enabled
+        else _funnel_jobs()
+        if settings.funnel_orders_sync_enabled
+        else ()
+    )
     tasks = [asyncio.create_task(run_background_job(job), name=f"checkstock:{job.name}") for job in jobs]
     application.state.background_tasks = tasks
     logger.info(

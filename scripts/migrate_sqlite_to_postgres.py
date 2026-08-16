@@ -47,10 +47,7 @@ def _source_connection(path: Path) -> sqlite3.Connection:
 
 
 def _source_tables(connection: sqlite3.Connection) -> set[str]:
-    return {
-        str(row[0])
-        for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    return {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
 def _batches(cursor: sqlite3.Cursor, size: int) -> Iterator[list[dict[str, object]]]:
@@ -105,9 +102,7 @@ def migrate(sqlite_path: Path, engine: Engine, *, batch_size: int = 2_000) -> di
                 if table.name not in source_tables:
                     copied[table.name] = 0
                     continue
-                source_columns = {
-                    str(row[1]) for row in source.execute(f'PRAGMA table_info("{table.name}")')
-                }
+                source_columns = {str(row[1]) for row in source.execute(f'PRAGMA table_info("{table.name}")')}
                 columns = [column.name for column in table.columns if column.name in source_columns]
                 quoted_columns = ", ".join(f'"{column}"' for column in columns)
                 cursor = source.execute(f'SELECT {quoted_columns} FROM "{table.name}"')

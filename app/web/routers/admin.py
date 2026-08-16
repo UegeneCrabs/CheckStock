@@ -320,9 +320,7 @@ async def admin_update_user_sections(
             permissions[section] = SectionAccessLevel(str(form.get(section.value) or ""))
     except ValueError:
         return JSONResponse({"ok": False, "error": "проверьте права разделов"}, status_code=400)
-    details = ", ".join(
-        f"{SECTION_LABELS[section]}: {level.value}" for section, level in permissions.items()
-    )
+    details = ", ".join(f"{SECTION_LABELS[section]}: {level.value}" for section, level in permissions.items())
     command = AuditedUserMutation(
         kind=UserMutationKind.SECTIONS,
         user_id=user_id,
@@ -448,9 +446,7 @@ def render_user_rows(actor: User, users: UserCollection) -> str:
                 f"{'Запретить изменения' if can_edit else 'Разрешить изменения'}</button>"
             )
             if auth.has_role(actor, "superadmin"):
-                permissions = {
-                    section.value: access_level(user, section).value for section in SectionName
-                }
+                permissions = {section.value: access_level(user, section).value for section in SectionName}
                 superadmin_controls = (
                     '<div class="u-role-editor">'
                     f'<select class="select-control u-role-select">{render_user_role_options(user)}</select>'
@@ -574,13 +570,13 @@ def render_usage_dashboard(data: dict[str, object]) -> str:
         people_rows.append(
             "<tr>"
             f'<td>{html.escape(str(person["full_name"]))}<small class="usage-login">'
-            f'{html.escape(str(person["login"]))}</small></td>'
+            f"{html.escape(str(person['login']))}</small></td>"
             f"<td>{status}</td>"
-            f'<td>{html.escape(section_label)}</td>'
-            f'<td>{html.escape(format_dt(person["last_seen"]))}</td>'
-            f'<td>{html.escape(_format_duration(person["active_today"]))}</td>'
-            f'<td>{html.escape(_format_duration(person["active_period"]))}</td>'
-            f'<td>{person["page_views"]}</td>'
+            f"<td>{html.escape(section_label)}</td>"
+            f"<td>{html.escape(format_dt(person['last_seen']))}</td>"
+            f"<td>{html.escape(_format_duration(person['active_today']))}</td>"
+            f"<td>{html.escape(_format_duration(person['active_period']))}</td>"
+            f"<td>{person['page_views']}</td>"
             "</tr>"
         )
     if not people_rows:
@@ -590,11 +586,7 @@ def render_usage_dashboard(data: dict[str, object]) -> str:
     section_rows = []
     for item in sections:
         key = item["section"]
-        label = (
-            SECTION_LABELS.get(SectionName(key), key)
-            if key in SectionName._value2member_map_
-            else key
-        )
+        label = SECTION_LABELS.get(SectionName(key), key) if key in SectionName._value2member_map_ else key
         width = (
             max(3, round(int(item["active_seconds"]) * 100 / max_section_seconds))
             if max_section_seconds
@@ -604,8 +596,8 @@ def render_usage_dashboard(data: dict[str, object]) -> str:
             '<div class="usage-section-row">'
             '<div class="usage-section-copy">'
             f"<strong>{html.escape(str(label))}</strong>"
-            f'<span>{item["page_views"]} открытий · {item["unique_users"]} пользователей · '
-            f'{html.escape(_format_duration(item["active_seconds"]))}</span>'
+            f"<span>{item['page_views']} открытий · {item['unique_users']} пользователей · "
+            f"{html.escape(_format_duration(item['active_seconds']))}</span>"
             "</div>"
             f'<div class="usage-section-bar"><span style="width:{width}%"></span></div>'
             "</div>"
@@ -620,12 +612,12 @@ def render_usage_dashboard(data: dict[str, object]) -> str:
         session_rows.append(
             "<tr>"
             f'<td>{html.escape(str(item["full_name"]))}<small class="usage-login">'
-            f'{html.escape(str(item["login"]))}</small></td>'
-            f'<td>{html.escape(format_dt(item["started_at"]))}</td>'
-            f'<td>{html.escape(format_dt(item["last_seen_at"]))}</td>'
-            f'<td>{html.escape(_format_duration(item["active_seconds"]))}</td>'
-            f'<td>{html.escape(location)}</td>'
-            f'<td>{html.escape(state)}</td>'
+            f"{html.escape(str(item['login']))}</small></td>"
+            f"<td>{html.escape(format_dt(item['started_at']))}</td>"
+            f"<td>{html.escape(format_dt(item['last_seen_at']))}</td>"
+            f"<td>{html.escape(_format_duration(item['active_seconds']))}</td>"
+            f"<td>{html.escape(location)}</td>"
+            f"<td>{html.escape(state)}</td>"
             "</tr>"
         )
     if not session_rows:
@@ -633,10 +625,10 @@ def render_usage_dashboard(data: dict[str, object]) -> str:
 
     return (
         '<div class="usage-cards">'
-        f'<article><span>Онлайн сейчас</span><strong>{data["online_count"]}</strong><small>активность за последние 10 минут</small></article>'
-        f'<article><span>Активны сегодня</span><strong>{data["active_today_count"]}</strong><small>уникальные пользователи</small></article>'
-        f'<article><span>Время сегодня</span><strong>{html.escape(_format_duration(data["active_today_seconds"]))}</strong><small>суммарно по пользователям</small></article>'
-        f'<article><span>Открытий разделов</span><strong>{data["period_page_views"]}</strong><small>за выбранный период</small></article>'
+        f"<article><span>Онлайн сейчас</span><strong>{data['online_count']}</strong><small>активность за последние 10 минут</small></article>"
+        f"<article><span>Активны сегодня</span><strong>{data['active_today_count']}</strong><small>уникальные пользователи</small></article>"
+        f"<article><span>Время сегодня</span><strong>{html.escape(_format_duration(data['active_today_seconds']))}</strong><small>суммарно по пользователям</small></article>"
+        f"<article><span>Открытий разделов</span><strong>{data['period_page_views']}</strong><small>за выбранный период</small></article>"
         "</div>"
         '<div class="admin-layout usage-layout">'
         '<section class="panel"><h3 class="panel-title">Использование разделов</h3>'
@@ -645,14 +637,14 @@ def render_usage_dashboard(data: dict[str, object]) -> str:
         '<section class="panel"><h3 class="panel-title">Пользователи</h3>'
         '<p class="panel-desc">Статус обновляется автоматически каждые 30 секунд</p>'
         '<div class="table-wrap"><table class="data-table"><thead><tr>'
-        '<th>Сотрудник</th><th>Статус</th><th>Сейчас</th><th>Последняя активность</th>'
-        '<th>Сегодня</th><th>За период</th><th>Открытий</th>'
-        f'</tr></thead><tbody>{"".join(people_rows)}</tbody></table></div></section></div>'
+        "<th>Сотрудник</th><th>Статус</th><th>Сейчас</th><th>Последняя активность</th>"
+        "<th>Сегодня</th><th>За период</th><th>Открытий</th>"
+        f"</tr></thead><tbody>{''.join(people_rows)}</tbody></table></div></section></div>"
         '<section class="panel panel--wide"><h3 class="panel-title">История входов</h3>'
         '<p class="panel-desc">Последние 100 сессий. Время считается только пока пользователь активен.</p>'
         '<div class="table-wrap table-wrap--scroll-10"><table class="data-table"><thead><tr>'
-        '<th>Сотрудник</th><th>Вошёл</th><th>Последняя активность</th><th>Был онлайн</th><th>Последний раздел</th><th>Статус</th>'
-        f'</tr></thead><tbody>{"".join(session_rows)}</tbody></table></div></section>'
+        "<th>Сотрудник</th><th>Вошёл</th><th>Последняя активность</th><th>Был онлайн</th><th>Последний раздел</th><th>Статус</th>"
+        f"</tr></thead><tbody>{''.join(session_rows)}</tbody></table></div></section>"
     )
 
 

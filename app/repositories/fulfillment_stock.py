@@ -280,10 +280,7 @@ def apply_ff_import_snapshot(
                  article, quantity, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                (*scope, article, quantity, updated_at)
-                for article, quantity in quantities.items()
-            ),
+            ((*scope, article, quantity, updated_at) for article, quantity in quantities.items()),
         )
         conn.execute(
             """

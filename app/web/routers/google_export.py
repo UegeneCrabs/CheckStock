@@ -31,6 +31,7 @@ MARKETPLACE_FORM_PREFIXES = {"WB": "wb", "OZON": "ozon", "YANDEX MARKET": "yande
 METRIC_LABELS = {
     "ff_stock": "Остатки ФФ",
     "fbs_stock": "Текущий сток FBS",
+    "fbo_stock": "Текущий сток FBO",
     "fbs_orders": "Заказы FBS",
 }
 
@@ -51,22 +52,46 @@ def _render_weekdays(selected: int) -> str:
     )
 
 
+def _metric_options(marketplace: str, selected: str = "") -> str:
+    placeholder = (
+        '<option value="" disabled' + (" selected" if not selected else "") + ">Выберите данные</option>"
+    )
+    options = "".join(
+        f'<option value="{metric}"{" selected" if metric == selected else ""}>'
+        f"{html.escape(METRIC_LABELS[metric])}</option>"
+        for metric in stock_sheet_export.repository.allowed_metrics(marketplace)
+    )
+    return placeholder + options
+
+
+def _render_target_row(marketplace: str, target: ExportTarget | None = None) -> str:
+    prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
+    metric = target.metric if target is not None else ""
+    sheet_name = target.sheet_name if target is not None else ""
+    key_column_name = target.key_column_name if target is not None else ""
+    value_column_name = target.value_column_name if target is not None else ""
+    return (
+        "<tr data-export-target-row>"
+        f'<td><select class="select-control" name="{prefix}_target_metric" required>'
+        f"{_metric_options(marketplace, metric)}</select></td>"
+        f'<td><input class="input-control" name="{prefix}_target_sheet" '
+        f'value="{_input(sheet_name)}" maxlength="200" required></td>'
+        f'<td><input class="input-control" name="{prefix}_target_key" '
+        f'value="{_input(key_column_name)}" maxlength="200" required></td>'
+        f'<td><input class="input-control" name="{prefix}_target_value" '
+        f'value="{_input(value_column_name)}" maxlength="200" required></td>'
+        '<td><button class="btn-icon export-remove-row" type="button" '
+        'data-export-remove-row aria-label="Удалить строку">×</button></td>'
+        "</tr>"
+    )
+
+
 def _render_target_rows(settings: StockSheetExportSettings, marketplace: str) -> str:
-    rows = []
-    for metric in stock_sheet_export.repository.METRICS:
-        target = settings.target(marketplace, metric)
-        prefix = f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}"
-        rows.append(
-            "<tr>"
-            f"<td><strong>{html.escape(METRIC_LABELS[metric])}</strong>"
-            f"<small>{html.escape(stock_sheet_export.METRIC_LABELS[metric])}</small></td>"
-            f'<td><input class="input-control" name="{prefix}_sheet" '
-            f'value="{_input(target.sheet_name)}" maxlength="200" required></td>'
-            f'<td><input class="input-control" name="{prefix}_column" '
-            f'value="{_input(target.value_column_name)}" maxlength="200" required></td>'
-            "</tr>"
-        )
-    return "".join(rows)
+    return "".join(
+        _render_target_row(marketplace, target)
+        for target in settings.targets
+        if target.marketplace == marketplace
+    )
 
 
 def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> str:
@@ -84,27 +109,23 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             else "Выгрузка ещё не запускалась"
         )
     )
-    key_columns = {
-        marketplace: settings.target(marketplace, "ff_stock").key_column_name
-        for marketplace in stock_sheet_export.repository.MARKETPLACES
-    }
     marketplace_sections = []
     for marketplace in stock_sheet_export.repository.MARKETPLACES:
         marketplace_sections.append(
             '<section class="export-marketplace">'
-            f"<div class=\"export-marketplace-head\"><div><span>{marketplace}</span>"
+            f'<div class="export-marketplace-head"><div><span>{marketplace}</span>'
             f"<h3>{html.escape(MARKETPLACE_LABELS[marketplace])}</h3></div>"
-            '<label class="export-key-field"><span>Колонка с артикулом / SKU</span>'
-            f'<input class="input-control" name="{MARKETPLACE_FORM_PREFIXES[marketplace]}_key_column" '
-            f'value="{_input(key_columns[marketplace])}" maxlength="200" required></label></div>'
+            f'<button class="btn-secondary export-add-row" type="button" data-export-add-row="{marketplace}">'
+            "Добавить строку</button></div>"
             '<div class="table-wrap"><table class="data-table export-target-table" data-no-filter><thead><tr>'
-            "<th>Показатель</th><th>Название листа</th><th>Название колонки</th>"
-            f"</tr></thead><tbody>{_render_target_rows(settings, marketplace)}</tbody></table></div>"
+            "<th>Что выгружать</th><th>Лист</th><th>Колонка с артикулом / SKU</th><th>Колонка для значения</th><th></th>"
+            f'</tr></thead><tbody data-export-targets="{marketplace}">{_render_target_rows(settings, marketplace)}</tbody></table></div>'
+            f'<template data-export-row-template="{marketplace}">{_render_target_row(marketplace)}</template>'
             "</section>"
         )
     return (
         f'<form class="panel export-store-card" data-export-form data-store="{settings.store_slug}"'
-        f'{"" if active else " hidden"}>'
+        f"{'' if active else ' hidden'}>"
         '<div class="export-card-head"><div class="export-store-title">'
         f'<span class="store-dot" style="--store-color:{_input(store.color)}"></span>'
         f"<div><small>МАГАЗИН</small><h2>{html.escape(store.name)}</h2></div></div>"
@@ -113,7 +134,7 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         '<div class="export-schedule-grid">'
         '<label><span>Периодичность</span><select class="select-control" name="schedule_kind" '
         'data-schedule-kind><option value="daily"'
-        f"{daily_selected}>Каждый день</option><option value=\"weekly\"{weekly_selected}>Раз в неделю</option></select></label>"
+        f'{daily_selected}>Каждый день</option><option value="weekly"{weekly_selected}>Раз в неделю</option></select></label>'
         '<label data-weekday-field><span>День недели</span><select class="select-control" name="weekday">'
         f"{_render_weekdays(settings.weekday)}</select></label>"
         '<label><span>Время (Москва)</span><input class="input-control" type="time" name="run_time" '
@@ -142,17 +163,27 @@ def _settings_from_form(
         weekday = int(_value(form, "weekday") or 0)
     except ValueError as error:
         raise ValueError("Некорректный день недели") from error
-    targets = tuple(
-        ExportTarget(
-            marketplace=marketplace,
-            metric=metric,
-            sheet_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}_sheet"),
-            key_column_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_key_column"),
-            value_column_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_{metric}_column"),
+    targets: list[ExportTarget] = []
+    for marketplace in stock_sheet_export.repository.MARKETPLACES:
+        prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
+        metrics = [str(value).strip() for value in form.getlist(f"{prefix}_target_metric")]
+        sheets = [str(value).strip() for value in form.getlist(f"{prefix}_target_sheet")]
+        keys = [str(value).strip() for value in form.getlist(f"{prefix}_target_key")]
+        values = [str(value).strip() for value in form.getlist(f"{prefix}_target_value")]
+        if not (len(metrics) == len(sheets) == len(keys) == len(values)):
+            raise ValueError("Некорректный набор строк выгрузки")
+        targets.extend(
+            ExportTarget(
+                marketplace=marketplace,
+                metric=metric,
+                sheet_name=sheet_name,
+                key_column_name=key_column_name,
+                value_column_name=value_column_name,
+            )
+            for metric, sheet_name, key_column_name, value_column_name in zip(
+                metrics, sheets, keys, values, strict=True
+            )
         )
-        for marketplace in stock_sheet_export.repository.MARKETPLACES
-        for metric in stock_sheet_export.repository.METRICS
-    )
     return replace(
         existing,
         enabled=_value(form, "enabled") == "1",
@@ -161,7 +192,7 @@ def _settings_from_form(
         run_time=_value(form, "run_time"),
         spreadsheet_url=_value(form, "spreadsheet_url"),
         updated_at=datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
-        targets=targets,
+        targets=tuple(targets),
     )
 
 

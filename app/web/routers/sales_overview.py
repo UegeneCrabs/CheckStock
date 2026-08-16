@@ -12,7 +12,7 @@ from app.section_access import has_access as has_section_access
 from app.section_access import landing_path
 from app.stores import STORES
 from app.wb import api as wb_api
-from app.wb import sales_funnel as wb_sales_funnel
+from app.wb import funnel_orders as wb_funnel_orders
 from app.web.access import (
     accessible_store_items,
     accessible_store_slugs,
@@ -47,7 +47,9 @@ async def sales(request: Request):
         default_to=today.isoformat(),
         date_max=today.isoformat(),
         sales_store_options="".join(store_options),
-        ephemerides_hidden="" if has_section_access(request.state.user, SectionName.EPHEMERIDES) else " hidden",
+        ephemerides_hidden=""
+        if has_section_access(request.state.user, SectionName.EPHEMERIDES)
+        else " hidden",
         rnp_hidden="" if has_section_access(request.state.user, SectionName.RNP) else " hidden",
         unit_economics_hidden=(
             "" if has_section_access(request.state.user, SectionName.UNIT_ECONOMICS) else " hidden"
@@ -91,28 +93,35 @@ async def sales_data(
         )
 
 
-@router.get("/api/sales/wb-funnel")
-async def wb_funnel_data(request: Request, date_from: str = "", date_to: str = "", store: str = ""):
-    store_slug = store.strip().lower()
-    if not store_slug:
-        return JSONResponse(
-            {"ok": False, "error": "Выберите магазин WB для просмотра воронки"}, status_code=400
-        )
-    if not has_store_access(request.state.user, store_slug):
+@router.get("/api/sales/wb-funnel-orders")
+async def wb_funnel_orders_data(
+    request: Request, date_from: str = "", date_to: str = "", store: str = "", refresh: bool = False
+):
+    store_slug = store.strip().lower() or None
+    if store_slug and not has_store_access(request.state.user, store_slug):
         return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину"}, status_code=403)
+    if store_slug is None and len(accessible_store_slugs(request.state.user)) != len(STORES):
+        store_slug = first_accessible_store(request.state.user)
+    if store_slug is None and not accessible_store_slugs(request.state.user):
+        return JSONResponse({"ok": False, "error": "Нет доступных магазинов"}, status_code=403)
     try:
+        if refresh:
+            if store_slug:
+                await run_in_threadpool(wb_funnel_orders.sync_store, store_slug)
+            else:
+                await run_in_threadpool(wb_funnel_orders.sync_all)
         return JSONResponse(
-            await run_in_threadpool(wb_sales_funnel.dashboard, store_slug, date_from, date_to)
+            await run_in_threadpool(wb_funnel_orders.dashboard, date_from, date_to, store_slug or None)
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     except wb_api.WBApiError as exc:
-        logger.warning("Не удалось загрузить воронку WB для %s: %s", store_slug, exc)
+        logger.warning("Не удалось загрузить заказы воронки WB для %s: %s", store_slug, exc)
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
     except Exception:
-        logger.exception("Не удалось загрузить воронку WB для %s", store_slug)
+        logger.exception("Не удалось загрузить заказы воронки WB для %s", store_slug)
         return JSONResponse(
-            {"ok": False, "error": "Не удалось загрузить воронку карточек WB"}, status_code=500
+            {"ok": False, "error": "Не удалось загрузить заказы из воронки WB"}, status_code=500
         )
 
 

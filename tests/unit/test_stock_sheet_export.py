@@ -29,6 +29,7 @@ class _FakeValues:
                             "ARTICLE",
                             "Доступно ФФ для распределения",
                             "Текущий сток в продаже FBS",
+                            "Текущий сток в продаже FBO",
                             "Заказы по ФБС",
                         ]
                     ]
@@ -74,6 +75,7 @@ def test_default_rimili_schedule_is_daily_at_one() -> None:
     assert settings.run_time == "01:00"
     assert settings.spreadsheet_url == stock_sheet_export.RIMILI_SPREADSHEET_URL
     assert settings.target("WB", "fbs_orders").value_column_name == "Заказы по ФБС"
+    assert settings.target("OZON", "fbs_orders").value_column_name == "Заказы по ФБС"
     assert settings.target("YANDEX MARKET", "fbs_stock").sheet_name == "YANDEX MARKET"
 
 
@@ -103,52 +105,80 @@ def test_wb_order_totals_require_both_requested_statuses() -> None:
         3: {"supplierStatus": "confirm", "wbStatus": "ready_for_pickup"},
     }
     with (
-        mock.patch.object(
-            stock_sheet_export,
-            "_history_windows",
-            return_value=[(date(2026, 8, 1), date(2026, 8, 2))],
-        ),
         mock.patch.object(stock_sheet_export, "_unix_bounds", return_value=(1, 2)),
         mock.patch.object(stock_sheet_export.wb_tokens, "get_token", return_value="token"),
         mock.patch.object(stock_sheet_export.wb_api, "get_fbs_orders", return_value=orders),
         mock.patch.object(stock_sheet_export.wb_api, "get_fbs_order_statuses", return_value=statuses),
     ):
-        assert stock_sheet_export._wb_fbs_order_totals("rimili") == {"barcode-a": 1, "B": 1}
+        assert stock_sheet_export._wb_fbs_order_totals(
+            "rimili", datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)
+        ) == {"barcode-a": 1, "B": 1}
 
 
-def test_ozon_order_totals_include_only_active_fbs_statuses() -> None:
+def test_wb_completed_week_uses_the_seven_finished_moscow_days() -> None:
+    assert stock_sheet_export.wb_completed_week(datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)) == (
+        date(2026, 8, 9),
+        date(2026, 8, 16),
+    )
+
+
+def test_ozon_week_uses_the_same_moscow_days_as_wb() -> None:
+    assert stock_sheet_export._ozon_rfc3339_bounds(date(2026, 8, 9), date(2026, 8, 16)) == (
+        "2026-08-08T21:00:00Z",
+        "2026-08-15T21:00:00Z",
+    )
+
+
+def test_ozon_order_totals_exclude_terminal_statuses_and_deduplicate() -> None:
     postings = [
         {
-            "posting_number": "one",
+            "posting_number": "posting-1",
             "status": "awaiting_packaging",
-            "products": [{"offer_id": "A", "quantity": 2}],
+            "products": [{"offer_id": "A-1", "quantity": 1}],
         },
         {
-            "posting_number": "two",
+            "posting_number": "posting-1",
+            "status": "awaiting_deliver",
+            "products": [{"offer_id": "A-1", "quantity": 3}],
+        },
+        {
+            "posting_number": "posting-2",
             "status": "delivered",
-            "products": [{"offer_id": "A", "quantity": 4}],
+            "products": [{"offer_id": "B-2", "quantity": 4}],
+        },
+        {
+            "posting_number": "posting-3",
+            "status": "CANCELLED",
+            "products": [{"offer_id": "C-3", "quantity": 5}],
+        },
+        {
+            "posting_number": "posting-4",
+            "status": "not_accepted",
+            "products": [{"offer_id": "D-4", "quantity": 6}],
         },
     ]
+    now = datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)
     with (
         mock.patch.object(
-            stock_sheet_export,
-            "_history_windows",
-            return_value=[(date(2026, 8, 1), date(2026, 8, 2))],
+            stock_sheet_export.ozon_tokens,
+            "get_credentials",
+            return_value=("client", "key"),
         ),
-        mock.patch.object(stock_sheet_export.ozon_tokens, "get_credentials", return_value=("id", "key")),
-        mock.patch.object(stock_sheet_export.ozon_api, "get_fbs_postings", return_value=postings),
+        mock.patch.object(
+            stock_sheet_export.ozon_api,
+            "get_fbs_postings_v4",
+            return_value=postings,
+        ) as loader,
     ):
-        assert stock_sheet_export._ozon_fbs_order_totals("rimili") == {"A": 2}
+        result = stock_sheet_export._ozon_fbs_order_totals("rimili", now)
 
-
-def test_yandex_order_totals_use_open_fbs_orders_from_synced_data() -> None:
-    with mock.patch.object(
-        stock_sheet_export.db,
-        "get_open_fbs_order_totals",
-        return_value={"YA-1": 3},
-    ) as get_totals:
-        assert stock_sheet_export._yandex_fbs_order_totals("rimili") == {"YA-1": 3}
-    get_totals.assert_called_once_with("rimili", "YANDEX MARKET")
+    assert result == {"A-1": 3}
+    loader.assert_called_once_with(
+        "client",
+        "key",
+        "2026-08-08T21:00:00Z",
+        "2026-08-15T21:00:00Z",
+    )
 
 
 def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> None:
@@ -161,7 +191,8 @@ def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> Non
     values = {
         "ff_stock": {"A-1": 3, "A-2": 4},
         "fbs_stock": {"A-1": 5, "A-2": 6},
-        "fbs_orders": {"A-1": 7, "A-2": 8},
+        "fbo_stock": {"A-1": 7, "A-2": 8},
+        "fbs_orders": {"A-1": 9, "A-2": 10},
     }
 
     report = stock_sheet_export._write_marketplace(
@@ -173,7 +204,7 @@ def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> Non
         values,
     )
 
-    assert report["updated_cells"] == 6
+    assert report["updated_cells"] == 8
     assert {update["range"] for update in service.sheets.value_api.updates} == {
         "'WB'!B2:B2",
         "'WB'!B3:B3",
@@ -181,8 +212,19 @@ def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> Non
         "'WB'!C3:C3",
         "'WB'!D2:D2",
         "'WB'!D3:D3",
+        "'WB'!E2:E2",
+        "'WB'!E3:E3",
     }
-    assert [update["values"][0][0] for update in service.sheets.value_api.updates] == [3, 4, 5, 6, 7, 8]
+    assert [update["values"][0][0] for update in service.sheets.value_api.updates] == [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+    ]
 
 
 def test_size_variants_are_aggregated_for_base_article_row() -> None:
@@ -199,22 +241,39 @@ def test_size_variants_are_aggregated_for_base_article_row() -> None:
             return_value={"barcode-s": 2, "barcode-m": 3},
         ),
     ):
-        values = stock_sheet_export._metric_values("rimili", "WB", catalog)
+        values = stock_sheet_export._metric_values("rimili", "WB", catalog, ("fbs_orders",))
 
     aliases, _ = stock_sheet_export._catalog_aliases(catalog)
     assert aliases["123"] == {"123 / S", "123 / M"}
     assert sum(values["fbs_orders"][article] for article in aliases["123"]) == 5
 
 
-def test_yandex_metric_values_keep_catalog_rows_and_use_yandex_orders() -> None:
+def test_ozon_metric_values_dispatch_weekly_fbs_orders() -> None:
+    catalog = [{"article": "OZ-1", "barcode": "ozon-barcode"}]
+    with mock.patch.object(
+        stock_sheet_export,
+        "_ozon_fbs_order_totals",
+        return_value={"ozon-barcode": 4},
+    ):
+        values = stock_sheet_export._metric_values("rimili", "OZON", catalog, ("fbs_orders",))
+
+    assert values == {"fbs_orders": {"OZ-1": 4}}
+
+
+def test_yandex_metric_values_keep_catalog_rows_and_include_fbo() -> None:
     catalog = [{"article": "YA-1", "barcode": "ya-barcode"}]
     with (
         mock.patch.object(stock_sheet_export.db, "get_ff_available_totals", return_value={"YA-1": 4}),
         mock.patch.object(stock_sheet_export.db, "get_mp_stock_totals", return_value={"YA-1": 5}),
-        mock.patch.object(stock_sheet_export, "_yandex_fbs_order_totals", return_value={"YA-1": 6}),
     ):
-        values = stock_sheet_export._metric_values("rimili", "YANDEX MARKET", catalog)
-    assert values == {"ff_stock": {"YA-1": 4}, "fbs_stock": {"YA-1": 5}, "fbs_orders": {"YA-1": 6}}
+        values = stock_sheet_export._metric_values(
+            "rimili", "YANDEX MARKET", catalog, ("ff_stock", "fbs_stock", "fbo_stock")
+        )
+    assert values == {
+        "ff_stock": {"YA-1": 4},
+        "fbs_stock": {"YA-1": 5},
+        "fbo_stock": {"YA-1": 5},
+    }
 
 
 def test_duplicate_configured_header_is_rejected() -> None:

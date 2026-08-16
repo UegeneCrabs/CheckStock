@@ -202,9 +202,7 @@ async def stock_store_article_detail(slug: str, article: str = "", mp: str = "")
             warehouse = str(row["warehouse"])
             if yandex_names:
                 warehouse = yandex_names.get(ya_sync._normalize_ff_name(warehouse), warehouse)
-            fbs_by_warehouse[warehouse] = fbs_by_warehouse.get(warehouse, 0) + int(
-                row["quantity"] or 0
-            )
+            fbs_by_warehouse[warehouse] = fbs_by_warehouse.get(warehouse, 0) + int(row["quantity"] or 0)
 
         warehouses = []
         for fulfillment in fulfillments:

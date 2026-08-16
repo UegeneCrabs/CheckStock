@@ -72,9 +72,7 @@ class BitrixAlertTests(unittest.TestCase):
             sender=lambda _token, _chat_id, text: sent.append(text),
             clock=lambda: 100.0,
         )
-        record = logging.LogRecord(
-            "app.test", logging.ERROR, __file__, 1, "same failure", (), exc_info=None
-        )
+        record = logging.LogRecord("app.test", logging.ERROR, __file__, 1, "same failure", (), exc_info=None)
 
         handler.emit(record)
         handler.emit(record)
@@ -95,9 +93,7 @@ class BitrixAlertTests(unittest.TestCase):
             raise RuntimeError("database unavailable")
         except RuntimeError:
             exception_info = __import__("sys").exc_info()
-        first = logging.LogRecord(
-            "app.web", logging.ERROR, __file__, 1, "request failed", (), exception_info
-        )
+        first = logging.LogRecord("app.web", logging.ERROR, __file__, 1, "request failed", (), exception_info)
         second = logging.LogRecord(
             "uvicorn.error", logging.ERROR, __file__, 1, "ASGI error", (), exception_info
         )

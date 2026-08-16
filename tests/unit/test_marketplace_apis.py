@@ -278,6 +278,25 @@ class OzonApiTests(unittest.TestCase):
         self.assertEqual(product["barcodes"], ["1", "2"])
         self.assertEqual(product["image_url"], "https://img.test/1.jpg")
 
+    def test_fbs_v4_postings_use_cursor_pagination(self) -> None:
+        with (
+            mock.patch.object(ozon_api, "FBS_POSTINGS_V4_PAGE_SIZE", 1),
+            mock.patch.object(
+                ozon_api,
+                "_request",
+                side_effect=[
+                    {"postings": [{"posting_number": "one"}], "has_next": True, "cursor": "next"},
+                    {"postings": [{"posting_number": "two"}], "has_next": False, "cursor": ""},
+                ],
+            ) as request,
+        ):
+            postings = ozon_api.get_fbs_postings_v4("client", "key", "from", "to")
+
+        self.assertEqual([posting["posting_number"] for posting in postings], ["one", "two"])
+        self.assertEqual(request.call_args_list[0].args[0], "/v4/posting/fbs/list")
+        self.assertNotIn("cursor", request.call_args_list[0].args[3])
+        self.assertEqual(request.call_args_list[1].args[3]["cursor"], "next")
+
 
 class YandexApiTests(unittest.TestCase):
     def test_errors_campaigns_and_orders(self) -> None:

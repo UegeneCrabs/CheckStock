@@ -132,6 +132,7 @@ def _backoff_pause(attempt: int) -> float:
 
 
 PAGE_SIZE = 1000
+FBS_POSTINGS_V4_PAGE_SIZE = 50
 
 
 SCHEME_FBO = "fbo"
@@ -494,6 +495,46 @@ def get_fbo_postings(client_id: str, api_key: str, since: str, to: str) -> list[
 
 def get_fbs_postings(client_id: str, api_key: str, since: str, to: str) -> list[dict]:
     return _get_postings("/v3/posting/fbs/list", client_id, api_key, since, to)
+
+
+def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> list[dict]:
+    """Return FBS postings using Ozon's cursor-based v4 endpoint."""
+    rows: list[dict] = []
+    cursor = ""
+    seen_cursors: set[str] = set()
+
+    while True:
+        payload = {
+            "dir": "ASC",
+            "filter": {"since": since, "to": to},
+            "limit": FBS_POSTINGS_V4_PAGE_SIZE,
+            "with": {
+                "analytics_data": False,
+                "barcodes": False,
+                "financial_data": False,
+                "translit": False,
+            },
+        }
+        if cursor:
+            payload["cursor"] = cursor
+
+        data = _request("/v4/posting/fbs/list", client_id, api_key, payload)
+        result = data.get("result") if isinstance(data.get("result"), dict) else data
+        page = result.get("postings") if isinstance(result, dict) else None
+        if page is None and isinstance(result, dict):
+            page = result.get("items")
+        if not isinstance(page, list):
+            raise OzonApiError(None, f"неожиданный формат отправлений Ozon v4: {result!r}"[:300])
+
+        rows.extend(page)
+        if not page or result.get("has_next") is False:
+            return rows
+
+        next_cursor = str(result.get("cursor") or "").strip()
+        if not next_cursor or next_cursor == cursor or next_cursor in seen_cursors:
+            raise OzonApiError(None, "Ozon v4 сообщил о следующей странице без нового cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
 
 
 def normalize_product(row: dict) -> dict:

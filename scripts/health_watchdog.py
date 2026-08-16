@@ -2,10 +2,9 @@ import json
 import os
 import socket
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from urllib import request
-
-from collections.abc import Callable
 
 from app.bitrix_alerts import send_bitrix_message
 

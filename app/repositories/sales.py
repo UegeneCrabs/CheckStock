@@ -99,6 +99,10 @@ def get_open_fbs_order_totals(store_slug: str, marketplace: str) -> dict[str, in
            AND marketplace = ?
            AND scheme = 'fbs'
            AND article <> ''
+           AND NOT (
+               marketplace = 'OZON'
+               AND LOWER(COALESCE(status, '')) IN ('delivered', 'cancelled', 'not_accepted')
+           )
          GROUP BY article
         HAVING SUM(
                    CASE
@@ -189,9 +193,15 @@ def get_sales_daily(
                SUM(CASE WHEN scheme = 'fbo'
                          AND order_amount - cancelled_amount > 0
                         THEN order_amount - cancelled_amount ELSE 0 END) AS fbo_amount,
+               SUM(CASE WHEN scheme = 'fbo'
+                         AND quantity - cancelled_quantity > 0
+                        THEN quantity - cancelled_quantity ELSE 0 END) AS fbo_count,
                SUM(CASE WHEN scheme = 'fbs'
                          AND order_amount - cancelled_amount > 0
                         THEN order_amount - cancelled_amount ELSE 0 END) AS fbs_amount,
+               SUM(CASE WHEN scheme = 'fbs'
+                         AND quantity - cancelled_quantity > 0
+                        THEN quantity - cancelled_quantity ELSE 0 END) AS fbs_count,
                SUM(cancelled_amount) AS cancellations_amount,
                SUM(CASE WHEN quantity - cancelled_quantity > 0
                         THEN quantity - cancelled_quantity ELSE 0 END) AS orders_count,

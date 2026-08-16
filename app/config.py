@@ -54,6 +54,7 @@ class Settings(BaseModel):
     log_level: str
     slow_request_threshold_ms: int = Field(ge=1)
     background_sync_enabled: bool
+    funnel_orders_sync_enabled: bool
     token_check_interval_seconds: int = Field(ge=1)
     sales_sync_startup_delay_seconds: int = Field(ge=0)
     decision_sync_startup_delay_seconds: int = Field(ge=0)
@@ -64,6 +65,7 @@ class Settings(BaseModel):
     wb_unit_reference_sync_hour: int = Field(ge=0, le=23)
     wb_unit_price_sync_interval_seconds: int = Field(ge=1)
     sales_sync_interval_seconds: int = Field(ge=1)
+    wb_funnel_orders_sync_interval_seconds: int = Field(ge=1)
     decision_sync_check_interval_seconds: int = Field(ge=1)
     rnp_analytics_sync_interval_seconds: int = Field(ge=1)
     session_ttl_days: int = Field(ge=1)
@@ -137,6 +139,7 @@ class Settings(BaseModel):
             log_level=log_level,
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
+            funnel_orders_sync_enabled=_env_bool("CHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED", True),
             token_check_interval_seconds=_env_int(
                 "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 6 * 60 * 60, minimum=1
             ),
@@ -158,6 +161,9 @@ class Settings(BaseModel):
             ),
             sales_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_SALES_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
+            ),
+            wb_funnel_orders_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_WB_FUNNEL_ORDERS_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
             ),
             decision_sync_check_interval_seconds=_env_int(
                 "CHECKSTOCK_DECISION_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1

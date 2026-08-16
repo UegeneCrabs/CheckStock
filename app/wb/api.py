@@ -199,17 +199,20 @@ def get_fbs_orders(token: str, date_from: int, date_to: int) -> list[dict]:
 
     while cursor not in seen_cursors:
         seen_cursors.add(cursor)
-        data = _request(
-            "GET",
-            f"{FBS_BASE}/api/v3/orders",
-            token,
-            params={
-                "limit": FBS_ORDERS_PER_REQUEST,
-                "next": cursor,
-                "dateFrom": date_from,
-                "dateTo": date_to,
-            },
-        ) or {}
+        data = (
+            _request(
+                "GET",
+                f"{FBS_BASE}/api/v3/orders",
+                token,
+                params={
+                    "limit": FBS_ORDERS_PER_REQUEST,
+                    "next": cursor,
+                    "dateFrom": date_from,
+                    "dateTo": date_to,
+                },
+            )
+            or {}
+        )
         page = data.get("orders")
         if not isinstance(page, list):
             raise WBApiError(None, detail=f"неожиданный формат FBS-заказов: {data!r}"[:300])
@@ -230,12 +233,15 @@ def get_fbs_order_statuses(token: str, order_ids: list[int]) -> dict[int, dict]:
     result: dict[int, dict] = {}
     for start in range(0, len(unique), FBS_ORDERS_PER_REQUEST):
         chunk = unique[start : start + FBS_ORDERS_PER_REQUEST]
-        data = _request(
-            "POST",
-            f"{FBS_BASE}/api/v3/orders/status",
-            token,
-            json_body={"orders": chunk},
-        ) or {}
+        data = (
+            _request(
+                "POST",
+                f"{FBS_BASE}/api/v3/orders/status",
+                token,
+                json_body={"orders": chunk},
+            )
+            or {}
+        )
         rows = data.get("orders")
         if not isinstance(rows, list):
             raise WBApiError(None, detail=f"неожиданный формат статусов FBS-заказов: {data!r}"[:300])
@@ -243,7 +249,9 @@ def get_fbs_order_statuses(token: str, order_ids: list[int]) -> dict[int, dict]:
             try:
                 result[int(row["id"])] = row
             except (KeyError, TypeError, ValueError) as error:
-                raise WBApiError(None, detail=f"неожиданная строка статуса FBS-заказа: {row!r}"[:300]) from error
+                raise WBApiError(
+                    None, detail=f"неожиданная строка статуса FBS-заказа: {row!r}"[:300]
+                ) from error
     return result
 
 
@@ -265,13 +273,7 @@ def get_fbo_stock_by_warehouse(token: str) -> dict[tuple[str, str], int]:
     barcode_by_chrt_id = _barcode_by_chrt_id(cards)
     if not barcode_by_chrt_id:
         raise WBApiError(None, detail="не удалось сопоставить размеры карточек WB с баркодами")
-    nm_ids = list(
-        dict.fromkeys(
-            int(card["nmID"])
-            for card in cards
-            if str(card.get("nmID") or "").isdigit()
-        )
-    )
+    nm_ids = list(dict.fromkeys(int(card["nmID"]) for card in cards if str(card.get("nmID") or "").isdigit()))
 
     by_warehouse: dict[tuple[str, str], int] = {}
     offset = 0
@@ -282,12 +284,15 @@ def get_fbo_stock_by_warehouse(token: str) -> dict[tuple[str, str], int]:
             "limit": FBO_STOCK_PAGE_LIMIT,
             "offset": offset,
         }
-        data = _request(
-            "POST",
-            f"{ANALYTICS_BASE}/api/analytics/v1/stocks-report/wb-warehouses",
-            token,
-            json_body=body,
-        ) or {}
+        data = (
+            _request(
+                "POST",
+                f"{ANALYTICS_BASE}/api/analytics/v1/stocks-report/wb-warehouses",
+                token,
+                json_body=body,
+            )
+            or {}
+        )
         rows = _expect(data, "data", "items", context="остатки FBO по складам")
         if not isinstance(rows, list):
             raise WBApiError(None, detail=f"неожиданный формат остатков FBO: {rows!r}"[:300])

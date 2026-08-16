@@ -35,9 +35,7 @@ def render_access_denied_page(
         )
     else:
         heading = heading or "Нет доступных разделов"
-        description = description or (
-            "Обратитесь к суперадминистратору, чтобы он открыл нужные разделы."
-        )
+        description = description or ("Обратитесь к суперадминистратору, чтобы он открыл нужные разделы.")
     content = fill_template(
         "access_denied_content.html",
         heading=html.escape(heading),
@@ -146,10 +144,9 @@ def render_page(
     first_stock = next((section for section in stock_sections if visible[section]), None)
     current_section = active_section(active)
     current_access = (
-        access_level(user, current_section)
-        if current_section is not None
-        else SectionAccessLevel.WRITE
+        access_level(user, current_section) if current_section is not None else SectionAccessLevel.WRITE
     )
+
     def hidden(allowed: bool) -> str:
         return "" if allowed else " hidden"
 

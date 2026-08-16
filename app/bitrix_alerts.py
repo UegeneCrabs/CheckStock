@@ -19,9 +19,7 @@ MAX_ALERT_MESSAGE_LENGTH = 3900
 DEFAULT_ALERT_COOLDOWN_SECONDS = 300
 
 _BITRIX_WEBHOOK_PATTERN = re.compile(r"(?i)(https?://[^/\s]+/rest/\d+/)[^/\s]+(?=/|$)")
-_SECRET_PATTERN = re.compile(
-    r"(?i)\b(token|api[_-]?key|authorization|password)\b([\s:=\"']+)([^\s,;\"']+)"
-)
+_SECRET_PATTERN = re.compile(r"(?i)\b(token|api[_-]?key|authorization|password)\b([\s:=\"']+)([^\s,;\"']+)")
 
 
 def redact_secrets(value: str) -> str:

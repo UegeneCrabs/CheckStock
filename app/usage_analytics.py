@@ -41,9 +41,7 @@ class UsageAnalyticsService:
         now = self._clock()
         with self._session_factory() as session:
             record = session.scalar(
-                select(UsageSessionRecord).where(
-                    UsageSessionRecord.session_key == _session_key(token)
-                )
+                select(UsageSessionRecord).where(UsageSessionRecord.session_key == _session_key(token))
             )
             if record is None:
                 session.add(
@@ -61,9 +59,7 @@ class UsageAnalyticsService:
         now = self._clock()
         with self._session_factory() as session:
             record = session.scalar(
-                select(UsageSessionRecord).where(
-                    UsageSessionRecord.session_key == _session_key(token)
-                )
+                select(UsageSessionRecord).where(UsageSessionRecord.session_key == _session_key(token))
             )
             if record is not None and record.ended_at is None:
                 record.ended_at = now.isoformat()
@@ -174,17 +170,11 @@ class UsageAnalyticsService:
             users = list(session.scalars(select(UserRecord).order_by(UserRecord.full_name)))
             usage_rows = list(
                 session.scalars(
-                    select(UserSectionUsageRecord).where(
-                        UserSectionUsageRecord.usage_date >= start_date
-                    )
+                    select(UserSectionUsageRecord).where(UserSectionUsageRecord.usage_date >= start_date)
                 )
             )
             recent_sessions = list(
-                session.scalars(
-                    select(UsageSessionRecord)
-                    .order_by(UsageSessionRecord.id.desc())
-                    .limit(500)
-                )
+                session.scalars(select(UsageSessionRecord).order_by(UsageSessionRecord.id.desc()).limit(500))
             )
 
         user_by_id = {user.id: user for user in users}
@@ -285,8 +275,7 @@ class UsageAnalyticsService:
             "active_today_count": sum(
                 1
                 for person in people
-                if person["active_today"] > 0
-                or usage_by_user[person["user_id"]]["views_today"] > 0
+                if person["active_today"] > 0 or usage_by_user[person["user_id"]]["views_today"] > 0
             ),
             "active_today_seconds": sum(person["active_today"] for person in people),
             "period_page_views": sum(person["page_views"] for person in people),

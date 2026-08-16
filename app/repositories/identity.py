@@ -80,8 +80,7 @@ def set_user_store_access(
     try:
         conn.execute("DELETE FROM user_store_access WHERE user_id = ?", (user_id,))
         conn.executemany(
-            "INSERT INTO user_store_access (user_id, store_slug) VALUES (?, ?) "
-            "ON CONFLICT DO NOTHING",
+            "INSERT INTO user_store_access (user_id, store_slug) VALUES (?, ?) ON CONFLICT DO NOTHING",
             [(user_id, slug) for slug in slugs],
         )
         if owns_conn:

@@ -71,6 +71,7 @@
                     </div>
                     <div class="sales-legend" aria-label="Показатели графика">
                         <button class="sales-legend-toggle" type="button" data-sales-toggle="orders" aria-pressed="true" title="Показать или скрыть заказы"><i class="line-total"></i>Заказы</button>
+                        <button class="sales-legend-toggle" type="button" data-sales-toggle="funnel_orders" aria-pressed="true" title="Показать или скрыть заказы из воронки" hidden><i class="line-funnel-orders"></i>Воронка</button>
                         <button class="sales-legend-toggle" type="button" data-sales-toggle="fbo" aria-pressed="true" title="Показать или скрыть FBO"><i class="line-fbo"></i>FBO</button>
                         <button class="sales-legend-toggle" type="button" data-sales-toggle="fbs" aria-pressed="true" title="Показать или скрыть FBS"><i class="line-fbs"></i>FBS</button>
                         <button class="sales-legend-toggle" type="button" data-sales-toggle="cancellations" aria-pressed="true" title="Показать или скрыть отмены"><i class="line-cancellations"></i>Отмены</button>
@@ -110,6 +111,7 @@
                         </g>
                         <path class="sales-area" data-sales-area d=""></path>
                         <path class="sales-line sales-line--total" data-sales-line="orders" d=""></path>
+                        <path class="sales-line sales-line--funnel-orders" data-sales-line="funnel_orders" d=""></path>
                         <path class="sales-line sales-line--fbo" data-sales-line="fbo" d=""></path>
                         <path class="sales-line sales-line--fbs" data-sales-line="fbs" d=""></path>
                         <path class="sales-line sales-line--cancellations" data-sales-line="cancellations" d=""></path>
@@ -119,32 +121,47 @@
                             <line class="sales-reference-line" data-sales-reference-line x1="72" y1="32" x2="72" y2="208"></line>
                             <g class="sales-points" data-sales-points></g>
                             <g class="sales-chart-tooltip" data-sales-tooltip>
-                                <rect width="250" height="178" rx="8"></rect>
+                                <rect width="320" height="194" rx="8"></rect>
                                 <text class="sales-tooltip-period" x="14" y="23" data-sales-tooltip-period></text>
+                                <text class="sales-tooltip-header" x="226" y="42">Сумма</text>
+                                <text class="sales-tooltip-header" x="304" y="42">Шт.</text>
+                                <line class="sales-tooltip-header-divider" x1="18" y1="49" x2="302" y2="49"></line>
+                                <line class="sales-tooltip-column-divider" data-sales-tooltip-column-divider x1="240" y1="37" x2="240" y2="186"></line>
                                 <g data-sales-tooltip-series="orders">
-                                    <circle class="sales-tooltip-key sales-tooltip-key--total" cx="18" cy="48" r="4"></circle>
-                                    <text class="sales-tooltip-row" x="29" y="52">Заказы</text>
-                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="52" data-sales-tooltip-orders></text>
+                                    <circle class="sales-tooltip-key sales-tooltip-key--total" cx="18" cy="60" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="64">Заказы</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="226" y="64" data-sales-tooltip-orders-amount></text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="304" y="64" data-sales-tooltip-orders-count></text>
+                                </g>
+                                <g data-sales-tooltip-series="funnel_orders">
+                                    <circle class="sales-tooltip-key sales-tooltip-key--funnel-orders" cx="18" cy="83" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="87">Воронка</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="226" y="87" data-sales-tooltip-funnel_orders-amount></text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="304" y="87" data-sales-tooltip-funnel_orders-count></text>
                                 </g>
                                 <g data-sales-tooltip-series="fbo">
-                                    <circle class="sales-tooltip-key sales-tooltip-key--fbo" cx="18" cy="76" r="4"></circle>
-                                    <text class="sales-tooltip-row" x="29" y="80">FBO</text>
-                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="80" data-sales-tooltip-fbo></text>
+                                    <circle class="sales-tooltip-key sales-tooltip-key--fbo" cx="18" cy="106" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="110">FBO</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="226" y="110" data-sales-tooltip-fbo-amount></text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="304" y="110" data-sales-tooltip-fbo-count></text>
                                 </g>
                                 <g data-sales-tooltip-series="fbs">
-                                    <circle class="sales-tooltip-key sales-tooltip-key--fbs" cx="18" cy="104" r="4"></circle>
-                                    <text class="sales-tooltip-row" x="29" y="108">FBS</text>
-                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="108" data-sales-tooltip-fbs></text>
+                                    <circle class="sales-tooltip-key sales-tooltip-key--fbs" cx="18" cy="129" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="133">FBS</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="226" y="133" data-sales-tooltip-fbs-amount></text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="304" y="133" data-sales-tooltip-fbs-count></text>
                                 </g>
                                 <g data-sales-tooltip-series="cancellations">
-                                    <circle class="sales-tooltip-key sales-tooltip-key--cancellations" cx="18" cy="132" r="4"></circle>
-                                    <text class="sales-tooltip-row" x="29" y="136">Отмены</text>
-                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="136" data-sales-tooltip-cancellations></text>
+                                    <circle class="sales-tooltip-key sales-tooltip-key--cancellations" cx="18" cy="152" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="156">Отмены</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="226" y="156" data-sales-tooltip-cancellations-amount></text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="304" y="156" data-sales-tooltip-cancellations-count></text>
                                 </g>
                                 <g data-sales-tooltip-series="sales">
-                                    <circle class="sales-tooltip-key sales-tooltip-key--sales" cx="18" cy="160" r="4"></circle>
-                                    <text class="sales-tooltip-row" x="29" y="164">Продажи</text>
-                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="236" y="164" data-sales-tooltip-sales></text>
+                                    <circle class="sales-tooltip-key sales-tooltip-key--sales" cx="18" cy="175" r="4"></circle>
+                                    <text class="sales-tooltip-row" x="29" y="179">Продажи</text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="226" y="179" data-sales-tooltip-sales-amount></text>
+                                    <text class="sales-tooltip-row sales-tooltip-row--value" x="304" y="179" data-sales-tooltip-sales-count></text>
                                 </g>
                             </g>
                         </g>
@@ -181,40 +198,5 @@
                     <small data-sales-kpi-note="count">—</small>
                 </article>
             </div>
-
-            <section class="sales-funnel-panel" data-sales-funnel hidden aria-live="polite">
-                <div class="sales-funnel-head">
-                    <div>
-                        <div class="sales-funnel-kicker">WILDBERRIES · КАРТОЧКИ ТОВАРОВ</div>
-                        <h3>Воронка за выбранный период</h3>
-                        <p data-sales-funnel-subtitle>Выберите магазин WB</p>
-                    </div>
-                    <span class="sales-funnel-updated" data-sales-funnel-updated></span>
-                </div>
-                <div class="sales-funnel-state" data-sales-funnel-state>
-                    <span class="sales-loader"></span>
-                    <strong>Загружаем воронку WB...</strong>
-                    <p>Статистика доступна отдельно по каждому кабинету.</p>
-                </div>
-                <div class="sales-funnel-content" data-sales-funnel-content hidden>
-                    <div class="sales-funnel-steps" data-sales-funnel-steps></div>
-                    <div class="sales-funnel-table-wrap">
-                        <table class="sales-funnel-table">
-                            <thead>
-                                <tr>
-                                    <th>Товар</th>
-                                    <th>Просмотры</th>
-                                    <th>Корзины</th>
-                                    <th>Заказы</th>
-                                    <th>Выкупы</th>
-                                    <th>Конверсия</th>
-                                </tr>
-                            </thead>
-                            <tbody data-sales-funnel-products></tbody>
-                        </table>
-                    </div>
-                    <p class="sales-funnel-note" data-sales-funnel-note></p>
-                </div>
-            </section>
 
         </section>

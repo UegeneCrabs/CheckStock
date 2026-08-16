@@ -11,7 +11,7 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertIn("/login", paths)
         self.assertIn("/stock/{slug}/transfer", paths)
         self.assertIn("/api/sales", paths)
-        self.assertIn("/api/sales/wb-funnel", paths)
+        self.assertIn("/api/sales/wb-funnel-orders", paths)
         self.assertIn("/admin/users", paths)
 
     def test_every_operation_has_a_unique_identifier(self) -> None:

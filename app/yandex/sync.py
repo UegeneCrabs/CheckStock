@@ -154,9 +154,7 @@ def sync_store(store_slug: str) -> int:
                 )
 
             warehouse_key = (article, warehouse)
-            warehouse_totals[key][warehouse_key] = (
-                warehouse_totals[key].get(warehouse_key, 0) + quantity
-            )
+            warehouse_totals[key][warehouse_key] = warehouse_totals[key].get(warehouse_key, 0) + quantity
 
     with _DB_LOCK:
         for key, by_warehouse in warehouse_totals.items():

@@ -23,24 +23,19 @@
     var yLabels = Array.prototype.slice.call(root.querySelectorAll('[data-y-label]'));
     var presets = Array.prototype.slice.call(root.querySelectorAll('[data-sales-preset]'));
     var legendButtons = Array.prototype.slice.call(root.querySelectorAll('[data-sales-toggle]'));
-    var seriesKeys = ['orders', 'fbo', 'fbs', 'cancellations', 'sales'];
+    var seriesKeys = ['orders', 'funnel_orders', 'fbo', 'fbs', 'cancellations', 'sales'];
     var lineElements = {};
     var tooltipElements = {};
     var tooltipGroups = {};
     var kpiElements = {};
     var kpiNotes = {};
-    var funnelPanel = root.querySelector('[data-sales-funnel]');
-    var funnelState = root.querySelector('[data-sales-funnel-state]');
-    var funnelContent = root.querySelector('[data-sales-funnel-content]');
-    var funnelSubtitle = root.querySelector('[data-sales-funnel-subtitle]');
-    var funnelUpdated = root.querySelector('[data-sales-funnel-updated]');
-    var funnelSteps = root.querySelector('[data-sales-funnel-steps]');
-    var funnelProducts = root.querySelector('[data-sales-funnel-products]');
-    var funnelNote = root.querySelector('[data-sales-funnel-note]');
 
     seriesKeys.forEach(function (key) {
         lineElements[key] = root.querySelector('[data-sales-line="' + key + '"]');
-        tooltipElements[key] = root.querySelector('[data-sales-tooltip-' + key + ']');
+        tooltipElements[key] = {
+            amount: root.querySelector('[data-sales-tooltip-' + key + '-amount]'),
+            count: root.querySelector('[data-sales-tooltip-' + key + '-count]')
+        };
         tooltipGroups[key] = root.querySelector('[data-sales-tooltip-series="' + key + '"]');
     });
     ['orders', 'sales', 'cancellations', 'count'].forEach(function (key) {
@@ -51,6 +46,7 @@
     var area = root.querySelector('[data-sales-area]');
     var tooltipPeriod = root.querySelector('[data-sales-tooltip-period]');
     var tooltipRect = tooltip.querySelector('rect');
+    var tooltipColumnDivider = root.querySelector('[data-sales-tooltip-column-divider]');
     var currentState = null;
     var activeIndex = 0;
     var requestNumber = 0;
@@ -63,16 +59,22 @@
     };
     var rangeLimits = { 'WB': 90, 'OZON': 365, 'YANDEX MARKET': 365 };
     var colors = {
-        orders: 'total', fbo: 'fbo', fbs: 'fbs',
+        orders: 'total', funnel_orders: 'funnel-orders', fbo: 'fbo', fbs: 'fbs',
         cancellations: 'cancellations', sales: 'sales'
     };
     var activeSeries = {
-        orders: true, fbo: true, fbs: true,
+        orders: true, funnel_orders: true, fbo: true, fbs: true,
         cancellations: true, sales: true
     };
 
+    function funnelAvailable() {
+        return form.elements.marketplace.value === 'WB';
+    }
+
     function activeSeriesKeys() {
-        return seriesKeys.filter(function (key) { return activeSeries[key]; });
+        return seriesKeys.filter(function (key) {
+            return activeSeries[key] && (key !== 'funnel_orders' || funnelAvailable());
+        });
     }
 
     function seriesLabel(key) {
@@ -82,7 +84,10 @@
 
     function syncLegend() {
         legendButtons.forEach(function (button) {
-            var enabled = activeSeries[button.dataset.salesToggle];
+            var key = button.dataset.salesToggle;
+            var available = key !== 'funnel_orders' || funnelAvailable();
+            button.hidden = !available;
+            var enabled = activeSeries[key];
             button.classList.toggle('is-off', !enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
         });
@@ -94,14 +99,15 @@
             var rowIndex = keys.indexOf(key);
             group.style.display = rowIndex === -1 ? 'none' : '';
             if (rowIndex === -1) return;
-            var textY = 52 + rowIndex * 28;
+            var textY = 64 + rowIndex * 23;
             group.querySelector('circle').setAttribute('cy', textY - 4);
             Array.prototype.forEach.call(group.querySelectorAll('text'), function (textElement) {
                 textElement.setAttribute('y', textY);
             });
         });
-        var height = 38 + keys.length * 28;
+        var height = 54 + keys.length * 23;
         tooltipRect.setAttribute('height', height);
+        tooltipColumnDivider.setAttribute('y2', height - 8);
         return height;
     }
 
@@ -258,90 +264,52 @@
         exportLink.href = '/sales/orders.xlsx?' + params.toString();
     }
 
-    function setFunnelState(title, detail, loading) {
-        funnelPanel.hidden = false;
-        funnelContent.hidden = true;
-        funnelState.hidden = false;
-        funnelState.classList.toggle('is-loading', Boolean(loading));
-        funnelState.querySelector('strong').textContent = title;
-        funnelState.querySelector('p').textContent = detail || '';
-        funnelUpdated.textContent = '';
+    function clearFunnelSeries(data) {
+        data.series.forEach(function (item) {
+            item.funnel_orders = 0;
+            item.funnel_orders_count = 0;
+        });
     }
 
-    function renderFunnel(data) {
-        var totals = data.totals || {};
-        var steps = [
-            { key: 'views', label: 'Просмотры карточек', rate: '100%' },
-            { key: 'carts', label: 'Добавили в корзину', rate: percent(totals.view_to_cart) + ' от просмотров' },
-            { key: 'orders', label: 'Заказы', rate: percent(totals.cart_to_order) + ' от корзин' },
-            { key: 'buyouts', label: 'Выкупы', rate: percent(totals.order_to_buyout) + ' от заказов' }
-        ];
-        funnelSteps.innerHTML = steps.map(function (step) {
-            return '<article class="sales-funnel-step">' +
-                '<span>' + step.label + '</span><strong>' + integer(totals[step.key]) + '</strong>' +
-                '<small>' + step.rate + '</small></article>';
-        }).join('');
-        var products = (data.products || []).slice(0, 100);
-        funnelProducts.innerHTML = products.length ? products.map(function (product) {
-            return '<tr><td><strong>' + escapeHtml(product.name) + '</strong><small>Арт. ' +
-                escapeHtml(product.article || product.nm_id) + '</small></td><td>' + integer(product.views) +
-                '</td><td>' + integer(product.carts) + '</td><td><strong>' + integer(product.orders) +
-                '</strong></td><td>' + integer(product.buyouts) + '</td><td><span class="sales-funnel-rate">' +
-                percent(product.view_to_cart) + ' → ' + percent(product.cart_to_order) + '</span></td></tr>';
-        }).join('') : '<tr><td class="sales-funnel-empty" colspan="6">За выбранный период WB не вернул данных по карточкам.</td></tr>';
-        var note = 'Показаны ' + integer(products.length) + ' из ' + integer((data.products || []).length) +
-            ' карточек, отсортированных по заказам.';
-        if (number(totals.favorites)) note += ' В избранное добавили: ' + integer(totals.favorites) + '.';
-        if (data.truncated) note += ' Не все карточки поместились в ответ WB.';
-        funnelNote.textContent = note;
-        funnelSubtitle.textContent = form.elements.store.options[form.elements.store.selectedIndex].text + ' · ' +
-            formatDate(data.period.from, false) + ' — ' + formatDate(data.period.to, false);
-        funnelUpdated.textContent = 'WB обновляет отчёт примерно раз в час';
-        funnelState.hidden = true;
-        funnelContent.hidden = false;
-        funnelPanel.hidden = false;
-    }
-
-    async function loadFunnel(expectedSalesRequest) {
-        var marketplace = form.elements.marketplace.value;
+    async function loadFunnelOrders(data, expectedSalesRequest, refresh) {
         var store = form.elements.store.value;
         var thisRequest = ++funnelRequestNumber;
-        if (marketplace !== 'WB') {
-            funnelPanel.hidden = true;
+        clearFunnelSeries(data);
+        syncLegend();
+        if (!funnelAvailable()) {
+            renderChart(data);
             return;
         }
-        if (!store) {
-            setFunnelState('Выберите магазин WB', 'Воронка WB доступна отдельно для каждого кабинета.', false);
-            return;
-        }
-        setFunnelState('Загружаем воронку WB...', 'Получаем статистику карточек за выбранный период.', true);
         var params = new URLSearchParams({
             date_from: form.elements.date_from.value,
             date_to: form.elements.date_to.value,
             store: store
         });
+        if (refresh) params.set('refresh', 'true');
         try {
-            var response = await fetch('/api/sales/wb-funnel?' + params.toString(), { headers: { Accept: 'application/json' } });
-            var data = await response.json();
-            if (!response.ok || data.ok === false) throw new Error(data.error || 'Не удалось загрузить воронку WB');
+            var response = await fetch('/api/sales/wb-funnel-orders?' + params.toString(), {
+                headers: { Accept: 'application/json' }
+            });
+            var payload = await response.json();
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || 'Не удалось загрузить заказы из воронки WB');
+            }
             if (thisRequest !== funnelRequestNumber || expectedSalesRequest !== requestNumber) return;
-            renderFunnel(data);
+            var byDay = {};
+            (payload.series || []).forEach(function (item) { byDay[item.date] = item; });
+            data.series.forEach(function (item) {
+                var funnel = byDay[item.date] || {};
+                item.funnel_orders = number(funnel.orders_amount);
+                item.funnel_orders_count = number(funnel.orders_count);
+            });
+            renderChart(data);
+            if (payload.truncated) showError('Не все карточки WB попали в расчёт воронки.');
         } catch (error) {
             if (thisRequest !== funnelRequestNumber || expectedSalesRequest !== requestNumber) return;
-            setFunnelState('Воронка WB временно недоступна', error.message || 'Повторите попытку немного позже.', false);
-        }
-    }
-
-    function resetFunnelForFilterChange() {
-        funnelRequestNumber += 1;
-        if (form.elements.marketplace.value !== 'WB') {
-            funnelPanel.hidden = true;
-            return;
-        }
-        if (!form.elements.store.value) {
-            setFunnelState('Выберите магазин WB', 'Воронка WB доступна отдельно для каждого кабинета.', false);
-        } else {
-            setFunnelState('Обновите данные', 'Воронка будет построена за выбранный период.', false);
+            clearFunnelSeries(data);
+            syncLegend();
+            renderChart(data);
+            showError(error.message || 'Не удалось загрузить заказы из воронки WB');
         }
     }
 
@@ -458,8 +426,14 @@
         var anchorY = Math.min.apply(null, keys.map(function (key) {
             return currentState.points[key][activeIndex][1];
         }));
-        var tooltipHeight = layoutTooltip(keys);
-        var tooltipX = point[0] > 720 ? point[0] - 266 : point[0] + 16;
+        var tooltipKeys = keys.slice().sort(function (left, right) {
+            var difference = number(item[right]) - number(item[left]);
+            return difference || seriesKeys.indexOf(left) - seriesKeys.indexOf(right);
+        });
+        var tooltipHeight = layoutTooltip(tooltipKeys);
+        // Широкому тултипу нужно место справа: иначе на точках ближе к
+        // правому краю SVG последняя колонка обрезается.
+        var tooltipX = point[0] > 680 ? point[0] - 336 : point[0] + 16;
         var tooltipY = Math.max(50, Math.min(bounds.bottom - tooltipHeight - 4, anchorY - 70));
         referenceLine.setAttribute('x1', point[0]);
         referenceLine.setAttribute('x2', point[0]);
@@ -472,7 +446,16 @@
         tooltip.setAttribute('transform', 'translate(' + tooltipX + ' ' + tooltipY + ')');
         tooltipPeriod.textContent = formatDate(item.date, true);
         Object.keys(tooltipElements).forEach(function (key) {
-            tooltipElements[key].textContent = money(item[key]);
+            var countKey = {
+                orders: 'orders_count',
+                funnel_orders: 'funnel_orders_count',
+                fbo: 'fbo_count',
+                fbs: 'fbs_count',
+                cancellations: 'cancellations_count',
+                sales: 'sales_count'
+            }[key];
+            tooltipElements[key].amount.textContent = money(item[key]);
+            tooltipElements[key].count.textContent = integer(item[countKey]) + ' шт.';
         });
         hoverLayer.classList.toggle('is-visible', visible);
         hoverLayer.setAttribute('aria-hidden', visible ? 'false' : 'true');
@@ -524,7 +507,7 @@
         });
     }
 
-    async function loadData() {
+    async function loadData(refreshFunnel) {
         var validationError = validateRange();
         if (validationError) {
             showError(validationError);
@@ -552,7 +535,7 @@
             renderChart(data);
             renderKpi(data);
             renderSync(data);
-            loadFunnel(thisRequest);
+            loadFunnelOrders(data, thisRequest, Boolean(refreshFunnel));
         } catch (error) {
             if (thisRequest !== requestNumber) return;
             showError(error.message || 'Не удалось загрузить данные');
@@ -585,15 +568,15 @@
         updateDateMinimum();
         showError(validateRange());
         updateExportLink();
-        resetFunnelForFilterChange();
+        syncLegend();
     });
     form.elements.store.addEventListener('change', function () {
         updateExportLink();
-        resetFunnelForFilterChange();
+        syncLegend();
     });
     form.addEventListener('submit', function (event) {
         event.preventDefault();
-        loadData();
+        loadData(true);
     });
     hitArea.addEventListener('pointerenter', function (event) { setActivePoint(indexFromPointer(event), true); });
     hitArea.addEventListener('pointermove', function (event) { setActivePoint(indexFromPointer(event), true); });
@@ -630,6 +613,15 @@
     if ('ResizeObserver' in window) {
         new ResizeObserver(refreshDateLabels).observe(chart);
     }
+
+    // The initial WB backfill writes days gradually. Re-read only the already
+    // saved funnel series while the sales page is open, without starting a new
+    // WB sync or making the user reload the dashboard.
+    window.setInterval(function () {
+        if (!document.hidden && currentState && funnelAvailable()) {
+            loadFunnelOrders(currentState, requestNumber, false);
+        }
+    }, 30000);
 
     updateDateMinimum();
     updateExportLink();

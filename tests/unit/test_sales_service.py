@@ -175,7 +175,9 @@ class SalesServiceTests(unittest.TestCase):
                 "day": start.isoformat(),
                 "orders_amount": 1000,
                 "fbo_amount": 600,
+                "fbo_count": 6,
                 "fbs_amount": 400,
+                "fbs_count": 4,
                 "cancellations_amount": 100,
                 "sales_amount": 800,
                 "orders_count": 10,
@@ -201,6 +203,7 @@ class SalesServiceTests(unittest.TestCase):
         ):
             result = sales.dashboard(start.isoformat(), today.isoformat(), "WB", "store")
         self.assertEqual(result["totals"]["orders_amount"], 1000)
+        self.assertEqual(result["series"][0]["fbo_count"], 6)
         self.assertEqual(result["totals"]["cancel_rate"], 16.7)
         self.assertEqual(result["sync"]["errors"], 1)
         with mock.patch.object(sales, "STORES", {"store": {}}):

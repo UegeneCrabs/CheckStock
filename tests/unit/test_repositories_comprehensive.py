@@ -415,6 +415,7 @@ class RepositoryUnitTests(unittest.TestCase):
         self.assertEqual(len(db.get_sales_sync_states("WB")), 1)
         daily = db.get_sales_daily("2026-08-01", "2026-09-01", "WB", "rimili")
         self.assertEqual(daily[0]["orders_amount"], 2500.0)
+        self.assertEqual(daily[0]["fbs_count"], 2)
         self.assertEqual(len(db.get_sales_daily("2026-08-01", "2026-09-01", "WB")), 2)
         available = db.get_sales_available_range("WB", "rimili")
         self.assertEqual(available["date_from"], "2026-08-10")
@@ -430,6 +431,27 @@ class RepositoryUnitTests(unittest.TestCase):
         row = next(item for item in rows if item["article"] == "A-1")
         self.assertEqual(row["marketplace_stock"], 4)
         self.assertEqual(row["fulfillment_stock"], 3)
+
+    def test_open_ozon_fbs_orders_exclude_terminal_statuses(self) -> None:
+        statuses = ("awaiting_packaging", "delivered", "cancelled", "not_accepted")
+        db.upsert_sales_order_lines(
+            [
+                sales_line(
+                    marketplace="OZON",
+                    order_key=f"order-{status}",
+                    line_key=f"line-{status}",
+                    status=status,
+                    sold_at=None,
+                    quantity=2,
+                    sold_quantity=0,
+                    cancelled_quantity=0,
+                )
+                for status in statuses
+            ],
+            NOW,
+        )
+
+        self.assertEqual(db.get_open_fbs_order_totals("rimili", "OZON"), {"A-1": 2})
 
     def test_rnp_repository_queries_and_mutations(self) -> None:
         self.add_catalog()

@@ -64,8 +64,10 @@ def test_identity_repository_persists_role_and_section_access(tmp_path: Path) ->
     dispose_databases()
     database = database_for_path(tmp_path / "identity.sqlite3")
     OrmBase.metadata.create_all(database.engine)
+
     def factory() -> SqlAlchemyIdentityUnitOfWork:
         return SqlAlchemyIdentityUnitOfWork(database.session_factory)
+
     with factory() as unit_of_work:
         user_id = unit_of_work.identities.create_user(
             CreateUserCommand(

@@ -165,21 +165,26 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
         refresh.assert_called_once()
         self.assertEqual(background._fixed_delay(5)(), 5)
         self.assertGreater(background._daily_delay(3)(), 0)
-        self.assertEqual(len(background._jobs(asyncio.Event())), 10)
+        self.assertEqual(len(background._jobs(asyncio.Event())), 11)
 
         with (
             mock.patch.object(background.db, "init_db") as init_db,
             mock.patch.object(background.decision_service, "init_schema") as decision_schema,
             mock.patch.object(background.rnp_analytics, "init_schema") as rnp_schema,
             mock.patch.object(background.db, "seed_defaults") as seed,
+            mock.patch.object(background.stock_sheet_export, "ensure_defaults") as export_defaults,
             mock.patch.object(background.auth, "seed_superadmin") as seed_admin,
         ):
             background._initialize_application()
-        for called in (init_db, decision_schema, rnp_schema, seed, seed_admin):
+        for called in (init_db, decision_schema, rnp_schema, seed, export_defaults, seed_admin):
             called.assert_called_once()
 
         app = FastAPI()
-        lifespan_settings = mock.Mock(background_sync_enabled=False, database_path="test.sqlite3")
+        lifespan_settings = mock.Mock(
+            background_sync_enabled=False,
+            funnel_orders_sync_enabled=False,
+            database_path="test.sqlite3",
+        )
         with (
             mock.patch.object(background, "_initialize_application"),
             mock.patch.object(background, "settings", lifespan_settings),
