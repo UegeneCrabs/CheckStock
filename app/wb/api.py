@@ -26,12 +26,8 @@ FBS_ORDERS_PER_REQUEST = 1000
 
 REQUEST_TIMEOUT = settings.wb_request_timeout_seconds
 
-
-NON_WAREHOUSE_LABELS = {
-    "В пути до получателей",
-    "В пути возвраты на склад WB",
-    "Всего находится на складах",
-}
+FBO_STOCK_PAGE_LIMIT = 250_000
+FBO_STOCK_PAGE_INTERVAL_SECONDS = 20.0
 
 
 REQUEST_ATTEMPTS = settings.wb_request_attempts
@@ -251,61 +247,67 @@ def get_fbs_order_statuses(token: str, order_ids: list[int]) -> dict[int, dict]:
     return result
 
 
-def _create_warehouse_remains_task(token: str) -> str:
-    data = _request(
-        "GET",
-        f"{ANALYTICS_BASE}/api/v1/warehouse_remains",
-        token,
-        params={"groupByNm": "true", "groupByBarcode": "true"},
+def _barcode_by_chrt_id(cards: list[dict]) -> dict[int, str]:
+    result: dict[int, str] = {}
+    try:
+        for card in cards:
+            for size in card.get("sizes") or []:
+                skus = size.get("skus") or []
+                if size.get("chrtID") and skus:
+                    result[int(size["chrtID"])] = str(skus[0]).strip()
+    except (AttributeError, TypeError, ValueError) as error:
+        raise WBApiError(None, detail=f"неожиданный формат размеров карточек WB: {error}") from error
+    return {chrt_id: barcode for chrt_id, barcode in result.items() if barcode}
+
+
+def get_fbo_stock_by_warehouse(token: str) -> dict[tuple[str, str], int]:
+    cards = get_cards_list(token)
+    barcode_by_chrt_id = _barcode_by_chrt_id(cards)
+    if not barcode_by_chrt_id:
+        raise WBApiError(None, detail="не удалось сопоставить размеры карточек WB с баркодами")
+    nm_ids = list(
+        dict.fromkeys(
+            int(card["nmID"])
+            for card in cards
+            if str(card.get("nmID") or "").isdigit()
+        )
     )
-    return _expect(data, "data", "taskId", context="создание задачи на отчёт FBO")
-
-
-def _get_warehouse_remains_status(token: str, task_id: str) -> str:
-    data = _request("GET", f"{ANALYTICS_BASE}/api/v1/warehouse_remains/tasks/{task_id}/status", token)
-    return _expect(data, "data", "status", context="статус отчёта FBO")
-
-
-def _download_warehouse_remains(token: str, task_id: str) -> list[dict]:
-    return _request("GET", f"{ANALYTICS_BASE}/api/v1/warehouse_remains/tasks/{task_id}/download", token) or []
-
-
-def get_fbo_stock_by_warehouse(
-    token: str, poll_interval: float = 5.0, max_wait: float = 120.0
-) -> dict[tuple[str, str], int]:
-
-    task_id = _create_warehouse_remains_task(token)
-
-    waited = 0.0
-    status = "processing"
-    while status not in ("done", "error", "purged", "canceled") and waited < max_wait:
-        time.sleep(poll_interval)
-        waited += poll_interval
-        status = _get_warehouse_remains_status(token, task_id)
-
-    if status != "done":
-        raise WBApiError(None, detail=f"отчёт по остаткам не собрался за {max_wait:.0f} с (статус: {status})")
-
-    rows = _download_warehouse_remains(token, task_id)
-    if not isinstance(rows, list):
-        raise WBApiError(None, detail=f"неожиданный формат отчёта FBO: {rows!r}"[:300])
 
     by_warehouse: dict[tuple[str, str], int] = {}
-    try:
-        for row in rows:
-            barcode = str(row.get("barcode", ""))
-            if not barcode:
-                continue
-            for wh in row.get("warehouses", []):
-                name = wh.get("warehouseName", "")
-                if name in NON_WAREHOUSE_LABELS:
-                    continue
-                qty = wh.get("quantity", 0)
-                by_warehouse[(barcode, name)] = by_warehouse.get((barcode, name), 0) + qty
-    except (AttributeError, TypeError) as e:
-        raise WBApiError(None, detail=f"неожиданная строка в отчёте FBO: {e}") from e
+    offset = 0
+    while True:
+        body = {
+            "nmIds": nm_ids if len(nm_ids) <= 1000 else [],
+            "chrtIds": [],
+            "limit": FBO_STOCK_PAGE_LIMIT,
+            "offset": offset,
+        }
+        data = _request(
+            "POST",
+            f"{ANALYTICS_BASE}/api/analytics/v1/stocks-report/wb-warehouses",
+            token,
+            json_body=body,
+        ) or {}
+        rows = _expect(data, "data", "items", context="остатки FBO по складам")
+        if not isinstance(rows, list):
+            raise WBApiError(None, detail=f"неожиданный формат остатков FBO: {rows!r}"[:300])
 
-    return by_warehouse
+        try:
+            for row in rows:
+                barcode = barcode_by_chrt_id.get(int(row.get("chrtId") or 0))
+                warehouse = str(row.get("warehouseName") or "").strip()
+                if not barcode or not warehouse:
+                    continue
+                quantity = int(row.get("quantity") or 0)
+                key = (barcode, warehouse)
+                by_warehouse[key] = by_warehouse.get(key, 0) + quantity
+        except (AttributeError, TypeError, ValueError) as error:
+            raise WBApiError(None, detail=f"неожиданная строка остатков FBO: {error}") from error
+
+        if len(rows) < FBO_STOCK_PAGE_LIMIT:
+            return by_warehouse
+        offset += len(rows)
+        time.sleep(FBO_STOCK_PAGE_INTERVAL_SECONDS)
 
 
 def get_cards_list(token: str, page_limit: int = CARDS_PAGE_LIMIT) -> list[dict]:

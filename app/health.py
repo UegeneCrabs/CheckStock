@@ -19,6 +19,13 @@ SCOPES = {
     "YANDEX MARKET": {"catalog": "каталог", "stocks": "остатки"},
 }
 
+ACCESS_ERROR_MARKERS = (
+    "нет доступа",
+    "доступ запрещён",
+    "ошибка 401",
+    "ошибка 403",
+)
+
 
 def _credentials_updated_at(marketplace: str) -> datetime | None:
     if marketplace == "WB":
@@ -80,6 +87,18 @@ def has_token(marketplace: str, store_slug: str) -> bool:
     return False
 
 
+def _is_access_error(row: dict) -> bool:
+    error = str(row.get("error") or "").casefold()
+    return any(marker in error for marker in ACCESS_ERROR_MARKERS)
+
+
+def _sync_problem_detail(rows: list[dict]) -> str:
+    errors = list(dict.fromkeys(str(row.get("error") or "").strip() for row in rows))
+    errors = [error.rstrip(".") for error in errors if error]
+    prefix = "; ".join(errors) if errors else "Маркетплейс временно не вернул данные"
+    return f"{prefix}. Отображаются ранее загруженные данные."
+
+
 def store_problems(store_slug: str) -> list[dict]:
 
     problems: list[dict] = []
@@ -101,18 +120,28 @@ def store_problems(store_slug: str) -> list[dict]:
         scopes = SCOPES.get(marketplace, {})
         broken = [scopes.get(r["scope"], r["scope"]) for r in rows]
 
+        access_error = all(_is_access_error(row) for row in rows)
         partial = len(broken) < len(scopes)
-        status = (
-            f"Ключ недействителен для раздела «{', '.join(broken)}»." if partial else "Ключ недействителен."
-        )
+        if access_error:
+            status = (
+                f"Ключ недействителен для раздела «{', '.join(broken)}»."
+                if partial
+                else "Ключ недействителен."
+            )
+            detail = "Данные по площадке не обновляются."
+            kind = "invalid"
+        else:
+            status = f"Не удалось обновить раздел «{', '.join(broken)}»."
+            detail = _sync_problem_detail(rows)
+            kind = "sync"
 
         problems.append(
             {
                 "marketplace": marketplace,
                 "title": title,
-                "kind": "invalid",
+                "kind": kind,
                 "status": status,
-                "detail": "Данные по площадке не обновляются.",
+                "detail": detail,
             }
         )
 

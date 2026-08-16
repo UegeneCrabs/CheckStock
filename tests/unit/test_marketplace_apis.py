@@ -38,32 +38,50 @@ class WildberriesApiTests(unittest.TestCase):
             with self.assertRaises(wb_api.WBApiError):
                 wb_api.get_fbs_stock("token", 10, ["1"])
 
-        rows = [
+        cards = [
+            {"nmID": 10, "sizes": [{"chrtID": 101, "skus": ["1", "extra"]}]},
+            {"nmID": "bad", "sizes": [{"chrtID": 102, "skus": [""]}]},
+        ]
+        pages = [
             {
-                "barcode": "1",
-                "warehouses": [
-                    {"warehouseName": "Коледино", "quantity": 2},
-                    {"warehouseName": "Коледино", "quantity": 3},
-                    {"warehouseName": "Всего находится на складах", "quantity": 100},
-                ],
+                "data": {
+                    "items": [
+                        {"chrtId": 101, "warehouseName": "Коледино", "quantity": 2},
+                        {"chrtId": 101, "warehouseName": "Коледино", "quantity": 3},
+                    ]
+                }
             },
-            {"barcode": "", "warehouses": []},
+            {"data": {"items": [{"chrtId": 999, "warehouseName": "Другой", "quantity": 9}]}},
         ]
         with (
-            mock.patch.object(wb_api, "_create_warehouse_remains_task", return_value="task"),
-            mock.patch.object(wb_api, "_get_warehouse_remains_status", return_value="done"),
-            mock.patch.object(wb_api, "_download_warehouse_remains", return_value=rows),
-            mock.patch.object(wb_api.time, "sleep"),
+            mock.patch.object(wb_api, "get_cards_list", return_value=cards),
+            mock.patch.object(wb_api, "FBO_STOCK_PAGE_LIMIT", 2),
+            mock.patch.object(wb_api, "_request", side_effect=pages) as request,
+            mock.patch.object(wb_api.time, "sleep") as sleep,
         ):
-            result = wb_api.get_fbo_stock_by_warehouse("token", poll_interval=0, max_wait=1)
+            result = wb_api.get_fbo_stock_by_warehouse("token")
         self.assertEqual(result, {("1", "Коледино"): 5})
+        self.assertEqual(
+            request.call_args_list[0].args[:2],
+            (
+                "POST",
+                f"{wb_api.ANALYTICS_BASE}/api/analytics/v1/stocks-report/wb-warehouses",
+            ),
+        )
+        self.assertEqual(request.call_args_list[0].kwargs["json_body"]["nmIds"], [10])
+        self.assertEqual(request.call_args_list[1].kwargs["json_body"]["offset"], 2)
+        sleep.assert_called_once_with(20.0)
+
         with (
-            mock.patch.object(wb_api, "_create_warehouse_remains_task", return_value="task"),
-            mock.patch.object(wb_api, "_get_warehouse_remains_status", return_value="error"),
-            mock.patch.object(wb_api.time, "sleep"),
+            mock.patch.object(wb_api, "get_cards_list", return_value=cards),
+            mock.patch.object(wb_api, "_request", return_value={"data": {"items": {}}}),
         ):
             with self.assertRaises(wb_api.WBApiError):
-                wb_api.get_fbo_stock_by_warehouse("token", poll_interval=0, max_wait=1)
+                wb_api.get_fbo_stock_by_warehouse("token")
+
+        with mock.patch.object(wb_api, "get_cards_list", return_value=[]):
+            with self.assertRaises(wb_api.WBApiError):
+                wb_api.get_fbo_stock_by_warehouse("token")
 
     def test_catalog_prices_and_statistics_pagination(self) -> None:
         pages = [

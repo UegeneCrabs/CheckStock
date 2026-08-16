@@ -52,9 +52,24 @@ class HealthTests(unittest.TestCase):
         self.assertFalse(health.has_token("wrong", "store"))
 
         health_rows = [
-            {"marketplace": "WB", "scope": "catalog", "checked_at": now.isoformat()},
-            {"marketplace": "OZON", "scope": "catalog", "checked_at": now.isoformat()},
-            {"marketplace": "OZON", "scope": "stocks", "checked_at": now.isoformat()},
+            {
+                "marketplace": "WB",
+                "scope": "catalog",
+                "error": "нет доступа — проверьте токен",
+                "checked_at": now.isoformat(),
+            },
+            {
+                "marketplace": "OZON",
+                "scope": "catalog",
+                "error": "таймаут API",
+                "checked_at": now.isoformat(),
+            },
+            {
+                "marketplace": "OZON",
+                "scope": "stocks",
+                "error": "таймаут API",
+                "checked_at": now.isoformat(),
+            },
         ]
         with (
             mock.patch.object(health.db, "get_sync_health", return_value=health_rows),
@@ -64,6 +79,9 @@ class HealthTests(unittest.TestCase):
             problems = health.store_problems("store")
         self.assertEqual(len(problems), 2)
         self.assertNotEqual(problems[0]["status"], problems[1]["status"])
+        self.assertEqual(problems[0]["kind"], "invalid")
+        self.assertEqual(problems[1]["kind"], "sync")
+        self.assertIn("ранее загруженные", problems[1]["detail"])
         with (
             mock.patch("app.stores.STORES", {"a": {}, "b": {}}),
             mock.patch.object(health, "store_problems", side_effect=lambda slug: [slug]),
