@@ -78,7 +78,7 @@ def get_settings(store_slug: str) -> StockSheetExportSettings | None:
         SELECT id, marketplace, metric, sheet_name, key_column_name, value_column_name
         FROM stock_sheet_export_targets
         WHERE store_slug = ?
-        ORDER BY marketplace, metric, id
+        ORDER BY id
         """,
         (store_slug,),
     ).fetchall()

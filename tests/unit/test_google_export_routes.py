@@ -52,6 +52,55 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
     assert saved.target("OZON", "fbs_orders").value_column_name == "Заказы по ФБС"
 
 
+def test_saved_target_rows_keep_the_submitted_order_after_reload(container, user_factory) -> None:
+    application = create_app(container)
+    user = user_factory()
+    data = _form_data()
+    data["wb_target_metric"] = ["fbs_orders", "ff_stock", "fbo_stock", "fbs_stock"]
+    data["wb_target_sheet"] = [
+        "Лист заказов",
+        "Лист ФФ",
+        "Лист FBO",
+        "Лист FBS",
+    ]
+    data["wb_target_key"] = ["Ключ заказов", "Ключ ФФ", "Ключ FBO", "Ключ FBS"]
+    data["wb_target_value"] = [
+        "Значение заказов",
+        "Значение ФФ",
+        "Значение FBO",
+        "Значение FBS",
+    ]
+
+    with (
+        mock.patch("app.background._jobs", return_value=()),
+        mock.patch.object(application.state.container.identity, "user_for_token", return_value=user),
+        TestClient(application, raise_server_exceptions=False) as client,
+    ):
+        client.cookies.set(auth.SESSION_COOKIE, "session")
+        response = client.post("/admin/google-export/rimili", data=data)
+        reloaded_page = client.get("/admin/google-export")
+
+    assert response.status_code == 200
+    assert reloaded_page.status_code == 200
+    saved = stock_sheet_export.get_settings("rimili")
+    wb_targets = [target for target in saved.targets if target.marketplace == "WB"]
+    assert [target.metric for target in wb_targets] == [
+        "fbs_orders",
+        "ff_stock",
+        "fbo_stock",
+        "fbs_stock",
+    ]
+    assert [target.sheet_name for target in wb_targets] == [
+        "Лист заказов",
+        "Лист ФФ",
+        "Лист FBO",
+        "Лист FBS",
+    ]
+    assert reloaded_page.text.index('value="Лист заказов"') < reloaded_page.text.index('value="Лист ФФ"')
+    assert reloaded_page.text.index('value="Лист ФФ"') < reloaded_page.text.index('value="Лист FBO"')
+    assert reloaded_page.text.index('value="Лист FBO"') < reloaded_page.text.index('value="Лист FBS"')
+
+
 def test_manual_export_endpoint_reports_success(container, user_factory) -> None:
     application = create_app(container)
     user = user_factory()

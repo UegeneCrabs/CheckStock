@@ -490,33 +490,38 @@ def _write_marketplace(
         value_letter = _column_letter(value_column)
         matched_articles: set[str] = set()
         matched_rows = 0
+        zeroed_unmatched_rows = 0
         for offset, row in enumerate(key_rows):
             key = _article_key(row[0] if row else "")
-            articles = aliases.get(key)
-            if not articles:
+            if not key:
                 continue
+            articles = aliases.get(key)
             row_number = data_start_row + offset
+            value = 0
+            if articles:
+                value = sum(values_by_metric[target.metric].get(article, 0) for article in articles)
+                matched_articles.update(articles)
+                matched_rows += 1
+            else:
+                zeroed_unmatched_rows += 1
             updates.append(
                 {
                     "range": (
                         f"{_quote_sheet(target.sheet_name)}!"
                         f"{value_letter}{row_number}:{value_letter}{row_number}"
                     ),
-                    "values": [
-                        [sum(values_by_metric[target.metric].get(article, 0) for article in articles)]
-                    ],
+                    "values": [[value]],
                 }
             )
-            matched_articles.update(articles)
-            matched_rows += 1
 
-        if not matched_rows and catalog_articles:
+        if not matched_rows and not zeroed_unmatched_rows and catalog_articles:
             raise StockSheetExportError(
                 f"Лист «{target.sheet_name}»: в колонке «{target.key_column_name}» "
                 f"не найдено товаров {marketplace}"
             )
         metric_report[target.metric] = {
             "rows": matched_rows,
+            "zeroed_unmatched_rows": zeroed_unmatched_rows,
             "unmatched_catalog_items": len(catalog_articles - matched_articles),
         }
 

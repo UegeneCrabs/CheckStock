@@ -183,7 +183,7 @@ def test_ozon_order_totals_exclude_terminal_statuses_and_deduplicate() -> None:
     )
 
 
-def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> None:
+def test_writer_updates_catalog_rows_and_zeroes_unmatched_sheet_rows() -> None:
     settings = stock_sheet_export.default_settings("rimili")
     service = _FakeService()
     catalog = [
@@ -206,26 +206,35 @@ def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> Non
         values,
     )
 
-    assert report["updated_cells"] == 8
+    assert report["updated_cells"] == 12
+    assert report["metrics"]["ff_stock"]["zeroed_unmatched_rows"] == 1
     assert {update["range"] for update in service.sheets.value_api.updates} == {
         "'WB'!B2:B2",
         "'WB'!B3:B3",
+        "'WB'!B4:B4",
         "'WB'!C2:C2",
         "'WB'!C3:C3",
+        "'WB'!C4:C4",
         "'WB'!D2:D2",
         "'WB'!D3:D3",
+        "'WB'!D4:D4",
         "'WB'!E2:E2",
         "'WB'!E3:E3",
+        "'WB'!E4:E4",
     }
     assert [update["values"][0][0] for update in service.sheets.value_api.updates] == [
         3,
         4,
+        0,
         5,
         6,
+        0,
         7,
         8,
+        0,
         9,
         10,
+        0,
     ]
 
 
