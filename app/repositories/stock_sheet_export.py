@@ -32,13 +32,19 @@ class ExportTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketplaceSpreadsheet:
+    marketplace: str
+    spreadsheet_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class StockSheetExportSettings:
     store_slug: str
     enabled: bool
     schedule_kind: str
     weekday: int
     run_time: str
-    spreadsheet_url: str
+    spreadsheets: tuple[MarketplaceSpreadsheet, ...]
     updated_at: str
     last_attempt_at: str | None
     last_success_at: str | None
@@ -50,6 +56,12 @@ class StockSheetExportSettings:
             if item.marketplace == marketplace and item.metric == metric:
                 return item
         raise KeyError(f"Не настроена выгрузка {marketplace}/{metric}")
+
+    def spreadsheet_url_for(self, marketplace: str) -> str:
+        for item in self.spreadsheets:
+            if item.marketplace == marketplace:
+                return item.spreadsheet_url
+        raise KeyError(f"Не настроена Google Таблица для {marketplace}")
 
 
 def get_settings(store_slug: str) -> StockSheetExportSettings | None:
@@ -70,14 +82,33 @@ def get_settings(store_slug: str) -> StockSheetExportSettings | None:
         """,
         (store_slug,),
     ).fetchall()
+    spreadsheet_rows = conn.execute(
+        """
+        SELECT marketplace, spreadsheet_url
+        FROM stock_sheet_export_marketplaces
+        WHERE store_slug = ?
+        """,
+        (store_slug,),
+    ).fetchall()
     conn.close()
+    legacy_spreadsheet_url = str(row["spreadsheet_url"] or "")
+    spreadsheet_urls = {
+        str(spreadsheet["marketplace"]): str(spreadsheet["spreadsheet_url"] or "")
+        for spreadsheet in spreadsheet_rows
+    }
     return StockSheetExportSettings(
         store_slug=str(row["store_slug"]),
         enabled=bool(row["enabled"]),
         schedule_kind=str(row["schedule_kind"]),
         weekday=int(row["weekday"]),
         run_time=str(row["run_time"]),
-        spreadsheet_url=str(row["spreadsheet_url"] or ""),
+        spreadsheets=tuple(
+            MarketplaceSpreadsheet(
+                marketplace=marketplace,
+                spreadsheet_url=spreadsheet_urls.get(marketplace, legacy_spreadsheet_url),
+            )
+            for marketplace in MARKETPLACES
+        ),
         updated_at=str(row["updated_at"]),
         last_attempt_at=row["last_attempt_at"],
         last_success_at=row["last_success_at"],
@@ -128,12 +159,27 @@ def save_settings(settings: StockSheetExportSettings) -> None:
                     settings.schedule_kind,
                     settings.weekday,
                     settings.run_time,
-                    settings.spreadsheet_url,
+                    settings.spreadsheet_url_for("WB"),
                     settings.updated_at,
                     settings.last_attempt_at,
                     settings.last_success_at,
                     settings.last_error,
                 ),
+            )
+            conn.execute(
+                "DELETE FROM stock_sheet_export_marketplaces WHERE store_slug = ?",
+                (settings.store_slug,),
+            )
+            conn.executemany(
+                """
+                INSERT INTO stock_sheet_export_marketplaces
+                    (store_slug, marketplace, spreadsheet_url)
+                VALUES (?, ?, ?)
+                """,
+                [
+                    (settings.store_slug, spreadsheet.marketplace, spreadsheet.spreadsheet_url)
+                    for spreadsheet in settings.spreadsheets
+                ],
             )
             conn.execute(
                 "DELETE FROM stock_sheet_export_targets WHERE store_slug = ?",

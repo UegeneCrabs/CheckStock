@@ -481,6 +481,14 @@ class StockSheetExportSettingRecord(OrmBase):
     last_error: Mapped[str | None] = mapped_column(Text)
 
 
+class StockSheetExportMarketplaceRecord(OrmBase):
+    __tablename__ = "stock_sheet_export_marketplaces"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    spreadsheet_url: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+
+
 class StockSheetExportTargetRecord(OrmBase):
     __tablename__ = "stock_sheet_export_targets"
 

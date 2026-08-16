@@ -35,6 +35,7 @@ METRIC_LABELS = {
 }
 
 ExportTarget = repository.ExportTarget
+MarketplaceSpreadsheet = repository.MarketplaceSpreadsheet
 StockSheetExportSettings = repository.StockSheetExportSettings
 
 
@@ -67,7 +68,13 @@ def default_settings(store_slug: str, now: datetime | None = None) -> StockSheet
         schedule_kind="daily" if store_slug == "rimili" else "weekly",
         weekday=6,
         run_time="01:00",
-        spreadsheet_url=RIMILI_SPREADSHEET_URL if store_slug == "rimili" else "",
+        spreadsheets=tuple(
+            MarketplaceSpreadsheet(
+                marketplace=marketplace,
+                spreadsheet_url=RIMILI_SPREADSHEET_URL if store_slug == "rimili" else "",
+            )
+            for marketplace in repository.MARKETPLACES
+        ),
         updated_at=_now_iso(now),
         last_attempt_at=None,
         last_success_at=None,
@@ -129,9 +136,6 @@ def validate_settings(settings: StockSheetExportSettings) -> None:
         raise ValueError("Некорректный день недели")
     if not TIME_RE.fullmatch(settings.run_time):
         raise ValueError("Время нужно указать в формате ЧЧ:ММ")
-    if settings.enabled and not SPREADSHEET_ID_RE.search(settings.spreadsheet_url):
-        raise ValueError("Укажите корректную ссылку на Google Таблицу")
-
     expected = {
         (marketplace, metric)
         for marketplace in repository.MARKETPLACES
@@ -140,6 +144,16 @@ def validate_settings(settings: StockSheetExportSettings) -> None:
     actual = {(target.marketplace, target.metric) for target in settings.targets}
     if not actual.issubset(expected):
         raise ValueError("Для выбранного маркетплейса указан недоступный показатель")
+    configured_spreadsheets = [item.marketplace for item in settings.spreadsheets]
+    if set(configured_spreadsheets) != set(repository.MARKETPLACES) or len(configured_spreadsheets) != len(
+        repository.MARKETPLACES
+    ):
+        raise ValueError("Для каждого маркетплейса должна быть указана одна Google Таблица")
+    target_marketplaces = {target.marketplace for target in settings.targets}
+    if settings.enabled:
+        for marketplace in target_marketplaces:
+            if not SPREADSHEET_ID_RE.search(settings.spreadsheet_url_for(marketplace)):
+                raise ValueError(f"Укажите корректную ссылку на Google Таблицу для {marketplace}")
     for target in settings.targets:
         values = (target.sheet_name, target.key_column_name, target.value_column_name)
         if any(not value.strip() for value in values):
@@ -522,13 +536,15 @@ def _write_marketplace(
 def export_store(store_slug: str, now: datetime | None = None) -> dict:
     settings = get_settings(store_slug)
     validate_settings(settings)
-    spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url)
     service = _google_service()
     reports = []
+    spreadsheet_ids: dict[str, str] = {}
     for marketplace in repository.MARKETPLACES:
         targets = tuple(target for target in settings.targets if target.marketplace == marketplace)
         if not targets:
             continue
+        spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(marketplace))
+        spreadsheet_ids[marketplace] = spreadsheet_id
         catalog = db.get_catalog_items(store_slug, marketplace)
         values_by_metric = _metric_values(
             store_slug,
@@ -547,7 +563,11 @@ def export_store(store_slug: str, now: datetime | None = None) -> dict:
                 values_by_metric,
             )
         )
-    return {"store_slug": store_slug, "spreadsheet_id": spreadsheet_id, "marketplaces": reports}
+    return {
+        "store_slug": store_slug,
+        "spreadsheet_ids": spreadsheet_ids,
+        "marketplaces": reports,
+    }
 
 
 def run_store(store_slug: str, now: datetime | None = None) -> dict:

@@ -15,10 +15,10 @@ def _form_data() -> dict[str, str | list[str]]:
         "schedule_kind": "daily",
         "weekday": "6",
         "run_time": "01:00",
-        "spreadsheet_url": stock_sheet_export.RIMILI_SPREADSHEET_URL,
     }
     for marketplace in repository.MARKETPLACES:
         prefix = google_export.MARKETPLACE_FORM_PREFIXES[marketplace]
+        data[f"{prefix}_spreadsheet_url"] = f"https://docs.google.com/spreadsheets/d/{prefix}-sheet-id/edit"
         metrics = repository.allowed_metrics(marketplace)
         data[f"{prefix}_target_metric"] = list(metrics)
         data[f"{prefix}_target_sheet"] = [marketplace] * len(metrics)
@@ -45,6 +45,8 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
     assert response.status_code == 200
     saved = stock_sheet_export.get_settings("rimili")
     assert saved.schedule_kind == "daily"
+    assert saved.spreadsheet_url_for("WB").endswith("/wb-sheet-id/edit")
+    assert saved.spreadsheet_url_for("OZON").endswith("/ozon-sheet-id/edit")
     assert saved.target("WB", "ff_stock").key_column_name == "Артикул WB"
     assert saved.target("WB", "fbo_stock").value_column_name == "Текущий сток в продаже FBO"
     assert saved.target("OZON", "fbs_orders").value_column_name == "Заказы по ФБС"

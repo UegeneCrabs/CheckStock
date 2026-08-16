@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime
 from unittest import mock
 
@@ -73,7 +74,8 @@ def test_default_rimili_schedule_is_daily_at_one() -> None:
     assert settings.enabled is True
     assert settings.schedule_kind == "daily"
     assert settings.run_time == "01:00"
-    assert settings.spreadsheet_url == stock_sheet_export.RIMILI_SPREADSHEET_URL
+    assert settings.spreadsheet_url_for("WB") == stock_sheet_export.RIMILI_SPREADSHEET_URL
+    assert settings.spreadsheet_url_for("OZON") == stock_sheet_export.RIMILI_SPREADSHEET_URL
     assert settings.target("WB", "fbs_orders").value_column_name == "Заказы по ФБС"
     assert settings.target("OZON", "fbs_orders").value_column_name == "Заказы по ФБС"
     assert settings.target("YANDEX MARKET", "fbs_stock").sheet_name == "YANDEX MARKET"
@@ -224,6 +226,46 @@ def test_writer_finds_headers_in_first_25_rows_and_updates_catalog_rows() -> Non
         8,
         9,
         10,
+    ]
+
+
+def test_export_store_uses_separate_spreadsheet_for_each_marketplace() -> None:
+    settings = stock_sheet_export.default_settings("rimili")
+    settings = replace(
+        settings,
+        spreadsheets=tuple(
+            stock_sheet_export.MarketplaceSpreadsheet(
+                marketplace=marketplace,
+                spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{marketplace.lower().replace(' ', '-')}-id/edit",
+            )
+            for marketplace in stock_sheet_export.repository.MARKETPLACES
+        ),
+    )
+    with (
+        mock.patch.object(stock_sheet_export, "get_settings", return_value=settings),
+        mock.patch.object(stock_sheet_export, "_google_service", return_value=object()),
+        mock.patch.object(stock_sheet_export.db, "get_catalog_items", return_value=[]),
+        mock.patch.object(stock_sheet_export, "_metric_values", return_value={}),
+        mock.patch.object(
+            stock_sheet_export,
+            "_write_marketplace",
+            side_effect=lambda _service, sheet_id, _settings, marketplace, _catalog, _values: {
+                "marketplace": marketplace,
+                "spreadsheet_id": sheet_id,
+            },
+        ) as writer,
+    ):
+        report = stock_sheet_export.export_store("rimili")
+
+    assert report["spreadsheet_ids"] == {
+        "WB": "wb-id",
+        "OZON": "ozon-id",
+        "YANDEX MARKET": "yandex-market-id",
+    }
+    assert [call.args[1] for call in writer.call_args_list] == [
+        "wb-id",
+        "ozon-id",
+        "yandex-market-id",
     ]
 
 

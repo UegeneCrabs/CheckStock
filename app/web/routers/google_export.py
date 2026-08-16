@@ -11,7 +11,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app import auth, db, stock_sheet_export
 from app.domain import MOSCOW_TIMEZONE
 from app.formatting import format_dt
-from app.repositories.stock_sheet_export import ExportTarget, StockSheetExportSettings
+from app.repositories.stock_sheet_export import (
+    ExportTarget,
+    MarketplaceSpreadsheet,
+    StockSheetExportSettings,
+)
 from app.stores import STORES
 from app.web.templating import fill_template, render_page
 
@@ -111,12 +115,18 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
     )
     marketplace_sections = []
     for marketplace in stock_sheet_export.repository.MARKETPLACES:
+        prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
+        marketplace_label = MARKETPLACE_LABELS[marketplace]
         marketplace_sections.append(
             '<section class="export-marketplace">'
             f'<div class="export-marketplace-head"><div><span>{marketplace}</span>'
-            f"<h3>{html.escape(MARKETPLACE_LABELS[marketplace])}</h3></div>"
+            f"<h3>{html.escape(marketplace_label)}</h3></div>"
             f'<button class="btn-secondary export-add-row" type="button" data-export-add-row="{marketplace}">'
             "Добавить строку</button></div>"
+            '<label class="export-url-field"><span>Ссылка на Google Таблицу</span>'
+            f'<input class="input-control" type="url" name="{prefix}_spreadsheet_url" '
+            f'value="{_input(settings.spreadsheet_url_for(marketplace))}" '
+            f'placeholder="Таблица для {html.escape(marketplace_label)}" required></label>'
             '<div class="table-wrap"><table class="data-table export-target-table" data-no-filter><thead><tr>'
             "<th>Что выгружать</th><th>Лист</th><th>Колонка с артикулом / SKU</th><th>Колонка для значения</th><th></th>"
             f'</tr></thead><tbody data-export-targets="{marketplace}">{_render_target_rows(settings, marketplace)}</tbody></table></div>'
@@ -139,9 +149,6 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         f"{_render_weekdays(settings.weekday)}</select></label>"
         '<label><span>Время (Москва)</span><input class="input-control" type="time" name="run_time" '
         f'value="{_input(settings.run_time)}" required></label></div>'
-        '<label class="export-url-field"><span>Ссылка на Google Таблицу</span>'
-        f'<input class="input-control" type="url" name="spreadsheet_url" '
-        f'value="{_input(settings.spreadsheet_url)}" placeholder="https://docs.google.com/spreadsheets/d/..." required></label>'
         + "".join(marketplace_sections)
         + f'<p class="export-status {status_class}" data-export-status>{html.escape(status_text)}</p>'
         '<div class="export-actions"><button class="btn-primary" type="submit">Сохранить настройки</button>'
@@ -164,8 +171,15 @@ def _settings_from_form(
     except ValueError as error:
         raise ValueError("Некорректный день недели") from error
     targets: list[ExportTarget] = []
+    spreadsheets: list[MarketplaceSpreadsheet] = []
     for marketplace in stock_sheet_export.repository.MARKETPLACES:
         prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
+        spreadsheets.append(
+            MarketplaceSpreadsheet(
+                marketplace=marketplace,
+                spreadsheet_url=_value(form, f"{prefix}_spreadsheet_url"),
+            )
+        )
         metrics = [str(value).strip() for value in form.getlist(f"{prefix}_target_metric")]
         sheets = [str(value).strip() for value in form.getlist(f"{prefix}_target_sheet")]
         keys = [str(value).strip() for value in form.getlist(f"{prefix}_target_key")]
@@ -190,7 +204,7 @@ def _settings_from_form(
         schedule_kind=_value(form, "schedule_kind"),
         weekday=weekday,
         run_time=_value(form, "run_time"),
-        spreadsheet_url=_value(form, "spreadsheet_url"),
+        spreadsheets=tuple(spreadsheets),
         updated_at=datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
         targets=tuple(targets),
     )

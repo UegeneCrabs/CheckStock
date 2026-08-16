@@ -6,6 +6,7 @@ from app.infrastructure.database import Database, DatabaseConnection, database_f
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord
 from app.repositories import core
 from app.repositories.seed_data import FULFILLMENTS, STOCK_ITEMS
+from app.repositories.stock_sheet_export import MARKETPLACES
 from app.stores import STORES
 
 
@@ -16,6 +17,7 @@ def init_db() -> None:
     OrmBase.metadata.create_all(database.engine)
     if target_table_was_rebuilt:
         _finish_stock_sheet_export_target_migration(database)
+    _backfill_stock_sheet_export_marketplace_urls(database)
     if database.dialect_name != "sqlite":
         return
     with core.get_connection() as connection:
@@ -59,6 +61,36 @@ def _preserve_legacy_wb_funnel_daily_orders(database: Database) -> None:
         )
     with database.connect() as connection:
         connection.execute(f"ALTER TABLE {table_name} RENAME TO {legacy_name}")
+        connection.commit()
+
+
+def _backfill_stock_sheet_export_marketplace_urls(database: Database) -> None:
+    """Copy the former store-wide URL into each marketplace on first upgrade."""
+
+    with database.connect() as connection:
+        settings_rows = connection.execute(
+            "SELECT store_slug, spreadsheet_url FROM stock_sheet_export_settings"
+        ).fetchall()
+        existing_rows = connection.execute(
+            "SELECT store_slug, marketplace FROM stock_sheet_export_marketplaces"
+        ).fetchall()
+        existing = {(str(row["store_slug"]), str(row["marketplace"])) for row in existing_rows}
+        missing = [
+            (str(row["store_slug"]), marketplace, str(row["spreadsheet_url"] or ""))
+            for row in settings_rows
+            for marketplace in MARKETPLACES
+            if (str(row["store_slug"]), marketplace) not in existing
+        ]
+        if not missing:
+            return
+        connection.executemany(
+            """
+            INSERT INTO stock_sheet_export_marketplaces
+                (store_slug, marketplace, spreadsheet_url)
+            VALUES (?, ?, ?)
+            """,
+            missing,
+        )
         connection.commit()
 
 
