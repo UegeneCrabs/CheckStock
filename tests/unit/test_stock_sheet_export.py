@@ -83,7 +83,10 @@ def test_default_rimili_schedule_is_daily_at_one() -> None:
 
 def test_schedule_due_uses_each_store_last_attempt() -> None:
     now = datetime(2026, 8, 14, 12, 0, tzinfo=MOSCOW_TIMEZONE)
-    settings = stock_sheet_export.default_settings("rimili", now)
+    settings = stock_sheet_export.default_settings(
+        "rimili",
+        datetime(2026, 8, 14, 0, 30, tzinfo=MOSCOW_TIMEZONE),
+    )
     assert stock_sheet_export.is_due(settings, now)
 
     completed = settings.__class__(
@@ -93,6 +96,25 @@ def test_schedule_due_uses_each_store_last_attempt() -> None:
         }
     )
     assert not stock_sheet_export.is_due(completed, now)
+
+
+def test_new_weekly_schedule_waits_for_configured_time() -> None:
+    saved_at = datetime(2026, 8, 17, 1, 20, 57, tzinfo=MOSCOW_TIMEZONE)
+    settings = replace(
+        stock_sheet_export.default_settings("rimili", saved_at),
+        schedule_kind="weekly",
+        weekday=0,
+        run_time="09:00",
+    )
+
+    assert not stock_sheet_export.is_due(
+        settings,
+        datetime(2026, 8, 17, 8, 59, tzinfo=MOSCOW_TIMEZONE),
+    )
+    assert stock_sheet_export.is_due(
+        settings,
+        datetime(2026, 8, 17, 9, 0, tzinfo=MOSCOW_TIMEZONE),
+    )
 
 
 def test_wb_order_totals_require_both_requested_statuses() -> None:
@@ -183,7 +205,7 @@ def test_ozon_order_totals_exclude_terminal_statuses_and_deduplicate() -> None:
     )
 
 
-def test_writer_updates_catalog_rows_and_zeroes_unmatched_sheet_rows() -> None:
+def test_writer_updates_catalog_rows_without_touching_unmatched_sheet_rows() -> None:
     settings = stock_sheet_export.default_settings("rimili")
     service = _FakeService()
     catalog = [
@@ -206,36 +228,110 @@ def test_writer_updates_catalog_rows_and_zeroes_unmatched_sheet_rows() -> None:
         values,
     )
 
-    assert report["updated_cells"] == 12
-    assert report["metrics"]["ff_stock"]["zeroed_unmatched_rows"] == 1
+    assert report["updated_cells"] == 8
+    assert report["metrics"]["ff_stock"]["skipped_unmatched_rows"] == 1
     assert {update["range"] for update in service.sheets.value_api.updates} == {
         "'WB'!B2:B2",
         "'WB'!B3:B3",
-        "'WB'!B4:B4",
         "'WB'!C2:C2",
         "'WB'!C3:C3",
-        "'WB'!C4:C4",
         "'WB'!D2:D2",
         "'WB'!D3:D3",
-        "'WB'!D4:D4",
         "'WB'!E2:E2",
         "'WB'!E3:E3",
-        "'WB'!E4:E4",
     }
     assert [update["values"][0][0] for update in service.sheets.value_api.updates] == [
         3,
         4,
-        0,
         5,
         6,
-        0,
         7,
         8,
-        0,
         9,
         10,
-        0,
     ]
+
+
+def test_record_result_success_uses_postgresql_safe_parameters(monkeypatch) -> None:
+    connection = mock.Mock()
+    monkeypatch.setattr(stock_sheet_export.repository, "get_connection", lambda: connection)
+
+    stock_sheet_export.repository.record_result(
+        "rimili",
+        "2026-08-17T09:00:00+03:00",
+        error=None,
+    )
+
+    statement, parameters = connection.execute.call_args.args
+    assert "CASE WHEN" not in statement
+    assert "last_error = NULL" in statement
+    assert parameters == (
+        "2026-08-17T09:00:00+03:00",
+        "2026-08-17T09:00:00+03:00",
+        "rimili",
+    )
+    connection.commit.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+def test_run_store_records_attempt_before_writing_to_google(monkeypatch) -> None:
+    events = []
+    report = {"marketplaces": []}
+    monkeypatch.setattr(
+        stock_sheet_export.repository,
+        "record_attempt",
+        lambda *_args, **_kwargs: events.append("attempt"),
+    )
+    monkeypatch.setattr(
+        stock_sheet_export,
+        "export_store",
+        lambda *_args, **_kwargs: events.append("google") or report,
+    )
+    monkeypatch.setattr(
+        stock_sheet_export.repository,
+        "record_result",
+        lambda *_args, **_kwargs: events.append("result"),
+    )
+
+    assert stock_sheet_export.run_store("rimili") == report
+    assert events == ["attempt", "google", "result"]
+
+
+def test_run_store_does_not_write_to_google_when_attempt_cannot_be_recorded(monkeypatch) -> None:
+    writer = mock.Mock()
+    monkeypatch.setattr(
+        stock_sheet_export.repository,
+        "record_attempt",
+        mock.Mock(side_effect=RuntimeError("database unavailable")),
+    )
+    monkeypatch.setattr(stock_sheet_export, "export_store", writer)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        stock_sheet_export.run_store("rimili")
+
+    writer.assert_not_called()
+
+
+def test_run_due_raises_when_a_store_export_fails(monkeypatch) -> None:
+    now = datetime(2026, 8, 17, 9, 0, tzinfo=MOSCOW_TIMEZONE)
+    settings = replace(
+        stock_sheet_export.default_settings(
+            "rimili",
+            datetime(2026, 8, 17, 8, 0, tzinfo=MOSCOW_TIMEZONE),
+        ),
+        schedule_kind="weekly",
+        weekday=0,
+        run_time="09:00",
+    )
+    monkeypatch.setattr(stock_sheet_export, "list_settings", lambda: [settings])
+    monkeypatch.setattr(
+        stock_sheet_export,
+        "run_store",
+        mock.Mock(side_effect=RuntimeError("Google unavailable")),
+    )
+
+    with pytest.raises(stock_sheet_export.StockSheetExportError, match="rimili"):
+        stock_sheet_export.run_due(now)
 
 
 def test_export_store_uses_separate_spreadsheet_for_each_marketplace() -> None:

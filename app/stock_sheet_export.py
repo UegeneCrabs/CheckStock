@@ -202,7 +202,10 @@ def is_due(settings: StockSheetExportSettings, now: datetime | None = None) -> b
     current = (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE)
     target = scheduled_at(settings, current)
     last_attempt = _parse_timestamp(settings.last_attempt_at)
-    return last_attempt is None or last_attempt < target
+    updated_at = _parse_timestamp(settings.updated_at)
+    references = tuple(value for value in (last_attempt, updated_at) if value is not None)
+    last_relevant_event = max(references) if references else None
+    return last_relevant_event is None or last_relevant_event < target
 
 
 def _unix_bounds(start: date, end: date) -> tuple[int, int]:
@@ -490,20 +493,19 @@ def _write_marketplace(
         value_letter = _column_letter(value_column)
         matched_articles: set[str] = set()
         matched_rows = 0
-        zeroed_unmatched_rows = 0
+        skipped_unmatched_rows = 0
         for offset, row in enumerate(key_rows):
             key = _article_key(row[0] if row else "")
             if not key:
                 continue
             articles = aliases.get(key)
+            if not articles:
+                skipped_unmatched_rows += 1
+                continue
             row_number = data_start_row + offset
-            value = 0
-            if articles:
-                value = sum(values_by_metric[target.metric].get(article, 0) for article in articles)
-                matched_articles.update(articles)
-                matched_rows += 1
-            else:
-                zeroed_unmatched_rows += 1
+            value = sum(values_by_metric[target.metric].get(article, 0) for article in articles)
+            matched_articles.update(articles)
+            matched_rows += 1
             updates.append(
                 {
                     "range": (
@@ -514,14 +516,14 @@ def _write_marketplace(
                 }
             )
 
-        if not matched_rows and not zeroed_unmatched_rows and catalog_articles:
+        if not matched_rows and catalog_articles:
             raise StockSheetExportError(
                 f"Лист «{target.sheet_name}»: в колонке «{target.key_column_name}» "
                 f"не найдено товаров {marketplace}"
             )
         metric_report[target.metric] = {
             "rows": matched_rows,
-            "zeroed_unmatched_rows": zeroed_unmatched_rows,
+            "skipped_unmatched_rows": skipped_unmatched_rows,
             "unmatched_catalog_items": len(catalog_articles - matched_articles),
         }
 
@@ -577,14 +579,34 @@ def export_store(store_slug: str, now: datetime | None = None) -> dict:
 
 def run_store(store_slug: str, now: datetime | None = None) -> dict:
     attempted_at = _now_iso(now)
+    logger.info("stock_sheet_export_started store=%s", store_slug)
+    try:
+        repository.record_attempt(store_slug, attempted_at)
+    except Exception:
+        logger.exception("stock_sheet_export_attempt_record_failed store=%s", store_slug)
+        raise
     try:
         report = export_store(store_slug, now)
     except Exception as error:
         message = f"{type(error).__name__}: {error}"[:2000]
-        repository.record_result(store_slug, attempted_at, error=message)
         logger.exception("stock_sheet_export_failed store=%s", store_slug)
+        try:
+            repository.record_result(store_slug, attempted_at, error=message)
+        except Exception:
+            logger.exception("stock_sheet_export_result_record_failed store=%s", store_slug)
         raise
-    repository.record_result(store_slug, attempted_at, error=None)
+    try:
+        repository.record_result(store_slug, attempted_at, error=None)
+    except Exception:
+        logger.exception("stock_sheet_export_result_record_failed store=%s", store_slug)
+        raise
+    updated_cells = sum(int(item.get("updated_cells") or 0) for item in report["marketplaces"])
+    logger.info(
+        "stock_sheet_export_completed store=%s marketplaces=%s updated_cells=%s",
+        store_slug,
+        len(report["marketplaces"]),
+        updated_cells,
+    )
     return report
 
 
@@ -601,4 +623,9 @@ def run_due(now: datetime | None = None) -> dict[str, dict]:
                 "ok": False,
                 "error": f"{type(error).__name__}: {error}"[:2000],
             }
+    failed_stores = [store_slug for store_slug, item in report.items() if not item["ok"]]
+    if failed_stores:
+        raise StockSheetExportError(
+            "Не выполнена выгрузка магазинов: " + ", ".join(failed_stores)
+        )
     return report

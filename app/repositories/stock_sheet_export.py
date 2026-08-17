@@ -211,6 +211,26 @@ def save_settings(settings: StockSheetExportSettings) -> None:
             conn.close()
 
 
+def record_attempt(store_slug: str, attempted_at: str) -> None:
+    with WRITE_LOCK:
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                UPDATE stock_sheet_export_settings
+                SET last_attempt_at = ?
+                WHERE store_slug = ?
+                """,
+                (attempted_at, store_slug),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 def record_result(
     store_slug: str,
     attempted_at: str,
@@ -219,15 +239,31 @@ def record_result(
 ) -> None:
     with WRITE_LOCK:
         conn = get_connection()
-        conn.execute(
-            """
-            UPDATE stock_sheet_export_settings
-            SET last_attempt_at = ?,
-                last_success_at = CASE WHEN ? IS NULL THEN ? ELSE last_success_at END,
-                last_error = ?
-            WHERE store_slug = ?
-            """,
-            (attempted_at, error, attempted_at, error, store_slug),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            if error is None:
+                conn.execute(
+                    """
+                    UPDATE stock_sheet_export_settings
+                    SET last_attempt_at = ?,
+                        last_success_at = ?,
+                        last_error = NULL
+                    WHERE store_slug = ?
+                    """,
+                    (attempted_at, attempted_at, store_slug),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE stock_sheet_export_settings
+                    SET last_attempt_at = ?,
+                        last_error = ?
+                    WHERE store_slug = ?
+                    """,
+                    (attempted_at, error, store_slug),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
