@@ -54,6 +54,24 @@ def _totals_by_scheme(items: list[dict], known_articles: set[str]) -> dict[str, 
     return totals
 
 
+def _fbo_skus_by_article(items: list[dict], known_articles: set[str]) -> dict[str, set[str]]:
+
+    result: dict[str, set[str]] = {}
+    for item in items:
+        article = str(item.get("offer_id") or "").strip()
+        if not article or article not in known_articles:
+            continue
+
+        for stock in item.get("stocks") or []:
+            if str(stock.get("type") or "").lower() != "fbo":
+                continue
+            sku = str(stock.get("sku") or "").strip()
+            if sku:
+                result.setdefault(article, set()).add(sku)
+
+    return result
+
+
 def _cluster_by_warehouse() -> dict[str, str]:
 
     return db.get_warehouse_clusters(MARKETPLACE)
@@ -71,13 +89,14 @@ def sync_store(store_slug: str) -> int:
 
     items = ozon_api.get_product_stocks(client_id, api_key)
     totals = _totals_by_scheme(items, known_articles)
+    fbo_skus_by_article = _fbo_skus_by_article(items, known_articles)
 
     fbo_rows = ozon_api.get_fbo_stock_by_warehouse(client_id, api_key)
 
     clusters = _cluster_by_warehouse()
 
     now = _now()
-    warehouse_entries: list[tuple[str, str, str | None, int, str]] = []
+    warehouse_quantities: dict[tuple[str, str], int] = {}
     seen_articles: set[str] = set()
 
     for row in fbo_rows:
@@ -87,13 +106,23 @@ def sync_store(store_slug: str) -> int:
         warehouse = str(row.get("warehouse_name") or "").strip()
         if not warehouse:
             continue
+        sku = str(row.get("sku") or "").strip()
+        active_skus = fbo_skus_by_article.get(article)
+        if active_skus and sku and sku not in active_skus:
+            continue
         try:
             quantity = int(row.get("free_to_sell_amount") or 0)
         except (TypeError, ValueError):
             continue
 
         seen_articles.add(article)
-        warehouse_entries.append((article, warehouse, clusters.get(warehouse), quantity, now))
+        key = (article, warehouse)
+        warehouse_quantities[key] = warehouse_quantities.get(key, 0) + quantity
+
+    warehouse_entries = [
+        (article, warehouse, clusters.get(warehouse), quantity, now)
+        for (article, warehouse), quantity in warehouse_quantities.items()
+    ]
 
     with _DB_LOCK:
         db.replace_mp_warehouse_stock(store_slug, MARKETPLACE, "fbo", warehouse_entries)

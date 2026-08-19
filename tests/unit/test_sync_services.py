@@ -288,14 +288,21 @@ class OzonSyncTests(unittest.TestCase):
     def test_stock_sync_and_all(self) -> None:
         catalog = [{"article": "A"}, {"article": "B"}]
         items = [
-            {"offer_id": "A", "stocks": [{"type": "fbo", "present": "3"}, {"type": "fbs", "present": "bad"}]},
+            {
+                "offer_id": "A",
+                "stocks": [
+                    {"type": "fbo", "present": "3", "sku": 100},
+                    {"type": "fbs", "present": "bad"},
+                ],
+            },
             {"offer_id": "X", "stocks": [{"type": "fbo", "present": 9}]},
             {"offer_id": "B", "stocks": [{"type": "unknown", "present": 1}]},
         ]
         totals = ozon_sync._totals_by_scheme(items, {"A", "B"})
         self.assertEqual(totals["fbo"]["A"], 3)
         rows = [
-            {"item_code": "A", "warehouse_name": "WH", "free_to_sell_amount": "2"},
+            {"item_code": "A", "sku": 100, "warehouse_name": "WH", "free_to_sell_amount": "2"},
+            {"item_code": "A", "sku": 999, "warehouse_name": "WH", "free_to_sell_amount": "1"},
             {"item_code": "A", "warehouse_name": "Bad", "free_to_sell_amount": "bad"},
             {"item_code": "X", "warehouse_name": "WH", "free_to_sell_amount": 5},
         ]
@@ -311,6 +318,10 @@ class OzonSyncTests(unittest.TestCase):
         ):
             self.assertEqual(ozon_sync.sync_store("store"), 1)
         replace.assert_called_once()
+        self.assertEqual(
+            replace.call_args.args[3],
+            [("A", "WH", "C", 2, mock.ANY)],
+        )
         self.assertEqual(upsert.call_count, 6)
         clear.assert_called_once()
 
