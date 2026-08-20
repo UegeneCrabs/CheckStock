@@ -118,6 +118,18 @@ from app.repositories.sales import (
     upsert_sales_order_lines,
 )
 from app.repositories.schema import init_db, seed_defaults
+from app.repositories.stock_randomizer import (
+    generate_stock_audit_sample,
+    get_stock_audit_state,
+)
+from app.repositories.supply_planning import (
+    create_manual_supply,
+    delete_manual_supply,
+    get_manual_supply,
+    list_manual_supplies,
+    set_manual_supply_ready,
+    update_manual_supply,
+)
 
 __all__ = (
     "DB_PATH",
@@ -138,14 +150,17 @@ __all__ = (
     "articles_with_own_stock",
     "count_superadmins",
     "count_users",
+    "create_manual_supply",
     "create_session",
     "create_user",
     "delete_expired_sessions",
+    "delete_manual_supply",
     "delete_session",
     "delete_sessions_for_user",
     "delete_user",
     "find_existing_delivery",
     "find_used_source",
+    "generate_stock_audit_sample",
     "get_activity_log",
     "get_catalog_items",
     "get_connection",
@@ -158,6 +173,7 @@ __all__ = (
     "get_fulfillments",
     "get_last_sync_at",
     "get_last_token_check",
+    "get_manual_supply",
     "get_mp_fbs_warehouse_details",
     "get_mp_stock_by_warehouse",
     "get_mp_stock_totals",
@@ -178,6 +194,7 @@ __all__ = (
     "get_sales_sync_states",
     "get_session",
     "get_stock_items",
+    "get_stock_audit_state",
     "get_stock_overview",
     "get_store_operations",
     "get_sync_health",
@@ -193,6 +210,7 @@ __all__ = (
     "increment_ff_stock",
     "init_db",
     "list_users",
+    "list_manual_supplies",
     "log_action",
     "log_action_for_operation",
     "normalize_store_slugs",
@@ -215,8 +233,10 @@ __all__ = (
     "set_user_active",
     "set_user_permission",
     "set_user_store_access",
+    "set_manual_supply_ready",
     "source_fingerprint",
     "update_user_password",
+    "update_manual_supply",
     "upsert_ff_stock",
     "upsert_fulfillment_unit_rates",
     "upsert_mp_stock",

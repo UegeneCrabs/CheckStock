@@ -11,6 +11,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 FBS_BASE = "https://marketplace-api.wildberries.ru"
+SUPPLIES_BASE = "https://supplies-api.wildberries.ru"
 ANALYTICS_BASE = "https://seller-analytics-api.wildberries.ru"
 CONTENT_BASE = "https://content-api.wildberries.ru"
 STATISTICS_BASE = "https://statistics-api.wildberries.ru"
@@ -253,6 +254,44 @@ def get_fbs_order_statuses(token: str, order_ids: list[int]) -> dict[int, dict]:
                     None, detail=f"неожиданная строка статуса FBS-заказа: {row!r}"[:300]
                 ) from error
     return result
+
+
+def get_fbw_supplies(
+    token: str,
+    *,
+    status_ids: tuple[int, ...] = (2,),
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page_limit: int = 1000,
+    max_pages: int = 10,
+) -> list[dict]:
+    """Return FBW supplies filtered by their current WB status."""
+
+    limit = min(max(int(page_limit), 1), 1000)
+    dates = []
+    if date_from and date_to:
+        dates.append({"from": date_from, "till": date_to, "type": "supplyDate"})
+    supplies: list[dict] = []
+    offset = 0
+    for _ in range(max(int(max_pages), 1)):
+        data = _request(
+            "POST",
+            f"{SUPPLIES_BASE}/api/v1/supplies",
+            token,
+            params={"limit": limit, "offset": offset},
+            json_body={"dates": dates, "statusIDs": list(status_ids)},
+        )
+        if not isinstance(data, list):
+            raise WBApiError(None, detail=f"неожиданный формат списка поставок FBW: {data!r}"[:300])
+        page = [row for row in data if isinstance(row, dict)]
+        if len(page) != len(data):
+            raise WBApiError(None, detail="WB вернул некорректную строку в списке поставок FBW")
+        supplies.extend(page)
+        if len(page) < limit:
+            return supplies
+        offset += len(page)
+    logger.warning("WB: список поставок FBW оборван после %s страниц", max_pages)
+    return supplies
 
 
 def _barcode_by_chrt_id(cards: list[dict]) -> dict[int, str]:
