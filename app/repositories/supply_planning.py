@@ -4,6 +4,7 @@ from app.repositories.core import WRITE_LOCK, get_connection
 def _manual_supply(row) -> dict:
     return {
         "id": int(row["id"]),
+        "store_slug": str(row["store_slug"]),
         "delivery_at": str(row["delivery_at"]),
         "origin": str(row["origin"]),
         "destination": str(row["destination"]),
@@ -15,15 +16,20 @@ def _manual_supply(row) -> dict:
     }
 
 
-def list_manual_supplies() -> list[dict]:
+def list_manual_supplies(store_slugs: tuple[str, ...]) -> list[dict]:
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
     with get_connection() as connection:
         rows = connection.execute(
-            """
-            SELECT id, delivery_at, origin, destination, supply_type, ready,
+            f"""
+            SELECT id, store_slug, delivery_at, origin, destination, supply_type, ready,
                    created_by_name, created_at, updated_at
               FROM manual_supplies
+             WHERE ready = 0 AND store_slug IN ({placeholders})
              ORDER BY delivery_at ASC, id ASC
-            """
+            """,
+            store_slugs,
         ).fetchall()
     return [_manual_supply(row) for row in rows]
 
@@ -32,7 +38,7 @@ def get_manual_supply(supply_id: int) -> dict | None:
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, delivery_at, origin, destination, supply_type, ready,
+            SELECT id, store_slug, delivery_at, origin, destination, supply_type, ready,
                    created_by_name, created_at, updated_at
               FROM manual_supplies
              WHERE id = ?
@@ -43,6 +49,7 @@ def get_manual_supply(supply_id: int) -> dict | None:
 
 
 def create_manual_supply(
+    store_slug: str,
     delivery_at: str,
     origin: str,
     destination: str,
@@ -56,11 +63,12 @@ def create_manual_supply(
         cursor = connection.execute(
             """
             INSERT INTO manual_supplies
-                (delivery_at, origin, destination, supply_type, ready,
+                (store_slug, delivery_at, origin, destination, supply_type, ready,
                  created_by_user_id, created_by_name, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                store_slug,
                 delivery_at,
                 origin,
                 destination,
@@ -82,6 +90,7 @@ def create_manual_supply(
 
 def update_manual_supply(
     supply_id: int,
+    store_slug: str,
     delivery_at: str,
     origin: str,
     destination: str,
@@ -93,11 +102,20 @@ def update_manual_supply(
         result = connection.execute(
             """
             UPDATE manual_supplies
-               SET delivery_at = ?, origin = ?, destination = ?, supply_type = ?,
+               SET store_slug = ?, delivery_at = ?, origin = ?, destination = ?, supply_type = ?,
                    ready = ?, updated_at = ?
              WHERE id = ?
             """,
-            (delivery_at, origin, destination, supply_type, int(ready), now, supply_id),
+            (
+                store_slug,
+                delivery_at,
+                origin,
+                destination,
+                supply_type,
+                int(ready),
+                now,
+                supply_id,
+            ),
         )
         connection.commit()
     return get_manual_supply(supply_id) if result.rowcount else None

@@ -1,8 +1,9 @@
 from datetime import datetime
 from unittest import mock
 
-from app import supply_planning
+from app import db, supply_planning
 from app.domain import MOSCOW_TIMEZONE
+from app.dto.identity import Role
 from app.wb import api as wb_api
 from app.web import middleware
 
@@ -120,6 +121,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
     later = client.post(
         "/stock/planning/manual",
         json={
+            "store_slug": "rimili",
             "delivery_at": "2026-08-23T12:00",
             "origin": "ФФ Подольск",
             "destination": "Коледино",
@@ -130,6 +132,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
     earlier = client.post(
         "/stock/planning/manual",
         json={
+            "store_slug": "tris",
             "delivery_at": "2026-08-21T09:30",
             "origin": "ФФ Чехов",
             "destination": "Электросталь",
@@ -142,31 +145,70 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
 
     rows = client.get("/stock/planning/manual").json()["supplies"]
     assert [row["destination"] for row in rows] == ["Электросталь", "Коледино"]
-    supply_id = rows[0]["id"]
+    assert [row["store_name"] for row in rows] == ["TRIS", "RIMILI"]
+    completed_id = rows[0]["id"]
+    active_id = rows[1]["id"]
 
     ready = client.patch(
-        f"/stock/planning/manual/{supply_id}/ready",
+        f"/stock/planning/manual/{completed_id}/ready",
         json={"ready": True},
     )
     assert ready.status_code == 200, ready.text
     assert ready.json()["supply"]["ready"] is True
+    active_rows = client.get("/stock/planning/manual").json()["supplies"]
+    assert [row["id"] for row in active_rows] == [active_id]
+    assert db.get_manual_supply(completed_id)["ready"] is True
 
     updated = client.put(
-        f"/stock/planning/manual/{supply_id}",
+        f"/stock/planning/manual/{active_id}",
         json={
+            "store_slug": "tris",
             "delivery_at": "2026-08-22T11:00",
             "origin": "ФФ Чехов",
             "destination": "Тула",
             "supply_type": "Короба",
-            "ready": True,
+            "ready": False,
         },
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["supply"]["destination"] == "Тула"
 
-    deleted = client.delete(f"/stock/planning/manual/{supply_id}")
+    assert updated.json()["supply"]["store_name"] == "TRIS"
+
+    deleted = client.delete(f"/stock/planning/manual/{active_id}")
     assert deleted.status_code == 200, deleted.text
-    assert len(client.get("/stock/planning/manual").json()["supplies"]) == 1
+    assert client.get("/stock/planning/manual").json()["supplies"] == []
+    assert db.get_manual_supply(completed_id) is not None
+
+
+def test_manual_supply_rejects_unavailable_cabinet(
+    client,
+    application,
+    user_factory,
+    monkeypatch,
+) -> None:
+    user = user_factory(role=Role.USER, stores=("rimili",))
+    monkeypatch.setattr(
+        application.state.container.identity,
+        "user_for_token",
+        lambda token: user,
+    )
+    client.cookies.set(middleware.auth.SESSION_COOKIE, "x" * 32)
+
+    response = client.post(
+        "/stock/planning/manual",
+        json={
+            "store_slug": "tris",
+            "delivery_at": "2026-08-23T12:00",
+            "origin": "ФФ Подольск",
+            "destination": "Коледино",
+            "supply_type": "Короба",
+            "ready": False,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Нет доступа к этому кабинету"
 
 
 def test_supplies_render_on_a_separate_stock_page(
@@ -187,6 +229,8 @@ def test_supplies_render_on_a_separate_stock_page(
     assert 'data-wb-date-from' in supplies.text
     assert 'data-wb-date-to' in supplies.text
     assert 'data-wb-date-sort' in supplies.text
+    assert 'select name="store_slug"' in supplies.text
+    assert '<option value="rimili">RIMILI</option>' in supplies.text
     assert '<a class="nav-subitem active" href="/stock/supplies">Поставки</a>' in supplies.text
 
 

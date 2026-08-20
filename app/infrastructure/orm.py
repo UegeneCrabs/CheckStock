@@ -320,6 +320,7 @@ class ManualSupplyRecord(OrmBase):
     __table_args__ = (Index("idx_manual_supplies_delivery_at", "delivery_at", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_slug: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     delivery_at: Mapped[str] = mapped_column(String, nullable=False)
     origin: Mapped[str] = mapped_column(String, nullable=False)
     destination: Mapped[str] = mapped_column(String, nullable=False)

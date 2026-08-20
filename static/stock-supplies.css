@@ -129,6 +129,7 @@
 
 .supply-filter-field select,
 .supply-filter-field input[type="date"],
+.manual-supply-form select,
 .manual-supply-form input[type="text"],
 .manual-supply-form input[type="datetime-local"] {
     width: 100%;
@@ -145,6 +146,7 @@
 
 .supply-filter-field select:focus,
 .supply-filter-field input:focus,
+.manual-supply-form select:focus,
 .manual-supply-form input:focus {
     border-color: #829cf2;
     box-shadow: 0 0 0 3px rgba(49, 94, 251, 0.1);
@@ -290,7 +292,7 @@
 
 .manual-supply-form {
     display: grid;
-    grid-template-columns: minmax(180px, 1.1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(150px, 0.8fr) auto;
+    grid-template-columns: minmax(130px, 0.75fr) minmax(170px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(130px, 0.8fr) auto;
     align-items: end;
     gap: 12px;
     margin-bottom: 16px;

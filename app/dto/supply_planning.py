@@ -6,6 +6,7 @@ from app.dto.common import DtoModel
 
 
 class ManualSupplyInput(DtoModel):
+    store_slug: str = Field(min_length=1, max_length=100)
     delivery_at: datetime
     origin: str = Field(min_length=1, max_length=200)
     destination: str = Field(min_length=1, max_length=200)

@@ -1,4 +1,4 @@
-        <link rel="stylesheet" href="/static/stock-supplies.css?v=2">
+        <link rel="stylesheet" href="/static/stock-supplies.css?v=3">
 
         <section class="supply-planner" data-supply-planner data-editable="$can_edit_supply">
             <div class="supply-planner-head">
@@ -80,6 +80,12 @@ $wb_store_options
                 <form class="manual-supply-form" data-manual-supply-form>
                     <input type="hidden" name="supply_id" value="">
                     <label>
+                        <span>Кабинет</span>
+                        <select name="store_slug" required>
+$manual_store_options
+                        </select>
+                    </label>
+                    <label>
                         <span>Дата и время</span>
                         <input type="datetime-local" name="delivery_at" required>
                     </label>
@@ -121,6 +127,7 @@ $wb_store_options
                         <thead>
                             <tr>
                                 <th>Дата поставки</th>
+                                <th>Кабинет</th>
                                 <th>Откуда</th>
                                 <th>Куда</th>
                                 <th>Тип</th>
@@ -129,11 +136,11 @@ $wb_store_options
                             </tr>
                         </thead>
                         <tbody data-manual-supply-rows>
-                            <tr class="supply-empty"><td colspan="6">Загрузка ручного плана…</td></tr>
+                            <tr class="supply-empty"><td colspan="7">Загрузка ручного плана…</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </section>
 
-        <script src="/static/stock-supplies.js?v=2"></script>
+        <script src="/static/stock-supplies.js?v=3"></script>

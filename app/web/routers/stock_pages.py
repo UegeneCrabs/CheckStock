@@ -211,6 +211,7 @@ async def stock_supplies(request: Request):
     content = fill_template(
         "stock_supplies_content.html",
         wb_store_options=wb_store_options,
+        manual_store_options=wb_store_options,
         wb_date_min=date_bounds["min_date"].isoformat(),
         wb_date_max=date_bounds["max_date"].isoformat(),
         wb_date_from=date_bounds["default_from"].isoformat(),

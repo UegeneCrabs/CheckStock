@@ -207,7 +207,7 @@
                 - (dateValue(right.delivery_at) || new Date(8640000000000000));
         });
         if (!manualSupplies.length) {
-            manualRows.innerHTML = '<tr class="supply-empty"><td colspan="6">Ручной план пока пуст</td></tr>';
+            manualRows.innerHTML = '<tr class="supply-empty"><td colspan="7">Активных перемещений нет</td></tr>';
             return;
         }
         manualRows.innerHTML = manualSupplies.map(function (row) {
@@ -223,6 +223,7 @@
                 : '—';
             return '<tr class="' + classes.join(' ') + '">'
                 + '<td>' + dateCell(row.delivery_at) + '</td>'
+                + '<td><strong>' + escapeHtml(row.store_name || row.store_slug) + '</strong></td>'
                 + '<td>' + escapeHtml(row.origin) + '</td>'
                 + '<td>' + escapeHtml(row.destination) + '</td>'
                 + '<td>' + escapeHtml(row.supply_type) + '</td>'
@@ -234,7 +235,7 @@
     }
 
     function loadManual() {
-        manualRows.innerHTML = '<tr class="supply-empty"><td colspan="6">Загрузка ручного плана…</td></tr>';
+        manualRows.innerHTML = '<tr class="supply-empty"><td colspan="7">Загрузка ручного плана…</td></tr>';
         request('/stock/planning/manual')
             .then(function (payload) {
                 manualSupplies = payload.supplies || [];
@@ -242,7 +243,7 @@
                 renderManual();
             })
             .catch(function (error) {
-                manualRows.innerHTML = '<tr class="supply-empty"><td colspan="6">' + escapeHtml(error.message) + '</td></tr>';
+                manualRows.innerHTML = '<tr class="supply-empty"><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
             });
     }
 
@@ -259,6 +260,7 @@
         var row = manualSupplies.find(function (item) { return item.id === id; });
         if (!row) return;
         manualForm.elements.supply_id.value = row.id;
+        manualForm.elements.store_slug.value = row.store_slug;
         manualForm.elements.delivery_at.value = String(row.delivery_at).slice(0, 16);
         manualForm.elements.origin.value = row.origin;
         manualForm.elements.destination.value = row.destination;
@@ -270,9 +272,8 @@
     }
 
     function replaceManual(row) {
-        var index = manualSupplies.findIndex(function (item) { return item.id === row.id; });
-        if (index === -1) manualSupplies.push(row);
-        else manualSupplies[index] = row;
+        manualSupplies = manualSupplies.filter(function (item) { return item.id !== row.id; });
+        if (!row.ready) manualSupplies.push(row);
         renderManual();
     }
 
@@ -281,6 +282,7 @@
         if (!editable) return;
         var id = Number(manualForm.elements.supply_id.value || 0);
         var payload = {
+            store_slug: manualForm.elements.store_slug.value,
             delivery_at: manualForm.elements.delivery_at.value,
             origin: manualForm.elements.origin.value.trim(),
             destination: manualForm.elements.destination.value.trim(),

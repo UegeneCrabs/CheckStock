@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app import auth, db, supply_planning
 from app.domain import MOSCOW_TIMEZONE
 from app.dto.supply_planning import ManualSupplyInput, ManualSupplyReadyInput
+from app.stores import STORES
 from app.web.access import accessible_store_slugs
 
 router = APIRouter()
@@ -21,10 +22,17 @@ def _delivery_iso(value: datetime) -> str:
 
 
 def _with_urgency(rows: list[dict]) -> list[dict]:
-    return [
-        {**row, "is_urgent": supply_planning.is_urgent(row.get("delivery_at"))}
-        for row in rows
-    ]
+    result = []
+    for row in rows:
+        store = STORES.get(str(row.get("store_slug") or ""))
+        result.append(
+            {
+                **row,
+                "store_name": store.name if store is not None else "Кабинет не указан",
+                "is_urgent": supply_planning.is_urgent(row.get("delivery_at")),
+            }
+        )
+    return result
 
 
 def _guard_edit(request: Request) -> JSONResponse | None:
@@ -39,6 +47,17 @@ def _guard_edit(request: Request) -> JSONResponse | None:
 def _actor(request: Request) -> tuple[int | None, str]:
     user = request.state.user
     return user.get("id"), str(user.get("full_name") or "Сотрудник")
+
+
+def _allowed_store_slug(request: Request, value: str) -> str:
+    store_slug = value.strip().lower()
+    if store_slug not in accessible_store_slugs(request.state.user):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому кабинету")
+    return store_slug
+
+
+def _guard_supply_store_access(request: Request, row: dict) -> None:
+    _allowed_store_slug(request, str(row.get("store_slug") or ""))
 
 
 @router.get("/stock/planning/wb")
@@ -67,8 +86,11 @@ async def wb_planned_supplies(
 
 
 @router.get("/stock/planning/manual")
-async def manual_supplies():
-    rows = await run_in_threadpool(db.list_manual_supplies)
+async def manual_supplies(request: Request):
+    rows = await run_in_threadpool(
+        db.list_manual_supplies,
+        accessible_store_slugs(request.state.user),
+    )
     return JSONResponse({"ok": True, "supplies": _with_urgency(rows)})
 
 
@@ -77,10 +99,12 @@ async def create_manual_supply(request: Request, payload: ManualSupplyInput):
     denied = _guard_edit(request)
     if denied is not None:
         return denied
+    store_slug = _allowed_store_slug(request, payload.store_slug)
     user_id, user_name = _actor(request)
     now = _now_iso()
     row = await run_in_threadpool(
         db.create_manual_supply,
+        store_slug,
         _delivery_iso(payload.delivery_at),
         payload.origin,
         payload.destination,
@@ -95,7 +119,7 @@ async def create_manual_supply(request: Request, payload: ManualSupplyInput):
         user_id,
         user_name,
         "Добавлена запланированная поставка",
-        f"{payload.origin} → {payload.destination} · {payload.supply_type}",
+        f"{STORES[store_slug].name}: {payload.origin} → {payload.destination} · {payload.supply_type}",
         now,
     )
     return JSONResponse({"ok": True, "supply": _with_urgency([row])[0]}, status_code=201)
@@ -110,10 +134,16 @@ async def update_manual_supply(
     denied = _guard_edit(request)
     if denied is not None:
         return denied
+    existing = await run_in_threadpool(db.get_manual_supply, supply_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Поставка не найдена")
+    _guard_supply_store_access(request, existing)
+    store_slug = _allowed_store_slug(request, payload.store_slug)
     now = _now_iso()
     row = await run_in_threadpool(
         db.update_manual_supply,
         supply_id,
+        store_slug,
         _delivery_iso(payload.delivery_at),
         payload.origin,
         payload.destination,
@@ -129,7 +159,7 @@ async def update_manual_supply(
         user_id,
         user_name,
         "Изменена запланированная поставка",
-        f"Поставка #{supply_id}: {payload.origin} → {payload.destination}",
+        f"Поставка #{supply_id}, {STORES[store_slug].name}: {payload.origin} → {payload.destination}",
         now,
     )
     return JSONResponse({"ok": True, "supply": _with_urgency([row])[0]})
@@ -144,6 +174,10 @@ async def set_manual_supply_ready(
     denied = _guard_edit(request)
     if denied is not None:
         return denied
+    existing = await run_in_threadpool(db.get_manual_supply, supply_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Поставка не найдена")
+    _guard_supply_store_access(request, existing)
     now = _now_iso()
     row = await run_in_threadpool(db.set_manual_supply_ready, supply_id, payload.ready, now)
     if row is None:
@@ -168,6 +202,7 @@ async def delete_manual_supply(request: Request, supply_id: int):
     existing = await run_in_threadpool(db.get_manual_supply, supply_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Поставка не найдена")
+    _guard_supply_store_access(request, existing)
     deleted = await run_in_threadpool(db.delete_manual_supply, supply_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Поставка не найдена")

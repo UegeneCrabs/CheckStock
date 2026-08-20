@@ -32,6 +32,7 @@ def init_db() -> None:
         _migrate_image_url(connection)
         _migrate_delivery_marketplace(connection)
         _migrate_activity_log_operation(connection)
+        _migrate_manual_supply_store_slug(connection)
         connection.execute("PRAGMA optimize")
         connection.commit()
 
@@ -336,6 +337,14 @@ def _migrate_activity_log_operation(connection: DatabaseConnection) -> None:
     columns = _column_names(connection, "activity_log")
     if columns and "operation_id" not in columns:
         connection.execute("ALTER TABLE activity_log ADD COLUMN operation_id INTEGER")
+
+
+def _migrate_manual_supply_store_slug(connection: DatabaseConnection) -> None:
+    columns = _column_names(connection, "manual_supplies")
+    if columns and "store_slug" not in columns:
+        connection.execute(
+            "ALTER TABLE manual_supplies ADD COLUMN store_slug TEXT NOT NULL DEFAULT ''"
+        )
 
 
 def _migrate_ff_stock_marketplace(connection: DatabaseConnection) -> None:
