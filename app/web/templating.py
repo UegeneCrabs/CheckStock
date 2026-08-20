@@ -123,6 +123,8 @@ def render_page(
         "supply": "ПОСТАВКИ И ЗАЯВКИ",
         "stock": "УПРАВЛЕНИЕ ЗАПАСАМИ",
         "stock2": "УПРАВЛЕНИЕ ЗАПАСАМИ",
+        "stock_supplies": "УПРАВЛЕНИЕ ЗАПАСАМИ / ПОСТАВКИ",
+        "stock_randomizer": "УПРАВЛЕНИЕ ЗАПАСАМИ / СВЕРКА С ФФ",
         "admin": "НАСТРОЙКИ И ДОСТУПЫ",
         "admin_activity": "ИСПОЛЬЗОВАНИЕ СИСТЕМЫ",
         "admin_google_export": "АВТОМАТИЗАЦИЯ / GOOGLE ТАБЛИЦЫ",
@@ -131,7 +133,7 @@ def render_page(
     }
     page_heading = title.removeprefix("CheckStock — ").replace(" — ", " / ")
     sales_open = active in {"sales", "sales_ephemerides", "sales_rnp"}
-    stock_open = active in {"stock", "stock2"}
+    stock_open = active in {"stock", "stock2", "stock_supplies", "stock_randomizer"}
     unit_open = active in {"sales_unit", "sales_wb_fbs", "sales_ozon", "sales_yandex"}
     visible = {section: has_access(user, section) for section in SectionName}
     sales_sections = (
@@ -184,6 +186,10 @@ def render_page(
         stock_hidden=hidden(visible[SectionName.STOCK]),
         stock2_active="active" if active == "stock2" else "",
         stock2_hidden=hidden(visible[SectionName.STOCK_OVERVIEW]),
+        stock_supplies_active="active" if active == "stock_supplies" else "",
+        stock_supplies_hidden=hidden(visible[SectionName.STOCK]),
+        stock_randomizer_active="active" if active == "stock_randomizer" else "",
+        stock_randomizer_hidden=hidden(visible[SectionName.STOCK]),
         admin_link=admin_link,
         user_name=html.escape(full_name),
         user_role=html.escape(db.ROLE_LABELS.get(user["role"], user["role"])) if user else "",

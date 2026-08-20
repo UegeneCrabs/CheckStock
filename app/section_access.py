@@ -96,5 +96,7 @@ def active_section(active: str) -> SectionName | None:
         "supply": SectionName.SUPPLY,
         "stock": SectionName.STOCK,
         "stock2": SectionName.STOCK_OVERVIEW,
+        "stock_supplies": SectionName.STOCK,
+        "stock_randomizer": SectionName.STOCK,
     }
     return mapping.get(active)

@@ -315,6 +315,23 @@ class StockOperationItemRecord(OrmBase):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class ManualSupplyRecord(OrmBase):
+    __tablename__ = "manual_supplies"
+    __table_args__ = (Index("idx_manual_supplies_delivery_at", "delivery_at", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_slug: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    delivery_at: Mapped[str] = mapped_column(String, nullable=False)
+    origin: Mapped[str] = mapped_column(String, nullable=False)
+    destination: Mapped[str] = mapped_column(String, nullable=False)
+    supply_type: Mapped[str] = mapped_column(String, nullable=False)
+    ready: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer)
+    created_by_name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class MarketplaceStockRecord(OrmBase):
     __tablename__ = "mp_stock"
     __table_args__ = (UniqueConstraint("store_slug", "article", "marketplace", "scheme"),)
@@ -352,6 +369,27 @@ class MarketplaceWarehouseClusterRecord(OrmBase):
     warehouse: Mapped[str] = mapped_column(String, nullable=False)
     cluster: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str | None] = mapped_column(String)
+
+
+class StockAuditRandomizationRecord(OrmBase):
+    __tablename__ = "stock_audit_randomizations"
+    __table_args__ = (
+        UniqueConstraint("month_key", "article"),
+        Index("idx_stock_audit_randomizations_batch", "batch_key"),
+        Index("idx_stock_audit_randomizations_month", "month_key", "fulfillment"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    month_key: Mapped[str] = mapped_column(String(7), nullable=False)
+    fulfillment: Mapped[str] = mapped_column(String, nullable=False)
+    store_slug: Mapped[str] = mapped_column(String, nullable=False)
+    article: Mapped[str] = mapped_column(String, nullable=False)
+    ff_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    fbs_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    user_name: Mapped[str] = mapped_column(String, nullable=False)
+    generated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class UnitCostRecord(OrmBase):

@@ -153,6 +153,10 @@ class FulfillmentCellQuery(DtoModel):
     marketplace: Marketplace
 
 
+class StockRandomizerGenerateRequest(DtoModel):
+    fulfillment: str = Field(min_length=1, max_length=200)
+
+
 class TrashCheckRequest(DtoModel):
     marketplace: Marketplace
     article: str = Field(min_length=1, max_length=200)
