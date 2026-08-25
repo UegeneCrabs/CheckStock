@@ -625,7 +625,5 @@ def run_due(now: datetime | None = None) -> dict[str, dict]:
             }
     failed_stores = [store_slug for store_slug, item in report.items() if not item["ok"]]
     if failed_stores:
-        raise StockSheetExportError(
-            "Не выполнена выгрузка магазинов: " + ", ".join(failed_stores)
-        )
+        raise StockSheetExportError("Не выполнена выгрузка магазинов: " + ", ".join(failed_stores))
     return report
