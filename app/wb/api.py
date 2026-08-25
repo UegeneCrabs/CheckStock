@@ -11,11 +11,15 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 FBS_BASE = "https://marketplace-api.wildberries.ru"
+SUPPLIES_BASE = "https://supplies-api.wildberries.ru"
 ANALYTICS_BASE = "https://seller-analytics-api.wildberries.ru"
 CONTENT_BASE = "https://content-api.wildberries.ru"
 STATISTICS_BASE = "https://statistics-api.wildberries.ru"
-PRICES_BASE = "https://discounts-prices-api.wildberries.ru"
-COMMON_BASE = "https://common-api.wildberries.ru"
+DISCOUNTS_PRICES_BASE = "https://discounts-prices-api.wildberries.ru"
+STOREFRONT_CARDS_BASE = "https://card.wb.ru/cards/v4/detail"
+STOREFRONT_DEFAULT_PAYMENT_URL = (
+    "https://static-basket-01.wbbasket.ru/vol1/global-payment/default-payment.json"
+)
 
 
 CARDS_PAGE_LIMIT = 100
@@ -42,6 +46,7 @@ _FRIENDLY_BY_STATUS = {
     413: "запрос слишком большой для WB — нужно уменьшить число товаров за один раз",
     422: "WB не смог обработать параметры запроса",
     429: "WB ограничил частоту запросов — попробуйте синхронизацию чуть позже",
+    498: "витрина WB временно отклонила запрос",
     500: "внутренняя ошибка WB, попробуйте позже",
     503: "сервис WB временно недоступен",
 }
@@ -137,6 +142,63 @@ def _request(method: str, url: str, token: str, params: dict | None = None, json
 
 def request(method: str, url: str, token: str, params: dict | None = None, json_body=None):
     return _request(method, url, token, params, json_body)
+
+
+def _public_request(url: str, params: dict | None = None):
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+    headers = {
+        "Accept": "application/json",
+        "Referer": "https://www.wildberries.ru/",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"
+        ),
+    }
+    retryable_statuses = {403, 429, 498}
+    for attempt in range(1, REQUEST_ATTEMPTS + 1):
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                raw_body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            raw = error.read().decode("utf-8", errors="replace")
+            title, detail = _parse_error_body(raw)
+            retryable = error.code in retryable_statuses or error.code >= 500
+            if retryable and attempt < REQUEST_ATTEMPTS:
+                wait = _retry_after_seconds(error, attempt)
+                logger.warning(
+                    "Витрина WB %s (попытка %s/%s), ждём %.1fс: %s",
+                    error.code,
+                    attempt,
+                    REQUEST_ATTEMPTS,
+                    wait,
+                    url,
+                )
+                time.sleep(wait)
+                continue
+            raise WBApiError(error.code, title, detail) from error
+        except TimeoutError as error:
+            raise WBApiError(
+                None, detail=f"витрина WB не ответила за {REQUEST_TIMEOUT}с (таймаут)"
+            ) from error
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, (socket.timeout, TimeoutError)):
+                raise WBApiError(
+                    None, detail=f"витрина WB не ответила за {REQUEST_TIMEOUT}с (таймаут)"
+                ) from error
+            raise WBApiError(None, detail=f"сеть: {error.reason}") from error
+
+        try:
+            return json.loads(raw_body)
+        except (ValueError, TypeError) as error:
+            raise WBApiError(
+                None,
+                detail=(
+                    f"витрина WB вернула ответ, который не удалось разобрать как JSON: {raw_body[:200]!r}"
+                ),
+            ) from error
+
+    raise WBApiError(None, detail="витрина WB не ответила")
 
 
 def _expect(value, *keys, context: str):
@@ -253,6 +315,44 @@ def get_fbs_order_statuses(token: str, order_ids: list[int]) -> dict[int, dict]:
                     None, detail=f"неожиданная строка статуса FBS-заказа: {row!r}"[:300]
                 ) from error
     return result
+
+
+def get_fbw_supplies(
+    token: str,
+    *,
+    status_ids: tuple[int, ...] = (2,),
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page_limit: int = 1000,
+    max_pages: int = 10,
+) -> list[dict]:
+    """Return FBW supplies filtered by their current WB status."""
+
+    limit = min(max(int(page_limit), 1), 1000)
+    dates = []
+    if date_from and date_to:
+        dates.append({"from": date_from, "till": date_to, "type": "supplyDate"})
+    supplies: list[dict] = []
+    offset = 0
+    for _ in range(max(int(max_pages), 1)):
+        data = _request(
+            "POST",
+            f"{SUPPLIES_BASE}/api/v1/supplies",
+            token,
+            params={"limit": limit, "offset": offset},
+            json_body={"dates": dates, "statusIDs": list(status_ids)},
+        )
+        if not isinstance(data, list):
+            raise WBApiError(None, detail=f"неожиданный формат списка поставок FBW: {data!r}"[:300])
+        page = [row for row in data if isinstance(row, dict)]
+        if len(page) != len(data):
+            raise WBApiError(None, detail="WB вернул некорректную строку в списке поставок FBW")
+        supplies.extend(page)
+        if len(page) < limit:
+            return supplies
+        offset += len(page)
+    logger.warning("WB: список поставок FBW оборван после %s страниц", max_pages)
+    return supplies
 
 
 def _barcode_by_chrt_id(cards: list[dict]) -> dict[int, str]:
@@ -398,44 +498,14 @@ def normalize_card(card: dict) -> dict:
     }
 
 
-def get_products_with_prices(token: str, nm_ids: list[int]) -> list[dict]:
-
-    unique = list(dict.fromkeys(int(nm_id) for nm_id in nm_ids if int(nm_id) > 0))
-    result: list[dict] = []
-
-    for start in range(0, len(unique), 1000):
-        data = _request(
-            "POST",
-            f"{PRICES_BASE}/api/v2/list/goods/filter",
-            token,
-            json_body={"nmList": unique[start : start + 1000]},
-        )
-        rows = _expect(data or {}, "data", "listGoods", context="цены товаров")
-        if not isinstance(rows, list):
-            raise WBApiError(None, detail=f"неожиданный формат цен WB: {rows!r}"[:300])
-        result.extend(rows)
-
-    return result
-
-
-def get_category_commissions(token: str) -> list[dict]:
-
-    data = _request(
-        "GET",
-        f"{COMMON_BASE}/api/v1/tariffs/commission",
-        token,
-        params={"locale": "ru"},
-    )
-    rows = (data or {}).get("report") or []
-    if not isinstance(rows, list):
-        raise WBApiError(None, detail=f"неожиданный формат комиссий WB: {rows!r}"[:300])
-    return rows
-
-
 ORDERS_PAGE_SIZE = 80000
 
 
 ORDERS_PAGE_PAUSE_SECONDS = 61
+PRICES_PAGE_LIMIT = 1000
+PRICES_PAGE_PAUSE_SECONDS = 0.65
+STOREFRONT_BATCH_PAUSE_SECONDS = 1.0
+STOREFRONT_MAX_BATCH_SIZE = 1_000
 
 
 def _get_statistics_rows(
@@ -448,8 +518,20 @@ def _get_statistics_rows(
 
     for page in range(max_pages):
         if page:
+            logger.info(
+                "WB API: перед следующей страницей «%s» ждём %.0f с",
+                label,
+                ORDERS_PAGE_PAUSE_SECONDS,
+            )
             time.sleep(ORDERS_PAGE_PAUSE_SECONDS)
 
+        logger.info(
+            "WB API: загружаем «%s», страница %s/%s, dateFrom=%s",
+            label,
+            page + 1,
+            max_pages,
+            cursor,
+        )
         rows = (
             _request(
                 "GET",
@@ -462,6 +544,7 @@ def _get_statistics_rows(
 
         if not isinstance(rows, list):
             raise WBApiError(None, detail=f"неожиданный формат {label} WB: {rows!r}"[:300])
+        logger.info("WB API: «%s», страница %s — получено строк: %s", label, page + 1, len(rows))
 
         for index, row in enumerate(rows):
             key = str(row.get("saleID") or row.get("srid") or "")
@@ -504,3 +587,249 @@ def get_sales(token: str, date_from: str, max_pages: int = 10) -> list[dict]:
         "продажи",
         max_pages,
     )
+
+
+def get_goods_prices(token: str, page_limit: int = PRICES_PAGE_LIMIT) -> list[dict]:
+    limit = min(max(int(page_limit), 1), PRICES_PAGE_LIMIT)
+    offset = 0
+    goods: list[dict] = []
+    while True:
+        if offset:
+            time.sleep(PRICES_PAGE_PAUSE_SECONDS)
+        payload = _request(
+            "GET",
+            f"{DISCOUNTS_PRICES_BASE}/api/v2/list/goods/filter",
+            token,
+            params={"limit": limit, "offset": offset},
+        )
+        if not isinstance(payload, dict):
+            raise WBApiError(None, detail=f"неожиданный формат цен WB: {payload!r}"[:300])
+        if payload.get("error"):
+            message = str(payload.get("errorText") or "WB не вернул цены товаров")
+            raise WBApiError(None, detail=message)
+        data = payload.get("data") or {}
+        rows = data.get("listGoods") if isinstance(data, dict) else None
+        if rows is None:
+            rows = []
+        if not isinstance(rows, list):
+            raise WBApiError(None, detail=f"неожиданный список цен WB: {rows!r}"[:300])
+        goods.extend(row for row in rows if isinstance(row, dict))
+        if len(rows) < limit:
+            return goods
+        offset += len(rows)
+
+
+def get_goods_prices_by_nm_ids(token: str, nm_ids: list[int] | tuple[int, ...]) -> list[dict]:
+    unique = list(dict.fromkeys(int(nm_id) for nm_id in nm_ids))
+    if not unique:
+        return []
+    if len(unique) > PRICES_PAGE_LIMIT:
+        raise ValueError(f"За один запрос можно получить не более {PRICES_PAGE_LIMIT} товаров")
+    payload = _request(
+        "POST",
+        f"{DISCOUNTS_PRICES_BASE}/api/v2/list/goods/filter",
+        token,
+        json_body={"nmList": unique},
+    )
+    if not isinstance(payload, dict):
+        raise WBApiError(None, detail=f"неожиданный формат цен WB: {payload!r}"[:300])
+    if payload.get("error"):
+        message = str(payload.get("errorText") or "WB не вернул цены товаров")
+        raise WBApiError(None, detail=message)
+    data = payload.get("data") or {}
+    rows = data.get("listGoods") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        raise WBApiError(None, detail=f"неожиданный список цен WB: {rows!r}"[:300])
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def upload_goods_prices_and_discounts(token: str, goods: list[dict]) -> dict:
+    if not goods:
+        raise ValueError("Нет цен для отправки")
+    if len(goods) > PRICES_PAGE_LIMIT:
+        raise ValueError(f"За один запрос можно изменить не более {PRICES_PAGE_LIMIT} товаров")
+    payload = _request(
+        "POST",
+        f"{DISCOUNTS_PRICES_BASE}/api/v2/upload/task",
+        token,
+        json_body={"data": goods},
+    )
+    if not isinstance(payload, dict):
+        raise WBApiError(None, detail=f"неожиданный ответ загрузки цен WB: {payload!r}"[:300])
+    if payload.get("error"):
+        message = str(payload.get("errorText") or "WB не принял цены")
+        raise WBApiError(None, detail=message)
+    data = payload.get("data")
+    if not isinstance(data, dict) or data.get("id") is None:
+        raise WBApiError(None, detail=f"в ответе WB нет ID загрузки: {payload!r}"[:300])
+    return data
+
+
+def get_price_upload_status(token: str, upload_id: int) -> dict | None:
+    payload = _request(
+        "GET",
+        f"{DISCOUNTS_PRICES_BASE}/api/v2/history/tasks",
+        token,
+        params={"uploadID": int(upload_id)},
+    )
+    if not isinstance(payload, dict):
+        raise WBApiError(None, detail=f"неожиданный статус загрузки цен WB: {payload!r}"[:300])
+    data = payload.get("data")
+    if data is None:
+        return None
+    if payload.get("error"):
+        message = str(payload.get("errorText") or "WB не вернул статус загрузки цен")
+        raise WBApiError(None, detail=message)
+    if not isinstance(data, dict):
+        raise WBApiError(None, detail=f"неожиданные данные статуса цен WB: {data!r}"[:300])
+    return data
+
+
+def get_price_upload_details(token: str, upload_id: int) -> list[dict]:
+    payload = _request(
+        "GET",
+        f"{DISCOUNTS_PRICES_BASE}/api/v2/history/goods/task",
+        token,
+        params={"uploadID": int(upload_id), "limit": PRICES_PAGE_LIMIT, "offset": 0},
+    )
+    if not isinstance(payload, dict):
+        raise WBApiError(None, detail=f"неожиданные детали загрузки цен WB: {payload!r}"[:300])
+    if payload.get("error"):
+        message = str(payload.get("errorText") or "WB не вернул детали загрузки цен")
+        raise WBApiError(None, detail=message)
+    data = payload.get("data") or {}
+    rows = data.get("historyGoods") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        raise WBApiError(None, detail=f"неожиданный список обработки цен WB: {rows!r}"[:300])
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def get_storefront_products(
+    nm_ids: list[str] | tuple[str, ...] | set[str],
+    *,
+    batch_size: int | None = None,
+) -> dict:
+    """Return public WB card data in caller-controlled batches without a seller token.
+
+    A failed batch is reported instead of aborting the remaining batches so the
+    caller can use an order-price fallback only for affected products. The
+    regular scheduler relies on the configured safe batch size; a manual probe
+    may explicitly request a larger batch.
+    """
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in nm_ids:
+        nm_id = str(value or "").strip()
+        if not nm_id.isdigit() or int(nm_id) <= 0 or nm_id in seen:
+            continue
+        seen.add(nm_id)
+        unique.append(nm_id)
+    if not unique:
+        return {"products": [], "failed_nm_ids": [], "errors": []}
+
+    limit = min(
+        max(int(batch_size or settings.wb_storefront_batch_size), 1),
+        STOREFRONT_MAX_BATCH_SIZE,
+    )
+    total_batches = (len(unique) + limit - 1) // limit
+    products_by_nm: dict[str, dict] = {}
+    failed_nm_ids: set[str] = set()
+    errors: list[str] = []
+    for start in range(0, len(unique), limit):
+        if start:
+            logger.info(
+                "Витрина WB: перед следующей пачкой ждём %.1f с",
+                STOREFRONT_BATCH_PAUSE_SECONDS,
+            )
+            time.sleep(STOREFRONT_BATCH_PAUSE_SECONDS)
+        chunk = unique[start : start + limit]
+        batch_number = start // limit + 1
+        logger.info(
+            "Витрина WB: запрашиваем пачку %s/%s, товаров=%s, артикулы=%s…%s",
+            batch_number,
+            total_batches,
+            len(chunk),
+            chunk[0],
+            chunk[-1],
+        )
+        started = time.monotonic()
+        try:
+            payload = _public_request(
+                STOREFRONT_CARDS_BASE,
+                params={
+                    "appType": 1,
+                    "curr": "rub",
+                    "dest": settings.wb_storefront_dest,
+                    "lang": "ru",
+                    "spp": 30,
+                    "nm": ";".join(chunk),
+                },
+            )
+            if not isinstance(payload, dict):
+                raise WBApiError(None, detail="витрина WB вернула неожиданный формат карточек")
+            rows = payload.get("products")
+            if rows is None and isinstance(payload.get("data"), dict):
+                rows = payload["data"].get("products")
+            if not isinstance(rows, list):
+                raise WBApiError(None, detail="витрина WB не вернула список товаров")
+        except Exception as error:
+            failed_nm_ids.update(chunk)
+            message = (
+                f"товары {chunk[0]}–{chunk[-1]}: {error.friendly if isinstance(error, WBApiError) else error}"
+            )
+            errors.append(message)
+            logger.warning(
+                "Витрина WB: пачка %s/%s не загружена за %.1f с: %s",
+                batch_number,
+                total_batches,
+                time.monotonic() - started,
+                message,
+            )
+            continue
+
+        returned: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            nm_id = str(row.get("id") or row.get("nmID") or row.get("nmId") or "").strip()
+            if nm_id in seen:
+                products_by_nm[nm_id] = row
+                returned.add(nm_id)
+        failed_nm_ids.update(set(chunk) - returned)
+        logger.info(
+            "Витрина WB: пачка %s/%s готова за %.1f с, получено=%s, пропущено=%s",
+            batch_number,
+            total_batches,
+            time.monotonic() - started,
+            len(returned),
+            len(set(chunk) - returned),
+        )
+
+    return {
+        "products": list(products_by_nm.values()),
+        "failed_nm_ids": sorted(failed_nm_ids, key=int),
+        "errors": errors,
+    }
+
+
+def get_default_wallet_discount_percent() -> float:
+    """Return the public WB Wallet discount used for an unauthenticated buyer."""
+
+    payload = _public_request(STOREFRONT_DEFAULT_PAYMENT_URL)
+    if not isinstance(payload, dict) or payload.get("state") != 0:
+        raise WBApiError(None, detail="WB не вернул настройку скидки кошелька")
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        raise WBApiError(None, detail="WB вернул неожиданный формат скидки кошелька")
+    payment = next(
+        (row for row in rows if isinstance(row, dict) and row.get("wctype_id") == 1),
+        None,
+    )
+    try:
+        percent = float(payment.get("discount_value")) if payment else None
+    except (TypeError, ValueError) as error:
+        raise WBApiError(None, detail="WB вернул некорректную скидку кошелька") from error
+    if percent is None or not 0 <= percent < 100:
+        raise WBApiError(None, detail="WB вернул некорректную скидку кошелька")
+    return percent

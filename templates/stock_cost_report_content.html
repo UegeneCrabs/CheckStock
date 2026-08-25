@@ -1,0 +1,34 @@
+        <link rel="stylesheet" href="/static/stock-cost-report.css?v=2">
+
+        <section class="cost-report-shell">
+            <header class="cost-report-hero">
+                <div>
+                    <span>УПРАВЛЕНЧЕСКИЙ УЧЁТ СТОКА</span>
+                    <h2>Движение товаров и закупочная стоимость</h2>
+                    <p>Поставки, перемещения, внешние отгрузки и продажи FBS по каждому магазину и маркетплейсу.</p>
+                </div>
+                <a class="cost-export" href="$export_url">Excel · 2 листа</a>
+            </header>
+
+            <form class="cost-filters" method="get" action="/stock/cost-report">
+                <label><span>Начало</span><input type="date" name="date_from" value="$date_from"></label>
+                <label><span>Конец</span><input type="date" name="date_to" value="$date_to"></label>
+                <label><span>Магазин</span><select name="store">$store_options</select></label>
+                <label><span>Маркетплейс</span><select name="marketplace">$marketplace_options</select></label>
+                <button type="submit">Показать</button>
+                <div class="cost-quick-periods">
+                    <a href="$current_week_url">Эта неделя</a>
+                    <a href="$previous_week_url">Прошлая неделя</a>
+                </div>
+            </form>
+
+            <aside class="cost-report-note">
+                <strong>Как считается ЗЦ</strong>
+                <span>Текущая закупочная цена из справочника 1С × количество. Если ЗЦ не заполнена, отчёт отдельно показывает такие единицы.</span>
+                <strong>Продажи FBS</strong>
+                <span>Основная цифра — выкупленные товары FBS/rFBS. Рядом идёт сверка: остаток на начало + помеченные перемещения на FBS − остаток на конец.</span>
+            </aside>
+
+            <nav class="cost-report-tabs" aria-label="Виды отчёта">$tabs</nav>
+            $detail
+        </section>

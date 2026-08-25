@@ -1,0 +1,52 @@
+        <section class="randomizer-shell" data-stock-randomizer>
+            <div class="randomizer-hero">
+                <div class="randomizer-hero-copy">
+                    <span class="randomizer-kicker">ЕЖЕДНЕВНАЯ МИНИ-СВЕРКА</span>
+                    <h2>Случайные позиции для проверки стока</h2>
+                    <p>По одному уникальному артикулу на магазин. В выборку попадают товары, которые сейчас есть на выбранном ФФ, на его складе WB FBS или в обоих источниках.</p>
+                </div>
+                <div class="randomizer-period">
+                    <span>Текущий период</span>
+                    <strong>$month_label</strong>
+                    <small>Повторы исключаются до нового месяца</small>
+                </div>
+            </div>
+
+            <section class="randomizer-controls" aria-label="Настройки генерации">
+                <label class="randomizer-ff-field">
+                    <span>Фулфилмент для сверки</span>
+                    <select data-randomizer-fulfillment$fulfillment_disabled>
+$fulfillment_options
+                    </select>
+                </label>
+                <button class="randomizer-generate" type="button" data-randomizer-generate$fulfillment_disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-3a4 4 0 0 0-4 4v2a4 4 0 0 1-4 4H4"></path><path d="m17 4 3 3-3 3"></path><path d="M4 7h4a4 4 0 0 1 3.5 2"></path><path d="m17 14 3 3-3 3"></path></svg>
+                    <span data-randomizer-button-label>Сгенерировать</span>
+                </button>
+                <div class="randomizer-last-run">
+                    <span>Последняя генерация</span>
+                    <strong data-randomizer-last-run>$last_generated</strong>
+                </div>
+            </section>
+
+            <div class="randomizer-notice" data-randomizer-notice hidden role="status" aria-live="polite"></div>
+
+            <div class="randomizer-store-grid" data-randomizer-grid>
+$store_cards
+            </div>
+
+            <section class="randomizer-rules">
+                <div>
+                    <span class="randomizer-rule-number">01</span>
+                    <p><strong>Проверяем два источника.</strong> Достаточно положительного остатка на ФФ или на соответствующем складе WB FBS; наличие в обоих источниках тоже подходит.</p>
+                </div>
+                <div>
+                    <span class="randomizer-rule-number">02</span>
+                    <p><strong>Не повторяемся.</strong> Выданный магазину артикул исключается из следующих генераций до начала нового календарного месяца.</p>
+                </div>
+                <div>
+                    <span class="randomizer-rule-number">03</span>
+                    <p><strong>Сверяем факт.</strong> Карточка показывает обе учётные цифры на момент генерации, чтобы расхождение было видно сразу.</p>
+                </div>
+            </section>
+        </section>

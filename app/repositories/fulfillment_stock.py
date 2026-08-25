@@ -5,6 +5,13 @@ from app.repositories.catalog import get_catalog_items
 from app.repositories.core import get_connection
 
 
+def get_fulfillments() -> list[str]:
+    conn = get_connection()
+    rows = conn.execute("SELECT name FROM fulfillments ORDER BY id").fetchall()
+    conn.close()
+    return [str(row["name"]) for row in rows]
+
+
 def upsert_ff_stock(
     store_slug: str,
     article: str,

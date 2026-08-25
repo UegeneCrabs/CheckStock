@@ -123,6 +123,7 @@ class StockEntrySplit(DtoModel):
 class AddFulfillmentItemsRequest(DtoModel):
     fulfillment: str = Field(min_length=1, max_length=200)
     marketplace: Marketplace = Marketplace.WB
+    note: str = Field(default="", max_length=200)
     items: tuple[PositiveStockEntry, ...] = Field(min_length=1)
 
 
@@ -151,6 +152,10 @@ class CatalogSearchQuery(DtoModel):
 class FulfillmentCellQuery(DtoModel):
     fulfillment: str = Field(min_length=1, max_length=200)
     marketplace: Marketplace
+
+
+class StockRandomizerGenerateRequest(DtoModel):
+    fulfillment: str = Field(min_length=1, max_length=200)
 
 
 class TrashCheckRequest(DtoModel):

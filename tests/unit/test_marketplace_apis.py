@@ -113,15 +113,6 @@ class WildberriesApiTests(unittest.TestCase):
         self.assertEqual(normalized["sizes"][0]["extra_barcodes"], ["12"])
         self.assertEqual(normalized["image_url"], "https://img.test/a.jpg")
 
-        with mock.patch.object(
-            wb_api,
-            "_request",
-            return_value={"data": {"listGoods": [{"nmID": 1}]}},
-        ):
-            self.assertEqual(wb_api.get_products_with_prices("token", [1, 1, -1]), [{"nmID": 1}])
-        with mock.patch.object(wb_api, "_request", return_value={"report": [{"kgvpMarketplace": 15}]}):
-            self.assertEqual(len(wb_api.get_category_commissions("token")), 1)
-
         page_one = [
             {"srid": "1", "lastChangeDate": "2026-08-10T00:00:00"},
             {"srid": "2", "lastChangeDate": "2026-08-11T00:00:00"},
@@ -139,6 +130,163 @@ class WildberriesApiTests(unittest.TestCase):
         self.assertEqual([row["srid"] for row in rows], ["1", "2", "3"])
         with mock.patch.object(wb_api, "_request", return_value=[]):
             self.assertEqual(wb_api.get_sales("token", "2026-08-01"), [])
+
+        price_pages = [
+            {"data": {"listGoods": [{"nmID": 1}, {"nmID": 2}]}, "error": False},
+            {"data": {"listGoods": [{"nmID": 3}]}, "error": False},
+        ]
+        with (
+            mock.patch.object(wb_api, "_request", side_effect=price_pages) as request,
+            mock.patch.object(wb_api.time, "sleep") as sleep,
+        ):
+            prices = wb_api.get_goods_prices("token", page_limit=2)
+        self.assertEqual([row["nmID"] for row in prices], [1, 2, 3])
+        self.assertEqual(request.call_args_list[1].kwargs["params"]["offset"], 2)
+        sleep.assert_called_once_with(wb_api.PRICES_PAGE_PAUSE_SECONDS)
+
+        with mock.patch.object(
+            wb_api,
+            "_request",
+            return_value={"data": {"listGoods": [{"nmID": 123}]}, "error": False},
+        ) as request:
+            prices = wb_api.get_goods_prices_by_nm_ids("token", [123, 123])
+        self.assertEqual(prices, [{"nmID": 123}])
+        self.assertEqual(request.call_args.kwargs["json_body"], {"nmList": [123]})
+
+        with mock.patch.object(
+            wb_api,
+            "_request",
+            return_value={"data": {"id": 77, "alreadyExists": False}, "error": False},
+        ) as request:
+            upload = wb_api.upload_goods_prices_and_discounts(
+                "token", [{"nmID": 123, "price": 1000, "discount": 20}]
+            )
+        self.assertEqual(upload["id"], 77)
+        self.assertEqual(
+            request.call_args.kwargs["json_body"],
+            {"data": [{"nmID": 123, "price": 1000, "discount": 20}]},
+        )
+
+        with mock.patch.object(
+            wb_api,
+            "_request",
+            return_value={"data": {"uploadID": 77, "status": 3}, "error": False},
+        ) as request:
+            status = wb_api.get_price_upload_status("token", 77)
+        self.assertEqual(status["status"], 3)
+        self.assertEqual(request.call_args.kwargs["params"], {"uploadID": 77})
+
+        with mock.patch.object(
+            wb_api,
+            "_request",
+            return_value={
+                "data": {"historyGoods": [{"nmID": 123, "errorText": "ошибка"}]},
+                "error": False,
+            },
+        ) as request:
+            details = wb_api.get_price_upload_details("token", 77)
+        self.assertEqual(details[0]["nmID"], 123)
+        self.assertEqual(
+            request.call_args.kwargs["params"],
+            {"uploadID": 77, "limit": wb_api.PRICES_PAGE_LIMIT, "offset": 0},
+        )
+
+    def test_storefront_products_are_loaded_in_safe_batches(self) -> None:
+        responses = [
+            {"products": [{"id": 367080326}, {"id": 340331510}]},
+            {"products": [{"id": 371727738}]},
+        ]
+        with (
+            mock.patch.object(wb_api, "_public_request", side_effect=responses) as request,
+            mock.patch.object(wb_api.time, "sleep") as sleep,
+        ):
+            report = wb_api.get_storefront_products(
+                ["367080326", "340331510", "371727738"],
+                batch_size=2,
+            )
+
+        self.assertEqual(
+            [row["id"] for row in report["products"]],
+            [367080326, 340331510, 371727738],
+        )
+        self.assertEqual(report["failed_nm_ids"], [])
+        self.assertEqual(request.call_args_list[0].kwargs["params"]["nm"], "367080326;340331510")
+        self.assertEqual(request.call_args_list[1].kwargs["params"]["nm"], "371727738")
+        sleep.assert_called_once_with(wb_api.STOREFRONT_BATCH_PAUSE_SECONDS)
+
+    def test_storefront_batch_failure_does_not_abort_later_batches(self) -> None:
+        responses = [
+            wb_api.WBApiError(498, detail="temporary"),
+            {"products": [{"id": 371727738}]},
+        ]
+        with (
+            mock.patch.object(wb_api, "_public_request", side_effect=responses),
+            mock.patch.object(wb_api.time, "sleep"),
+        ):
+            report = wb_api.get_storefront_products(
+                ["367080326", "340331510", "371727738"],
+                batch_size=2,
+            )
+
+        self.assertEqual([row["id"] for row in report["products"]], [371727738])
+        self.assertEqual(report["failed_nm_ids"], ["340331510", "367080326"])
+        self.assertIn("витрина WB временно отклонила запрос", report["errors"][0])
+
+    def test_storefront_explicit_large_batch_is_sent_in_one_request(self) -> None:
+        nm_ids = [str(100000000 + index) for index in range(150)]
+        response = {"products": [{"id": int(nm_id)} for nm_id in nm_ids]}
+        with (
+            mock.patch.object(wb_api, "_public_request", return_value=response) as request,
+            mock.patch.object(wb_api.time, "sleep") as sleep,
+        ):
+            report = wb_api.get_storefront_products(nm_ids, batch_size=len(nm_ids))
+
+        self.assertEqual(len(report["products"]), 150)
+        request.assert_called_once()
+        self.assertEqual(request.call_args.kwargs["params"]["nm"], ";".join(nm_ids))
+        sleep.assert_not_called()
+
+    def test_storefront_batch_is_capped_at_confirmed_wb_limit(self) -> None:
+        nm_ids = [str(100000000 + index) for index in range(1_001)]
+        responses = [
+            {"products": [{"id": int(nm_id)} for nm_id in nm_ids[:1_000]]},
+            {"products": [{"id": int(nm_ids[-1])}]},
+        ]
+        with (
+            mock.patch.object(wb_api, "_public_request", side_effect=responses) as request,
+            mock.patch.object(wb_api.time, "sleep") as sleep,
+        ):
+            report = wb_api.get_storefront_products(nm_ids, batch_size=len(nm_ids))
+
+        self.assertEqual(len(report["products"]), 1_001)
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(len(request.call_args_list[0].kwargs["params"]["nm"].split(";")), 1_000)
+        self.assertEqual(request.call_args_list[1].kwargs["params"]["nm"], nm_ids[-1])
+        sleep.assert_called_once_with(wb_api.STOREFRONT_BATCH_PAUSE_SECONDS)
+
+    def test_public_wallet_discount_uses_first_default_wallet_payment(self) -> None:
+        with mock.patch.object(
+            wb_api,
+            "_public_request",
+            return_value={
+                "state": 0,
+                "data": [
+                    {"wctype_id": 1, "discount_value": 2},
+                    {"wctype_id": 1, "discount_value": 3},
+                ],
+            },
+        ) as request:
+            percent = wb_api.get_default_wallet_discount_percent()
+
+        self.assertEqual(percent, 2)
+        request.assert_called_once_with(wb_api.STOREFRONT_DEFAULT_PAYMENT_URL)
+
+    def test_public_wallet_discount_rejects_invalid_response(self) -> None:
+        with (
+            mock.patch.object(wb_api, "_public_request", return_value={"state": 1}),
+            self.assertRaises(wb_api.WBApiError),
+        ):
+            wb_api.get_default_wallet_discount_percent()
 
 
 class OzonApiTests(unittest.TestCase):

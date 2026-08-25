@@ -5,6 +5,85 @@ from app.infrastructure.orm import OrmBase
 from app.repositories import core, schema
 
 
+def test_cabinet_settings_are_migrated_to_current_commissions_and_taxes(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "legacy-cabinet-settings.sqlite3"
+    monkeypatch.setattr(core, "DB_PATH", path)
+    dispose_databases()
+    database = database_for_path(path)
+    with database.connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE unit_economics_1c_cabinet_settings (
+                store_slug TEXT NOT NULL,
+                marketplace TEXT NOT NULL DEFAULT 'WB',
+                acceptance_coefficient FLOAT NOT NULL DEFAULT 0,
+                wb_extra_tariff_percent FLOAT NOT NULL DEFAULT 0,
+                annual_capital_rate_percent FLOAT NOT NULL DEFAULT 18.5,
+                days_in_year INTEGER NOT NULL DEFAULT 365,
+                custom_parameter_1 FLOAT NOT NULL DEFAULT 21,
+                custom_parameter_2 FLOAT NOT NULL DEFAULT 35,
+                overhead_percent FLOAT NOT NULL DEFAULT 0.57,
+                team_percent FLOAT NOT NULL DEFAULT 2.27,
+                contrib_percent FLOAT NOT NULL DEFAULT 0,
+                tax_percent FLOAT NOT NULL DEFAULT 9,
+                updated_at TEXT NOT NULL,
+                updated_by_user_id INTEGER NOT NULL,
+                updated_by_name TEXT NOT NULL,
+                PRIMARY KEY (store_slug, marketplace)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO unit_economics_1c_cabinet_settings
+                (store_slug, marketplace, tax_percent, updated_at,
+                 updated_by_user_id, updated_by_name)
+            VALUES ('rimili', 'WB', 11, '2026-08-18T12:00:00+00:00', 7, 'Unit Admin')
+            """
+        )
+        connection.commit()
+
+    schema.init_db()
+    schema.init_db()
+
+    with database_for_path(path).connect() as connection:
+        columns = connection.column_names("unit_economics_1c_cabinet_settings")
+        row = connection.execute(
+            """
+            SELECT acquiring_percent, team_commission_percent, vat_percent,
+                   usn_percent, osno_percent, tax_system, updated_by_name
+              FROM unit_economics_1c_cabinet_settings
+             WHERE store_slug='rimili' AND marketplace='WB'
+            """
+        ).fetchone()
+
+    assert "acquiring_percent" in columns
+    assert "team_commission_percent" in columns
+    assert "vat_percent" in columns
+    assert "usn_percent" in columns
+    assert "osno_percent" in columns
+    assert "tax_system" in columns
+    assert {
+        "annual_capital_rate_percent",
+        "days_in_year",
+        "custom_parameter_1",
+        "custom_parameter_2",
+        "overhead_percent",
+        "team_percent",
+        "contrib_percent",
+        "tax_percent",
+    }.isdisjoint(columns)
+    assert row is not None
+    assert row["acquiring_percent"] == 3.8
+    assert row["team_commission_percent"] == 2.27
+    assert row["vat_percent"] == 11
+    assert row["usn_percent"] == 0
+    assert row["osno_percent"] == 0
+    assert row["tax_system"] == "usn"
+    assert row["updated_by_name"] == "Unit Admin"
+    dispose_databases()
+
+
 def test_old_export_targets_are_migrated_without_losing_rows(tmp_path, monkeypatch) -> None:
     path = tmp_path / "legacy-export.sqlite3"
     monkeypatch.setattr(core, "DB_PATH", path)

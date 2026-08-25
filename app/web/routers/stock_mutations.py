@@ -33,6 +33,7 @@ async def upload_ff_stock(
     slug: str,
     fulfillment: str = Form(...),
     marketplace: Marketplace = Form(Marketplace.WB),
+    note: str = Form("", max_length=200),
     sheet_url: str = Form(""),
     file: UploadFile | None = File(None),
 ):
@@ -85,6 +86,7 @@ async def upload_ff_stock(
         )
 
     actor = request.state.user
+    note_text = note.strip()
 
     def _record() -> None:
         now = _now_iso()
@@ -100,6 +102,7 @@ async def upload_ff_stock(
             sheet_url=sheet_url.strip() or None,
             to_fulfillment=fulfillment,
             to_marketplace=marketplace.value,
+            note=note_text or None,
         )
         db.log_action_for_operation(
             actor["id"],
@@ -108,7 +111,7 @@ async def upload_ff_stock(
             f"{store.name} · {marketplace.value} · {fulfillment} · «{report['table_title']}» — "
             f"добавлено {report.get('added_quantity', 0)} шт. в "
             f"{report.get('applied', len(report.get('items', [])))} позициях; "
-            f"без изменений {len(report.get('unchanged', []))}",
+            f"без изменений {len(report.get('unchanged', []))}" + (f" · {note_text}" if note_text else ""),
             now,
             operation_id,
         )
@@ -158,6 +161,7 @@ async def add_ff_items(
 
     actor = request.state.user
     details = ", ".join(f"{item.article} +{item.added}" for item in results.root)
+    note_text = payload.note.strip()
 
     def _record() -> None:
         now = _now_iso()
@@ -179,12 +183,13 @@ async def add_ff_items(
             created_at=now,
             to_fulfillment=payload.fulfillment,
             to_marketplace=payload.marketplace.value,
+            note=note_text or None,
         )
         db.log_action_for_operation(
             actor["id"],
             actor["full_name"],
             "Добавлен остаток на ФФ вручную",
-            f"{store.name} · {payload.fulfillment} · {details}",
+            f"{store.name} · {payload.fulfillment} · {details}" + (f" · {note_text}" if note_text else ""),
             now,
             operation_id,
         )
@@ -253,6 +258,7 @@ async def transfer_ff_stock(
     from_marketplace: Marketplace = Form(...),
     to_fulfillment: str = Form(...),
     to_marketplace: Marketplace = Form(...),
+    note: str = Form("", max_length=200),
     items: str = Form(""),
     sheet_url: str = Form(""),
     file: UploadFile | None = File(None),
@@ -320,6 +326,10 @@ async def transfer_ff_stock(
     skipped = transfer_result.skipped
     moved = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
     skipped_note = "; ".join(f"{item.article} x{item.quantity}: {item.reason}" for item in skipped.root)
+    note_text = note.strip()
+    operation_note = " · ".join(
+        part for part in (note_text, f"Не переведено: {skipped_note}" if skipped_note else "") if part
+    )
 
     def _record() -> None:
         now = _now_iso()
@@ -337,7 +347,7 @@ async def transfer_ff_stock(
             from_marketplace=from_marketplace.value,
             to_fulfillment=to_fulfillment.strip(),
             to_marketplace=to_marketplace.value,
-            note=(f"Не переведено: {skipped_note}" if skipped_note else None),
+            note=operation_note or None,
         )
         db.log_action_for_operation(
             actor.id,
@@ -345,6 +355,7 @@ async def transfer_ff_stock(
             "Перемещение между фулфилментами",
             f"{store.name} · {from_fulfillment}/{from_marketplace.value} -> "
             f"{to_fulfillment}/{to_marketplace.value} · {moved}"
+            + (f" · {note_text}" if note_text else "")
             + (f" · не переведено: {skipped_note}" if skipped_note else ""),
             now,
             operation_id,
