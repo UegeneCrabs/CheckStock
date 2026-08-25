@@ -6,7 +6,6 @@ from app.application.decision_commands import DecisionCommandService
 from app.application.identity import IdentityService
 from app.application.rnp_commands import RnpCommandService
 from app.application.stock import StockMovementService
-from app.application.unit_economics import UnitEconomicsConfigurationService
 from app.container import ApplicationContainer
 from app.dto.identity import User
 
@@ -43,12 +42,6 @@ def get_stock_movement_service(
     return container.stock
 
 
-def get_unit_economics_configuration_service(
-    container: Annotated[ApplicationContainer, Depends(get_container)],
-) -> UnitEconomicsConfigurationService:
-    return container.unit_economics
-
-
 ContainerDependency = Annotated[ApplicationContainer, Depends(get_container)]
 IdentityServiceDependency = Annotated[IdentityService, Depends(get_identity_service)]
 CurrentUserDependency = Annotated[User, Depends(get_current_user)]
@@ -60,8 +53,4 @@ DecisionCommandServiceDependency = Annotated[
 StockMovementServiceDependency = Annotated[
     StockMovementService,
     Depends(get_stock_movement_service),
-]
-UnitEconomicsConfigurationServiceDependency = Annotated[
-    UnitEconomicsConfigurationService,
-    Depends(get_unit_economics_configuration_service),
 ]

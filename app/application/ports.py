@@ -49,11 +49,6 @@ from app.dto.stock import (
     StockQuantity,
     StockQuantityQuery,
 )
-from app.dto.unit_economics import (
-    FulfillmentNames,
-    PersistedFulfillmentRates,
-    SaveFulfillmentRatesCommand,
-)
 
 
 class IdentityRepository(Protocol):
@@ -210,30 +205,3 @@ class StockUnitOfWork(Protocol):
 
 class StockUnitOfWorkFactory(Protocol):
     def __call__(self) -> StockUnitOfWork: ...
-
-
-class FulfillmentRateRepository(Protocol):
-    def fulfillment_names(self) -> FulfillmentNames: ...
-
-    def rates(self) -> PersistedFulfillmentRates: ...
-
-    def save(self, command: SaveFulfillmentRatesCommand) -> None: ...
-
-
-class FulfillmentRateUnitOfWork(Protocol):
-    repository: FulfillmentRateRepository
-
-    def __enter__(self) -> FulfillmentRateUnitOfWork: ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None: ...
-
-    def commit(self) -> None: ...
-
-
-class FulfillmentRateUnitOfWorkFactory(Protocol):
-    def __call__(self) -> FulfillmentRateUnitOfWork: ...

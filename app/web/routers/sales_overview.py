@@ -51,9 +51,6 @@ async def sales(request: Request):
         if has_section_access(request.state.user, SectionName.EPHEMERIDES)
         else " hidden",
         rnp_hidden="" if has_section_access(request.state.user, SectionName.RNP) else " hidden",
-        unit_economics_hidden=(
-            "" if has_section_access(request.state.user, SectionName.UNIT_ECONOMICS) else " hidden"
-        ),
     )
     return render_page(
         "CheckStock — Продажи",
