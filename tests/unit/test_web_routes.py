@@ -422,6 +422,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-columns-toggle"', response.text)
         self.assertIn('id="ue1c-column-list"', response.text)
         self.assertIn("Товары в минус", response.text)
+        self.assertIn("Новинки", response.text)
         self.assertNotIn('class="ue1c-col-price"', response.text)
         self.assertIn('class="data-table ue1c-redesign-table"', response.text)
         self.assertIn('id="ue1c-column-list"', response.text)
@@ -572,6 +573,26 @@ class WebRouteUnitTests(unittest.TestCase):
             [{"article": "949558342", "name": "Связанный товар"}],
         )
 
+        new_product = unit_economics._unit_economics_1c_mock_product(
+            "rimili",
+            {"article": "949558343", "name": "Новинка"},
+            product_reference={"card_created_at": "2026-08-01T10:15:00Z"},
+            first_sale_at="2026-08-10",
+            sales_age_today=datetime(2026, 8, 19, tzinfo=UTC).date(),
+        )
+        self.assertTrue(new_product["is_new"])
+        self.assertEqual(new_product["sales_days"], 10)
+        self.assertEqual(new_product["sales_started_at"], "2026-08-10")
+
+        old_product = unit_economics._unit_economics_1c_mock_product(
+            "rimili",
+            {"article": "949558344", "name": "Старый товар"},
+            first_sale_at="2026-06-01",
+            sales_age_today=datetime(2026, 8, 19, tzinfo=UTC).date(),
+        )
+        self.assertFalse(old_product["is_new"])
+        self.assertEqual(old_product["sales_days"], 80)
+
     def test_unit_economics_1c_commission_panel_uses_split_taxes(self) -> None:
         root = Path(__file__).resolve().parents[2]
         script = (root / "static" / "unit-economics-1c.js").read_text(encoding="utf-8")
@@ -708,6 +729,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("НДС</strong> = цена покупателя × ставка ÷ (100 + ставка)", template)
         self.assertIn("УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100", template)
         self.assertIn('id="ue1c-subject-select"', template)
+        self.assertIn('type="search" list="ue1c-subject-options"', template)
+        self.assertIn('id="ue1c-subject-options"', template)
         self.assertNotIn("Симулятор параметров", template)
         self.assertNotIn("Параметр</span><span>Значение", template)
 

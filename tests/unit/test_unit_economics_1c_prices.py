@@ -311,6 +311,8 @@ class UnitEconomics1CPricesTests(unittest.TestCase):
             "products": [
                 {
                     "id": 371727738,
+                    "reviewRating": 4.8,
+                    "feedbacks": 406,
                     "sizes": [{"optionId": 1, "price": {"product": 203400, "logistics": 0}}],
                 },
                 {
@@ -356,6 +358,11 @@ class UnitEconomics1CPricesTests(unittest.TestCase):
         self.assertEqual(latest["371727738"]["customer_price_with_wallet"], 1993)
         self.assertEqual(latest["371727738"]["customer_price_orders_count"], 0)
         self.assertIsNone(latest["371727738"]["customer_price_window_days"])
+        reputation = db.get_unit_economics_1c_latest_product_reputation(("rimili",))
+        first_reputation = next(item for item in reputation if item["article"] == "371727738")
+        self.assertEqual(first_reputation["rating"], 4.8)
+        self.assertEqual(first_reputation["reviews_count"], 406)
+        self.assertEqual(report["reputation_rows"], 1)
 
         with (
             mock.patch.object(prices.wb_api, "get_storefront_products", return_value=storefront),

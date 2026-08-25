@@ -153,13 +153,16 @@ def _migrate_unit_economics_1c_daily_prices(database: Database) -> None:
 
 
 def _migrate_unit_economics_1c_product_categories(database: Database) -> None:
-    """Remember WB's imtID so glued cards can be shown without extra requests."""
+    """Remember WB metadata needed for glue and product-age calculations."""
 
     table_name = "unit_economics_1c_product_categories"
     with database.connect() as connection:
         columns = connection.column_names(table_name)
         if columns and "imt_id" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN imt_id INTEGER")
+        if columns and "created_at" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN created_at TEXT")
+            connection.execute(f"UPDATE {table_name} SET synced_at='' ")
         connection.commit()
 
 

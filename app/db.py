@@ -158,6 +158,9 @@ from app.repositories.unit_economics_1c import (
     get_product_reference_rows as get_unit_economics_1c_product_reference_rows,
 )
 from app.repositories.unit_economics_1c import (
+    get_product_sales_starts as get_unit_economics_1c_product_sales_starts,
+)
+from app.repositories.unit_economics_1c import (
     get_product_settings as get_unit_economics_1c_product_settings,
 )
 from app.repositories.unit_economics_1c import (
@@ -219,6 +222,9 @@ from app.repositories.unit_economics_1c import (
 )
 from app.repositories.unit_economics_1c import (
     upsert_daily_prices as upsert_unit_economics_1c_daily_prices,
+)
+from app.repositories.unit_economics_1c import (
+    upsert_product_reputation as upsert_unit_economics_1c_product_reputation,
 )
 from app.repositories.unit_economics_1c import (
     wb_commissions_due as unit_economics_1c_wb_commissions_due,
@@ -308,6 +314,7 @@ __all__ = (
     "get_unit_economics_1c_latest_reliable_spp_prices",
     "get_unit_economics_1c_product_settings",
     "get_unit_economics_1c_product_reference_rows",
+    "get_unit_economics_1c_product_sales_starts",
     "get_unit_economics_1c_wb_order_metric_rows",
     "get_unit_economics_1c_wb_order_price_rows",
     "get_warehouse_clusters",
@@ -366,6 +373,7 @@ __all__ = (
     "upsert_mp_stock",
     "upsert_sales_order_lines",
     "upsert_unit_economics_1c_daily_prices",
+    "upsert_unit_economics_1c_product_reputation",
     "unit_economics_1c_product_categories_due",
     "unit_economics_1c_product_classifications_due",
     "unit_economics_1c_wb_commissions_due",

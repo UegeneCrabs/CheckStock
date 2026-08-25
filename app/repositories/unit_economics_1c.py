@@ -152,8 +152,9 @@ def replace_product_categories(store_slug: str, rows: list[dict], synced_at: str
             conn.executemany(
                 """
                 INSERT INTO unit_economics_1c_product_categories
-                    (stock_item_id, wb_subject_id, imt_id, category, category_key, synced_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (stock_item_id, wb_subject_id, imt_id, category, category_key,
+                     created_at, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -162,6 +163,7 @@ def replace_product_categories(store_slug: str, rows: list[dict], synced_at: str
                         row.get("imt_id"),
                         row.get("category"),
                         row.get("category_key"),
+                        row.get("created_at"),
                         synced_at,
                     )
                     for row in rows
@@ -239,6 +241,7 @@ def get_product_reference_rows(store_slugs: tuple[str, ...]) -> list[dict]:
                source.supplier_external_raw, source.fact_sales, source.plan_sales,
                source.source_sheet_title, source.source_row, source.synced_at AS source_synced_at,
                category.wb_subject_id, category.imt_id, category.category,
+               category.created_at AS card_created_at,
                commission.commission_percent AS subject_commission_percent
           FROM stock_items items
           LEFT JOIN unit_economics_1c_product_classifications classification
@@ -272,13 +275,22 @@ def list_wb_commissions() -> list[dict]:
 
 
 def get_latest_product_reputation(store_slugs: tuple[str, ...]) -> list[dict]:
-    """Use the latest RNP snapshot for rating and review count."""
+    """Merge cached storefront reputation with analytics fallbacks."""
 
     if not store_slugs:
         return []
     placeholders = ", ".join("?" for _ in store_slugs)
     conn = get_connection()
-    rows = conn.execute(
+    decision_rows = conn.execute(
+        f"""
+        SELECT store_slug, CAST(nm_id AS TEXT) AS article, rating,
+               NULL AS reviews_count, funnel_synced_at AS day
+          FROM wb_decision_metrics
+         WHERE store_slug IN ({placeholders}) AND rating>0
+        """,
+        store_slugs,
+    ).fetchall()
+    rnp_rows = conn.execute(
         f"""
         SELECT metric.store_slug, metric.article, metric.rating, metric.reviews_count, metric.day
           FROM rnp_daily_metrics metric
@@ -291,6 +303,92 @@ def get_latest_product_reputation(store_slugs: tuple[str, ...]) -> list[dict]:
                   AND candidate.marketplace=metric.marketplace
                   AND candidate.article=metric.article
            )
+        """,
+        store_slugs,
+    ).fetchall()
+    cached_rows = conn.execute(
+        f"""
+        SELECT store_slug, nm_id AS article, rating, reviews_count, synced_at AS day
+          FROM unit_economics_1c_product_reputation
+         WHERE store_slug IN ({placeholders})
+        """,
+        store_slugs,
+    ).fetchall()
+    conn.close()
+    merged: dict[tuple[str, str], dict] = {}
+    for source_rows in (decision_rows, rnp_rows, cached_rows):
+        for source in source_rows:
+            row = dict(source)
+            key = (str(row["store_slug"]), str(row["article"]))
+            current = merged.setdefault(
+                key,
+                {
+                    "store_slug": key[0],
+                    "article": key[1],
+                    "rating": None,
+                    "reviews_count": None,
+                    "day": None,
+                },
+            )
+            for field in ("rating", "reviews_count", "day"):
+                if row.get(field) is not None:
+                    current[field] = row[field]
+    return list(merged.values())
+
+
+def upsert_product_reputation(store_slug: str, rows: list[dict], synced_at: str) -> int:
+    """Persist public WB card rating and feedback count for fast page loads."""
+
+    normalized = [
+        (
+            store_slug,
+            str(row.get("nm_id") or "").strip(),
+            row.get("rating"),
+            row.get("reviews_count"),
+            synced_at,
+        )
+        for row in rows
+        if str(row.get("nm_id") or "").strip()
+    ]
+    if not normalized:
+        return 0
+    with WRITE_LOCK:
+        conn = get_connection()
+        try:
+            conn.executemany(
+                """
+                INSERT INTO unit_economics_1c_product_reputation
+                    (store_slug, nm_id, rating, reviews_count, synced_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(store_slug, nm_id) DO UPDATE SET
+                    rating=excluded.rating,
+                    reviews_count=excluded.reviews_count,
+                    synced_at=excluded.synced_at
+                """,
+                normalized,
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return len(normalized)
+
+
+def get_product_sales_starts(store_slugs: tuple[str, ...]) -> list[dict]:
+    """Return the first observed product order from persisted WB funnel history."""
+
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT store_slug, article, MIN(day) AS first_sale_at
+          FROM wb_funnel_daily_orders
+         WHERE store_slug IN ({placeholders}) AND orders_count>0
+         GROUP BY store_slug, article
         """,
         store_slugs,
     ).fetchall()

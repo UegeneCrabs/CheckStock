@@ -1,4 +1,4 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=28">
+    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=29">
 
         <section class="ue1c-page" id="unit-economics-1c">
             <div class="ue1c-toolbar">
@@ -15,6 +15,7 @@
                     <button class="ue1c-segment" data-state-filter="risk" type="button">Риски</button>
                     <button class="ue1c-segment" data-state-filter="low" type="button">Мало остатков</button>
                     <button class="ue1c-segment" data-state-filter="negative" type="button">Товары в минус</button>
+                    <button class="ue1c-segment" data-state-filter="new" type="button">Новинки</button>
                 </div>
                 <div class="ue1c-column-settings">
                     <button class="ue1c-ghost-button" id="ue1c-columns-toggle" type="button"
@@ -108,7 +109,7 @@
                                     <label class="ue1c-calculator-row" style="--compact-order:1;--expanded-order:2"><span><span class="ue1c-compact-label">Цена с СПП</span><span class="ue1c-expanded-label">Цена с СПП, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-spp-price-input" data-calculator-input="client" type="number" min="1" step="1"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:3"><span>WB Кошелёк, %</span><span class="ue1c-calculator-field"><input id="ue1c-wallet-percent" data-calculator-input="walletPercent" type="number" min="0" max="99.99" step="0.01"><b>%</b></span></label>
                                     <label class="ue1c-calculator-row" style="--compact-order:2;--expanded-order:4"><span><span class="ue1c-compact-label">Цена с WB Кошельком</span><span class="ue1c-expanded-label">Цена с WB Кошельком, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-wallet-price-input" data-calculator-input="wallet" type="number" min="1" step="1" placeholder="недоступна"><b>₽</b></span></label>
-                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Предмет</span><span class="ue1c-calculator-field ue1c-calculator-field--select"><select id="ue1c-subject-select" aria-label="Предмет товара"></select></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Предмет</span><span class="ue1c-calculator-field ue1c-calculator-field--select"><input id="ue1c-subject-select" type="search" list="ue1c-subject-options" aria-label="Предмет товара" placeholder="Начните вводить…" autocomplete="off"><datalist id="ue1c-subject-options"></datalist></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Комиссия WB, %</span><span class="ue1c-calculator-field"><input data-calculator-input="commission" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:6"><span>Комиссия WB, руб</span><span class="ue1c-calculator-field"><input id="ue1c-commission-rub" data-calculator-input="commissionRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:7"><span>Логистика, руб</span><span class="ue1c-calculator-field"><input data-calculator-input="logistics" type="number" min="0" step="0.01"><b>₽</b></span></label>
@@ -196,4 +197,4 @@
         </section>
 
         <script type="application/json" id="ue1c-config">$unit_1c_config</script>
-    <script src="/static/unit-economics-1c.js?v=42"></script>
+    <script src="/static/unit-economics-1c.js?v=43"></script>

@@ -48,6 +48,7 @@
         calculatorReset: id('ue1c-calculator-reset'), calculatorMode: id('ue1c-calculator-mode'),
         calculatorFields: id('ue1c-calculator-inputs'),
         subjectSelect: id('ue1c-subject-select'),
+        subjectOptions: id('ue1c-subject-options'),
         calculatorInputs: root.querySelectorAll('[data-calculator-input]'),
         breakEven: id('ue1c-break-even'), saveState: id('ue1c-save-state'), savePrice: id('ue1c-save-price'),
         priceMetrics: id('ue1c-price-metrics'), parameters: id('ue1c-parameter-groups'),
@@ -63,6 +64,7 @@
 
     var columnGroups = [
         { key: 'product', label: 'Товар', fixed: true, columns: [{ index: 0, label: 'Товар', width: 260 }] },
+        { key: 'newness', label: 'Новинка', columns: [{ index: 23, label: 'Новинка', width: 90 }] },
         { key: 'comments', label: 'Комментарии', columns: [{ index: 1, label: 'Комментарии', width: 260 }] },
         { key: 'current', label: 'Текущая экономика', columns: [
             { index: 2, label: 'Маржа, ₽', number: true, width: 100 },
@@ -104,6 +106,9 @@
         }) : defaultColumnOrder.slice(),
         hidden: Array.isArray(savedColumns.hidden) ? savedColumns.hidden.slice() : []
     };
+    if (Array.isArray(savedColumns.order) && columnPreferences.order.indexOf('newness') === -1) {
+        columnPreferences.order.splice(Math.max(columnPreferences.order.indexOf('product') + 1, 0), 0, 'newness');
+    }
     defaultColumnOrder.forEach(function (key) {
         if (columnPreferences.order.indexOf(key) === -1) columnPreferences.order.push(key);
     });
@@ -257,6 +262,7 @@
         return [product.name, product.article, product.barcode, product.store_name, commentText(product.id),
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.rating, product.reviews_count, product.advertising.drr, product.advertising.spend,
+            product.is_new ? 'новинка' : '', product.sales_days,
             product.advertising.ctr, product.advertising.cpc,
             product.current_economics && product.current_economics.margin,
             product.current_economics && product.current_economics.roi,
@@ -279,7 +285,8 @@
             product.advertising.ctr, product.advertising.cpc,
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.stock.total, product.stock.fbs, product.stock.fbo,
-            product.stock.fulfillment, product.stock.days
+            product.stock.fulfillment, product.stock.days,
+            product.is_new ? 'Новинка' : 'Нет'
         ];
         var value = values[Number(columnIndex)];
         return String(value === null || value === undefined ? '—' : value);
@@ -323,6 +330,10 @@
             + escapeHtml(product.id) + '" maxlength="480" placeholder="Добавить комментарий…"'
             + ' aria-label="Комментарий к товару ' + escapeHtml(product.name) + '">'
             + escapeHtml(commentText(product.id)) + '</textarea></td>';
+        cells.newness = '<td class="ue1c-newness"><span class="ue1c-new-badge'
+            + (product.is_new ? ' is-new' : '') + '">' + (product.is_new ? 'Новинка' : 'Обычный')
+            + '</span><small>' + (product.sales_days === null || product.sales_days === undefined
+                ? 'нет данных' : integer.format(product.sales_days) + ' дн.') + '</small></td>';
         cells.current = '<td class="ue1c-num ue1c-group-start"><strong>'
             + nullable(current.margin, money) + '</strong></td><td class="ue1c-num"><strong>'
             + nullable(current.roi, decimal, '%') + '</strong></td>';
@@ -363,6 +374,7 @@
                 && (state.status === 'all' || (state.status === 'risk'
                     ? product.stock && product.stock.state && product.stock.state.is_risk
                     : state.status === 'low' ? product.stock && product.stock.state && product.stock.state.is_low
+                        : state.status === 'new' ? product.is_new === true
                         : productState(product) === state.status))
                 && (!query || productSearchValue(product).indexOf(query) !== -1);
         });
@@ -600,9 +612,8 @@
             options.unshift({ category: currentSubject, commission_percent:
                 finite(product.details && product.details.subject_commission_percent, 0) });
         }
-        nodes.subjectSelect.innerHTML = options.map(function (item) {
-            return '<option value="' + escapeHtml(item.category) + '" data-commission="'
-                + escapeHtml(item.commission_percent) + '">' + escapeHtml(item.category) + '</option>';
+        nodes.subjectOptions.innerHTML = options.map(function (item) {
+            return '<option value="' + escapeHtml(item.category) + '"></option>';
         }).join('');
         nodes.subjectSelect.value = currentSubject;
     }
@@ -1475,9 +1486,20 @@
     });
     nodes.subjectSelect.addEventListener('change', function () {
         var product = productsById[state.selected];
-        var option = nodes.subjectSelect.options[nodes.subjectSelect.selectedIndex];
-        if (!product || !option) return;
-        var subjectCommission = finite(option.dataset.commission, 0);
+        var selectedSubject = String(nodes.subjectSelect.value || '').trim().toLocaleLowerCase('ru-RU');
+        var subject = subjectCommissions.find(function (item) {
+            return String(item.category || '').trim().toLocaleLowerCase('ru-RU') === selectedSubject;
+        });
+        if (!subject && product && String(product.details && product.details.subject || '')
+            .trim().toLocaleLowerCase('ru-RU') === selectedSubject) {
+            subject = {
+                category: product.details.subject,
+                commission_percent: product.details.subject_commission_percent
+            };
+        }
+        if (!product || !subject) return;
+        nodes.subjectSelect.value = subject.category;
+        var subjectCommission = finite(subject.commission_percent, 0);
         var extra = finite(product.details && product.details.wb_extra_tariff_percent, 0);
         setCalculatorValue('commission', subjectCommission + extra);
         syncDetailedCalculatorInputs(product, 'commission');

@@ -80,6 +80,7 @@ class UnitEconomics1CReferenceDataTests(unittest.TestCase):
                     {
                         "nmID": 367080326,
                         "imtID": 445566,
+                        "createdAt": "2026-08-01T10:15:00Z",
                         "subjectID": 1708,
                         "subjectName": " смесители ",
                     }
@@ -92,6 +93,7 @@ class UnitEconomics1CReferenceDataTests(unittest.TestCase):
         self.assertEqual(report["matched"], 1)
         self.assertEqual(references["367080326"]["category"], "смесители")
         self.assertEqual(references["367080326"]["imt_id"], 445566)
+        self.assertEqual(references["367080326"]["card_created_at"], "2026-08-01T10:15:00Z")
         self.assertEqual(references["367080326"]["subject_commission_percent"], 24.62)
         self.assertIsNone(references["340331510"]["category"])
         get_cards.assert_called_once_with("token")

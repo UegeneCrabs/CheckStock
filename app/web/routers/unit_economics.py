@@ -26,6 +26,7 @@ from app.web.templating import fill_template, render_page
 router = APIRouter()
 logger = logging.getLogger(__name__)
 PRICE_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ue1c-price")
+NEW_PRODUCT_MAX_SALES_DAYS = 28
 
 
 def _cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
@@ -64,6 +65,13 @@ def _optional_integer(value: object) -> int | None:
         return None
 
 
+def _optional_day(value: object) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
 def _unit_economics_1c_mock_product(
     store_slug: str,
     product: dict,
@@ -84,6 +92,8 @@ def _unit_economics_1c_mock_product(
     reputation: dict | None = None,
     glued_products: list[dict] | None = None,
     history_days: int = 7,
+    first_sale_at: str | None = None,
+    sales_age_today: date | None = None,
 ) -> dict:
     """Build the 1C layout while keeping WB prices, orders and advertising real."""
     article = str(product.get("article") or "").strip()
@@ -310,6 +320,19 @@ def _unit_economics_1c_mock_product(
         product_reference.get("stock_status"),
         period_days=stock_period_days,
     )
+    age_today = sales_age_today or datetime.now(MOSCOW_TIMEZONE).date()
+    first_sale_day = _optional_day(first_sale_at)
+    card_created_at = str(product_reference.get("card_created_at") or "").strip() or None
+    card_created_day = _optional_day(card_created_at)
+    if first_sale_day is not None and first_sale_day <= age_today:
+        sales_days = max((age_today - first_sale_day).days + 1, 1)
+        is_new = sales_days <= NEW_PRODUCT_MAX_SALES_DAYS
+    elif card_created_day is not None and card_created_day <= age_today:
+        sales_days = 0
+        is_new = (age_today - card_created_day).days < NEW_PRODUCT_MAX_SALES_DAYS
+    else:
+        sales_days = None
+        is_new = False
 
     return {
         "id": f"{store_slug}:{article}",
@@ -324,6 +347,10 @@ def _unit_economics_1c_mock_product(
         "image_url": str(product.get("image_url") or "").strip(),
         "rating": _price_value(reputation.get("rating")),
         "reviews_count": _optional_integer(reputation.get("reviews_count")),
+        "sales_days": sales_days,
+        "sales_started_at": first_sale_day.isoformat() if first_sale_day is not None else None,
+        "card_created_at": card_created_at,
+        "is_new": is_new,
         "glued_products": glued_products,
         "tag": str(product_reference.get("tag_raw") or "").strip() or None,
         "tag_data": {
@@ -457,6 +484,10 @@ async def sales_unit_economics_1c(request: Request):
             (str(item["store_slug"]), _nm_id(item["article"])): item
             for item in db.get_unit_economics_1c_latest_product_reputation(store_slugs)
         }
+        sales_starts = {
+            (str(item["store_slug"]), _nm_id(item["article"])): str(item["first_sale_at"])
+            for item in db.get_unit_economics_1c_product_sales_starts(store_slugs)
+        }
         catalogs = {store_slug: db.get_stock_items(store_slug, "WB") for store_slug in store_slugs}
         glue_groups: dict[tuple[str, int], list[dict]] = {}
         for store_slug, catalog in catalogs.items():
@@ -517,6 +548,7 @@ async def sales_unit_economics_1c(request: Request):
                         stock_order_metrics=stock_order_metrics.get((store_slug, _nm_id(article))),
                         reputation=reputations.get((store_slug, _nm_id(article))),
                         glued_products=glued_products,
+                        first_sale_at=sales_starts.get((store_slug, _nm_id(article))),
                     )
                 )
 

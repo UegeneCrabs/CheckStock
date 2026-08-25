@@ -149,6 +149,28 @@ def _storefront_price_rows(products: list[dict]) -> list[dict]:
     return result
 
 
+def _storefront_reputation_rows(products: list[dict]) -> list[dict]:
+    result: list[dict] = []
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+        nm_id = str(product.get("id") or product.get("nmID") or product.get("nmId") or "").strip()
+        if not nm_id:
+            continue
+        rating = _number(product.get("reviewRating"))
+        reviews_count = _integer(product.get("feedbacks"))
+        if rating is None and reviews_count is None:
+            continue
+        result.append(
+            {
+                "nm_id": nm_id,
+                "rating": rating,
+                "reviews_count": reviews_count,
+            }
+        )
+    return result
+
+
 def _resolve_customer_price_with_spp(
     storefront_price: object,
     retail_price: object,
@@ -813,6 +835,14 @@ def _sync_store(
                 [*seller_rows, *order_retail_rows],
             )
     catalog_nm_ids = {str(target["nm_id"]) for target in targets}
+    reputation_rows = [
+        row for row in _storefront_reputation_rows(storefront_products) if row["nm_id"] in catalog_nm_ids
+    ]
+    reputation_rows_saved = db.upsert_unit_economics_1c_product_reputation(
+        store_slug,
+        reputation_rows,
+        attempted_at,
+    )
     returned_products = {
         str(product.get("id") or product.get("nmID") or product.get("nmId") or ""): product
         for product in storefront_products
@@ -963,6 +993,7 @@ def _sync_store(
         "storefront_ok": storefront_ok,
         "retail_price_requested": load_retail_prices,
         "storefront_rows": storefront_rows_saved,
+        "reputation_rows": reputation_rows_saved,
         "wallet_rows": wallet_rows_saved,
         "wallet_discount_percent": wallet_discount_percent,
         "wallet_discount_ok": bool(wallet_discount_report.get("ok")),

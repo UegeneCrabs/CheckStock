@@ -138,6 +138,21 @@ class WbFunnelOrdersTests(unittest.TestCase):
             payload["series"], [{"date": day.isoformat(), "orders_count": 10, "orders_amount": 1_400.0}]
         )
 
+    def test_product_sales_starts_use_first_day_with_orders(self) -> None:
+        today = date.today()
+        first_day = today - timedelta(days=5)
+        later_day = today - timedelta(days=2)
+        funnel_orders._replace_day("rimili", first_day, [("1001", "RK-1", "Товар 1", 0, 0)])
+        funnel_orders._replace_day("rimili", later_day, [("1001", "RK-1", "Товар 1", 3, 450)])
+        funnel_orders._replace_day("tris", first_day, [("1002", "TR-1", "Товар 2", 2, 300)])
+
+        rows = db.get_unit_economics_1c_product_sales_starts(("rimili",))
+
+        self.assertEqual(
+            rows,
+            [{"store_slug": "rimili", "article": "1001", "first_sale_at": later_day.isoformat()}],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

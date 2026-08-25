@@ -640,6 +640,17 @@ class UnitEconomics1CProductCategoryRecord(OrmBase):
     imt_id: Mapped[int | None] = mapped_column(Integer, index=True)
     category: Mapped[str | None] = mapped_column(String)
     category_key: Mapped[str | None] = mapped_column(String, index=True)
+    created_at: Mapped[str | None] = mapped_column(String)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CProductReputationRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_product_reputation"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    nm_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rating: Mapped[float | None] = mapped_column(Float)
+    reviews_count: Mapped[int | None] = mapped_column(Integer)
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
 
 

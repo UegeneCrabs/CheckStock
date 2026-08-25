@@ -350,19 +350,15 @@ class RnpAnalyticsTests(unittest.TestCase):
         ):
             self.assertEqual(rnp_analytics._yandex_current_prices("rimili")["A"], (100, 90))
 
-        payload = {"data": {"products": [{"id": 1001, "reviewRating": 4.8, "feedbacks": 25}]}}
-
-        class Response:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def read(self):
-                return json.dumps(payload).encode()
-
-        with mock.patch.object(rnp_analytics.urllib.request, "urlopen", return_value=Response()):
+        with mock.patch.object(
+            rnp_analytics.wb_api,
+            "get_storefront_products",
+            return_value={
+                "products": [{"id": 1001, "reviewRating": 4.8, "feedbacks": 25}],
+                "failed_nm_ids": [],
+                "errors": [],
+            },
+        ):
             reputation = rnp_analytics._wb_current_reputation([{"article": "1001", "nm_id": 1001}])
         self.assertEqual(reputation["1001"], (4.8, 25))
 
