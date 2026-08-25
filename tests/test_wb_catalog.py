@@ -106,6 +106,14 @@ class WBCatalogTagTests(unittest.TestCase):
                     fulfillment TEXT NOT NULL,
                     quantity INTEGER NOT NULL
                 );
+                CREATE TABLE catalog_product_exclusions (
+                    store_slug TEXT NOT NULL,
+                    marketplace TEXT NOT NULL,
+                    nm_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (store_slug, marketplace, nm_id)
+                );
                 """
             )
             connection.executemany(

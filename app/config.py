@@ -1,12 +1,26 @@
 import os
 from pathlib import Path
 
+from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MIN_PBKDF2_ITERATIONS = 100_000
 MAX_PBKDF2_ITERATIONS = 5_000_000
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_local_env(path: Path) -> None:
+    """Load local defaults without overriding variables provided by the process."""
+    if not path.is_file():
+        return
+    for name, value in dotenv_values(path).items():
+        if value is not None:
+            os.environ.setdefault(name, value)
+
+
+_load_local_env(BASE_DIR / ".env")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -55,17 +69,21 @@ class Settings(BaseModel):
     slow_request_threshold_ms: int = Field(ge=1)
     background_sync_enabled: bool
     funnel_orders_sync_enabled: bool
+    unit_economics_1c_price_sync_enabled: bool
+    unit_economics_1c_source_sync_hour: int = Field(ge=0, le=23)
     token_check_interval_seconds: int = Field(ge=1)
+    unit_economics_1c_price_sync_startup_delay_seconds: int = Field(ge=0)
     sales_sync_startup_delay_seconds: int = Field(ge=0)
     decision_sync_startup_delay_seconds: int = Field(ge=0)
     rnp_sync_startup_delay_seconds: int = Field(ge=0)
     auto_sync_interval_seconds: int = Field(ge=1)
     catalog_sync_hour: int = Field(ge=0, le=23)
-    unit_cost_sync_hour: int = Field(ge=0, le=23)
-    wb_unit_reference_sync_hour: int = Field(ge=0, le=23)
-    wb_unit_price_sync_interval_seconds: int = Field(ge=1)
     sales_sync_interval_seconds: int = Field(ge=1)
     wb_funnel_orders_sync_interval_seconds: int = Field(ge=1)
+    unit_economics_1c_price_sync_interval_seconds: int = Field(ge=1)
+    unit_economics_1c_wallet_sync_interval_seconds: int = Field(ge=1)
+    wb_storefront_dest: str = Field(min_length=1)
+    wb_storefront_batch_size: int = Field(ge=1, le=1_000)
     decision_sync_check_interval_seconds: int = Field(ge=1)
     rnp_analytics_sync_interval_seconds: int = Field(ge=1)
     session_ttl_days: int = Field(ge=1)
@@ -102,7 +120,7 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "Settings":
-        base_dir = Path(__file__).resolve().parent.parent
+        base_dir = BASE_DIR
         database_path = Path(os.getenv("CHECKSTOCK_DB_PATH", base_dir / "data" / "checkstock.db"))
         database_url = os.getenv("CHECKSTOCK_DATABASE_URL", "").strip() or None
         if database_url and not database_url.startswith(("postgresql://", "postgresql+psycopg://")):
@@ -140,8 +158,17 @@ class Settings(BaseModel):
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
             funnel_orders_sync_enabled=_env_bool("CHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED", True),
+            unit_economics_1c_price_sync_enabled=_env_bool(
+                "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_ENABLED", True
+            ),
+            unit_economics_1c_source_sync_hour=_env_int(
+                "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR", 2, maximum=23
+            ),
             token_check_interval_seconds=_env_int(
                 "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 6 * 60 * 60, minimum=1
+            ),
+            unit_economics_1c_price_sync_startup_delay_seconds=_env_int(
+                "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_STARTUP_DELAY_SECONDS", 5, minimum=0
             ),
             sales_sync_startup_delay_seconds=_env_int(
                 "CHECKSTOCK_SALES_SYNC_STARTUP_DELAY_SECONDS", 10, minimum=0
@@ -154,16 +181,25 @@ class Settings(BaseModel):
             ),
             auto_sync_interval_seconds=_env_int("CHECKSTOCK_AUTO_SYNC_INTERVAL_SECONDS", 30 * 60, minimum=1),
             catalog_sync_hour=_env_int("CHECKSTOCK_CATALOG_SYNC_HOUR", 3, maximum=23),
-            unit_cost_sync_hour=_env_int("CHECKSTOCK_UNIT_COST_SYNC_HOUR", 2, maximum=23),
-            wb_unit_reference_sync_hour=_env_int("CHECKSTOCK_WB_REFERENCE_SYNC_HOUR", 4, maximum=23),
-            wb_unit_price_sync_interval_seconds=_env_int(
-                "CHECKSTOCK_WB_PRICE_SYNC_INTERVAL_SECONDS", 60 * 60, minimum=1
-            ),
             sales_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_SALES_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
             ),
             wb_funnel_orders_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_WB_FUNNEL_ORDERS_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
+            ),
+            unit_economics_1c_price_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_INTERVAL_SECONDS",
+                2 * 60 * 60,
+                minimum=1,
+            ),
+            unit_economics_1c_wallet_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_UNIT_ECONOMICS_1C_WALLET_SYNC_INTERVAL_SECONDS",
+                5 * 60,
+                minimum=1,
+            ),
+            wb_storefront_dest=os.getenv("CHECKSTOCK_WB_STOREFRONT_DEST", "-1257786").strip() or "-1257786",
+            wb_storefront_batch_size=_env_int(
+                "CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE", 1_000, minimum=1, maximum=1_000
             ),
             decision_sync_check_interval_seconds=_env_int(
                 "CHECKSTOCK_DECISION_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1

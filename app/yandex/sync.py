@@ -190,11 +190,12 @@ def sync_store(store_slug: str) -> int:
     return len(covered)
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if not ya_tokens.has_credentials(slug):
             report[slug] = {"token": False, "yandex": None}
             continue

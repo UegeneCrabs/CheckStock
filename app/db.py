@@ -2,24 +2,16 @@ from app.domain import DEFAULT_MARKETPLACE, MARKETPLACES
 from app.repositories.catalog import (
     articles_with_own_stock,
     get_catalog_items,
+    get_excluded_nm_ids,
     get_stock_items,
+    list_product_exclusions,
     replace_catalog,
+    set_product_exclusions,
 )
 from app.repositories.core import (
     DB_PATH,
     WRITE_LOCK,
     get_connection,
-)
-from app.repositories.fulfillment_rates import (
-    get_fulfillment_unit_rates,
-    get_fulfillments,
-    get_unit_costs,
-    get_wb_price_last_sync,
-    get_wb_unit_metrics,
-    replace_unit_costs,
-    upsert_fulfillment_unit_rates,
-    upsert_wb_unit_prices,
-    upsert_wb_unit_references,
 )
 from app.repositories.fulfillment_stock import (
     apply_ff_import_snapshot,
@@ -33,6 +25,7 @@ from app.repositories.fulfillment_stock import (
     get_ff_stock_one,
     get_ff_transfers,
     get_ff_warehouse_details_by_mp,
+    get_fulfillments,
     get_sync_health,
     get_trash_details,
     increment_ff_stock,
@@ -118,6 +111,112 @@ from app.repositories.sales import (
     upsert_sales_order_lines,
 )
 from app.repositories.schema import init_db, seed_defaults
+from app.repositories.stock_cost_report import (
+    get_fbs_sales_for_period,
+    get_fbs_stock_snapshots,
+    get_operations_with_items_for_period,
+    get_purchase_price_rows,
+    set_operation_fbs_transfer,
+)
+from app.repositories.stock_history import (
+    get_daily_stock_history,
+    get_fulfillment_stock_daily_history,
+    replace_fulfillment_stock_daily_history,
+    replace_marketplace_stock_daily_history,
+)
+from app.repositories.stock_randomizer import (
+    generate_stock_audit_sample,
+    get_stock_audit_state,
+)
+from app.repositories.supply_planning import (
+    create_manual_supply,
+    delete_manual_supply,
+    get_manual_supply,
+    list_manual_supplies,
+    set_manual_supply_ready,
+    update_manual_supply,
+)
+from app.repositories.unit_economics_1c import (
+    get_cabinet_settings as get_unit_economics_1c_cabinet_settings,
+)
+from app.repositories.unit_economics_1c import (
+    get_daily_advertising as get_unit_economics_1c_daily_advertising,
+)
+from app.repositories.unit_economics_1c import (
+    get_daily_price_history as get_unit_economics_1c_daily_price_history,
+)
+from app.repositories.unit_economics_1c import (
+    get_latest_daily_prices as get_unit_economics_1c_latest_daily_prices,
+)
+from app.repositories.unit_economics_1c import (
+    get_latest_reliable_spp_prices as get_unit_economics_1c_latest_reliable_spp_prices,
+)
+from app.repositories.unit_economics_1c import (
+    get_product_reference_rows as get_unit_economics_1c_product_reference_rows,
+)
+from app.repositories.unit_economics_1c import (
+    get_product_settings as get_unit_economics_1c_product_settings,
+)
+from app.repositories.unit_economics_1c import (
+    get_wb_order_metric_rows as get_unit_economics_1c_wb_order_metric_rows,
+)
+from app.repositories.unit_economics_1c import (
+    get_wb_order_price_rows as get_unit_economics_1c_wb_order_price_rows,
+)
+from app.repositories.unit_economics_1c import (
+    list_active_wb_stock_items as list_unit_economics_1c_active_wb_stock_items,
+)
+from app.repositories.unit_economics_1c import (
+    list_advertising_sync_states as list_unit_economics_1c_advertising_sync_states,
+)
+from app.repositories.unit_economics_1c import (
+    list_cabinet_settings as list_unit_economics_1c_cabinet_settings,
+)
+from app.repositories.unit_economics_1c import (
+    list_price_sync_states as list_unit_economics_1c_price_sync_states,
+)
+from app.repositories.unit_economics_1c import (
+    list_product_settings as list_unit_economics_1c_product_settings,
+)
+from app.repositories.unit_economics_1c import (
+    product_categories_due as unit_economics_1c_product_categories_due,
+)
+from app.repositories.unit_economics_1c import (
+    product_classifications_due as unit_economics_1c_product_classifications_due,
+)
+from app.repositories.unit_economics_1c import (
+    record_advertising_sync_state as record_unit_economics_1c_advertising_sync_state,
+)
+from app.repositories.unit_economics_1c import (
+    record_price_sync_state as record_unit_economics_1c_price_sync_state,
+)
+from app.repositories.unit_economics_1c import (
+    replace_daily_advertising as replace_unit_economics_1c_daily_advertising,
+)
+from app.repositories.unit_economics_1c import (
+    replace_product_categories as replace_unit_economics_1c_product_categories,
+)
+from app.repositories.unit_economics_1c import (
+    replace_product_classifications as replace_unit_economics_1c_product_classifications,
+)
+from app.repositories.unit_economics_1c import (
+    replace_source_values as replace_unit_economics_1c_source_values,
+)
+from app.repositories.unit_economics_1c import (
+    replace_wb_commissions as replace_unit_economics_1c_wb_commissions,
+)
+from app.repositories.unit_economics_1c import (
+    save_cabinet_settings as save_unit_economics_1c_cabinet_settings,
+)
+from app.repositories.unit_economics_1c import (
+    save_product_settings as save_unit_economics_1c_product_settings,
+)
+from app.repositories.unit_economics_1c import (
+    upsert_daily_prices as upsert_unit_economics_1c_daily_prices,
+)
+from app.repositories.unit_economics_1c import (
+    wb_commissions_due as unit_economics_1c_wb_commissions_due,
+)
 
 __all__ = (
     "DB_PATH",
@@ -138,26 +237,34 @@ __all__ = (
     "articles_with_own_stock",
     "count_superadmins",
     "count_users",
+    "create_manual_supply",
     "create_session",
     "create_user",
     "delete_expired_sessions",
+    "delete_manual_supply",
     "delete_session",
     "delete_sessions_for_user",
     "delete_user",
     "find_existing_delivery",
     "find_used_source",
+    "generate_stock_audit_sample",
     "get_activity_log",
     "get_catalog_items",
+    "get_daily_stock_history",
+    "get_excluded_nm_ids",
     "get_connection",
     "get_ff_available_totals",
+    "get_fbs_sales_for_period",
+    "get_fbs_stock_snapshots",
+    "get_fulfillment_stock_daily_history",
     "get_ff_stock_one",
     "get_ff_transfers",
     "get_ff_warehouse_details_by_mp",
     "get_ff_warehouse_map",
-    "get_fulfillment_unit_rates",
     "get_fulfillments",
     "get_last_sync_at",
     "get_last_token_check",
+    "get_manual_supply",
     "get_mp_fbs_warehouse_details",
     "get_mp_stock_by_warehouse",
     "get_mp_stock_totals",
@@ -166,6 +273,8 @@ __all__ = (
     "get_operation_items",
     "get_open_fbs_order_totals",
     "get_operations_with_items",
+    "get_operations_with_items_for_period",
+    "get_purchase_price_rows",
     "get_rnp_action_logs",
     "get_rnp_catalog_page",
     "get_rnp_daily_totals",
@@ -179,49 +288,78 @@ __all__ = (
     "get_session",
     "get_stock_items",
     "get_stock_overview",
+    "get_stock_audit_state",
     "get_store_operations",
     "get_sync_health",
     "get_trash_details",
-    "get_unit_costs",
     "get_user",
     "get_user_by_login",
     "get_user_store_access",
+    "get_unit_economics_1c_cabinet_settings",
+    "get_unit_economics_1c_daily_advertising",
+    "get_unit_economics_1c_daily_price_history",
+    "get_unit_economics_1c_latest_daily_prices",
+    "get_unit_economics_1c_latest_reliable_spp_prices",
+    "get_unit_economics_1c_product_settings",
+    "get_unit_economics_1c_product_reference_rows",
+    "get_unit_economics_1c_wb_order_metric_rows",
+    "get_unit_economics_1c_wb_order_price_rows",
     "get_warehouse_clusters",
-    "get_wb_price_last_sync",
     "get_wb_token_infos",
-    "get_wb_unit_metrics",
     "increment_ff_stock",
     "init_db",
     "list_users",
+    "list_manual_supplies",
+    "list_product_exclusions",
+    "list_unit_economics_1c_advertising_sync_states",
+    "list_unit_economics_1c_cabinet_settings",
+    "list_unit_economics_1c_price_sync_states",
+    "list_unit_economics_1c_product_settings",
+    "list_unit_economics_1c_active_wb_stock_items",
     "log_action",
     "log_action_for_operation",
     "normalize_store_slugs",
     "record_delivery",
     "record_operation",
     "record_sales_sync",
+    "record_unit_economics_1c_advertising_sync_state",
+    "record_unit_economics_1c_price_sync_state",
     "record_sync_health",
     "record_used_source",
     "replace_catalog",
     "replace_ff_warehouse_map",
+    "replace_fulfillment_stock_daily_history",
+    "replace_marketplace_stock_daily_history",
     "replace_mp_warehouse_stock",
-    "replace_unit_costs",
     "rnp_article_exists",
     "sales_has_history",
     "save_rnp_strategy",
     "save_warehouse_clusters",
+    "replace_unit_economics_1c_daily_advertising",
+    "replace_unit_economics_1c_product_categories",
+    "replace_unit_economics_1c_product_classifications",
+    "replace_unit_economics_1c_source_values",
+    "replace_unit_economics_1c_wb_commissions",
+    "save_unit_economics_1c_cabinet_settings",
+    "save_unit_economics_1c_product_settings",
     "search_catalog",
     "seed_defaults",
     "set_trash_checked",
+    "set_product_exclusions",
+    "set_operation_fbs_transfer",
     "set_user_active",
     "set_user_permission",
     "set_user_store_access",
+    "set_manual_supply_ready",
     "source_fingerprint",
     "update_user_password",
+    "update_manual_supply",
     "upsert_ff_stock",
-    "upsert_fulfillment_unit_rates",
     "upsert_mp_stock",
     "upsert_sales_order_lines",
+    "upsert_unit_economics_1c_daily_prices",
+    "unit_economics_1c_product_categories_due",
+    "unit_economics_1c_product_classifications_due",
+    "unit_economics_1c_wb_commissions_due",
     "upsert_wb_token_info",
-    "upsert_wb_unit_prices",
-    "upsert_wb_unit_references",
 )

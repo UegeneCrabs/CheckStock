@@ -15,7 +15,7 @@ from app.dto.decision import DecisionAction, DecisionStatus
 from app.main import create_app
 from app.repositories import core
 from app.stores import STORES
-from app.web.routers import admin, sales_overview, unit_economics
+from app.web.routers import admin, sales_overview
 from app.web.routers import decision_center as decision_routes
 from app.web.routers import rnp as rnp_routes
 
@@ -108,12 +108,15 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/sales/decision-center",
             "/sales/ephemerides",
             "/sales/rnp",
-            "/sales/unit-economics",
-            "/sales/unit-economics/wb-fbs",
-            "/sales/unit-economics/ozon",
-            "/sales/unit-economics/yandex-market",
+            "/sales/unit-economics-1c",
+            "/sales/unit-economics-1c/cabinet-settings",
+            "/sales/unit-economics-1c/ozon",
+            "/sales/unit-economics-1c/yandex-market",
             "/supply",
             "/stock",
+            "/stock/total",
+            "/stock/randomizer",
+            "/stock/planning/wb",
             "/stock-2",
             "/stock-2/details/zero",
             "/stock/rimili",
@@ -126,6 +129,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
         downloads = (
+            "/stock/total.xlsx",
             f"/admin/operations/{operation_id}/xlsx",
             "/stock/rimili/operations/xlsx",
             "/stock/rimili/warehouses/xlsx",
@@ -378,36 +382,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(operations.status_code, 200)
         self.assertIn("delivery.xlsx", operations.text)
 
-    def test_unit_economics_good_and_bad_outcomes(self) -> None:
-        db.upsert_ff_stock("rimili", "A-1", "FF", 1, "2026-08-12T10:00:00+00:00", "WB")
-        with mock.patch.object(
-            unit_economics.wb_unit_economics,
-            "load_wb_fbs_data",
-            return_value={"ok": True, "store": "rimili", "rows": [], "warnings": []},
-        ):
-            response = self.client.post("/sales/unit-economics/wb-fbs/calculate", json={"store": "rimili"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            self.client.post("/sales/unit-economics/wb-fbs/calculate", json={"store": "unknown"}).status_code,
-            404,
-        )
-        fulfillment_names = db.get_fulfillments()
-        rates = self.client.post(
-            "/sales/unit-economics/wb-fbs/fulfillment-rates",
-            json={
-                "rates": [
-                    {"name": name, "storage": 1, "accept": 2, "fulfillment": 3} for name in fulfillment_names
-                ]
-            },
-        )
-        self.assertEqual(rates.status_code, 200, rates.text)
-        self.assertEqual(
-            self.client.post(
-                "/sales/unit-economics/wb-fbs/fulfillment-rates", json={"rates": "wrong"}
-            ).status_code,
-            422,
-        )
-
     def test_admin_good_and_bad_outcomes(self) -> None:
         created = self.client.post(
             "/admin/users",
@@ -497,14 +471,32 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/api/rnp/sync",
             "/api/rnp/strategy",
             "/api/rnp/action",
-            "/sales/unit-economics",
-            "/sales/unit-economics/wb-fbs",
-            "/sales/unit-economics/wb-fbs/calculate",
-            "/sales/unit-economics/wb-fbs/fulfillment-rates",
-            "/sales/unit-economics/ozon",
-            "/sales/unit-economics/yandex-market",
+            "/sales/unit-economics-1c",
+            "/sales/unit-economics-1c/cabinet-settings",
+            "/api/unit-economics-1c/cabinet-settings",
+            "/api/unit-economics-1c/cabinet-settings/{store_slug}",
+            "/api/unit-economics-1c/source-data/sync",
+            "/api/unit-economics-1c/prices",
+            "/api/unit-economics-1c/prices/preview",
+            "/api/unit-economics-1c/prices/sync",
+            "/api/unit-economics-1c/sync",
+            "/api/unit-economics-1c/product-settings/{store_slug}",
+            "/sales/unit-economics-1c/ozon",
+            "/sales/unit-economics-1c/yandex-market",
             "/supply",
             "/stock",
+            "/stock/total",
+            "/stock/total.xlsx",
+            "/stock/cost-report",
+            "/stock/cost-report.xlsx",
+            "/stock/cost-report/operations/{operation_id}/fbs-transfer",
+            "/stock/supplies",
+            "/stock/randomizer",
+            "/stock/randomizer/generate",
+            "/stock/planning/wb",
+            "/stock/planning/manual",
+            "/stock/planning/manual/{supply_id}",
+            "/stock/planning/manual/{supply_id}/ready",
             "/stock-2",
             "/stock-2/details/{kind}",
             "/stock/{slug}",

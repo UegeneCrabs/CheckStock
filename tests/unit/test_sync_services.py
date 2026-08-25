@@ -577,5 +577,63 @@ class YandexSyncTests(unittest.TestCase):
         self.assertEqual(health.call_count, 2)
 
 
+class ScopedMarketplaceSyncTests(unittest.TestCase):
+    def setUp(self) -> None:
+        logging.disable(logging.CRITICAL)
+
+    def tearDown(self) -> None:
+        logging.disable(logging.NOTSET)
+
+    def test_catalog_syncs_use_only_requested_stores(self) -> None:
+        targets = ("allowed",)
+        cases = (
+            (wb_catalog, wb_catalog.wb_tokens, "has_token"),
+            (ozon_catalog, ozon_catalog.ozon_tokens, "has_credentials"),
+            (yandex_catalog, yandex_catalog.ya_tokens, "has_credentials"),
+        )
+        for service, tokens, credential_check in cases:
+            with self.subTest(service=service.__name__):
+                with (
+                    mock.patch.object(tokens, credential_check, return_value=True) as has_credentials,
+                    mock.patch.object(service, "sync_store", return_value={}) as sync_store,
+                    mock.patch.object(service.db, "record_sync_health"),
+                ):
+                    report = service.sync_all(targets)
+                self.assertEqual(set(report), {"allowed"})
+                has_credentials.assert_called_once_with("allowed")
+                sync_store.assert_called_once_with("allowed")
+
+    def test_stock_syncs_use_only_requested_stores(self) -> None:
+        targets = ("allowed",)
+        with (
+            mock.patch.object(wb_sync.wb_tokens, "has_token", return_value=True),
+            mock.patch.object(wb_sync, "sync_store_fbs", return_value=1) as wb_fbs,
+            mock.patch.object(wb_sync, "sync_store_fbo", return_value=2) as wb_fbo,
+            mock.patch.object(wb_sync.db, "record_sync_health"),
+        ):
+            wb_report = wb_sync.sync_all(targets)
+        self.assertEqual(set(wb_report), {"allowed"})
+        wb_fbs.assert_called_once_with("allowed")
+        wb_fbo.assert_called_once_with("allowed")
+
+        with (
+            mock.patch.object(ozon_sync.ozon_tokens, "has_credentials", return_value=True),
+            mock.patch.object(ozon_sync, "sync_store", return_value=3) as ozon_store,
+            mock.patch.object(ozon_sync.db, "record_sync_health"),
+        ):
+            ozon_report = ozon_sync.sync_all(targets)
+        self.assertEqual(set(ozon_report), {"allowed"})
+        ozon_store.assert_called_once_with("allowed")
+
+        with (
+            mock.patch.object(yandex_sync.ya_tokens, "has_credentials", return_value=True),
+            mock.patch.object(yandex_sync, "sync_store", return_value=4) as yandex_store,
+            mock.patch.object(yandex_sync.db, "record_sync_health"),
+        ):
+            yandex_report = yandex_sync.sync_all(targets)
+        self.assertEqual(set(yandex_report), {"allowed"})
+        yandex_store.assert_called_once_with("allowed")
+
+
 if __name__ == "__main__":
     unittest.main()

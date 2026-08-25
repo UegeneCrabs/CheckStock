@@ -54,6 +54,16 @@ class SalesNormalizationTests(unittest.TestCase):
         self.assertEqual(normalized[1]["status"], "cancelled")
         self.assertEqual(normalized[1]["cancelled_amount"], 500)
 
+    def test_wb_orders_skip_excluded_nm_ids(self) -> None:
+        orders = [
+            {"srid": "active", "nmId": 111, "finishedPrice": 900, "date": "2026-08-10"},
+            {"srid": "old", "nmId": 222, "finishedPrice": 500, "date": "2026-08-10"},
+        ]
+
+        normalized = sales._normalize_wb("trusthome", orders, [], {"222"})
+
+        self.assertEqual([row["order_key"] for row in normalized], ["active"])
+
     def test_ozon_delivered_and_cancelled_lines(self) -> None:
         postings = [
             {

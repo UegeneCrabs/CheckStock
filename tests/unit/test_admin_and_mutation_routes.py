@@ -430,7 +430,10 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         self.assertIsNone(db.get_user(target_id))
 
     def test_admin_page_download_and_sync(self) -> None:
-        self.assertEqual(self.client.get("/admin").status_code, 200)
+        admin_page = self.client.get("/admin")
+        self.assertEqual(admin_page.status_code, 200)
+        self.assertIn("unit_economics_1c", admin_page.text)
+        self.assertIn("Юнит-экономика 1С", admin_page.text)
         self.assertEqual(self.client.get("/admin/activity").status_code, 200)
         activity_data = self.client.get("/admin/activity/data").json()
         self.assertTrue(activity_data["ok"])
@@ -441,21 +444,81 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         with mock.patch.object(admin.ff_export, "build_operation_xlsx", side_effect=LookupError()):
             self.assertEqual(self.client.get("/admin/operations/999/xlsx").status_code, 404)
         with (
-            mock.patch.object(admin.wb_catalog, "sync_all", return_value={"rimili": {"ok": True}}),
-            mock.patch.object(admin.wb_sync, "sync_all", return_value={"rimili": {"token": True}}),
-            mock.patch.object(admin.ozon_catalog, "sync_all", return_value={"rimili": {"ok": True}}),
+            mock.patch.object(
+                admin.wb_catalog, "sync_all", return_value={"rimili": {"ok": True}}
+            ) as wb_catalog_sync,
+            mock.patch.object(
+                admin.wb_sync, "sync_all", return_value={"rimili": {"token": True}}
+            ) as wb_stock_sync,
+            mock.patch.object(
+                admin.ozon_catalog, "sync_all", return_value={"rimili": {"ok": True}}
+            ) as ozon_catalog_sync,
             mock.patch.object(
                 admin.ozon_sync, "sync_all", return_value={"rimili": {"token": True, "ozon": {"ok": True}}}
-            ),
-            mock.patch.object(admin.ya_catalog, "sync_all", return_value={"rimili": {"ok": True}}),
+            ) as ozon_stock_sync,
+            mock.patch.object(
+                admin.ya_catalog, "sync_all", return_value={"rimili": {"ok": True}}
+            ) as yandex_catalog_sync,
             mock.patch.object(
                 admin.ya_sync, "sync_all", return_value={"rimili": {"token": True, "yandex": {"ok": True}}}
-            ),
+            ) as yandex_stock_sync,
             mock.patch.object(admin.db, "get_last_sync_at", return_value="2026-01-01"),
         ):
             response = self.client.post("/admin/sync-stock")
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertIn("ozon_catalog", response.json()["report"]["rimili"])
+        sync_report = response.json()["report"]["rimili"]
+        self.assertEqual(sync_report["wb_catalog"], {"ok": True})
+        self.assertEqual(sync_report["ozon_catalog"], {"ok": True})
+        self.assertEqual(sync_report["yandex_catalog"], {"ok": True})
+        for sync in (
+            wb_catalog_sync,
+            wb_stock_sync,
+            ozon_catalog_sync,
+            ozon_stock_sync,
+            yandex_catalog_sync,
+            yandex_stock_sync,
+        ):
+            sync.assert_called_once_with(tuple(STORES))
+
+    def test_sync_stock_scopes_admin_and_requires_stock_write(self) -> None:
+        identity_lookup = self.app.state.container.identity.user_for_token
+        limited_admin = self.user.model_copy(update={"role": Role.ADMIN, "store_slugs": ("tris",)})
+        identity_lookup.return_value = limited_admin
+        try:
+            with (
+                mock.patch.object(admin.wb_catalog, "sync_all", return_value={}) as wb_catalog_sync,
+                mock.patch.object(admin.wb_sync, "sync_all", return_value={}) as wb_stock_sync,
+                mock.patch.object(admin.ozon_catalog, "sync_all", return_value={}) as ozon_catalog_sync,
+                mock.patch.object(admin.ozon_sync, "sync_all", return_value={}) as ozon_stock_sync,
+                mock.patch.object(admin.ya_catalog, "sync_all", return_value={}) as yandex_catalog_sync,
+                mock.patch.object(admin.ya_sync, "sync_all", return_value={}) as yandex_stock_sync,
+            ):
+                response = self.client.post("/admin/sync-stock")
+            self.assertEqual(response.status_code, 200, response.text)
+            for sync in (
+                wb_catalog_sync,
+                wb_stock_sync,
+                ozon_catalog_sync,
+                ozon_stock_sync,
+                yandex_catalog_sync,
+                yandex_stock_sync,
+            ):
+                sync.assert_called_once_with(("tris",))
+
+            read_only_admin = limited_admin.model_copy(
+                update={
+                    "section_access": {
+                        SectionName.STOCK: SectionAccessLevel.READ,
+                    }
+                }
+            )
+            identity_lookup.return_value = read_only_admin
+            stock_page = self.client.get("/stock")
+            self.assertEqual(stock_page.status_code, 200)
+            self.assertNotIn('id="sync-products-btn"', stock_page.text)
+            self.assertEqual(self.client.post("/admin/sync-stock").status_code, 403)
+        finally:
+            identity_lookup.return_value = self.user
 
 
 if __name__ == "__main__":

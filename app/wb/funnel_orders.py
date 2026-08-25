@@ -49,12 +49,16 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _payload(day: date, cursor: str | None = None) -> dict:
+def _payload(
+    day: date,
+    cursor: str | None = None,
+    nm_ids: tuple[int, ...] = (),
+) -> dict:
     previous_day = day - timedelta(days=1)
     payload = {
         "selectedPeriod": {"start": day.isoformat(), "end": day.isoformat()},
         "pastPeriod": {"start": previous_day.isoformat(), "end": previous_day.isoformat()},
-        "nmIds": [],
+        "nmIds": list(nm_ids),
         "brandNames": [],
         "subjectIds": [],
         "tagIds": [],
@@ -86,7 +90,11 @@ def _product_values(raw: object) -> tuple[str, str, str, int, float] | None:
     )
 
 
-def _daily_products(token: str, day: date) -> list[tuple[str, str, str, int, float]]:
+def _daily_products(
+    token: str,
+    day: date,
+    nm_ids: tuple[int, ...] = (),
+) -> list[tuple[str, str, str, int, float]]:
     """Return daily net orders separately for every WB product card.
 
     The v3 endpoint returns an aggregate for the selected period per card. We
@@ -98,7 +106,12 @@ def _daily_products(token: str, day: date) -> list[tuple[str, str, str, int, flo
     cursor: str | None = None
     seen_cursors: set[str] = set()
     for _ in range(MAX_PAGES):
-        response = wb_api.request("POST", ENDPOINT, token, json_body=_payload(day, cursor))
+        response = wb_api.request(
+            "POST",
+            ENDPOINT,
+            token,
+            json_body=_payload(day, cursor, nm_ids),
+        )
         data = _mapping(_mapping(response).get("data"))
         rows = _items(data.get("products"))
         for raw in rows:
@@ -219,12 +232,27 @@ def sync_store(store_slug: str) -> dict:
         return {"store": store, "status": "fresh", "records": 0}
     _record_sync(store, "running")
     token = wb_tokens.get_token(store)
+    active_nm_ids = tuple(
+        sorted(
+            {
+                int(str(item.get("article") or "").partition(" / ")[0])
+                for item in db.get_catalog_items(store, "WB")
+                if str(item.get("article") or "").partition(" / ")[0].isdigit()
+            }
+        )
+    )
     records = 0
     try:
         for index, day in enumerate(days):
             if index:
                 time.sleep(REQUEST_PAUSE_SECONDS)
-            products = _daily_products(token, day)
+            products = _daily_products(
+                token,
+                day,
+                active_nm_ids if len(active_nm_ids) <= 1_000 else (),
+            )
+            excluded_nm_ids = db.get_excluded_nm_ids(store, "WB")
+            products = [row for row in products if row[0] not in excluded_nm_ids]
             _replace_day(store, day, products)
             records += len(products)
     except Exception as exc:

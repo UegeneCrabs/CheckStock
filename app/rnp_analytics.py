@@ -1024,9 +1024,9 @@ def _current_snapshot_rows(
             "WITH stock AS (SELECT article,SUM(quantity) AS quantity FROM mp_stock "
             "WHERE store_slug=? AND marketplace=? GROUP BY article) "
             "SELECT si.article,si.mp_sku,si.mp_product_id,COALESCE(stock.quantity,0) AS stock_units,"
-            "wm.nm_id,wm.list_price,wm.discounted_price,wm.buyer_price,wm.spp_percent "
+            "NULL AS nm_id,NULL AS list_price,NULL AS discounted_price,"
+            "NULL AS buyer_price,NULL AS spp_percent "
             "FROM stock_items si LEFT JOIN stock ON stock.article=si.article "
-            "LEFT JOIN wb_unit_metrics wm ON wm.store_slug=si.store_slug AND wm.article=si.article "
             "WHERE si.store_slug=? AND si.marketplace=? AND si.is_service=0" + article_sql,
             [store_slug, marketplace, store_slug, marketplace, *(articles or [])],
         ).fetchall()

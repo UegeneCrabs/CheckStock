@@ -59,15 +59,12 @@ def get_rnp_catalog_page(
                COALESCE(a.orders_count, 0) AS orders_count,
                COALESCE(ms.quantity, 0) AS current_stock,
                ms.updated_at AS stock_updated_at,
-               uc.purchase_price, uc.other_cost,
-               wm.list_price, wm.discounted_price, wm.buyer_price, wm.spp_percent
+               NULL AS purchase_price, NULL AS other_cost,
+               NULL AS list_price, NULL AS discounted_price,
+               NULL AS buyer_price, NULL AS spp_percent
           FROM stock_items si
           LEFT JOIN activity a ON a.article = si.article
           LEFT JOIN current_stock ms ON ms.article = si.article
-          LEFT JOIN unit_costs uc
-            ON uc.store_slug = si.store_slug AND uc.article = si.article
-          LEFT JOIN wb_unit_metrics wm
-            ON wm.store_slug = si.store_slug AND wm.article = si.article
          WHERE si.store_slug = ? AND si.marketplace = ? AND si.is_service = 0
                {search_sql}
          ORDER BY COALESCE(a.orders_amount, 0) DESC,
@@ -122,14 +119,9 @@ def get_rnp_product_daily(
         SELECT sol.article, substr(sol.sold_at, 1, 10) AS day,
                SUM(sol.sale_amount) AS sales_amount,
                SUM(sol.sold_quantity) AS sales_count,
-               SUM(CASE WHEN uc.purchase_price IS NULL THEN NULL
-                        ELSE sol.sale_amount - sol.sold_quantity *
-                             (uc.purchase_price + COALESCE(uc.other_cost, 0)) END) AS gross_profit,
-               SUM(CASE WHEN uc.purchase_price IS NULL THEN 0 ELSE sol.sold_quantity END)
-                   AS costed_sales_count
+               NULL AS gross_profit,
+               0 AS costed_sales_count
           FROM sales_order_lines sol
-          LEFT JOIN unit_costs uc
-            ON uc.store_slug = sol.store_slug AND uc.article = sol.article
          WHERE sol.store_slug = ? AND sol.marketplace = ?
            AND sol.sold_at >= ? AND sol.sold_at < ?
            AND sol.article IN ({placeholders})
@@ -197,14 +189,9 @@ def get_rnp_daily_totals(store_slug: str, marketplace: str, date_from: str, date
         SELECT substr(sol.sold_at, 1, 10) AS day,
                SUM(sol.sale_amount) AS sales_amount,
                SUM(sol.sold_quantity) AS sales_count,
-               SUM(CASE WHEN uc.purchase_price IS NULL THEN NULL
-                        ELSE sol.sale_amount - sol.sold_quantity *
-                             (uc.purchase_price + COALESCE(uc.other_cost, 0)) END) AS gross_profit,
-               SUM(CASE WHEN uc.purchase_price IS NULL THEN 0 ELSE sol.sold_quantity END)
-                   AS costed_sales_count
+               NULL AS gross_profit,
+               0 AS costed_sales_count
           FROM sales_order_lines sol
-          LEFT JOIN unit_costs uc
-            ON uc.store_slug = sol.store_slug AND uc.article = sol.article
          WHERE sol.store_slug = ? AND sol.marketplace = ?
            AND sol.sold_at >= ? AND sol.sold_at < ?
          GROUP BY substr(sol.sold_at, 1, 10)

@@ -532,18 +532,14 @@ def _local_products(store_slugs: list[str]) -> dict[tuple[str, int], dict]:
     catalog_rows = _select_in(
         """
         SELECT si.store_slug, si.article, si.name, si.image_url,
-               COALESCE(wm.nm_id, 0) AS metric_nm_id,
-               COALESCE(wm.buyer_price, wm.discounted_price, wm.list_price, 0) AS price,
-               COALESCE(wm.commission_fbs_rate, 0) AS commission_rate,
-               COALESCE(uc.purchase_price, 0) AS purchase_price,
-               COALESCE(uc.other_cost, 0) AS other_cost,
+               0 AS metric_nm_id,
+               0 AS price,
+               0 AS commission_rate,
+               0 AS purchase_price,
+               0 AS other_cost,
                COALESCE(ms.quantity, 0) AS mp_stock,
                COALESCE(fs.quantity, 0) AS ff_stock
           FROM stock_items si
-          LEFT JOIN wb_unit_metrics wm
-            ON wm.store_slug = si.store_slug AND wm.article = si.article
-          LEFT JOIN unit_costs uc
-            ON uc.store_slug = si.store_slug AND uc.article = si.article
           LEFT JOIN (
               SELECT store_slug, article, SUM(quantity) AS quantity
                 FROM mp_stock WHERE marketplace = 'WB'

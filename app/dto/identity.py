@@ -23,7 +23,7 @@ class SectionName(StrEnum):
     DECISION_CENTER = "decision_center"
     EPHEMERIDES = "ephemerides"
     RNP = "rnp"
-    UNIT_ECONOMICS = "unit_economics"
+    UNIT_ECONOMICS_1C = "unit_economics_1c"
     SUPPLY = "supply"
     STOCK = "stock"
     STOCK_OVERVIEW = "stock_overview"

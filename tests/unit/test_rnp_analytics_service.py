@@ -370,25 +370,11 @@ class RnpAnalyticsTests(unittest.TestCase):
         db.replace_mp_warehouse_stock(
             "rimili", "WB", "fbs", [("1001", "WH", "Region", 14, "2026-08-12T10:00:00+00:00")]
         )
-        db.upsert_wb_unit_prices(
-            "rimili",
-            [
-                {
-                    "article": "1001",
-                    "nm_id": 1001,
-                    "list_price": 1000,
-                    "discounted_price": 900,
-                    "buyer_price": 850,
-                    "spp_percent": 10,
-                }
-            ],
-            "2026-08-12T10:00:00+00:00",
-        )
         snapshot_day = date(2026, 8, 12)
         with mock.patch.object(rnp_analytics, "_wb_current_reputation", return_value={"1001": (4.8, 25)}):
             snapshot = rnp_analytics._current_snapshot_rows("rimili", "WB", snapshot_day, None)[0]
         self.assertEqual(snapshot["stock_units"], 14)
-        self.assertEqual(snapshot["price_after_spp"], 850)
+        self.assertIsNone(snapshot["price_after_spp"])
         self.assertEqual(snapshot["stock_turnover_days"], 48.28)
         self.assertIn("Region", snapshot["stock_regions"])
 

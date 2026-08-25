@@ -7,11 +7,27 @@ class ApplicationIntegrationTests(unittest.TestCase):
     def test_openapi_contains_all_public_contracts(self) -> None:
         paths = create_app().openapi()["paths"]
 
-        self.assertEqual(len(paths), 64)
+        self.assertEqual(len(paths), 82)
         self.assertIn("/login", paths)
         self.assertIn("/stock/{slug}/transfer", paths)
+        self.assertIn("/stock/supplies", paths)
+        self.assertIn("/stock/randomizer", paths)
+        self.assertIn("/stock/randomizer/generate", paths)
         self.assertIn("/api/sales", paths)
         self.assertIn("/api/sales/wb-funnel-orders", paths)
+        self.assertIn("/sales/unit-economics-1c", paths)
+        self.assertIn("/sales/unit-economics-1c/ozon", paths)
+        self.assertIn("/sales/unit-economics-1c/yandex-market", paths)
+        self.assertIn("/sales/unit-economics-1c/cabinet-settings", paths)
+        self.assertIn("/api/unit-economics-1c/cabinet-settings", paths)
+        self.assertIn("/api/unit-economics-1c/cabinet-settings/{store_slug}", paths)
+        self.assertIn("/api/unit-economics-1c/source-data/sync", paths)
+        self.assertIn("/api/unit-economics-1c/prices/preview", paths)
+        self.assertIn("/api/unit-economics-1c/prices/sync", paths)
+        self.assertIn("/api/unit-economics-1c/sync", paths)
+        self.assertIn("/api/unit-economics-1c/product-settings/{store_slug}", paths)
+        self.assertNotIn("/sales/unit-economics", paths)
+        self.assertNotIn("/sales/unit-economics/wb-fbs", paths)
         self.assertIn("/admin/users", paths)
 
     def test_every_operation_has_a_unique_identifier(self) -> None:

@@ -7,10 +7,14 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
 
-from app import auth, db, rnp_analytics, stock_sheet_export, unit_costs
+from app import auth, db, rnp_analytics, stock_history, stock_sheet_export, unit_economics_1c
 from app import decision_center as decision_service
 from app import sales as sales_service
+from app import unit_economics_1c_advertising as advertising_sync
+from app import unit_economics_1c_reference_data as unit_reference_sync
+from app import unit_economics_1c_source_data as unit_source_sync
 from app.config import settings
+from app.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
@@ -19,7 +23,6 @@ from app.wb import catalog as wb_catalog
 from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import sync as wb_sync
 from app.wb import token_watch
-from app.wb import unit_economics as wb_unit_economics
 from app.yandex import catalog as ya_catalog
 from app.yandex import sync as ya_sync
 
@@ -30,6 +33,14 @@ SyncTarget = tuple[str, Callable[[], object]]
 
 def _seconds_until_next_run(hour: int) -> float:
     now = datetime.now()
+    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def _seconds_until_next_moscow_run(hour: int) -> float:
+    now = datetime.now(MOSCOW_TIMEZONE)
     target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
@@ -70,9 +81,18 @@ def _sync_stocks() -> SyncGroupReport:
     return _run_sync_group(
         "stocks",
         (
-            ("WB", wb_sync.sync_all),
             ("OZON", ozon_sync.sync_all),
             ("YANDEX MARKET", ya_sync.sync_all),
+        ),
+    )
+
+
+def _sync_sales_and_advertising() -> SyncGroupReport:
+    return _run_sync_group(
+        "sales_and_advertising",
+        (
+            ("orders", sales_service.sync_all),
+            ("WB advertising", advertising_sync.sync_all),
         ),
     )
 
@@ -89,6 +109,10 @@ def _daily_delay(hour: int) -> Callable[[], float]:
     return lambda: _seconds_until_next_run(hour)
 
 
+def _moscow_daily_delay(hour: int) -> Callable[[], float]:
+    return lambda: _seconds_until_next_moscow_run(hour)
+
+
 def _fixed_delay(seconds: int) -> Callable[[], float]:
     return lambda: seconds
 
@@ -100,6 +124,49 @@ def _funnel_jobs() -> tuple[BackgroundJob, ...]:
             wb_funnel_orders.sync_all,
             _fixed_delay(settings.wb_funnel_orders_sync_interval_seconds),
             startup_delay_seconds=5,
+        ),
+    )
+
+
+def _unit_economics_1c_price_jobs() -> tuple[BackgroundJob, ...]:
+    return (
+        BackgroundJob(
+            "unit_economics_1c_sync",
+            unit_economics_1c.sync_prices_due,
+            _fixed_delay(settings.unit_economics_1c_price_sync_interval_seconds),
+            startup_delay_seconds=settings.unit_economics_1c_price_sync_startup_delay_seconds,
+        ),
+        BackgroundJob(
+            "unit_economics_1c_wallet_sync",
+            unit_economics_1c.sync_wallet_prices,
+            _fixed_delay(settings.unit_economics_1c_wallet_sync_interval_seconds),
+            startup_delay_seconds=(settings.unit_economics_1c_price_sync_startup_delay_seconds + 30),
+        ),
+    )
+
+
+def _wb_stock_history_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
+    return (
+        BackgroundJob(
+            "wb_stock_sync_10_msk",
+            wb_sync.sync_all,
+            _moscow_daily_delay(10),
+            startup_delay_seconds=_seconds_until_next_moscow_run(10),
+            ready_event=catalog_ready,
+        ),
+        BackgroundJob(
+            "marketplace_stock_sync_and_history_23_msk",
+            stock_history.sync_marketplaces_and_save_daily_history,
+            _moscow_daily_delay(23),
+            startup_delay_seconds=_seconds_until_next_moscow_run(23),
+            ready_event=catalog_ready,
+        ),
+        BackgroundJob(
+            "fulfillment_stock_history_00_msk",
+            stock_history.save_previous_day_fulfillment_history,
+            _moscow_daily_delay(0),
+            startup_delay_seconds=_seconds_until_next_moscow_run(0),
+            ready_event=catalog_ready,
         ),
     )
 
@@ -118,31 +185,15 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             _fixed_delay(settings.auto_sync_interval_seconds),
             ready_event=catalog_ready,
         ),
+        *_wb_stock_history_jobs(catalog_ready),
         BackgroundJob(
             "wb_token_check",
             _refresh_token_info,
             _fixed_delay(settings.token_check_interval_seconds),
         ),
         BackgroundJob(
-            "unit_cost_sync",
-            unit_costs.sync_all,
-            _daily_delay(settings.unit_cost_sync_hour),
-        ),
-        BackgroundJob(
-            "wb_unit_reference_sync",
-            wb_unit_economics.sync_references_all,
-            _daily_delay(settings.wb_unit_reference_sync_hour),
-            ready_event=catalog_ready,
-        ),
-        BackgroundJob(
-            "wb_unit_price_sync",
-            wb_unit_economics.sync_prices_all,
-            _fixed_delay(settings.wb_unit_price_sync_interval_seconds),
-            ready_event=catalog_ready,
-        ),
-        BackgroundJob(
             "sales_sync",
-            sales_service.sync_all,
+            _sync_sales_and_advertising,
             _fixed_delay(settings.sales_sync_interval_seconds),
             startup_delay_seconds=settings.sales_sync_startup_delay_seconds,
         ),
@@ -167,6 +218,19 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             _fixed_delay(60),
             ready_event=catalog_ready,
         ),
+        BackgroundJob(
+            "unit_economics_1c_source_sync",
+            unit_source_sync.sync_all,
+            _moscow_daily_delay(settings.unit_economics_1c_source_sync_hour),
+            ready_event=catalog_ready,
+        ),
+        BackgroundJob(
+            "unit_economics_1c_reference_sync",
+            unit_reference_sync.sync_due,
+            _fixed_delay(24 * 60 * 60),
+            startup_delay_seconds=30,
+            ready_event=catalog_ready,
+        ),
     )
 
 
@@ -183,13 +247,11 @@ def _initialize_application() -> None:
 async def lifespan(application: FastAPI):
     await run_in_threadpool(_initialize_application)
     catalog_ready = asyncio.Event()
-    jobs = (
-        _jobs(catalog_ready)
-        if settings.background_sync_enabled
-        else _funnel_jobs()
-        if settings.funnel_orders_sync_enabled
-        else ()
-    )
+    jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
+    if not settings.background_sync_enabled and settings.funnel_orders_sync_enabled:
+        jobs += _funnel_jobs()
+    if settings.unit_economics_1c_price_sync_enabled:
+        jobs += _unit_economics_1c_price_jobs()
     tasks = [asyncio.create_task(run_background_job(job), name=f"checkstock:{job.name}") for job in jobs]
     application.state.background_tasks = tasks
     logger.info(

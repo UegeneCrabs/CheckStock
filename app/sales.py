@@ -134,10 +134,18 @@ def _wb_sale_totals(rows: list[dict]) -> dict[str, dict]:
     return result
 
 
-def _normalize_wb(store_slug: str, orders: list[dict], sales_rows: list[dict]) -> list[dict]:
+def _normalize_wb(
+    store_slug: str,
+    orders: list[dict],
+    sales_rows: list[dict],
+    excluded_nm_ids: set[str] | None = None,
+) -> list[dict]:
     sale_totals = _wb_sale_totals(sales_rows)
+    excluded = excluded_nm_ids or set()
     lines: list[dict] = []
     for index, row in enumerate(orders):
+        if str(row.get("nmId") or row.get("nmID") or "").strip() in excluded:
+            continue
         srid = str(row.get("srid") or "").strip()
         order_key = srid or ":".join(str(row.get(field) or "") for field in ("gNumber", "barcode", "date"))
         if not order_key:
@@ -355,7 +363,8 @@ def _sync_wb(store_slug: str, start: date, end: date) -> tuple[list[dict], list[
     except Exception as exc:
         sales_rows = []
         warnings.append(f"продажи: {type(exc).__name__}: {exc}")
-    return _normalize_wb(store_slug, orders, sales_rows), warnings
+    excluded_nm_ids = db.get_excluded_nm_ids(store_slug, "WB")
+    return _normalize_wb(store_slug, orders, sales_rows, excluded_nm_ids), warnings
 
 
 def _sync_ozon(store_slug: str, start: date, end: date) -> tuple[list[dict], list[str]]:

@@ -110,18 +110,22 @@ def store_problems(store_slug: str) -> list[dict]:
         if not has_token(marketplace, store_slug):
             continue
 
+        stock_scopes = SCOPES.get(marketplace, {})
         rows = _fresh_health_rows(
             marketplace,
-            [r for r in health_rows if r["marketplace"] == marketplace],
+            [
+                row
+                for row in health_rows
+                if row["marketplace"] == marketplace and row["scope"] in stock_scopes
+            ],
         )
         if not rows:
             continue
 
-        scopes = SCOPES.get(marketplace, {})
-        broken = [scopes.get(r["scope"], r["scope"]) for r in rows]
+        broken = [stock_scopes[row["scope"]] for row in rows]
 
         access_error = all(_is_access_error(row) for row in rows)
-        partial = len(broken) < len(scopes)
+        partial = len(broken) < len(stock_scopes)
         if access_error:
             status = (
                 f"Ключ недействителен для раздела «{', '.join(broken)}»."

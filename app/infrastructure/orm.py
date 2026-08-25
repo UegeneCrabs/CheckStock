@@ -23,16 +23,6 @@ class FulfillmentRecord(OrmBase):
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
 
 
-class FulfillmentUnitRateRecord(OrmBase):
-    __tablename__ = "fulfillment_unit_rates"
-
-    fulfillment: Mapped[str] = mapped_column(String, primary_key=True)
-    storage_per_m3_day: Mapped[float | None] = mapped_column(Float)
-    acceptance_per_unit: Mapped[float | None] = mapped_column(Float)
-    fulfillment_per_unit: Mapped[float | None] = mapped_column(Float)
-    updated_at: Mapped[str | None] = mapped_column(String)
-
-
 class StockItemRecord(OrmBase):
     __tablename__ = "stock_items"
     __table_args__ = (UniqueConstraint("store_slug", "marketplace", "article"),)
@@ -49,6 +39,16 @@ class StockItemRecord(OrmBase):
     is_service: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     updated_at: Mapped[str | None] = mapped_column(String)
     mp_updated_at: Mapped[str | None] = mapped_column(String)
+
+
+class CatalogProductExclusionRecord(OrmBase):
+    __tablename__ = "catalog_product_exclusions"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    nm_id: Mapped[str] = mapped_column(String, primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class FulfillmentStockRecord(OrmBase):
@@ -315,6 +315,40 @@ class StockOperationItemRecord(OrmBase):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class StockOperationReportFlagRecord(OrmBase):
+    __tablename__ = "stock_operation_report_flags"
+
+    operation_id: Mapped[int] = mapped_column(
+        ForeignKey("stock_operations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    is_fbs_transfer: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    updated_by: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ManualSupplyRecord(OrmBase):
+    __tablename__ = "manual_supplies"
+    __table_args__ = (Index("idx_manual_supplies_delivery_at", "delivery_at", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_slug: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    delivery_at: Mapped[str] = mapped_column(String, nullable=False)
+    origin: Mapped[str] = mapped_column(String, nullable=False)
+    destination: Mapped[str] = mapped_column(String, nullable=False)
+    supply_type: Mapped[str] = mapped_column(String, nullable=False)
+    ready: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer)
+    created_by_name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class MarketplaceStockRecord(OrmBase):
     __tablename__ = "mp_stock"
     __table_args__ = (UniqueConstraint("store_slug", "article", "marketplace", "scheme"),)
@@ -326,6 +360,32 @@ class MarketplaceStockRecord(OrmBase):
     scheme: Mapped[str] = mapped_column(String, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     updated_at: Mapped[str | None] = mapped_column(String)
+
+
+class MarketplaceStockDailyHistoryRecord(OrmBase):
+    __tablename__ = "marketplace_stock_daily_history"
+    __table_args__ = (Index("idx_mp_stock_daily_lookup", "store_slug", "marketplace", "article", "day"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    scheme: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    captured_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class FulfillmentStockDailyHistoryRecord(OrmBase):
+    __tablename__ = "fulfillment_stock_daily_history"
+    __table_args__ = (Index("idx_ff_stock_daily_lookup", "store_slug", "marketplace", "article", "day"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    fulfillment: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    captured_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class MarketplaceWarehouseStockRecord(OrmBase):
@@ -354,40 +414,25 @@ class MarketplaceWarehouseClusterRecord(OrmBase):
     updated_at: Mapped[str | None] = mapped_column(String)
 
 
-class UnitCostRecord(OrmBase):
-    __tablename__ = "unit_costs"
+class StockAuditRandomizationRecord(OrmBase):
+    __tablename__ = "stock_audit_randomizations"
+    __table_args__ = (
+        UniqueConstraint("month_key", "article"),
+        Index("idx_stock_audit_randomizations_batch", "batch_key"),
+        Index("idx_stock_audit_randomizations_month", "month_key", "fulfillment"),
+    )
 
-    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
-    article: Mapped[str] = mapped_column(String, primary_key=True)
-    purchase_price: Mapped[float] = mapped_column(Float, nullable=False)
-    other_cost: Mapped[float | None] = mapped_column(Float)
-    source_sheet_gid: Mapped[str] = mapped_column(String, nullable=False)
-    updated_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
-class WbUnitMetricRecord(OrmBase):
-    __tablename__ = "wb_unit_metrics"
-
-    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
-    article: Mapped[str] = mapped_column(String, primary_key=True)
-    nm_id: Mapped[int | None] = mapped_column(Integer)
-    tech_size: Mapped[str | None] = mapped_column(String)
-    subject_id: Mapped[int | None] = mapped_column(Integer)
-    category: Mapped[str | None] = mapped_column(String)
-    list_price: Mapped[float | None] = mapped_column(Float)
-    discounted_price: Mapped[float | None] = mapped_column(Float)
-    club_discounted_price: Mapped[float | None] = mapped_column(Float)
-    buyer_price: Mapped[float | None] = mapped_column(Float)
-    spp_percent: Mapped[float | None] = mapped_column(Float)
-    buyer_price_observed_at: Mapped[str | None] = mapped_column(String)
-    length_cm: Mapped[float | None] = mapped_column(Float)
-    width_cm: Mapped[float | None] = mapped_column(Float)
-    height_cm: Mapped[float | None] = mapped_column(Float)
-    volume_l: Mapped[float | None] = mapped_column(Float)
-    weight_kg: Mapped[float | None] = mapped_column(Float)
-    commission_fbs_rate: Mapped[float | None] = mapped_column(Float)
-    price_updated_at: Mapped[str | None] = mapped_column(String)
-    reference_updated_at: Mapped[str | None] = mapped_column(String)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    month_key: Mapped[str] = mapped_column(String(7), nullable=False)
+    fulfillment: Mapped[str] = mapped_column(String, nullable=False)
+    store_slug: Mapped[str] = mapped_column(String, nullable=False)
+    article: Mapped[str] = mapped_column(String, nullable=False)
+    ff_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    fbs_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    user_name: Mapped[str] = mapped_column(String, nullable=False)
+    generated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class SalesOrderLineRecord(OrmBase):
@@ -499,6 +544,183 @@ class StockSheetExportTargetRecord(OrmBase):
     sheet_name: Mapped[str] = mapped_column(String, nullable=False)
     key_column_name: Mapped[str] = mapped_column(String, nullable=False)
     value_column_name: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CCabinetSettingRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_cabinet_settings"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True, default="WB", server_default="WB")
+    acceptance_coefficient: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0, server_default="0"
+    )
+    wb_extra_tariff_percent: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0, server_default="0"
+    )
+    acquiring_percent: Mapped[float] = mapped_column(Float, nullable=False, default=3.8, server_default="3.8")
+    team_commission_percent: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0, server_default="0"
+    )
+    vat_percent: Mapped[float] = mapped_column(Float, nullable=False, default=9, server_default="9")
+    usn_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    osno_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    tax_system: Mapped[str] = mapped_column(String, nullable=False, default="usn", server_default="usn")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CProductSettingRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_product_settings"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True, default="WB", server_default="WB")
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    delivery_wb_rub: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    buyout_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    return_cost_rub: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    volume_l: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    storage_wb_rub: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CProductClassificationRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_product_classifications"
+
+    stock_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("stock_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    abc_code: Mapped[str | None] = mapped_column(String)
+    turnover_days: Mapped[int] = mapped_column(Integer, nullable=False, default=21, server_default="21")
+    source_article: Mapped[str | None] = mapped_column(String)
+    source_barcode: Mapped[str | None] = mapped_column(String)
+    source_row: Mapped[int | None] = mapped_column(Integer)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CSourceValueRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_source_values"
+
+    stock_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("stock_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    purchase_price: Mapped[float | None] = mapped_column(Float)
+    fulfillment_cost: Mapped[float | None] = mapped_column(Float)
+    team_commission_percent: Mapped[float | None] = mapped_column(Float)
+    tag_raw: Mapped[str | None] = mapped_column(Text)
+    goal_week: Mapped[float | None] = mapped_column(Float)
+    goal_day: Mapped[float | None] = mapped_column(Float)
+    stock_status: Mapped[str | None] = mapped_column(String)
+    stock_end_week: Mapped[str | None] = mapped_column(String)
+    supplier_external_raw: Mapped[str | None] = mapped_column(Text)
+    abc_code: Mapped[str | None] = mapped_column(String)
+    fact_sales: Mapped[float | None] = mapped_column(Float)
+    plan_sales: Mapped[float | None] = mapped_column(Float)
+    source_sheet_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_sheet_title: Mapped[str] = mapped_column(String, nullable=False)
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CProductCategoryRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_product_categories"
+
+    stock_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("stock_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    wb_subject_id: Mapped[int | None] = mapped_column(Integer)
+    category: Mapped[str | None] = mapped_column(String)
+    category_key: Mapped[str | None] = mapped_column(String, index=True)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CWBCommissionRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_wb_commissions"
+
+    category_key: Mapped[str] = mapped_column(String, primary_key=True)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    commission_percent: Mapped[float] = mapped_column(Float, nullable=False)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CDailyPriceRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_wb_daily_prices"
+    __table_args__ = (
+        Index("idx_ue1c_wb_price_latest", "store_slug", "article", "day"),
+        Index("idx_ue1c_wb_price_nm", "store_slug", "nm_id", "day"),
+    )
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, nullable=False, default="WB", server_default="WB")
+    nm_id: Mapped[str] = mapped_column(String, nullable=False)
+    size_id: Mapped[int | None] = mapped_column(Integer)
+    tech_size_name: Mapped[str | None] = mapped_column(String)
+    vendor_code: Mapped[str | None] = mapped_column(String)
+    currency: Mapped[str] = mapped_column(String, nullable=False, default="RUB", server_default="RUB")
+    seller_base_price: Mapped[float | None] = mapped_column(Float)
+    retail_price: Mapped[float | None] = mapped_column(Float)
+    club_discounted_price: Mapped[float | None] = mapped_column(Float)
+    customer_price_with_spp: Mapped[float | None] = mapped_column(Float)
+    customer_price_with_wallet: Mapped[float | None] = mapped_column(Float)
+    customer_price_window_days: Mapped[int | None] = mapped_column(Integer)
+    customer_price_orders_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_order_at: Mapped[str | None] = mapped_column(String)
+    orders_synced_at: Mapped[str | None] = mapped_column(String)
+    retail_synced_at: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CPriceSyncStateRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_wb_price_sync_state"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True, default="WB", server_default="WB")
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    orders_ok: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    retail_ok: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_attempt_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    rows_saved: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class UnitEconomics1CDailyAdvertisingRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_wb_daily_advertising"
+    __table_args__ = (Index("idx_ue1c_wb_ad_period", "store_slug", "day", "nm_id"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    nm_id: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, nullable=False, default="WB", server_default="WB")
+    spend: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomics1CAdvertisingSyncStateRecord(OrmBase):
+    __tablename__ = "unit_economics_1c_wb_advertising_sync_state"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True, default="WB", server_default="WB")
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    period_from: Mapped[str] = mapped_column(String, nullable=False)
+    period_to: Mapped[str] = mapped_column(String, nullable=False)
+    last_attempt_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    rows_saved: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    campaigns_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 class RnpStrategyRecord(OrmBase):

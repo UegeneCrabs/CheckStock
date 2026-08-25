@@ -199,12 +199,13 @@ def sync_store_fbo(store_slug: str) -> int:
     return updated
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
     active_slugs = []
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if not wb_tokens.has_token(slug):
             report[slug] = {"token": False, "fbs": None, "fbo": None}
         else:

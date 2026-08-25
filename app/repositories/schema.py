@@ -15,6 +15,10 @@ def init_db() -> None:
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
+    _remove_legacy_unit_economics(database)
+    _migrate_unit_economics_1c_cabinet_settings(database)
+    _migrate_unit_economics_1c_source_values(database)
+    _migrate_unit_economics_1c_daily_prices(database)
     if target_table_was_rebuilt:
         _finish_stock_sheet_export_target_migration(database)
     _backfill_stock_sheet_export_marketplace_urls(database)
@@ -32,7 +36,117 @@ def init_db() -> None:
         _migrate_image_url(connection)
         _migrate_delivery_marketplace(connection)
         _migrate_activity_log_operation(connection)
+        _migrate_manual_supply_store_slug(connection)
         connection.execute("PRAGMA optimize")
+        connection.commit()
+
+
+def _remove_legacy_unit_economics(database: Database) -> None:
+    """Remove the retired unit-economics storage while preserving 1C access rules."""
+
+    with database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO user_section_access (user_id, section, access_level)
+            SELECT legacy.user_id, 'unit_economics_1c', legacy.access_level
+              FROM user_section_access legacy
+             WHERE legacy.section = 'unit_economics'
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM user_section_access current
+                    WHERE current.user_id = legacy.user_id
+                      AND current.section = 'unit_economics_1c'
+               )
+            ON CONFLICT DO NOTHING
+            """
+        )
+        connection.execute("DELETE FROM user_section_access WHERE section = 'unit_economics'")
+        connection.execute("DELETE FROM user_section_usage WHERE section = 'unit_economics'")
+        connection.execute(
+            "UPDATE user_usage_sessions SET last_section = NULL WHERE last_section = 'unit_economics'"
+        )
+        connection.execute(
+            "UPDATE user_usage_sessions SET last_path = NULL "
+            "WHERE last_path = '/sales/unit-economics' "
+            "OR last_path LIKE '/sales/unit-economics/%'"
+        )
+        connection.execute(
+            "DELETE FROM sync_health WHERE scope IN ('unit_cost', 'unit_prices', 'unit_reference')"
+        )
+        for table in ("fulfillment_unit_rates", "wb_unit_metrics", "unit_costs"):
+            connection.execute(f"DROP TABLE IF EXISTS {table}")
+        connection.commit()
+
+
+def _migrate_unit_economics_1c_cabinet_settings(database: Database) -> None:
+    """Keep cabinet settings aligned with the current manual parameter set."""
+
+    table_name = "unit_economics_1c_cabinet_settings"
+    with database.connect() as connection:
+        columns = connection.column_names(table_name)
+        if columns and "acquiring_percent" not in columns:
+            connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN acquiring_percent FLOAT NOT NULL DEFAULT 3.8"
+            )
+            columns.add("acquiring_percent")
+        if columns and "team_commission_percent" not in columns:
+            connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN team_commission_percent FLOAT NOT NULL DEFAULT 0"
+            )
+            if "team_percent" in columns:
+                connection.execute(f"UPDATE {table_name} SET team_commission_percent=team_percent")
+            columns.add("team_commission_percent")
+        if columns and "vat_percent" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN vat_percent FLOAT NOT NULL DEFAULT 9")
+            if "tax_percent" in columns:
+                connection.execute(f"UPDATE {table_name} SET vat_percent=tax_percent")
+            columns.add("vat_percent")
+        if columns and "usn_percent" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN usn_percent FLOAT NOT NULL DEFAULT 0")
+            columns.add("usn_percent")
+        if columns and "osno_percent" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN osno_percent FLOAT NOT NULL DEFAULT 0")
+            columns.add("osno_percent")
+        if columns and "tax_system" not in columns:
+            connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN tax_system VARCHAR NOT NULL DEFAULT 'usn'"
+            )
+            columns.add("tax_system")
+        retired_columns = (
+            "annual_capital_rate_percent",
+            "days_in_year",
+            "custom_parameter_1",
+            "custom_parameter_2",
+            "overhead_percent",
+            "team_percent",
+            "contrib_percent",
+            "tax_percent",
+        )
+        for column in retired_columns:
+            if column in columns:
+                connection.execute(f"ALTER TABLE {table_name} DROP COLUMN {column}")
+        connection.commit()
+
+
+def _migrate_unit_economics_1c_source_values(database: Database) -> None:
+    """Add source snapshot fields introduced after the table was first deployed."""
+
+    table_name = "unit_economics_1c_source_values"
+    with database.connect() as connection:
+        columns = connection.column_names(table_name)
+        if columns and "team_commission_percent" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN team_commission_percent FLOAT")
+        connection.commit()
+
+
+def _migrate_unit_economics_1c_daily_prices(database: Database) -> None:
+    """Add the independently refreshed public WB Wallet price."""
+
+    table_name = "unit_economics_1c_wb_daily_prices"
+    with database.connect() as connection:
+        columns = connection.column_names(table_name)
+        if columns and "customer_price_with_wallet" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN customer_price_with_wallet FLOAT")
         connection.commit()
 
 
@@ -336,6 +450,12 @@ def _migrate_activity_log_operation(connection: DatabaseConnection) -> None:
     columns = _column_names(connection, "activity_log")
     if columns and "operation_id" not in columns:
         connection.execute("ALTER TABLE activity_log ADD COLUMN operation_id INTEGER")
+
+
+def _migrate_manual_supply_store_slug(connection: DatabaseConnection) -> None:
+    columns = _column_names(connection, "manual_supplies")
+    if columns and "store_slug" not in columns:
+        connection.execute("ALTER TABLE manual_supplies ADD COLUMN store_slug TEXT NOT NULL DEFAULT ''")
 
 
 def _migrate_ff_stock_marketplace(connection: DatabaseConnection) -> None:

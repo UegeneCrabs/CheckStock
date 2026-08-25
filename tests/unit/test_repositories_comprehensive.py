@@ -4,6 +4,10 @@ from pathlib import Path
 from unittest import mock
 
 from app import db, decision_center, rnp_analytics
+from app.dto.unit_economics_1c import (
+    UnitEconomics1CCabinetSettingsRequest,
+    UnitEconomics1CProductSettingsRequest,
+)
 from app.repositories import core, stock_dashboard
 
 NOW = "2026-08-12T10:00:00+00:00"
@@ -240,6 +244,81 @@ class RepositoryUnitTests(unittest.TestCase):
         db.upsert_ff_stock("rimili", "A-1", "ФФ", 0, NOW, "WB")
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "ФФ", "WB"), 0)
 
+    def test_daily_stock_history_keeps_marketplace_zeroes_and_ff_breakdown(self) -> None:
+        self.add_catalog()
+        db.upsert_mp_stock("rimili", "A-1", "WB", "fbs", 7, NOW)
+        db.upsert_mp_stock("rimili", "A-1", "WB", "fbo", 3, NOW)
+        db.upsert_ff_stock("rimili", "A-1", "ФФ-1", 100, NOW, "WB")
+        db.upsert_ff_stock("rimili", "A-1", "ФФ-2", 60, NOW, "WB")
+
+        self.assertEqual(
+            db.replace_marketplace_stock_daily_history("rimili", "WB", "fbs", "2026-08-20", NOW),
+            2,
+        )
+        self.assertEqual(
+            db.replace_marketplace_stock_daily_history("rimili", "WB", "fbo", "2026-08-20", NOW),
+            2,
+        )
+        self.assertEqual(db.replace_fulfillment_stock_daily_history("2026-08-20", NOW), 2)
+
+        history = db.get_daily_stock_history(("rimili",), "WB", "2026-08-20", "2026-08-20")
+        by_article = {row["article"]: row for row in history}
+        self.assertEqual(by_article["A-1"]["fbs"], 7)
+        self.assertEqual(by_article["A-1"]["fbo"], 3)
+        self.assertEqual(by_article["A-1"]["fulfillment"], 160)
+        self.assertEqual(by_article["B-2"]["fbs"], 0)
+        self.assertEqual(by_article["B-2"]["fbo"], 0)
+
+        db.upsert_ff_stock("rimili", "A-1", "ФФ-2", 0, NOW, "WB")
+        self.assertEqual(db.replace_fulfillment_stock_daily_history("2026-08-21", NOW), 2)
+        ff_rows = db.get_fulfillment_stock_daily_history("rimili", "WB", "A-1", "2026-08-20", "2026-08-21")
+        quantities = {(row["day"], row["fulfillment"]): row["quantity"] for row in ff_rows}
+        self.assertEqual(quantities[("2026-08-20", "ФФ-1")], 100)
+        self.assertEqual(quantities[("2026-08-20", "ФФ-2")], 60)
+        self.assertEqual(quantities[("2026-08-21", "ФФ-1")], 100)
+        self.assertEqual(quantities[("2026-08-21", "ФФ-2")], 0)
+
+        with self.assertRaises(ValueError):
+            db.replace_marketplace_stock_daily_history("rimili", "WB", "wrong", "2026-08-20", NOW)
+
+    def test_catalog_exclusion_is_persistent_across_catalog_refresh(self) -> None:
+        db.replace_catalog(
+            "rimili",
+            "WB",
+            [
+                {"article": "100", "barcode": "bc-100", "name": "Активный"},
+                {"article": "200", "barcode": "bc-200", "name": "Старье"},
+            ],
+            NOW,
+        )
+        db.upsert_mp_stock("rimili", "200", "WB", "fbs", 7, NOW)
+
+        result = db.set_product_exclusions(
+            "rimili",
+            "WB",
+            {"200"},
+            status="Старье",
+            updated_at=NOW,
+        )
+
+        self.assertEqual(result["marked"], 1)
+        self.assertEqual(result["catalog_removed"], 1)
+        self.assertEqual(db.get_excluded_nm_ids("rimili", "WB"), {"200"})
+        self.assertEqual(db.list_product_exclusions("rimili", "WB")[0]["status"], "Старье")
+        self.assertEqual([row["article"] for row in db.get_catalog_items("rimili", "WB")], ["100"])
+        self.assertNotIn("200", db.get_mp_stock_totals("rimili", "WB", "fbs"))
+
+        db.replace_catalog(
+            "rimili",
+            "WB",
+            [
+                {"article": "100", "barcode": "bc-100", "name": "Активный"},
+                {"article": "200", "barcode": "bc-200", "name": "Вернулся из API"},
+            ],
+            NOW,
+        )
+        self.assertEqual([row["article"] for row in db.get_catalog_items("rimili", "WB")], ["100"])
+
     def test_fulfillment_sources_search_and_movements(self) -> None:
         self.add_catalog()
         db.increment_ff_stock("rimili", "A-1", "ФФ-1", 0, NOW, "WB")
@@ -307,76 +386,149 @@ class RepositoryUnitTests(unittest.TestCase):
         self.assertEqual(db.get_trash_details("rimili", "WB"), [])
         self.assertTrue(db.get_ff_warehouse_details_by_mp("rimili", "WB"))
 
-    def test_fulfillment_rates_costs_and_wb_metrics(self) -> None:
+    def test_fulfillment_names(self) -> None:
         db.seed_defaults()
         fulfillments = db.get_fulfillments()
         self.assertTrue(fulfillments)
-        self.assertEqual(db.upsert_fulfillment_unit_rates([], NOW), 0)
-        with self.assertRaises(ValueError):
-            db.upsert_fulfillment_unit_rates([{"name": "Unknown"}], NOW)
-        first = fulfillments[0]
-        self.assertEqual(
-            db.upsert_fulfillment_unit_rates(
-                [{"name": first, "storage": 1.5, "accept": 2.5, "fulfillment": 3.5}], NOW
-            ),
-            1,
-        )
-        rates = db.get_fulfillment_unit_rates()
-        self.assertEqual(next(row for row in rates if row["name"] == first)["storage_per_m3_day"], 1.5)
 
-        self.assertEqual(
-            db.replace_unit_costs(
-                "rimili",
-                [{"article": "A-1", "purchase_price": 100.0, "other_cost": 20.0}],
-                "gid-1",
-                NOW,
-            ),
-            1,
-        )
-        self.assertEqual(db.get_unit_costs("rimili")["A-1"]["purchase_price"], 100.0)
-        self.assertEqual(db.upsert_wb_unit_references("rimili", [], NOW), 0)
-        self.assertEqual(
-            db.upsert_wb_unit_references(
-                "rimili",
-                [
-                    {
-                        "article": "A-1",
-                        "nm_id": 1001,
-                        "tech_size": "0",
-                        "subject_id": 55,
-                        "category": "Категория",
-                        "length_cm": 10,
-                        "width_cm": 20,
-                        "height_cm": 30,
-                        "volume_l": 6,
-                        "weight_kg": 1.2,
-                        "commission_fbs_rate": 15,
-                    }
-                ],
-                NOW,
-            ),
-            1,
-        )
-        self.assertEqual(db.upsert_wb_unit_prices("rimili", [], NOW), 0)
-        db.upsert_wb_unit_prices(
-            "rimili",
-            [
-                {
-                    "article": "A-1",
-                    "nm_id": 1001,
-                    "tech_size": "0",
-                    "list_price": 1000,
-                    "discounted_price": 900,
-                    "club_discounted_price": 850,
-                    "buyer_price": 800,
-                    "spp_percent": 10,
-                    "buyer_price_observed_at": NOW,
-                }
-            ],
+    def test_legacy_unit_economics_storage_is_removed(self) -> None:
+        user_id = db.create_user(
+            "Legacy User",
+            "legacy@example.test",
+            "legacy",
+            "hash",
+            "user",
             NOW,
+            ["rimili"],
         )
-        self.assertEqual(db.get_wb_unit_metrics("rimili")["A-1"]["buyer_price"], 800)
-        self.assertEqual(db.get_wb_price_last_sync("rimili"), NOW)
+        conn = db.get_connection()
+        conn.execute(
+            "INSERT INTO user_section_access (user_id, section, access_level) VALUES (?, ?, ?)",
+            (user_id, "unit_economics", "read"),
+        )
+        conn.execute(
+            "INSERT INTO user_section_usage "
+            "(user_id, section, usage_date, page_views, active_seconds, last_viewed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, "unit_economics", "2026-08-12", 1, 30, NOW),
+        )
+        conn.execute(
+            "INSERT INTO user_usage_sessions "
+            "(session_key, user_id, started_at, last_seen_at, active_seconds, last_section, last_path) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "legacy-unit-session",
+                user_id,
+                NOW,
+                NOW,
+                30,
+                "unit_economics",
+                "/sales/unit-economics/wb-fbs",
+            ),
+        )
+        conn.execute(
+            "INSERT INTO sync_health (store_slug, marketplace, scope, ok, checked_at) VALUES (?, ?, ?, ?, ?)",
+            ("rimili", "WB", "unit_prices", 1, NOW),
+        )
+        for table in ("fulfillment_unit_rates", "wb_unit_metrics", "unit_costs"):
+            conn.execute(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+
+        db.init_db()
+
+        conn = db.get_connection()
+        access_rows = conn.execute(
+            "SELECT section, access_level FROM user_section_access WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        tables = {
+            str(row["name"])
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        usage_count = conn.execute(
+            "SELECT COUNT(*) FROM user_section_usage WHERE section='unit_economics'"
+        ).fetchone()[0]
+        session = conn.execute(
+            "SELECT last_section, last_path FROM user_usage_sessions WHERE session_key=?",
+            ("legacy-unit-session",),
+        ).fetchone()
+        sync_count = conn.execute("SELECT COUNT(*) FROM sync_health WHERE scope='unit_prices'").fetchone()[0]
+        conn.close()
+        self.assertEqual(
+            [(row["section"], row["access_level"]) for row in access_rows],
+            [("unit_economics_1c", "read")],
+        )
+        self.assertTrue({"fulfillment_unit_rates", "wb_unit_metrics", "unit_costs"}.isdisjoint(tables))
+        self.assertEqual(usage_count, 0)
+        self.assertEqual((session["last_section"], session["last_path"]), (None, None))
+        self.assertEqual(sync_count, 0)
+
+    def test_unit_economics_1c_cabinet_settings_defaults_and_save(self) -> None:
+        defaults = db.get_unit_economics_1c_cabinet_settings("rimili")
+        self.assertEqual(defaults.acquiring_percent, 3.8)
+        self.assertEqual(defaults.team_commission_percent, 0)
+        self.assertEqual(defaults.vat_percent, 9)
+        self.assertEqual(defaults.usn_percent, 0)
+        self.assertEqual(defaults.osno_percent, 0)
+        self.assertEqual(defaults.tax_system, "usn")
+        self.assertIsNone(defaults.updated_at)
+
+        saved = db.save_unit_economics_1c_cabinet_settings(
+            "rimili",
+            UnitEconomics1CCabinetSettingsRequest(
+                acceptance_coefficient=1.25,
+                wb_extra_tariff_percent=3.5,
+                acquiring_percent=4.15,
+                team_commission_percent=2.5,
+                vat_percent=20,
+                usn_percent=6,
+                osno_percent=25,
+                tax_system="osno",
+            ),
+            updated_at=NOW,
+            updated_by_user_id=7,
+            updated_by_name="Unit Admin",
+        )
+        self.assertEqual(saved.acceptance_coefficient, 1.25)
+        self.assertEqual(saved.acquiring_percent, 4.15)
+        self.assertEqual(saved.team_commission_percent, 2.5)
+        self.assertEqual(saved.vat_percent, 20)
+        self.assertEqual(saved.usn_percent, 6)
+        self.assertEqual(saved.osno_percent, 25)
+        self.assertEqual(saved.tax_system, "osno")
+        self.assertEqual(saved.updated_by_name, "Unit Admin")
+        self.assertEqual(
+            db.list_unit_economics_1c_cabinet_settings(("rimili", "tris"))[1].vat_percent,
+            9,
+        )
+
+    def test_unit_economics_1c_product_settings_defaults_and_save(self) -> None:
+        defaults = db.get_unit_economics_1c_product_settings("rimili", "949558341")
+        self.assertEqual(defaults.delivery_wb_rub, 0)
+        self.assertEqual(defaults.buyout_percent, 0)
+        self.assertIsNone(defaults.updated_at)
+
+        saved = db.save_unit_economics_1c_product_settings(
+            "rimili",
+            UnitEconomics1CProductSettingsRequest(
+                article="949558341",
+                delivery_wb_rub=120,
+                buyout_percent=80,
+                return_cost_rub=50,
+                volume_l=1.2,
+                storage_wb_rub=2.5,
+            ),
+            updated_at=NOW,
+            updated_by_user_id=7,
+            updated_by_name="Unit Admin",
+        )
+        self.assertEqual(saved.delivery_wb_rub, 120)
+        self.assertEqual(saved.buyout_percent, 80)
+        self.assertEqual(saved.volume_l, 1.2)
+        self.assertEqual(saved.updated_by_name, "Unit Admin")
+        listed = db.list_unit_economics_1c_product_settings(("rimili", "tris"))
+        self.assertEqual([(item.store_slug, item.article) for item in listed], [("rimili", "949558341")])
 
     def test_operations_sales_and_dashboard_queries(self) -> None:
         self.add_catalog()
@@ -424,9 +576,6 @@ class RepositoryUnitTests(unittest.TestCase):
 
         db.upsert_mp_stock("rimili", "A-1", "WB", "fbs", 4, NOW)
         db.upsert_ff_stock("rimili", "A-1", "ФФ", 3, NOW, "WB")
-        db.replace_unit_costs(
-            "rimili", [{"article": "A-1", "purchase_price": 100, "other_cost": 10}], "gid", NOW
-        )
         rows = stock_dashboard.get_inventory_rows("2026-08-01", "2026-07-01")
         row = next(item for item in rows if item["article"] == "A-1")
         self.assertEqual(row["marketplace_stock"], 4)
@@ -466,16 +615,12 @@ class RepositoryUnitTests(unittest.TestCase):
             NOW,
         )
         db.upsert_mp_stock("rimili", "A-1", "WB", "fbs", 8, NOW)
-        db.replace_unit_costs(
-            "rimili", [{"article": "A-1", "purchase_price": 100, "other_cost": 10}], "gid", NOW
-        )
         page = db.get_rnp_catalog_page("rimili", "WB", "2026-08-01", "2026-09-01")
         self.assertEqual(page["total"], 2)
         filtered = db.get_rnp_catalog_page("rimili", "WB", "2026-08-01", "2026-09-01", "Первый", 1, 0)
         self.assertEqual(filtered["items"][0]["article"], "A-1")
         product_daily = db.get_rnp_product_daily("rimili", "WB", "2026-08-01", "2026-09-01", ["A-1"])
-        sale_day = next(row for row in product_daily if row.get("gross_profit") is not None)
-        self.assertEqual(sale_day["gross_profit"], 1580)
+        self.assertTrue(all(row.get("gross_profit") is None for row in product_daily))
         self.assertEqual(db.get_rnp_product_daily("rimili", "WB", "x", "y", []), [])
         self.assertTrue(db.get_rnp_daily_totals("rimili", "WB", "2026-08-01", "2026-09-01"))
         self.assertEqual(db.get_rnp_stock_total("rimili", "WB"), 8)

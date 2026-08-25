@@ -797,25 +797,30 @@ async def admin_create_user(
 
 @router.post("/admin/sync-stock")
 async def sync_stock(request: Request):
-    if not auth.has_role(request.state.user, "admin"):
+    actor = request.state.user
+    if (
+        not auth.has_role(actor, "admin")
+        or access_level(actor, SectionName.STOCK) is not SectionAccessLevel.WRITE
+    ):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
-    wb_catalog_report = await run_in_threadpool(wb_catalog.sync_all)
-    report = await run_in_threadpool(wb_sync.sync_all)
+    store_slugs = accessible_store_slugs(actor)
+    wb_catalog_report = await run_in_threadpool(wb_catalog.sync_all, store_slugs)
+    report = await run_in_threadpool(wb_sync.sync_all, store_slugs)
     for slug, entry in wb_catalog_report.items():
         if slug in report:
             report[slug]["wb_catalog"] = entry
 
-    catalog_report = await run_in_threadpool(ozon_catalog.sync_all)
-    ozon_report = await run_in_threadpool(ozon_sync.sync_all)
+    catalog_report = await run_in_threadpool(ozon_catalog.sync_all, store_slugs)
+    ozon_report = await run_in_threadpool(ozon_sync.sync_all, store_slugs)
     for slug, entry in ozon_report.items():
         if slug in report:
             report[slug]["ozon"] = entry.get("ozon")
             report[slug]["ozon_token"] = entry.get("token")
             report[slug]["ozon_catalog"] = catalog_report.get(slug)
 
-    ya_catalog_report = await run_in_threadpool(ya_catalog.sync_all)
-    ya_report = await run_in_threadpool(ya_sync.sync_all)
+    ya_catalog_report = await run_in_threadpool(ya_catalog.sync_all, store_slugs)
+    ya_report = await run_in_threadpool(ya_sync.sync_all, store_slugs)
     for slug, entry in ya_report.items():
         if slug in report:
             report[slug]["yandex"] = entry.get("yandex")
