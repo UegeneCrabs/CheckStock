@@ -1,0 +1,26 @@
+.content--unit-1c-report { max-width: none; }
+.ue1cr-page { display: grid; gap: 16px; min-width: 0; color: var(--text); }
+.ue1cr-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
+.ue1cr-head span { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.ue1cr-head h1 { margin: 2px 0 0; font-size: 25px; }
+.ue1cr-head p { margin: 0; color: var(--muted); }
+.ue1cr-filters { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)) auto; gap: 10px; align-items: end; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.ue1cr-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.ue1cr-filters input, .ue1cr-filters select { height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); }
+.ue1cr-filters button { height: 38px; padding: 0 16px; border: 0; border-radius: 9px; background: #6750d8; color: #fff; font-weight: 800; cursor: pointer; }
+.ue1cr-filters button:disabled { opacity: .6; }
+.ue1cr-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.ue1cr-summary div { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.ue1cr-summary span { color: var(--muted); font-size: 12px; }
+.ue1cr-summary strong { font-size: 16px; }
+.ue1cr-table-card { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); overflow: hidden; }
+.ue1cr-table-wrap { overflow: auto; max-height: calc(100vh - 310px); }
+.ue1cr-table { min-width: 1440px; }
+.ue1cr-table th { position: sticky; top: 0; z-index: 1; white-space: nowrap; background: var(--card); }
+.ue1cr-table td:first-child { min-width: 230px; }
+.ue1cr-table td:first-child span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.ue1cr-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ue1cr-table tfoot th { position: sticky; bottom: 0; top: auto; background: color-mix(in srgb, var(--card) 88%, #6750d8 12%); }
+.ue1cr-empty, .ue1cr-error { padding: 24px; text-align: center; color: var(--muted); }
+.ue1cr-error { border: 1px solid #d9534f; border-radius: 12px; color: #d9534f; }
+@media (max-width: 1100px) { .ue1cr-filters { grid-template-columns: repeat(3, 1fr); } }

@@ -19,6 +19,8 @@ def init_db() -> None:
     _migrate_unit_economics_1c_cabinet_settings(database)
     _migrate_unit_economics_1c_source_values(database)
     _migrate_unit_economics_1c_daily_prices(database)
+    _migrate_unit_economics_1c_product_categories(database)
+    _migrate_unit_economics_1c_daily_advertising(database)
     if target_table_was_rebuilt:
         _finish_stock_sheet_export_target_migration(database)
     _backfill_stock_sheet_export_marketplace_urls(database)
@@ -147,6 +149,29 @@ def _migrate_unit_economics_1c_daily_prices(database: Database) -> None:
         columns = connection.column_names(table_name)
         if columns and "customer_price_with_wallet" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN customer_price_with_wallet FLOAT")
+        connection.commit()
+
+
+def _migrate_unit_economics_1c_product_categories(database: Database) -> None:
+    """Remember WB's imtID so glued cards can be shown without extra requests."""
+
+    table_name = "unit_economics_1c_product_categories"
+    with database.connect() as connection:
+        columns = connection.column_names(table_name)
+        if columns and "imt_id" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN imt_id INTEGER")
+        connection.commit()
+
+
+def _migrate_unit_economics_1c_daily_advertising(database: Database) -> None:
+    """Add traffic counters needed for seven-day CTR and CPC."""
+
+    table_name = "unit_economics_1c_wb_daily_advertising"
+    with database.connect() as connection:
+        columns = connection.column_names(table_name)
+        for column in ("impressions", "clicks"):
+            if columns and column not in columns:
+                connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
         connection.commit()
 
 

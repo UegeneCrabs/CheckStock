@@ -1,9 +1,11 @@
 import json
 import logging
 import tempfile
+import time
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -99,6 +101,7 @@ class WebRouteUnitTests(unittest.TestCase):
             "/sales/rnp",
             "/sales/unit-economics-1c/cabinet-settings",
             "/sales/unit-economics-1c",
+            "/sales/unit-economics-1c/reports/unit-profit",
             "/sales/unit-economics-1c/ozon",
             "/sales/unit-economics-1c/yandex-market",
             "/supply",
@@ -155,6 +158,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('href="/sales/unit-economics-1c"', response.text)
         self.assertIn('href="/sales/unit-economics-1c/cabinet-settings"', response.text)
+        self.assertIn('title="Отчёты"', response.text)
+        self.assertIn(">Юниточная прибыль</a>", response.text)
         self.assertNotIn('href="/sales/unit-economics/wb-fbs"', response.text)
 
     def test_cost_report_tables_have_filters_and_separate_store_marketplace_columns(self) -> None:
@@ -413,16 +418,13 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-pagination"', response.text)
         self.assertIn('id="ue1c-page-size"', response.text)
         self.assertIn('<option value="100">100</option>', response.text)
-        self.assertIn('class="ue1c-group-row"', response.text)
-        self.assertIn('colspan="7" class="ue1c-header-group ue1c-col-tag', response.text)
-        self.assertIn("Рекламные расходы", response.text)
-        self.assertIn("ДРР, %", response.text)
-        self.assertIn("Хватит, дней", response.text)
+        self.assertIn('id="ue1c-table-head"', response.text)
+        self.assertIn('id="ue1c-columns-toggle"', response.text)
+        self.assertIn('id="ue1c-column-list"', response.text)
+        self.assertIn("Товары в минус", response.text)
         self.assertNotIn('class="ue1c-col-price"', response.text)
         self.assertIn('class="data-table ue1c-redesign-table"', response.text)
-        self.assertIn('data-filter-column="0"', response.text)
-        self.assertIn('data-filter-column="18" data-filter-type="number"', response.text)
-        self.assertIn("Комментарии", response.text)
+        self.assertIn('id="ue1c-column-list"', response.text)
         self.assertNotIn("Товарная юнит-экономика", response.text)
         self.assertNotIn('class="ue1c-kpis"', response.text)
         self.assertIn('href="/sales/unit-economics-1c/ozon"', response.text)
@@ -557,6 +559,19 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(product_with_stock_history["history"][-1]["fbo_units"], 6)
         self.assertEqual(product_with_stock_history["history"][-1]["fulfillment_units"], 3)
 
+        product_with_reputation_and_glue = unit_economics._unit_economics_1c_mock_product(
+            "rimili",
+            {"article": "949558341", "name": "Основной товар"},
+            reputation={"rating": 4.8, "reviews_count": 123},
+            glued_products=[{"article": "949558342", "name": "Связанный товар"}],
+        )
+        self.assertEqual(product_with_reputation_and_glue["rating"], 4.8)
+        self.assertEqual(product_with_reputation_and_glue["reviews_count"], 123)
+        self.assertEqual(
+            product_with_reputation_and_glue["glued_products"],
+            [{"article": "949558342", "name": "Связанный товар"}],
+        )
+
     def test_unit_economics_1c_commission_panel_uses_split_taxes(self) -> None:
         root = Path(__file__).resolve().parents[2]
         script = (root / "static" / "unit-economics-1c.js").read_text(encoding="utf-8")
@@ -628,7 +643,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-calculator-mode" type="checkbox" role="switch"', template)
         self.assertIn('id="ue1c-calculator-inputs"', template)
         self.assertIn("Затраты на ФФ", template)
-        self.assertIn("Рекламные расходы, руб (7 дней)", template)
+        self.assertIn("Рекламные расходы в день, руб", template)
         self.assertIn('id="ue1c-secondary-tax-label"', template)
         for output_id in (
             "ue1c-spp-percent",
@@ -680,24 +695,21 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("Структура расходов", template)
         self.assertNotIn('id="ue1c-costs"', template)
         self.assertNotIn("nodes.costs", script)
+        self.assertIn('<details class="ue1c-formula-popover">', template)
+        self.assertIn("Показать формулу чистой прибыли", template)
         self.assertIn(
-            '<details class="ue1c-drawer-section ue1c-profit-formula">',
-            template,
-        )
-        self.assertIn('<summary class="ue1c-section-head">', template)
-        self.assertEqual(template.count("Формула чистой прибыли"), 1)
-        self.assertIn(
-            "чистая выручка − закупочная цена − фулфилмент − комиссия компании − налог НДС − налог УСН/ОСНО",
+            "чистая выручка − закупочная цена − фулфилмент − комиссия компании − НДС − УСН/ОСНО",
             template,
         )
         self.assertIn(
             "цена без СПП − эквайринг − логистика − хранение − комиссия WB − реклама по ДРР",
             template,
         )
-        self.assertIn("можно изменять любой показатель для симуляции", template)
-        self.assertIn("Эквайринг, комиссия компании, комиссия WB и ДРР считаются от цены без СПП", template)
-        self.assertIn("НДС</strong> = цена покупателя × ставка НДС", template)
-        self.assertIn("УСН</strong> = (цена покупателя − НДС) × ставка УСН", template)
+        self.assertIn("НДС</strong> = цена покупателя × ставка ÷ (100 + ставка)", template)
+        self.assertIn("УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100", template)
+        self.assertIn('id="ue1c-subject-select"', template)
+        self.assertNotIn("Симулятор параметров", template)
+        self.assertNotIn("Параметр</span><span>Значение", template)
 
     def test_unit_economics_1c_history_calculates_daily_drr_from_raw_metrics(self) -> None:
         product = unit_economics._unit_economics_1c_mock_product(
@@ -900,11 +912,19 @@ class WebRouteUnitTests(unittest.TestCase):
             "price_data_refreshed": True,
             "sync": {"ok": True, "rows": 1},
         }
+        started = Event()
+        release = Event()
+
+        def delayed_submit(store_slug, changes):
+            started.set()
+            release.wait(timeout=2)
+            return report
+
         with (
             mock.patch.object(
                 unit_economics.unit_economics_1c_prices,
                 "submit_price_changes",
-                return_value=report,
+                side_effect=delayed_submit,
             ) as submit,
             mock.patch.object(
                 unit_economics.unit_economics_1c_prices,
@@ -925,10 +945,22 @@ class WebRouteUnitTests(unittest.TestCase):
                 },
                 headers={"X-Requested-With": "fetch"},
             )
-
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertTrue(response.json()["ok"])
-        self.assertEqual(response.json()["accepted_product_ids"], ["rimili:949558341"])
+            self.assertEqual(response.status_code, 202, response.text)
+            self.assertTrue(response.json()["ok"])
+            job_id = response.json()["job_id"]
+            self.assertTrue(started.wait(timeout=1))
+            running = self.client.get(f"/api/unit-economics-1c/prices/jobs/{job_id}")
+            self.assertIn(running.json()["status"], {"queued", "running"})
+            release.set()
+            for _ in range(100):
+                job_response = self.client.get(f"/api/unit-economics-1c/prices/jobs/{job_id}")
+                if job_response.json()["status"] not in {"queued", "running"}:
+                    break
+                time.sleep(0.01)
+            self.assertEqual(job_response.status_code, 200, job_response.text)
+            self.assertEqual(job_response.json()["status"], "success")
+            result = job_response.json()["result"]
+            self.assertEqual(result["accepted_product_ids"], ["rimili:949558341"])
         submit.assert_called_once_with(
             "rimili",
             [
@@ -940,7 +972,64 @@ class WebRouteUnitTests(unittest.TestCase):
             ],
         )
         finalize.assert_called_once_with("rimili", report)
-        self.assertTrue(response.json()["price_data_refreshed"])
+        self.assertTrue(result["price_data_refreshed"])
+
+    def test_unit_profit_report_supports_period_filters_and_totals(self) -> None:
+        metrics = {
+            ("rimili", "949558341"): {
+                "period_from": "2026-08-13",
+                "period_to": "2026-08-19",
+                "period_days": 7,
+                "spend": 210,
+                "average_daily_spend": 30,
+                "impressions": 1000,
+                "clicks": 25,
+                "ctr": 2.5,
+                "cpc": 8.4,
+                "orders_amount": 5000,
+                "orders_count": 10,
+                "sold_count": 8,
+                "buyout_percent": 80,
+                "drr": 4.2,
+                "daily": [],
+            }
+        }
+        with mock.patch.object(
+            unit_economics.unit_economics_1c,
+            "load_product_metrics",
+            return_value=metrics,
+        ):
+            response = self.client.get(
+                "/api/unit-economics-1c/reports/unit-profit",
+                params={
+                    "date_from": "2026-08-13",
+                    "date_to": "2026-08-19",
+                    "store": "rimili",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual((payload["period_from"], payload["period_to"]), ("2026-08-13", "2026-08-19"))
+        row = next(item for item in payload["rows"] if item["article"] == "949558341")
+        self.assertEqual(row["orders_count"], 10)
+        self.assertEqual(row["orders_amount"], 5000)
+        self.assertEqual(row["buyout_percent"], 80)
+        self.assertEqual(row["ctr"], 2.5)
+        self.assertEqual(row["cpc"], 8.4)
+        self.assertEqual(row["advertising_spend"], 210)
+        self.assertIn("legal_entity", row)
+        self.assertIn("subject", row)
+        self.assertEqual(payload["totals"]["orders_count"], 10)
+        self.assertEqual(payload["totals"]["ctr"], 2.5)
+        self.assertIn("legal_entities", payload["filters"])
+        self.assertIn("subjects", payload["filters"])
+
+        invalid = self.client.get(
+            "/api/unit-economics-1c/reports/unit-profit",
+            params={"date_from": "2026-08-20", "date_to": "2026-08-19"},
+        )
+        self.assertEqual(invalid.status_code, 422)
 
     def test_unit_economics_1c_price_preview_endpoint_is_point_only(self) -> None:
         db.replace_catalog(

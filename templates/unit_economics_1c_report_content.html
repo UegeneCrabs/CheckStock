@@ -1,0 +1,38 @@
+    <link rel="stylesheet" href="/static/unit-economics-1c-report.css?v=1">
+    <section class="ue1cr-page" id="unit-economics-1c-report">
+        <header class="ue1cr-head">
+            <div>
+                <span>Отчёты</span>
+                <h1>Юниточная прибыль</h1>
+            </div>
+            <p>Продажи и юнит-экономика по артикулам за произвольный период.</p>
+        </header>
+        <form class="ue1cr-filters" id="ue1cr-filters">
+            <label><span>С</span><input type="date" id="ue1cr-date-from" required></label>
+            <label><span>По</span><input type="date" id="ue1cr-date-to" required></label>
+            <label><span>Магазин</span><select id="ue1cr-store"><option value="all">Все магазины</option></select></label>
+            <label><span>Предмет</span><select id="ue1cr-subject"><option value="">Все предметы</option></select></label>
+            <label><span>Юрлицо</span><select id="ue1cr-legal"><option value="">Все юрлица</option></select></label>
+            <button type="submit" id="ue1cr-submit">Сформировать</button>
+        </form>
+        <section class="ue1cr-summary" id="ue1cr-summary" aria-live="polite"></section>
+        <section class="ue1cr-table-card">
+            <div class="ue1cr-table-wrap">
+                <table class="data-table ue1cr-table">
+                    <thead><tr>
+                        <th>Товар</th><th>Магазин</th><th>Предмет</th><th>Юрлицо</th>
+                        <th class="num">Заказы, шт.</th><th class="num">Заказы, ₽</th>
+                        <th class="num">Выкуп, %</th><th class="num">Остатки</th>
+                        <th class="num">CTR, %</th><th class="num">CPC, ₽</th>
+                        <th class="num">Реклама, ₽</th><th class="num">Маржа, ₽</th><th class="num">ROI, %</th>
+                    </tr></thead>
+                    <tbody id="ue1cr-rows"></tbody>
+                    <tfoot id="ue1cr-total"></tfoot>
+                </table>
+                <div class="ue1cr-empty" id="ue1cr-empty" hidden>За выбранный период данных нет.</div>
+            </div>
+        </section>
+        <div class="ue1cr-error" id="ue1cr-error" role="alert" hidden></div>
+    </section>
+    <script type="application/json" id="ue1cr-config">$unit_1c_report_config</script>
+    <script src="/static/unit-economics-1c-report.js?v=1"></script>

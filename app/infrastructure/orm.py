@@ -637,6 +637,7 @@ class UnitEconomics1CProductCategoryRecord(OrmBase):
         primary_key=True,
     )
     wb_subject_id: Mapped[int | None] = mapped_column(Integer)
+    imt_id: Mapped[int | None] = mapped_column(Integer, index=True)
     category: Mapped[str | None] = mapped_column(String)
     category_key: Mapped[str | None] = mapped_column(String, index=True)
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -705,6 +706,8 @@ class UnitEconomics1CDailyAdvertisingRecord(OrmBase):
     day: Mapped[str] = mapped_column(String, primary_key=True)
     marketplace: Mapped[str] = mapped_column(String, nullable=False, default="WB", server_default="WB")
     spend: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    impressions: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    clicks: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
 
 

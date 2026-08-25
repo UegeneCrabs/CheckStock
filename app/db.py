@@ -149,6 +149,9 @@ from app.repositories.unit_economics_1c import (
     get_latest_daily_prices as get_unit_economics_1c_latest_daily_prices,
 )
 from app.repositories.unit_economics_1c import (
+    get_latest_product_reputation as get_unit_economics_1c_latest_product_reputation,
+)
+from app.repositories.unit_economics_1c import (
     get_latest_reliable_spp_prices as get_unit_economics_1c_latest_reliable_spp_prices,
 )
 from app.repositories.unit_economics_1c import (
@@ -177,6 +180,9 @@ from app.repositories.unit_economics_1c import (
 )
 from app.repositories.unit_economics_1c import (
     list_product_settings as list_unit_economics_1c_product_settings,
+)
+from app.repositories.unit_economics_1c import (
+    list_wb_commissions as list_unit_economics_1c_wb_commissions,
 )
 from app.repositories.unit_economics_1c import (
     product_categories_due as unit_economics_1c_product_categories_due,
@@ -324,6 +330,8 @@ __all__ = (
     "record_sales_sync",
     "record_unit_economics_1c_advertising_sync_state",
     "record_unit_economics_1c_price_sync_state",
+    "get_unit_economics_1c_latest_product_reputation",
+    "list_unit_economics_1c_wb_commissions",
     "record_sync_health",
     "record_used_source",
     "replace_catalog",

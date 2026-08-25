@@ -177,6 +177,7 @@ def render_page(
         "unit_1c_wb": "ЮНИТ-ЭКОНОМИКА 1С / WILDBERRIES",
         "unit_1c_ozon": "ЮНИТ-ЭКОНОМИКА 1С / OZON",
         "unit_1c_yandex": "ЮНИТ-ЭКОНОМИКА 1С / ЯНДЕКС МАРКЕТ",
+        "unit_1c_reports": "ОТЧЁТЫ / ЮНИТОЧНАЯ ПРИБЫЛЬ",
         "supply": "ПОСТАВКИ И ЗАЯВКИ",
         "stock": "УПРАВЛЕНИЕ ЗАПАСАМИ",
         "stock_total": "УПРАВЛЕНИЕ ЗАПАСАМИ / ОСТАТКИ ТОТАЛ",
@@ -200,7 +201,13 @@ def render_page(
         "stock_randomizer",
         "stock_cost_report",
     }
-    unit_1c_open = active in {"unit_1c_settings", "unit_1c_wb", "unit_1c_ozon", "unit_1c_yandex"}
+    unit_1c_open = active in {
+        "unit_1c_settings",
+        "unit_1c_wb",
+        "unit_1c_ozon",
+        "unit_1c_yandex",
+    }
+    reports_open = active == "unit_1c_reports"
     visible = {section: has_access(user, section) for section in SectionName}
     sales_sections = (
         SectionName.SALES,
@@ -246,6 +253,11 @@ def render_page(
         unit_1c_wb_active="active" if active == "unit_1c_wb" else "",
         unit_1c_ozon_active="active" if active == "unit_1c_ozon" else "",
         unit_1c_yandex_active="active" if active == "unit_1c_yandex" else "",
+        reports_open="is-open" if reports_open else "",
+        reports_expanded="true" if reports_open else "false",
+        reports_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
+        reports_group_active="active" if reports_open else "",
+        unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
         supply_active="active" if active == "supply" else "",
         supply_hidden=hidden(visible[SectionName.SUPPLY]),
         stock_active="active" if active == "stock" else "",

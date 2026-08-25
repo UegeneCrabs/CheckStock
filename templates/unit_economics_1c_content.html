@@ -1,4 +1,4 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=27">
+    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=28">
 
         <section class="ue1c-page" id="unit-economics-1c">
             <div class="ue1c-toolbar">
@@ -14,6 +14,15 @@
                     <button class="ue1c-segment is-active" data-state-filter="all" type="button">Все</button>
                     <button class="ue1c-segment" data-state-filter="risk" type="button">Риски</button>
                     <button class="ue1c-segment" data-state-filter="low" type="button">Мало остатков</button>
+                    <button class="ue1c-segment" data-state-filter="negative" type="button">Товары в минус</button>
+                </div>
+                <div class="ue1c-column-settings">
+                    <button class="ue1c-ghost-button" id="ue1c-columns-toggle" type="button"
+                            aria-expanded="false">Колонки</button>
+                    <div class="ue1c-column-panel" id="ue1c-column-panel" hidden>
+                        <strong>Порядок и видимость</strong>
+                        <div id="ue1c-column-list"></div>
+                    </div>
                 </div>
                 <button class="ue1c-ghost-button" id="ue1c-refresh" type="button">Обновить</button>
             </div>
@@ -21,52 +30,8 @@
             <section class="ue1c-table-card" aria-label="Таблица товаров">
                 <div class="ue1c-table-wrap" id="ue1c-table-wrap">
                     <table class="data-table ue1c-redesign-table" id="ue1c-table">
-                        <colgroup>
-                            <col style="width:17%">
-                            <col class="ue1c-col-comments" style="width:8%">
-                            <col class="ue1c-col-tag" style="width:4%"><col class="ue1c-col-tag" style="width:3.5%">
-                            <col class="ue1c-col-tag" style="width:4.8%"><col class="ue1c-col-tag" style="width:5.2%">
-                            <col class="ue1c-col-tag" style="width:4%"><col class="ue1c-col-tag" style="width:4.75%">
-                            <col class="ue1c-col-tag" style="width:4.75%">
-                            <col style="width:4.2%"><col style="width:5.4%">
-                            <col style="width:5.5%"><col style="width:5.5%"><col style="width:4.6%">
-                            <col style="width:4.3%"><col style="width:3.6%"><col style="width:3.6%">
-                            <col style="width:3.4%"><col style="width:3.9%">
-                        </colgroup>
-                        <thead>
-                            <tr class="ue1c-group-row">
-                                <th rowspan="2" data-filter-column="0">Товар</th>
-                                <th rowspan="2" class="ue1c-col-comments" data-filter-column="1">Комментарии</th>
-                                <th colspan="7" class="ue1c-header-group ue1c-col-tag ue1c-group-start">Тег</th>
-                                <th colspan="2" class="ue1c-header-group ue1c-group-start">Рекламные расходы</th>
-                                <th colspan="3" class="ue1c-header-group ue1c-group-start">Экономика за 7 дней</th>
-                                <th colspan="5" class="ue1c-header-group ue1c-group-start">Остатки</th>
-                            </tr>
-                            <tr class="ue1c-subhead-row">
-                                <th class="ue1c-col-tag ue1c-group-start" data-filter-column="2" data-filter-type="number">Цель неделя</th>
-                                <th class="ue1c-col-tag" data-filter-column="3" data-filter-type="number">Цель день</th>
-                                <th class="ue1c-col-tag" data-filter-column="4">Статус стока</th>
-                                <th class="ue1c-col-tag" data-filter-column="5">Сток закончится</th>
-                                <th class="ue1c-col-tag" data-filter-column="6">Код товара</th>
-                                <th class="ue1c-col-tag" data-filter-column="7" data-filter-type="number">Факт прош. недели</th>
-                                <th class="ue1c-col-tag" data-filter-column="8" data-filter-type="number">План прош. недели</th>
-                                <th class="ue1c-num ue1c-group-start" data-filter-column="9" data-filter-type="number"
-                                    title="Расходы на рекламу / заказали на сумму за последние 7 дней">ДРР, %</th>
-                                <th class="ue1c-num" data-filter-column="10" data-filter-type="number"
-                                    title="Затраты на рекламу WB за последние 7 дней">Затраты, ₽</th>
-                                <th class="ue1c-num ue1c-group-start" data-filter-column="11" data-filter-type="number"
-                                    title="ТО: полная сумма заказов по цене покупателя за последние 7 дней">ТО, ₽</th>
-                                <th class="ue1c-num" data-filter-column="12" data-filter-type="number"
-                                    title="Чистая прибыль по всем заказам за последние 7 дней">Маржа, ₽</th>
-                                <th class="ue1c-num" data-filter-column="13" data-filter-type="number"
-                                    title="Чистая прибыль / закупочная стоимость заказанных товаров">ROI, %</th>
-                                <th class="ue1c-num ue1c-group-start" data-filter-column="14" data-filter-type="number">Всего</th>
-                                <th class="ue1c-num" data-filter-column="15" data-filter-type="number">FBS</th>
-                                <th class="ue1c-num" data-filter-column="16" data-filter-type="number">FBO</th>
-                                <th class="ue1c-num" data-filter-column="17" data-filter-type="number">ФФ</th>
-                                <th class="ue1c-num" data-filter-column="18" data-filter-type="number">Хватит, дней</th>
-                            </tr>
-                        </thead>
+                        <colgroup id="ue1c-colgroup"></colgroup>
+                        <thead id="ue1c-table-head"></thead>
                         <tbody id="ue1c-product-rows"></tbody>
                     </table>
                     <div class="ue1c-empty" id="ue1c-empty" hidden>
@@ -116,10 +81,7 @@
                     <section class="ue1c-tab-panel" id="ue1c-panel-economics" role="tabpanel">
                         <section class="ue1c-calculator" aria-labelledby="ue1c-calculator-title">
                             <header class="ue1c-calculator-head">
-                                <div>
-                                    <span class="ue1c-calculator-kicker">Симулятор параметров</span>
-                                    <h3 id="ue1c-calculator-title">Калькулятор чистой прибыли</h3>
-                                </div>
+                                <h3 class="visually-hidden" id="ue1c-calculator-title">Расчёт чистой прибыли</h3>
                                 <div class="ue1c-calculator-tools">
                                     <label class="ue1c-calculator-mode" for="ue1c-calculator-mode">
                                         <span>Подробный расчёт</span>
@@ -127,22 +89,31 @@
                                                aria-controls="ue1c-calculator-inputs">
                                         <i aria-hidden="true"></i>
                                     </label>
+                                    <details class="ue1c-formula-popover">
+                                        <summary aria-label="Показать формулу чистой прибыли">?</summary>
+                                        <div>
+                                            <p><strong>Чистая прибыль</strong> = чистая выручка − закупочная цена − фулфилмент − комиссия компании − НДС − УСН/ОСНО.</p>
+                                            <p><strong>Чистая выручка</strong> = цена без СПП − эквайринг − логистика − хранение − комиссия WB − реклама по ДРР.</p>
+                                            <p><strong>НДС</strong> = цена покупателя × ставка ÷ (100 + ставка).</p>
+                                            <p><strong>УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100.</p>
+                                        </div>
+                                    </details>
                                     <button class="ue1c-calculator-reset" id="ue1c-calculator-reset" type="button">Сбросить</button>
                                 </div>
                             </header>
                             <div class="ue1c-calculator-body">
                                 <div class="ue1c-calculator-inputs" id="ue1c-calculator-inputs">
-                                    <div class="ue1c-calculator-columns"><span>Параметр</span><span>Значение</span></div>
                                     <label class="ue1c-calculator-row" style="--compact-order:0;--expanded-order:0"><span><span class="ue1c-compact-label">Цена без СПП</span><span class="ue1c-expanded-label">Цена без СПП, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-price-input" data-calculator-input="retail" type="number" min="1" step="1"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:1"><span>СПП, %</span><span class="ue1c-calculator-field"><input id="ue1c-spp-percent" data-calculator-input="spp" type="number" min="0" max="99.99" step="0.01"><b>%</b></span></label>
                                     <label class="ue1c-calculator-row" style="--compact-order:1;--expanded-order:2"><span><span class="ue1c-compact-label">Цена с СПП</span><span class="ue1c-expanded-label">Цена с СПП, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-spp-price-input" data-calculator-input="client" type="number" min="1" step="1"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:3"><span>WB Кошелёк, %</span><span class="ue1c-calculator-field"><input id="ue1c-wallet-percent" data-calculator-input="walletPercent" type="number" min="0" max="99.99" step="0.01"><b>%</b></span></label>
                                     <label class="ue1c-calculator-row" style="--compact-order:2;--expanded-order:4"><span><span class="ue1c-compact-label">Цена с WB Кошельком</span><span class="ue1c-expanded-label">Цена с WB Кошельком, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-wallet-price-input" data-calculator-input="wallet" type="number" min="1" step="1" placeholder="недоступна"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Предмет</span><span class="ue1c-calculator-field ue1c-calculator-field--select"><select id="ue1c-subject-select" aria-label="Предмет товара"></select></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Комиссия WB, %</span><span class="ue1c-calculator-field"><input data-calculator-input="commission" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:6"><span>Комиссия WB, руб</span><span class="ue1c-calculator-field"><input id="ue1c-commission-rub" data-calculator-input="commissionRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:7"><span>Логистика, руб</span><span class="ue1c-calculator-field"><input data-calculator-input="logistics" type="number" min="0" step="0.01"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row" style="--compact-order:3;--expanded-order:8"><span><span class="ue1c-compact-label">ДРР</span><span class="ue1c-expanded-label">ДРР, % (7 дней)</span></span><span class="ue1c-calculator-field"><input data-calculator-input="drr" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
-                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:9"><span>Рекламные расходы, руб (7 дней)</span><span class="ue1c-calculator-field"><input id="ue1c-advertising-rub" data-calculator-input="advertisingRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:9"><span>Рекламные расходы в день, руб</span><span class="ue1c-calculator-field"><input id="ue1c-advertising-rub" data-calculator-input="advertisingRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:10"><span>Эквайринг, %</span><span class="ue1c-calculator-field"><input id="ue1c-acquiring-percent" data-calculator-input="acquiringPercent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:11"><span>Эквайринг, руб</span><span class="ue1c-calculator-field"><input id="ue1c-acquiring-rub" data-calculator-input="acquiringRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
                                     <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:12"><span>Хранение, руб</span><span class="ue1c-calculator-field"><input id="ue1c-storage-rub" data-calculator-input="storageTotal" type="number" min="0" step="0.01"><b>₽</b></span></label>
@@ -161,7 +132,6 @@
                                 </div>
                                 <aside class="ue1c-calculator-results" id="ue1c-price-metrics" aria-live="polite"></aside>
                             </div>
-                            <p class="ue1c-calculator-note">В подробном режиме можно изменять любой показатель для симуляции. «Сбросить» возвращает все значения из базы.</p>
                             <footer class="ue1c-calculator-actions">
                                 <button class="ue1c-break-even" id="ue1c-break-even" type="button">Цена без убытка</button>
                                 <span id="ue1c-save-state">Сохранение сразу отправит цену в WB</span>
@@ -169,18 +139,10 @@
                             </footer>
                         </section>
 
-                        <details class="ue1c-drawer-section ue1c-profit-formula">
-                            <summary class="ue1c-section-head">
-                                <h3 id="ue1c-profit-formula-title">Формула чистой прибыли</h3>
-                            </summary>
-                            <div class="ue1c-profit-formula-body">
-                                <p><strong>Чистая прибыль</strong> = чистая выручка − закупочная цена − фулфилмент − комиссия компании − налог НДС − налог УСН/ОСНО.</p>
-                                <p><strong>Чистая выручка</strong> = цена без СПП − эквайринг − логистика − хранение − комиссия WB − реклама по ДРР.</p>
-                                <p><strong>НДС</strong> = цена покупателя × ставка НДС ÷ (100 + ставка НДС).</p>
-                                <p><strong>УСН</strong> = (цена покупателя − НДС) × ставка УСН ÷ 100. Для GOGOL в режиме ОСНО: <strong>ОСНО</strong> = цена покупателя × ставка ОСНО ÷ 100.</p>
-                                <p>Эквайринг, комиссия компании, комиссия WB и ДРР считаются от цены без СПП. Цена покупателя — цена с СПП, а при её отсутствии — цена без СПП.</p>
-                            </div>
-                        </details>
+                        <section class="ue1c-drawer-section" id="ue1c-glued-section" hidden>
+                            <div class="ue1c-section-head"><h3>Связанные артикулы</h3><span>склейка WB</span></div>
+                            <div class="ue1c-glued-products" id="ue1c-glued-products"></div>
+                        </section>
 
                         <section class="ue1c-drawer-section">
                             <div class="ue1c-section-head">
@@ -234,4 +196,4 @@
         </section>
 
         <script type="application/json" id="ue1c-config">$unit_1c_config</script>
-    <script src="/static/unit-economics-1c.js?v=41"></script>
+    <script src="/static/unit-economics-1c.js?v=42"></script>

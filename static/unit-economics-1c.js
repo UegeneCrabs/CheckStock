@@ -8,6 +8,7 @@
     var config = JSON.parse(configNode.textContent || '{}');
     var products = Array.isArray(config.products) ? config.products : [];
     var stores = Array.isArray(config.stores) ? config.stores : [];
+    var subjectCommissions = Array.isArray(config.subjectCommissions) ? config.subjectCommissions : [];
     var canEdit = config.canEdit === true;
     var productsById = {};
     products.forEach(function (product) { productsById[product.id] = product; });
@@ -18,37 +19,94 @@
     var preciseMoney = new Intl.NumberFormat('ru-RU', {
         style: 'currency', currency: 'RUB', minimumFractionDigits: 2, maximumFractionDigits: 2
     });
-    var commentsKey = 'checkstock.unit-economics-1c.comments';
+    var userKey = String(config.userKey || 'anonymous');
+    var commentsKey = 'checkstock.unit-economics-1c.comments.' + userKey;
+    var columnsKey = 'checkstock.unit-economics-1c.columns.' + userKey;
+    var priceJobsKey = 'checkstock.unit-economics-1c.price-jobs.' + userKey;
     var comments = readJson(commentsKey, {});
+    var pendingPriceJobs = readJson(priceJobsKey, []);
+    if (!Array.isArray(pendingPriceJobs)) pendingPriceJobs = [];
     var toastTimer = 0;
     var sendingPrice = false;
     var editedPriceKind = 'retail';
     var pendingPriceChange = null;
     var state = {
         query: '', store: 'all', status: 'all', page: 1, pageSize: 20,
-        selected: null, sortColumn: 11, sortDirection: -1, tableFilters: {}
+        selected: null, sortColumn: 4, sortDirection: -1, tableFilters: {}
     };
     var nodes = {
         table: id('ue1c-table'), rows: id('ue1c-product-rows'), empty: id('ue1c-empty'), search: id('ue1c-search'),
         store: id('ue1c-store-filter'), tableWrap: id('ue1c-table-wrap'), pageSize: id('ue1c-page-size'),
         pagePrev: id('ue1c-page-prev'), pageNext: id('ue1c-page-next'), pageNumbers: id('ue1c-page-numbers'),
         summary: id('ue1c-pagination-summary'), refresh: id('ue1c-refresh'), overlay: id('ue1c-overlay'),
+        colgroup: id('ue1c-colgroup'), tableHead: id('ue1c-table-head'),
+        columnsToggle: id('ue1c-columns-toggle'), columnPanel: id('ue1c-column-panel'),
+        columnList: id('ue1c-column-list'),
         detail: id('ue1c-detail'), detailClose: id('ue1c-detail-close'), drawerThumb: id('ue1c-drawer-thumb'),
         drawerTitle: id('ue1c-drawer-title'), drawerMeta: id('ue1c-drawer-meta'), priceInput: id('ue1c-price-input'),
         sppPriceInput: id('ue1c-spp-price-input'), walletPriceInput: id('ue1c-wallet-price-input'),
         calculatorReset: id('ue1c-calculator-reset'), calculatorMode: id('ue1c-calculator-mode'),
         calculatorFields: id('ue1c-calculator-inputs'),
+        subjectSelect: id('ue1c-subject-select'),
         calculatorInputs: root.querySelectorAll('[data-calculator-input]'),
         breakEven: id('ue1c-break-even'), saveState: id('ue1c-save-state'), savePrice: id('ue1c-save-price'),
         priceMetrics: id('ue1c-price-metrics'), parameters: id('ue1c-parameter-groups'),
         secondaryTaxLabel: id('ue1c-secondary-tax-label'),
         chart: id('ue1c-chart'), chartWrap: id('ue1c-chart-wrap'), chartTooltip: id('ue1c-chart-tooltip'),
+        gluedSection: id('ue1c-glued-section'), gluedProducts: id('ue1c-glued-products'),
         confirmModal: id('ue1c-price-confirm-modal'), confirmClose: id('ue1c-price-confirm-close'),
         confirmCancel: id('ue1c-price-confirm-cancel'), confirmSend: id('ue1c-price-confirm-send'),
         confirmProduct: id('ue1c-price-confirm-product'), confirmTarget: id('ue1c-price-confirm-target'),
         confirmGrid: id('ue1c-price-confirm-grid'), confirmWarning: id('ue1c-price-confirm-warning'),
         toast: id('ue1c-toast')
     };
+
+    var columnGroups = [
+        { key: 'product', label: 'Товар', fixed: true, columns: [{ index: 0, label: 'Товар', width: 260 }] },
+        { key: 'comments', label: 'Комментарии', columns: [{ index: 1, label: 'Комментарии', width: 260 }] },
+        { key: 'current', label: 'Текущая экономика', columns: [
+            { index: 2, label: 'Маржа, ₽', number: true, width: 100 },
+            { index: 3, label: 'ROI, %', number: true, width: 85 }
+        ] },
+        { key: 'actual', label: 'Экономика за 7 дней', columns: [
+            { index: 4, label: 'ТО, ₽', number: true, width: 105 },
+            { index: 5, label: 'Маржа, ₽', number: true, width: 105 },
+            { index: 6, label: 'ROI, %', number: true, width: 85 }
+        ] },
+        { key: 'advertising', label: 'Реклама за 7 дней', columns: [
+            { index: 7, label: 'ДРР, %', number: true, width: 80 },
+            { index: 8, label: 'Затраты, ₽', number: true, width: 100 },
+            { index: 9, label: 'CTR, %', number: true, width: 78 },
+            { index: 10, label: 'CPC, ₽', number: true, width: 78 }
+        ] },
+        { key: 'tag', label: 'Тег', columns: [
+            { index: 11, label: 'Цель неделя', number: true, width: 90 },
+            { index: 12, label: 'Цель день', number: true, width: 80 },
+            { index: 13, label: 'Статус стока', width: 100 },
+            { index: 14, label: 'Сток закончится', width: 105 },
+            { index: 15, label: 'Код товара', width: 85 },
+            { index: 16, label: 'Факт прош. недели', number: true, width: 105 },
+            { index: 17, label: 'План прош. недели', number: true, width: 105 }
+        ] },
+        { key: 'stock', label: 'Остатки', columns: [
+            { index: 18, label: 'Всего', number: true, width: 75 },
+            { index: 19, label: 'FBS', number: true, width: 65 },
+            { index: 20, label: 'FBO', number: true, width: 65 },
+            { index: 21, label: 'ФФ', number: true, width: 65 },
+            { index: 22, label: 'Хватит, дней', number: true, width: 90 }
+        ] }
+    ];
+    var defaultColumnOrder = columnGroups.map(function (group) { return group.key; });
+    var savedColumns = readJson(columnsKey, {});
+    var columnPreferences = {
+        order: Array.isArray(savedColumns.order) ? savedColumns.order.filter(function (key) {
+            return defaultColumnOrder.indexOf(key) !== -1;
+        }) : defaultColumnOrder.slice(),
+        hidden: Array.isArray(savedColumns.hidden) ? savedColumns.hidden.slice() : []
+    };
+    defaultColumnOrder.forEach(function (key) {
+        if (columnPreferences.order.indexOf(key) === -1) columnPreferences.order.push(key);
+    });
 
     function id(value) { return document.getElementById(value); }
     function readJson(key, fallback) {
@@ -129,20 +187,79 @@
             + '" data-copy-tooltip="Нажмите, чтобы скопировать">' + escapeHtml(label)
             + ' <strong>' + escapeHtml(value) + '</strong></button>';
     }
-    function productState(product) {
-        var stockTotal = finite(product.stock.total, null);
-        var drr = finite(product.advertising.drr, null);
-        if (stockTotal !== null && stockTotal < 80) return 'low';
-        if ((drr !== null && drr >= 18) || String(tagData(product).status || '').toUpperCase() === 'LOW') {
-            return 'risk';
+    function groupByKey(key) {
+        return columnGroups.find(function (group) { return group.key === key; });
+    }
+    function visibleColumnGroups() {
+        return columnPreferences.order.map(groupByKey).filter(function (group) {
+            return group && (group.fixed || columnPreferences.hidden.indexOf(group.key) === -1);
+        });
+    }
+    function renderTableHeader() {
+        var groups = visibleColumnGroups();
+        nodes.colgroup.innerHTML = groups.map(function (group) {
+            return group.columns.map(function (column) {
+                return '<col data-column-group="' + group.key + '" style="width:' + column.width + 'px">';
+            }).join('');
+        }).join('');
+        var top = '';
+        var sub = '';
+        groups.forEach(function (group) {
+            if (group.columns.length === 1) {
+                var only = group.columns[0];
+                top += '<th rowspan="2" data-filter-column="' + only.index + '">' + escapeHtml(only.label) + '</th>';
+                return;
+            }
+            top += '<th colspan="' + group.columns.length + '" class="ue1c-header-group ue1c-group-start">'
+                + escapeHtml(group.label) + '</th>';
+            sub += group.columns.map(function (column, index) {
+                return '<th class="' + (column.number ? 'ue1c-num ' : '')
+                    + (index === 0 ? 'ue1c-group-start' : '') + '" data-filter-column="'
+                    + column.index + '"' + (column.number ? ' data-filter-type="number"' : '') + '>'
+                    + escapeHtml(column.label) + '</th>';
+            }).join('');
+        });
+        nodes.tableHead.innerHTML = '<tr class="ue1c-group-row">' + top
+            + '</tr><tr class="ue1c-subhead-row">' + sub + '</tr>';
+    }
+    function saveColumnPreferences() {
+        writeJson(columnsKey, columnPreferences);
+        renderTableHeader();
+        renderColumnSettings();
+        renderPage();
+        if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
+            window.CheckStockTableFilter.refresh(nodes.table);
         }
+    }
+    function renderColumnSettings() {
+        nodes.columnList.innerHTML = columnPreferences.order.map(function (key, index) {
+            var group = groupByKey(key);
+            if (!group) return '';
+            var checked = group.fixed || columnPreferences.hidden.indexOf(key) === -1;
+            return '<div class="ue1c-column-option" data-column-key="' + key + '"><label><input type="checkbox"'
+                + (checked ? ' checked' : '') + (group.fixed ? ' disabled' : '') + '> <span>'
+                + escapeHtml(group.label) + '</span></label><div><button type="button" data-column-move="up"'
+                + (index === 0 ? ' disabled' : '') + ' aria-label="Выше">↑</button><button type="button"'
+                + ' data-column-move="down"' + (index === columnPreferences.order.length - 1 ? ' disabled' : '')
+                + ' aria-label="Ниже">↓</button></div></div>';
+        }).join('');
+    }
+    function productState(product) {
+        var current = product.current_economics || {};
+        if (finite(current.roi, 0) < 0) return 'negative';
+        var stockState = product.stock && product.stock.state || {};
+        if (stockState.is_low) return 'low';
+        if (stockState.is_risk) return 'risk';
         return 'ok';
     }
     function productSearchValue(product) {
         var tag = tagData(product);
         return [product.name, product.article, product.barcode, product.store_name, commentText(product.id),
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
-            product.advertising.drr, product.advertising.spend,
+            product.rating, product.reviews_count, product.advertising.drr, product.advertising.spend,
+            product.advertising.ctr, product.advertising.cpc,
+            product.current_economics && product.current_economics.margin,
+            product.current_economics && product.current_economics.roi,
             product.economics_7d && product.economics_7d.turnover,
             product.economics_7d && product.economics_7d.margin,
             product.economics_7d && product.economics_7d.roi, product.stock.total, product.stock.fbs,
@@ -152,11 +269,15 @@
         var tag = tagData(product);
         var values = [
             [product.name, product.article, product.barcode, product.store_name].join(' · '),
-            commentText(product.id), tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code,
-            tag.fact, tag.plan, product.advertising.drr, product.advertising.spend,
+            commentText(product.id),
+            product.current_economics && product.current_economics.margin,
+            product.current_economics && product.current_economics.roi,
             product.economics_7d && product.economics_7d.turnover,
             product.economics_7d && product.economics_7d.margin,
             product.economics_7d && product.economics_7d.roi,
+            product.advertising.drr, product.advertising.spend,
+            product.advertising.ctr, product.advertising.cpc,
+            tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.stock.total, product.stock.fbs, product.stock.fbo,
             product.stock.fulfillment, product.stock.days
         ];
@@ -188,49 +309,61 @@
         var stockTitle = 'Заказы за ' + integer.format(finite(stock.period_days, 21)) + ' дн.: '
             + integer.format(finite(stock.orders_21d, 0)) + ' · среднесуточно: '
             + decimal.format(finite(stock.average_daily_orders, 0));
-        return '<tr data-product-id="' + escapeHtml(product.id) + '"'
-            + (rowClasses.length ? ' class="' + rowClasses.join(' ') + '"' : '') + '>'
-            + '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')
+        var current = product.current_economics || {};
+        var cells = {};
+        cells.product = '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')
             + '<div><button class="ue1c-product-name" type="button" data-product-open="' + escapeHtml(product.id)
             + '" title="Открыть карточку товара">' + escapeHtml(product.name)
             + '</button><div class="ue1c-product-meta">' + copyValue('Арт.', product.article)
             + copyValue('Баркод', product.barcode) + '<span>' + escapeHtml(product.store_name) + '</span>'
             + '<span title="Рейтинг товара">★ ' + escapeHtml(nullText(product.rating)) + '</span>'
-            + '</div></div></div></td>'
-            + '<td class="ue1c-col-comments"><textarea class="ue1c-comment-input" data-comment-id="'
+            + '<span title="Количество отзывов">' + escapeHtml(nullText(product.reviews_count)) + ' отзывов</span>'
+            + '</div></div></div></td>';
+        cells.comments = '<td class="ue1c-col-comments"><textarea class="ue1c-comment-input" data-comment-id="'
             + escapeHtml(product.id) + '" maxlength="480" placeholder="Добавить комментарий…"'
             + ' aria-label="Комментарий к товару ' + escapeHtml(product.name) + '">'
-            + escapeHtml(commentText(product.id)) + '</textarea></td>'
-            + '<td class="ue1c-col-tag ue1c-group-start ue1c-num"><strong>' + escapeHtml(nullText(tag.goal_week)) + '</strong></td>'
+            + escapeHtml(commentText(product.id)) + '</textarea></td>';
+        cells.current = '<td class="ue1c-num ue1c-group-start"><strong>'
+            + nullable(current.margin, money) + '</strong></td><td class="ue1c-num"><strong>'
+            + nullable(current.roi, decimal, '%') + '</strong></td>';
+        cells.actual = '<td class="ue1c-num ue1c-group-start"><strong title="' + escapeHtml(economicsTitle) + '">'
+            + nullable(economics.turnover, money) + '</strong></td>'
+            + '<td class="ue1c-num"><strong title="' + escapeHtml(economicsTitle) + '">'
+            + nullable(economics.margin, money) + '</strong></td>'
+            + '<td class="ue1c-num"><strong title="' + escapeHtml(economicsTitle) + '">'
+            + nullable(economics.roi, decimal, '%') + '</strong></td>';
+        cells.advertising = '<td class="ue1c-num ue1c-group-start"><span class="ue1c-drr' + drrClass + '" title="'
+            + escapeHtml(advertisingTitle) + '">' + (drr === null ? '—' : decimal.format(drr) + '%')
+            + '</span></td><td class="ue1c-num"><strong title="' + escapeHtml(advertisingTitle) + '">'
+            + nullable(product.advertising.spend, money) + '</strong></td><td class="ue1c-num">'
+            + nullable(product.advertising.ctr, decimal, '%') + '</td><td class="ue1c-num">'
+            + nullable(product.advertising.cpc, preciseMoney) + '</td>';
+        cells.tag = '<td class="ue1c-col-tag ue1c-group-start ue1c-num"><strong>' + escapeHtml(nullText(tag.goal_week)) + '</strong></td>'
             + '<td class="ue1c-col-tag ue1c-num">' + escapeHtml(nullText(tag.goal_day)) + '</td>'
             + '<td class="ue1c-col-tag"><span class="ue1c-tag-status is-' + escapeHtml(status) + '">'
             + escapeHtml(nullText(tag.status)) + '</span></td><td class="ue1c-col-tag">' + escapeHtml(nullText(tag.ends)) + '</td>'
             + '<td class="ue1c-col-tag"><span class="ue1c-code-pill">' + escapeHtml(nullText(tag.code)) + '</span></td>'
             + '<td class="ue1c-col-tag ue1c-num">' + escapeHtml(nullText(tag.fact)) + '</td>'
-            + '<td class="ue1c-col-tag ue1c-num">' + escapeHtml(nullText(tag.plan)) + '</td>'
-            + '<td class="ue1c-num ue1c-group-start"><span class="ue1c-drr' + drrClass + '" title="'
-            + escapeHtml(advertisingTitle) + '">' + (drr === null ? '—' : decimal.format(drr) + '%')
-            + '</span></td><td class="ue1c-num"><strong title="' + escapeHtml(advertisingTitle) + '">'
-            + nullable(product.advertising.spend, money) + '</strong></td>'
-            + '<td class="ue1c-num ue1c-group-start"><strong title="' + escapeHtml(economicsTitle) + '">'
-            + nullable(economics.turnover, money) + '</strong></td>'
-            + '<td class="ue1c-num"><strong title="' + escapeHtml(economicsTitle) + '">'
-            + nullable(economics.margin, money) + '</strong></td>'
-            + '<td class="ue1c-num"><strong title="' + escapeHtml(economicsTitle) + '">'
-            + nullable(economics.roi, decimal, '%') + '</strong></td>'
-            + '<td class="ue1c-num ue1c-group-start"><strong>' + nullable(product.stock.total, integer) + '</strong></td>'
+            + '<td class="ue1c-col-tag ue1c-num">' + escapeHtml(nullText(tag.plan)) + '</td>';
+        cells.stock = '<td class="ue1c-num ue1c-group-start"><strong>' + nullable(product.stock.total, integer) + '</strong></td>'
             + '<td class="ue1c-num"><span class="ue1c-stock-channel is-fbs">' + nullable(product.stock.fbs, integer)
             + '</span></td><td class="ue1c-num"><span class="ue1c-stock-channel is-fbo">'
             + nullable(product.stock.fbo, integer) + '</span></td><td class="ue1c-num"><span class="ue1c-stock-channel">'
             + nullable(product.stock.fulfillment, integer) + '</span></td><td class="ue1c-num"><strong>'
             + '<span title="' + escapeHtml(stockTitle) + '">' + nullable(product.stock.days, integer)
-            + '</span></strong></td></tr>';
+            + '</span></strong></td>';
+        return '<tr data-product-id="' + escapeHtml(product.id) + '"'
+            + (rowClasses.length ? ' class="' + rowClasses.join(' ') + '"' : '') + '>'
+            + visibleColumnGroups().map(function (group) { return cells[group.key] || ''; }).join('') + '</tr>';
     }
     function externallyFilteredProducts() {
         var query = state.query.trim().toLocaleLowerCase('ru-RU');
         return products.filter(function (product) {
             return (state.store === 'all' || product.store_slug === state.store)
-                && (state.status === 'all' || productState(product) === state.status)
+                && (state.status === 'all' || (state.status === 'risk'
+                    ? product.stock && product.stock.state && product.stock.state.is_risk
+                    : state.status === 'low' ? product.stock && product.stock.state && product.stock.state.is_low
+                        : productState(product) === state.status))
                 && (!query || productSearchValue(product).indexOf(query) !== -1);
         });
     }
@@ -307,11 +440,12 @@
         nodes.tableWrap.scrollTop = 0;
     }
     function resetPageAndRender() { state.page = 1; renderPage(); }
-    function showToast(message) {
+    function showToast(message, kind) {
         window.clearTimeout(toastTimer);
         nodes.toast.textContent = message;
+        nodes.toast.classList.toggle('is-error', kind === 'error');
         nodes.toast.classList.add('is-visible');
-        toastTimer = window.setTimeout(function () { nodes.toast.classList.remove('is-visible'); }, 1800);
+        toastTimer = window.setTimeout(function () { nodes.toast.classList.remove('is-visible'); }, 5000);
     }
     async function copyText(button) {
         var value = button.dataset.copyValue || '';
@@ -366,7 +500,9 @@
             commissionRub: finite(details.commission_value,
                 retail === null || commissionPercent === null ? null : retail * commissionPercent / 100),
             drr: finite(product.advertising && product.advertising.drr, null),
-            advertisingRub: finite(product.advertising && product.advertising.spend, null),
+            advertisingRub: finite(product.advertising && product.advertising.average_daily_spend,
+                finite(product.advertising && product.advertising.spend, 0)
+                / Math.max(1, finite(product.advertising && product.advertising.period_days, 7))),
             logistics: finite(details.delivery_with_returns, finite(details.logistics, null)),
             storage: storageRate,
             storageTotal: finite(details.storage_sum,
@@ -458,6 +594,17 @@
             var value = values[input.dataset.calculatorInput];
             input.value = value === null ? '' : String(Math.round(Number(value) * 100) / 100);
         });
+        var currentSubject = String(product.details && product.details.subject || '');
+        var options = subjectCommissions.slice();
+        if (currentSubject && !options.some(function (item) { return item.category === currentSubject; })) {
+            options.unshift({ category: currentSubject, commission_percent:
+                finite(product.details && product.details.subject_commission_percent, 0) });
+        }
+        nodes.subjectSelect.innerHTML = options.map(function (item) {
+            return '<option value="' + escapeHtml(item.category) + '" data-commission="'
+                + escapeHtml(item.commission_percent) + '">' + escapeHtml(item.category) + '</option>';
+        }).join('');
+        nodes.subjectSelect.value = currentSubject;
     }
     function productTaxSystem(product) {
         return product.store_slug === 'gogol'
@@ -576,7 +723,9 @@
 
         var advertisingRub = finite(values.advertisingRub, null);
         var drr = finite(values.drr, null);
-        var ordersAmount = finite(product.advertising && product.advertising.orders_amount, null);
+        var periodDays = Math.max(1, finite(product.advertising && product.advertising.period_days, 7));
+        var periodOrdersAmount = finite(product.advertising && product.advertising.orders_amount, null);
+        var ordersAmount = periodOrdersAmount === null ? null : periodOrdersAmount / periodDays;
         var advertisingBase = ordersAmount !== null && ordersAmount > 0 ? ordersAmount : retail;
         if (source === 'drr') {
             setCalculatorValue('advertisingRub', advertisingBase === null || drr === null
@@ -737,6 +886,14 @@
             + '</span><button type="button" data-save-product-settings' + (canEdit ? '' : ' disabled')
             + '>Сохранить параметры</button></div>';
     }
+    function renderGluedProducts(product) {
+        var items = Array.isArray(product.glued_products) ? product.glued_products : [];
+        nodes.gluedSection.hidden = !items.length;
+        nodes.gluedProducts.innerHTML = items.map(function (item) {
+            return '<div><strong>' + escapeHtml(item.name) + '</strong><span>Арт. '
+                + escapeHtml(item.article) + '</span></div>';
+        }).join('');
+    }
     function chartPath(points) {
         return points.map(function (point, index) {
             return (index ? 'L' : 'M') + point[0].toFixed(1) + ' ' + point[1].toFixed(1);
@@ -893,12 +1050,13 @@
         renderDrawerMedia(product);
         nodes.drawerTitle.textContent = product.name;
         nodes.drawerMeta.textContent = product.store_name + ' · Арт. ' + product.article
-            + ' · ★ ' + nullText(product.rating);
+            + ' · ★ ' + nullText(product.rating) + ' · ' + nullText(product.reviews_count) + ' отзывов';
         syncTaxCalculatorLabel(product);
         fillCalculator(product);
         updateSaveState(product);
         renderPriceCalculation(product);
         renderParameters(product);
+        renderGluedProducts(product);
         renderChart(product);
         setDetailTab('economics');
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
@@ -1063,7 +1221,7 @@
         nodes.confirmSend.disabled = true;
         nodes.confirmCancel.disabled = true;
         nodes.confirmClose.disabled = true;
-        nodes.confirmSend.textContent = 'Отправляем и обновляем…';
+        nodes.confirmSend.textContent = 'Ставим в очередь…';
         if (product) updateSaveState(product);
         try {
             var response = await window.fetch('/api/unit-economics-1c/prices', {
@@ -1072,26 +1230,16 @@
                 body: JSON.stringify(pending.payload)
             });
             var result = await response.json();
-            var accepted = Array.isArray(result.accepted) ? result.accepted : [];
-            var firstError = Array.isArray(result.errors) && result.errors.length
-                ? result.errors[0].error : result.error;
-            if (!response.ok || !accepted.length) {
-                throw new Error(firstError || 'WB не принял изменение цены');
-            }
+            if (!response.ok || !result.job_id) throw new Error(result.error || 'Не удалось запустить отправку');
             pendingPriceChange = null;
             nodes.confirmModal.classList.remove('is-open');
             nodes.confirmModal.setAttribute('aria-hidden', 'true');
-            if (result.price_data_refreshed) {
-                showToast('Цена отправлена в WB, через 10 секунд данные обновлены');
-                window.setTimeout(function () { window.location.reload(); }, 700);
-            } else {
-                var syncError = Array.isArray(result.sync_errors) && result.sync_errors.length
-                    ? result.sync_errors[0].error : null;
-                showToast('Цена отправлена в WB, но обновление данных не завершилось'
-                    + (syncError ? ': ' + syncError : ''));
-            }
+            if (pendingPriceJobs.indexOf(result.job_id) === -1) pendingPriceJobs.push(result.job_id);
+            writeJson(priceJobsKey, pendingPriceJobs);
+            showToast('Цена отправляется в фоне — можно продолжать работу');
+            pollPriceJob(result.job_id);
         } catch (error) {
-            showToast(error.message || 'Не удалось передать цену в WB');
+            showToast(error.message || 'Не удалось передать цену в WB', 'error');
         } finally {
             sendingPrice = false;
             nodes.confirmSend.disabled = false;
@@ -1099,6 +1247,48 @@
             nodes.confirmClose.disabled = false;
             nodes.confirmSend.textContent = 'Подтвердить и отправить';
             if (product) updateSaveState(product);
+        }
+    }
+    function finishPriceJob(jobId) {
+        pendingPriceJobs = pendingPriceJobs.filter(function (item) { return item !== jobId; });
+        writeJson(priceJobsKey, pendingPriceJobs);
+    }
+    function applyPriceJobResult(result) {
+        var accepted = result && Array.isArray(result.accepted) ? result.accepted : [];
+        accepted.forEach(function (plan) {
+            var product = productsById[plan.product_id];
+            if (!product) return;
+            product.price.current = finite(plan.display_retail_price, product.price.current);
+            product.price.with_spp = finite(plan.predicted_spp_price, product.price.with_spp);
+            product.price.with_wallet = finite(plan.predicted_wallet_price, product.price.with_wallet);
+        });
+        renderPage();
+        if (state.selected && productsById[state.selected]) {
+            fillCalculator(productsById[state.selected]);
+            renderPriceCalculation(productsById[state.selected]);
+        }
+    }
+    async function pollPriceJob(jobId) {
+        try {
+            var response = await window.fetch('/api/unit-economics-1c/prices/jobs/' + encodeURIComponent(jobId), {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
+            });
+            var job = await response.json();
+            if (response.status === 404) { finishPriceJob(jobId); return; }
+            if (!response.ok) throw new Error(job.error || 'Не удалось проверить отправку цены');
+            if (job.status === 'queued' || job.status === 'running') {
+                window.setTimeout(function () { pollPriceJob(jobId); }, 2500);
+                return;
+            }
+            finishPriceJob(jobId);
+            if (job.status === 'success') {
+                applyPriceJobResult(job.result);
+                showToast('Цена успешно отправлена в WB');
+            } else {
+                showToast(job.error || 'WB не принял изменение цены', 'error');
+            }
+        } catch (error) {
+            window.setTimeout(function () { pollPriceJob(jobId); }, 5000);
         }
     }
     async function saveSelectedProductSettings() {
@@ -1168,6 +1358,30 @@
     nodes.store.addEventListener('change', function () {
         state.store = nodes.store.value;
         resetPageAndRender();
+    });
+    nodes.columnsToggle.addEventListener('click', function () {
+        var opening = nodes.columnPanel.hidden;
+        nodes.columnPanel.hidden = !opening;
+        nodes.columnsToggle.setAttribute('aria-expanded', String(opening));
+    });
+    nodes.columnList.addEventListener('change', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || event.target.type !== 'checkbox') return;
+        var key = option.dataset.columnKey;
+        columnPreferences.hidden = columnPreferences.hidden.filter(function (item) { return item !== key; });
+        if (!event.target.checked) columnPreferences.hidden.push(key);
+        saveColumnPreferences();
+    });
+    nodes.columnList.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-column-move]');
+        var option = event.target.closest('[data-column-key]');
+        if (!button || !option) return;
+        var index = columnPreferences.order.indexOf(option.dataset.columnKey);
+        var next = button.dataset.columnMove === 'up' ? index - 1 : index + 1;
+        if (index < 0 || next < 0 || next >= columnPreferences.order.length) return;
+        var moved = columnPreferences.order.splice(index, 1)[0];
+        columnPreferences.order.splice(next, 0, moved);
+        saveColumnPreferences();
     });
     Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
         button.addEventListener('click', function () {
@@ -1259,6 +1473,16 @@
             renderPriceCalculation(product);
         });
     });
+    nodes.subjectSelect.addEventListener('change', function () {
+        var product = productsById[state.selected];
+        var option = nodes.subjectSelect.options[nodes.subjectSelect.selectedIndex];
+        if (!product || !option) return;
+        var subjectCommission = finite(option.dataset.commission, 0);
+        var extra = finite(product.details && product.details.wb_extra_tariff_percent, 0);
+        setCalculatorValue('commission', subjectCommission + extra);
+        syncDetailedCalculatorInputs(product, 'commission');
+        renderPriceCalculation(product);
+    });
     [nodes.priceInput, nodes.sppPriceInput, nodes.walletPriceInput].forEach(function (input) {
         input.addEventListener('keydown', function (event) {
             if (event.key !== 'Enter') return;
@@ -1314,10 +1538,13 @@
     });
 
     renderStores();
+    renderTableHeader();
+    renderColumnSettings();
     nodes.table._tfAdapter = {
         values: tableFilterValues,
         filter: applyTableFilters,
         sort: applyTableSort
     };
     renderPage();
+    pendingPriceJobs.slice().forEach(pollPriceJob);
 })();

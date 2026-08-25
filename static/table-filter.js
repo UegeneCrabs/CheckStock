@@ -423,7 +423,13 @@
 
     window.CheckStockTableFilter = {
         refresh: function (table) {
-            if (table) applyAllFilters(table);
+            if (!table) return;
+            closePopover();
+            table.querySelectorAll('thead th[data-filter-column]').forEach(function (th) {
+                if (th.classList.contains('col-filler') || th.querySelector('.tf-th-inner')) return;
+                buildHeaderButton(th, table, Number(th.getAttribute('data-filter-column')));
+            });
+            applyAllFilters(table);
         }
     };
 })();

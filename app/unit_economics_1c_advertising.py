@@ -112,6 +112,10 @@ def _flatten_stats(response: object, date_from: date, date_to: date) -> list[dic
                             "nm_id": nm_id,
                             "day": day_value,
                             "spend": _number(nm.get("sum") if nm.get("sum") is not None else nm.get("spend")),
+                            "impressions": _integer(
+                                nm.get("views") if nm.get("views") is not None else nm.get("impressions")
+                            ),
+                            "clicks": _integer(nm.get("clicks")),
                         }
                     )
     return rows
@@ -119,7 +123,9 @@ def _flatten_stats(response: object, date_from: date, date_to: date) -> list[dic
 
 def _load_daily_rows(token: str, date_from: date, date_to: date) -> tuple[list[dict], int]:
     campaign_ids = _campaign_ids(token, date_from)
-    grouped: dict[tuple[str, str], float] = defaultdict(float)
+    grouped: dict[tuple[str, str], dict[str, float | int]] = defaultdict(
+        lambda: {"spend": 0.0, "impressions": 0, "clicks": 0}
+    )
     for offset in range(0, len(campaign_ids), STATS_BATCH_SIZE):
         if offset:
             time.sleep(STATS_BATCH_PAUSE_SECONDS)
@@ -135,10 +141,19 @@ def _load_daily_rows(token: str, date_from: date, date_to: date) -> tuple[list[d
             },
         )
         for row in _flatten_stats(response, date_from, date_to):
-            grouped[(row["nm_id"], row["day"])] += row["spend"]
+            item = grouped[(row["nm_id"], row["day"])]
+            item["spend"] += row["spend"]
+            item["impressions"] += row["impressions"]
+            item["clicks"] += row["clicks"]
     rows = [
-        {"nm_id": nm_id, "day": day_value, "spend": round(spend, 2)}
-        for (nm_id, day_value), spend in sorted(grouped.items())
+        {
+            "nm_id": nm_id,
+            "day": day_value,
+            "spend": round(float(values["spend"]), 2),
+            "impressions": int(values["impressions"]),
+            "clicks": int(values["clicks"]),
+        }
+        for (nm_id, day_value), values in sorted(grouped.items())
     ]
     return rows, len(campaign_ids)
 

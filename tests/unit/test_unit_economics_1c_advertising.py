@@ -87,7 +87,18 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
                 "days": [
                     {
                         "date": "2026-08-18T00:00:00Z",
-                        "apps": [{"nm": [{"nmId": 123, "sum": 100.5}]}],
+                        "apps": [
+                            {
+                                "nm": [
+                                    {
+                                        "nmId": 123,
+                                        "sum": 100.5,
+                                        "views": 1000,
+                                        "clicks": 20,
+                                    }
+                                ]
+                            }
+                        ],
                     }
                 ],
             },
@@ -96,11 +107,33 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
                 "days": [
                     {
                         "date": "2026-08-18T00:00:00Z",
-                        "apps": [{"nms": [{"nmId": 123, "spend": 49.5}]}],
+                        "apps": [
+                            {
+                                "nms": [
+                                    {
+                                        "nmId": 123,
+                                        "spend": 49.5,
+                                        "impressions": 500,
+                                        "clicks": 10,
+                                    }
+                                ]
+                            }
+                        ],
                     },
                     {
                         "date": "2026-08-19T00:00:00Z",
-                        "apps": [{"nm": [{"nmId": 999, "sum": 25}]}],
+                        "apps": [
+                            {
+                                "nm": [
+                                    {
+                                        "nmId": 999,
+                                        "sum": 25,
+                                        "views": 200,
+                                        "clicks": 5,
+                                    }
+                                ]
+                            }
+                        ],
                     },
                 ],
             },
@@ -126,6 +159,15 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
                 ("999", "2026-08-19", 25.0),
             ],
         )
+        first = next(row for row in rows if row["nm_id"] == "123")
+        self.assertEqual((first["impressions"], first["clicks"]), (1500, 30))
+        metrics = unit_economics_1c.load_product_metrics(
+            ("rimili",),
+            today=date(2026, 8, 19),
+        )[("rimili", "123")]
+        self.assertEqual(metrics["average_daily_spend"], round(150 / 7, 2))
+        self.assertEqual(metrics["ctr"], 2)
+        self.assertEqual(metrics["cpc"], 5)
         state = db.list_unit_economics_1c_advertising_sync_states(("rimili",))[0]
         self.assertEqual((state["status"], state["campaigns_count"]), ("ok", 2))
 

@@ -36,6 +36,8 @@ DAILY_ADVERTISING_COLUMNS = (
     "day",
     "marketplace",
     "spend",
+    "impressions",
+    "clicks",
     "synced_at",
 )
 
@@ -150,13 +152,14 @@ def replace_product_categories(store_slug: str, rows: list[dict], synced_at: str
             conn.executemany(
                 """
                 INSERT INTO unit_economics_1c_product_categories
-                    (stock_item_id, wb_subject_id, category, category_key, synced_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (stock_item_id, wb_subject_id, imt_id, category, category_key, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         row["stock_item_id"],
                         row.get("wb_subject_id"),
+                        row.get("imt_id"),
                         row.get("category"),
                         row.get("category_key"),
                         synced_at,
@@ -235,7 +238,7 @@ def get_product_reference_rows(store_slugs: tuple[str, ...]) -> list[dict]:
                source.stock_status, source.stock_end_week,
                source.supplier_external_raw, source.fact_sales, source.plan_sales,
                source.source_sheet_title, source.source_row, source.synced_at AS source_synced_at,
-               category.wb_subject_id, category.category,
+               category.wb_subject_id, category.imt_id, category.category,
                commission.commission_percent AS subject_commission_percent
           FROM stock_items items
           LEFT JOIN unit_economics_1c_product_classifications classification
@@ -248,6 +251,46 @@ def get_product_reference_rows(store_slugs: tuple[str, ...]) -> list[dict]:
             ON commission.category_key=category.category_key
          WHERE items.store_slug IN ({placeholders})
            AND items.marketplace='WB' AND items.is_service=0
+        """,
+        store_slugs,
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def list_wb_commissions() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT category, category_key, commission_percent
+          FROM unit_economics_1c_wb_commissions
+         ORDER BY category
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_latest_product_reputation(store_slugs: tuple[str, ...]) -> list[dict]:
+    """Use the latest RNP snapshot for rating and review count."""
+
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT metric.store_slug, metric.article, metric.rating, metric.reviews_count, metric.day
+          FROM rnp_daily_metrics metric
+         WHERE metric.store_slug IN ({placeholders})
+           AND metric.marketplace='WB'
+           AND metric.day = (
+               SELECT MAX(candidate.day)
+                 FROM rnp_daily_metrics candidate
+                WHERE candidate.store_slug=metric.store_slug
+                  AND candidate.marketplace=metric.marketplace
+                  AND candidate.article=metric.article
+           )
         """,
         store_slugs,
     ).fetchall()
@@ -662,7 +705,13 @@ def replace_daily_advertising(
                         ({", ".join(DAILY_ADVERTISING_COLUMNS)})
                     VALUES ({placeholders})
                     """,
-                    ([row.get(column) for column in DAILY_ADVERTISING_COLUMNS] for row in rows),
+                    (
+                        [
+                            row.get(column, 0) if column in {"impressions", "clicks"} else row.get(column)
+                            for column in DAILY_ADVERTISING_COLUMNS
+                        ]
+                        for row in rows
+                    ),
                 )
             conn.commit()
         except Exception:
@@ -680,7 +729,7 @@ def get_daily_advertising(store_slugs: tuple[str, ...], date_from: str, date_to:
     conn = get_connection()
     rows = conn.execute(
         f"""
-        SELECT store_slug, nm_id, day, spend, synced_at
+        SELECT store_slug, nm_id, day, spend, impressions, clicks, synced_at
           FROM unit_economics_1c_wb_daily_advertising
          WHERE store_slug IN ({placeholders})
            AND marketplace='WB'

@@ -12,6 +12,8 @@ from app.stores import STORES
 
 DEFAULT_PERIOD_DAYS = 7
 STOCK_COVERAGE_PERIOD_DAYS = 21
+LOW_STOCK_COVERAGE_DAYS = 14
+OVERSTOCK_COVERAGE_DAYS = 90
 
 
 def calculate_paid_acceptance_cost(volume_l: float, acceptance_coefficient: float) -> float:
@@ -190,6 +192,37 @@ def calculate_stock_coverage_days(
     return round(stock * days / orders, 2)
 
 
+def classify_stock_state(
+    total_stock: object,
+    orders_count: object,
+    internal_status: object,
+    *,
+    period_days: int = STOCK_COVERAGE_PERIOD_DAYS,
+) -> dict[str, object]:
+    """Classify shortages from 1C levels and 21-day demand, never by an absolute stock count."""
+
+    stock = max(_number(total_stock), 0.0)
+    orders = max(_number(orders_count), 0.0)
+    status = str(internal_status or "").strip().casefold()
+    coverage = calculate_stock_coverage_days(stock, orders, period_days=period_days)
+    shortage_status = any(
+        marker in status for marker in ("low", "short", "шорт", "шерт", "дефиц", "мало", "законч")
+    )
+    risk_status = shortage_status or any(
+        marker in status for marker in ("risk", "риск", "over", "овер", "избыт")
+    )
+    demand_low = orders > 0 and coverage <= LOW_STOCK_COVERAGE_DAYS
+    demand_over = orders > 0 and coverage >= OVERSTOCK_COVERAGE_DAYS
+    is_low = shortage_status or demand_low
+    is_risk = risk_status or demand_low or demand_over
+    return {
+        "is_low": is_low,
+        "is_risk": is_risk,
+        "coverage_days": coverage,
+        "reason": "internal" if risk_status else "coverage" if demand_low or demand_over else None,
+    }
+
+
 def load_product_average_daily_orders(
     store_slugs: tuple[str, ...],
     *,
@@ -241,6 +274,8 @@ def load_product_metrics(
         lambda: defaultdict(
             lambda: {
                 "advertising_spend": 0.0,
+                "advertising_impressions": 0,
+                "advertising_clicks": 0,
                 "orders_amount": 0.0,
                 "orders_count": 0,
                 "sold_count": 0,
@@ -257,6 +292,8 @@ def load_product_metrics(
     ):
         key = (str(row["store_slug"]), str(row["nm_id"]))
         daily[key][str(row["day"])]["advertising_spend"] += _number(row.get("spend"))
+        daily[key][str(row["day"])]["advertising_impressions"] += _integer(row.get("impressions"))
+        daily[key][str(row["day"])]["advertising_clicks"] += _integer(row.get("clicks"))
 
     period_start = datetime.combine(date_from, time.min, tzinfo=MOSCOW_TIMEZONE).isoformat()
     period_end = datetime.combine(today + timedelta(days=1), time.min, tzinfo=MOSCOW_TIMEZONE).isoformat()
@@ -283,6 +320,8 @@ def load_product_metrics(
         for day_value in days:
             values = by_day[day_value.isoformat()]
             advertising_spend = round(float(values["advertising_spend"]), 2)
+            advertising_impressions = int(values["advertising_impressions"])
+            advertising_clicks = int(values["advertising_clicks"])
             orders_amount = round(float(values["orders_amount"]), 2)
             orders_count = int(values["orders_count"])
             sold_count = min(int(values["sold_count"]), orders_count)
@@ -291,6 +330,8 @@ def load_product_metrics(
                 {
                     "date": day_value.isoformat(),
                     "advertising_spend": advertising_spend,
+                    "advertising_impressions": advertising_impressions,
+                    "advertising_clicks": advertising_clicks,
                     "orders_amount": orders_amount,
                     "orders_count": orders_count,
                     "sold_count": sold_count,
@@ -304,6 +345,8 @@ def load_product_metrics(
                 }
             )
         spend = round(sum(item["advertising_spend"] for item in history), 2)
+        impressions = sum(item["advertising_impressions"] for item in history)
+        clicks = sum(item["advertising_clicks"] for item in history)
         orders_amount = round(sum(item["orders_amount"] for item in history), 2)
         orders_count = sum(item["orders_count"] for item in history)
         sold_count = sum(item["sold_count"] for item in history)
@@ -316,6 +359,11 @@ def load_product_metrics(
             "period_to": today.isoformat(),
             "period_days": len(days),
             "spend": spend,
+            "average_daily_spend": round(spend / len(days), 2),
+            "impressions": impressions,
+            "clicks": clicks,
+            "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
+            "cpc": round(spend / clicks, 2) if clicks else 0.0,
             "orders_amount": orders_amount,
             "orders_count": orders_count,
             "sold_count": sold_count,
@@ -337,6 +385,11 @@ def empty_product_metrics(*, period_days: int = DEFAULT_PERIOD_DAYS, today: date
         "period_to": today.isoformat(),
         "period_days": max(1, period_days),
         "spend": 0.0,
+        "average_daily_spend": 0.0,
+        "impressions": 0,
+        "clicks": 0,
+        "ctr": 0.0,
+        "cpc": 0.0,
         "orders_amount": 0.0,
         "orders_count": 0,
         "sold_count": 0,
@@ -347,6 +400,8 @@ def empty_product_metrics(*, period_days: int = DEFAULT_PERIOD_DAYS, today: date
             {
                 "date": (date_from + timedelta(days=offset)).isoformat(),
                 "advertising_spend": 0.0,
+                "advertising_impressions": 0,
+                "advertising_clicks": 0,
                 "orders_amount": 0.0,
                 "orders_count": 0,
                 "sold_count": 0,

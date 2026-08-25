@@ -112,7 +112,7 @@ body:has(.content--unit-1c) { overflow: hidden; }
 
 .ue1c-toolbar {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) 170px auto auto;
+    grid-template-columns: minmax(220px, 1fr) 160px auto auto auto;
     gap: 10px;
     align-items: center;
     flex: 0 0 auto;
@@ -178,7 +178,7 @@ body:has(.content--unit-1c) { overflow: hidden; }
 .ue1c-table-wrap { min-height: 0; flex: 1 1 auto; overflow: auto; scrollbar-width: thin; }
 .ue1c-redesign-table {
     width: 100%;
-    min-width: 0;
+    min-width: 1850px;
     margin: 0;
     border: 0;
     border-collapse: separate;
@@ -239,8 +239,8 @@ body:has(.content--unit-1c) { overflow: hidden; }
 .ue1c-num { text-align: right !important; }
 
 .ue1c-redesign-table td {
-    height: 76px;
-    padding: 9px 11px;
+    height: 62px;
+    padding: 6px 9px;
     border-bottom: 1px solid #edf0f3;
     color: var(--ue-text);
     vertical-align: middle;
@@ -383,8 +383,7 @@ body:has(.content--unit-1c) { overflow: hidden; }
 .ue1c-page-gap { width: 24px; text-align: center; }
 
 .ue1c-page.has-detail { padding-right: 520px; }
-.ue1c-page.has-detail .ue1c-col-comments, .ue1c-page.has-detail .ue1c-col-tag { display: none; }
-.ue1c-page.has-detail .ue1c-redesign-table { min-width: 0; }
+.ue1c-page.has-detail .ue1c-redesign-table { min-width: 1850px; }
 .ue1c-overlay { display: none; }
 .ue1c-drawer {
     position: fixed;
@@ -612,6 +611,59 @@ body:has(.content--unit-1c) { overflow: hidden; }
 .ue1c-modal .ue1c-primary-button:disabled { color: #7d8999; border-color: #dce1e8; background: #e7ebf0; box-shadow: none; cursor: not-allowed; }
 .ue1c-toast { position: fixed; z-index: 150; left: 50%; bottom: 24px; padding: 9px 12px; opacity: 0; border-radius: 9px; color: #fff; background: var(--ue-nav); pointer-events: none; transform: translate(-50%,8px); transition: .18s ease; font-size: 10px; }
 .ue1c-toast.is-visible { opacity: 1; transform: translate(-50%,0); }
+.ue1c-toast.is-error { background: var(--ue-danger); }
+
+.ue1c-column-settings { position: relative; }
+.ue1c-column-panel {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 7px);
+    right: 0;
+    width: 270px;
+    padding: 12px;
+    border: 1px solid var(--ue-line);
+    border-radius: 12px;
+    background: var(--ue-surface);
+    box-shadow: 0 14px 38px rgba(25,38,62,.18);
+}
+.ue1c-column-panel > strong { display: block; margin-bottom: 8px; font-size: 12px; }
+.ue1c-column-option { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--ue-line); }
+.ue1c-column-option label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.ue1c-column-option button { width: 27px; height: 26px; padding: 0; border: 1px solid var(--ue-line); border-radius: 6px; background: var(--ue-surface-2); cursor: pointer; }
+.ue1c-column-option button:disabled { opacity: .35; cursor: default; }
+
+.ue1c-formula-popover { position: relative; }
+.ue1c-formula-popover > summary {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--ue-line-strong);
+    border-radius: 50%;
+    color: var(--ue-accent);
+    background: var(--ue-surface);
+    cursor: pointer;
+    font-weight: 850;
+    list-style: none;
+}
+.ue1c-formula-popover > summary::-webkit-details-marker { display: none; }
+.ue1c-formula-popover > div {
+    position: absolute;
+    z-index: 8;
+    top: 36px;
+    right: 0;
+    width: 350px;
+    padding: 11px 13px;
+    border: 1px solid var(--ue-line);
+    border-radius: 10px;
+    background: var(--ue-surface);
+    box-shadow: 0 12px 32px rgba(25,38,62,.18);
+}
+.ue1c-formula-popover p { margin: 4px 0; color: var(--ue-muted); font-size: 10px; line-height: 1.45; }
+.ue1c-calculator-field--select select { width: 100%; height: 30px; padding: 0 8px; border: 1px solid #d8dee8; border-radius: 7px; color: var(--ue-text); background: var(--ue-soft); font-size: 11px; }
+.ue1c-glued-products { display: grid; gap: 7px; }
+.ue1c-glued-products > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--ue-line); border-radius: 9px; background: var(--ue-surface-2); }
+.ue1c-glued-products span { color: var(--ue-muted); white-space: nowrap; }
 
 html[data-theme="dark"] .ue1c-page {
     --ue-bg: #0f1726;
