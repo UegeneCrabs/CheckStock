@@ -77,6 +77,9 @@ $stock_rows
 $ff_options
                     </select>
 
+                    <input type="text" class="select-control" id="ff-upload-note"
+                           placeholder="Примечание: номер поставки, отправитель" maxlength="200">
+
                     <div class="io-block" id="ff-io">
                         <div class="io-block-head">
                             <span class="io-block-title">Товары и количества</span>
@@ -145,6 +148,9 @@ $mp_move_options
                             </select>
                         </div>
                     </div>
+
+                    <input type="text" class="select-control" id="mv-note"
+                           placeholder="Примечание: причина перемещения" maxlength="200">
 
                     <div class="io-block" id="mv-io">
                         <div class="io-block-head">
@@ -490,6 +496,7 @@ $mp_move_options
 
             (function () {
                 var select = document.getElementById('ff-upload-select');
+                var noteInput = document.getElementById('ff-upload-note');
                 var fileInput = document.getElementById('ff-upload-file');
                 var urlInput = document.getElementById('ff-upload-url');
                 var btn = document.getElementById('ff-upload-btn');
@@ -556,8 +563,8 @@ $mp_move_options
 
                     var formData = new FormData();
                     formData.append('fulfillment', fulfillment);
-
                     formData.append('marketplace', window.stockTable.currentMp());
+                    formData.append('note', noteInput.value.trim());
                     if (method === 'file') {
                         formData.append('file', fileInput.files[0]);
                     } else {
@@ -636,6 +643,7 @@ $mp_move_options
                             }
 
                             urlInput.value = '';
+                            noteInput.value = '';
                             fileInput.value = '';
                             var drop = fileInput.closest('.file-drop');
                             var lbl = drop && drop.querySelector('.file-drop-text');
@@ -774,6 +782,7 @@ $mp_move_options
                             body: JSON.stringify({
                                 fulfillment: fulfillment,
                                 marketplace: window.stockTable.currentMp(),
+                                note: noteInput.value.trim(),
                                 items: items
                             })
                         })
@@ -790,6 +799,7 @@ $mp_move_options
 
                                 manualRows.innerHTML = '';
                                 addRow();
+                                noteInput.value = '';
                                 refreshFfAvailable();
                             })
                             .catch(function (e) { manualStatus.textContent = 'Ошибка: ' + e; })
@@ -930,6 +940,7 @@ $mp_move_options
                 var fromMp = document.getElementById('mv-from-mp');
                 var toFf = document.getElementById('mv-to-ff');
                 var toMp = document.getElementById('mv-to-mp');
+                var noteInput = document.getElementById('mv-note');
                 var fileInput = document.getElementById('mv-file');
                 var urlInput = document.getElementById('mv-url');
                 var status = document.getElementById('mv-status');
@@ -954,6 +965,7 @@ $mp_move_options
                     fd.append('from_marketplace', fromMp.value);
                     fd.append('to_fulfillment', toFf.value);
                     fd.append('to_marketplace', toMp.value);
+                    fd.append('note', noteInput.value.trim());
 
                     var method = io.current();
                     var hasFile = fileInput.files && fileInput.files.length > 0;
@@ -1011,6 +1023,7 @@ $mp_move_options
 
                             rows.reset();
                             urlInput.value = '';
+                            noteInput.value = '';
 
                             fileInput.value = '';
                             var drop = fileInput.closest('.file-drop');

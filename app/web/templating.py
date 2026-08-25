@@ -44,41 +44,98 @@ def render_access_denied_page(
     return render_page("CheckStock — Нет доступа", "access_denied", content, user)
 
 
-def render_token_banner(user: dict | None = None) -> str:
-
+def _token_alerts(user: dict | None = None) -> list[dict[str, str]]:
     allowed_names = {STORES[slug]["name"] for slug in accessible_store_slugs(user)}
     warnings = [
         warning
         for warning in token_watch.get_warnings()
         if not allowed_names or warning.get("store") in allowed_names
     ]
-    if not warnings:
-        return ""
-
-    items = []
+    alerts: list[dict[str, str]] = []
     for w in warnings:
         when = format_dt(w["expires_at"])
         if w["expired"]:
-            items.append(
-                f"<strong>{html.escape(w['store'])}</strong> — ключ уже недействителен (истёк {when})"
-            )
+            message = f"{w['store']} — ключ уже недействителен (истёк {when})"
         else:
             days = w["days_left"]
             tail = "сегодня" if days <= 0 else f"через {days} дн."
-            items.append(f"<strong>{html.escape(w['store'])}</strong> — ключ истекает {tail} ({when})")
+            message = f"{w['store']} — ключ истекает {tail} ({when})"
+        alerts.append(
+            {
+                "title": "Скоро закончится срок действия ключа WB",
+                "text": message,
+            }
+        )
+    return alerts
 
+
+def _advertising_alerts(user: dict | None = None) -> list[dict[str, str]]:
+    store_slugs = accessible_store_slugs(user)
+    try:
+        states = db.list_unit_economics_1c_advertising_sync_states(store_slugs)
+    except Exception:
+        return []
+    alerts: list[dict[str, str]] = []
+    for state in states:
+        if state.get("status") != "error":
+            continue
+        store_slug = str(state.get("store_slug") or "")
+        store_name = STORES[store_slug]["name"] if store_slug in STORES else store_slug.upper()
+        message = str(state.get("error") or "ошибка синхронизации")
+        access_error = any(
+            marker in message.casefold() for marker in ("доступ", "токен", "авторизац", "401", "403")
+        )
+        title = f"Кабинет {store_name}: затраты на рекламу не обновились"
+        if access_error:
+            title += " из-за доступа у API-ключа"
+        alerts.append({"title": title, "text": "" if access_error else message})
+    return alerts
+
+
+def _render_alerts(alerts: list[dict[str, str]]) -> str:
+    normalized = [alert for alert in alerts if alert.get("title") or alert.get("text")]
+    if not normalized:
+        return ""
+    dots = "".join(
+        f'<i class="system-alert-dot{" is-active" if index == 0 else ""}"></i>'
+        for index in range(len(normalized))
+    )
+    items = "".join(
+        (
+            f'<article class="system-alert-item" data-system-alert-item{" hidden" if index else ""}>'
+            f"<strong>{html.escape(str(alert.get('title') or ''))}</strong>"
+            f"<span>{html.escape(str(alert.get('text') or ''))}</span>"
+            "</article>"
+        )
+        for index, alert in enumerate(normalized)
+    )
     return (
-        '<div class="token-banner">'
-        '<span class="token-banner-icon">!</span>'
-        '<div><p class="token-banner-title">Скоро закончится срок действия ключа WB</p>'
-        f'<p class="token-banner-text">{"; ".join(items)}. '
-        "Сообщите администратору о необходимости замены ключа — иначе остатки перестанут обновляться.</p></div>"
-        "</div>"
+        '<section class="token-banner system-alerts" data-system-alerts role="status" aria-live="polite">'
+        f'<span class="system-alert-dots" aria-hidden="true">{dots}</span>'
+        '<span class="token-banner-icon" aria-hidden="true">!</span>'
+        f'<div class="system-alert-items">{items}</div>'
+        "</section>"
     )
 
 
+def render_token_banner(user: dict | None = None) -> str:
+    return _render_alerts(_token_alerts(user))
+
+
+def render_system_alerts(
+    user: dict | None = None,
+    extra_alerts: list[dict[str, str]] | None = None,
+) -> str:
+    return _render_alerts([*_token_alerts(user), *_advertising_alerts(user), *(extra_alerts or [])])
+
+
 def render_page(
-    title: str, active: str, content: str, user: dict | None = None, content_class: str = ""
+    title: str,
+    active: str,
+    content: str,
+    user: dict | None = None,
+    content_class: str = "",
+    alerts: list[dict[str, str]] | None = None,
 ) -> str:
     admin_link = ""
     if auth.has_role(user, "admin"):
@@ -116,13 +173,17 @@ def render_page(
         "sales_decision": "ПРОДАЖИ И АНАЛИТИКА / WILDBERRIES",
         "sales_ephemerides": "ПРОДАЖИ И АНАЛИТИКА",
         "sales_rnp": "ПРОДАЖИ И АНАЛИТИКА",
-        "sales_unit": "ЮНИТ-ЭКОНОМИКА",
-        "sales_wb_fbs": "ЮНИТ-ЭКОНОМИКА / WB FBS",
-        "sales_ozon": "ЮНИТ-ЭКОНОМИКА / OZON",
-        "sales_yandex": "ЮНИТ-ЭКОНОМИКА / ЯНДЕКС МАРКЕТ",
+        "unit_1c_settings": "ЮНИТ-ЭКОНОМИКА 1С / ВВОД ДАННЫХ ПО КАБИНЕТАМ",
+        "unit_1c_wb": "ЮНИТ-ЭКОНОМИКА 1С / WILDBERRIES",
+        "unit_1c_ozon": "ЮНИТ-ЭКОНОМИКА 1С / OZON",
+        "unit_1c_yandex": "ЮНИТ-ЭКОНОМИКА 1С / ЯНДЕКС МАРКЕТ",
         "supply": "ПОСТАВКИ И ЗАЯВКИ",
         "stock": "УПРАВЛЕНИЕ ЗАПАСАМИ",
+        "stock_total": "УПРАВЛЕНИЕ ЗАПАСАМИ / ОСТАТКИ ТОТАЛ",
         "stock2": "УПРАВЛЕНИЕ ЗАПАСАМИ",
+        "stock_supplies": "УПРАВЛЕНИЕ ЗАПАСАМИ / ПОСТАВКИ",
+        "stock_randomizer": "УПРАВЛЕНИЕ ЗАПАСАМИ / СВЕРКА С ФФ",
+        "stock_cost_report": "УПРАВЛЕНИЕ ЗАПАСАМИ / ДВИЖЕНИЕ И ЗЦ",
         "admin": "НАСТРОЙКИ И ДОСТУПЫ",
         "admin_activity": "ИСПОЛЬЗОВАНИЕ СИСТЕМЫ",
         "admin_google_export": "АВТОМАТИЗАЦИЯ / GOOGLE ТАБЛИЦЫ",
@@ -131,8 +192,15 @@ def render_page(
     }
     page_heading = title.removeprefix("CheckStock — ").replace(" — ", " / ")
     sales_open = active in {"sales", "sales_ephemerides", "sales_rnp"}
-    stock_open = active in {"stock", "stock2"}
-    unit_open = active in {"sales_unit", "sales_wb_fbs", "sales_ozon", "sales_yandex"}
+    stock_open = active in {
+        "stock",
+        "stock_total",
+        "stock2",
+        "stock_supplies",
+        "stock_randomizer",
+        "stock_cost_report",
+    }
+    unit_1c_open = active in {"unit_1c_settings", "unit_1c_wb", "unit_1c_ozon", "unit_1c_yandex"}
     visible = {section: has_access(user, section) for section in SectionName}
     sales_sections = (
         SectionName.SALES,
@@ -170,20 +238,28 @@ def render_page(
         stock_group_hidden=hidden(first_stock is not None),
         stock_href=SECTION_PATHS[first_stock] if first_stock is not None else "/access-denied",
         stock_group_active="active" if stock_open else "",
-        unit_open="is-open" if unit_open else "",
-        unit_expanded="true" if unit_open else "false",
-        unit_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS]),
-        unit_href="/sales/unit-economics/wb-fbs",
-        unit_group_active="active" if unit_open else "",
-        sales_wb_fbs_active="active" if active == "sales_wb_fbs" else "",
-        sales_ozon_active="active" if active == "sales_ozon" else "",
-        sales_yandex_active="active" if active == "sales_yandex" else "",
+        unit_1c_open="is-open" if unit_1c_open else "",
+        unit_1c_expanded="true" if unit_1c_open else "false",
+        unit_1c_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
+        unit_1c_group_active="active" if unit_1c_open else "",
+        unit_1c_settings_active="active" if active == "unit_1c_settings" else "",
+        unit_1c_wb_active="active" if active == "unit_1c_wb" else "",
+        unit_1c_ozon_active="active" if active == "unit_1c_ozon" else "",
+        unit_1c_yandex_active="active" if active == "unit_1c_yandex" else "",
         supply_active="active" if active == "supply" else "",
         supply_hidden=hidden(visible[SectionName.SUPPLY]),
         stock_active="active" if active == "stock" else "",
         stock_hidden=hidden(visible[SectionName.STOCK]),
+        stock_total_active="active" if active == "stock_total" else "",
+        stock_total_hidden=hidden(visible[SectionName.STOCK]),
         stock2_active="active" if active == "stock2" else "",
         stock2_hidden=hidden(visible[SectionName.STOCK_OVERVIEW]),
+        stock_supplies_active="active" if active == "stock_supplies" else "",
+        stock_supplies_hidden=hidden(visible[SectionName.STOCK]),
+        stock_randomizer_active="active" if active == "stock_randomizer" else "",
+        stock_randomizer_hidden=hidden(visible[SectionName.STOCK]),
+        stock_cost_report_active="active" if active == "stock_cost_report" else "",
+        stock_cost_report_hidden=hidden(visible[SectionName.STOCK]),
         admin_link=admin_link,
         user_name=html.escape(full_name),
         user_role=html.escape(db.ROLE_LABELS.get(user["role"], user["role"])) if user else "",
@@ -197,7 +273,7 @@ def render_page(
         page_kicker=section_kickers.get(active, "РАБОЧЕЕ ПРОСТРАНСТВО"),
         page_heading=html.escape(page_heading),
         content_class=html.escape(content_class),
-        content=render_token_banner(user) + content,
+        content=render_system_alerts(user, alerts) + content,
         section=current_section.value if current_section is not None else active,
         access_level=current_access.value,
     )

@@ -46,24 +46,29 @@
                     </div>
                     <div class="nav-submenu" data-nav-submenu>
                         <a class="nav-subitem $stock_active" href="/stock"$stock_hidden>Остатки</a>
+                        <a class="nav-subitem $stock_total_active" href="/stock/total"$stock_total_hidden>Остатки Тотал</a>
                         <a class="nav-subitem $stock2_active" href="/stock-2"$stock2_hidden>Аналитика остатков</a>
+                        <a class="nav-subitem $stock_supplies_active" href="/stock/supplies"$stock_supplies_hidden>Поставки</a>
+                        <a class="nav-subitem $stock_randomizer_active" href="/stock/randomizer"$stock_randomizer_hidden>Рандомайзер</a>
+                        <a class="nav-subitem $stock_cost_report_active" href="/stock/cost-report"$stock_cost_report_hidden>Движение и ЗЦ</a>
                     </div>
                 </div>
 
-                <div class="nav-group $unit_open" data-nav-group$unit_group_hidden>
+                <div class="nav-group $unit_1c_open" data-nav-group$unit_1c_group_hidden>
                     <div class="nav-group-head">
-                        <a class="nav-item $unit_group_active" href="$unit_href" title="Юнит-экономика">
-                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path><path d="M12 8v8"></path></svg>
-                            <span>Юнит-экономика</span>
+                        <a class="nav-item $unit_1c_group_active" href="/sales/unit-economics-1c" title="Юнит-экономика 1С">
+                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4Z"></path><path d="M8 9h8"></path><path d="M8 13h3"></path><path d="M14 13h2"></path><path d="M8 17h3"></path><path d="M14 17h2"></path></svg>
+                            <span>Юнит-экономика 1С</span>
                         </a>
-                        <button class="nav-group-toggle" type="button" aria-label="Показать юнит-экономику" aria-expanded="$unit_expanded" data-nav-toggle>
+                        <button class="nav-group-toggle" type="button" aria-label="Показать площадки юнит-экономики 1С" aria-expanded="$unit_1c_expanded" data-nav-toggle>
                             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
                         </button>
                     </div>
                     <div class="nav-submenu" data-nav-submenu>
-                        <a class="nav-subitem $sales_wb_fbs_active" href="/sales/unit-economics/wb-fbs">Wildberries</a>
-                        <a class="nav-subitem $sales_ozon_active" href="/sales/unit-economics/ozon">Ozon</a>
-                        <a class="nav-subitem $sales_yandex_active" href="/sales/unit-economics/yandex-market">Яндекс Маркет</a>
+                        <a class="nav-subitem $unit_1c_settings_active" href="/sales/unit-economics-1c/cabinet-settings">Ввод данных по кабинетам</a>
+                        <a class="nav-subitem $unit_1c_wb_active" href="/sales/unit-economics-1c">Wildberries</a>
+                        <a class="nav-subitem $unit_1c_ozon_active" href="/sales/unit-economics-1c/ozon">Ozon</a>
+                        <a class="nav-subitem $unit_1c_yandex_active" href="/sales/unit-economics-1c/yandex-market">Яндекс Маркет</a>
                     </div>
                 </div>
 
