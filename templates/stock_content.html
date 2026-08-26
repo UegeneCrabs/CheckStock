@@ -9,8 +9,8 @@ $stock_summary
                     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3"></path><path d="M4 4v5h5"></path><path d="M4 13a8 8 0 0 0 14.9 3"></path><path d="M20 20v-5h-5"></path></svg>
                 </span>
                 <span class="stock-sync-copy">
-                    <strong>Синхронизация товаров</strong>
-                    <small>Загружает новые товары из WB, Ozon и Яндекс Маркета и обновляет остатки</small>
+                    <strong>Обновление остатков</strong>
+                    <small>Обновляет каталоги и текущие остатки WB, Ozon и Яндекс Маркета</small>
                 </span>
             </div>
 
@@ -188,7 +188,7 @@ $store_cards
                     if (hideTimer) clearTimeout(hideTimer);
                     panel.classList.remove('is-fading');
                     setBusy(true);
-                    status.textContent = 'Синхронизация товаров...';
+                    status.textContent = 'Обновление остатков...';
                     results.innerHTML = '';
                     fetch('/admin/sync-stock', {
                         method: 'POST',

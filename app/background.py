@@ -81,6 +81,7 @@ def _sync_stocks() -> SyncGroupReport:
     return _run_sync_group(
         "stocks",
         (
+            ("WB", wb_sync.sync_all),
             ("OZON", ozon_sync.sync_all),
             ("YANDEX MARKET", ya_sync.sync_all),
         ),
@@ -148,13 +149,6 @@ def _unit_economics_1c_price_jobs() -> tuple[BackgroundJob, ...]:
 def _wb_stock_history_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
-            "wb_stock_sync_10_msk",
-            wb_sync.sync_all,
-            _moscow_daily_delay(10),
-            startup_delay_seconds=_seconds_until_next_moscow_run(10),
-            ready_event=catalog_ready,
-        ),
-        BackgroundJob(
             "marketplace_stock_sync_and_history_23_msk",
             stock_history.sync_marketplaces_and_save_daily_history,
             _moscow_daily_delay(23),
@@ -198,13 +192,6 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             startup_delay_seconds=settings.sales_sync_startup_delay_seconds,
         ),
         *_funnel_jobs(),
-        BackgroundJob(
-            "decision_center_sync",
-            decision_service.sync_all,
-            _fixed_delay(settings.decision_sync_check_interval_seconds),
-            startup_delay_seconds=settings.decision_sync_startup_delay_seconds,
-            ready_event=catalog_ready,
-        ),
         BackgroundJob(
             "rnp_analytics_sync",
             rnp_analytics.sync_current,

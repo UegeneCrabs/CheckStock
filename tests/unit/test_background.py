@@ -55,7 +55,7 @@ class BackgroundSyncTests(unittest.TestCase):
         self.assertIs(jobs["sales_sync"].callback, background._sync_sales_and_advertising)
         self.assertEqual(jobs["sales_sync"].next_delay(), background.settings.sales_sync_interval_seconds)
 
-    def test_wb_stock_jobs_run_at_fixed_moscow_hours(self) -> None:
+    def test_stock_history_jobs_run_at_fixed_moscow_hours(self) -> None:
         ready = mock.Mock()
         with mock.patch.object(
             background,
@@ -64,8 +64,7 @@ class BackgroundSyncTests(unittest.TestCase):
         ):
             jobs = {job.name: job for job in background._wb_stock_history_jobs(ready)}
 
-        self.assertIs(jobs["wb_stock_sync_10_msk"].callback, background.wb_sync.sync_all)
-        self.assertEqual(jobs["wb_stock_sync_10_msk"].startup_delay_seconds, 1000)
+        self.assertNotIn("wb_stock_sync_10_msk", jobs)
         self.assertIs(
             jobs["marketplace_stock_sync_and_history_23_msk"].callback,
             background.stock_history.sync_marketplaces_and_save_daily_history,
@@ -79,6 +78,27 @@ class BackgroundSyncTests(unittest.TestCase):
             background.stock_history.save_previous_day_fulfillment_history,
         )
         self.assertEqual(jobs["fulfillment_stock_history_00_msk"].startup_delay_seconds, 0)
+
+    def test_current_stock_job_refreshes_all_marketplaces_every_thirty_minutes(self) -> None:
+        jobs = {job.name: job for job in background._jobs(mock.Mock())}
+
+        self.assertIs(jobs["stock_sync"].callback, background._sync_stocks)
+        self.assertEqual(jobs["stock_sync"].next_delay(), 30 * 60)
+        with (
+            mock.patch.object(background.wb_sync, "sync_all") as wb,
+            mock.patch.object(background.ozon_sync, "sync_all") as ozon,
+            mock.patch.object(background.ya_sync, "sync_all") as yandex,
+        ):
+            report = background._sync_stocks()
+
+        for sync in (wb, ozon, yandex):
+            sync.assert_called_once_with()
+        self.assertEqual(report.succeeded, ("WB", "OZON", "YANDEX MARKET"))
+
+    def test_decision_center_has_no_background_job(self) -> None:
+        jobs = {job.name: job for job in background._jobs(mock.Mock())}
+
+        self.assertNotIn("decision_center_sync", jobs)
 
     def test_reference_data_job_checks_for_weekly_refresh_daily(self) -> None:
         jobs = {job.name: job for job in background._jobs(mock.Mock())}

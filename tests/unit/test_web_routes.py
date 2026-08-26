@@ -127,7 +127,7 @@ class WebRouteUnitTests(unittest.TestCase):
 
         stock_page = self.client.get("/stock")
         self.assertIn('id="sync-products-btn"', stock_page.text)
-        self.assertIn("Синхронизировать товары", stock_page.text)
+        self.assertIn("Обновить остатки", stock_page.text)
         self.assertIn("catalogBadge(entry.wb_catalog)", stock_page.text)
         self.assertIn("if (!response.ok)", stock_page.text)
         self.assertIn('aria-live="polite"', stock_page.text)

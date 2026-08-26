@@ -165,7 +165,7 @@ class Settings(BaseModel):
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR", 2, maximum=23
             ),
             token_check_interval_seconds=_env_int(
-                "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 6 * 60 * 60, minimum=1
+                "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 24 * 60 * 60, minimum=1
             ),
             unit_economics_1c_price_sync_startup_delay_seconds=_env_int(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_STARTUP_DELAY_SECONDS", 5, minimum=0

@@ -41,10 +41,7 @@ def should_refresh(last_checked: str | None) -> bool:
         return True
 
     now = _now()
-    if (now - checked) >= timedelta(days=7):
-        return True
-
-    return now.weekday() == 6 and checked.date() != now.date()
+    return (now - checked) >= timedelta(days=1)
 
 
 def get_warnings() -> list[dict]:

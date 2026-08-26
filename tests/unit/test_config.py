@@ -15,6 +15,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(configured.unit_economics_1c_price_sync_interval_seconds, 2 * 60 * 60)
         self.assertEqual(configured.unit_economics_1c_wallet_sync_interval_seconds, 5 * 60)
         self.assertEqual(configured.unit_economics_1c_source_sync_hour, 2)
+        self.assertEqual(configured.token_check_interval_seconds, 24 * 60 * 60)
         self.assertEqual(configured.wb_storefront_dest, "-1257786")
         self.assertEqual(configured.wb_storefront_batch_size, 1_000)
 

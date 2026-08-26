@@ -199,7 +199,7 @@ async def stock(request: Request):
         store_cards="\n".join(cards),
         sync_products_button=(
             '<button class="btn-primary btn-sync" type="button" id="sync-products-btn" '
-            'aria-describedby="sync-products-status">Синхронизировать товары</button>'
+            'aria-describedby="sync-products-status">Обновить остатки</button>'
             if auth.has_role(request.state.user, "admin")
             and access_level(request.state.user, SectionName.STOCK) is SectionAccessLevel.WRITE
             else ""

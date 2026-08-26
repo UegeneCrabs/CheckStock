@@ -133,7 +133,7 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
             mock.patch.object(background.ozon_sync, "sync_all", return_value={}),
             mock.patch.object(background.ya_sync, "sync_all", return_value={}),
         ):
-            self.assertEqual(set(background._sync_stocks().succeeded), {"OZON", "YANDEX MARKET"})
+            self.assertEqual(set(background._sync_stocks().succeeded), {"WB", "OZON", "YANDEX MARKET"})
         with (
             mock.patch.object(background.db, "get_last_token_check", return_value="now"),
             mock.patch.object(background.token_watch, "should_refresh", return_value=False),
@@ -148,7 +148,7 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
         refresh.assert_called_once()
         self.assertEqual(background._fixed_delay(5)(), 5)
         self.assertGreater(background._daily_delay(3)(), 0)
-        self.assertEqual(len(background._jobs(asyncio.Event())), 13)
+        self.assertEqual(len(background._jobs(asyncio.Event())), 11)
 
         with (
             mock.patch.object(background.db, "init_db") as init_db,
