@@ -8,8 +8,10 @@ from app.dto.stock import (
     AddFulfillmentItemsCommand,
     ApplyShipmentCommand,
     ApplyTransferCommand,
+    CancelTransitCommand,
     CatalogItem,
     CatalogQuery,
+    ReceiveTransitCommand,
     ResolvedStockEntries,
     ResolvedStockEntry,
     ResolveStockEntriesCommand,
@@ -26,6 +28,7 @@ from app.dto.stock import (
     TargetStockEntry,
     TransferResult,
     TransferStockCommand,
+    TransitActionResult,
 )
 from app.errors import StockValidationError
 
@@ -120,7 +123,7 @@ class StockMovementService:
                     marketplace=command.from_marketplace,
                 ),
             )
-            unit_of_work.repository.apply_transfer(
+            transfer_id = unit_of_work.repository.apply_transfer(
                 ApplyTransferCommand(
                     transfer=command,
                     items=resolution.movable,
@@ -141,7 +144,24 @@ class StockMovementService:
                     )
                 ),
                 skipped=resolution.skipped,
+                transfer_id=transfer_id,
             )
+
+    def receive_transfer(self, command: ReceiveTransitCommand) -> TransitActionResult:
+        with self._unit_of_work_factory() as unit_of_work:
+            result = unit_of_work.repository.receive_transfer(
+                command.model_copy(update={"created_at": self._clock()})
+            )
+            unit_of_work.commit()
+            return result
+
+    def cancel_transfer(self, command: CancelTransitCommand) -> TransitActionResult:
+        with self._unit_of_work_factory() as unit_of_work:
+            result = unit_of_work.repository.cancel_transfer(
+                command.model_copy(update={"created_at": self._clock()})
+            )
+            unit_of_work.commit()
+            return result
 
     def ship(self, command: ShipmentCommand) -> StockMovementItems:
         with self._unit_of_work_factory() as unit_of_work:
@@ -176,6 +196,39 @@ class StockMovementService:
                 )
             )
             unit_of_work.commit()
+            return StockMovementItems(
+                tuple(
+                    StockMovementItem(
+                        article=entry.article,
+                        name=entry.name,
+                        barcode=entry.barcode,
+                        quantity=entry.quantity,
+                    )
+                    for entry in entries.root
+                )
+            )
+
+    def register_fbs_transfer(self, command: ShipmentCommand) -> StockMovementItems:
+        """Validate an FBS allocation without removing the physical FF stock."""
+
+        with self._unit_of_work_factory() as unit_of_work:
+            entries = self._resolve_entries(
+                unit_of_work.repository,
+                ResolveStockEntriesCommand(
+                    store_slug=command.store_slug,
+                    entries=command.entries,
+                    marketplace=command.marketplace,
+                ),
+            )
+            self._check_availability(
+                unit_of_work.repository,
+                StockAvailabilityQuery(
+                    store_slug=command.store_slug,
+                    entries=entries,
+                    fulfillment=command.fulfillment,
+                    marketplace=command.marketplace,
+                ),
+            )
             return StockMovementItems(
                 tuple(
                     StockMovementItem(

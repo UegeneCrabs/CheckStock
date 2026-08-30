@@ -207,7 +207,7 @@
                 - (dateValue(right.delivery_at) || new Date(8640000000000000));
         });
         if (!manualSupplies.length) {
-            manualRows.innerHTML = '<tr class="supply-empty"><td colspan="7">Активных перемещений нет</td></tr>';
+            manualRows.innerHTML = '<tr class="supply-empty"><td colspan="8">Активных перемещений нет</td></tr>';
             return;
         }
         manualRows.innerHTML = manualSupplies.map(function (row) {
@@ -227,6 +227,7 @@
                 + '<td>' + escapeHtml(row.origin) + '</td>'
                 + '<td>' + escapeHtml(row.destination) + '</td>'
                 + '<td>' + escapeHtml(row.supply_type) + '</td>'
+                + '<td>' + escapeHtml(row.note) + '</td>'
                 + '<td><input class="supply-ready-toggle" type="checkbox" data-manual-ready="' + row.id + '"'
                     + (row.ready ? ' checked' : '') + disabled + ' aria-label="Поставка готова"></td>'
                 + '<td>' + actions + '</td>'
@@ -235,7 +236,7 @@
     }
 
     function loadManual() {
-        manualRows.innerHTML = '<tr class="supply-empty"><td colspan="7">Загрузка ручного плана…</td></tr>';
+        manualRows.innerHTML = '<tr class="supply-empty"><td colspan="8">Загрузка ручного плана…</td></tr>';
         request('/stock/planning/manual')
             .then(function (payload) {
                 manualSupplies = payload.supplies || [];
@@ -243,7 +244,7 @@
                 renderManual();
             })
             .catch(function (error) {
-                manualRows.innerHTML = '<tr class="supply-empty"><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
+                manualRows.innerHTML = '<tr class="supply-empty"><td colspan="8">' + escapeHtml(error.message) + '</td></tr>';
             });
     }
 
@@ -265,6 +266,7 @@
         manualForm.elements.origin.value = row.origin;
         manualForm.elements.destination.value = row.destination;
         manualForm.elements.supply_type.value = row.supply_type;
+        manualForm.elements.note.value = row.note;
         manualForm.elements.ready.checked = Boolean(row.ready);
         manualSubmit.textContent = 'Сохранить изменения';
         manualCancel.hidden = false;
@@ -293,6 +295,7 @@
             origin: manualForm.elements.origin.value.trim(),
             destination: manualForm.elements.destination.value.trim(),
             supply_type: manualForm.elements.supply_type.value.trim(),
+            note: manualForm.elements.note.value.trim(),
             ready: manualForm.elements.ready.checked
         };
         manualSubmit.disabled = true;

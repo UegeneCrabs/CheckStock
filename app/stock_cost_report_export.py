@@ -73,10 +73,11 @@ def build_xlsx(report: dict, view: str) -> tuple[bytes, str]:
             "Перемещено на FBS",
             "FBS на конец",
             "Продажи по формуле",
+            "Продажи по данным маркетплейса",
             "Примечание",
             "Сотрудник",
         ],
-        [22, 16, 18, 24, 30, 30, 20, 18, 46, 13, 16, 16, 14, 18, 14, 19, 34, 24],
+        [22, 16, 18, 24, 30, 30, 20, 18, 46, 13, 16, 16, 14, 18, 14, 19, 22, 34, 24],
     )
 
     operations = operations_for_view(report, view)
@@ -121,6 +122,7 @@ def build_xlsx(report: dict, view: str) -> tuple[bytes, str]:
                     "",
                     "",
                     "",
+                    "",
                     operation.get("note") or "",
                     operation.get("user_name") or "",
                 ]
@@ -135,6 +137,10 @@ def build_xlsx(report: dict, view: str) -> tuple[bytes, str]:
         for item in report["reconciliation"]
         if item["available"]
         for article in item["items"]
+    }
+    actual_items = {
+        (item["store_slug"], item["marketplace"], item["article"]): item
+        for item in report["fbs_actual_sales"]
     }
     period_label = f"{report['date_from'].isoformat()} — {report['date_to'].isoformat()}"
     for (store_slug, marketplace), group in sorted(sales_by_key.items()):
@@ -156,13 +162,14 @@ def build_xlsx(report: dict, view: str) -> tuple[bytes, str]:
                 sum(int(item["quantity"]) for item in group),
                 cost,
                 missing_units,
-                "Данные продаж",
-                "Выкупленные товары FBS/rFBS",
+                "Расчёт по остаткам",
+                "Остаток до периода + перемещения на FBS − остаток в конце",
                 "Система",
             ]
         )
         for item in group:
             formula = reconciliation_items.get((store_slug, marketplace, item["article"]), {})
+            actual = actual_items.get((store_slug, marketplace, item["article"]), {})
             items_sheet.append(
                 [
                     period_label,
@@ -181,7 +188,8 @@ def build_xlsx(report: dict, view: str) -> tuple[bytes, str]:
                     formula.get("moved_quantity", ""),
                     formula.get("end_quantity", ""),
                     formula.get("quantity", ""),
-                    "Выкупленные товары FBS/rFBS",
+                    actual.get("quantity", ""),
+                    "Расчёт по остаткам; данные маркетплейса — только сверка",
                     "Система",
                 ]
             )

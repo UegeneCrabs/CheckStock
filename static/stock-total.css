@@ -97,6 +97,45 @@
     background: var(--card);
 }
 
+[data-stock-marketplace-view][hidden] {
+    display: none;
+}
+
+.stock-store-total-view {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.stock-store-total-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+}
+
+.stock-store-total-head .panel-title,
+.stock-store-total-head .stock-operation-summary {
+    margin-top: 0;
+}
+
+.stock-store-total-head .stock-operation-summary {
+    margin-bottom: 0;
+}
+
+.stock-store-total-legend {
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+}
+
+.stock-store-total-view .stock-total-table-wrap {
+    max-height: calc(100vh - 17rem);
+}
+
+.stock-store-total-view > .ff-select-status {
+    margin: 0.7rem 0 0;
+}
+
 .stock-total-controls {
     gap: 1rem;
     margin-bottom: 0.75rem;
@@ -140,6 +179,8 @@
 
 .stock-total-legend--ff,
 .stock-total-group--ff { background: #fff2cc !important; color: #5d4a00 !important; }
+.stock-total-legend--transit,
+.stock-total-group--transit { background: #fce4d6 !important; color: #7c3c20 !important; }
 .stock-total-legend--fbs,
 .stock-total-group--fbs { background: #ddebf7 !important; color: #19476a !important; }
 .stock-total-legend--rfbs,
@@ -158,7 +199,7 @@
 }
 
 .data-table--stock-total {
-    min-width: 112rem;
+    min-width: 126rem;
     table-layout: fixed;
     font-size: 0.78rem;
 }
@@ -256,6 +297,14 @@
     .stock-total-controls label {
         width: 100%;
     }
+
+    .stock-store-total-head {
+        flex-direction: column;
+    }
+
+    .stock-store-total-legend {
+        justify-content: flex-start;
+    }
 }
 
 /* Presentation-ready layout */
@@ -332,6 +381,15 @@
 .stock-total-download:hover {
     color: #fff;
     background: color-mix(in srgb, var(--blue, var(--accent)) 88%, #000);
+}
+
+.stock-total-controls .stock-total-download {
+    min-width: 8.75rem;
+    min-height: 2.25rem;
+    margin-left: 0.15rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    box-shadow: none;
 }
 
 .stock-total-summary {
@@ -485,9 +543,9 @@
 
 .stock-total-table-wrap {
     width: 100%;
-    height: calc(100vh - 22.25rem);
-    min-height: 28rem;
-    max-height: 56rem;
+    height: calc(100vh - 13.5rem);
+    min-height: 24rem;
+    max-height: none;
     border: 0;
     border-radius: 0;
     background: var(--card);
@@ -699,7 +757,7 @@ html[data-theme="dark"] .stock-total-group {
     }
 
     .stock-total-table-wrap {
-        height: calc(100vh - 23.5rem);
+        height: calc(100vh - 13.5rem);
     }
 }
 
@@ -733,6 +791,10 @@ html[data-theme="dark"] .stock-total-group {
 
     .stock-total-panel > .tf-toolbar {
         grid-template-columns: 1fr;
+    }
+
+    .stock-total-table-wrap {
+        height: calc(100vh - 18rem);
     }
 
     .data-table--stock-total .stock-total-groups > th:nth-child(2),

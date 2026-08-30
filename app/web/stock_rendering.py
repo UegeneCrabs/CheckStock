@@ -44,8 +44,9 @@ def render_stock_head(marketplace: str, store_slug: str = "") -> str:
     schemes = schemes_for(marketplace, store_slug)
     items = db.get_stock_items(store_slug, marketplace, tuple(key for key, _ in schemes))
     ff_total = sum(item["ff_available"] or 0 for item in items)
+    transit_total = sum(db.get_ff_transit_totals(store_slug, marketplace).values())
     scheme_totals = {scheme: sum(item[f"{scheme}_stock"] or 0 for item in items) for scheme, _ in schemes}
-    grand_total = ff_total + sum(scheme_totals.values())
+    grand_total = ff_total + transit_total + sum(scheme_totals.values())
 
     cells = [
         '<th class="col-product"><span class="stock-head-heading">'
@@ -57,6 +58,9 @@ def render_stock_head(marketplace: str, store_slug: str = "") -> str:
         '<th class="col-ff-available"><span class="stock-head-heading">'
         '<span class="stock-head-label">Доступно ФФ для распределения</span>'
         f'<strong class="stock-head-total tot-ff">{_fmt_num(ff_total)}</strong></span></th>',
+        '<th class="col-transit"><span class="stock-head-heading">'
+        '<span class="stock-head-label">В пути между ФФ</span>'
+        f'<strong class="stock-head-total tot-transit">{_fmt_num(transit_total)}</strong></span></th>',
     ]
     cells += [
         f'<th class="col-scheme col-{scheme}"><span class="stock-head-heading">'
@@ -83,13 +87,15 @@ def marketplace_move_label(name: str) -> str:
     return f"{name} — {UNALLOCATED_SUFFIX}"
 
 
-def render_mp_move_options() -> str:
+def render_mp_move_options(allowed_marketplaces: tuple[str, ...] | None = None) -> str:
 
+    allowed = set(allowed_marketplaces or db.MARKETPLACES)
     return "\n".join(
         f'                                <option value="{html.escape(name)}"'
         f"{' selected' if name == db.DEFAULT_MARKETPLACE else ''}>"
         f"{html.escape(marketplace_move_label(name))}</option>"
         for name in db.MARKETPLACES
+        if name in allowed
     )
 
 
@@ -100,10 +106,17 @@ def marketplace_ready(marketplace: str, store_slug: str) -> bool:
     return health.has_token(marketplace, store_slug)
 
 
-def render_mp_tabs(active: str, store_slug: str = "") -> str:
+def render_mp_tabs(
+    active: str,
+    store_slug: str = "",
+    allowed_marketplaces: tuple[str, ...] | None = None,
+) -> str:
 
     tabs = []
+    allowed = set(allowed_marketplaces or db.MARKETPLACES)
     for name in db.MARKETPLACES:
+        if name not in allowed:
+            continue
         ready = marketplace_ready(name, store_slug)
         classes = "mp-tab" + (" active" if name == active else "")
         classes += "" if ready else " mp-tab--nokey"
@@ -164,8 +177,9 @@ def render_product_cell(
 def render_stock_rows(store_slug: str, marketplace: str) -> str:
     schemes = schemes_for(marketplace, store_slug)
     items = db.get_stock_items(store_slug, marketplace, tuple(k for k, _ in schemes))
+    transit = db.get_ff_transit_totals(store_slug, marketplace)
     if not items:
-        colspan = 4 + len(schemes)
+        colspan = 5 + len(schemes)
         return (
             f'                            <tr class="empty-row"><td colspan="{colspan}">'
             "Пока нет остатков по этому магазину</td></tr>"
@@ -174,10 +188,11 @@ def render_stock_rows(store_slug: str, marketplace: str) -> str:
     rows = []
     for item in items:
         ff_available = item["ff_available"] or 0
+        transit_quantity = transit.get(str(item["article"] or ""), 0)
 
         by_scheme = {scheme: (item[f"{scheme}_stock"] or 0) for scheme, _ in schemes}
         sale_total = sum(by_scheme.values())
-        row_total = ff_available + sale_total
+        row_total = ff_available + transit_quantity + sale_total
 
         stuck = ff_available > 0 and sale_total == 0
         row_class = ' class="row-alert"' if stuck else ""
@@ -191,6 +206,7 @@ def render_stock_rows(store_slug: str, marketplace: str) -> str:
             + product_cell
             + f'<td class="col-row-total">{_cell(row_total)}</td>'
             f'<td class="col-ff-available">{_cell(ff_available)}</td>'
+            f'<td class="col-transit">{_cell(transit_quantity)}</td>'
             + "".join(
                 f'<td class="col-scheme col-{scheme}">{_cell(by_scheme[scheme])}</td>'
                 for scheme, _ in schemes
@@ -208,14 +224,16 @@ def render_stock_totals(store_slug: str, marketplace: str) -> str:
     items = db.get_stock_items(store_slug, marketplace, tuple(k for k, _ in schemes))
 
     ff_total = sum(item["ff_available"] or 0 for item in items)
+    transit_total = sum(db.get_ff_transit_totals(store_slug, marketplace).values())
     scheme_totals = {scheme: sum(item[f"{scheme}_stock"] or 0 for item in items) for scheme, _ in schemes}
-    grand_total = ff_total + sum(scheme_totals.values())
+    grand_total = ff_total + transit_total + sum(scheme_totals.values())
 
     return (
         '<tr class="totals-row">'
         '<th class="totals-label">Итого</th>'
         f'<th class="col-row-total tot-grand">{_fmt_num(grand_total)}</th>'
         f'<th class="col-ff-available tot-ff">{_fmt_num(ff_total)}</th>'
+        f'<th class="col-transit tot-transit">{_fmt_num(transit_total)}</th>'
         + "".join(
             f'<th class="col-scheme tot-{scheme}">{_fmt_num(scheme_totals[scheme])}</th>'
             for scheme, _ in schemes

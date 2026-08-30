@@ -17,8 +17,9 @@ def _captured_at(value: datetime | None = None) -> str:
 def sync_wb_and_save_daily_history(
     snapshot_day: date | None = None,
     captured_at: datetime | None = None,
+    store_slugs: tuple[str, ...] | None = None,
 ) -> dict:
-    report = wb_sync.sync_all()
+    report = wb_sync.sync_all(store_slugs)
     day = snapshot_day or datetime.now(MOSCOW_TIMEZONE).date()
     timestamp = _captured_at(captured_at)
     saved: dict[str, dict[str, int]] = {}
@@ -44,12 +45,15 @@ def sync_wb_and_save_daily_history(
 def sync_marketplaces_and_save_daily_history(
     snapshot_day: date | None = None,
     captured_at: datetime | None = None,
+    target_stores: dict[str, tuple[str, ...]] | None = None,
 ) -> dict:
     """Refresh and save normalized FBS/FBO boundaries for every marketplace."""
 
     day = snapshot_day or datetime.now(MOSCOW_TIMEZONE).date()
     timestamp = _captured_at(captured_at)
-    wb_result = sync_wb_and_save_daily_history(day, captured_at)
+    stores_by_marketplace = target_stores or {}
+    wb_stores = stores_by_marketplace.get("WB", ()) if target_stores is not None else None
+    wb_result = sync_wb_and_save_daily_history(day, captured_at, wb_stores)
     reports = {"WB": wb_result["sync"]}
     saved: dict[str, dict[str, dict[str, int]]] = {"WB": wb_result["saved"]}
 
@@ -58,7 +62,10 @@ def sync_marketplaces_and_save_daily_history(
         ("YANDEX MARKET", "yandex", yandex_sync.sync_all),
     )
     for marketplace, result_key, sync in configurations:
-        report = sync()
+        selected_stores = (
+            stores_by_marketplace.get(marketplace, ()) if target_stores is not None else None
+        )
+        report = sync(selected_stores)
         reports[marketplace] = report
         marketplace_saved: dict[str, dict[str, int]] = {}
         for store_slug, store_report in report.items():

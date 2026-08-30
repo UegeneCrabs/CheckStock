@@ -1295,6 +1295,20 @@ main h2,
     background: #edf1ff;
 }
 
+.mp-tab--total {
+    margin-left: 5px;
+    color: #76510c;
+    border-color: #ead89a;
+    background: #fff8df;
+    text-decoration: none;
+}
+
+.mp-tab--total:hover {
+    color: #5f4008;
+    border-color: #dfc66b;
+    background: #fff3c4;
+}
+
 .mp-tab-soon {
     border-radius: 5px;
     color: #8d96a5;
@@ -2118,6 +2132,15 @@ main h2,
     align-items: center;
     justify-content: space-between;
     gap: 18px;
+}
+
+.sales-head.sales-head--compact {
+    min-height: 0;
+    justify-content: flex-end;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .sales-head h2 {
@@ -3356,7 +3379,10 @@ main h2,
 
 .ops-kind--delivery i,
 .ops-kind--manual_add i { background: #28a779; }
-.ops-kind--transfer i { background: #4771f0; }
+.ops-kind--transfer i,
+.ops-kind--transfer_dispatch i { background: #4771f0; }
+.ops-kind--transfer_receive i { background: #28a779; }
+.ops-kind--transfer_cancel i { background: #d45d55; }
 .ops-kind--shipment i { background: #d48b2b; }
 .ops-kind--trash i { background: #d45d55; }
 
@@ -3966,7 +3992,13 @@ main h2,
 
 .data-table--stock th.col-ff-available,
 .data-table--stock td.col-ff-available {
-    width: 14%;
+    width: 12%;
+}
+
+.data-table--stock th.col-transit,
+.data-table--stock td.col-transit {
+    width: 10%;
+    background: #fffaf0;
 }
 
 .data-table--stock tbody tr[data-article] {
@@ -4140,6 +4172,315 @@ main h2,
     border-top: 1px solid var(--border);
 }
 
+.stock-transit-panel {
+    grid-column: 1 / -1;
+}
+
+.stock-transit-head,
+.stock-transit-card-head,
+.stock-transit-summary,
+.stock-transit-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.stock-transit-head .panel-title {
+    margin: 0;
+}
+
+.stock-transit-tabs {
+    width: max-content;
+    margin-top: 14px;
+    padding: 3px;
+    display: flex;
+    gap: 3px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #f3f6fa;
+}
+
+.stock-transit-tab {
+    min-height: 32px;
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 7px;
+    color: #748096;
+    background: transparent;
+    font-size: 0.7rem;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.stock-transit-tab.is-active {
+    color: #3155c8;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(24, 42, 76, 0.1);
+}
+
+.stock-transit-list {
+    margin-top: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.stock-transit-empty {
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: #8a95a6;
+    background: #fafbfd;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.stock-transit-empty--error {
+    color: var(--red);
+}
+
+.stock-transit-card {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #fbfcfe;
+}
+
+.stock-transit-card-head > div,
+.stock-transit-item-identity,
+.stock-transit-route {
+    min-width: 0;
+}
+
+.stock-transit-card-head strong,
+.stock-transit-card-head small,
+.stock-transit-item-identity strong,
+.stock-transit-item-identity small {
+    display: block;
+}
+
+.stock-transit-card-head strong {
+    color: #344154;
+    font-size: 0.8rem;
+}
+
+.stock-transit-card-head small,
+.stock-transit-item-identity small {
+    margin-top: 3px;
+    color: #8a95a6;
+    font-size: 0.625rem;
+}
+
+.stock-transit-state {
+    padding: 5px 8px;
+    border-radius: 999px;
+    color: #3155c8;
+    background: #edf1ff;
+    font-size: 0.625rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.stock-transit-state--partial {
+    color: #9b6212;
+    background: #fff2d8;
+}
+
+.stock-transit-state--received {
+    color: #18794e;
+    background: #e5f7ee;
+}
+
+.stock-transit-state--cancelled {
+    color: #b54747;
+    background: #fdecec;
+}
+
+.stock-transit-route {
+    margin-top: 10px;
+    color: #4c596d;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.stock-transit-note {
+    margin: 7px 0 0;
+    color: #778396;
+    font-size: 0.6875rem;
+}
+
+.stock-transit-summary {
+    margin-top: 10px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    color: #7d8899;
+    font-size: 0.6875rem;
+}
+
+.stock-transit-summary b {
+    color: #3155c8;
+}
+
+.stock-transit-timeline {
+    margin-top: 12px;
+    padding: 12px 13px;
+    display: grid;
+    gap: 0;
+    border: 1px solid #e4e9f1;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.stock-transit-event {
+    position: relative;
+    min-height: 54px;
+    padding: 0 0 14px 28px;
+}
+
+.stock-transit-event:last-child {
+    min-height: 0;
+    padding-bottom: 0;
+}
+
+.stock-transit-event::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 12px;
+    bottom: -2px;
+    width: 2px;
+    background: #e1e6ee;
+}
+
+.stock-transit-event:last-child::before {
+    display: none;
+}
+
+.stock-transit-event-marker {
+    position: absolute;
+    left: 0;
+    top: 3px;
+    width: 14px;
+    height: 14px;
+    border: 3px solid #edf1ff;
+    border-radius: 50%;
+    background: #5474df;
+}
+
+.stock-transit-event--received .stock-transit-event-marker {
+    border-color: #e5f7ee;
+    background: #2a9d69;
+}
+
+.stock-transit-event--cancelled .stock-transit-event-marker {
+    border-color: #fdecec;
+    background: #c65b5b;
+}
+
+.stock-transit-event-content > strong,
+.stock-transit-event-content > small,
+.stock-transit-event-content > span {
+    display: block;
+}
+
+.stock-transit-event-content > strong {
+    color: #435066;
+    font-size: 0.7rem;
+}
+
+.stock-transit-event-content > small {
+    margin-top: 2px;
+    color: #8a95a6;
+    font-size: 0.625rem;
+}
+
+.stock-transit-event-details,
+.stock-transit-event-note {
+    margin-top: 4px;
+    color: #6f7b8f;
+    font-size: 0.65rem;
+    line-height: 1.4;
+}
+
+.stock-transit-event-note {
+    color: #53627a;
+    font-style: italic;
+}
+
+.stock-transit-items {
+    margin-top: 10px;
+    overflow: hidden;
+    border: 1px solid #e7ebf1;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.stock-transit-item {
+    min-height: 54px;
+    padding: 8px 10px;
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(210px, auto) 86px;
+    align-items: center;
+    gap: 12px;
+    border-top: 1px solid #edf0f3;
+}
+
+.stock-transit-item--readonly {
+    grid-template-columns: minmax(150px, 1fr) minmax(210px, auto);
+}
+
+.stock-transit-item:first-child {
+    border-top: 0;
+}
+
+.stock-transit-item-identity strong {
+    overflow: hidden;
+    color: #445064;
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stock-transit-item-quantities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    color: #8a95a6;
+    font-size: 0.625rem;
+}
+
+.stock-transit-item-quantities b {
+    color: #47546a;
+}
+
+.stock-transit-quantity {
+    min-height: 34px;
+    padding: 5px 8px;
+    text-align: right;
+}
+
+.stock-transit-actions {
+    margin-top: 10px;
+    align-items: stretch;
+}
+
+.stock-transit-actions .select-control {
+    flex: 1 1 260px;
+}
+
+.stock-transit-actions button {
+    flex: 0 0 auto;
+}
+
+.stock-transit-actions--cancel {
+    padding-top: 10px;
+    border-top: 1px dashed #e1e6ed;
+}
+
+.stock-transit-cancel {
+    color: var(--red);
+}
+
 body.stock-drawer-open {
     overflow: hidden;
 }
@@ -4292,7 +4633,7 @@ body.stock-drawer-open {
 .stock-drawer-metrics {
     margin-top: 10px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
 }
 
@@ -4409,6 +4750,49 @@ body.stock-drawer-open {
 
 .stock-drawer-warehouse-value--fbs b {
     color: var(--blue);
+}
+
+.stock-drawer-transit {
+    margin-top: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.stock-drawer-transit-row {
+    min-height: 54px;
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid #edf0f3;
+}
+
+.stock-drawer-transit-row:first-child {
+    border-top: 0;
+}
+
+.stock-drawer-transit-route strong,
+.stock-drawer-transit-route small {
+    display: block;
+}
+
+.stock-drawer-transit-route strong {
+    color: #445064;
+    font-size: 0.6875rem;
+}
+
+.stock-drawer-transit-route small {
+    margin-top: 3px;
+    color: #969eaa;
+    font-size: 0.5625rem;
+}
+
+.stock-drawer-transit-row > b {
+    color: #3155c8;
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 .stock-drawer-loading {

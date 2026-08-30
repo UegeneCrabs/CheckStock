@@ -610,10 +610,16 @@ def run_store(store_slug: str, now: datetime | None = None) -> dict:
     return report
 
 
-def run_due(now: datetime | None = None) -> dict[str, dict]:
+def run_due(
+    now: datetime | None = None,
+    store_slugs: tuple[str, ...] | None = None,
+) -> dict[str, dict]:
     current = now or datetime.now(MOSCOW_TIMEZONE)
+    allowed_stores = set(STORES if store_slugs is None else store_slugs)
     report: dict[str, dict] = {}
     for settings in list_settings():
+        if settings.store_slug not in allowed_stores:
+            continue
         if not is_due(settings, current):
             continue
         try:

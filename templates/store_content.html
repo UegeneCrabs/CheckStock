@@ -1,12 +1,10 @@
-        <a class="back-link" href="/stock">&larr; Все магазины</a>
+<link rel="stylesheet" href="/static/stock-total.css?v=8">
 
-        <div class="store-header">
-            <div class="store-avatar" style="background:$store_color;color:$store_text;">$store_initials</div>
-            <h2>Остатки — $store_name</h2>
-        </div>
+        <a class="back-link" href="/stock">&larr; Все магазины</a>
 
         <div class="mp-tabs" role="tablist">
 $mp_tabs
+$total_button
         </div>
 
         <section class="panel mp-placeholder" id="mp-placeholder" data-ready="$mp_ready">
@@ -18,10 +16,9 @@ $mp_tabs
              data-can-edit="$can_edit_stock" hidden></div>
 
         <div class="store-layout" id="store-layout" data-marketplace="$marketplace">
-            <section class="panel stock-table-panel">
+            <section class="panel stock-table-panel" data-stock-marketplace-view>
                 <div class="stock-table-header">
                     <div>
-                        <span class="section-kicker">ОСТАТКИ ПО АРТИКУЛАМ</span>
                         <h3 class="panel-title">Все товары — $store_name</h3>
                     </div>
                     <div class="panel-header-actions">
@@ -57,14 +54,112 @@ $stock_rows
                 </div>
             </section>
 
-            <div class="side-panels stock-operations" id="stock-operations">
+            <section class="stock-total-panel stock-store-total-view" data-stock-store-total-view hidden>
+                <div class="stock-store-total-head">
+                    <div>
+                        <h3 class="panel-title">Тотал по трём площадкам — $store_name</h3>
+                        <p class="stock-operation-summary">Остатки WB, OZON и Яндекс Маркета объединены по товару внутри этого магазина.</p>
+                    </div>
+$total_download_button
+                </div>
+                <div class="stock-total-controls stock-store-total-legend" aria-label="Обозначения колонок">
+                    <p><span class="stock-total-legend stock-total-legend--ff"></span>ФФ</p>
+                    <p><span class="stock-total-legend stock-total-legend--transit"></span>В пути</p>
+                    <p><span class="stock-total-legend stock-total-legend--fbs"></span>FBS</p>
+                    <p><span class="stock-total-legend stock-total-legend--rfbs"></span>rFBS</p>
+                    <p><span class="stock-total-legend stock-total-legend--fbo"></span>FBO</p>
+                </div>
+                <div class="table-wrap stock-total-table-wrap">
+                    <table class="data-table data-table--stock-total" data-table-filter id="store-stock-total-table">
+                        <colgroup>
+                            <col class="stock-total-col stock-total-col--article">
+                            <col class="stock-total-col stock-total-col--barcode">
+                            <col class="stock-total-col stock-total-col--name">
+                            <col class="stock-total-col stock-total-col--grand">
+                            <col class="stock-total-col stock-total-col--quantity" span="15">
+                        </colgroup>
+                        <thead>
+                            <tr class="stock-total-groups">
+                                <th rowspan="2" data-filter-column="0">АРТИКУЛ</th>
+                                <th rowspan="2" data-filter-column="1">ШТРИХКОД</th>
+                                <th rowspan="2" data-filter-column="2">НАЗВАНИЕ</th>
+                                <th rowspan="2" data-filter-column="3" data-filter-type="number">ГРАНД ТОТАЛ</th>
+                                <th colspan="3" class="stock-total-group stock-total-group--ff">ДОСТУПНО ФФ</th>
+                                <th colspan="3" class="stock-total-group stock-total-group--transit">В ПУТИ МЕЖДУ ФФ</th>
+                                <th colspan="3" class="stock-total-group stock-total-group--fbs">СТОК В ПРОДАЖЕ FBS</th>
+                                <th colspan="3" class="stock-total-group stock-total-group--rfbs">СТОК В ПРОДАЖЕ rFBS</th>
+                                <th colspan="3" class="stock-total-group stock-total-group--fbo">СТОК В ПРОДАЖЕ FBO</th>
+                            </tr>
+                            <tr class="stock-total-marketplaces">
+                                <th data-filter-column="4" data-filter-type="number">ВБ</th>
+                                <th data-filter-column="5" data-filter-type="number">ОЗОН</th>
+                                <th data-filter-column="6" data-filter-type="number">ЯМ</th>
+                                <th data-filter-column="7" data-filter-type="number">ВБ</th>
+                                <th data-filter-column="8" data-filter-type="number">ОЗОН</th>
+                                <th data-filter-column="9" data-filter-type="number">ЯМ</th>
+                                <th data-filter-column="10" data-filter-type="number">ВБ</th>
+                                <th data-filter-column="11" data-filter-type="number">ОЗОН</th>
+                                <th data-filter-column="12" data-filter-type="number">ЯМ</th>
+                                <th data-filter-column="13" data-filter-type="number">ВБ</th>
+                                <th data-filter-column="14" data-filter-type="number">ОЗОН</th>
+                                <th data-filter-column="15" data-filter-type="number">ЯМ</th>
+                                <th data-filter-column="16" data-filter-type="number">ВБ</th>
+                                <th data-filter-column="17" data-filter-type="number">ОЗОН</th>
+                                <th data-filter-column="18" data-filter-type="number">ЯМ</th>
+                            </tr>
+                            <tr class="totals-row">
+                                <th>ИТОГО</th>
+                                <th></th>
+                                <th data-store-total-positions>позиций: 0</th>
+                                <th data-store-total-key="grand_total">0</th>
+                                <th data-store-total-key="ff_wb">0</th>
+                                <th data-store-total-key="ff_ozon">0</th>
+                                <th data-store-total-key="ff_yandex">0</th>
+                                <th data-store-total-key="transit_wb">0</th>
+                                <th data-store-total-key="transit_ozon">0</th>
+                                <th data-store-total-key="transit_yandex">0</th>
+                                <th data-store-total-key="fbs_wb">0</th>
+                                <th data-store-total-key="fbs_ozon">0</th>
+                                <th data-store-total-key="fbs_yandex">0</th>
+                                <th data-store-total-key="rfbs_wb">0</th>
+                                <th data-store-total-key="rfbs_ozon">0</th>
+                                <th data-store-total-key="rfbs_yandex">0</th>
+                                <th data-store-total-key="fbo_wb">0</th>
+                                <th data-store-total-key="fbo_ozon">0</th>
+                                <th data-store-total-key="fbo_yandex">0</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="empty-row"><td colspan="19">Нажмите «ТОТАЛ», чтобы загрузить остатки</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="ff-select-status" data-stock-store-total-status></p>
+            </section>
+
+            <div class="side-panels stock-operations" id="stock-operations" data-stock-marketplace-view>
                 <div class="stock-operations-head">
                     <div>
-                        <span class="section-kicker">ОПЕРАЦИИ С ОСТАТКАМИ</span>
                         <h3>Движение товаров</h3>
                     </div>
-                    <p>Пополнение, перенос и отгрузка собраны в одном рабочем блоке.</p>
                 </div>
+                <section class="panel stock-operation-card stock-transit-panel" data-stock-transit-panel>
+                    <div class="stock-transit-head">
+                        <div>
+                            <h3 class="panel-title">Перемещения между ФФ</h3>
+                            <p class="stock-operation-summary">Активные партии и полная история их отправки, приёмки и отмены.</p>
+                        </div>
+                        <button class="btn-link" type="button" data-stock-transit-refresh>Обновить</button>
+                    </div>
+                    <div class="stock-transit-tabs" role="tablist" aria-label="Перемещения между фулфилментами">
+                        <button class="stock-transit-tab is-active" type="button" role="tab" aria-selected="true" data-stock-transit-view="active">В пути</button>
+                        <button class="stock-transit-tab" type="button" role="tab" aria-selected="false" data-stock-transit-view="history">История</button>
+                    </div>
+                    <p class="ff-select-status" data-stock-transit-status></p>
+                    <div class="stock-transit-list" data-stock-transit-list>
+                        <div class="stock-transit-empty">Загрузка перемещений...</div>
+                    </div>
+                </section>
                 <section class="panel panel--collapsible stock-operation-card stock-operation-card--upload" data-collapse-id="ff-upload" data-collapsed>
                     <h3 class="panel-title">Загрузка остатков на фулфилмент</h3>
                     <p class="stock-operation-summary">Пополнить ФФ вручную, из Excel или Google Таблицы.</p>
@@ -78,7 +173,8 @@ $ff_options
                     </select>
 
                     <input type="text" class="select-control" id="ff-upload-note"
-                           placeholder="Примечание: номер поставки, отправитель" maxlength="200">
+                           placeholder="Примечание обязательно: номер поставки, отправитель" maxlength="200"
+                           required aria-required="true">
 
                     <div class="io-block" id="ff-io">
                         <div class="io-block-head">
@@ -118,10 +214,10 @@ $ff_options
 
                 <section class="panel panel--collapsible stock-operation-card stock-operation-card--move" data-collapse-id="ff-move" data-collapsed>
                     <h3 class="panel-title">Перемещение остатков</h3>
-                    <p class="stock-operation-summary">Перенести товар между ФФ и маркетплейсами.</p>
+                    <p class="stock-operation-summary">Отправить товар с одного ФФ на другой через состояние «В пути».</p>
 
                     <div class="panel-body">
-                    <p class="panel-desc">Перенос между фулфилментами, между маркетплейсами или и то и другое сразу. Откуда — вычитаем, куда — прибавляем.</p>
+                    <p class="panel-desc">После отправки товар списывается с исходного ФФ и появляется в колонке «В пути». На ФФ назначения он попадёт только после приёмки партии.</p>
 
                     <div class="route">
                         <div class="route-side">
@@ -131,7 +227,7 @@ $ff_options
 $ff_options
                             </select>
                             <select class="select-control" id="mv-from-mp">
-$mp_move_options
+$mp_source_options
                             </select>
                         </div>
 
@@ -144,13 +240,14 @@ $mp_move_options
 $ff_options
                             </select>
                             <select class="select-control" id="mv-to-mp">
-$mp_move_options
+$mp_target_options
                             </select>
                         </div>
                     </div>
 
                     <input type="text" class="select-control" id="mv-note"
-                           placeholder="Примечание: причина перемещения" maxlength="200">
+                           placeholder="Примечание обязательно: причина перемещения" maxlength="200"
+                           required aria-required="true">
 
                     <div class="io-block" id="mv-io">
                         <div class="io-block-head">
@@ -181,17 +278,17 @@ $mp_move_options
                         </div>
                     </div>
 
-                    <button class="btn-primary" type="button" id="mv-btn">Переместить</button>
+                    <button class="btn-primary" type="button" id="mv-btn">Отправить в путь</button>
                     <p class="ff-select-status" id="mv-status"></p>
                     </div>
                 </section>
 
                 <section class="panel panel--collapsible stock-operation-card stock-operation-card--ship" data-collapse-id="ff-ship" data-collapsed>
                     <h3 class="panel-title">Отгрузки стока</h3>
-                    <p class="stock-operation-summary">Отгрузить товар наружу или зафиксировать расхождение.</p>
+                    <p class="stock-operation-summary">Отгрузить наружу, переместить на FBS или зафиксировать расхождение.</p>
 
                     <div class="panel-body">
-                    <p class="panel-desc">Товар уходит с фулфилмента наружу — количество вычитается. Если остатка не хватит хотя бы по одной позиции, отгрузка не проведётся целиком.</p>
+                    <p class="panel-desc">Обычная отгрузка списывает физический остаток. Перемещение на FBS только фиксирует доступный для продаж товар — физически он остаётся на фулфилменте.</p>
 
                     <div class="route route--single">
                         <div class="route-side">
@@ -201,13 +298,22 @@ $mp_move_options
 $ff_options
                             </select>
                             <select class="select-control" id="sh-mp">
-$mp_move_options
+$mp_source_options
                             </select>
                         </div>
                     </div>
 
                     <input type="text" class="select-control" id="sh-note"
-                           placeholder="Примечание: номер отгрузки, получатель" maxlength="200">
+                           placeholder="Примечание обязательно: номер, получатель или причина" maxlength="200"
+                           required aria-required="true">
+
+                    <label class="check-line">
+                        <input type="checkbox" id="sh-fbs">
+                        <span>
+                            <b>Перемещение на FBS</b> — зафиксировать товар в продаже FBS,
+                            не списывая его с физического остатка фулфилмента.
+                        </span>
+                    </label>
 
                     <label class="check-line">
                         <input type="checkbox" id="sh-trash">
@@ -276,19 +382,26 @@ $mp_move_options
 
                 <div class="stock-drawer-metrics">
                     <article><span>Доступно ФФ</span><strong data-stock-drawer-available>0</strong></article>
+                    <article><span>В пути</span><strong data-stock-drawer-transit-total>0</strong></article>
                     <article><span>В продаже FBS</span><strong data-stock-drawer-fbs>0</strong></article>
                     <article><span>В продаже FBO</span><strong data-stock-drawer-fbo>0</strong></article>
                 </div>
 
                 <div class="stock-drawer-section-head">
                     <div>
-                        <span class="section-kicker">ДЕТАЛИЗАЦИЯ FBS</span>
                         <h3>Остатки по фулфилментам</h3>
                     </div>
                     <span data-stock-drawer-warehouse-count></span>
                 </div>
                 <div class="stock-drawer-warehouses" data-stock-drawer-warehouses>
                     <div class="stock-drawer-loading">Загрузка складов...</div>
+                </div>
+                <div class="stock-drawer-section-head stock-drawer-section-head--transit">
+                    <div><h3>Партии в пути</h3></div>
+                    <span data-stock-drawer-transit-count></span>
+                </div>
+                <div class="stock-drawer-transit" data-stock-drawer-transit>
+                    <div class="stock-drawer-loading">Нет партий в пути</div>
                 </div>
                 <p class="stock-drawer-note">«Доступно ФФ» — ручной остаток для распределения. FBS показывает товар, уже выставленный в продажу с выбранного склада.</p>
 
@@ -361,11 +474,12 @@ $mp_move_options
 
                 function recalcTotals() {
                     if (!table) return;
-                    var ff = 0, saleTotals = {};
+                    var ff = 0, transit = 0, saleTotals = {};
                     SCHEMES.forEach(function (scheme) { saleTotals[scheme] = 0; });
 
                     table.querySelectorAll('tbody tr[data-article]').forEach(function (row) {
                         var rowFf = num(row.querySelector('.col-ff-available'));
+                        var rowTransit = num(row.querySelector('.col-transit'));
                         var rowSale = 0;
                         var rowByScheme = {};
                         SCHEMES.forEach(function (scheme) {
@@ -373,7 +487,7 @@ $mp_move_options
                             rowByScheme[scheme] = v;
                             rowSale += v;
                         });
-                        var rowTotal = rowFf + rowSale;
+                        var rowTotal = rowFf + rowTransit + rowSale;
 
                         var totalCell = row.querySelector('.col-row-total');
                         if (totalCell) totalCell.textContent = rowTotal === 0 ? '—' : fmt(rowTotal);
@@ -383,6 +497,7 @@ $mp_move_options
 
                         if (row.style.display === 'none') return;
                         ff += rowFf;
+                        transit += rowTransit;
                         SCHEMES.forEach(function (scheme) { saleTotals[scheme] += rowByScheme[scheme]; });
                     });
 
@@ -390,8 +505,9 @@ $mp_move_options
                         var el = table.querySelector(sel);
                         if (el) el.textContent = fmt(v);
                     };
-                    var grand = ff;
+                    var grand = ff + transit;
                     set('.tot-ff', ff);
+                    set('.tot-transit', transit);
                     SCHEMES.forEach(function (scheme) {
                         set('.tot-' + scheme, saleTotals[scheme]);
                         grand += saleTotals[scheme];
@@ -418,12 +534,14 @@ $mp_move_options
 
                     return Promise.all([
                         fetch(query('fbs', { ff: ff, mp: mp })).then(function (r) { return r.json(); }),
-                        fetch(query('ff-available', { ff: ff, mp: mp })).then(function (r) { return r.json(); })
+                        fetch(query('ff-available', { ff: ff, mp: mp })).then(function (r) { return r.json(); }),
+                        fetch(query('transit', { ff: ff, mp: mp })).then(function (r) { return r.json(); })
                     ])
                         .then(function (results) {
                             if (seq !== requestSeq) return;
                             applyValues('.col-fbs', results[0].fbs || {});
                             applyValues('.col-ff-available', results[1].ff_available || {});
+                            applyValues('.col-transit', results[2].transit || {});
                             recalcTotals();
                             if (status) {
                                 status.textContent =
@@ -456,7 +574,7 @@ $mp_move_options
 
 
                 (function () {
-                    document.querySelectorAll('.mp-tab').forEach(function (tab) {
+                    document.querySelectorAll('.mp-tab[data-mp]').forEach(function (tab) {
                         tab.addEventListener('click', function () {
                             if (tab.classList.contains('active')) return;
                             window.location = '/stock/' + storeSlug + '?mp=' +
@@ -533,6 +651,12 @@ $mp_move_options
                         status.classList.add('ff-select-status--bad');
                         return;
                     }
+                    if (!noteInput.value.trim()) {
+                        status.textContent = 'Укажите обязательное примечание к поставке';
+                        status.classList.add('ff-select-status--bad');
+                        noteInput.focus();
+                        return;
+                    }
 
                     var method = io.current();
                     var hasFile = fileInput.files && fileInput.files.length > 0;
@@ -561,22 +685,90 @@ $mp_move_options
                         return;
                     }
 
-                    var formData = new FormData();
-                    formData.append('fulfillment', fulfillment);
-                    formData.append('marketplace', window.stockTable.currentMp());
-                    formData.append('note', noteInput.value.trim());
-                    if (method === 'file') {
-                        formData.append('file', fileInput.files[0]);
-                    } else {
-                        formData.append('sheet_url', url);
+                    var marketplace = window.stockTable.currentMp();
+
+                    function buildFormData(previewMode, confirmationToken) {
+                        var formData = new FormData();
+                        formData.append('fulfillment', fulfillment);
+                        formData.append('marketplace', marketplace);
+                        formData.append('note', noteInput.value.trim());
+                        if (previewMode) formData.append('preview', '1');
+                        if (confirmationToken) formData.append('confirmation_token', confirmationToken);
+                        if (method === 'file') {
+                            formData.append('file', fileInput.files[0]);
+                        } else {
+                            formData.append('sheet_url', url);
+                        }
+                        return formData;
+                    }
+
+                    function postImport(formData) {
+                        return fetch('/stock/' + storeSlug + '/upload-ff-stock', {
+                            method: 'POST',
+                            body: formData
+                        }).then(function (r) {
+                            return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+                        });
+                    }
+
+                    function escapeHtml(value) {
+                        var node = document.createElement('span');
+                        node.textContent = String(value == null ? '' : value);
+                        return node.innerHTML;
                     }
 
                     btn.disabled = true;
-                    status.textContent = 'Загрузка...';
+                    status.textContent = 'Проверяю количество...';
 
-                    fetch('/stock/' + storeSlug + '/upload-ff-stock', { method: 'POST', body: formData })
-                        .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+                    postImport(buildFormData(true, ''))
                         .then(function (result) {
+                            var data = result.data;
+                            if (!result.ok || !data.ok) {
+                                status.textContent = 'Ошибка: ' + (data.error || 'не удалось проверить файл');
+                                return null;
+                            }
+
+                            var preview = data.preview;
+                            var sourceLabel = method === 'file' ? 'В файле' : 'В таблице';
+                            var unmatchedNote = preview.unmatched_quantity
+                                ? '<p class="import-report-note">Не найдено в каталоге: <strong>' +
+                                    escapeHtml(preview.unmatched_quantity) + ' шт.</strong> — они не будут внесены.</p>'
+                                : '';
+                            var body =
+                                '<div class="import-report-summary">' +
+                                    '<span><strong>' + escapeHtml(preview.source_quantity) + '</strong>шт. ' +
+                                        escapeHtml(sourceLabel.toLowerCase()) + '</span>' +
+                                    '<span><strong>' + escapeHtml(preview.added_quantity) + '</strong>шт. будет внесено</span>' +
+                                '</div>' +
+                                '<p><strong>Колонка:</strong> ФФ для распределения ' +
+                                    escapeHtml(marketplace) + '</p>' +
+                                unmatchedNote +
+                                '<p>Убедитесь, что количество в источнике и количество к внесению верны. ' +
+                                    'Если цифры не совпадают с ожидаемыми, нажмите «ОТМЕНА».</p>';
+                            var confirmation = window.Modal && window.Modal.confirm
+                                ? window.Modal.confirm({
+                                    title: 'Проверка внесения стока',
+                                    bodyHtml: body,
+                                    confirmLabel: 'ДА',
+                                    cancelLabel: 'ОТМЕНА'
+                                })
+                                : Promise.resolve(window.confirm(
+                                    sourceLabel + ': ' + preview.source_quantity + ' шт.\n' +
+                                    'Будет внесено: ' + preview.added_quantity + ' шт.\n\n' +
+                                    'Внести в ФФ для распределения ' + marketplace + '?'
+                                ));
+
+                            return confirmation.then(function (approved) {
+                                if (!approved) {
+                                    status.textContent = 'Отменено. Сток не изменён.';
+                                    return null;
+                                }
+                                status.textContent = 'Вношу сток...';
+                                return postImport(buildFormData(false, preview.confirmation_token));
+                            });
+                        })
+                        .then(function (result) {
+                            if (!result) return;
                             var data = result.data;
                             if (!result.ok || !data.ok) {
                                 status.textContent = 'Ошибка: ' + (data.error || 'не удалось загрузить');
@@ -595,7 +787,10 @@ $mp_move_options
                             var detail = function (title, items, tone, describe) {
                                 if (!items.length) return '';
                                 var visible = items.slice(0, 12).map(function (item) {
-                                    return '<li><strong>' + safe(item.article) + '</strong><span>' +
+                                    var article = window.CheckStockIdentifierCopy
+                                        ? window.CheckStockIdentifierCopy.html('Артикул', item.article, item.article)
+                                        : safe(item.article);
+                                    return '<li><strong>' + article + '</strong><span>' +
                                         safe(describe(item)) + '</span></li>';
                                 }).join('');
                                 var tail = items.length > 12
@@ -773,19 +968,51 @@ $mp_move_options
                             return;
                         }
 
-                        btn.disabled = true;
-                        manualStatus.textContent = 'Добавляю...';
+                        var invalidItem = items.some(function (item) {
+                            return !item.code || !Number.isInteger(item.quantity) || item.quantity <= 0;
+                        });
+                        if (invalidItem) {
+                            manualStatus.textContent = 'Заполните артикул/баркод и положительное целое количество в каждой строке';
+                            return;
+                        }
 
-                        fetch('/stock/' + storeSlug + '/add-ff-items', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
-                            body: JSON.stringify({
-                                fulfillment: fulfillment,
-                                marketplace: window.stockTable.currentMp(),
-                                note: noteInput.value.trim(),
-                                items: items
+                        var marketplace = window.stockTable.currentMp();
+                        var totalQuantity = items.reduce(function (total, item) {
+                            return total + item.quantity;
+                        }, 0);
+                        var confirmationText = 'Внести ' + totalQuantity +
+                            ' единиц в колонку «ФФ для распределения ' + marketplace + '»?';
+                        var confirmation = window.Modal && window.Modal.confirm
+                            ? window.Modal.confirm({
+                                title: 'Проверка внесения стока',
+                                bodyHtml: '<p><strong>' + totalQuantity + ' ед.</strong> будет внесено в колонку ' +
+                                    '«ФФ для распределения ' + marketplace + '».</p>' +
+                                    '<p>Проверьте итоговое количество. Если оно неверно, нажмите «ОТМЕНА» — сток не изменится.</p>',
+                                confirmLabel: 'ДА',
+                                cancelLabel: 'ОТМЕНА'
                             })
-                        })
+                            : Promise.resolve(window.confirm(confirmationText));
+
+                        confirmation.then(function (approved) {
+                            if (!approved) {
+                                manualStatus.textContent = 'Отменено. Сток не изменён.';
+                                return;
+                            }
+
+                            btn.disabled = true;
+                            manualStatus.textContent = 'Добавляю...';
+
+                            fetch('/stock/' + storeSlug + '/add-ff-items', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+                                body: JSON.stringify({
+                                    fulfillment: fulfillment,
+                                    marketplace: marketplace,
+                                    note: noteInput.value.trim(),
+                                    confirmed: true,
+                                    items: items
+                                })
+                            })
                             .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
                             .then(function (res) {
                                 if (!res.ok || !res.data.ok) {
@@ -804,6 +1031,7 @@ $mp_move_options
                             })
                             .catch(function (e) { manualStatus.textContent = 'Ошибка: ' + e; })
                             .finally(function () { btn.disabled = false; });
+                        });
                     };
                 }
             })();
@@ -960,6 +1188,12 @@ $mp_move_options
                 fromMp.addEventListener('change', rows.onSourceChange);
 
                 btn.addEventListener('click', function () {
+                    if (!noteInput.value.trim()) {
+                        status.textContent = 'Укажите обязательное примечание к перемещению';
+                        status.classList.add('ff-select-status--bad');
+                        noteInput.focus();
+                        return;
+                    }
                     var fd = new FormData();
                     fd.append('from_fulfillment', fromFf.value);
                     fd.append('from_marketplace', fromMp.value);
@@ -1011,7 +1245,7 @@ $mp_move_options
                             }
                             var list = res.data.results || [];
                             var skipped = res.data.skipped || [];
-                            var message = 'Перемещено: ' + list.map(function (r) {
+                            var message = 'Отправлено в путь, партия №' + res.data.transfer_id + ': ' + list.map(function (r) {
                                 return r.article + ' x' + r.quantity;
                             }).join(', ');
                             if (skipped.length) {
@@ -1031,6 +1265,7 @@ $mp_move_options
                             if (lbl) lbl.textContent = 'Выбрать файл .xlsx';
                             rows.loadSourceStock();
                             if (window.stockTable) window.stockTable.refresh();
+                            if (window.stockTransit) window.stockTransit.refresh();
                         })
                         .catch(function (e) { rows.showServerMessage('Ошибка: ' + e, true); })
                         .finally(function () {
@@ -1050,6 +1285,7 @@ $mp_move_options
                 var ffSelect = document.getElementById('sh-ff');
                 var mpSelect = document.getElementById('sh-mp');
                 var noteInput = document.getElementById('sh-note');
+                var fbsInput = document.getElementById('sh-fbs');
                 var trashInput = document.getElementById('sh-trash');
                 var fileInput = document.getElementById('sh-file');
                 var urlInput = document.getElementById('sh-url');
@@ -1072,10 +1308,19 @@ $mp_move_options
 
 
                 trashInput.addEventListener('change', function () {
-                    btn.textContent = trashInput.checked ? 'Списать в мусорку' : 'Отгрузить';
+                    if (trashInput.checked) fbsInput.checked = false;
+                    btn.textContent = trashInput.checked
+                        ? 'Списать в мусорку'
+                        : (fbsInput.checked ? 'Переместить на FBS' : 'Отгрузить');
 
 
                     rows.setAllowNegative(trashInput.checked);
+                });
+
+                fbsInput.addEventListener('change', function () {
+                    if (fbsInput.checked) trashInput.checked = false;
+                    btn.textContent = fbsInput.checked ? 'Переместить на FBS' : 'Отгрузить';
+                    rows.setAllowNegative(false);
                 });
 
                 btn.addEventListener('click', function () {
@@ -1084,11 +1329,18 @@ $mp_move_options
                         status.classList.add('ff-select-status--bad');
                         return;
                     }
+                    if (!noteInput.value.trim()) {
+                        status.textContent = 'Укажите обязательное примечание к операции';
+                        status.classList.add('ff-select-status--bad');
+                        noteInput.focus();
+                        return;
+                    }
 
                     var fd = new FormData();
                     fd.append('fulfillment', ffSelect.value);
                     fd.append('marketplace', mpSelect.value);
                     fd.append('note', noteInput.value.trim());
+                    fd.append('to_fbs', fbsInput.checked ? '1' : '');
                     fd.append('to_trash', trashInput.checked ? '1' : '');
 
                     var method = io.current();
@@ -1121,7 +1373,9 @@ $mp_move_options
                     }
 
                     btn.disabled = true;
-                    status.textContent = trashInput.checked ? 'Списываю в мусорку...' : 'Отгружаю...';
+                    status.textContent = trashInput.checked
+                        ? 'Списываю в мусорку...'
+                        : (fbsInput.checked ? 'Фиксирую перемещение на FBS...' : 'Отгружаю...');
 
                     fetch('/stock/' + storeSlug + '/shipment', {
                         method: 'POST', body: fd, headers: { 'X-Requested-With': 'fetch' }
@@ -1135,7 +1389,9 @@ $mp_move_options
                             }
                             var list = res.data.results || [];
                             rows.showServerMessage(
-                                (trashInput.checked ? 'В мусорку: ' : 'Отгружено: ') +
+                                (trashInput.checked
+                                    ? 'В мусорку: '
+                                    : (fbsInput.checked ? 'Перемещено на FBS: ' : 'Отгружено: ')) +
                                 list.map(function (r) {
                                     return r.article + ' x' + r.quantity;
                                 }).join(', '), false);
@@ -1143,6 +1399,9 @@ $mp_move_options
                             rows.reset();
                             urlInput.value = '';
                             noteInput.value = '';
+                            fbsInput.checked = false;
+                            trashInput.checked = false;
+                            btn.textContent = 'Отгрузить';
                             fileInput.value = '';
                             var drop = fileInput.closest('.file-drop');
                             var lbl = drop && drop.querySelector('.file-drop-text');

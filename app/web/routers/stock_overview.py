@@ -16,6 +16,7 @@ from app.repositories import stock_dashboard as stock_dashboard_repository
 from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num
+from app.web.identifiers import copy_identifier
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -73,12 +74,14 @@ def _stock2_badge(tone: str, text: str) -> str:
 def _stock2_product_cell(row: dict) -> str:
     article = str(row.get("article") or "")
     barcode = str(row.get("barcode") or "")
-    meta = f"Арт. {article}" + (f" · {barcode}" if barcode else "")
+    meta = copy_identifier(article, "Артикул", f"Арт. {article}")
+    if barcode:
+        meta += f' <span aria-hidden="true">·</span> {copy_identifier(barcode, "Баркод")}'
     return (
         '<span class="stock2-product">'
         f'<strong title="{html.escape(str(row.get("name") or ""), quote=True)}">'
         f"{html.escape(str(row.get('name') or article or 'Без названия'))}</strong>"
-        f"<small>{html.escape(meta)}</small>"
+        f"<small>{meta}</small>"
         "</span>"
     )
 
@@ -92,7 +95,11 @@ def _stock2_load_inventory_rows() -> list[dict]:
     for row in rows:
         item = dict(row)
         store = STORES.get(item["store_slug"], {})
-        total_stock = int(item["marketplace_stock"] or 0) + int(item["fulfillment_stock"] or 0)
+        total_stock = (
+            int(item["marketplace_stock"] or 0)
+            + int(item["fulfillment_stock"] or 0)
+            + int(item.get("transit_stock") or 0)
+        )
         sold_30 = int(item["sold_30"] or 0)
         avg_daily = sold_30 / settings.stock_window_days if sold_30 else 0
         coverage_days = total_stock / avg_daily if avg_daily > 0 else None
@@ -143,6 +150,7 @@ def _stock2_aggregate(rows: list[dict], key: str) -> dict[str, dict]:
                 "total_stock": 0,
                 "marketplace_stock": 0,
                 "fulfillment_stock": 0,
+                "transit_stock": 0,
                 "sold_30": 0,
                 "avg_daily": 0.0,
                 "stock_value": 0.0,
@@ -164,6 +172,7 @@ def _stock2_aggregate(rows: list[dict], key: str) -> dict[str, dict]:
         item["total_stock"] += total_stock
         item["marketplace_stock"] += int(row["marketplace_stock"] or 0)
         item["fulfillment_stock"] += int(row["fulfillment_stock"] or 0)
+        item["transit_stock"] += int(row.get("transit_stock") or 0)
         item["sold_30"] += int(row["sold_30"] or 0)
         item["avg_daily"] += float(row["avg_daily"] or 0)
         if row.get("stock_value") is not None:
@@ -427,28 +436,24 @@ def _stock2_pagination(kind: str, page: int, total_rows: int) -> str:
 STOCK2_DETAIL_META = {
     "ending-7": {
         "title": "Закончатся до 7 дней",
-        "subtitle": "Все SKU с продажами и покрытием не больше 7 дней.",
         "table": "SKU требуют пополнения",
         "note": "Сортировка: сначала минимальное покрытие, затем максимальная скорость продаж.",
         "frozen": False,
     },
     "zero": {
         "title": "Нулевой остаток",
-        "subtitle": "Все SKU, по которым сейчас нет доступного остатка.",
         "table": "SKU без остатка",
         "note": "Сверху товары, которые продавались за последние 30 дней.",
         "frozen": False,
     },
     "excess": {
         "title": "Избыточный запас",
-        "subtitle": "Все SKU с покрытием выше 90 дней по истории продаж.",
         "table": "SKU с высоким покрытием",
         "note": "Сортировка: сначала максимальное покрытие и максимальный остаток.",
         "frozen": False,
     },
     "frozen": {
         "title": "Замороженный запас",
-        "subtitle": "Все SKU с остатком и без продаж за последние 60 дней.",
         "table": "SKU без движения",
         "note": "Сортировка: сначала максимальная стоимость остатка, если известна себестоимость.",
         "frozen": True,
@@ -607,8 +612,6 @@ async def stock2_details(request: Request, kind: str, page: int = 1):
 
     content = fill_template(
         "stock2_detail_content.html",
-        detail_title=html.escape(str(meta["title"])),
-        detail_subtitle=html.escape(str(meta["subtitle"])),
         detail_count=_fmt_num(len(detail_rows)),
         table_title=html.escape(str(meta["table"])),
         table_note=html.escape(str(meta["note"])),

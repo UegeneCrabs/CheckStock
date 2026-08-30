@@ -1,12 +1,7 @@
-        <link rel="stylesheet" href="/static/stock-supplies.css?v=3">
+        <link rel="stylesheet" href="/static/stock-supplies.css?v=4">
 
         <section class="supply-planner" data-supply-planner data-editable="$can_edit_supply">
-            <div class="supply-planner-head">
-                <div>
-                    <span class="supply-planner-kicker">Единый план</span>
-                    <h2>Поставки</h2>
-                    <p>Запланированные поставки WB и ручной план команды в одном месте.</p>
-                </div>
+            <div class="supply-planner-head supply-planner-head--compact">
                 <span class="supply-planner-warning"><i aria-hidden="true"></i>Красным — менее 36 часов</span>
             </div>
 
@@ -109,6 +104,11 @@ $manual_store_options
                             <option value="FBS"></option>
                         </datalist>
                     </label>
+                    <label class="manual-note-field">
+                        <span>Примечание *</span>
+                        <input type="text" name="note" maxlength="500"
+                               placeholder="Что, зачем и почему планируется" required>
+                    </label>
                     <label class="manual-ready-field">
                         <input type="checkbox" name="ready">
                         <span>Готово</span>
@@ -131,16 +131,17 @@ $manual_store_options
                                 <th>Откуда</th>
                                 <th>Куда</th>
                                 <th>Тип</th>
+                                <th>Примечание</th>
                                 <th>Готово</th>
                                 <th>Действия</th>
                             </tr>
                         </thead>
                         <tbody data-manual-supply-rows>
-                            <tr class="supply-empty"><td colspan="7">Загрузка ручного плана…</td></tr>
+                            <tr class="supply-empty"><td colspan="8">Загрузка ручного плана…</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </section>
 
-        <script src="/static/stock-supplies.js?v=4"></script>
+        <script src="/static/stock-supplies.js?v=5"></script>

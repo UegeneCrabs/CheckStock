@@ -307,6 +307,8 @@
     }
 
     function buildHeaderButton(th, table, colIndex) {
+        if (th.querySelector('.tf-th-inner')) return;
+
         var inner = document.createElement('span');
         inner.className = 'tf-th-inner';
 
@@ -334,6 +336,7 @@
     function buildToolbar(table) {
         var wrap = table.closest('.table-wrap');
         if (!wrap || !wrap.parentNode) return;
+        if (wrap.previousElementSibling && wrap.previousElementSibling.classList.contains('tf-toolbar')) return;
 
         var bar = document.createElement('div');
         bar.className = 'tf-toolbar';
@@ -429,6 +432,7 @@
                 if (th.classList.contains('col-filler') || th.querySelector('.tf-th-inner')) return;
                 buildHeaderButton(th, table, Number(th.getAttribute('data-filter-column')));
             });
+            buildToolbar(table);
             applyAllFilters(table);
         }
     };

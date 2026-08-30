@@ -1,14 +1,16 @@
 import html
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 
 from app import stock_total as stock_total_service
+from app.access_control import ActionPermission, profile_has_permission, scope_pairs
 from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num
 from app.web.downloads import _download_headers
+from app.web.identifiers import copy_identifier
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -21,7 +23,7 @@ def _quantity_cell(value: int) -> str:
 
 def _render_rows(rows: list[dict]) -> str:
     if not rows:
-        return '<tr class="empty-row"><td colspan="16">Пока нет товаров и остатков</td></tr>'
+        return '<tr class="empty-row"><td colspan="19">Пока нет товаров и остатков</td></tr>'
 
     result = []
     for row in rows:
@@ -35,8 +37,8 @@ def _render_rows(rows: list[dict]) -> str:
         result.append(
             f'<tr data-store="{html.escape(str(row["store_slug"]), quote=True)}" '
             f'data-grand-total="{quantities[0]}">'
-            f'<td title="{html.escape(article, quote=True)}">{html.escape(article)}</td>'
-            f'<td title="{html.escape(barcode, quote=True)}">{html.escape(barcode)}</td>'
+            f"<td>{copy_identifier(article, 'Артикул')}</td>"
+            f"<td>{copy_identifier(barcode, 'Баркод')}</td>"
             f'<td title="{html.escape(name, quote=True)}">{html.escape(name)}</td>'
             + "".join(_quantity_cell(value) for value in quantities)
             + "</tr>"
@@ -61,25 +63,47 @@ def _render_totals(rows: list[dict]) -> str:
     )
 
 
-def _store_options(store_slugs: tuple[str, ...]) -> str:
+def _store_options(store_slugs: tuple[str, ...], selected_store: str = "") -> str:
     options = ['<option value="">Все магазины</option>']
     options.extend(
-        f'<option value="{html.escape(slug, quote=True)}">{html.escape(STORES[slug]["name"])}</option>'
+        f'<option value="{html.escape(slug, quote=True)}"'
+        f'{" selected" if slug == selected_store else ""}>'
+        f'{html.escape(STORES[slug]["name"])}</option>'
         for slug in store_slugs
     )
     return "".join(options)
 
 
+def _selected_store(store: str, accessible: tuple[str, ...]) -> str:
+    selected = store.strip().lower()
+    if not selected:
+        return ""
+    if selected not in STORES:
+        raise HTTPException(status_code=404, detail="Магазин не найден")
+    if selected not in accessible:
+        raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
+    return selected
+
+
 @router.get("/stock/total", response_class=HTMLResponse)
-async def stock_total(request: Request):
+async def stock_total(request: Request, store: str = ""):
+    if not profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_VIEW):
+        raise HTTPException(status_code=403, detail="Нет доступа к сводным остаткам")
     store_slugs = accessible_store_slugs(request.state.user)
-    rows = await run_in_threadpool(stock_total_service.build_rows, store_slugs)
+    selected_store = _selected_store(store, store_slugs)
+    rows = await run_in_threadpool(
+        stock_total_service.build_rows,
+        store_slugs,
+        scope_pairs(request.state.user),
+    )
     content = fill_template(
         "stock_total_content.html",
-        store_options=_store_options(store_slugs),
-        total_positions=_fmt_num(len(rows)),
-        store_count=_fmt_num(len(store_slugs)),
-        grand_total=_fmt_num(sum(int(row["grand_total"] or 0) for row in rows)),
+        store_options=_store_options(store_slugs, selected_store),
+        download_href=(
+            f"/stock/total.xlsx?store={html.escape(selected_store, quote=True)}"
+            if selected_store
+            else "/stock/total.xlsx"
+        ),
         total_row=_render_totals(rows),
         rows=_render_rows(rows),
     )
@@ -93,11 +117,22 @@ async def stock_total(request: Request):
 
 
 @router.get("/stock/total.xlsx")
-async def stock_total_xlsx(request: Request):
+async def stock_total_xlsx(request: Request, store: str = ""):
+    if not profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT):
+        raise HTTPException(status_code=403, detail="Нет доступа к выгрузке сводных остатков")
     store_slugs = accessible_store_slugs(request.state.user)
+    selected_store = _selected_store(store, store_slugs)
+    export_store_slugs = (selected_store,) if selected_store else store_slugs
+    allowed_pairs = scope_pairs(request.state.user)
+    if selected_store:
+        allowed_pairs = tuple(
+            pair for pair in allowed_pairs if pair[0] == selected_store
+        )
 
     def build() -> tuple[bytes, str]:
-        return stock_total_service.build_xlsx(stock_total_service.build_rows(store_slugs))
+        return stock_total_service.build_xlsx(
+            stock_total_service.build_rows(export_store_slugs, allowed_pairs)
+        )
 
     content, filename = await run_in_threadpool(build)
     return Response(

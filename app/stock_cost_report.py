@@ -7,8 +7,9 @@ from app.stores import STORES
 VIEW_KINDS = {
     "summary": None,
     "deliveries": {"delivery", "manual_add"},
-    "transfers": {"transfer"},
+    "transfers": {"transfer", "transfer_dispatch", "transfer_receive", "transfer_cancel"},
     "shipments": {"shipment"},
+    "fbs_transfers": {"fbs_transfer"},
     "fbs_sales": set(),
 }
 
@@ -65,13 +66,19 @@ def _enrich_item(
     article = str(item.get("article") or "")
     barcode = str(item.get("barcode") or "")
     quantity = int(item.get("quantity") or 0)
-    purchase_price = by_article.get((store_slug, article))
-    if purchase_price is None and barcode:
-        purchase_price = by_barcode.get((store_slug, barcode))
+    price_was_recorded = bool(int(item.get("purchase_price_recorded") or 0))
+    purchase_price = item.get("purchase_price") if price_was_recorded else None
+    if not price_was_recorded:
+        purchase_price = by_article.get((store_slug, article))
+        if purchase_price is None and barcode:
+            purchase_price = by_barcode.get((store_slug, barcode))
+    if purchase_price is not None:
+        purchase_price = float(purchase_price)
     item["article"] = article
     item["barcode"] = barcode
     item["quantity"] = quantity
     item["purchase_price"] = purchase_price
+    item["purchase_price_recorded"] = price_was_recorded
     item["purchase_cost"] = round(float(purchase_price) * quantity, 2) if purchase_price is not None else None
     return item
 
@@ -143,6 +150,7 @@ def _summary_rows(store_slugs: tuple[str, ...], marketplaces: tuple[str, ...]) -
             "moved_in": _empty_metric(),
             "shipped": _empty_metric(),
             "fbs_sales": _empty_metric(),
+            "fbs_actual_sales": _empty_metric(),
             "fbs_formula": None,
         }
         for store_slug in store_slugs
@@ -175,7 +183,10 @@ def _build_reconciliation(
 
     inbound: dict[tuple[str, str, str], dict] = {}
     for operation in operations:
-        if operation.get("kind") != "shipment" or not operation.get("is_fbs_transfer"):
+        is_legacy_fbs_transfer = (
+            operation.get("kind") == "shipment" and operation.get("is_fbs_transfer")
+        )
+        if operation.get("kind") != "fbs_transfer" and not is_legacy_fbs_transfer:
             continue
         store_slug = str(operation.get("store_slug") or "")
         marketplace = str(operation.get("from_marketplace") or "")
@@ -266,8 +277,10 @@ def build_report(
     date_from: date,
     date_to: date,
     marketplaces: tuple[str, ...] | None = None,
+    allowed_pairs: tuple[tuple[str, str], ...] | None = None,
 ) -> dict:
     marketplaces = marketplaces or tuple(MARKETPLACES)
+    allowed = set(allowed_pairs) if allowed_pairs is not None else None
     operation_from, operation_to, sales_from, sales_to = _period_boundaries(date_from, date_to)
     price_rows = db.get_purchase_price_rows(store_slugs)
     by_article, by_barcode = _price_indexes(price_rows)
@@ -282,11 +295,23 @@ def build_report(
     operations = [
         operation
         for operation in operations
-        if operation.get("from_marketplace") in marketplaces
-        or operation.get("to_marketplace") in marketplaces
+        if (
+            operation.get("from_marketplace") in marketplaces
+            and (
+                allowed is None
+                or (operation["store_slug"], operation.get("from_marketplace")) in allowed
+            )
+        )
+        or (
+            operation.get("to_marketplace") in marketplaces
+            and (
+                allowed is None
+                or (operation["store_slug"], operation.get("to_marketplace")) in allowed
+            )
+        )
     ]
 
-    fbs_sales = [
+    actual_fbs_sales = [
         _enrich_item(row, str(row.get("store_slug") or ""), by_article, by_barcode)
         | {
             "store_slug": str(row.get("store_slug") or ""),
@@ -294,9 +319,17 @@ def build_report(
         }
         for row in db.get_fbs_sales_for_period(store_slugs, sales_from, sales_to)
         if row.get("marketplace") in marketplaces
+        and (
+            allowed is None
+            or (str(row.get("store_slug") or ""), str(row.get("marketplace") or "")) in allowed
+        )
     ]
 
     summary = _summary_rows(store_slugs, marketplaces)
+    if allowed is not None:
+        summary = [
+            row for row in summary if (row["store_slug"], row["marketplace"]) in allowed
+        ]
     summary_by_key = {(row["store_slug"], row["marketplace"]): row for row in summary}
     for operation in operations:
         kind = operation.get("kind")
@@ -311,19 +344,35 @@ def build_report(
                 _add_items(summary_by_key[out_key]["moved_out"], operation["items"])
             if in_key in summary_by_key:
                 _add_items(summary_by_key[in_key]["moved_in"], operation["items"])
+        elif kind == "transfer_dispatch":
+            key = (operation["store_slug"], operation.get("from_marketplace"))
+            if key in summary_by_key:
+                _add_items(summary_by_key[key]["moved_out"], operation["items"])
+        elif kind == "transfer_receive":
+            key = (operation["store_slug"], operation.get("to_marketplace"))
+            if key in summary_by_key:
+                _add_items(summary_by_key[key]["moved_in"], operation["items"])
+        elif kind == "transfer_cancel":
+            key = (operation["store_slug"], operation.get("to_marketplace"))
+            if key in summary_by_key:
+                _add_items(summary_by_key[key]["moved_in"], operation["items"])
         elif kind == "shipment":
             key = (operation["store_slug"], operation.get("from_marketplace"))
             if key not in summary_by_key:
                 continue
             target = "moved_in" if operation.get("is_fbs_transfer") else "shipped"
             _add_items(summary_by_key[key][target], operation["items"])
+        elif kind == "fbs_transfer":
+            key = (operation["store_slug"], operation.get("from_marketplace"))
+            if key in summary_by_key:
+                _add_items(summary_by_key[key]["moved_in"], operation["items"])
 
-    sales_by_key: dict[tuple[str, str], list[dict]] = {}
-    for item in fbs_sales:
-        sales_by_key.setdefault((item["store_slug"], item["marketplace"]), []).append(item)
-    for key, items in sales_by_key.items():
+    actual_sales_by_key: dict[tuple[str, str], list[dict]] = {}
+    for item in actual_fbs_sales:
+        actual_sales_by_key.setdefault((item["store_slug"], item["marketplace"]), []).append(item)
+    for key, items in actual_sales_by_key.items():
         if key in summary_by_key:
-            _add_items(summary_by_key[key]["fbs_sales"], items, count_operation=False)
+            _add_items(summary_by_key[key]["fbs_actual_sales"], items, count_operation=False)
 
     reconciliation = _build_reconciliation(
         store_slugs,
@@ -334,8 +383,28 @@ def build_report(
         by_article,
         by_barcode,
     )
+    if allowed is not None:
+        reconciliation = [
+            row for row in reconciliation if (row["store_slug"], row["marketplace"]) in allowed
+        ]
     for item in reconciliation:
         summary_by_key[(item["store_slug"], item["marketplace"])]["fbs_formula"] = item
+
+    fbs_sales = [
+        formula_item
+        | {
+            "store_slug": entry["store_slug"],
+            "marketplace": entry["marketplace"],
+        }
+        for entry in reconciliation
+        if entry["available"]
+        for formula_item in entry["items"]
+    ]
+    formula_sales_by_key: dict[tuple[str, str], list[dict]] = {}
+    for item in fbs_sales:
+        formula_sales_by_key.setdefault((item["store_slug"], item["marketplace"]), []).append(item)
+    for key, items in formula_sales_by_key.items():
+        _add_items(summary_by_key[key]["fbs_sales"], items, count_operation=False)
 
     return {
         "date_from": date_from,
@@ -344,6 +413,7 @@ def build_report(
         "marketplaces": marketplaces,
         "operations": operations,
         "fbs_sales": fbs_sales,
+        "fbs_actual_sales": actual_fbs_sales,
         "summary": summary,
         "reconciliation": reconciliation,
     }

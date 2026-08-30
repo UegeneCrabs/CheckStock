@@ -7,6 +7,11 @@
     gap: 20px;
 }
 
+.randomizer-status-row {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .randomizer-hero {
     position: relative;
     min-height: 210px;

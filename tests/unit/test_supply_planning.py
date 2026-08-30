@@ -123,6 +123,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
             "origin": "ФФ Подольск",
             "destination": "Коледино",
             "supply_type": "Короба",
+            "note": "Поставка первой партии",
             "ready": False,
         },
     )
@@ -134,6 +135,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
             "origin": "ФФ Чехов",
             "destination": "Электросталь",
             "supply_type": "Монопаллета",
+            "note": "Пополнение недельного запаса",
             "ready": False,
         },
     )
@@ -162,6 +164,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
             "origin": "ФФ Чехов",
             "destination": "Тула",
             "supply_type": "Короба",
+            "note": "Изменили склад назначения",
             "ready": True,
         },
     )

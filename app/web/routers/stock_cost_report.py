@@ -7,11 +7,18 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app import auth, db, stock_cost_report, stock_cost_report_export
+from app.access_control import (
+    ActionPermission,
+    has_action_permission,
+    profile_has_permission,
+    scope_pairs,
+)
 from app.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num, _now_iso
 from app.web.downloads import _download_headers
+from app.web.identifiers import copy_identifier
 from app.web.routers.stock_mutations import _guard_stock_edit
 from app.web.templating import fill_template, render_page
 
@@ -22,6 +29,7 @@ VIEW_LABELS = (
     ("deliveries", "Поставки"),
     ("transfers", "Перемещения"),
     ("shipments", "Отгрузки"),
+    ("fbs_transfers", "На FBS"),
     ("fbs_sales", "Продажи FBS"),
 )
 
@@ -75,15 +83,16 @@ def _summary_table(rows: list[dict]) -> str:
     for row in rows:
         formula = row.get("fbs_formula") or {}
         if formula.get("available"):
-            formula_metric = _metric_cell(formula["metric"])
             formula_note = (
-                '<span class="formula-note">по остаткам: '
+                '<span class="formula-note">'
                 f"{_fmt_num(formula['start_units'])} + {_fmt_num(formula['moved_units'])} − "
                 f"{_fmt_num(formula['end_units'])}</span>"
             )
+            fbs_units = _fbs_units_cell(row["fbs_sales"], formula_note)
+            fbs_cost = _fbs_cost_cell(row["fbs_sales"])
         else:
-            formula_metric = '<span class="snapshot-wait">Снимки границ ещё не накоплены</span>'
-            formula_note = ""
+            fbs_units = '<span class="snapshot-wait">Снимки границ ещё не накоплены</span>'
+            fbs_cost = '<span class="snapshot-wait">—</span>'
         body.append(
             "<tr>"
             f"<th>{html.escape(row['store_name'])}</th>"
@@ -92,16 +101,16 @@ def _summary_table(rows: list[dict]) -> str:
             f"<td>{_metric_cell(row['moved_out'])}</td>"
             f"<td>{_metric_cell(row['moved_in'])}</td>"
             f"<td>{_metric_cell(row['shipped'])}</td>"
-            f"<td>{_fbs_units_cell(row['fbs_sales'], formula_note)}</td>"
-            f"<td>{_fbs_cost_cell(row['fbs_sales'])}</td>"
-            f"<td>{formula_metric}</td>"
+            f"<td>{fbs_units}</td>"
+            f"<td>{fbs_cost}</td>"
+            f"<td>{_fbs_units_cell(row['fbs_actual_sales'], '')}</td>"
             "</tr>"
         )
     return (
         '<div class="cost-table-wrap table-wrap"><table class="cost-summary-table data-table"><thead><tr>'
         "<th>Магазин</th><th>Маркетплейс</th><th>Поставки</th><th>Со стока</th><th>На сток</th>"
-        "<th>Отгружено наружу</th><th>Продано FBS, ед.</th><th>ЗЦ продаж FBS</th>"
-        "<th>Сверка по остаткам</th>"
+        "<th>Отгружено наружу</th><th>Продано FBS по формуле</th><th>ЗЦ продаж FBS</th>"
+        "<th>По данным маркетплейса</th>"
         "</tr></thead><tbody>" + "".join(body) + "</tbody></table></div>"
     )
 
@@ -159,52 +168,57 @@ def _operation_table(
             f'<td data-filter-value="{int(operation["units"])}"><strong>{_fmt_num(operation["units"])} ед.</strong>'
             f"<small>{_fmt_num(operation['positions'])} поз.</small></td>"
             f"<td>{_operation_cost(operation)}</td>"
+            f"<td>{html.escape(str(operation.get('note') or '—'))}</td>"
             f"<td>{_classification_form(operation, query, can_edit)}</td>"
             "</tr>"
         )
     return (
         '<div class="cost-table-wrap table-wrap"><table class="cost-operation-table data-table"><thead><tr>'
         "<th>Когда</th><th>Магазин</th><th>Маркетплейс</th><th>Операция</th><th>Маршрут</th>"
-        '<th data-filter-type="number">Количество</th><th>ЗЦ</th>'
+        '<th data-filter-type="number">Количество</th><th>ЗЦ</th><th>Примечание</th>'
         "<th>Учёт отгрузки</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
     )
 
 
 def _fbs_sales_table(report: dict) -> str:
     if not report["fbs_sales"]:
-        return '<div class="cost-empty">Продаж FBS за выбранный период в загруженных данных нет.</div>'
-    formula = {
-        (entry["store_slug"], entry["marketplace"], item["article"]): item
-        for entry in report["reconciliation"]
-        if entry["available"]
-        for item in entry["items"]
+        return (
+            '<div class="cost-empty">Для расчёта продаж FBS нужны снимки остатков '
+            "на обеих границах периода.</div>"
+        )
+    actual = {
+        (item["store_slug"], item["marketplace"], item["article"]): item
+        for item in report["fbs_actual_sales"]
     }
     rows = []
     for item in report["fbs_sales"]:
-        check = formula.get((item["store_slug"], item["marketplace"], item["article"]))
-        check_html = (
-            f"{_fmt_num(check['start_quantity'])} + {_fmt_num(check['moved_quantity'])} − "
-            f"{_fmt_num(check['end_quantity'])} = <strong>{_fmt_num(check['quantity'])}</strong>"
-            if check
-            else '<span class="snapshot-wait">ждём снимки границ</span>'
-        )
+        check = actual.get((item["store_slug"], item["marketplace"], item["article"]))
+        check_html = f"{_fmt_num(check['quantity'])} ед." if check else "—"
         cost = _money(item["purchase_cost"]) if item["purchase_cost"] is not None else "нет ЗЦ"
+        article_copy = copy_identifier(
+            item["article"],
+            "Артикул",
+            f"Арт. {item['article']}",
+        )
+        barcode_copy = copy_identifier(item.get("barcode"), "Баркод")
         rows.append(
             "<tr>"
             f"<td>{html.escape(STORES[item['store_slug']]['name'])}</td>"
             f"<td>{html.escape(item['marketplace'])}</td>"
             f"<td><strong>{html.escape(str(item.get('name') or item['article']))}</strong>"
-            f"<small>Арт. {html.escape(item['article'])} · {html.escape(item.get('barcode') or '—')}</small></td>"
+            f"<small>{article_copy} · {barcode_copy}</small></td>"
             f"<td>{_fmt_num(item['quantity'])} ед.</td>"
             f"<td>{html.escape(_money(item['purchase_price'])) if item['purchase_price'] is not None else '—'}</td>"
             f"<td><strong>{html.escape(cost)}</strong></td>"
+            f"<td>{_fmt_num(item['start_quantity'])} + {_fmt_num(item['moved_quantity'])} − "
+            f"{_fmt_num(item['end_quantity'])}</td>"
             f"<td>{check_html}</td>"
             "</tr>"
         )
     return (
         '<div class="cost-table-wrap table-wrap"><table class="cost-sales-table data-table"><thead><tr>'
         "<th>Магазин</th><th>Маркетплейс</th><th>Товар</th><th>Продано FBS</th><th>ЗЦ/ед.</th>"
-        "<th>ЗЦ продаж</th><th>Сверка: начало + на FBS − конец</th>"
+        "<th>ЗЦ продаж</th><th>Начало + на FBS − конец</th><th>По данным маркетплейса</th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
     )
 
@@ -242,12 +256,18 @@ async def stock_cost_report_page(
     marketplace: str = "",
     view: str = "summary",
 ):
+    if not profile_has_permission(request.state.user, ActionPermission.STOCK_OPERATIONS_VIEW):
+        raise HTTPException(status_code=403, detail="Нет доступа к отчёту движения стока")
     start, end = _period(date_from, date_to)
     allowed_stores = accessible_store_slugs(request.state.user)
     store = store if store in allowed_stores else ""
     store_slugs = (store,) if store else allowed_stores
-    marketplace = marketplace if marketplace in MARKETPLACES else ""
-    marketplaces = (marketplace,) if marketplace else tuple(MARKETPLACES)
+    allowed_pairs = scope_pairs(request.state.user)
+    allowed_marketplaces = tuple(
+        item for item in MARKETPLACES if any(pair[1] == item for pair in allowed_pairs)
+    )
+    marketplace = marketplace if marketplace in allowed_marketplaces else ""
+    marketplaces = (marketplace,) if marketplace else allowed_marketplaces
     view = view if view in stock_cost_report.VIEW_KINDS else "summary"
     report = await run_in_threadpool(
         stock_cost_report.build_report,
@@ -255,6 +275,7 @@ async def stock_cost_report_page(
         start,
         end,
         marketplaces,
+        allowed_pairs,
     )
     query = _query(start, end, store, marketplace, view)
     current_monday, current_end = _default_period()
@@ -274,7 +295,7 @@ async def stock_cost_report_page(
     marketplace_options = '<option value="">Все маркетплейсы</option>' + "".join(
         f'<option value="{html.escape(item, quote=True)}"'
         f"{' selected' if item == marketplace else ''}>{html.escape(item)}</option>"
-        for item in MARKETPLACES
+        for item in allowed_marketplaces
     )
     if view == "summary":
         detail = _summary_table(report["summary"])
@@ -296,6 +317,9 @@ async def stock_cost_report_page(
         current_week_url=html.escape(current_week_url, quote=True),
         previous_week_url=html.escape(previous_week_url, quote=True),
         export_url=html.escape(export_url, quote=True),
+        export_hidden=""
+        if profile_has_permission(request.state.user, ActionPermission.STOCK_OPERATIONS_EXPORT)
+        else " hidden",
         tabs=_tabs(query, view),
         detail=detail,
     )
@@ -317,12 +341,18 @@ async def stock_cost_report_xlsx(
     marketplace: str = "",
     view: str = "summary",
 ):
+    if not profile_has_permission(request.state.user, ActionPermission.STOCK_OPERATIONS_EXPORT):
+        raise HTTPException(status_code=403, detail="Нет доступа к выгрузке отчёта")
     start, end = _period(date_from, date_to)
     allowed_stores = accessible_store_slugs(request.state.user)
     store = store if store in allowed_stores else ""
     store_slugs = (store,) if store else allowed_stores
-    marketplace = marketplace if marketplace in MARKETPLACES else ""
-    marketplaces = (marketplace,) if marketplace else tuple(MARKETPLACES)
+    allowed_pairs = scope_pairs(request.state.user)
+    allowed_marketplaces = tuple(
+        item for item in MARKETPLACES if any(pair[1] == item for pair in allowed_pairs)
+    )
+    marketplace = marketplace if marketplace in allowed_marketplaces else ""
+    marketplaces = (marketplace,) if marketplace else allowed_marketplaces
     view = view if view in stock_cost_report.VIEW_KINDS else "summary"
     report = await run_in_threadpool(
         stock_cost_report.build_report,
@@ -330,6 +360,7 @@ async def stock_cost_report_xlsx(
         start,
         end,
         marketplaces,
+        allowed_pairs,
     )
     try:
         content, filename = await run_in_threadpool(stock_cost_report_export.build_xlsx, report, view)
@@ -360,6 +391,16 @@ async def classify_shipment_as_fbs_transfer(
     allowed_stores = accessible_store_slugs(request.state.user)
     if operation is None or operation.get("store_slug") not in allowed_stores:
         raise HTTPException(status_code=404, detail="Операция не найдена")
+    operation_marketplace = str(
+        operation.get("from_marketplace") or operation.get("to_marketplace") or ""
+    )
+    if not operation_marketplace or not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_SHIPMENT,
+        store_slug=str(operation["store_slug"]),
+        marketplace=operation_marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     changed = await run_in_threadpool(
         db.set_operation_fbs_transfer,
         operation_id,

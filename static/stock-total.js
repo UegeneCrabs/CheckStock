@@ -22,22 +22,14 @@
         var positions = table.querySelector('[data-total-positions]');
         if (positions) positions.textContent = 'позиций: ' + formatNumber(rows.length);
 
-        for (var column = 3; column <= 15; column++) {
+        table.querySelectorAll('[data-total-column]').forEach(function (target) {
+            var column = Number(target.getAttribute('data-total-column'));
             var total = rows.reduce(function (sum, row) {
                 return sum + numberValue(row.children[column]);
             }, 0);
-            var target = table.querySelector('[data-total-column="' + column + '"]');
-            if (target) target.textContent = formatNumber(total);
-        }
+            target.textContent = formatNumber(total);
+        });
 
-        var summaryPositions = document.querySelector('[data-summary-positions]');
-        var summaryGrand = document.querySelector('[data-summary-grand]');
-        if (summaryPositions) summaryPositions.textContent = formatNumber(rows.length);
-        if (summaryGrand) {
-            summaryGrand.textContent = formatNumber(rows.reduce(function (sum, row) {
-                return sum + numberValue(row.children[3]);
-            }, 0));
-        }
     }
 
     function sortByGrandTotal(table) {
@@ -56,7 +48,16 @@
         var select = document.getElementById('stock-total-store');
         if (!table || !select) return;
 
-        function applyStore() {
+        function syncLinks(selected, updateAddress) {
+            var query = selected ? '?store=' + encodeURIComponent(selected) : '';
+            var download = document.querySelector('.stock-total-download');
+            if (download) download.setAttribute('href', '/stock/total.xlsx' + query);
+            if (updateAddress && window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', '/stock/total' + query);
+            }
+        }
+
+        function applyStore(updateAddress) {
             var selected = select.value;
             table.querySelectorAll('tbody tr:not(.empty-row)').forEach(function (row) {
                 row.dataset.externalHidden = selected && row.dataset.store !== selected ? 'true' : 'false';
@@ -70,10 +71,11 @@
                 });
                 updateTotals(table);
             }
+            syncLinks(selected, updateAddress === true);
         }
 
         table.addEventListener('tablefilterchange', function () { updateTotals(table); });
-        select.addEventListener('change', applyStore);
-        applyStore();
+        select.addEventListener('change', function () { applyStore(true); });
+        applyStore(false);
     });
 })();

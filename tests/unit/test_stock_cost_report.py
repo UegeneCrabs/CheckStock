@@ -59,6 +59,42 @@ class StockCostReportTests(unittest.TestCase):
                 "is_fbs_transfer": 1,
                 "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": 3}],
             },
+            common
+            | {
+                "id": 5,
+                "kind": "fbs_transfer",
+                "from_marketplace": "WB",
+                "to_marketplace": "WB",
+                "is_fbs_transfer": 0,
+                "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": 2}],
+            },
+            common
+            | {
+                "id": 6,
+                "kind": "transfer_dispatch",
+                "from_marketplace": "WB",
+                "to_marketplace": "OZON",
+                "is_fbs_transfer": 0,
+                "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": 2}],
+            },
+            common
+            | {
+                "id": 7,
+                "kind": "transfer_receive",
+                "from_marketplace": "WB",
+                "to_marketplace": "OZON",
+                "is_fbs_transfer": 0,
+                "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": 2}],
+            },
+            common
+            | {
+                "id": 8,
+                "kind": "transfer_cancel",
+                "from_marketplace": "OZON",
+                "to_marketplace": "WB",
+                "is_fbs_transfer": 0,
+                "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": 1}],
+            },
         ]
         snapshots = [
             {
@@ -134,12 +170,14 @@ class StockCostReportTests(unittest.TestCase):
         wb = summary[("rimili", "WB")]
         ozon = summary[("rimili", "OZON")]
         self.assertEqual((wb["deliveries"]["units"], wb["deliveries"]["cost"]), (2, 20.0))
-        self.assertEqual((wb["moved_out"]["units"], wb["moved_in"]["units"]), (1, 3))
+        self.assertEqual((wb["moved_out"]["units"], wb["moved_in"]["units"]), (3, 6))
         self.assertEqual((wb["shipped"]["units"], wb["shipped"]["cost"]), (4, 40.0))
-        self.assertEqual((wb["fbs_sales"]["units"], wb["fbs_sales"]["cost"]), (5, 50.0))
-        self.assertEqual(ozon["moved_in"]["units"], 1)
+        self.assertEqual((wb["fbs_sales"]["units"], wb["fbs_sales"]["cost"]), (7, 70.0))
+        self.assertEqual((wb["fbs_actual_sales"]["units"], wb["fbs_actual_sales"]["cost"]), (5, 50.0))
+        self.assertEqual(ozon["moved_in"]["units"], 3)
+        self.assertEqual(len(stock_cost_report.operations_for_view(report, "transfers")), 4)
         self.assertTrue(wb["fbs_formula"]["available"])
-        self.assertEqual(wb["fbs_formula"]["metric"]["units"], 5)
+        self.assertEqual(wb["fbs_formula"]["metric"]["units"], 7)
 
         sales_table = stock_cost_report_routes._fbs_sales_table(report)
         self.assertIn('class="cost-sales-table data-table"', sales_table)

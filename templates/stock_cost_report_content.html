@@ -1,14 +1,9 @@
-        <link rel="stylesheet" href="/static/stock-cost-report.css?v=2">
+        <link rel="stylesheet" href="/static/stock-cost-report.css?v=4">
 
         <section class="cost-report-shell">
-            <header class="cost-report-hero">
-                <div>
-                    <span>УПРАВЛЕНЧЕСКИЙ УЧЁТ СТОКА</span>
-                    <h2>Движение товаров и закупочная стоимость</h2>
-                    <p>Поставки, перемещения, внешние отгрузки и продажи FBS по каждому магазину и маркетплейсу.</p>
-                </div>
-                <a class="cost-export" href="$export_url">Excel · 2 листа</a>
-            </header>
+            <div class="cost-report-actions">
+                <a class="cost-export" href="$export_url"$export_hidden>Excel · 2 листа</a>
+            </div>
 
             <form class="cost-filters" method="get" action="/stock/cost-report">
                 <label><span>Начало</span><input type="date" name="date_from" value="$date_from"></label>
@@ -24,9 +19,9 @@
 
             <aside class="cost-report-note">
                 <strong>Как считается ЗЦ</strong>
-                <span>Текущая закупочная цена из справочника 1С × количество. Если ЗЦ не заполнена, отчёт отдельно показывает такие единицы.</span>
+                <span>Для новых операций фиксируется закупочная цена из 1С на момент проведения × количество. Старые операции без снимка используют текущую ЗЦ и отдельно помечают товары без цены.</span>
                 <strong>Продажи FBS</strong>
-                <span>Основная цифра — выкупленные товары FBS/rFBS. Рядом идёт сверка: остаток на начало + помеченные перемещения на FBS − остаток на конец.</span>
+                <span>Основная цифра: остаток FBS перед периодом + перемещения на FBS − остаток FBS в конце периода. Продажи из API маркетплейса показаны рядом только для сверки.</span>
             </aside>
 
             <nav class="cost-report-tabs" aria-label="Виды отчёта">$tabs</nav>

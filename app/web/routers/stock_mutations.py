@@ -5,11 +5,16 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app import auth, db
+from app import access_notifications, auth, db
+from app.access_control import ActionPermission, has_action_permission
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
     AddFulfillmentItemsCommand,
     AddFulfillmentItemsRequest,
+    CancelTransitCommand,
+    CancelTransitRequest,
+    ReceiveTransitCommand,
+    ReceiveTransitRequest,
     ShipmentCommand,
     SignedStockEntries,
     TransferStockCommand,
@@ -20,11 +25,69 @@ from app.ff_import import shipment as ff_shipment
 from app.ff_import import transfer as ff_transfer
 from app.formatting import format_dt
 from app.stores import STORES
+from app.web.access import accessible_marketplaces
 from app.web.common import _now_iso
 from app.web.dependencies import StockMovementServiceDependency
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _required_note(value: str) -> tuple[str, JSONResponse | None]:
+    note = value.strip()
+    if note:
+        return note, None
+    return "", JSONResponse(
+        {"ok": False, "error": "Укажите примечание: что, зачем и по какой причине проводится"},
+        status_code=400,
+    )
+
+
+def _guard_stock_action(
+    actor,
+    *,
+    permission: ActionPermission,
+    store_slug: str,
+    marketplace: str,
+    target_marketplace: str | None = None,
+    reason: str,
+    context: dict | None = None,
+) -> JSONResponse | None:
+    if actor.access_profile is None:
+        denied = _guard_stock_edit(actor)
+        if denied:
+            return JSONResponse({"ok": False, "error": denied}, status_code=403)
+    if has_action_permission(
+        actor,
+        permission,
+        store_slug=store_slug,
+        marketplace=marketplace,
+        target_marketplace=target_marketplace,
+    ):
+        return None
+    if actor.access_profile is None or not accessible_marketplaces(actor, store_slug):
+        return JSONResponse({"ok": False, "error": "Нет доступа к этой площадке"}, status_code=403)
+    access_request = db.create_access_request(
+        user_id=actor.id,
+        permission=permission.value,
+        store_slug=store_slug,
+        source_marketplace=marketplace,
+        target_marketplace=target_marketplace,
+        reason=reason.strip() or "Рабочая операция со стоком",
+        context=context or {},
+        duration_days=7,
+    )
+    if access_request.get("created_new"):
+        access_notifications.notify_request_created(access_request)
+    return JSONResponse(
+        {
+            "ok": False,
+            "approval_required": True,
+            "request_id": access_request["id"],
+            "error": "Нужен доступ супер-администратора. Запрос уже отправлен; после одобрения разрешение будет действовать 7 дней.",
+        },
+        status_code=403,
+    )
 
 
 @router.post("/stock/{slug}/upload-ff-stock")
@@ -34,6 +97,8 @@ async def upload_ff_stock(
     fulfillment: str = Form(...),
     marketplace: Marketplace = Form(Marketplace.WB),
     note: str = Form("", max_length=200),
+    preview: str = Form(""),
+    confirmation_token: str = Form("", max_length=128),
     sheet_url: str = Form(""),
     file: UploadFile | None = File(None),
 ):
@@ -42,13 +107,32 @@ async def upload_ff_stock(
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
-    denied = _guard_stock_edit(request.state.user)
-    if denied:
-        return JSONResponse({"ok": False, "error": denied}, status_code=403)
+    note_text, note_error = _required_note(note)
+    if note_error is not None:
+        return note_error
 
     fulfillment = fulfillment.strip()
     if not fulfillment:
         return JSONResponse({"ok": False, "error": "Выберите фулфилмент назначения"}, status_code=400)
+
+    preview_requested = preview.strip().lower() in ("1", "true", "on", "yes")
+    if not preview_requested:
+        denied = await run_in_threadpool(
+            _guard_stock_action,
+            request.state.user,
+            permission=ActionPermission.STOCK_RECEIVE,
+            store_slug=slug.lower(),
+            marketplace=marketplace.value,
+            reason=note_text,
+            context={"fulfillment": fulfillment.strip()},
+        )
+        if denied is not None:
+            return denied
+    if not preview_requested and not confirmation_token.strip():
+        return JSONResponse(
+            {"ok": False, "error": "Сначала проверьте количество и подтвердите внесение"},
+            status_code=400,
+        )
 
     file_bytes = await file.read() if (file is not None and file.filename) else None
     source_type, _ = _source_of(file, file_bytes, sheet_url)
@@ -62,6 +146,8 @@ async def upload_ff_stock(
                 file_bytes,
                 file.filename,
                 marketplace.value,
+                preview=preview_requested,
+                confirmation_token=confirmation_token.strip() or None,
             )
         elif sheet_url.strip():
             report = await run_in_threadpool(
@@ -70,12 +156,16 @@ async def upload_ff_stock(
                 fulfillment,
                 sheet_url.strip(),
                 marketplace.value,
+                preview=preview_requested,
+                confirmation_token=confirmation_token.strip() or None,
             )
         else:
             return JSONResponse(
                 {"ok": False, "error": "Прикрепите файл .xlsx или вставьте ссылку на Google Таблицу"},
                 status_code=400,
             )
+    except ff_stock_import.FFImportConfirmationError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=409)
     except ff_stock_import.FFImportError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     except Exception:
@@ -85,9 +175,10 @@ async def upload_ff_stock(
             status_code=500,
         )
 
-    actor = request.state.user
-    note_text = note.strip()
+    if preview_requested:
+        return JSONResponse({"ok": True, "preview": report})
 
+    actor = request.state.user
     def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
@@ -102,7 +193,7 @@ async def upload_ff_stock(
             sheet_url=sheet_url.strip() or None,
             to_fulfillment=fulfillment,
             to_marketplace=marketplace.value,
-            note=note_text or None,
+            note=note_text,
         )
         db.log_action_for_operation(
             actor["id"],
@@ -121,12 +212,27 @@ async def upload_ff_stock(
 
 
 @router.get("/stock/{slug}/catalog-search")
-async def catalog_search(slug: str, q: str = "", ff: str = "", mp: str = ""):
+async def catalog_search(request: Request, slug: str, q: str = "", ff: str = "", mp: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
-    items = await run_in_threadpool(db.search_catalog, slug.lower(), q, 15, ff or None, mp or None)
+    marketplace = mp or (accessible_marketplaces(request.state.user, slug.lower()) or ("",))[0]
+    if not marketplace or not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=slug.lower(),
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
+    items = await run_in_threadpool(
+        db.search_catalog,
+        slug.lower(),
+        q,
+        15,
+        ff or None,
+        marketplace,
+    )
     return JSONResponse({"items": items})
 
 
@@ -142,9 +248,28 @@ async def add_ff_items(
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
-    denied = _guard_stock_edit(request.state.user)
-    if denied:
-        return JSONResponse({"ok": False, "error": denied}, status_code=403)
+    note_text, note_error = _required_note(payload.note)
+    if note_error is not None:
+        return note_error
+    if not payload.confirmed:
+        return JSONResponse(
+            {"ok": False, "error": "Подтвердите итоговое количество перед внесением"},
+            status_code=400,
+        )
+    denied = await run_in_threadpool(
+        _guard_stock_action,
+        request.state.user,
+        permission=ActionPermission.STOCK_RECEIVE,
+        store_slug=slug.lower(),
+        marketplace=payload.marketplace.value,
+        reason=note_text,
+        context={
+            "fulfillment": payload.fulfillment,
+            "quantity": sum(item.quantity for item in payload.items),
+        },
+    )
+    if denied is not None:
+        return denied
 
     try:
         results = await run_in_threadpool(
@@ -161,8 +286,6 @@ async def add_ff_items(
 
     actor = request.state.user
     details = ", ".join(f"{item.article} +{item.added}" for item in results.root)
-    note_text = payload.note.strip()
-
     def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
@@ -183,7 +306,7 @@ async def add_ff_items(
             created_at=now,
             to_fulfillment=payload.fulfillment,
             to_marketplace=payload.marketplace.value,
-            note=note_text or None,
+            note=note_text,
         )
         db.log_action_for_operation(
             actor["id"],
@@ -200,13 +323,20 @@ async def add_ff_items(
 
 
 @router.get("/stock/{slug}/ff-cell")
-async def ff_cell_stock(slug: str, ff: str = "", mp: str = ""):
+async def ff_cell_stock(request: Request, slug: str, ff: str = "", mp: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     if not ff or not mp:
         return JSONResponse({"stock": {}})
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=slug.lower(),
+        marketplace=mp,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     stock = await run_in_threadpool(db.get_ff_available_totals, slug.lower(), ff, mp)
     return JSONResponse({"stock": stock})
 
@@ -269,9 +399,40 @@ async def transfer_ff_stock(
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     actor = request.state.user
-    denied = _guard_stock_edit(actor)
-    if denied:
-        return JSONResponse({"ok": False, "error": denied}, status_code=403)
+    note_text, note_error = _required_note(note)
+    if note_error is not None:
+        return note_error
+    denied = await run_in_threadpool(
+        _guard_stock_action,
+        actor,
+        permission=ActionPermission.STOCK_TRANSFER,
+        store_slug=slug.lower(),
+        marketplace=from_marketplace.value,
+        reason=note_text,
+        context={
+            "from_fulfillment": from_fulfillment,
+            "to_fulfillment": to_fulfillment,
+            "to_marketplace": to_marketplace.value,
+        },
+    )
+    if denied is not None:
+        return denied
+    if from_marketplace is not to_marketplace:
+        denied = await run_in_threadpool(
+            _guard_stock_action,
+            actor,
+            permission=ActionPermission.STOCK_TRANSFER_CROSS_MARKETPLACE,
+            store_slug=slug.lower(),
+            marketplace=from_marketplace.value,
+            target_marketplace=to_marketplace.value,
+            reason=note_text,
+            context={
+                "from_fulfillment": from_fulfillment,
+                "to_fulfillment": to_fulfillment,
+            },
+        )
+        if denied is not None:
+            return denied
 
     file_bytes = await file.read() if (file is not None and file.filename) else None
     source_type, source_name = _source_of(file, file_bytes, sheet_url)
@@ -312,6 +473,7 @@ async def transfer_ff_stock(
                 to_marketplace=to_marketplace,
                 user_id=actor.id,
                 user_name=actor.full_name,
+                note=note_text,
             ),
         )
     except (ff_stock_import.FFImportError, StockValidationError) as e:
@@ -324,9 +486,19 @@ async def transfer_ff_stock(
 
     results = transfer_result.moved
     skipped = transfer_result.skipped
+    if transfer_result.transfer_id is None:
+        return JSONResponse(
+            {"ok": False, "error": "перемещение создано без номера партии"},
+            status_code=500,
+        )
+    transit_batch = await run_in_threadpool(db.get_ff_transit_batch, transfer_result.transfer_id)
+    if transit_batch is None:
+        return JSONResponse(
+            {"ok": False, "error": "не удалось прочитать созданную партию перемещения"},
+            status_code=500,
+        )
     moved = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
     skipped_note = "; ".join(f"{item.article} x{item.quantity}: {item.reason}" for item in skipped.root)
-    note_text = note.strip()
     operation_note = " · ".join(
         part for part in (note_text, f"Не переведено: {skipped_note}" if skipped_note else "") if part
     )
@@ -335,9 +507,18 @@ async def transfer_ff_stock(
         now = _now_iso()
         operation_id = db.record_operation(
             store_slug=slug.lower(),
-            kind="transfer",
+            kind="transfer_dispatch",
             source_type=source_type,
-            items=results.model_dump(mode="json"),
+            items=[
+                {
+                    "article": item["to_article"],
+                    "barcode": item.get("barcode"),
+                    "name": item.get("name"),
+                    "quantity": item["sent_quantity"],
+                    "purchase_price": item.get("purchase_price"),
+                }
+                for item in transit_batch["items"]
+            ],
             user_id=actor.id,
             user_name=actor.full_name,
             created_at=now,
@@ -348,11 +529,12 @@ async def transfer_ff_stock(
             to_fulfillment=to_fulfillment.strip(),
             to_marketplace=to_marketplace.value,
             note=operation_note or None,
+            transit_batch_id=transfer_result.transfer_id,
         )
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            "Перемещение между фулфилментами",
+            "Отправлено перемещение между фулфилментами",
             f"{store.name} · {from_fulfillment}/{from_marketplace.value} -> "
             f"{to_fulfillment}/{to_marketplace.value} · {moved}"
             + (f" · {note_text}" if note_text else "")
@@ -377,8 +559,206 @@ async def transfer_ff_stock(
     return JSONResponse(
         {
             "ok": True,
+            "transfer_id": transfer_result.transfer_id,
+            "status": "in_transit",
             "results": results.model_dump(mode="json"),
             "skipped": skipped.model_dump(mode="json"),
+        }
+    )
+
+
+@router.get("/stock/{slug}/transfers/in-transit")
+async def list_in_transit_transfers(
+    request: Request,
+    slug: str,
+    mp: str = "",
+    view: str = "active",
+):
+    store_slug = slug.lower()
+    if store_slug not in STORES:
+        raise HTTPException(status_code=404, detail="Магазин не найден")
+    marketplace = mp.strip() or Marketplace.WB.value
+    if marketplace not in {item.value for item in Marketplace}:
+        raise HTTPException(status_code=400, detail="Неизвестный маркетплейс")
+    if view not in {"active", "history"}:
+        raise HTTPException(status_code=400, detail="Неизвестный вид перемещений")
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=store_slug,
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
+
+    batches = await run_in_threadpool(
+        db.get_ff_transit_batches,
+        store_slug,
+        marketplace,
+        active_only=view == "active",
+        closed_only=view == "history",
+    )
+    for batch in batches:
+        batch["can_receive"] = view == "active" and has_action_permission(
+            request.state.user,
+            ActionPermission.STOCK_TRANSFER_RECEIVE,
+            store_slug=store_slug,
+            marketplace=batch["to_marketplace"],
+        )
+        batch["can_cancel"] = view == "active" and has_action_permission(
+            request.state.user,
+            ActionPermission.STOCK_TRANSFER_CANCEL,
+            store_slug=store_slug,
+            marketplace=batch["from_marketplace"],
+        )
+    return JSONResponse({"ok": True, "view": view, "batches": batches})
+
+
+@router.post("/stock/{slug}/transfers/{transfer_id}/receive")
+async def receive_in_transit_transfer(
+    request: Request,
+    slug: str,
+    transfer_id: int,
+    payload: ReceiveTransitRequest,
+    stock: StockMovementServiceDependency,
+):
+    store_slug = slug.lower()
+    batch = await run_in_threadpool(db.get_ff_transit_batch, transfer_id)
+    if batch is None or batch["store_slug"] != store_slug:
+        return JSONResponse({"ok": False, "error": "Перемещение не найдено"}, status_code=404)
+    actor = request.state.user
+    if not has_action_permission(
+        actor,
+        ActionPermission.STOCK_TRANSFER_RECEIVE,
+        store_slug=store_slug,
+        marketplace=batch["to_marketplace"],
+    ):
+        return JSONResponse(
+            {"ok": False, "error": "Нет доступа к приёмке на площадке назначения"},
+            status_code=403,
+        )
+
+    try:
+        result = await run_in_threadpool(
+            stock.receive_transfer,
+            ReceiveTransitCommand(
+                transfer_id=transfer_id,
+                request=payload,
+                user_id=actor.id,
+                user_name=actor.full_name,
+            ),
+        )
+    except StockValidationError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+
+    now = _now_iso()
+    items = result.moved.model_dump(mode="json")
+    operation_id = await run_in_threadpool(
+        db.record_operation,
+        store_slug,
+        "transfer_receive",
+        "manual",
+        items,
+        actor.id,
+        actor.full_name,
+        now,
+        from_fulfillment=f"В пути №{transfer_id}",
+        from_marketplace=batch["from_marketplace"],
+        to_fulfillment=batch["to_fulfillment"],
+        to_marketplace=batch["to_marketplace"],
+        note=payload.note.strip() or None,
+        transit_batch_id=transfer_id,
+    )
+    moved = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
+    await run_in_threadpool(
+        db.log_action_for_operation,
+        actor.id,
+        actor.full_name,
+        "Принято перемещение между фулфилментами",
+        f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved}",
+        now,
+        operation_id,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "transfer_id": transfer_id,
+            "status": result.status,
+            "results": items,
+        }
+    )
+
+
+@router.post("/stock/{slug}/transfers/{transfer_id}/cancel")
+async def cancel_in_transit_transfer(
+    request: Request,
+    slug: str,
+    transfer_id: int,
+    payload: CancelTransitRequest,
+    stock: StockMovementServiceDependency,
+):
+    store_slug = slug.lower()
+    batch = await run_in_threadpool(db.get_ff_transit_batch, transfer_id)
+    if batch is None or batch["store_slug"] != store_slug:
+        return JSONResponse({"ok": False, "error": "Перемещение не найдено"}, status_code=404)
+    actor = request.state.user
+    if not has_action_permission(
+        actor,
+        ActionPermission.STOCK_TRANSFER_CANCEL,
+        store_slug=store_slug,
+        marketplace=batch["from_marketplace"],
+    ):
+        return JSONResponse(
+            {"ok": False, "error": "Отменять перемещения может старший менеджер или суперадминистратор"},
+            status_code=403,
+        )
+
+    try:
+        result = await run_in_threadpool(
+            stock.cancel_transfer,
+            CancelTransitCommand(
+                transfer_id=transfer_id,
+                request=payload,
+                user_id=actor.id,
+                user_name=actor.full_name,
+            ),
+        )
+    except StockValidationError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+
+    now = _now_iso()
+    items = result.moved.model_dump(mode="json")
+    operation_id = await run_in_threadpool(
+        db.record_operation,
+        store_slug,
+        "transfer_cancel",
+        "manual",
+        items,
+        actor.id,
+        actor.full_name,
+        now,
+        from_fulfillment=f"В пути №{transfer_id}",
+        from_marketplace=batch["to_marketplace"],
+        to_fulfillment=batch["from_fulfillment"],
+        to_marketplace=batch["from_marketplace"],
+        note=payload.reason,
+        transit_batch_id=transfer_id,
+    )
+    returned = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
+    await run_in_threadpool(
+        db.log_action_for_operation,
+        actor.id,
+        actor.full_name,
+        "Отменено перемещение между фулфилментами",
+        f"{STORES[store_slug]['name']} · партия №{transfer_id} · возвращено: {returned}",
+        now,
+        operation_id,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "transfer_id": transfer_id,
+            "status": result.status,
+            "results": items,
         }
     )
 
@@ -390,7 +770,8 @@ async def ship_ff_stock(
     stock: StockMovementServiceDependency,
     fulfillment: str = Form(...),
     marketplace: Marketplace = Form(...),
-    note: str = Form(""),
+    note: str = Form("", max_length=200),
+    to_fbs: str = Form(""),
     to_trash: str = Form(""),
     items: str = Form(""),
     sheet_url: str = Form(""),
@@ -402,12 +783,30 @@ async def ship_ff_stock(
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     actor = request.state.user
-    denied = _guard_stock_edit(actor)
-    if denied:
-        return JSONResponse({"ok": False, "error": denied}, status_code=403)
+    note_text, note_error = _required_note(note)
+    if note_error is not None:
+        return note_error
 
     trash = to_trash.strip().lower() in ("1", "true", "on", "yes")
-    kind = "trash" if trash else "shipment"
+    fbs_transfer = to_fbs.strip().lower() in ("1", "true", "on", "yes")
+    if trash and fbs_transfer:
+        return JSONResponse(
+            {"ok": False, "error": "Выберите только один тип операции: FBS или мусорка"},
+            status_code=400,
+        )
+    kind = "trash" if trash else ("fbs_transfer" if fbs_transfer else "shipment")
+    permission = ActionPermission.STOCK_WRITEOFF if trash else ActionPermission.STOCK_SHIPMENT
+    denied = await run_in_threadpool(
+        _guard_stock_action,
+        actor,
+        permission=permission,
+        store_slug=slug.lower(),
+        marketplace=marketplace.value,
+        reason=note_text,
+        context={"fulfillment": fulfillment, "kind": kind},
+    )
+    if denied is not None:
+        return denied
 
     source_kind = f"{kind}:{marketplace.value}"
 
@@ -438,15 +837,16 @@ async def ship_ff_stock(
             except ValidationError:
                 return JSONResponse({"ok": False, "error": "неверный формат позиций"}, status_code=400)
 
+        command = ShipmentCommand(
+            store_slug=slug.lower(),
+            entries=raw_entries,
+            fulfillment=fulfillment,
+            marketplace=marketplace,
+            to_trash=trash,
+        )
         results = await run_in_threadpool(
-            stock.ship,
-            ShipmentCommand(
-                store_slug=slug.lower(),
-                entries=raw_entries,
-                fulfillment=fulfillment,
-                marketplace=marketplace,
-                to_trash=trash,
-            ),
+            stock.register_fbs_transfer if fbs_transfer else stock.ship,
+            command,
         )
     except (ff_stock_import.FFImportError, StockValidationError) as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
@@ -457,8 +857,6 @@ async def ship_ff_stock(
         )
 
     shipped = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
-    note_text = note.strip()
-
     def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
@@ -473,14 +871,18 @@ async def ship_ff_stock(
             sheet_url=sheet_url.strip() or None,
             from_fulfillment=fulfillment.strip(),
             from_marketplace=marketplace.value,
-            to_fulfillment="Мусорка" if trash else None,
-            to_marketplace=marketplace.value if trash else None,
-            note=note_text or None,
+            to_fulfillment="Мусорка" if trash else ("FBS" if fbs_transfer else None),
+            to_marketplace=marketplace.value if (trash or fbs_transfer) else None,
+            note=note_text,
         )
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            "Списание в мусорку" if trash else "Отгрузка стока",
+            (
+                "Списание в мусорку"
+                if trash
+                else ("Перемещение на FBS" if fbs_transfer else "Отгрузка стока")
+            ),
             f"{store.name} · {fulfillment}/{marketplace.value} · {shipped}"
             + (f" · {note_text}" if note_text else ""),
             now,

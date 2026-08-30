@@ -15,6 +15,7 @@ MARKETPLACES = (
 )
 STOCK_GROUPS = (
     ("ff", "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ"),
+    ("transit", "В ПУТИ МЕЖДУ ФФ"),
     ("fbs", "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBS"),
     ("rfbs", "ТЕКУЩИЙ СТОК В ПРОДАЖЕ RFBS"),
     ("fbo", "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO"),
@@ -53,8 +54,35 @@ def _empty_row(store_slug: str, identity: tuple[str, ...]) -> dict:
     return row
 
 
-def build_rows(store_slugs: tuple[str, ...]) -> list[dict]:
-    catalog, marketplace_stock, fulfillment_stock = repository.get_source_rows(store_slugs)
+def build_rows(
+    store_slugs: tuple[str, ...],
+    allowed_pairs: tuple[tuple[str, str], ...] | None = None,
+) -> list[dict]:
+    catalog, marketplace_stock, fulfillment_stock, transit_stock = repository.get_source_rows(
+        store_slugs
+    )
+    if allowed_pairs is not None:
+        allowed = set(allowed_pairs)
+        catalog = [
+            item
+            for item in catalog
+            if (str(item["store_slug"]), str(item["marketplace"])) in allowed
+        ]
+        marketplace_stock = [
+            item
+            for item in marketplace_stock
+            if (str(item["store_slug"]), str(item["marketplace"])) in allowed
+        ]
+        fulfillment_stock = [
+            item
+            for item in fulfillment_stock
+            if (str(item["store_slug"]), str(item["marketplace"])) in allowed
+        ]
+        transit_stock = [
+            item
+            for item in transit_stock
+            if (str(item["store_slug"]), str(item["marketplace"])) in allowed
+        ]
     marketplace_keys = {marketplace: key for marketplace, key, _label in MARKETPLACES}
 
     barcode_identity_by_article: dict[tuple[str, str], set[tuple[str, ...]]] = defaultdict(set)
@@ -130,6 +158,16 @@ def build_rows(store_slugs: tuple[str, ...]) -> list[dict]:
         row = bucket_for(store_slug, marketplace, article)
         row[f"ff_{marketplace_key}"] += int(item.get("quantity") or 0)
 
+    for item in transit_stock:
+        marketplace = str(item["marketplace"])
+        marketplace_key = marketplace_keys.get(marketplace)
+        if marketplace_key is None:
+            continue
+        store_slug = str(item["store_slug"])
+        article = str(item["article"])
+        row = bucket_for(store_slug, marketplace, article)
+        row[f"transit_{marketplace_key}"] += int(item.get("quantity") or 0)
+
     for item in marketplace_stock:
         marketplace = str(item["marketplace"])
         marketplace_key = marketplace_keys.get(marketplace)
@@ -178,6 +216,7 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
 
     group_fills = {
         "ff": "FFF2CC",
+        "transit": "FCE4D6",
         "fbs": "DDEBF7",
         "rfbs": "E4DFEC",
         "fbo": "E2F0D9",

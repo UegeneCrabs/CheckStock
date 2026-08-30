@@ -5,6 +5,109 @@ from app.infrastructure.orm import OrmBase
 from app.repositories import core, schema
 
 
+def test_buyout_and_funnel_tables_are_migrated_to_automatic_weekly_metrics(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "legacy-buyout.sqlite3"
+    monkeypatch.setattr(core, "DB_PATH", path)
+    dispose_databases()
+    database = database_for_path(path)
+    with database.connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE unit_economics_1c_product_settings (
+                store_slug TEXT NOT NULL,
+                marketplace TEXT NOT NULL DEFAULT 'WB',
+                article TEXT NOT NULL,
+                delivery_wb_rub FLOAT NOT NULL DEFAULT 0,
+                buyout_percent FLOAT NOT NULL DEFAULT 0,
+                return_cost_rub FLOAT NOT NULL DEFAULT 0,
+                volume_l FLOAT NOT NULL DEFAULT 0,
+                storage_wb_rub FLOAT NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                updated_by_user_id INTEGER NOT NULL,
+                updated_by_name TEXT NOT NULL,
+                PRIMARY KEY (store_slug, marketplace, article)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO unit_economics_1c_product_settings
+                (store_slug, marketplace, article, delivery_wb_rub, buyout_percent,
+                 return_cost_rub, volume_l, storage_wb_rub, updated_at,
+                 updated_by_user_id, updated_by_name)
+            VALUES
+                ('rimili', 'WB', '123', 120, 75, 50, 1.5, 2,
+                 '2026-08-25T10:00:00+00:00', 7, 'Unit Admin')
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE wb_funnel_daily_orders (
+                store_slug TEXT NOT NULL,
+                day TEXT NOT NULL,
+                article TEXT NOT NULL,
+                vendor_code TEXT NOT NULL DEFAULT '',
+                product_name TEXT NOT NULL DEFAULT '',
+                orders_count INTEGER NOT NULL DEFAULT 0,
+                orders_amount FLOAT NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (store_slug, day, article)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO wb_funnel_daily_orders
+                (store_slug, day, article, orders_count, orders_amount, updated_at)
+            VALUES
+                ('rimili', '2026-08-25', '123', 3, 1500, '2026-08-25T10:00:00+00:00')
+            """
+        )
+        connection.commit()
+
+    schema.init_db()
+    schema.init_db()
+
+    with database_for_path(path).connect() as connection:
+        product_columns = connection.column_names("unit_economics_1c_product_settings")
+        product = connection.execute(
+            """
+            SELECT delivery_wb_rub, return_cost_rub, volume_l, storage_wb_rub
+              FROM unit_economics_1c_product_settings
+             WHERE store_slug='rimili' AND article='123'
+            """
+        ).fetchone()
+        funnel_columns = connection.column_names("wb_funnel_daily_orders")
+        funnel = connection.execute(
+            "SELECT source_version FROM wb_funnel_daily_orders WHERE article='123'"
+        ).fetchone()
+        metric_columns = connection.column_names("wb_funnel_product_metrics")
+
+    assert "buyout_percent" not in product_columns
+    assert product is not None
+    assert dict(product) == {
+        "delivery_wb_rub": 120.0,
+        "return_cost_rub": 50.0,
+        "volume_l": 1.5,
+        "storage_wb_rub": 2.0,
+    }
+    assert "source_version" in funnel_columns
+    assert {"cancel_count", "cancel_amount"}.issubset(funnel_columns)
+    assert funnel is not None and funnel["source_version"] == 1
+    assert {
+        "orders_count",
+        "orders_amount",
+        "cancel_count",
+        "cancel_amount",
+        "buyout_percent",
+        "source_version",
+    }.issubset(metric_columns)
+    dispose_databases()
+
+
 def test_cabinet_settings_are_migrated_to_current_commissions_and_taxes(tmp_path, monkeypatch) -> None:
     path = tmp_path / "legacy-cabinet-settings.sqlite3"
     monkeypatch.setattr(core, "DB_PATH", path)

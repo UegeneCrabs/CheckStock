@@ -40,7 +40,9 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
         response = client.post("/admin/google-export/rimili", data=_form_data())
 
     assert page.status_code == 200
-    assert "Выгрузка остатков и заказов" in page.text
+    assert "Доступ к таблице" in page.text
+    assert 'class="topbar"' not in page.text
+    assert 'class="export-page-head"' not in page.text
     assert "Яндекс Маркет" in page.text
     assert response.status_code == 200
     saved = stock_sheet_export.get_settings("rimili")

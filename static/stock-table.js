@@ -97,6 +97,16 @@
         if (node) node.textContent = value;
     }
 
+    function setDrawerIdentifier(selector, kind, value, label) {
+        var node = drawerBackdrop.querySelector(selector);
+        if (!node) return;
+        if (value && window.CheckStockIdentifierCopy) {
+            node.innerHTML = window.CheckStockIdentifierCopy.html(kind, value, label);
+        } else {
+            node.textContent = label;
+        }
+    }
+
     function renderWarehouses(items) {
         var list = drawerBackdrop.querySelector('[data-stock-drawer-warehouses]');
         list.innerHTML = '';
@@ -129,10 +139,40 @@
         setDrawerText('[data-stock-drawer-warehouse-count]', items.length + ' складов');
     }
 
+    function renderTransit(items) {
+        var list = drawerBackdrop.querySelector('[data-stock-drawer-transit]');
+        if (!list) return;
+        list.innerHTML = '';
+        if (!items.length) {
+            list.innerHTML = '<div class="stock-drawer-loading">Нет партий в пути</div>';
+            setDrawerText('[data-stock-drawer-transit-count]', '');
+            return;
+        }
+        items.forEach(function (item) {
+            var row = document.createElement('div');
+            row.className = 'stock-drawer-transit-row';
+            var route = document.createElement('span');
+            route.className = 'stock-drawer-transit-route';
+            var name = document.createElement('strong');
+            name.textContent = 'Партия №' + item.transfer_id;
+            var caption = document.createElement('small');
+            caption.textContent = item.from_fulfillment + ' → ' + item.to_fulfillment;
+            route.appendChild(name);
+            route.appendChild(caption);
+            var quantity = document.createElement('b');
+            quantity.textContent = numberFormat.format(item.quantity || 0) + ' шт.';
+            row.appendChild(route);
+            row.appendChild(quantity);
+            list.appendChild(row);
+        });
+        setDrawerText('[data-stock-drawer-transit-count]', items.length + ' партий');
+    }
+
     function loadWarehouseDetails(article) {
         var request = ++drawerRequest;
         var list = drawerBackdrop.querySelector('[data-stock-drawer-warehouses]');
         list.innerHTML = '<div class="stock-drawer-loading"><span></span>Загружаем остатки...</div>';
+        renderTransit([]);
 
         var layout = document.getElementById('store-layout');
         var marketplace = layout ? layout.getAttribute('data-marketplace') || 'WB' : 'WB';
@@ -147,11 +187,13 @@
             .then(function (data) {
                 if (request !== drawerRequest) return;
                 renderWarehouses(data.warehouses || []);
+                renderTransit(data.transit || []);
             })
             .catch(function () {
                 if (request !== drawerRequest) return;
                 list.innerHTML = '<div class="stock-drawer-loading stock-drawer-loading--error">Не удалось загрузить детализацию складов</div>';
                 setDrawerText('[data-stock-drawer-warehouse-count]', '');
+                renderTransit([]);
             });
     }
 
@@ -167,11 +209,12 @@
         var marketplace = document.getElementById('store-layout').getAttribute('data-marketplace') || 'WB';
 
         setDrawerText('[data-stock-drawer-name]', name ? name.textContent.trim() : article);
-        setDrawerText('[data-stock-drawer-article]', 'Арт. ' + (article || '—'));
-        setDrawerText('[data-stock-drawer-barcode]', 'Баркод ' + (barcode || '—'));
+        setDrawerIdentifier('[data-stock-drawer-article]', 'Артикул', article, 'Арт. ' + (article || '—'));
+        setDrawerIdentifier('[data-stock-drawer-barcode]', 'Баркод', barcode, 'Баркод ' + (barcode || '—'));
         setDrawerText('[data-stock-drawer-marketplace]', marketplace);
         setDrawerText('[data-stock-drawer-total]', numberFormat.format(numberFromCell(row, '.col-row-total')));
         setDrawerText('[data-stock-drawer-available]', numberFormat.format(numberFromCell(row, '.col-ff-available')));
+        setDrawerText('[data-stock-drawer-transit-total]', numberFormat.format(numberFromCell(row, '.col-transit')));
         setDrawerText('[data-stock-drawer-fbs]', numberFormat.format(numberFromCell(row, '.col-fbs')));
         setDrawerText('[data-stock-drawer-fbo]', numberFormat.format(numberFromCell(row, '.col-fbo')));
 

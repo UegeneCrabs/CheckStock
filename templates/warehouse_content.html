@@ -1,18 +1,15 @@
         <a class="back-link" href="/stock/$slug">&larr; К остаткам $store_name</a>
 
-        <div class="store-header">
-            <div class="store-avatar" style="background:$store_color;color:$store_text;">$store_initials</div>
-            <h2>Детализация по складам — $store_name <span class="mp-badge">$marketplace</span></h2>
-        </div>
-        <p class="page-subtitle">История не хранится — показаны последние данные на момент синхронизации.</p>
-
         <section class="panel">
             <div class="panel-header-row">
-                <div class="wh-tabs" role="tablist">
-                <button class="wh-tab active" type="button" role="tab" data-target="wh-fbo">FBO — склады маркетплейса</button>
-                <button class="wh-tab" type="button" role="tab" data-target="wh-fbs">FBS — склады продавца</button>
-                <button class="wh-tab" type="button" role="tab" data-target="wh-ff">ФФ — фулфилменты</button>
-                <button class="wh-tab" type="button" role="tab" data-target="wh-trash">Мусорка</button>
+                <div class="warehouse-context">
+                    <span class="mp-badge">$marketplace</span>
+                    <div class="wh-tabs" role="tablist">
+                    <button class="wh-tab active" type="button" role="tab" data-target="wh-fbo">FBO — склады маркетплейса</button>
+                    <button class="wh-tab" type="button" role="tab" data-target="wh-fbs">FBS — склады продавца</button>
+                    <button class="wh-tab" type="button" role="tab" data-target="wh-ff">ФФ — фулфилменты</button>
+                    <button class="wh-tab" type="button" role="tab" data-target="wh-trash">Мусорка</button>
+                    </div>
                 </div>
                 <a class="btn-secondary" href="/stock/$slug/warehouses/xlsx?mp=$marketplace">Выгрузить в Excel</a>
             </div>

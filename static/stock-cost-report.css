@@ -7,6 +7,11 @@
     gap: 18px;
 }
 
+.cost-report-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .cost-report-hero,
 .cost-filters,
 .cost-report-note,
@@ -225,14 +230,25 @@
     line-height: 1.35;
 }
 
+.cost-operation-table th:nth-child(5),
 .cost-operation-table td:nth-child(5) {
-    white-space: nowrap;
+    min-width: 190px;
+}
+
+.cost-operation-table td:nth-child(5) {
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .cost-operation-table td:nth-child(5) span,
 .cost-operation-table td:nth-child(5) b {
-    display: inline-block;
-    margin-right: 6px;
+    display: block;
+}
+
+.cost-operation-table td:nth-child(5) b {
+    margin: 2px 0;
+    color: #94a3b8;
+    line-height: 1;
 }
 
 .fbs-classifier button {

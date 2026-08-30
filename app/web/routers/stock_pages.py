@@ -8,14 +8,23 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app import auth, db, health, supply_planning
+from app import stock_total as stock_total_service
+from app.access_control import (
+    ActionPermission,
+    accessible_stores,
+    has_action_permission,
+    profile_has_permission,
+    scope_pairs,
+)
 from app.domain import MOSCOW_TIMEZONE
 from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
 from app.dto.stock import StockRandomizerGenerateRequest
 from app.formatting import format_dt
 from app.section_access import access_level
 from app.stores import STORES
-from app.web.access import accessible_store_slugs
+from app.web.access import accessible_marketplaces, accessible_store_slugs
 from app.web.common import _fmt_num
+from app.web.identifiers import copy_identifier
 from app.web.stock_rendering import (
     fbs_schemes_for,
     marketplace_ready,
@@ -85,11 +94,15 @@ def _randomizer_result(item: dict) -> str:
             "</div>"
         )
     barcode = str(item.get("barcode") or "")
-    barcode_html = f"<small>Баркод {html.escape(barcode)}</small>" if barcode else ""
+    barcode_html = (
+        f"<small>{copy_identifier(barcode, 'Баркод', f'Баркод {barcode}')}</small>"
+        if barcode
+        else ""
+    )
     return (
         '<div class="randomizer-result is-ready" data-randomizer-result>'
         "<span>АРТИКУЛ ДЛЯ СВЕРКИ</span>"
-        f"<strong>{html.escape(str(article))}</strong>"
+        f"<strong>{copy_identifier(article, 'Артикул')}</strong>"
         f"<p>{html.escape(str(item.get('name') or 'Без названия'))}</p>"
         f"{barcode_html}"
         '<div class="randomizer-stock-pair">'
@@ -124,10 +137,18 @@ def _randomizer_card(store_slug: str, item: dict, month_label: str) -> str:
 async def stock(request: Request):
     allowed_stores = accessible_store_slugs(request.state.user)
     allowed_set = set(allowed_stores)
-    overview = await run_in_threadpool(db.get_stock_overview)
+    overview = await run_in_threadpool(db.get_stock_overview, scope_pairs(request.state.user))
     overview = {slug: item for slug, item in overview.items() if slug in allowed_set}
     problems = await run_in_threadpool(health.stores_with_problems)
-    problems = {slug: items for slug, items in problems.items() if slug in allowed_set}
+    problems = {
+        slug: [
+            problem
+            for problem in items
+            if problem.get("marketplace") in accessible_marketplaces(request.state.user, slug)
+        ]
+        for slug, items in problems.items()
+        if slug in allowed_set
+    }
 
     marketplace_labels = {
         "WB": "WB",
@@ -139,7 +160,11 @@ async def stock(request: Request):
         store = STORES[slug]
         item = overview.get(slug, {})
         store_problems = problems.get(slug) or []
-        marketplaces = item.get("marketplaces") or []
+        marketplaces = [
+            marketplace
+            for marketplace in (item.get("marketplaces") or [])
+            if marketplace in accessible_marketplaces(request.state.user, slug)
+        ]
         badges = (
             "".join(
                 f"<span>{html.escape(marketplace_labels.get(mp, mp))}</span>"
@@ -211,20 +236,27 @@ async def stock(request: Request):
 @router.get("/stock/supplies", response_class=HTMLResponse)
 async def stock_supplies(request: Request):
     allowed_stores = accessible_store_slugs(request.state.user)
+    wb_stores = accessible_stores(request.state.user, "WB")
     date_bounds = supply_planning.planned_supply_date_bounds()
     wb_store_options = "".join(
+        f'<option value="{html.escape(slug)}">{html.escape(STORES[slug]["name"])}</option>'
+        for slug in wb_stores
+    )
+    manual_store_options = "".join(
         f'<option value="{html.escape(slug)}">{html.escape(STORES[slug]["name"])}</option>'
         for slug in allowed_stores
     )
     content = fill_template(
         "stock_supplies_content.html",
         wb_store_options=wb_store_options,
-        manual_store_options=wb_store_options,
+        manual_store_options=manual_store_options,
         wb_date_min=date_bounds["min_date"].isoformat(),
         wb_date_max=date_bounds["max_date"].isoformat(),
         wb_date_from=date_bounds["default_from"].isoformat(),
         wb_date_to=date_bounds["default_to"].isoformat(),
-        can_edit_supply="1" if auth.can_edit_stock(request.state.user) else "0",
+        can_edit_supply="1"
+        if profile_has_permission(request.state.user, ActionPermission.STOCK_RECEIVE)
+        else "0",
     )
     return render_page(
         "CheckStock — Поставки",
@@ -237,7 +269,9 @@ async def stock_supplies(request: Request):
 
 @router.get("/stock/randomizer", response_class=HTMLResponse)
 async def stock_randomizer(request: Request, ff: str = ""):
-    allowed_stores = accessible_store_slugs(request.state.user)
+    allowed_stores = accessible_stores(request.state.user, "WB")
+    if not allowed_stores:
+        raise HTTPException(status_code=403, detail="Рандомайзер доступен только сотрудникам с доступом к WB")
     fulfillments = await run_in_threadpool(db.get_fulfillments)
     selected = (
         ff
@@ -296,7 +330,9 @@ async def generate_stock_randomizer(request: Request, payload: StockRandomizerGe
     user = coerce_user(request.state.user)
     if user is None:
         raise HTTPException(status_code=401, detail="Требуется вход в систему")
-    allowed_stores = accessible_store_slugs(user)
+    allowed_stores = accessible_stores(user, "WB")
+    if not allowed_stores:
+        raise HTTPException(status_code=403, detail="Рандомайзер доступен только сотрудникам с доступом к WB")
     now = datetime.now(MOSCOW_TIMEZONE)
     month_key, month_label = _randomizer_period(now)
     result = await run_in_threadpool(
@@ -330,21 +366,51 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
-    marketplace = mp if mp in db.MARKETPLACES else db.DEFAULT_MARKETPLACE
+    allowed_marketplaces = accessible_marketplaces(request.state.user, slug.lower())
+    if not allowed_marketplaces:
+        raise HTTPException(status_code=403, detail="Нет доступных маркетплейсов в этом магазине")
+    marketplace = mp if mp in allowed_marketplaces else allowed_marketplaces[0]
     content = fill_template(
         "store_content.html",
         store_name=store["name"],
-        store_color=store["color"],
-        store_text=store["text"],
-        store_initials=store["initials"],
         slug=slug.lower(),
         ff_options=render_ff_options(),
-        mp_tabs=render_mp_tabs(marketplace, slug.lower()),
-        mp_move_options=render_mp_move_options(),
+        mp_tabs=render_mp_tabs(marketplace, slug.lower(), allowed_marketplaces),
+        total_button=(
+            '            <button class="mp-tab mp-tab--total" type="button" role="tab" '
+            'aria-selected="false" data-store-total>ТОТАЛ</button>'
+            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_VIEW)
+            else ""
+        ),
+        total_download_button=(
+            f'<a class="btn-secondary stock-total-download" '
+            f'href="/stock/total.xlsx?store={html.escape(slug.lower(), quote=True)}" download>'
+            'Скачать XLSX</a>'
+            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT)
+            else ""
+        ),
+        mp_source_options=render_mp_move_options(allowed_marketplaces),
+        mp_target_options=render_mp_move_options(tuple(db.MARKETPLACES)),
         marketplace=html.escape(marketplace),
         mp_ready="1" if marketplace_ready(marketplace, slug.lower()) else "0",
-        can_edit_stock="1" if auth.can_edit_stock(request.state.user) else "0",
-        access_problems=html.escape(json.dumps(health.store_problems(slug.lower()), ensure_ascii=False)),
+        can_edit_stock="1"
+        if has_action_permission(
+            request.state.user,
+            ActionPermission.STOCK_RECEIVE,
+            store_slug=slug.lower(),
+            marketplace=marketplace,
+        )
+        else "0",
+        access_problems=html.escape(
+            json.dumps(
+                [
+                    problem
+                    for problem in health.store_problems(slug.lower())
+                    if problem.get("marketplace") in allowed_marketplaces
+                ],
+                ensure_ascii=False,
+            )
+        ),
         stock_head=render_stock_head(marketplace, slug.lower()),
         scheme_list=",".join(scheme for scheme, _ in schemes_for(marketplace, slug.lower())),
         scheme_count=str(len(schemes_for(marketplace, slug.lower()))),
@@ -359,31 +425,101 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
     )
 
 
+@router.get("/stock/{slug}/total-data")
+async def stock_store_total_data(request: Request, slug: str):
+    store_slug = slug.lower()
+    if store_slug not in STORES:
+        raise HTTPException(status_code=404, detail="Магазин не найден")
+    if not profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_VIEW):
+        raise HTTPException(status_code=403, detail="Нет доступа к сводным остаткам")
+    if store_slug not in accessible_store_slugs(request.state.user):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
+
+    allowed_pairs = tuple(
+        pair for pair in scope_pairs(request.state.user) if pair[0] == store_slug
+    )
+    rows = await run_in_threadpool(
+        stock_total_service.build_rows,
+        (store_slug,),
+        allowed_pairs,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "store": store_slug,
+            "quantity_keys": stock_total_service.QUANTITY_KEYS,
+            "rows": rows,
+        }
+    )
+
+
 @router.get("/stock/{slug}/fbs")
-async def stock_store_fbs_by_ff(slug: str, ff: str = "", mp: str = ""):
+async def stock_store_fbs_by_ff(request: Request, slug: str, ff: str = "", mp: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp or db.DEFAULT_MARKETPLACE
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=slug.lower(),
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     stock = await run_in_threadpool(_get_fbs_stock, slug.lower(), marketplace, ff)
 
     return JSONResponse({"fbs": stock})
 
 
 @router.get("/stock/{slug}/ff-available")
-async def stock_store_ff_available(slug: str, ff: str = "", mp: str = ""):
+async def stock_store_ff_available(request: Request, slug: str, ff: str = "", mp: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
-    available = await run_in_threadpool(db.get_ff_available_totals, slug.lower(), ff or None, mp or None)
+    marketplace = mp or (accessible_marketplaces(request.state.user, slug.lower()) or ("",))[0]
+    if not marketplace or not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=slug.lower(),
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
+    available = await run_in_threadpool(
+        db.get_ff_available_totals,
+        slug.lower(),
+        ff or None,
+        marketplace,
+    )
     return JSONResponse({"ff_available": available})
 
 
+@router.get("/stock/{slug}/transit")
+async def stock_store_transit(request: Request, slug: str, ff: str = "", mp: str = ""):
+    store_slug = slug.lower()
+    if store_slug not in STORES:
+        raise HTTPException(status_code=404, detail="Магазин не найден")
+    marketplace = mp or (accessible_marketplaces(request.state.user, store_slug) or ("",))[0]
+    if not marketplace or not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=store_slug,
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
+    totals = await run_in_threadpool(
+        db.get_ff_transit_totals,
+        store_slug,
+        marketplace,
+        ff or None,
+    )
+    return JSONResponse({"transit": totals})
+
+
 @router.get("/stock/{slug}/article-detail")
-async def stock_store_article_detail(slug: str, article: str = "", mp: str = ""):
+async def stock_store_article_detail(request: Request, slug: str, article: str = "", mp: str = ""):
 
     store_slug = slug.lower()
     if store_slug not in STORES:
@@ -395,6 +531,13 @@ async def stock_store_article_detail(slug: str, article: str = "", mp: str = "")
     marketplace = mp or db.DEFAULT_MARKETPLACE
     if marketplace not in db.MARKETPLACES:
         raise HTTPException(status_code=400, detail="Неизвестный маркетплейс")
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=store_slug,
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
     def load_warehouses() -> list[dict]:
         fulfillments = db.get_fulfillments()
@@ -423,10 +566,30 @@ async def stock_store_article_detail(slug: str, article: str = "", mp: str = "")
         return warehouses
 
     warehouses = await run_in_threadpool(load_warehouses)
+    batches = await run_in_threadpool(
+        db.get_ff_transit_batches,
+        store_slug,
+        marketplace,
+        active_only=True,
+    )
+    transit = [
+        {
+            "transfer_id": batch["id"],
+            "from_fulfillment": batch["from_fulfillment"],
+            "to_fulfillment": batch["to_fulfillment"],
+            "sent_at": batch["sent_at"],
+            "status": batch["status"],
+            "quantity": item["remaining_quantity"],
+        }
+        for batch in batches
+        for item in batch["items"]
+        if item["to_article"] == article and int(item["remaining_quantity"] or 0) > 0
+    ]
     return JSONResponse(
         {
             "article": article,
             "marketplace": marketplace,
             "warehouses": warehouses,
+            "transit": transit,
         }
     )
