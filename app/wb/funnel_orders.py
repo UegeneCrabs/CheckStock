@@ -380,14 +380,13 @@ def sync_store(store_slug: str) -> dict:
         days = _days_to_sync(store)
         _record_sync(store, "running")
         token = wb_tokens.get_token(store)
-        active_nm_ids = _active_nm_ids(store)
         records = 0
         try:
             for day in days:
                 products = _daily_products(
                     token,
                     day,
-                    active_nm_ids if len(active_nm_ids) <= 1_000 else (),
+                    (),
                 )
                 _replace_day(store, day, products)
                 records += len(products)
@@ -411,13 +410,12 @@ def sync_weekly_metrics_store(store_slug: str) -> dict:
     with _STORE_SYNC_LOCKS[store]:
         date_to = datetime.now(MOSCOW).date()
         date_from = date_to - timedelta(days=BUYOUT_PERIOD_DAYS - 1)
-        active_nm_ids = _active_nm_ids(store)
         try:
             products = _period_product_metrics(
                 wb_tokens.get_token(store),
                 date_from,
                 date_to,
-                active_nm_ids if len(active_nm_ids) <= 1_000 else (),
+                (),
             )
             _replace_product_metrics(store, date_from, date_to, products)
         except Exception as exc:
@@ -454,11 +452,10 @@ def _sync_previous_day_store(store_slug: str, day: date) -> dict:
         return {"store": store_slug, "status": "skipped", "records": 0}
     with _STORE_SYNC_LOCKS[store_slug]:
         try:
-            active_nm_ids = _active_nm_ids(store_slug)
             products = _daily_products(
                 wb_tokens.get_token(store_slug),
                 day,
-                active_nm_ids if len(active_nm_ids) <= 1_000 else (),
+                (),
             )
             _replace_day(store_slug, day, products)
         except Exception as exc:

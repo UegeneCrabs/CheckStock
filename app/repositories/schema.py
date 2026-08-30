@@ -153,7 +153,7 @@ def _remove_legacy_unit_economics(database: Database) -> None:
         connection.execute(
             "UPDATE user_usage_sessions SET last_path = NULL "
             "WHERE last_path = '/sales/unit-economics' "
-            "OR last_path LIKE '/sales/unit-economics/%'"
+            "OR last_path LIKE '/sales/unit-economics/%%'"
         )
         connection.execute(
             "DELETE FROM sync_health WHERE scope IN ('unit_cost', 'unit_prices', 'unit_reference')"
@@ -241,10 +241,16 @@ def _migrate_unit_economics_1c_daily_prices(database: Database) -> None:
     """Add the independently refreshed public WB Wallet price."""
 
     table_name = "unit_economics_1c_wb_daily_prices"
+    column_types = {
+        str(column["name"]): str(column["type"]).upper()
+        for column in inspect(database.engine).get_columns(table_name)
+    }
     with database.connect() as connection:
         columns = connection.column_names(table_name)
         if columns and "customer_price_with_wallet" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN customer_price_with_wallet FLOAT")
+        if database.dialect_name == "postgresql" and column_types.get("size_id") == "INTEGER":
+            connection.execute(f"ALTER TABLE {table_name} ALTER COLUMN size_id TYPE BIGINT")
         connection.commit()
 
 
@@ -252,10 +258,16 @@ def _migrate_unit_economics_1c_product_categories(database: Database) -> None:
     """Remember WB metadata needed for glue and product-age calculations."""
 
     table_name = "unit_economics_1c_product_categories"
+    column_types = {
+        str(column["name"]): str(column["type"]).upper()
+        for column in inspect(database.engine).get_columns(table_name)
+    }
     with database.connect() as connection:
         columns = connection.column_names(table_name)
         if columns and "imt_id" not in columns:
-            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN imt_id INTEGER")
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN imt_id BIGINT")
+        elif database.dialect_name == "postgresql" and column_types.get("imt_id") == "INTEGER":
+            connection.execute(f"ALTER TABLE {table_name} ALTER COLUMN imt_id TYPE BIGINT")
         if columns and "created_at" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN created_at TEXT")
             connection.execute(f"UPDATE {table_name} SET synced_at='' ")

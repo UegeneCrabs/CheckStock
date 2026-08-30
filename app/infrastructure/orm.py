@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
     Float,
     ForeignKey,
     Index,
@@ -885,7 +886,7 @@ class UnitEconomics1CProductCategoryRecord(OrmBase):
         primary_key=True,
     )
     wb_subject_id: Mapped[int | None] = mapped_column(Integer)
-    imt_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    imt_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
     category: Mapped[str | None] = mapped_column(String)
     category_key: Mapped[str | None] = mapped_column(String, index=True)
     created_at: Mapped[str | None] = mapped_column(String)
@@ -923,7 +924,7 @@ class UnitEconomics1CDailyPriceRecord(OrmBase):
     day: Mapped[str] = mapped_column(String, primary_key=True)
     marketplace: Mapped[str] = mapped_column(String, nullable=False, default="WB", server_default="WB")
     nm_id: Mapped[str] = mapped_column(String, nullable=False)
-    size_id: Mapped[int | None] = mapped_column(Integer)
+    size_id: Mapped[int | None] = mapped_column(BigInteger)
     tech_size_name: Mapped[str | None] = mapped_column(String)
     vendor_code: Mapped[str | None] = mapped_column(String)
     currency: Mapped[str] = mapped_column(String, nullable=False, default="RUB", server_default="RUB")
