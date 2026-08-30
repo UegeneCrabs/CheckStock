@@ -87,6 +87,21 @@ class WebRouteUnitTests(unittest.TestCase):
             NOW,
         )
 
+    def _unit_economics_products(self) -> list[dict]:
+        response = self.client.get("/sales/unit-economics-1c", params={"data": "1"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["ok"])
+        return response.json()["products"]
+
+    def _unit_economics_product(self, store_slug: str, article: str) -> dict:
+        response = self.client.get(
+            "/sales/unit-economics-1c",
+            params={"data": "1", "store": store_slug, "article": article},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["ok"])
+        return response.json()["product"]
+
     def tearDown(self) -> None:
         self.client.close()
         logging.disable(logging.NOTSET)
@@ -427,12 +442,11 @@ class WebRouteUnitTests(unittest.TestCase):
         gogol = next(item for item in gogol_loaded.json()["items"] if item["store_slug"] == "gogol")
         self.assertEqual(gogol["usn_percent"], 5)
         self.assertEqual(gogol["osno_percent"], 0)
-        unit_page = self.client.get("/sales/unit-economics-1c")
-        self.assertEqual(unit_page.status_code, 200)
-        self.assertIn('"acquiring": 4.2', unit_page.text)
-        self.assertIn('"team_commission_percent": 0.0', unit_page.text)
-        self.assertIn('"vat_percent": 10.0', unit_page.text)
-        self.assertIn('"usn_percent": 6.0', unit_page.text)
+        unit_product = self._unit_economics_product("rimili", "949558341")
+        self.assertEqual(unit_product["details"]["acquiring"], 4.2)
+        self.assertEqual(unit_product["details"]["team_commission_percent"], 0)
+        self.assertEqual(unit_product["details"]["vat_percent"], 10)
+        self.assertEqual(unit_product["details"]["usn_percent"], 6)
         forbidden = self.client.put(
             "/api/unit-economics-1c/cabinet-settings/rimili",
             json={**payload, "team_commission_percent": 2.8},
@@ -496,12 +510,22 @@ class WebRouteUnitTests(unittest.TestCase):
 
     def test_unit_economics_1c_uses_sidebar_marketplace_navigation(self) -> None:
         response = self.client.get("/sales/unit-economics-1c")
+        products = self._unit_economics_products()
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Юнит-экономика 1С", response.text)
-        self.assertIn("949558341", response.text)
-        self.assertIn("Ретро гирлянда", response.text)
+        self.assertNotIn("949558341", response.text)
+        self.assertTrue(any(item["article"] == "949558341" for item in products))
+        summary = next(item for item in products if item["article"] == "949558341")
+        self.assertTrue(summary["name"])
+        self.assertNotIn("details", summary)
+        self.assertNotIn("history", summary)
+        detail = self._unit_economics_product("rimili", "949558341")
+        self.assertIn("details", detail)
+        self.assertEqual(len(detail["history"]), 21)
         self.assertIn('id="ue1c-product-rows"', response.text)
+        self.assertIn('id="ue1c-products-loading"', response.text)
+        self.assertIn('"products": []', response.text)
         self.assertIn('id="ue1c-store-filter"', response.text)
         self.assertIn('id="ue1c-detail"', response.text)
         self.assertIn('id="ue1c-chart"', response.text)
@@ -560,10 +584,9 @@ class WebRouteUnitTests(unittest.TestCase):
         connection.commit()
         connection.close()
 
-        response = self.client.get("/sales/unit-economics-1c")
+        products = self._unit_economics_products()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("949558341", response.text)
+        self.assertTrue(any(item["article"] == "949558341" for item in products))
 
     def test_unit_economics_1c_product_contains_only_real_or_null_values(self) -> None:
         product = unit_economics._unit_economics_1c_mock_product(
@@ -747,6 +770,11 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("function coverageTitle(label, coverage)", script)
         self.assertIn("function coverageValue(label, value, formatter, coverage, suffix)", script)
         self.assertIn("coverageCellClass(marginCoverage)", script)
+        self.assertIn("var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000", script)
+        self.assertIn("function refreshProductsIfStale(force)", script)
+        self.assertIn("loadProducts({ silent: true, refreshDetail: true })", script)
+        self.assertIn("document.addEventListener('visibilitychange'", script)
+        self.assertIn("async function refreshSelectedDetail()", script)
         self.assertIn("ue1c-partial-cell", styles)
         self.assertIn(".ue1c-coverage-value.is-partial", styles)
 
@@ -1319,6 +1347,166 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(storefront_only["price"]["with_spp"], 2034)
         self.assertNotIn("spp_percent", storefront_only["details"])
 
+    def test_unit_profit_report_groups_categories_with_ratio_totals(self) -> None:
+        rows = [
+            {
+                "subject": "Игрушки",
+                "store_slug": "rimili",
+                "store_name": "RIMILI",
+                "manager": "Менеджер",
+                "orders_count": 10,
+                "orders_amount": 1000,
+                "cancel_count": 2,
+                "cancel_amount": 200,
+                "net_orders_count": 8,
+                "net_orders_amount": 800,
+                "buyout_percent": 80,
+                "buyout_orders_count": 10,
+                "expected_buyout_amount": 800,
+                "stock": 3,
+                "impressions": 100,
+                "clicks": 10,
+                "advertising_spend": 100,
+                "margin_orders_count": 8,
+                "margin": 400,
+                "purchase_value": 800,
+                "margin_complete": True,
+                "margin_missing_days": [],
+                "daily_calculations": [
+                    {
+                        "date": "2026-08-30",
+                        "available": True,
+                        "snapshot_available": True,
+                        "orders_count": 10,
+                        "net_orders_count": 8,
+                        "buyout_percent": 80,
+                        "expected_buyouts": 8,
+                        "advertising_spend": 100,
+                        "advertising_per_unit": 12.5,
+                        "net_profit": 50,
+                    }
+                ],
+            },
+            {
+                "subject": "Игрушки",
+                "store_slug": "tris",
+                "store_name": "TRIS",
+                "manager": "Менеджер",
+                "orders_count": 5,
+                "orders_amount": 500,
+                "cancel_count": 0,
+                "cancel_amount": 0,
+                "net_orders_count": 5,
+                "net_orders_amount": 500,
+                "buyout_percent": 60,
+                "buyout_orders_count": 5,
+                "expected_buyout_amount": 300,
+                "stock": 2,
+                "impressions": 100,
+                "clicks": 20,
+                "advertising_spend": 50,
+                "margin_orders_count": 3,
+                "margin": 100,
+                "purchase_value": 200,
+                "margin_complete": True,
+                "margin_missing_days": [],
+                "daily_calculations": [
+                    {
+                        "date": "2026-08-30",
+                        "available": True,
+                        "snapshot_available": True,
+                        "orders_count": 5,
+                        "net_orders_count": 5,
+                        "buyout_percent": 60,
+                        "expected_buyouts": 3,
+                        "advertising_spend": 50,
+                        "advertising_per_unit": 16.67,
+                        "net_profit": 20,
+                    }
+                ],
+            },
+        ]
+
+        categories = unit_economics._unit_profit_category_rows(rows)
+
+        self.assertEqual(len(categories), 1)
+        category = categories[0]
+        self.assertEqual(category["name"], "Игрушки")
+        self.assertEqual(category["product_count"], 2)
+        self.assertEqual(category["store_name"], "2 магазинов")
+        self.assertEqual(category["orders_count"], 15)
+        self.assertEqual(category["net_orders_amount"], 1300)
+        self.assertEqual(category["buyout_percent"], 73.33)
+        self.assertEqual(category["ctr"], 15)
+        self.assertEqual(category["cpc"], 5)
+        self.assertEqual(category["drr"], 13.64)
+        self.assertEqual(category["margin"], 500)
+        self.assertEqual(category["roi"], 50)
+        daily = category["daily_calculations"][0]
+        self.assertEqual(daily["advertising_spend"], 150)
+        self.assertEqual(daily["buyout_percent"], 73.33)
+        self.assertEqual(daily["advertising_per_unit"], 13.64)
+        self.assertEqual(daily["net_profit"], 41.82)
+
+    def test_unit_profit_report_exposes_daily_margin_inputs(self) -> None:
+        inputs = {
+            "retail_price": 1000,
+            "customer_price": 800,
+            "customer_price_with_spp": 800,
+            "acquiring_percent": 2,
+            "delivery_wb_rub": 50,
+            "return_cost_rub": 25,
+            "paid_acceptance_cost": 0,
+            "storage_wb_rub": 1,
+            "turnover_days": 10,
+            "commission_percent": 20,
+            "purchase_price": 300,
+            "fulfillment_cost": 20,
+            "team_commission_percent": 5,
+            "vat_percent": 20,
+            "usn_percent": 6,
+            "osno_percent": 0,
+            "tax_system": "usn",
+            "buyout_percent": 80,
+        }
+
+        result = unit_economics._report_daily_calculations(
+            date_from=date(2026, 8, 30),
+            date_to=date(2026, 8, 30),
+            daily_orders={
+                "2026-08-30": {
+                    "orders_count": 10,
+                    "cancel_count": 2,
+                    "buyout_percent": 80,
+                }
+            },
+            margin_snapshots={
+                "2026-08-30": {
+                    "inputs_json": json.dumps(inputs),
+                    "unit_margin": 0,
+                    "purchase_price": 300,
+                }
+            },
+            live_day=date(2026, 8, 31),
+            live_snapshot=None,
+            daily_advertising={"2026-08-30": 800},
+            fallback_buyout_percent=75,
+        )
+
+        self.assertEqual(len(result), 1)
+        daily = result[0]
+        self.assertTrue(daily["available"])
+        self.assertEqual(daily["orders_count"], 10)
+        self.assertEqual(daily["net_orders_count"], 8)
+        self.assertEqual(daily["advertising_spend"], 800)
+        self.assertEqual(daily["advertising_per_unit"], 100)
+        self.assertEqual(daily["logistics"], 65)
+        self.assertEqual(daily["storage"], 10)
+        self.assertEqual(daily["net_revenue"], 605)
+        self.assertEqual(daily["net_profit"], 61.67)
+        self.assertEqual(daily["vat_value"], 133.33)
+        self.assertEqual(daily["usn_value"], 40)
+
     def test_unit_economics_1c_uses_abc_turnover_and_total_wb_percent(self) -> None:
         product = unit_economics._unit_economics_1c_mock_product(
             "trusthome",
@@ -1524,11 +1712,31 @@ class WebRouteUnitTests(unittest.TestCase):
                 "buyout_source_version": 2,
                 "drr": 4.2,
                 "daily": [
-                    {"date": "2026-08-13", "advertising_spend": 90},
-                    {"date": "2026-08-19", "advertising_spend": 120},
+                    {
+                        "date": "2026-08-13",
+                        "advertising_spend": 90,
+                        "orders_count": 4,
+                        "orders_amount": 2000,
+                        "cancel_count": 1,
+                        "cancel_amount": 500,
+                        "buyout_percent": 80,
+                    },
+                    {
+                        "date": "2026-08-19",
+                        "advertising_spend": 120,
+                        "orders_count": 5,
+                        "orders_amount": 2500,
+                        "cancel_count": 1,
+                        "cancel_amount": 500,
+                        "buyout_percent": 80,
+                    },
                 ],
             }
         }
+        filters_response = self.client.get(
+            "/api/unit-economics-1c/reports/unit-profit/filters",
+            params={"store": "rimili"},
+        )
         with mock.patch.object(
             unit_economics.unit_economics_1c,
             "load_product_metrics",
@@ -1550,8 +1758,45 @@ class WebRouteUnitTests(unittest.TestCase):
                     "store": "rimili",
                 },
             )
+            category_download = self.client.get(
+                "/sales/unit-economics-1c/reports/unit-profit.xlsx",
+                params={
+                    "date_from": "2026-08-13",
+                    "date_to": "2026-08-19",
+                    "store": "rimili",
+                    "group_by": "subject",
+                    "daily_details": "1",
+                },
+            )
+            category_response = self.client.get(
+                "/api/unit-economics-1c/reports/unit-profit",
+                params={
+                    "date_from": "2026-08-13",
+                    "date_to": "2026-08-19",
+                    "store": "rimili",
+                    "group_by": "subject",
+                    "daily_details": "1",
+                    "page": "1",
+                    "page_size": "25",
+                },
+            )
+            filtered_daily_download = self.client.get(
+                "/sales/unit-economics-1c/reports/unit-profit.xlsx",
+                params={
+                    "date_from": "2026-08-13",
+                    "date_to": "2026-08-19",
+                    "store": "rimili",
+                    "article": "949558341",
+                    "daily_details": "1",
+                },
+            )
 
         self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(filters_response.status_code, 200, filters_response.text)
+        self.assertTrue(filters_response.json()["ok"])
+        self.assertIn("949558341", {
+            item["article"] for item in filters_response.json()["filters"]["articles"]
+        })
         payload = response.json()
         self.assertEqual((payload["period_from"], payload["period_to"]), ("2026-08-13", "2026-08-19"))
         row = next(item for item in payload["rows"] if item["article"] == "949558341")
@@ -1581,7 +1826,13 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("subjects", payload["filters"])
         self.assertIn("managers", payload["filters"])
         self.assertIn("articles", payload["filters"])
-        self.assertTrue(payload["funnel_daily_rows"])
+        self.assertEqual(payload["funnel_daily_rows"], [])
+        self.assertEqual(payload["funnel_weekly_rows"], [])
+        self.assertEqual(payload["pagination"]["page"], 1)
+        self.assertEqual(payload["pagination"]["page_size"], 50)
+        self.assertEqual(payload["pagination"]["total_count"], len(payload["rows"]))
+        self.assertEqual(payload["pagination"]["total_pages"], 1)
+        self.assertFalse(payload["pagination"]["enabled"])
         self.assertTrue(
             {
                 "retail_price",
@@ -1656,6 +1907,53 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(sheet.cell(row=sheet.max_row, column=1).value, "ИТОГО")
         self.assertEqual(sheet.freeze_panes, "F6")
         self.assertTrue(sheet.auto_filter.ref.startswith("A5:"))
+
+        self.assertEqual(category_download.status_code, 200, category_download.text)
+        self.assertEqual(category_response.status_code, 200, category_response.text)
+        category_payload = category_response.json()
+        self.assertTrue(category_payload["rows"])
+        self.assertTrue(all(item["row_kind"] == "category" for item in category_payload["rows"]))
+        self.assertFalse(category_payload["daily_details"])
+        self.assertFalse(category_payload["rows"][0]["daily_calculations"])
+        self.assertFalse(category_payload["pagination"]["enabled"])
+        self.assertEqual(category_payload["pagination"]["page_size"], 25)
+        category_workbook = openpyxl.load_workbook(
+            BytesIO(category_download.content),
+            data_only=False,
+        )
+        category_sheet = category_workbook["Расчёт маржи и ROI"]
+        self.assertEqual(
+            category_sheet["A1"].value,
+            "Отчёт по юниточной прибыли — по категориям",
+        )
+        self.assertEqual(category_sheet["G2"].value, 1)
+        self.assertEqual(category_sheet.max_column, 67)
+
+        self.assertEqual(filtered_daily_download.status_code, 200, filtered_daily_download.text)
+        filtered_daily_workbook = openpyxl.load_workbook(
+            BytesIO(filtered_daily_download.content),
+            data_only=False,
+        )
+        filtered_daily_sheet = filtered_daily_workbook["Расчёт маржи и ROI"]
+        self.assertEqual(filtered_daily_sheet["G2"].value, 1)
+        self.assertEqual(filtered_daily_sheet.max_column, 67 + 7 * 20)
+        self.assertEqual(
+            filtered_daily_sheet.cell(row=4, column=68).value.date(),
+            date(2026, 8, 13),
+        )
+        self.assertEqual(
+            sum(
+                filtered_daily_sheet.cell(row=5, column=column).value
+                == "Расходы на рекламу, ₽"
+                for column in range(68, filtered_daily_sheet.max_column + 1)
+            ),
+            7,
+        )
+        filtered_articles = [
+            filtered_daily_sheet.cell(row=row_index, column=2).value
+            for row_index in range(6, filtered_daily_sheet.max_row)
+        ]
+        self.assertEqual(filtered_articles, ["949558341"])
         daily_sheet = workbook["Воронка по дням"]
         daily_headers = [
             daily_sheet.cell(row=4, column=column).value
@@ -1693,6 +1991,10 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1cr-article-search"', page.text)
         self.assertIn('id="ue1cr-show-images"', page.text)
         self.assertIn('id="ue1cr-export"', page.text)
+        self.assertIn('id="ue1cr-submit">Сформировать</button>', page.text)
+        self.assertIn('Настройте параметры и нажмите «Сформировать».', page.text)
+        self.assertIn('id="ue1cr-pagination"', page.text)
+        self.assertIn('id="ue1cr-page-size"', page.text)
         self.assertIn("unit-profit.xlsx", page.text)
         self.assertIn('data-filter-column="7" data-filter-type="number"', page.text)
         report_script = (
@@ -1701,15 +2003,27 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("function turnover(item)", report_script)
         self.assertIn("+ turnover(row.orders_amount)", report_script)
         self.assertNotIn("+ rub(row.orders_amount)", report_script)
-        self.assertIn("function sortRowsByTurnover(rows)", report_script)
         self.assertNotIn("row.unit_margin", report_script)
-        self.assertIn(
-            "numeric(b.orders_amount) - numeric(a.orders_amount)",
-            report_script,
-        )
-        self.assertIn("state.rows = sortRowsByTurnover(result.rows || [])", report_script)
-        self.assertIn("function reportQuery()", report_script)
+        self.assertIn("query.set('page', String(state.page))", report_script)
+        self.assertIn("query.set('page_size', String(state.pageSize))", report_script)
+        self.assertIn("state.rows = result.rows || []", report_script)
+        self.assertIn("window.localStorage.setItem(preferenceKey", report_script)
+        self.assertIn("ue1cr-page--daily-hidden", report_script)
+        self.assertIn("function reportQuery(includeView)", report_script)
         self.assertIn("function updateExportLink()", report_script)
+        self.assertIn("async function downloadExcel(event)", report_script)
+        self.assertIn("Формируем Excel…", report_script)
+        self.assertIn("window.URL.createObjectURL(blob)", report_script)
+        self.assertIn("nodes.export.addEventListener('click', downloadExcel)", report_script)
+        self.assertIn("var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000", report_script)
+        self.assertIn("function refreshReportIfStale(force)", report_script)
+        self.assertIn("if (!state.reportLoaded || document.hidden", report_script)
+        self.assertIn("async function loadFilterOptions()", report_script)
+        self.assertIn("reportLoaded: false", report_script)
+        self.assertTrue(report_script.rstrip().endswith("loadFilterOptions();\n})();"))
+        self.assertIn("load({ silent: true })", report_script)
+        self.assertIn("timeZone: 'Europe/Moscow'", report_script)
+        self.assertIn("document.addEventListener('visibilitychange'", report_script)
         self.assertNotIn("data-report-details", report_script)
 
         invalid = self.client.get(
@@ -1722,6 +2036,74 @@ class WebRouteUnitTests(unittest.TestCase):
             params={"date_from": "2026-08-20", "date_to": "2026-08-19"},
         )
         self.assertEqual(invalid_export.status_code, 422)
+
+    def test_unit_profit_report_paginates_only_daily_product_details(self) -> None:
+        products = [
+            {
+                "article": str(100_000_000 + index),
+                "name": f"Товар {index:02d}",
+                "barcode": "",
+                "image_url": "",
+                "fbs_stock": 0,
+                "fbo_stock": 0,
+                "ff_available": 0,
+            }
+            for index in range(60)
+        ]
+        with (
+            mock.patch.object(unit_economics.db, "get_stock_items", return_value=products),
+            mock.patch.object(
+                unit_economics.unit_economics_1c,
+                "load_product_metrics",
+                return_value={},
+            ),
+            mock.patch.object(
+                unit_economics.unit_economics_1c,
+                "load_product_average_daily_orders",
+                return_value={},
+            ),
+        ):
+            response = self.client.get(
+                "/api/unit-economics-1c/reports/unit-profit",
+                params={
+                    "date_from": "2026-08-01",
+                    "date_to": "2026-08-02",
+                    "store": "rimili",
+                    "page": "2",
+                    "page_size": "25",
+                },
+            )
+            daily_response = self.client.get(
+                "/api/unit-economics-1c/reports/unit-profit",
+                params={
+                    "date_from": "2026-08-01",
+                    "date_to": "2026-08-02",
+                    "store": "rimili",
+                    "daily_details": "1",
+                    "page": "2",
+                    "page_size": "25",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(len(payload["rows"]), 60)
+        self.assertEqual(
+            payload["pagination"],
+            {
+                "enabled": False,
+                "page": 1,
+                "page_size": 25,
+                "total_count": 60,
+                "total_pages": 1,
+            },
+        )
+        self.assertEqual(daily_response.status_code, 200, daily_response.text)
+        daily_payload = daily_response.json()
+        self.assertEqual(len(daily_payload["rows"]), 25)
+        self.assertTrue(daily_payload["pagination"]["enabled"])
+        self.assertEqual(daily_payload["pagination"]["page"], 2)
+        self.assertEqual(daily_payload["pagination"]["total_pages"], 3)
 
     def test_unit_profit_report_filters_by_manager_and_limits_regular_users(self) -> None:
         stock_item = next(
@@ -1998,12 +2380,11 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(saved["paid_acceptance_cost"], 0)
         self.assertEqual(saved["delivery_with_returns"], 130)
 
-        page = self.client.get("/sales/unit-economics-1c")
-        self.assertEqual(page.status_code, 200)
-        self.assertIn('"delivery_wb_rub": 100.0', page.text)
-        self.assertIn('"buyout_percent": 80.0', page.text)
-        self.assertIn('"delivery_with_returns": 130.0', page.text)
-        self.assertIn('"subject": null', page.text)
+        product = self._unit_economics_product("rimili", "949558341")
+        self.assertEqual(product["details"]["delivery_wb_rub"], 100)
+        self.assertEqual(product["details"]["buyout_percent"], 80)
+        self.assertEqual(product["details"]["delivery_with_returns"], 130)
+        self.assertIsNone(product["details"]["subject"])
         script = (Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c.js").read_text(
             encoding="utf-8"
         )
@@ -2034,9 +2415,8 @@ class WebRouteUnitTests(unittest.TestCase):
                 }
             ]
         )
-        page = self.client.get("/sales/unit-economics-1c")
-        self.assertEqual(page.status_code, 200)
-        self.assertNotIn("STALE-HISTORY-ONLY", page.text)
+        articles = {item["article"] for item in self._unit_economics_products()}
+        self.assertNotIn("STALE-HISTORY-ONLY", articles)
 
     def test_yandex_stock_shows_combined_fby_and_fbs(self) -> None:
         db.replace_catalog(

@@ -119,6 +119,29 @@ _WEEKLY_COLUMNS = (
     ("updated_at", "Обновлено", 22, "datetime"),
 )
 
+_DAILY_CALCULATION_COLUMNS = (
+    ("advertising_spend", "Расходы на рекламу, ₽", 19, "money"),
+    ("orders_count", "Заказы, шт.", 14, "integer"),
+    ("net_orders_count", "Заказы − отмены, шт.", 20, "integer"),
+    ("buyout_percent", "Выкуп, %", 14, "percent"),
+    ("vat_percent", "НДС, %", 12, "percent"),
+    ("usn_percent", "УСН, %", 12, "percent"),
+    ("customer_price", "Цена с СПП, ₽", 17, "money"),
+    ("retail_price", "Цена без СПП, ₽", 18, "money"),
+    ("acquiring_percent", "Эквайринг, %", 15, "percent"),
+    ("logistics", "Логистика, ₽", 15, "money"),
+    ("storage", "Хранение, ₽", 15, "money"),
+    ("commission_percent", "Комиссия WB, %", 18, "percent"),
+    ("team_commission_percent", "Комиссия компании, %", 21, "percent"),
+    ("fulfillment_cost", "Фулфилмент, ₽", 17, "money"),
+    ("purchase_price", "Закупочная цена, ₽", 19, "money"),
+    ("net_profit", "Чистая прибыль, ₽", 18, "money"),
+    ("net_revenue", "Чистая выручка, ₽", 18, "money"),
+    ("advertising_per_unit", "Реклама за 1 шт., ₽", 19, "money"),
+    ("vat_value", "НДС, ₽", 14, "money"),
+    ("usn_value", "УСН, ₽", 14, "money"),
+)
+
 
 def _number(value: object) -> float | None:
     if value is None or value == "":
@@ -145,6 +168,18 @@ def _datetime(value: object) -> datetime | None:
 
 
 def _cell_value(row: dict, key: str, kind: str) -> object:
+    if key.startswith("daily:"):
+        _, day_value, daily_key = key.split(":", 2)
+        daily_row = next(
+            (
+                item
+                for item in row.get("daily_calculations") or []
+                if str(item.get("date")) == day_value
+            ),
+            {},
+        )
+        value = daily_row.get(daily_key)
+        return _cell_value({daily_key: value}, daily_key, kind)
     if key == "expected_buyouts":
         return round(
             float(row.get("orders_count") or 0) * float(row.get("buyout_percent") or 0) / 100,
@@ -224,9 +259,32 @@ def _build_summary(workbook, report: dict) -> None:
     sheet = workbook.active
     sheet.title = "Расчёт маржи и ROI"
     sheet.sheet_view.showGridLines = False
-    last_column = get_column_letter(len(_SUMMARY_COLUMNS))
+    rows = (
+        list(report.get("category_rows") or [])
+        if report.get("group_by") == "subject"
+        else list(report.get("rows") or [])
+    )
+    daily_dates = sorted(
+        {
+            str(item.get("date"))
+            for row in rows
+            for item in row.get("daily_calculations") or []
+            if item.get("date")
+        }
+    )
+    daily_columns = tuple(
+        (f"daily:{day_value}:{key}", title, width, kind)
+        for day_value in daily_dates
+        for key, title, width, kind in _DAILY_CALCULATION_COLUMNS
+    )
+    columns = _SUMMARY_COLUMNS + daily_columns
+    last_column = get_column_letter(len(columns))
     sheet.merge_cells(f"A1:{last_column}1")
-    sheet["A1"] = "Отчёт по юниточной прибыли — полный расчёт"
+    sheet["A1"] = (
+        "Отчёт по юниточной прибыли — по категориям"
+        if report.get("group_by") == "subject"
+        else "Отчёт по юниточной прибыли — полный расчёт"
+    )
     sheet["A1"].font = Font(name="Arial", size=16, bold=True, color="FFFFFF")
     sheet["A1"].fill = PatternFill("solid", fgColor="18233F")
     sheet["A1"].alignment = Alignment(vertical="center", horizontal="left")
@@ -235,8 +293,8 @@ def _build_summary(workbook, report: dict) -> None:
     sheet["B2"] = _date(report.get("period_from"))
     sheet["C2"] = "—"
     sheet["D2"] = _date(report.get("period_to"))
-    sheet["F2"] = "Позиций"
-    sheet["G2"] = len(report.get("rows") or [])
+    sheet["F2"] = "Категорий" if report.get("group_by") == "subject" else "Позиций"
+    sheet["G2"] = len(rows)
     sheet["B2"].number_format = sheet["D2"].number_format = "dd.mm.yyyy"
     for cell in (sheet["A2"], sheet["F2"]):
         cell.font = Font(name="Arial", size=10, bold=True, color="5E6678")
@@ -263,16 +321,29 @@ def _build_summary(workbook, report: dict) -> None:
         cell = sheet.cell(row=4, column=start, value=title)
         cell.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
         cell.alignment = Alignment(vertical="center", horizontal="center")
-    _style_header(sheet, _SUMMARY_COLUMNS, 5)
+    daily_start = len(_SUMMARY_COLUMNS) + 1
+    for day_index, day_value in enumerate(daily_dates):
+        start = daily_start + day_index * len(_DAILY_CALCULATION_COLUMNS)
+        end = start + len(_DAILY_CALCULATION_COLUMNS) - 1
+        sheet.merge_cells(start_row=4, start_column=start, end_row=4, end_column=end)
+        for column in range(start, end + 1):
+            sheet.cell(row=4, column=column).fill = PatternFill(
+                "solid",
+                fgColor="5B7DB1" if day_index % 2 == 0 else "426A9F",
+            )
+        cell = sheet.cell(row=4, column=start, value=_date(day_value))
+        cell.number_format = "dd.mm.yyyy"
+        cell.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+        cell.alignment = Alignment(vertical="center", horizontal="center")
+    _style_header(sheet, columns, 5)
 
-    rows = report.get("rows") or []
-    total_row = _write_rows(sheet, rows, _SUMMARY_COLUMNS, 6)
+    total_row = _write_rows(sheet, rows, columns, 6)
     totals = report.get("totals") or {}
     total_fill = PatternFill("solid", fgColor="E3DFFA")
     total_border = Border(top=Side(style="medium", color="6750D8"))
     total_values = {
         "name": "ИТОГО",
-        "article": f"{len(rows)} поз.",
+        "article": f"{len(rows)} {'кат.' if report.get('group_by') == 'subject' else 'поз.'}",
         "orders_count": totals.get("orders_count"),
         "orders_amount": totals.get("orders_amount"),
         "cancel_count": totals.get("cancel_count"),
@@ -288,13 +359,14 @@ def _build_summary(workbook, report: dict) -> None:
         "ctr": totals.get("ctr"),
         "cpc": totals.get("cpc"),
         "advertising_spend": totals.get("advertising_spend"),
+        "drr": totals.get("drr"),
         "margin_orders_count": totals.get("margin_orders_count"),
         "margin": totals.get("margin"),
         "purchase_value": totals.get("purchase_value"),
         "roi": totals.get("roi"),
     }
     seen_keys: set[str] = set()
-    for column_index, (key, _, _, kind) in enumerate(_SUMMARY_COLUMNS, start=1):
+    for column_index, (key, _, _, kind) in enumerate(columns, start=1):
         value = total_values.get(key) if key not in seen_keys else None
         seen_keys.add(key)
         cell = sheet.cell(
@@ -309,7 +381,7 @@ def _build_summary(workbook, report: dict) -> None:
         cell.number_format = _number_format(kind)
     sheet.row_dimensions[total_row].height = 24
 
-    key_columns = {key: index for index, (key, _, _, _) in enumerate(_SUMMARY_COLUMNS, start=1)}
+    key_columns = {key: index for index, (key, _, _, _) in enumerate(columns, start=1)}
     for row_index in range(6, total_row):
         for key in ("margin", "roi"):
             value = _number(rows[row_index - 6].get(key))

@@ -7,11 +7,22 @@
 
     var config = JSON.parse(configNode.textContent || '{}');
     var products = Array.isArray(config.products) ? config.products : [];
+    var productsEndpoint = String(config.productsEndpoint || '/sales/unit-economics-1c?data=1');
+    var commissionsEndpoint = String(
+        config.commissionsEndpoint || '/sales/unit-economics-1c?data=1&commissions=1'
+    );
     var stores = Array.isArray(config.stores) ? config.stores : [];
     var subjectCommissions = Array.isArray(config.subjectCommissions) ? config.subjectCommissions : [];
+    var commissionsPromise = null;
+    var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    var AUTO_REFRESH_STALE_MS = 60 * 1000;
+    var lastProductsLoadedAt = 0;
     var canEdit = config.canEdit === true;
     var productsById = {};
-    products.forEach(function (product) { productsById[product.id] = product; });
+    products.forEach(function (product) {
+        product._detailLoaded = Boolean(product.details && Array.isArray(product.history));
+        productsById[product.id] = product;
+    });
 
     var integer = new Intl.NumberFormat('ru-RU');
     var decimal = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
@@ -36,17 +47,21 @@
     var pendingPriceChange = null;
     var state = {
         query: '', store: 'all', status: 'all', page: 1, pageSize: 20,
-        selected: null, sortColumn: 4, sortDirection: -1, tableFilters: {}
+        selected: null, sortColumn: 4, sortDirection: -1, tableFilters: {},
+        productsLoading: products.length === 0, productsRefreshing: false
     };
     var nodes = {
         table: id('ue1c-table'), rows: id('ue1c-product-rows'), empty: id('ue1c-empty'), search: id('ue1c-search'),
         store: id('ue1c-store-filter'), tableWrap: id('ue1c-table-wrap'), pageSize: id('ue1c-page-size'),
         pagePrev: id('ue1c-page-prev'), pageNext: id('ue1c-page-next'), pageNumbers: id('ue1c-page-numbers'),
         summary: id('ue1c-pagination-summary'), refresh: id('ue1c-refresh'), overlay: id('ue1c-overlay'),
+        productsLoading: id('ue1c-products-loading'), productsError: id('ue1c-products-error'),
+        productsErrorText: id('ue1c-products-error-text'), productsRetry: id('ue1c-products-retry'),
         colgroup: id('ue1c-colgroup'), tableHead: id('ue1c-table-head'),
         columnsToggle: id('ue1c-columns-toggle'), columnPanel: id('ue1c-column-panel'),
         columnList: id('ue1c-column-list'),
         detail: id('ue1c-detail'), detailClose: id('ue1c-detail-close'), drawerThumb: id('ue1c-drawer-thumb'),
+        detailLoading: id('ue1c-detail-loading'),
         drawerTitle: id('ue1c-drawer-title'), drawerMeta: id('ue1c-drawer-meta'), priceInput: id('ue1c-price-input'),
         sppPriceInput: id('ue1c-spp-price-input'), walletPriceInput: id('ue1c-wallet-price-input'),
         calculatorReset: id('ue1c-calculator-reset'), calculatorMode: id('ue1c-calculator-mode'),
@@ -73,7 +88,7 @@
         { key: 'newness', label: 'Новинка', columns: [{ index: 23, label: 'Новинка', width: 90 }] },
         { key: 'comments', label: 'Комментарии', columns: [{ index: 1, label: 'Комментарии', width: 260 }] },
         { key: 'current', label: 'Текущая экономика', columns: [
-            { index: 2, label: 'Маржа, ₽', number: true, width: 100 },
+            { index: 2, label: 'Маржа на шт., ₽', number: true, width: 112 },
             { index: 3, label: 'ROI, %', number: true, width: 85 }
         ] },
         { key: 'actual', label: 'Экономика за 7 дней', columns: [
@@ -504,6 +519,12 @@
         }).join('') : '';
     }
     function renderPage() {
+        if (state.productsLoading) {
+            nodes.rows.innerHTML = '';
+            nodes.empty.hidden = true;
+            renderPagination(0);
+            return;
+        }
         var filtered = filteredProducts();
         state.page = Math.min(Math.max(1, state.page), Math.max(1, Math.ceil(filtered.length / state.pageSize)));
         var offset = (state.page - 1) * state.pageSize;
@@ -511,9 +532,81 @@
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('.ue1c-product-thumb img'), function (image) {
             image.addEventListener('error', function () { image.hidden = true; }, { once: true });
         });
-        nodes.empty.hidden = filtered.length > 0;
+        nodes.empty.hidden = filtered.length > 0 || !nodes.productsError.hidden;
         renderPagination(filtered.length);
         nodes.tableWrap.scrollTop = 0;
+    }
+    function replaceProducts(items, preserveDetails) {
+        var previousProducts = productsById;
+        products = (Array.isArray(items) ? items : []).map(function (product) {
+            var previous = preserveDetails ? previousProducts[product.id] : null;
+            if (!previous || !previous._detailLoaded) return product;
+            Object.assign(previous, product);
+            return previous;
+        });
+        productsById = {};
+        products.forEach(function (product) {
+            product._detailLoaded = product._detailLoaded
+                || Boolean(product.details && Array.isArray(product.history));
+            productsById[product.id] = product;
+        });
+    }
+    function setProductsLoading(loading) {
+        state.productsLoading = loading;
+        nodes.productsLoading.hidden = !loading;
+        nodes.search.disabled = loading;
+        nodes.store.disabled = loading;
+        nodes.pageSize.disabled = loading;
+        Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
+            button.disabled = loading;
+        });
+    }
+    async function loadProducts(options) {
+        options = options || {};
+        var silent = options.silent === true;
+        if (state.productsRefreshing) return false;
+        state.productsRefreshing = true;
+        var scrollTop = nodes.tableWrap.scrollTop;
+        var scrollLeft = nodes.tableWrap.scrollLeft;
+        if (!silent) {
+            setProductsLoading(true);
+            nodes.productsError.hidden = true;
+            renderPage();
+        }
+        try {
+            var response = await window.fetch(productsEndpoint, {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
+            });
+            var result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось загрузить данные WB');
+            replaceProducts(result.products, silent);
+            if (!silent) {
+                state.page = 1;
+                state.tableFilters = {};
+            }
+            lastProductsLoadedAt = Date.now();
+            nodes.productsError.hidden = true;
+            renderPage();
+            if (silent) {
+                nodes.tableWrap.scrollTop = scrollTop;
+                nodes.tableWrap.scrollLeft = scrollLeft;
+            }
+            if (options.refreshDetail) await refreshSelectedDetail();
+            return true;
+        } catch (error) {
+            if (!silent) {
+                replaceProducts([]);
+                nodes.productsErrorText.textContent = error.message || 'Повторите попытку чуть позже.';
+                nodes.productsError.hidden = false;
+            }
+            return false;
+        } finally {
+            state.productsRefreshing = false;
+            if (!silent) {
+                setProductsLoading(false);
+                renderPage();
+            }
+        }
     }
     function resetPageAndRender() { state.page = 1; renderPage(); }
     function showToast(message, kind) {
@@ -663,6 +756,26 @@
         if (source !== 'retail') nodes.priceInput.value = retail === null ? '' : String(retail);
         if (source !== 'client') nodes.sppPriceInput.value = client === null ? '' : String(client);
         if (source !== 'wallet') nodes.walletPriceInput.value = wallet === null ? '' : String(wallet);
+    }
+    async function ensureSubjectCommissions() {
+        if (subjectCommissions.length) return subjectCommissions;
+        if (!commissionsPromise) {
+            commissionsPromise = window.fetch(commissionsEndpoint, {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
+            }).then(function (response) {
+                return response.json().then(function (result) {
+                    if (!response.ok || !result.ok) {
+                        throw new Error(result.error || 'Не удалось загрузить комиссии WB');
+                    }
+                    subjectCommissions = Array.isArray(result.items) ? result.items : [];
+                    return subjectCommissions;
+                });
+            }).catch(function () {
+                commissionsPromise = null;
+                return [];
+            });
+        }
+        return commissionsPromise;
     }
     function fillCalculator(product) {
         var values = databaseCalculatorValues(product);
@@ -1289,13 +1402,10 @@
         var image = nodes.drawerThumb.querySelector('img');
         if (image) image.addEventListener('error', function () { image.hidden = true; }, { once: true });
     }
-    function openDetail(product) {
+    function renderDetailProduct(product) {
+        root.classList.remove('is-detail-loading');
+        nodes.detailLoading.hidden = true;
         state.selected = product.id;
-        editedPriceKind = 'retail';
-        root.classList.add('has-detail');
-        nodes.detail.classList.add('is-open');
-        nodes.detail.setAttribute('aria-hidden', 'false');
-        nodes.overlay.classList.add('is-open');
         renderDrawerMedia(product);
         nodes.drawerTitle.textContent = product.name;
         nodes.drawerMeta.innerHTML = escapeHtml(product.store_name) + ' · '
@@ -1312,6 +1422,66 @@
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
             row.classList.toggle('is-selected', row.dataset.productId === product.id);
         });
+    }
+    async function fetchProductDetail(product) {
+        var separator = productsEndpoint.indexOf('?') === -1 ? '?' : '&';
+        var query = new URLSearchParams({ store: product.store_slug, article: product.article });
+        var response = await window.fetch(productsEndpoint + separator + query.toString(), {
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
+        });
+        var result = await response.json();
+        if (!response.ok || !result.ok || !result.product) {
+            throw new Error(result.error || 'Не удалось загрузить карточку товара');
+        }
+        Object.assign(product, result.product);
+        product._detailLoaded = true;
+        if (product._pendingPricePlan) {
+            applyPricePlan(product, product._pendingPricePlan);
+            delete product._pendingPricePlan;
+        }
+        productsById[product.id] = product;
+        return product;
+    }
+    async function refreshSelectedDetail() {
+        var product = productsById[state.selected];
+        if (!product || !nodes.detail.classList.contains('is-open')) return;
+        var active = document.activeElement;
+        if (active && nodes.detail.contains(active)
+            && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) return;
+        try {
+            await fetchProductDetail(product);
+            if (state.selected === product.id) renderDetailProduct(product);
+        } catch (error) {
+            /* Keep the last valid detail while a background refresh is unavailable. */
+        }
+    }
+    async function openDetail(product) {
+        state.selected = product.id;
+        editedPriceKind = 'retail';
+        root.classList.add('has-detail');
+        nodes.detail.classList.add('is-open');
+        nodes.detail.setAttribute('aria-hidden', 'false');
+        nodes.overlay.classList.add('is-open');
+        renderDrawerMedia(product);
+        nodes.drawerTitle.textContent = product.name;
+        nodes.drawerMeta.innerHTML = escapeHtml(product.store_name) + ' · '
+            + copyValue('Арт.', product.article, 'Артикул');
+        root.classList.add('is-detail-loading');
+        nodes.detailLoading.hidden = false;
+        var commissionsLoad = ensureSubjectCommissions();
+        try {
+            if (!product._detailLoaded) {
+                await fetchProductDetail(product);
+            }
+            await commissionsLoad;
+            if (state.selected === product.id) renderDetailProduct(product);
+        } catch (error) {
+            if (state.selected !== product.id) return;
+            root.classList.remove('is-detail-loading');
+            nodes.detailLoading.hidden = true;
+            closeDetail();
+            showToast(error.message || 'Не удалось загрузить карточку товара', 'error');
+        }
     }
     function clearFiltersForProduct() {
         state.query = '';
@@ -1358,7 +1528,8 @@
     }
     function closeDetail() {
         state.selected = null;
-        root.classList.remove('has-detail');
+        root.classList.remove('has-detail', 'is-detail-loading');
+        nodes.detailLoading.hidden = true;
         nodes.detail.classList.remove('is-open');
         nodes.detail.setAttribute('aria-hidden', 'true');
         nodes.overlay.classList.remove('is-open');
@@ -1546,17 +1717,24 @@
         pendingPriceJobs = pendingPriceJobs.filter(function (item) { return item !== jobId; });
         writeJson(priceJobsKey, pendingPriceJobs);
     }
+    function applyPricePlan(product, plan) {
+        if (!product.price) {
+            product._pendingPricePlan = plan;
+            return;
+        }
+        product.price.current = finite(plan.display_retail_price, product.price.current);
+        product.price.with_spp = finite(plan.predicted_spp_price, product.price.with_spp);
+        product.price.with_wallet = finite(plan.predicted_wallet_price, product.price.with_wallet);
+    }
     function applyPriceJobResult(result) {
         var accepted = result && Array.isArray(result.accepted) ? result.accepted : [];
         accepted.forEach(function (plan) {
             var product = productsById[plan.product_id];
             if (!product) return;
-            product.price.current = finite(plan.display_retail_price, product.price.current);
-            product.price.with_spp = finite(plan.predicted_spp_price, product.price.with_spp);
-            product.price.with_wallet = finite(plan.predicted_wallet_price, product.price.with_wallet);
+            applyPricePlan(product, plan);
         });
         renderPage();
-        if (state.selected && productsById[state.selected]) {
+        if (state.selected && productsById[state.selected] && productsById[state.selected]._detailLoaded) {
             fillCalculator(productsById[state.selected]);
             renderPriceCalculation(productsById[state.selected]);
         }
@@ -1743,6 +1921,7 @@
         state.page = Number(button.dataset.page) || 1;
         renderPage();
     });
+    nodes.productsRetry.addEventListener('click', loadProducts);
     nodes.rows.addEventListener('click', function (event) {
         var copy = event.target.closest('[data-copy-value]');
         if (copy) { copyText(copy); return; }
@@ -1905,6 +2084,16 @@
         if (nodes.confirmModal.classList.contains('is-open')) closePriceConfirmation();
         else if (state.selected) closeDetail();
     });
+    function refreshProductsIfStale(force) {
+        if (document.hidden || state.productsRefreshing) return;
+        if (!force && Date.now() - lastProductsLoadedAt < AUTO_REFRESH_STALE_MS) return;
+        loadProducts({ silent: true, refreshDetail: true });
+    }
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) refreshProductsIfStale(false);
+    });
+    window.addEventListener('focus', function () { refreshProductsIfStale(false); });
+    window.setInterval(function () { refreshProductsIfStale(true); }, AUTO_REFRESH_INTERVAL_MS);
 
     renderStores();
     Array.prototype.forEach.call(root.querySelectorAll('[data-chart-series]'), function (input) {
@@ -1920,5 +2109,7 @@
         sort: applyTableSort
     };
     renderPage();
-    pendingPriceJobs.slice().forEach(pollPriceJob);
+    loadProducts().then(function () {
+        pendingPriceJobs.slice().forEach(pollPriceJob);
+    });
 })();

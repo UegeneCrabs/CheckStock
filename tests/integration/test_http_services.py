@@ -562,6 +562,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/sales/unit-economics-1c/reports/unit-profit",
             "/sales/unit-economics-1c/reports/unit-profit.xlsx",
             "/api/unit-economics-1c/reports/unit-profit",
+            "/api/unit-economics-1c/reports/unit-profit/filters",
             "/api/unit-economics-1c/preferences/columns",
             "/sales/unit-economics-1c/ozon",
             "/sales/unit-economics-1c/yandex-market",

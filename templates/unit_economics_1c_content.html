@@ -1,4 +1,4 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=41">
+    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=42">
 
         <section class="ue1c-page" id="unit-economics-1c" aria-label="Юнит-экономика Wildberries">
             <div class="ue1c-toolbar">
@@ -33,6 +33,17 @@
                         <thead id="ue1c-table-head"></thead>
                         <tbody id="ue1c-product-rows"></tbody>
                     </table>
+                    <div class="ue1c-load-state" id="ue1c-products-loading" role="status" aria-live="polite">
+                        <i aria-hidden="true"></i>
+                        <strong>Загружаем данные WB…</strong>
+                        <span>Таблица появится сразу после подготовки расчётов.</span>
+                    </div>
+                    <div class="ue1c-load-state ue1c-load-state--error" id="ue1c-products-error"
+                         role="alert" hidden>
+                        <strong>Не удалось загрузить данные WB</strong>
+                        <span id="ue1c-products-error-text"></span>
+                        <button type="button" id="ue1c-products-retry">Повторить</button>
+                    </div>
                     <div class="ue1c-empty" id="ue1c-empty" hidden>
                         Ничего не найдено. Измените поиск или фильтр.
                     </div>
@@ -77,6 +88,9 @@
                 </div>
 
                 <div class="ue1c-drawer-body">
+                    <div class="ue1c-detail-loading" id="ue1c-detail-loading" role="status" hidden>
+                        <i aria-hidden="true"></i><span>Загружаем расчёты и график…</span>
+                    </div>
                     <section class="ue1c-tab-panel" id="ue1c-panel-economics" role="tabpanel">
                         <section class="ue1c-calculator" aria-labelledby="ue1c-calculator-title">
                             <header class="ue1c-calculator-head">
@@ -202,4 +216,4 @@
         </section>
 
         <script type="application/json" id="ue1c-config">$unit_1c_config</script>
-    <script src="/static/unit-economics-1c.js?v=62"></script>
+    <script src="/static/unit-economics-1c.js?v=65"></script>
