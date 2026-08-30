@@ -4,14 +4,24 @@ from app import unit_economics_1c
 
 
 class UnitEconomics1CCalculationTests(unittest.TestCase):
-    def test_vat_is_extracted_from_customer_price_and_usn_uses_price_without_vat(self) -> None:
+    def test_advertising_per_unit_is_adjusted_by_buyout_percent(self) -> None:
+        self.assertEqual(unit_economics_1c.calculate_advertising_per_unit(800, 10, 80), 100)
+        self.assertEqual(unit_economics_1c.calculate_advertising_per_unit(800, 10, 0), 80)
+        self.assertEqual(unit_economics_1c.calculate_advertising_per_unit(800, 0, 80), 0)
+
+    def test_drr_is_adjusted_by_buyout_percent(self) -> None:
+        self.assertEqual(unit_economics_1c.calculate_drr_percent(800, 10_000, 80), 10)
+        self.assertEqual(unit_economics_1c.calculate_drr_percent(800, 10_000, 0), 8)
+        self.assertEqual(unit_economics_1c.calculate_drr_percent(800, 0, 80), 100)
+
+    def test_vat_is_extracted_from_spp_price_and_usn_excludes_vat(self) -> None:
         taxes = unit_economics_1c.calculate_tax_components(2522, 7, 6, 0, "usn")
 
         self.assertEqual(round(taxes["vat"], 2), 164.99)
         self.assertEqual(round(taxes["usn"], 2), 141.42)
         self.assertEqual(round(taxes["total"], 2), 306.41)
 
-    def test_profit_margin_and_roi_remain_consistent_with_included_vat(self) -> None:
+    def test_profit_uses_per_order_advertising_rubles_instead_of_retail_drr(self) -> None:
         result = unit_economics_1c.calculate_unit_profit(
             retail_price=2522,
             customer_price=2522,
@@ -20,7 +30,7 @@ class UnitEconomics1CCalculationTests(unittest.TestCase):
             storage_wb_rub=2,
             turnover_days=10,
             wb_commission_percent=20,
-            drr_percent=10,
+            advertising_rub=252.2,
             purchase_price=700,
             fulfillment_cost=40,
             team_commission_percent=3,
@@ -31,6 +41,7 @@ class UnitEconomics1CCalculationTests(unittest.TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
+        self.assertEqual(result["advertising"], 252.2)
         self.assertEqual(result["vat"], 164.99)
         self.assertEqual(result["usn"], 141.42)
         self.assertEqual(result["margin"], 472.89)

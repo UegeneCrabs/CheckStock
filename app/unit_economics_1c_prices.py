@@ -806,14 +806,14 @@ def _sync_store(
     reliable_spp_rows = db.get_unit_economics_1c_latest_reliable_spp_prices(store_slug)
     reliable_spp = {str(row["article"]): row for row in reliable_spp_rows}
     if load_retail_prices:
-        logger.info("Цены 1С [%s]: загружаем цены продавца без СПП", store_slug)
+        logger.debug("Цены 1С [%s]: загружаем цены продавца без СПП", store_slug)
         seller_report = _seller_price_report(store_slug)
     else:
-        logger.info("Цены 1С [%s]: цена без СПП отключена для этого запуска", store_slug)
+        logger.debug("Цены 1С [%s]: цена без СПП отключена для этого запуска", store_slug)
         seller_report = {"ok": True, "goods": [], "error": None}
     seller_rows = _seller_price_rows(list(seller_report.get("goods") or []))
     if load_retail_prices and seller_report.get("ok"):
-        logger.info("Цены 1С [%s]: цен продавца получено=%s", store_slug, len(seller_rows))
+        logger.debug("Цены 1С [%s]: цен продавца получено=%s", store_slug, len(seller_rows))
     elif load_retail_prices:
         errors.append(f"цена без СПП: {seller_report.get('error') or 'не загружена'}")
     storefront_products = list(storefront_report.get("products") or [])
@@ -873,7 +873,7 @@ def _sync_store(
     affected_nm_ids = missing_nm_ids | (failed_nm_ids & {str(target["nm_id"]) for target in targets})
     storefront_ok = not affected_nm_ids
     retail_ok = not load_retail_prices or not retail_missing_targets
-    logger.info(
+    logger.debug(
         "Цены 1С [%s]: товаров в каталоге=%s, WB вернул=%s, с ценой=%s, "
         "не вернул=%s, без цены=%s (без остатка=%s), без актуальной цены=%s",
         store_slug,
@@ -897,7 +897,7 @@ def _sync_store(
 
     orders_ok = storefront_ok
     if missing_targets:
-        logger.info(
+        logger.debug(
             "Цены 1С [%s]: витрина не дала цену с СПП для %s товаров; цена по заказам не используется",
             store_slug,
             len(missing_targets),
@@ -1013,7 +1013,7 @@ def _sync_store(
         report["error"] = "; ".join(errors)
     if wallet_discount_report.get("error"):
         report["wallet_error"] = wallet_discount_report["error"]
-    logger.info(
+    logger.debug(
         "Цены 1С [%s]: завершено, статус=%s, сохранено=%s, витрина=%s, СПП восстановлено=%s, не обновлено=%s",
         store_slug,
         status,
@@ -1071,7 +1071,10 @@ def sync_stores(
         )
     except Exception as error:
         message = _friendly_error(error)
-        logger.exception("Витринные цены WB не загружены: %s", message)
+        if isinstance(error, wb_api.WBApiError):
+            logger.warning("wb_storefront_prices_failed error=%s", message)
+        else:
+            logger.exception("wb_storefront_prices_crashed error=%s", message)
         storefront_report = {
             "products": [],
             "failed_nm_ids": sorted(nm_ids),
@@ -1079,7 +1082,7 @@ def sync_stores(
         }
     for store_slug in store_slugs:
         try:
-            logger.info("Цены 1С [%s]: обрабатываем кабинет", store_slug)
+            logger.debug("Цены 1С [%s]: обрабатываем кабинет", store_slug)
             report[store_slug] = _sync_store(
                 store_slug,
                 snapshot_day,
@@ -1091,7 +1094,10 @@ def sync_stores(
         except Exception as error:
             attempted_at = _now()
             message = _friendly_error(error)
-            logger.exception("Цены юнитки 1С %s не обновлены: %s", store_slug, message)
+            if isinstance(error, wb_api.WBApiError):
+                logger.warning("unit_prices_sync_failed store=%s error=%s", store_slug, message)
+            else:
+                logger.exception("unit_prices_sync_crashed store=%s error=%s", store_slug, message)
             if record_state:
                 _record_state(
                     store_slug,
@@ -1103,6 +1109,15 @@ def sync_stores(
                     errors=[message],
                 )
             report[store_slug] = {"ok": False, "status": "error", "rows": 0, "error": message}
+    statuses = [str(item.get("status") or "error") for item in report.values()]
+    logger.info(
+        "unit_prices_sync_complete stores=%s ok=%s partial=%s error=%s rows=%s",
+        len(report),
+        statuses.count("ok") + statuses.count("fallback"),
+        statuses.count("partial"),
+        statuses.count("error"),
+        sum(int(item.get("rows") or 0) for item in report.values()),
+    )
     return report
 
 

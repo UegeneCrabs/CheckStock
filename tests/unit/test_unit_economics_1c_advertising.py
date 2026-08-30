@@ -9,6 +9,7 @@ from app import db, unit_economics_1c
 from app import unit_economics_1c_advertising as advertising
 from app.domain import MOSCOW_TIMEZONE
 from app.repositories import core
+from app.wb import funnel_orders
 from app.web import templating
 
 NOW = "2026-08-19T08:00:00+00:00"
@@ -195,26 +196,32 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
                 },
             ],
         )
-        db.upsert_sales_order_lines(
-            [
-                order_line("ordered", "123", 1000),
-                order_line("cancelled", "123", 400, cancelled=True),
-            ],
-            NOW,
+        funnel_orders._replace_day(
+            "rimili",
+            date(2026, 8, 18),
+            [("123", "V-123", "Товар", 1, 1000)],
+        )
+        funnel_orders._replace_product_metrics(
+            "rimili",
+            date(2026, 8, 13),
+            date(2026, 8, 19),
+            [("123", 1, 1000, 75)],
         )
 
         metrics = unit_economics_1c.load_product_metrics(("rimili",), today=date(2026, 8, 19))
 
         self.assertEqual(metrics[("rimili", "123")]["orders_amount"], 1000)
-        self.assertEqual(metrics[("rimili", "123")]["drr"], 15)
+        self.assertEqual(metrics[("rimili", "123")]["drr"], 20)
         self.assertEqual(metrics[("rimili", "999")]["orders_amount"], 0)
         self.assertEqual(metrics[("rimili", "999")]["drr"], 100)
         daily_123 = {item["date"]: item for item in metrics[("rimili", "123")]["daily"]}
         daily_999 = {item["date"]: item for item in metrics[("rimili", "999")]["daily"]}
-        self.assertEqual(daily_123["2026-08-18"]["drr"], 15)
+        self.assertEqual(daily_123["2026-08-18"]["drr"], 20)
         self.assertEqual(daily_999["2026-08-19"]["drr"], 100)
         self.assertEqual(daily_123["2026-08-19"]["drr"], 0)
         self.assertEqual(unit_economics_1c.calculate_drr_percent(0, 0), 0)
+        self.assertEqual(unit_economics_1c.calculate_drr_percent(12_336.11, 172_511), 7.15)
+        self.assertEqual(unit_economics_1c.calculate_drr_percent(12_336.11, 172_511, 80), 8.94)
         self.assertTrue(
             unit_economics_1c._attempted_today(
                 {"last_attempt_at": "2026-08-18T22:30:00+00:00"},
@@ -223,15 +230,17 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
         )
         self.assertFalse(unit_economics_1c._attempted_today(None, date(2026, 8, 19)))
 
-    def test_product_metrics_include_real_buyout_percent(self) -> None:
-        db.upsert_sales_order_lines(
-            [
-                order_line("sold-1", "123", 1000, sold=True),
-                order_line("sold-2", "123", 1000, sold=True),
-                order_line("waiting", "123", 1000),
-                order_line("cancelled-buyout", "123", 1000, cancelled=True),
-            ],
-            NOW,
+    def test_product_metrics_include_persisted_funnel_buyout_percent(self) -> None:
+        funnel_orders._replace_day(
+            "rimili",
+            date(2026, 8, 18),
+            [("123", "V-123", "Товар", 3, 3000)],
+        )
+        funnel_orders._replace_product_metrics(
+            "rimili",
+            date(2026, 8, 13),
+            date(2026, 8, 19),
+            [("123", 3, 3000, 66.67)],
         )
 
         metrics = unit_economics_1c.load_product_metrics(("rimili",), today=date(2026, 8, 19))[
@@ -239,17 +248,50 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
         ]
 
         self.assertEqual(metrics["orders_count"], 3)
-        self.assertEqual(metrics["sold_count"], 2)
         self.assertEqual(metrics["buyout_percent"], 66.67)
+        self.assertEqual(metrics["buyout_orders_count"], 3)
 
-    def test_three_week_order_demand_and_retail_price_are_loaded_from_orders(self) -> None:
-        db.upsert_sales_order_lines(
-            [
-                order_line("first", "123", 800, retail_price=1000),
-                order_line("second", "123", 1200, retail_price=1400),
-                order_line("cancelled", "123", 900, cancelled=True, retail_price=1100),
-            ],
-            NOW,
+    def test_product_metrics_use_matching_weekly_funnel_when_daily_rows_are_legacy(self) -> None:
+        conn = db.get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO wb_funnel_daily_orders
+                    (store_slug, day, article, vendor_code, product_name,
+                     orders_count, orders_amount, cancel_count, cancel_amount,
+                     source_version, updated_at)
+                VALUES ('rimili', '2026-08-19', '123', 'V-123', 'Товар',
+                        26, 93444, 0, 0, 2, ?)
+                """,
+                (NOW,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        funnel_orders._replace_product_metrics(
+            "rimili",
+            date(2026, 8, 13),
+            date(2026, 8, 19),
+            [("123", 314, 1_128_515, 11, 39_534, 82)],
+        )
+
+        metrics = unit_economics_1c.load_product_metrics(
+            ("rimili",),
+            today=date(2026, 8, 19),
+        )[("rimili", "123")]
+
+        self.assertEqual(metrics["orders_count"], 314)
+        self.assertEqual(metrics["orders_amount"], 1_128_515)
+        self.assertEqual(metrics["cancel_count"], 11)
+        self.assertEqual(metrics["cancel_amount"], 39_534)
+        self.assertEqual(metrics["net_orders_count"], 303)
+        self.assertEqual(metrics["net_orders_amount"], 1_088_981)
+
+    def test_three_week_order_demand_is_loaded_from_funnel(self) -> None:
+        funnel_orders._replace_day(
+            "rimili",
+            date(2026, 8, 18),
+            [("123", "V-123", "Товар", 2, 2000)],
         )
 
         demand = unit_economics_1c.load_product_average_daily_orders(
@@ -264,7 +306,7 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
         self.assertEqual(demand["period_days"], 21)
         self.assertEqual(demand["orders_count"], 2)
         self.assertEqual(demand["average_daily_orders"], round(2 / 21, 4))
-        self.assertEqual(metrics["average_retail_price"], 1200)
+        self.assertEqual(metrics["orders_amount"], 2000)
         self.assertEqual(unit_economics_1c.calculate_stock_coverage_days(210, 42), 105)
         self.assertEqual(unit_economics_1c.calculate_stock_coverage_days(210, 0), 0)
         self.assertEqual(unit_economics_1c.calculate_stock_coverage_days(0, 42), 0)

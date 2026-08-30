@@ -1,5 +1,4 @@
 import logging
-import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
@@ -16,7 +15,6 @@ MARKETPLACE = "WB"
 DEFAULT_PERIOD_DAYS = 7
 SUPPORTED_CAMPAIGN_STATUSES = {7, 9, 11}
 STATS_BATCH_SIZE = 50
-STATS_BATCH_PAUSE_SECONDS = 20.1
 CAMPAIGNS_URL = "https://advert-api.wildberries.ru/adv/v1/promotion/count"
 STATS_URL = "https://advert-api.wildberries.ru/adv/v3/fullstats"
 
@@ -127,8 +125,6 @@ def _load_daily_rows(token: str, date_from: date, date_to: date) -> tuple[list[d
         lambda: {"spend": 0.0, "impressions": 0, "clicks": 0}
     )
     for offset in range(0, len(campaign_ids), STATS_BATCH_SIZE):
-        if offset:
-            time.sleep(STATS_BATCH_PAUSE_SECONDS)
         batch = campaign_ids[offset : offset + STATS_BATCH_SIZE]
         response = wb_api.request(
             "GET",
@@ -216,8 +212,6 @@ def sync_store(
     try:
         token = wb_tokens.get_token(store_slug)
         daily_rows, campaigns_count = _load_daily_rows(token, date_from, date_to)
-        excluded_nm_ids = db.get_excluded_nm_ids(store_slug, MARKETPLACE)
-        daily_rows = [row for row in daily_rows if row["nm_id"] not in excluded_nm_ids]
         rows = [
             {
                 "store_slug": store_slug,

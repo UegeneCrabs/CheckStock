@@ -15,6 +15,7 @@ def _sheet(title: str, sheet_id: int, rows: list[list[object]]) -> dict:
     header = [""] * 24
     header[1] = "АртикулВБ"
     header[7] = "Тег"
+    header[8] = "Менеджер"
     header[10] = "Артикул поставщика внешний"
     header[19] = "Себес, руб"
     header[20] = "Проч.затр, руб"
@@ -30,10 +31,12 @@ def _row(
     purchase: object,
     fulfillment: object,
     commission: object,
+    manager: str = "",
 ) -> list[object]:
     row = [""] * 24
     row[1] = article
     row[7] = tag
+    row[8] = manager
     row[10] = external
     row[19] = purchase
     row[20] = fulfillment
@@ -91,6 +94,7 @@ class UnitEconomics1CSourceDataTests(unittest.TestCase):
                         purchase=" 901,35",
                         fulfillment="100,53",
                         commission="4,00",
+                        manager="Анастасия Кипке",
                     )
                 ],
             ),
@@ -122,6 +126,7 @@ class UnitEconomics1CSourceDataTests(unittest.TestCase):
         self.assertEqual(rimili["purchase_price"], 901.35)
         self.assertEqual(rimili["fulfillment_cost"], 100.53)
         self.assertEqual(rimili["team_commission_percent"], 4)
+        self.assertEqual(rimili["manager"], "Анастасия Кипке")
         self.assertEqual(rimili["goal_week"], 1)
         self.assertEqual(rimili["stock_status"], "SHORT1")
         self.assertEqual(rimili["stock_end_week"], "W34 2026")
@@ -209,6 +214,7 @@ class UnitEconomics1CSourceDataTests(unittest.TestCase):
     def test_schema_migrates_an_earlier_source_snapshot_table(self) -> None:
         conn = core.get_connection()
         conn.execute("ALTER TABLE unit_economics_1c_source_values DROP COLUMN team_commission_percent")
+        conn.execute("ALTER TABLE unit_economics_1c_source_values DROP COLUMN manager")
         conn.commit()
         conn.close()
 
@@ -221,6 +227,7 @@ class UnitEconomics1CSourceDataTests(unittest.TestCase):
         }
         conn.close()
         self.assertIn("team_commission_percent", columns)
+        self.assertIn("manager", columns)
 
 
 if __name__ == "__main__":

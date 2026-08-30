@@ -23,6 +23,9 @@ SOURCE_COLUMNS = {
     "fulfillment_cost": "прочзатрруб",
     "team_commission": "процентдляучетамаркетинговыхзатрат",
 }
+OPTIONAL_SOURCE_COLUMNS = {
+    "manager": "менеджер",
+}
 
 
 class SourceDataError(RuntimeError):
@@ -225,8 +228,13 @@ def parse_source_values(sheets: list[dict], catalog: list[dict]) -> dict:
                 column = current_columns[SOURCE_COLUMNS[name]]
                 return current_row[column] if column < len(current_row) else None
 
+            def optional_cell(name: str, current_row=row, current_columns=columns) -> object:
+                column = current_columns.get(OPTIONAL_SOURCE_COLUMNS[name])
+                return current_row[column] if column is not None and column < len(current_row) else None
+
             parsed = {
                 "stock_item_id": int(item["id"]),
+                "manager": _text(optional_cell("manager")) or None,
                 "purchase_price": _number(cell("purchase_price")),
                 "fulfillment_cost": _number(cell("fulfillment_cost")),
                 "team_commission_percent": _number(cell("team_commission")),

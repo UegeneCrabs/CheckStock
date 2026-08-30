@@ -197,14 +197,35 @@
     stroke: #fff;
 }
 
+.ue1cs-hero--compact {
+    min-height: 0;
+    padding: 12px 14px;
+    overflow: visible;
+    background: var(--card);
+    box-shadow: none;
+}
+
+.ue1cs-hero--compact::after {
+    content: none;
+}
+
+.ue1cs-hero--compact .ue1cs-hero-copy {
+    max-width: none;
+}
+
+.ue1cs-hero--compact .ue1cs-summary {
+    margin-top: 0;
+    align-items: center;
+}
+
 .ue1cs-notice {
     display: flex;
-    min-height: 64px;
+    min-height: 0;
     align-items: center;
-    gap: 12px;
-    padding: 11px 14px;
+    gap: 0;
+    padding: 8px 12px;
     border: 1px solid color-mix(in srgb, var(--ue1cs-accent) 20%, var(--border));
-    border-radius: 14px;
+    border-radius: 10px;
     background: color-mix(in srgb, var(--ue1cs-accent) 5%, var(--card));
 }
 
@@ -240,6 +261,12 @@
 }
 
 .ue1cs-notice-copy > span {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+
+.ue1cs-notice-copy {
     color: var(--text-muted);
     font-size: 0.75rem;
     line-height: 1.45;
@@ -518,6 +545,10 @@
     opacity: 0.5;
 }
 
+.ue1cs-card-foot {
+    justify-content: flex-end;
+}
+
 .ue1cs-empty {
     padding: 56px 24px;
     border: 1px dashed var(--border);
@@ -569,6 +600,10 @@
     .ue1cs-hero::after,
     .ue1cs-hero-mark {
         display: none;
+    }
+
+    .ue1cs-hero--compact {
+        padding: 10px 12px;
     }
 }
 

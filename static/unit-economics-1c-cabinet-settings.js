@@ -82,11 +82,11 @@
             + '" style="--store-color:' + escapeHtml(item.store_color) + ';--store-text:' + escapeHtml(item.store_text) + '">'
             + '<div class="ue1cs-card-head"><span class="ue1cs-avatar">'
             + escapeHtml(item.store_initials) + '</span><div><h3>' + escapeHtml(item.store_name)
-            + '</h3><p>Кабинет Wildberries</p></div><span class="ue1cs-state" data-state>'
+            + '</h3></div><span class="ue1cs-state" data-state>'
             + escapeHtml(formatUpdated(item)) + '</span></div>'
             + '<div class="ue1cs-card-body">' + fieldGroups.map(function (group) { return fieldGroupHtml(group, item); }).join('')
-            + '</div><div class="ue1cs-card-foot"><span>Сохранённые параметры сразу участвуют в расчётах юнит-экономики.</span>'
-            + '<button type="button" data-save' + (canEdit ? '' : ' disabled') + '>Сохранить</button></div></article>';
+            + '</div><div class="ue1cs-card-foot"><button type="button" data-save'
+            + (canEdit ? '' : ' disabled') + '>Сохранить</button></div></article>';
     }
     function payloadFromCard(card) {
         var payload = {};

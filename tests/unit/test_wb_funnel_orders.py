@@ -16,8 +16,11 @@ def _response(
     name: str = "Тестовый товар",
     orders: int,
     amount: float,
-    cancellations: int,
-    cancellation_amount: float,
+    cancellations: int = 0,
+    cancellation_amount: float = 0,
+    buyouts: int = 0,
+    buyout_amount: float = 0,
+    buyout_percent: float = 0,
     cursor: str = "",
 ) -> dict:
     return {
@@ -31,6 +34,9 @@ def _response(
                             "orderSum": amount,
                             "cancelCount": cancellations,
                             "cancelSum": cancellation_amount,
+                            "buyoutCount": buyouts,
+                            "buyoutSum": buyout_amount,
+                            "conversions": {"buyoutPercent": buyout_percent},
                         }
                     },
                 }
@@ -51,14 +57,13 @@ class WbFunnelOrdersTests(unittest.TestCase):
         self.path_patch.stop()
         self.temp.cleanup()
 
-    def test_sync_store_persists_daily_net_amount_and_count(self) -> None:
+    def test_sync_store_persists_orders_cancellations_and_net_values_separately(self) -> None:
         first_day = date.today() - timedelta(days=1)
         second_day = date.today()
         with (
             mock.patch.object(funnel_orders, "_days_to_sync", return_value=[first_day, second_day]),
             mock.patch.object(funnel_orders.wb_tokens, "has_token", return_value=True),
             mock.patch.object(funnel_orders.wb_tokens, "get_token", return_value="token"),
-            mock.patch.object(funnel_orders, "REQUEST_PAUSE_SECONDS", 0),
             mock.patch.object(
                 funnel_orders.wb_api,
                 "request",
@@ -75,8 +80,24 @@ class WbFunnelOrdersTests(unittest.TestCase):
         self.assertEqual(
             payload["series"],
             [
-                {"date": first_day.isoformat(), "orders_count": 8, "orders_amount": 1_200.0},
-                {"date": second_day.isoformat(), "orders_count": 6, "orders_amount": 600.0},
+                {
+                    "date": first_day.isoformat(),
+                    "orders_count": 10,
+                    "orders_amount": 1_500.0,
+                    "cancel_count": 2,
+                    "cancel_amount": 300.0,
+                    "net_orders_count": 8,
+                    "net_orders_amount": 1_200.0,
+                },
+                {
+                    "date": second_day.isoformat(),
+                    "orders_count": 7,
+                    "orders_amount": 700.0,
+                    "cancel_count": 1,
+                    "cancel_amount": 100.0,
+                    "net_orders_count": 6,
+                    "net_orders_amount": 600.0,
+                },
             ],
         )
         body = request.call_args_list[0].kwargs["json_body"]
@@ -95,9 +116,13 @@ class WbFunnelOrdersTests(unittest.TestCase):
     def test_sync_store_keeps_each_article_separately_and_follows_cursor(self) -> None:
         day = date.today()
         first_page = _response(
-            article="1001", orders=5, amount=500, cancellations=1, cancellation_amount=100, cursor="next-page"
+            article="1001", orders=5, amount=500, cancellations=1, cancellation_amount=100,
+            buyouts=3, buyout_amount=330, buyout_percent=75, cursor="next-page"
         )
-        second_page = _response(article="1002", orders=3, amount=300, cancellations=0, cancellation_amount=0)
+        second_page = _response(
+            article="1002", orders=3, amount=300, cancellations=0, cancellation_amount=0,
+            buyouts=2, buyout_amount=220, buyout_percent=50,
+        )
         with (
             mock.patch.object(funnel_orders, "_days_to_sync", return_value=[day]),
             mock.patch.object(funnel_orders.wb_tokens, "has_token", return_value=True),
@@ -113,7 +138,8 @@ class WbFunnelOrdersTests(unittest.TestCase):
         conn = db.get_connection()
         try:
             rows = conn.execute(
-                "SELECT article, vendor_code, product_name, orders_count, orders_amount "
+                "SELECT article, vendor_code, product_name, orders_count, orders_amount, "
+                "cancel_count, cancel_amount, buyout_count, buyout_amount, buyout_percent, source_version "
                 "FROM wb_funnel_daily_orders ORDER BY article"
             ).fetchall()
         finally:
@@ -121,8 +147,8 @@ class WbFunnelOrdersTests(unittest.TestCase):
         self.assertEqual(
             [tuple(row.values()) for row in rows],
             [
-                ("1001", "RK-1001", "Тестовый товар", 4, 400.0),
-                ("1002", "RK-1001", "Тестовый товар", 3, 300.0),
+                ("1001", "RK-1001", "Тестовый товар", 5, 500.0, 1, 100.0, 3, 330.0, 75.0, 4),
+                ("1002", "RK-1001", "Тестовый товар", 3, 300.0, 0, 0.0, 2, 220.0, 50.0, 4),
             ],
         )
 
@@ -135,7 +161,18 @@ class WbFunnelOrdersTests(unittest.TestCase):
 
         self.assertEqual(payload["store"], "all")
         self.assertEqual(
-            payload["series"], [{"date": day.isoformat(), "orders_count": 10, "orders_amount": 1_400.0}]
+            payload["series"],
+            [
+                {
+                    "date": day.isoformat(),
+                    "orders_count": 10,
+                    "orders_amount": 1_400.0,
+                    "cancel_count": 0,
+                    "cancel_amount": 0.0,
+                    "net_orders_count": 10,
+                    "net_orders_amount": 1_400.0,
+                }
+            ],
         )
 
     def test_product_sales_starts_use_first_day_with_orders(self) -> None:
@@ -152,6 +189,143 @@ class WbFunnelOrdersTests(unittest.TestCase):
             rows,
             [{"store_slug": "rimili", "article": "1001", "first_sale_at": later_day.isoformat()}],
         )
+
+    def test_funnel_order_totals_use_requested_period_and_stores(self) -> None:
+        first_day = date.today() - timedelta(days=2)
+        second_day = date.today() - timedelta(days=1)
+        outside_period = date.today()
+        funnel_orders._replace_day(
+            "rimili", first_day, [("1001", "RK-1", "Товар 1", 4, 500, 1, 125, 3, 300, 75)]
+        )
+        funnel_orders._replace_day(
+            "rimili", second_day, [("1001", "RK-1", "Товар 1", 6, 900, 2, 300, 4, 600, 80)]
+        )
+        funnel_orders._replace_day(
+            "rimili",
+            outside_period,
+            [("1001", "RK-1", "Товар 1", 8, 1_200)],
+        )
+        funnel_orders._replace_day("tris", first_day, [("1002", "TR-1", "Товар 2", 3, 450)])
+
+        rows = db.get_unit_economics_1c_funnel_order_totals(
+            ("rimili",),
+            first_day.isoformat(),
+            second_day.isoformat(),
+        )
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "store_slug": "rimili",
+                    "article": "1001",
+                    "orders_count": 10,
+                    "orders_amount": 1_400.0,
+                    "cancel_count": 3,
+                    "cancel_amount": 425.0,
+                    "buyout_count": 7,
+                    "buyout_amount": 900.0,
+                    "buyout_percent": 78.0,
+                    "net_orders_count": 7,
+                    "net_orders_amount": 975.0,
+                }
+            ],
+        )
+
+    def test_weekly_metrics_sync_persists_buyout_percent(self) -> None:
+        with (
+            mock.patch.object(funnel_orders.wb_tokens, "has_token", return_value=True),
+            mock.patch.object(funnel_orders.wb_tokens, "get_token", return_value="token"),
+            mock.patch.object(
+                funnel_orders.wb_api,
+                "request",
+                return_value=_response(
+                    article="1001",
+                    orders=25,
+                    amount=12_500,
+                    cancellations=4,
+                    cancellation_amount=2_000,
+                    buyout_percent=73.45,
+                ),
+            ) as request,
+        ):
+            result = funnel_orders.sync_weekly_metrics_store("rimili")
+
+        self.assertEqual(result, {"store": "rimili", "status": "success", "records": 1})
+        rows = db.get_unit_economics_1c_funnel_product_metrics(("rimili",))
+        self.assertEqual(rows[0]["article"], "1001")
+        self.assertEqual(rows[0]["orders_count"], 25)
+        self.assertEqual(rows[0]["orders_amount"], 12_500)
+        self.assertEqual(rows[0]["cancel_count"], 4)
+        self.assertEqual(rows[0]["cancel_amount"], 2_000)
+        self.assertEqual(rows[0]["buyout_percent"], 73.45)
+        body = request.call_args.kwargs["json_body"]
+        self.assertEqual(
+            (date.fromisoformat(body["selectedPeriod"]["end"]) - date.fromisoformat(body["selectedPeriod"]["start"])).days,
+            6,
+        )
+
+    def test_sync_window_does_not_trigger_an_unbounded_legacy_backfill(self) -> None:
+        legacy_day = date.today() - timedelta(days=100)
+        current_day = date.today() - timedelta(days=1)
+        funnel_orders._replace_day(
+            "rimili",
+            current_day,
+            [("1001", "RK-1", "Товар", 5, 500, 1, 100)],
+        )
+        conn = db.get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO wb_funnel_daily_orders
+                    (store_slug, day, article, vendor_code, product_name,
+                     orders_count, orders_amount, cancel_count, cancel_amount,
+                     source_version, updated_at)
+                VALUES ('rimili', ?, '1001', 'RK-1', 'Товар', 4, 400, 0, 0, 2, 'legacy')
+                """,
+                (legacy_day.isoformat(),),
+            )
+            conn.execute(
+                """
+                INSERT INTO wb_funnel_product_metrics
+                    (store_slug, article, period_from, period_to, orders_count, orders_amount,
+                     cancel_count, cancel_amount, buyout_percent, source_version, updated_at)
+                VALUES ('rimili', 'legacy', ?, ?, 4, 400, 0, 0, 50, 1, 'legacy')
+                """,
+                (legacy_day.isoformat(), legacy_day.isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        db.init_db()
+
+        days_to_sync = funnel_orders._days_to_sync("rimili")
+        self.assertEqual(
+            days_to_sync,
+            [
+                date.today() - timedelta(days=offset)
+                for offset in range(funnel_orders.RECENT_REFRESH_DAYS)
+            ],
+        )
+        self.assertNotIn(legacy_day, days_to_sync)
+        totals = db.get_unit_economics_1c_funnel_order_totals(
+            ("rimili",), legacy_day.isoformat(), current_day.isoformat()
+        )
+        self.assertEqual(totals[0]["orders_count"], 5)
+        self.assertEqual(totals[0]["cancel_count"], 1)
+        self.assertFalse(
+            any(row["article"] == "legacy" for row in db.get_unit_economics_1c_funnel_product_metrics(("rimili",)))
+        )
+        conn = db.get_connection()
+        try:
+            source_version = conn.execute(
+                "SELECT source_version FROM wb_funnel_daily_orders WHERE day=?",
+                (legacy_day.isoformat(),),
+            ).fetchone()["source_version"]
+        finally:
+            conn.close()
+        self.assertEqual(source_version, 2)
 
 
 if __name__ == "__main__":

@@ -22,11 +22,15 @@
     var userKey = String(config.userKey || 'anonymous');
     var commentsKey = 'checkstock.unit-economics-1c.comments.' + userKey;
     var columnsKey = 'checkstock.unit-economics-1c.columns.' + userKey;
+    var chartKey = 'checkstock.unit-economics-1c.chart.' + userKey;
     var priceJobsKey = 'checkstock.unit-economics-1c.price-jobs.' + userKey;
     var comments = readJson(commentsKey, {});
     var pendingPriceJobs = readJson(priceJobsKey, []);
     if (!Array.isArray(pendingPriceJobs)) pendingPriceJobs = [];
     var toastTimer = 0;
+    var rowHighlightTimer = 0;
+    var columnSaveTimer = 0;
+    var draggedColumnKey = null;
     var sendingPrice = false;
     var editedPriceKind = 'retail';
     var pendingPriceChange = null;
@@ -50,10 +54,12 @@
         subjectSelect: id('ue1c-subject-select'),
         subjectOptions: id('ue1c-subject-options'),
         calculatorInputs: root.querySelectorAll('[data-calculator-input]'),
-        breakEven: id('ue1c-break-even'), saveState: id('ue1c-save-state'), savePrice: id('ue1c-save-price'),
+        breakEven: id('ue1c-break-even'), savePrice: id('ue1c-save-price'),
         priceMetrics: id('ue1c-price-metrics'), parameters: id('ue1c-parameter-groups'),
         secondaryTaxLabel: id('ue1c-secondary-tax-label'),
         chart: id('ue1c-chart'), chartWrap: id('ue1c-chart-wrap'), chartTooltip: id('ue1c-chart-tooltip'),
+        chartSeriesTooltip: id('ue1c-chart-series-tooltip'),
+        chartDailySales: id('ue1c-chart-daily-sales'),
         gluedSection: id('ue1c-glued-section'), gluedProducts: id('ue1c-glued-products'),
         confirmModal: id('ue1c-price-confirm-modal'), confirmClose: id('ue1c-price-confirm-close'),
         confirmCancel: id('ue1c-price-confirm-cancel'), confirmSend: id('ue1c-price-confirm-send'),
@@ -76,7 +82,7 @@
             { index: 6, label: 'ROI, %', number: true, width: 85 }
         ] },
         { key: 'advertising', label: 'Реклама за 7 дней', columns: [
-            { index: 7, label: 'ДРР, %', number: true, width: 80 },
+            { index: 7, label: 'ДРР с выкупом, %', number: true, width: 115 },
             { index: 8, label: 'Затраты, ₽', number: true, width: 100 },
             { index: 9, label: 'CTR, %', number: true, width: 78 },
             { index: 10, label: 'CPC, ₽', number: true, width: 78 }
@@ -99,7 +105,8 @@
         ] }
     ];
     var defaultColumnOrder = columnGroups.map(function (group) { return group.key; });
-    var savedColumns = readJson(columnsKey, {});
+    var savedColumns = config.columnPreferences && Array.isArray(config.columnPreferences.order)
+        ? config.columnPreferences : readJson(columnsKey, {});
     var columnPreferences = {
         order: Array.isArray(savedColumns.order) ? savedColumns.order.filter(function (key) {
             return defaultColumnOrder.indexOf(key) !== -1;
@@ -112,6 +119,15 @@
     defaultColumnOrder.forEach(function (key) {
         if (columnPreferences.order.indexOf(key) === -1) columnPreferences.order.push(key);
     });
+    var savedChart = readJson(chartKey, {});
+    var chartSeries = ['orders', 'stock', 'margin', 'ads', 'drr'];
+    var chartPreferences = {
+        series: Array.isArray(savedChart.series) ? savedChart.series.filter(function (key) {
+            return chartSeries.indexOf(key) !== -1;
+        }) : chartSeries.slice(),
+        compare: savedChart.compare === true
+    };
+    if (!chartPreferences.series.length) chartPreferences.series = ['orders', 'stock'];
 
     function id(value) { return document.getElementById(value); }
     function readJson(key, fallback) {
@@ -163,6 +179,31 @@
     function nullText(value) {
         return value === null || value === undefined || value === '' ? '—' : String(value);
     }
+    function coverageDate(value) {
+        var parts = String(value || '').split('-');
+        return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : String(value || '');
+    }
+    function coverageTitle(label, coverage) {
+        if (!coverage || !Array.isArray(coverage.dates) || !coverage.dates.length) {
+            return label + ': данных для расчёта нет';
+        }
+        return label + ': данные за ' + coverage.dates.map(coverageDate).join(', ')
+            + ' (' + integer.format(finite(coverage.days, coverage.dates.length)) + ' из '
+            + integer.format(finite(coverage.expected_days, 7)) + ' дней)';
+    }
+    function isPartialCoverage(coverage) {
+        return Boolean(coverage && finite(coverage.days, 0) > 0 && coverage.complete !== true);
+    }
+    function coverageCellClass(coverage) {
+        return isPartialCoverage(coverage) ? ' ue1c-partial-cell' : '';
+    }
+    function coverageValue(label, value, formatter, coverage, suffix) {
+        if (value === null || value === undefined || value === '') return '—';
+        var partial = isPartialCoverage(coverage);
+        return '<span class="ue1c-coverage-value' + (partial ? ' is-partial' : '') + '" title="'
+            + escapeHtml(coverageTitle(label, coverage)) + '">' + formatter.format(value)
+            + (suffix || '') + (partial ? '<sup>*</sup>' : '') + '</span>';
+    }
     function moneyOrNull(value) {
         var parsed = finite(value, null);
         return parsed === null ? '—' : money.format(parsed);
@@ -184,13 +225,16 @@
         return '<span class="' + className + '" aria-hidden="true"><span>'
             + escapeHtml(initial) + '</span>' + image + '</span>';
     }
-    function copyValue(label, value) {
+    function copyValue(label, value, kind) {
         if (value === null || value === undefined || value === '') {
             return '<span>' + escapeHtml(label) + ' —</span>';
         }
+        var copyKind = kind || (/баркод/i.test(label) ? 'Баркод' : 'Артикул');
         return '<button class="ue1c-copy-value" type="button" data-copy-value="' + escapeHtml(value)
-            + '" data-copy-tooltip="Нажмите, чтобы скопировать">' + escapeHtml(label)
-            + ' <strong>' + escapeHtml(value) + '</strong></button>';
+            + '" data-copy-kind="' + escapeHtml(copyKind)
+            + '" data-copy-tooltip="Нажмите, чтобы скопировать" aria-label="Скопировать '
+            + escapeHtml(copyKind.toLocaleLowerCase('ru-RU')) + ' ' + escapeHtml(value) + '">'
+            + (label ? escapeHtml(label) + ' ' : '') + '<strong>' + escapeHtml(value) + '</strong></button>';
     }
     function groupByKey(key) {
         return columnGroups.find(function (group) { return group.key === key; });
@@ -212,13 +256,15 @@
         groups.forEach(function (group) {
             if (group.columns.length === 1) {
                 var only = group.columns[0];
-                top += '<th rowspan="2" data-filter-column="' + only.index + '">' + escapeHtml(only.label) + '</th>';
+                top += '<th rowspan="2" data-column-group="' + group.key + '" data-filter-column="'
+                    + only.index + '">' + escapeHtml(only.label) + '</th>';
                 return;
             }
-            top += '<th colspan="' + group.columns.length + '" class="ue1c-header-group ue1c-group-start">'
+            top += '<th colspan="' + group.columns.length + '" data-column-group="' + group.key
+                + '" class="ue1c-header-group ue1c-group-start">'
                 + escapeHtml(group.label) + '</th>';
             sub += group.columns.map(function (column, index) {
-                return '<th class="' + (column.number ? 'ue1c-num ' : '')
+                return '<th data-column-group="' + group.key + '" class="' + (column.number ? 'ue1c-num ' : '')
                     + (index === 0 ? 'ue1c-group-start' : '') + '" data-filter-column="'
                     + column.index + '"' + (column.number ? ' data-filter-type="number"' : '') + '>'
                     + escapeHtml(column.label) + '</th>';
@@ -229,6 +275,14 @@
     }
     function saveColumnPreferences() {
         writeJson(columnsKey, columnPreferences);
+        window.clearTimeout(columnSaveTimer);
+        columnSaveTimer = window.setTimeout(function () {
+            window.fetch('/api/unit-economics-1c/preferences/columns', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+                body: JSON.stringify(columnPreferences)
+            }).catch(function () { return null; });
+        }, 250);
         renderTableHeader();
         renderColumnSettings();
         renderPage();
@@ -241,7 +295,9 @@
             var group = groupByKey(key);
             if (!group) return '';
             var checked = group.fixed || columnPreferences.hidden.indexOf(key) === -1;
-            return '<div class="ue1c-column-option" data-column-key="' + key + '"><label><input type="checkbox"'
+            return '<div class="ue1c-column-option" data-column-key="' + key + '" draggable="true"'
+                + ' aria-grabbed="false"><span class="ue1c-column-grip" title="Перетащить">⋮⋮</span>'
+                + '<label><input type="checkbox"'
                 + (checked ? ' checked' : '') + (group.fixed ? ' disabled' : '') + '> <span>'
                 + escapeHtml(group.label) + '</span></label><div><button type="button" data-column-move="up"'
                 + (index === 0 ? ' disabled' : '') + ' aria-label="Выше">↑</button><button type="button"'
@@ -307,16 +363,22 @@
         var drr = finite(product.advertising.drr, null);
         var drrClass = drr !== null && drr >= 18 ? ' is-high' : (drr !== null && drr >= 12 ? ' is-medium' : '');
         var advertisingTitle = 'Период ' + nullText(product.advertising.period_from)
-            + ' — ' + nullText(product.advertising.period_to) + ' · заказали на '
+            + ' — ' + nullText(product.advertising.period_to) + ' · ТО воронки '
             + nullable(product.advertising.orders_amount, preciseMoney);
         var economics = product.economics_7d || {};
-        var economicsTitle = 'Период ' + nullText(economics.period_from) + ' — '
-            + nullText(economics.period_to) + ' · ТО по всем заказам';
+        var turnoverCoverage = economics.turnover_coverage || null;
+        var marginCoverage = economics.margin_coverage || null;
+        var roiCoverage = economics.roi_coverage || marginCoverage;
         var stock = product.stock || {};
-        var stockTitle = 'Заказы за ' + integer.format(finite(stock.period_days, 21)) + ' дн.: '
+        var stockTitle = 'Заказы воронки за ' + integer.format(finite(stock.period_days, 21)) + ' дн.: '
             + integer.format(finite(stock.orders_21d, 0)) + ' · среднесуточно: '
             + decimal.format(finite(stock.average_daily_orders, 0));
         var current = product.current_economics || {};
+        var currentTitle = 'Сегодня, ' + nullText(current.period_to) + ' · заказы '
+            + integer.format(finite(current.orders, 0)) + ' · выкуп '
+            + (finite(current.buyout_percent, null) === null
+                ? '—' : decimal.format(finite(current.buyout_percent, 0)) + '%')
+            + ' · реклама ' + nullable(current.advertising_spend, preciseMoney);
         var cells = {};
         cells.product = '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')
             + '<div><button class="ue1c-product-name" type="button" data-product-open="' + escapeHtml(product.id)
@@ -334,15 +396,17 @@
             + (product.is_new ? ' is-new' : '') + '">' + (product.is_new ? 'Новинка' : 'Обычный')
             + '</span><small>' + (product.sales_days === null || product.sales_days === undefined
                 ? 'нет данных' : integer.format(product.sales_days) + ' дн.') + '</small></td>';
-        cells.current = '<td class="ue1c-num ue1c-group-start"><strong>'
+        cells.current = '<td class="ue1c-num ue1c-group-start"><strong title="'
+            + escapeHtml(currentTitle) + '">'
             + nullable(current.margin, money) + '</strong></td><td class="ue1c-num"><strong>'
-            + nullable(current.roi, decimal, '%') + '</strong></td>';
-        cells.actual = '<td class="ue1c-num ue1c-group-start"><strong title="' + escapeHtml(economicsTitle) + '">'
-            + nullable(economics.turnover, money) + '</strong></td>'
-            + '<td class="ue1c-num"><strong title="' + escapeHtml(economicsTitle) + '">'
-            + nullable(economics.margin, money) + '</strong></td>'
-            + '<td class="ue1c-num"><strong title="' + escapeHtml(economicsTitle) + '">'
-            + nullable(economics.roi, decimal, '%') + '</strong></td>';
+            + '<span title="' + escapeHtml(currentTitle) + '">'
+            + nullable(current.roi, decimal, '%') + '</span></strong></td>';
+        cells.actual = '<td class="ue1c-num ue1c-group-start' + coverageCellClass(turnoverCoverage)
+            + '"><strong>' + coverageValue('ТО после отмен', economics.turnover, money, turnoverCoverage)
+            + '</strong></td><td class="ue1c-num' + coverageCellClass(marginCoverage) + '"><strong>'
+            + coverageValue('Маржа', economics.margin, money, marginCoverage)
+            + '</strong></td><td class="ue1c-num' + coverageCellClass(roiCoverage) + '"><strong>'
+            + coverageValue('ROI', economics.roi, decimal, roiCoverage, '%') + '</strong></td>';
         cells.advertising = '<td class="ue1c-num ue1c-group-start"><span class="ue1c-drr' + drrClass + '" title="'
             + escapeHtml(advertisingTitle) + '">' + (drr === null ? '—' : decimal.format(drr) + '%')
             + '</span></td><td class="ue1c-num"><strong title="' + escapeHtml(advertisingTitle) + '">'
@@ -479,7 +543,9 @@
             helper.remove();
         }
         button.dataset.copyTooltip = copied ? 'Скопировано' : 'Не удалось скопировать';
-        window.setTimeout(function () { button.dataset.copyTooltip = 'Нажмите, чтобы скопировать'; }, 1300);
+        window.setTimeout(function () {
+            button.dataset.copyTooltip = button.dataset.copyTooltipDefault || 'Нажмите, чтобы скопировать';
+        }, 1300);
     }
 
     function databaseCalculatorValues(product) {
@@ -512,9 +578,7 @@
             commissionRub: finite(details.commission_value,
                 retail === null || commissionPercent === null ? null : retail * commissionPercent / 100),
             drr: finite(product.advertising && product.advertising.drr, null),
-            advertisingRub: finite(product.advertising && product.advertising.average_daily_spend,
-                finite(product.advertising && product.advertising.spend, 0)
-                / Math.max(1, finite(product.advertising && product.advertising.period_days, 7))),
+            advertisingRub: finite(product.advertising && product.advertising.spend_per_order, 0),
             logistics: finite(details.delivery_with_returns, finite(details.logistics, null)),
             storage: storageRate,
             storageTotal: finite(details.storage_sum,
@@ -734,10 +798,12 @@
 
         var advertisingRub = finite(values.advertisingRub, null);
         var drr = finite(values.drr, null);
-        var periodDays = Math.max(1, finite(product.advertising && product.advertising.period_days, 7));
         var periodOrdersAmount = finite(product.advertising && product.advertising.orders_amount, null);
-        var ordersAmount = periodOrdersAmount === null ? null : periodOrdersAmount / periodDays;
-        var advertisingBase = ordersAmount !== null && ordersAmount > 0 ? ordersAmount : retail;
+        var periodOrders = finite(product.advertising && product.advertising.orders, null);
+        var averageOrderAmount = periodOrdersAmount === null || periodOrders === null || periodOrders <= 0
+            ? null : periodOrdersAmount / periodOrders;
+        var advertisingBase = averageOrderAmount !== null && averageOrderAmount > 0
+            ? averageOrderAmount : retail;
         if (source === 'drr') {
             setCalculatorValue('advertisingRub', advertisingBase === null || drr === null
                 ? null : advertisingBase * drr / 100);
@@ -770,13 +836,12 @@
         var osnoPercent = finite(values.osno, null);
         var taxSystem = productTaxSystem(product);
         var acquiringPercent = finite(values.acquiringPercent, finite(details.acquiring, null));
-        var drrPercent = finite(values.drr, null);
+        var advertisingRub = finite(values.advertisingRub, null);
         var acquiring = finite(values.acquiringRub, current === null || acquiringPercent === null
             ? null : current * acquiringPercent / 100);
         var commission = finite(values.commissionRub, current === null || commissionPercent === null
             ? null : current * commissionPercent / 100);
-        var advertising = current === null || drrPercent === null
-            ? null : current * drrPercent / 100;
+        var advertising = advertisingRub;
         var teamCommission = finite(values.teamRub, current === null || teamCommissionPercent === null
             ? null : current * teamCommissionPercent / 100);
         var calculatedVat = clientPrice === null || vatPercent === null
@@ -835,6 +900,10 @@
         return '<div class="ue1c-parameter"><span>' + escapeHtml(label) + '</span><strong title="'
             + escapeHtml(value) + '">' + escapeHtml(value) + '</strong></div>';
     }
+    function identifierParameter(label, value) {
+        return '<div class="ue1c-parameter"><span>' + escapeHtml(label) + '</span>'
+            + copyValue('', value, label) + '</div>';
+    }
     function nullable(value, formatter, suffix) {
         if (value === null || value === undefined || value === '') return '—';
         return formatter.format(value) + (suffix || '');
@@ -852,7 +921,8 @@
         var groups = [
             ['Товар', [
                 parameter('Предмет', item.subject === null ? '—' : item.subject),
-                parameter('Артикул', product.article), parameter('Баркод', product.barcode),
+                identifierParameter('Артикул', product.article),
+                identifierParameter('Баркод', product.barcode),
                 parameter('Магазин', product.store_name),
                 parameter('Закупочная цена', nullable(item.purchase_cost, preciseMoney)),
                 parameter('Схема комиссии', item.commission_scheme === null ? '—' : item.commission_scheme)
@@ -869,10 +939,9 @@
                 parameter('Комиссия команды', nullable(item.team_commission_percent, decimal, '%'))
             ]],
             ['Продажи и реклама', [
-                parameter('Выкуп факт за 7 дней', nullable(product.advertising.buyout_percent, decimal, '%')),
-                editableParameter('Выкуп для логистики', 'buyout_percent', saved.buyout_percent, '%', 100),
+                parameter('Выкуп WB за 7 дней', nullable(product.advertising.buyout_percent, decimal, '%')),
                 parameter('СПП', nullable(calculateSppPercent(product), decimal, '%')),
-                parameter('ДРР', nullable(product.advertising.drr, decimal, '%')),
+                parameter('ДРР с выкупом', nullable(product.advertising.drr, decimal, '%')),
                 parameter('Реклама факт', nullable(item.actual_advertising, preciseMoney))
             ]],
             ['Логистика', [
@@ -901,8 +970,13 @@
         var items = Array.isArray(product.glued_products) ? product.glued_products : [];
         nodes.gluedSection.hidden = !items.length;
         nodes.gluedProducts.innerHTML = items.map(function (item) {
-            return '<div><strong>' + escapeHtml(item.name) + '</strong><span>Арт. '
-                + escapeHtml(item.article) + '</span></div>';
+            var targetId = product.store_slug + ':' + item.article;
+            return '<div><button class="ue1c-glued-name" type="button" data-glued-product-open="'
+                + escapeHtml(targetId) + '" title="Открыть карточку товара">' + escapeHtml(item.name)
+                + '</button><button class="ue1c-copy-value ue1c-glued-article" type="button" data-copy-value="'
+                + escapeHtml(item.article) + '" data-copy-kind="Артикул" data-copy-tooltip="нажмите чтобы скопировать"'
+                + ' data-copy-tooltip-default="нажмите чтобы скопировать" aria-label="Скопировать артикул '
+                + escapeHtml(item.article) + '">Арт. <strong>' + escapeHtml(item.article) + '</strong></button></div>';
         }).join('');
     }
     function chartPath(points) {
@@ -910,70 +984,161 @@
             return (index ? 'L' : 'M') + point[0].toFixed(1) + ' ' + point[1].toFixed(1);
         }).join(' ');
     }
+    function renderChartDailySales(history) {
+        if (!nodes.chartDailySales) return;
+        if (!history.length) {
+            nodes.chartDailySales.innerHTML = '';
+            nodes.chartDailySales.hidden = true;
+            return;
+        }
+        nodes.chartDailySales.style.setProperty('--ue1c-chart-days', history.length);
+        nodes.chartDailySales.innerHTML = '<span class="ue1c-chart-daily-sales-label">Продажи<small>шт.</small></span>'
+            + history.map(function (item) {
+                var orders = Math.max(0, Math.round(finite(item.orders_count, 0)));
+                return '<span class="ue1c-chart-daily-sales-value" title="' + escapeHtml(item.label)
+                    + ': ' + escapeHtml(integer.format(orders)) + ' шт.">'
+                    + escapeHtml(integer.format(orders)) + '</span>';
+            }).join('');
+        nodes.chartDailySales.setAttribute(
+            'aria-label',
+            'Продажи по дням в штуках: ' + history.map(function (item) {
+                return item.label + ' — ' + Math.max(0, Math.round(finite(item.orders_count, 0)));
+            }).join(', ')
+        );
+        nodes.chartDailySales.hidden = false;
+    }
     function renderChart(product) {
-        var history = Array.isArray(product.history) ? product.history : [];
-        if (!history.length) { nodes.chart.innerHTML = ''; return; }
+        var allHistory = Array.isArray(product.history) ? product.history : [];
+        if (!allHistory.length) {
+            nodes.chart.innerHTML = '';
+            renderChartDailySales([]);
+            return;
+        }
+        var history = allHistory.slice(-14);
+        renderChartDailySales(history);
+        var previousHistory = allHistory.length >= 21 ? allHistory.slice(-21, -7) : [];
+        var compare = chartPreferences.compare && previousHistory.length === history.length;
+        var compareInput = nodes.chartWrap.querySelector('[data-chart-compare]');
+        if (compareInput) compareInput.disabled = previousHistory.length !== history.length;
+        var enabled = function (key) { return chartPreferences.series.indexOf(key) !== -1; };
         var left = 42;
         var right = 398;
         var top = 16;
         var bottom = 174;
         var width = right - left;
         var height = bottom - top;
+        var orderScale = 10;
+        var visibleHistory = history;
+        var comparedOrderHistory = compare ? history.concat(previousHistory) : history;
         var moneyValues = [];
-        history.forEach(function (item) {
-            var marginValue = finite(item.margin_rub, null);
-            var advertisingValue = finite(item.advertising_rub, null);
+        visibleHistory.forEach(function (item) {
+            var marginValue = enabled('margin') ? finite(item.margin_rub, null) : null;
+            var advertisingValue = enabled('ads') ? finite(item.advertising_rub, null) : null;
             if (marginValue !== null) moneyValues.push(marginValue);
             if (advertisingValue !== null) moneyValues.push(advertisingValue);
         });
         var minimum = Math.min.apply(null, [0].concat(moneyValues));
         var maximum = Math.max.apply(null, [1].concat(moneyValues));
+        var usesMoneyAxis = enabled('margin') || enabled('ads');
+        if (usesMoneyAxis && enabled('orders') && minimum < 0) {
+            var moneyBoundary = Math.max(Math.abs(minimum), Math.abs(maximum), 1);
+            minimum = -moneyBoundary;
+            maximum = moneyBoundary;
+        }
         var range = maximum - minimum || 1;
-        var stockValues = history.map(function (item) { return finite(item.fbs_units, null); })
-            .filter(function (value) { return value !== null; });
+        var stockValues = [];
+        var scaledOrderValues = enabled('orders') ? comparedOrderHistory.map(function (item) {
+            return finite(item.orders_count, 0) * orderScale;
+        }) : [];
+        visibleHistory.forEach(function (item) {
+            if (!enabled('stock')) return;
+            var stockValue = finite(item.stock_units, null);
+            if (stockValue !== null) stockValues.push(stockValue);
+        });
         var stockMaximum = Math.max.apply(null, [1].concat(stockValues));
-        var drrValues = history.map(function (item) { return finite(item.drr_percent, null); })
+        var orderMaximum = Math.max.apply(null, [1].concat(scaledOrderValues));
+        var drrValues = visibleHistory.map(function (item) { return finite(item.drr_percent, null); })
             .filter(function (value) { return value !== null; });
         var drrObservedMaximum = Math.max.apply(null, [0].concat(drrValues));
         var drrMaximum = drrObservedMaximum <= 10 ? 10
             : drrObservedMaximum <= 25 ? 25
                 : drrObservedMaximum <= 50 ? 50
                     : drrObservedMaximum <= 100 ? 100 : Math.ceil(drrObservedMaximum / 50) * 50;
-        function x(index) { return history.length < 2 ? left : left + width * index / (history.length - 1); }
+        function x(index) { return left + width * (index + 0.5) / history.length; }
         function moneyY(value) { return bottom - (value - minimum) / range * height; }
-        function stockY(value) { return bottom - value / stockMaximum * height * 0.75; }
+        function stockY(value) { return bottom - value / stockMaximum * height; }
+        var orderBaselineY = usesMoneyAxis ? moneyY(0) : bottom;
+        function orderY(value) {
+            return orderBaselineY - value / orderMaximum * Math.max(orderBaselineY - top, 1);
+        }
         function drrY(value) { return bottom - value / drrMaximum * height; }
-        var marginComplete = history.every(function (item) { return finite(item.margin_rub, null) !== null; });
-        var adsComplete = history.every(function (item) { return finite(item.advertising_rub, null) !== null; });
-        var drrComplete = history.every(function (item) { return finite(item.drr_percent, null) !== null; });
-        var marginPoints = marginComplete ? history.map(function (item, index) {
-            return [x(index), moneyY(finite(item.margin_rub, 0))];
-        }) : [];
-        var adsPoints = adsComplete ? history.map(function (item, index) {
-            return [x(index), moneyY(finite(item.advertising_rub, 0))];
-        }) : [];
-        var drrPoints = drrComplete ? history.map(function (item, index) {
-            return [x(index), drrY(finite(item.drr_percent, 0))];
-        }) : [];
+        function complete(items, key) {
+            return items.length && items.every(function (item) { return finite(item[key], null) !== null; });
+        }
+        function points(items, key, yFunction) {
+            return items.map(function (item, index) { return [x(index), yFunction(finite(item[key], 0))]; });
+        }
         var grid = [0, 1, 2, 3].map(function (index) {
             var y = top + height * index / 3;
-            var value = maximum - range * index / 3;
+            var value = usesMoneyAxis ? maximum - range * index / 3
+                : stockValues.length ? stockMaximum * (1 - index / 3)
+                    : orderMaximum * (1 - index / 3) / orderScale;
             return '<line class="ue1c-chart-grid" x1="' + left + '" y1="' + y + '" x2="' + right
                 + '" y2="' + y + '"></line><text class="ue1c-chart-y" x="2" y="' + (y + 3)
-                 + '">' + escapeHtml(integer.format(Math.round(value))) + '</text>';
+                + '">' + escapeHtml(integer.format(Math.round(value))) + '</text>';
         }).join('');
-        var drrAxis = [0, 0.5, 1].map(function (ratio) {
+        var drrAxis = enabled('drr') ? [0, 0.5, 1].map(function (ratio) {
             var y = bottom - height * ratio;
             return '<text class="ue1c-chart-y ue1c-chart-y--drr" x="438" y="' + (y + 3)
                 + '" text-anchor="end">' + escapeHtml(decimal.format(drrMaximum * ratio)) + '%</text>';
-        }).join('');
-        var bars = history.map(function (item, index) {
-            var stockValue = finite(item.fbs_units, null);
-            if (stockValue === null) return '';
-            var y = stockY(stockValue);
-            return '<rect class="ue1c-chart-bar" x="' + (x(index) - 11) + '" y="' + y
-                + '" width="22" height="' + (bottom - y) + '" rx="3"></rect>';
-        }).join('');
+        }).join('') : '';
+        var chartSlotWidth = width / history.length;
+        var barGap = Math.max(2, Math.min(4, chartSlotWidth * 0.12));
+        var barWidth = compare
+            ? Math.max(5, (chartSlotWidth - barGap * 2) / 2)
+            : Math.max(7, Math.min(22, chartSlotWidth * 0.64));
+        function orderBars(items, previous) {
+            if (!enabled('orders') || !items.length) return '';
+            return items.map(function (item, index) {
+                var actualOrders = Math.max(0, Math.round(finite(item.orders_count, 0)));
+                var scaledOrders = actualOrders * orderScale;
+                var y = orderY(Math.min(scaledOrders, orderMaximum));
+                var offset = compare ? (previous ? barGap / 2 : -(barWidth + barGap / 2)) : -barWidth / 2;
+                var barHeight = orderBaselineY - y;
+                return '<rect class="ue1c-chart-bar' + (previous ? ' is-previous' : '') + '" x="'
+                    + (x(index) + offset) + '" y="' + y + '" width="' + barWidth
+                    + '" height="' + barHeight + '" rx="2"></rect>';
+            }).join('');
+        }
+        function line(items, key, yFunction, className, seriesKey) {
+            var availablePoints = [];
+            items.forEach(function (item, index) {
+                var itemValue = finite(item[key], null);
+                if (itemValue !== null) availablePoints.push([x(index), yFunction(itemValue)]);
+            });
+            if (!availablePoints.length) return { visual: '', hit: '' };
+            if (availablePoints.length === 1) {
+                return {
+                    visual: '<circle class="ue1c-chart-point ' + className + '" cx="'
+                        + availablePoints[0][0] + '" cy="' + availablePoints[0][1] + '" r="3"></circle>',
+                    hit: '<circle class="ue1c-chart-line-hit" data-chart-line-series="' + seriesKey
+                        + '" cx="' + availablePoints[0][0] + '" cy="' + availablePoints[0][1]
+                        + '" r="8"></circle>'
+                };
+            }
+            var path = chartPath(availablePoints);
+            return {
+                visual: '<path class="ue1c-chart-line ' + className + '" d="' + path + '"></path>',
+                hit: '<path class="ue1c-chart-line-hit" data-chart-line-series="' + seriesKey
+                    + '" d="' + path + '"></path>'
+            };
+        }
+        var renderedLines = {
+            stock: enabled('stock') ? line(history, 'stock_units', stockY, 'is-stock', 'stock') : { visual: '', hit: '' },
+            margin: enabled('margin') ? line(history, 'margin_rub', moneyY, 'is-margin', 'margin') : { visual: '', hit: '' },
+            ads: enabled('ads') ? line(history, 'advertising_rub', moneyY, 'is-ads', 'ads') : { visual: '', hit: '' },
+            drr: enabled('drr') ? line(history, 'drr_percent', drrY, 'is-drr', 'drr') : { visual: '', hit: '' }
+        };
         var labels = history.map(function (item, index) {
             return '<text class="ue1c-chart-x" x="' + x(index) + '" y="204" text-anchor="middle">'
                 + escapeHtml(item.label) + '</text>';
@@ -984,23 +1149,97 @@
             return '<rect class="ue1c-chart-hit" data-chart-index="' + index + '" x="' + hitLeft
                 + '" y="' + top + '" width="' + (hitRight - hitLeft) + '" height="190" tabindex="0"></rect>';
         }).join('');
-        nodes.chart.innerHTML = grid + drrAxis + '<line class="ue1c-chart-zero" x1="' + left + '" y1="'
-            + moneyY(0) + '" x2="' + right + '" y2="' + moneyY(0) + '"></line>' + bars
-            + (marginComplete ? '<path class="ue1c-chart-line is-margin" d="' + chartPath(marginPoints) + '"></path>' : '')
-            + (adsComplete ? '<path class="ue1c-chart-line is-ads" d="' + chartPath(adsPoints) + '"></path>' : '')
-            + (drrComplete ? '<path class="ue1c-chart-line is-drr" d="' + chartPath(drrPoints) + '"></path>' : '')
+        var zeroAxis = usesMoneyAxis ? '<line class="ue1c-chart-zero" x1="'
+            + left + '" y1="' + moneyY(0) + '" x2="' + right + '" y2="' + moneyY(0)
+            + '"></line><text class="ue1c-chart-y ue1c-chart-zero-label" x="2" y="'
+            + (moneyY(0) + 3) + '">0</text>' : '';
+        nodes.chart.innerHTML = grid + drrAxis + zeroAxis
+            + orderBars(compare ? previousHistory : [], true) + orderBars(history, false)
+            + renderedLines.stock.visual + renderedLines.margin.visual
+            + renderedLines.ads.visual + renderedLines.drr.visual
             + '<line class="ue1c-chart-cursor" data-chart-cursor x1="' + left + '" y1="' + top
-            + '" x2="' + left + '" y2="' + bottom + '"></line>' + labels + hits;
+            + '" x2="' + left + '" y2="' + bottom + '"></line>'
+            + '<circle class="ue1c-chart-hover-point" data-chart-series-marker r="4"></circle>'
+            + labels + hits + renderedLines.stock.hit + renderedLines.margin.hit
+            + renderedLines.ads.hit + renderedLines.drr.hit;
         Array.prototype.forEach.call(nodes.chart.querySelectorAll('[data-chart-index]'), function (hit) {
-            function show() { showChartTooltip(product, Number(hit.dataset.chartIndex), x); }
+            function show() {
+                showChartTooltip(Number(hit.dataset.chartIndex), x, history, compare ? previousHistory : []);
+            }
             hit.addEventListener('mouseenter', show);
             hit.addEventListener('focus', show);
             hit.addEventListener('blur', hideChartTooltip);
         });
+        var seriesDefinitions = {
+            stock: { key: 'stock_units', label: 'Остатки', formatter: integer, suffix: ' шт.', y: stockY },
+            margin: { key: 'margin_rub', label: 'Прибыль', formatter: preciseMoney, suffix: '', y: moneyY },
+            ads: { key: 'advertising_rub', label: 'Реклама', formatter: preciseMoney, suffix: '', y: moneyY },
+            drr: { key: 'drr_percent', label: 'ДРР с выкупом', formatter: decimal, suffix: '%', y: drrY }
+        };
+        Array.prototype.forEach.call(nodes.chart.querySelectorAll('[data-chart-line-series]'), function (lineHit) {
+            var seriesKey = lineHit.dataset.chartLineSeries;
+            var definition = seriesDefinitions[seriesKey];
+            if (!definition) return;
+            lineHit.addEventListener('mousemove', function (event) {
+                var bounds = nodes.chart.getBoundingClientRect();
+                var pointerX = (event.clientX - bounds.left) * 440 / Math.max(bounds.width, 1);
+                var index = Math.max(0, Math.min(
+                    history.length - 1,
+                    Math.round((pointerX - left) * history.length / width - 0.5)
+                ));
+                if (finite(history[index][definition.key], null) === null) {
+                    var availableIndexes = history.map(function (item, itemIndex) {
+                        return finite(item[definition.key], null) === null ? null : itemIndex;
+                    }).filter(function (itemIndex) { return itemIndex !== null; });
+                    if (!availableIndexes.length) return;
+                    index = availableIndexes.reduce(function (nearest, candidate) {
+                        return Math.abs(candidate - index) < Math.abs(nearest - index) ? candidate : nearest;
+                    }, availableIndexes[0]);
+                }
+                showChartTooltip(index, x, history, compare ? previousHistory : []);
+                showChartSeriesTooltip(
+                    seriesKey,
+                    definition,
+                    history[index],
+                    x(index),
+                    definition.y(finite(history[index][definition.key], 0))
+                );
+            });
+            lineHit.addEventListener('mouseleave', hideChartSeriesTooltip);
+        });
     }
-    function showChartTooltip(product, index, xFunction) {
-        var item = product.history[index];
+    function showChartSeriesTooltip(seriesKey, definition, item, pointX, pointY) {
+        if (!nodes.chartSeriesTooltip || !item) return;
+        var value = finite(item[definition.key], null);
+        if (value === null) return;
+        var chartBounds = nodes.chart.getBoundingClientRect();
+        var wrapBounds = nodes.chartWrap.getBoundingClientRect();
+        var leftPosition = chartBounds.left - wrapBounds.left + pointX / 440 * chartBounds.width;
+        var topPosition = chartBounds.top - wrapBounds.top + pointY / 220 * chartBounds.height;
+        nodes.chartSeriesTooltip.innerHTML = '<strong>' + escapeHtml(item.label) + '</strong><span>'
+            + escapeHtml(definition.label) + '</span><b>'
+            + escapeHtml(definition.formatter.format(value) + definition.suffix) + '</b>';
+        nodes.chartSeriesTooltip.style.left = Math.max(58, Math.min(wrapBounds.width - 58, leftPosition)) + 'px';
+        nodes.chartSeriesTooltip.style.top = topPosition + 'px';
+        nodes.chartSeriesTooltip.className = 'ue1c-chart-series-tooltip is-' + seriesKey;
+        nodes.chartSeriesTooltip.classList.toggle('is-below-point', pointY < 44);
+        nodes.chartSeriesTooltip.hidden = false;
+        var marker = nodes.chart.querySelector('[data-chart-series-marker]');
+        if (marker) {
+            marker.setAttribute('cx', pointX);
+            marker.setAttribute('cy', pointY);
+            marker.setAttribute('class', 'ue1c-chart-hover-point is-visible is-' + seriesKey);
+        }
+    }
+    function hideChartSeriesTooltip() {
+        if (nodes.chartSeriesTooltip) nodes.chartSeriesTooltip.hidden = true;
+        var marker = nodes.chart.querySelector('[data-chart-series-marker]');
+        if (marker) marker.setAttribute('class', 'ue1c-chart-hover-point');
+    }
+    function showChartTooltip(index, xFunction, history, previousHistory) {
+        var item = history[index];
         if (!item) return;
+        var previous = previousHistory[index];
         var x = xFunction(index);
         var cursor = nodes.chart.querySelector('[data-chart-cursor]');
         if (cursor) {
@@ -1008,22 +1247,24 @@
             cursor.setAttribute('x2', x);
             cursor.classList.add('is-visible');
         }
-        nodes.chartTooltip.innerHTML = '<strong>' + escapeHtml(item.label) + '</strong>'
-            + '<span>Заказы / выкуп <b>' + nullable(item.orders_count, decimal, ' шт.') + ' / '
-            + nullable(item.purchased_units, decimal, ' шт.') + ' ('
-            + nullable(item.buyout_percent, decimal, '%') + ')</b></span>'
-            + '<span>Реклама <b>' + nullable(item.advertising_rub, preciseMoney) + '</b></span>'
-            + '<span>ДРР <b>' + nullable(item.drr_percent, decimal, '%') + '</b></span>'
-            + '<span>Чистая прибыль <b>' + nullable(item.margin_rub, preciseMoney) + '</b></span>'
-            + '<span>Остаток FBS <b>' + nullable(item.fbs_units, integer, ' шт.') + ' · '
-            + nullable(item.purchase_value, preciseMoney) + '</b></span>';
+        nodes.chartTooltip.innerHTML = '<strong>' + escapeHtml(item.label) + '</strong><table><tbody>'
+            + '<tr><th scope="row">Заказы воронки</th><td>' + nullable(item.orders_count, decimal, ' шт.') + '</td></tr>'
+            + '<tr><th scope="row">Реклама</th><td>' + nullable(item.advertising_rub, preciseMoney) + '</td></tr>'
+            + '<tr><th scope="row">ДРР с выкупом</th><td>' + nullable(item.drr_percent, decimal, '%') + '</td></tr>'
+            + '<tr><th scope="row">Чистая прибыль</th><td>' + nullable(item.margin_rub, preciseMoney) + '</td></tr>'
+            + '<tr><th scope="row">Остатки</th><td>' + nullable(item.stock_units, integer, ' шт.') + '</td></tr>'
+            + (previous ? '<tr class="ue1c-chart-tooltip-previous"><th scope="row">Неделей ранее</th><td>'
+                + nullable(previous.orders_count, decimal, ' шт.') + '</td></tr>' : '')
+            + '</tbody></table>';
+        nodes.chartTooltip.classList.add('is-below');
         nodes.chartTooltip.hidden = false;
-        nodes.chartTooltip.style.left = (x / 440 * 100) + '%';
-        nodes.chartTooltip.style.top = '28px';
-        nodes.chartTooltip.style.transform = x > 270 ? 'translateX(-100%)' : 'translateX(0)';
+        nodes.chartTooltip.style.left = '';
+        nodes.chartTooltip.style.top = '';
+        nodes.chartTooltip.style.transform = 'none';
     }
     function hideChartTooltip() {
         nodes.chartTooltip.hidden = true;
+        hideChartSeriesTooltip();
         var cursor = nodes.chart.querySelector('[data-chart-cursor]');
         if (cursor) cursor.classList.remove('is-visible');
     }
@@ -1037,11 +1278,8 @@
         id('ue1c-panel-economics').hidden = tabName !== 'economics';
         id('ue1c-panel-params').hidden = tabName !== 'params';
     }
-    function updateSaveState(product) {
-        var labels = { retail: 'без СПП', client: 'с СПП', wallet: 'с WB Кошельком' };
-        nodes.saveState.textContent = sendingPrice
-            ? 'Отправляем цену и обновляем данные…'
-            : 'Цель: цена ' + labels[editedPriceKind] + ' · отправка сразу в WB';
+    function updateSaveState() {
+        nodes.savePrice.setAttribute('aria-busy', sendingPrice ? 'true' : 'false');
     }
     function renderDrawerMedia(product) {
         var initial = (product.name || product.article || '?').slice(0, 1).toUpperCase();
@@ -1060,8 +1298,9 @@
         nodes.overlay.classList.add('is-open');
         renderDrawerMedia(product);
         nodes.drawerTitle.textContent = product.name;
-        nodes.drawerMeta.textContent = product.store_name + ' · Арт. ' + product.article
-            + ' · ★ ' + nullText(product.rating) + ' · ' + nullText(product.reviews_count) + ' отзывов';
+        nodes.drawerMeta.innerHTML = escapeHtml(product.store_name) + ' · '
+            + copyValue('Арт.', product.article, 'Артикул') + ' · ★ ' + escapeHtml(nullText(product.rating))
+            + ' · ' + escapeHtml(nullText(product.reviews_count)) + ' отзывов';
         syncTaxCalculatorLabel(product);
         fillCalculator(product);
         updateSaveState(product);
@@ -1073,6 +1312,49 @@
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
             row.classList.toggle('is-selected', row.dataset.productId === product.id);
         });
+    }
+    function clearFiltersForProduct() {
+        state.query = '';
+        nodes.search.value = '';
+        state.store = 'all';
+        nodes.store.value = 'all';
+        state.status = 'all';
+        state.tableFilters = {};
+        nodes.table._tfFilters = {};
+        Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
+            button.classList.toggle('is-active', button.dataset.stateFilter === 'all');
+        });
+        Array.prototype.forEach.call(nodes.table.querySelectorAll('.tf-btn--active'), function (button) {
+            button.classList.remove('tf-btn--active');
+        });
+    }
+    function locateProductInTable(product) {
+        var filtered = filteredProducts();
+        var productIndex = filtered.findIndex(function (item) { return item.id === product.id; });
+        if (productIndex === -1) {
+            clearFiltersForProduct();
+            filtered = filteredProducts();
+            productIndex = filtered.findIndex(function (item) { return item.id === product.id; });
+        }
+        if (productIndex === -1) {
+            showToast('Не удалось найти связанный товар в таблице', 'error');
+            return;
+        }
+        state.page = Math.floor(productIndex / state.pageSize) + 1;
+        renderPage();
+        openDetail(product);
+        var targetRow = Array.prototype.find.call(nodes.rows.querySelectorAll('tr'), function (row) {
+            return row.dataset.productId === product.id;
+        });
+        if (!targetRow) return;
+        window.clearTimeout(rowHighlightTimer);
+        targetRow.classList.add('is-located');
+        window.requestAnimationFrame(function () {
+            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        });
+        rowHighlightTimer = window.setTimeout(function () {
+            targetRow.classList.remove('is-located');
+        }, 5000);
     }
     function closeDetail() {
         state.selected = null;
@@ -1095,7 +1377,7 @@
         var taxSystem = productTaxSystem(product);
         var activeTaxPercent = taxSystem === 'osno' ? osnoPercent : usnPercent;
         var acquiringPercent = finite(values.acquiringPercent, finite(item.acquiring, null));
-        var drrPercent = finite(values.drr, null);
+        var advertisingRub = finite(values.advertisingRub, null);
         var purchase = finite(values.purchase, finite(item.purchase_cost, null));
         var fulfillment = finite(values.fulfillment, null);
         var logistics = finite(values.logistics, null);
@@ -1104,7 +1386,7 @@
         var storage = finite(values.storageTotal,
             storageRate === null || turnoverDays === null ? null : storageRate * turnoverDays);
         if ([commissionPercent, teamCommissionPercent, vatPercent, activeTaxPercent,
-            acquiringPercent, drrPercent,
+            acquiringPercent, advertisingRub,
             purchase, fulfillment, logistics, storage].some(function (value) {
             return value === null;
         })) return null;
@@ -1119,11 +1401,11 @@
         var secondaryTaxFactor = taxSystem === 'osno'
             ? osnoPercent / 100
             : (1 - vatFactor) * usnPercent / 100;
-        var variableFactor = 1 - (commissionPercent + drrPercent) / 100
+        var variableFactor = 1 - commissionPercent / 100
             - acquiringPercent / 100
             - teamCommissionPercent / 100
             - clientPriceFactor * (vatFactor + secondaryTaxFactor);
-        var fixed = purchase + fulfillment + logistics + storage;
+        var fixed = purchase + fulfillment + logistics + storage + advertisingRub;
         return {
             retail: Math.ceil(fixed / Math.max(0.01, variableFactor) / 10) * 10,
             clientPriceFactor: clientPriceFactor,
@@ -1154,8 +1436,8 @@
     }
     function openPriceConfirmation(product, payload, plan) {
         pendingPriceChange = { productId: product.id, payload: payload, plan: plan };
-        nodes.confirmProduct.textContent = product.store_name + ' · Арт. ' + product.article
-            + ' · ' + product.name;
+        nodes.confirmProduct.innerHTML = escapeHtml(product.store_name) + ' · '
+            + copyValue('Арт.', product.article, 'Артикул') + ' · ' + escapeHtml(product.name);
         nodes.confirmTarget.textContent = priceKindLabel(plan.target_kind) + ': '
             + decimal.format(plan.target_price) + ' ₽';
         nodes.confirmGrid.innerHTML = confirmationRow(
@@ -1309,7 +1591,7 @@
         var valid = true;
         Array.prototype.forEach.call(nodes.parameters.querySelectorAll('[data-product-setting]'), function (input) {
             var value = Number(input.value);
-            if (!Number.isFinite(value) || value < 0 || (input.dataset.productSetting === 'buyout_percent' && value > 100)) {
+            if (!Number.isFinite(value) || value < 0) {
                 valid = false;
                 return;
             }
@@ -1338,7 +1620,7 @@
             var saved = result.settings;
             product.product_settings = {
                 store_slug: saved.store_slug, marketplace: saved.marketplace, article: saved.article,
-                delivery_wb_rub: saved.delivery_wb_rub, buyout_percent: saved.buyout_percent,
+                delivery_wb_rub: saved.delivery_wb_rub,
                 return_cost_rub: saved.return_cost_rub, volume_l: saved.volume_l,
                 storage_wb_rub: saved.storage_wb_rub, updated_at: saved.updated_at,
                 updated_by_user_id: saved.updated_by_user_id, updated_by_name: saved.updated_by_name
@@ -1394,6 +1676,47 @@
         columnPreferences.order.splice(next, 0, moved);
         saveColumnPreferences();
     });
+    nodes.columnList.addEventListener('dragstart', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option) return;
+        draggedColumnKey = option.dataset.columnKey;
+        option.classList.add('is-dragging');
+        option.setAttribute('aria-grabbed', 'true');
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', draggedColumnKey);
+        }
+    });
+    nodes.columnList.addEventListener('dragover', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || !draggedColumnKey || option.dataset.columnKey === draggedColumnKey) return;
+        event.preventDefault();
+        option.classList.add('is-drag-target');
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    });
+    nodes.columnList.addEventListener('dragleave', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (option) option.classList.remove('is-drag-target');
+    });
+    nodes.columnList.addEventListener('drop', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || !draggedColumnKey) return;
+        event.preventDefault();
+        var from = columnPreferences.order.indexOf(draggedColumnKey);
+        var to = columnPreferences.order.indexOf(option.dataset.columnKey);
+        if (from >= 0 && to >= 0 && from !== to) {
+            var moved = columnPreferences.order.splice(from, 1)[0];
+            columnPreferences.order.splice(to, 0, moved);
+            saveColumnPreferences();
+        }
+    });
+    nodes.columnList.addEventListener('dragend', function () {
+        draggedColumnKey = null;
+        Array.prototype.forEach.call(nodes.columnList.querySelectorAll('.is-dragging, .is-drag-target'), function (item) {
+            item.classList.remove('is-dragging', 'is-drag-target');
+            item.setAttribute('aria-grabbed', 'false');
+        });
+    });
     Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
         button.addEventListener('click', function () {
             state.status = button.dataset.stateFilter;
@@ -1425,6 +1748,18 @@
         if (copy) { copyText(copy); return; }
         var opener = event.target.closest('[data-product-open]');
         if (opener && productsById[opener.dataset.productOpen]) openDetail(productsById[opener.dataset.productOpen]);
+    });
+    nodes.gluedProducts.addEventListener('click', function (event) {
+        var copy = event.target.closest('[data-copy-value]');
+        if (copy) { copyText(copy); return; }
+        var opener = event.target.closest('[data-glued-product-open]');
+        if (!opener) return;
+        var product = productsById[opener.dataset.gluedProductOpen];
+        if (!product) {
+            showToast('Не удалось найти связанный товар в таблице', 'error');
+            return;
+        }
+        locateProductInTable(product);
     });
     nodes.rows.addEventListener('keydown', function (event) {
         var field = event.target.closest('[data-comment-id]');
@@ -1546,6 +1881,18 @@
     nodes.parameters.addEventListener('click', function (event) {
         if (event.target.closest('[data-save-product-settings]')) saveSelectedProductSettings();
     });
+    nodes.chartWrap.addEventListener('change', function (event) {
+        var series = event.target.dataset.chartSeries;
+        if (series) {
+            chartPreferences.series = chartPreferences.series.filter(function (key) { return key !== series; });
+            if (event.target.checked) chartPreferences.series.push(series);
+        } else if (event.target.hasAttribute('data-chart-compare')) {
+            chartPreferences.compare = event.target.checked;
+        } else return;
+        writeJson(chartKey, chartPreferences);
+        var product = productsById[state.selected];
+        if (product) renderChart(product);
+    });
     nodes.chartWrap.addEventListener('mouseleave', hideChartTooltip);
     nodes.confirmClose.addEventListener('click', closePriceConfirmation);
     nodes.confirmCancel.addEventListener('click', closePriceConfirmation);
@@ -1560,6 +1907,11 @@
     });
 
     renderStores();
+    Array.prototype.forEach.call(root.querySelectorAll('[data-chart-series]'), function (input) {
+        input.checked = chartPreferences.series.indexOf(input.dataset.chartSeries) !== -1;
+    });
+    var compareControl = root.querySelector('[data-chart-compare]');
+    if (compareControl) compareControl.checked = chartPreferences.compare;
     renderTableHeader();
     renderColumnSettings();
     nodes.table._tfAdapter = {

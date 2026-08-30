@@ -3,7 +3,7 @@ import logging
 import tempfile
 import time
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import Event
 from unittest import mock
@@ -21,6 +21,7 @@ from app.repositories import core
 from app.stores import STORES
 from app.wb import funnel_orders as wb_funnel_orders
 from app.web import middleware
+from app.web.identifiers import copy_identifier
 from app.web.routers import decision_center as decision_routes
 from app.web.routers import rnp as rnp_routes
 from app.web.routers import sales_overview, unit_economics
@@ -106,6 +107,9 @@ class WebRouteUnitTests(unittest.TestCase):
             "/sales/unit-economics-1c/yandex-market",
             "/supply",
             "/stock",
+            "/stock/total",
+            "/stock/supplies",
+            "/stock/randomizer",
             "/stock-2",
             "/stock-2/details/frozen",
             "/stock/rimili",
@@ -114,12 +118,53 @@ class WebRouteUnitTests(unittest.TestCase):
             "/stock/rimili/operations",
             "/stock/cost-report",
             "/admin",
+            "/admin/activity",
+            "/admin/google-export",
+            "/admin/integrations",
         )
         for path in paths:
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200, f"{path}: {response.text[:500]}")
                 self.assertTrue(response.content)
+                if "text/html" in response.headers.get("content-type", ""):
+                    self.assertIn('<header class="sidebar app-header" id="app-header">', response.text)
+                    self.assertNotIn('<aside class="sidebar"', response.text)
+                    self.assertNotIn('class="topbar"', response.text)
+                    self.assertNotIn("Система работает", response.text)
+
+        for path in (
+            "/sales",
+            "/sales/ephemerides",
+            "/sales/rnp",
+            "/stock",
+            "/stock/total",
+            "/stock/supplies",
+            "/stock/randomizer",
+            "/stock-2",
+            "/stock-2/details/frozen",
+            "/stock/rimili",
+            "/stock/cost-report",
+            "/sales/unit-economics-1c/cabinet-settings",
+            "/sales/unit-economics-1c",
+            "/sales/unit-economics-1c/reports/unit-profit",
+            "/sales/unit-economics-1c/ozon",
+            "/sales/unit-economics-1c/yandex-market",
+        ):
+            with self.subTest(data_workspace_path=path):
+                response = self.client.get(path)
+                self.assertNotIn('class="topbar"', response.text)
+                self.assertNotIn("Система работает", response.text)
+
+        stock_total_page = self.client.get("/stock/total")
+        self.assertNotIn("ЕДИНЫЙ СРЕЗ ПО ВСЕМ КАБИНЕТАМ", stock_total_page.text)
+        self.assertNotIn("Позиции разных площадок объединены по штрихкоду", stock_total_page.text)
+        sales_page = self.client.get("/sales")
+        self.assertNotIn("Продажи по магазинам и схемам", sales_page.text)
+
+        unit_page = self.client.get("/sales/unit-economics-1c")
+        self.assertNotIn("ЮНИТ-ЭКОНОМИКА 1С / WILDBERRIES", unit_page.text)
+        self.assertNotIn("Юнит-экономика 1С / Wildberries", unit_page.text)
 
         root = self.client.get("/", follow_redirects=False)
         self.assertEqual(root.status_code, 303)
@@ -156,11 +201,55 @@ class WebRouteUnitTests(unittest.TestCase):
         response = self.client.get("/sales")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text.count('class="nav-item nav-group-trigger'), 4)
+        self.assertIn('aria-controls="nav-reports-submenu" data-nav-toggle', response.text)
+        self.assertIn('id="nav-reports-submenu" data-nav-submenu', response.text)
+        self.assertNotIn(
+            'href="/sales/unit-economics-1c/reports/unit-profit" title=',
+            response.text,
+        )
         self.assertIn('href="/sales/unit-economics-1c"', response.text)
         self.assertIn('href="/sales/unit-economics-1c/cabinet-settings"', response.text)
         self.assertIn('title="Отчёты"', response.text)
         self.assertIn(">Юниточная прибыль</a>", response.text)
         self.assertNotIn('href="/sales/unit-economics/wb-fbs"', response.text)
+
+    def test_product_identifiers_are_copyable_globally(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        page_template = (root / "templates" / "page.html").read_text(encoding="utf-8")
+        copy_script = (root / "static" / "identifier-copy.js").read_text(encoding="utf-8")
+        self.assertIn('/static/identifier-copy.css?v=1', page_template)
+        self.assertIn('/static/identifier-copy.js?v=1', page_template)
+        self.assertIn("navigator.clipboard.writeText(value)", copy_script)
+        self.assertIn("document.execCommand('copy')", copy_script)
+        self.assertIn("document.addEventListener('pointerover'", copy_script)
+        self.assertIn("document.addEventListener('focusin'", copy_script)
+        self.assertIn("event.stopPropagation()", copy_script)
+
+        total_page = self.client.get("/stock/total")
+        self.assertIn('data-copy-kind="Артикул"', total_page.text)
+        self.assertIn('data-copy-kind="Баркод"', total_page.text)
+        stock_page = self.client.get("/stock/rimili")
+        self.assertIn('data-copy-value="949558341"', stock_page.text)
+        self.assertIn('data-copy-value="2050292584830"', stock_page.text)
+
+        copy_sources = {
+            "static/decision-center.js": "copyIdentifier",
+            "static/rnp-dashboard.js": "copyIdentifier",
+            "static/stock-randomizer.js": "copyIdentifier",
+            "static/unit-economics-1c.js": "data-copy-kind",
+            "static/unit-economics-1c-report.js": "copyIdentifier",
+            "templates/store_content.html": "CheckStockIdentifierCopy.html",
+        }
+        for relative_path, expected in copy_sources.items():
+            with self.subTest(relative_path=relative_path):
+                source = (root / relative_path).read_text(encoding="utf-8")
+                self.assertIn(expected, source)
+
+        escaped = copy_identifier('123"456', "Баркод")
+        self.assertIn('data-copy-kind="Баркод"', escaped)
+        self.assertIn('data-copy-value="123&quot;456"', escaped)
+        self.assertIn('aria-label="Скопировать баркод 123&quot;456"', escaped)
 
     def test_cost_report_tables_have_filters_and_separate_store_marketplace_columns(self) -> None:
         db.record_operation(
@@ -202,7 +291,7 @@ class WebRouteUnitTests(unittest.TestCase):
                     self.assertIn("<th>Магазин</th><th>Маркетплейс</th>", response.text)
                 if view == "summary":
                     self.assertIn(
-                        "<th>Продано FBS, ед.</th><th>ЗЦ продаж FBS</th>",
+                        "<th>Продано FBS по формуле</th><th>ЗЦ продаж FBS</th>",
                         response.text,
                     )
                 self.assertIn("Все маркетплейсы", response.text)
@@ -260,7 +349,8 @@ class WebRouteUnitTests(unittest.TestCase):
         page = self.client.get("/sales/unit-economics-1c/cabinet-settings")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Ввод данных по кабинетам", page.text)
-        self.assertIn("Только хранение данных", page.text)
+        self.assertIn("Комиссия команды обновляется ночью", page.text)
+        self.assertNotIn("Только хранение данных", page.text)
         self.assertIn("unit-economics-1c-cabinet-settings.js", page.text)
         self.assertIn('id="ue1cs-source-sync"', page.text)
         self.assertIn("Выгрузить себес", page.text)
@@ -421,6 +511,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-table-head"', response.text)
         self.assertIn('id="ue1c-columns-toggle"', response.text)
         self.assertIn('id="ue1c-column-list"', response.text)
+        self.assertNotIn('data-state-filter="risk"', response.text)
+        self.assertNotIn('data-state-filter="low"', response.text)
         self.assertIn("Товары в минус", response.text)
         self.assertIn("Новинки", response.text)
         self.assertNotIn('class="ue1c-col-price"', response.text)
@@ -443,19 +535,35 @@ class WebRouteUnitTests(unittest.TestCase):
             yandex.text,
         )
 
-    def test_unit_economics_1c_hides_catalog_exclusions(self) -> None:
-        db.set_product_exclusions(
-            "rimili",
-            "WB",
-            {"949558341"},
-            status="Старье",
-            updated_at=NOW,
+    def test_unit_economics_1c_ignores_legacy_catalog_exclusions(self) -> None:
+        connection = core.get_connection()
+        connection.execute(
+            """
+            CREATE TABLE catalog_product_exclusions (
+                store_slug TEXT NOT NULL,
+                marketplace TEXT NOT NULL,
+                nm_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (store_slug, marketplace, nm_id)
+            )
+            """
         )
+        connection.execute(
+            """
+            INSERT INTO catalog_product_exclusions
+                (store_slug, marketplace, nm_id, status, updated_at)
+            VALUES ('rimili', 'WB', '949558341', 'Старье', ?)
+            """,
+            (NOW,),
+        )
+        connection.commit()
+        connection.close()
 
         response = self.client.get("/sales/unit-economics-1c")
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn("949558341", response.text)
+        self.assertIn("949558341", response.text)
 
     def test_unit_economics_1c_product_contains_only_real_or_null_values(self) -> None:
         product = unit_economics._unit_economics_1c_mock_product(
@@ -523,6 +631,27 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("margin_percent", product["details"])
         self.assertNotIn("fixed_margin", product["details"])
         self.assertNotIn("package", product["details"])
+
+        product_not_for_sale = unit_economics._unit_economics_1c_mock_product(
+            "tris",
+            {"article": "1449522671", "name": "Новый товар"},
+            product_metrics={
+                "period_from": "2026-08-20",
+                "period_to": "2026-08-26",
+                "period_days": 7,
+                "orders_amount": 0,
+                "orders_count": 0,
+                "spend": 0,
+                "daily": [],
+            },
+            product_reference={"purchase_price": 22_008.75},
+        )
+        self.assertIsNone(product_not_for_sale["price"]["current"])
+        self.assertIsNone(product_not_for_sale["price"]["with_spp"])
+        self.assertIsNone(product_not_for_sale["current_economics"]["margin"])
+        self.assertIsNone(product_not_for_sale["current_economics"]["roi"])
+        self.assertIsNone(product_not_for_sale["economics_7d"]["margin"])
+        self.assertIsNone(product_not_for_sale["economics_7d"]["roi"])
 
         product_with_demand = unit_economics._unit_economics_1c_mock_product(
             "rimili",
@@ -593,6 +722,34 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertFalse(old_product["is_new"])
         self.assertEqual(old_product["sales_days"], 80)
 
+    def test_unit_economics_1c_glued_products_are_interactive_and_located_in_table(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        script = (root / "static" / "unit-economics-1c.js").read_text(encoding="utf-8")
+        styles = (root / "static" / "unit-economics-1c.css").read_text(encoding="utf-8")
+        template = (root / "templates" / "unit_economics_1c_content.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertLess(template.index("Динамика за 14 дней"), template.index("Связанные артикулы"))
+        self.assertNotIn("склейка WB", template)
+        self.assertNotIn("заказы столбиками ×10, показатели линиями", template)
+        self.assertNotIn("Цель: цена", script)
+        self.assertIn('class="ue1c-calculator ue1c-drawer-section"', template)
+        self.assertIn("overflow-x: hidden", styles)
+        self.assertIn('data-copy-tooltip="нажмите чтобы скопировать"', script)
+        self.assertIn('data-glued-product-open="', script)
+        self.assertIn("function locateProductInTable(product)", script)
+        self.assertIn("Math.floor(productIndex / state.pageSize) + 1", script)
+        self.assertIn("targetRow.scrollIntoView", script)
+        self.assertIn("targetRow.classList.add('is-located')", script)
+        self.assertIn("}, 5000);", script)
+        self.assertIn("tr.is-located td", styles)
+        self.assertIn("function coverageTitle(label, coverage)", script)
+        self.assertIn("function coverageValue(label, value, formatter, coverage, suffix)", script)
+        self.assertIn("coverageCellClass(marginCoverage)", script)
+        self.assertIn("ue1c-partial-cell", styles)
+        self.assertIn(".ue1c-coverage-value.is-partial", styles)
+
     def test_unit_economics_1c_commission_panel_uses_split_taxes(self) -> None:
         root = Path(__file__).resolve().parents[2]
         script = (root / "static" / "unit-economics-1c.js").read_text(encoding="utf-8")
@@ -640,7 +797,11 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("walletPrice * acquiringPercent / 100", script)
         self.assertIn("- acquiringPercent / 100", script)
         self.assertNotIn("- walletPriceFactor * acquiringPercent / 100", script)
-        self.assertIn("current * drrPercent / 100", script)
+        self.assertNotIn("current * drrPercent / 100", script)
+        self.assertIn("var advertising = advertisingRub", script)
+        self.assertIn("advertisingBase * drr / 100", script)
+        self.assertIn("advertisingRub / advertisingBase * 100", script)
+        self.assertNotIn("buyoutRatio", script)
         self.assertIn("current * teamCommissionPercent / 100", script)
         self.assertNotIn("clientPrice * teamCommissionPercent / 100", script)
         self.assertIn("- teamCommissionPercent / 100", script)
@@ -664,7 +825,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-calculator-mode" type="checkbox" role="switch"', template)
         self.assertIn('id="ue1c-calculator-inputs"', template)
         self.assertIn("Затраты на ФФ", template)
-        self.assertIn("Рекламные расходы в день, руб", template)
+        self.assertIn("Рекламные расходы на выкупленную единицу, руб", template)
         self.assertIn('id="ue1c-secondary-tax-label"', template)
         for output_id in (
             "ue1c-spp-percent",
@@ -723,10 +884,19 @@ class WebRouteUnitTests(unittest.TestCase):
             template,
         )
         self.assertIn(
-            "цена без СПП − эквайринг − логистика − хранение − комиссия WB − реклама по ДРР",
+            "цена без СПП − эквайринг − логистика − хранение − комиссия WB − реклама на единицу",
             template,
         )
-        self.assertIn("НДС</strong> = цена покупателя × ставка ÷ (100 + ставка)", template)
+        self.assertIn(
+            "Реклама на единицу</strong> = рекламные расходы за 7 дней ÷ заказы воронки за 7 дней ÷ (процент выкупа ÷ 100)",
+            template,
+        )
+        self.assertIn(
+            "ДРР с выкупом</strong> = рекламные расходы за 7 дней ÷ (оборот заказов за 7 дней × процент выкупа ÷ 100) × 100%",
+            template,
+        )
+        self.assertIn("Рекламные расходы на выкупленную единицу, руб", template)
+        self.assertIn("НДС</strong> = цена с СПП ÷ (100 + ставка) × ставка", template)
         self.assertIn("УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100", template)
         self.assertIn('id="ue1c-subject-select"', template)
         self.assertIn('type="search" list="ue1c-subject-options"', template)
@@ -741,6 +911,7 @@ class WebRouteUnitTests(unittest.TestCase):
             product_metrics={
                 "period_to": "2026-08-19",
                 "period_days": 7,
+                "buyout_percent": 80,
                 "daily": [
                     {
                         "date": "2026-08-15",
@@ -753,9 +924,48 @@ class WebRouteUnitTests(unittest.TestCase):
         )
 
         day = next(item for item in product["history"] if item["date"] == "2026-08-15")
-        self.assertEqual(day["drr_percent"], 4.84)
+        self.assertEqual(day["drr_percent"], 6.05)
 
-    def test_unit_economics_1c_period_economics_apply_real_buyout(self) -> None:
+    def test_unit_economics_1c_history_uses_report_daily_economics(self) -> None:
+        product = unit_economics._unit_economics_1c_mock_product(
+            "trusthome",
+            {"article": "551394618", "name": "Товар"},
+            product_metrics={
+                "period_to": "2026-08-15",
+                "period_days": 1,
+                "buyout_percent": 80,
+            },
+            history_product_metrics={
+                "period_to": "2026-08-15",
+                "period_days": 1,
+                "buyout_percent": 80,
+                "daily": [
+                    {
+                        "date": "2026-08-15",
+                        "advertising_spend": 211.5,
+                        "orders_amount": 4372,
+                        "orders_count": 3,
+                    }
+                ],
+            },
+            history_day_economics={
+                "2026-08-15": {
+                    "margin": 321.25,
+                    "purchase_value": 150,
+                    "buyout_percent": 50,
+                }
+            },
+        )
+
+        day = product["history"][0]
+        self.assertEqual(day["orders_count"], 3)
+        self.assertEqual(day["advertising_rub"], 211.5)
+        self.assertEqual(day["buyout_percent"], 50)
+        self.assertEqual(day["purchased_units"], 1.5)
+        self.assertEqual(day["drr_percent"], 9.68)
+        self.assertEqual(day["margin_rub"], 321.25)
+
+    def test_unit_economics_1c_period_margin_is_unit_margin_times_funnel_orders(self) -> None:
         product = unit_economics._unit_economics_1c_mock_product(
             "rimili",
             {"article": "949735537", "name": "Товар"},
@@ -798,15 +1008,277 @@ class WebRouteUnitTests(unittest.TestCase):
         )
 
         self.assertEqual(product["advertising"]["buyout_percent"], 80)
+        self.assertEqual(product["advertising"]["average_daily_spend"], 114.29)
+        self.assertEqual(product["advertising"]["spend_per_order"], 100)
+        self.assertEqual(product["advertising"]["drr"], 12.5)
         self.assertEqual(product["economics_7d"]["turnover"], 8000)
         self.assertEqual(product["economics_7d"]["orders"], 10)
         self.assertEqual(product["details"]["vat_value"], 66.06)
         self.assertEqual(product["details"]["usn_value"], 44.04)
         self.assertEqual(product["details"]["tax_value"], 110.09)
+        self.assertEqual(product["current_economics"]["margin"], 261.91)
         self.assertEqual(product["economics_7d"]["margin"], 2619.1)
+        self.assertEqual(
+            product["economics_7d"]["margin"],
+            round(
+                product["current_economics"]["margin"] * product["economics_7d"]["orders"],
+                2,
+            ),
+        )
         self.assertEqual(product["economics_7d"]["roi"], 87.3)
         self.assertEqual(product["history"][-1]["purchased_units"], 8)
         self.assertEqual(product["history"][-1]["margin_rub"], 2095.28)
+
+    def test_unit_economics_1c_separates_today_from_closed_seven_day_period(self) -> None:
+        product = unit_economics._unit_economics_1c_mock_product(
+            "rimili",
+            {"article": "949735537", "name": "Товар"},
+            {
+                "retail_price": 1000,
+                "customer_price_with_spp": 800,
+            },
+            product_metrics={
+                "period_from": "2026-08-23",
+                "period_to": "2026-08-29",
+                "period_days": 7,
+                "orders_amount": 7000,
+                "orders_count": 7,
+                "cancel_amount": 1000,
+                "buyout_percent": 80,
+                "spend": 700,
+                "impressions": 1000,
+                "clicks": 100,
+                "ctr": 10,
+                "cpc": 7,
+                "daily": [],
+            },
+            current_product_metrics={
+                "period_from": "2026-08-30",
+                "period_to": "2026-08-30",
+                "period_days": 1,
+                "orders_amount": 1600,
+                "orders_count": 2,
+                "range_buyout_percent": 0,
+                "buyout_percent": 75,
+                "spend": 90,
+                "daily": [],
+            },
+            closed_period_economics={
+                "margin": 1234.56,
+                "purchase_value": 1000,
+                "roi": 123.46,
+                "buyout_percent": 70,
+                "complete": False,
+                "coverage": {
+                    "dates": ["2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29"],
+                    "days": 5,
+                    "expected_days": 7,
+                    "complete": False,
+                    "period_from": "2026-08-25",
+                    "period_to": "2026-08-29",
+                    "missing_dates": ["2026-08-23", "2026-08-24"],
+                },
+            },
+            turnover_coverage={
+                "dates": [
+                    "2026-08-24",
+                    "2026-08-25",
+                    "2026-08-26",
+                    "2026-08-27",
+                    "2026-08-28",
+                    "2026-08-29",
+                ],
+                "days": 6,
+                "expected_days": 7,
+                "complete": False,
+                "period_from": "2026-08-24",
+                "period_to": "2026-08-29",
+                "missing_dates": ["2026-08-23"],
+            },
+            product_reference={
+                "purchase_price": 300,
+                "fulfillment_cost": 50,
+                "subject_commission_percent": 10,
+            },
+        )
+
+        self.assertEqual(
+            (product["economics_7d"]["period_from"], product["economics_7d"]["period_to"]),
+            ("2026-08-23", "2026-08-29"),
+        )
+        self.assertEqual(product["economics_7d"]["turnover"], 6000)
+        self.assertEqual(product["economics_7d"]["margin"], 1234.56)
+        self.assertEqual(product["economics_7d"]["roi"], 123.46)
+        self.assertEqual(product["economics_7d"]["turnover_coverage"]["days"], 6)
+        self.assertEqual(product["economics_7d"]["margin_coverage"]["days"], 5)
+        self.assertEqual(product["economics_7d"]["roi_coverage"]["days"], 5)
+        self.assertEqual(product["advertising"]["period_from"], "2026-08-23")
+        self.assertEqual(product["advertising"]["period_to"], "2026-08-29")
+        self.assertEqual(product["advertising"]["spend"], 700)
+        self.assertEqual(product["advertising"]["drr"], 14.29)
+        self.assertEqual(product["advertising"]["spend_per_order"], 142.86)
+        self.assertEqual(
+            (product["current_economics"]["period_from"], product["current_economics"]["period_to"]),
+            ("2026-08-30", "2026-08-30"),
+        )
+        self.assertEqual(product["current_economics"]["margin"], 452)
+        self.assertEqual(product["current_economics"]["roi"], 150.67)
+        self.assertEqual(product["current_economics"]["orders"], 2)
+        self.assertEqual(product["current_economics"]["advertising_spend"], 90)
+        self.assertEqual(product["details"]["buyout_percent"], 75)
+        self.assertEqual(product["details"]["advertising_per_unit"], 60)
+
+    def test_unit_profit_report_sums_margin_and_orders_for_each_day(self) -> None:
+        result = unit_economics._report_historical_economics(
+            date_from=date(2026, 8, 23),
+            date_to=date(2026, 8, 25),
+            daily_orders={
+                "2026-08-23": {"orders_count": 2, "buyout_percent": 50},
+                "2026-08-24": {"orders_count": 3, "buyout_percent": 80},
+                "2026-08-25": {"orders_count": 4, "buyout_percent": 100},
+            },
+            margin_snapshots={
+                "2026-08-23": {"unit_margin": 100, "purchase_price": 50},
+                "2026-08-24": {"unit_margin": 200, "purchase_price": 60},
+                "2026-08-25": {"unit_margin": 300, "purchase_price": 70},
+            },
+            live_day=date(2026, 8, 28),
+            live_unit_margin=None,
+            live_purchase_price=None,
+            daily_advertising={
+                "2026-08-23": 10,
+                "2026-08-24": 20,
+                "2026-08-25": 30,
+            },
+        )
+
+        self.assertEqual(result["margin"], 1720)
+        self.assertEqual(result["purchase_value"], 474)
+        self.assertEqual(result["orders"], 7.4)
+        self.assertEqual(result["advertising_spend"], 60)
+        self.assertTrue(result["complete"])
+
+    def test_historical_economics_can_return_only_covered_days_for_dashboard(self) -> None:
+        result = unit_economics._report_historical_economics(
+            date_from=date(2026, 8, 23),
+            date_to=date(2026, 8, 25),
+            daily_orders={
+                "2026-08-23": {"orders_count": 2, "buyout_percent": 50},
+                "2026-08-24": {"orders_count": 3, "buyout_percent": 80},
+                "2026-08-25": {"orders_count": 4, "buyout_percent": 100},
+            },
+            margin_snapshots={
+                "2026-08-24": {"unit_margin": 200, "purchase_price": 60},
+                "2026-08-25": {"unit_margin": 300, "purchase_price": 70},
+            },
+            live_day=date(2026, 8, 28),
+            live_unit_margin=None,
+            live_purchase_price=None,
+            daily_advertising={
+                "2026-08-23": 10,
+                "2026-08-24": 20,
+                "2026-08-25": 30,
+            },
+            allow_partial=True,
+        )
+
+        self.assertEqual(result["margin"], 1630)
+        self.assertEqual(result["purchase_value"], 424)
+        self.assertEqual(result["roi"], 384.43)
+        self.assertEqual(result["orders"], 6.4)
+        self.assertEqual(result["advertising_spend"], 50)
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["missing_days"], ["2026-08-23"])
+        self.assertEqual(result["coverage"]["dates"], ["2026-08-24", "2026-08-25"])
+        self.assertEqual(result["coverage"]["days"], 2)
+        self.assertEqual(result["coverage"]["expected_days"], 3)
+
+        empty = unit_economics._report_historical_economics(
+            date_from=date(2026, 8, 23),
+            date_to=date(2026, 8, 23),
+            daily_orders={"2026-08-23": {"orders_count": 1, "buyout_percent": 100}},
+            margin_snapshots={},
+            live_day=date(2026, 8, 28),
+            live_unit_margin=None,
+            live_purchase_price=None,
+            allow_partial=True,
+        )
+        self.assertIsNone(empty["margin"])
+        self.assertIsNone(empty["roi"])
+        self.assertEqual(empty["coverage"]["days"], 0)
+
+    def test_unit_profit_report_never_substitutes_current_margin_for_missing_history(self) -> None:
+        result = unit_economics._report_historical_economics(
+            date_from=date(2026, 8, 23),
+            date_to=date(2026, 8, 24),
+            daily_orders={
+                "2026-08-23": {"orders_count": 2, "buyout_percent": 100},
+                "2026-08-24": {"orders_count": 3, "buyout_percent": 100},
+            },
+            margin_snapshots={
+                "2026-08-24": {"unit_margin": 200, "purchase_price": 60},
+            },
+            live_day=date(2026, 8, 28),
+            live_unit_margin=999,
+            live_purchase_price=999,
+        )
+
+        self.assertIsNone(result["margin"])
+        self.assertIsNone(result["purchase_value"])
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["missing_days"], ["2026-08-23"])
+
+    def test_unit_profit_report_allocates_daily_advertising_to_expected_buyouts(self) -> None:
+        result = unit_economics._report_historical_economics(
+            date_from=date(2026, 8, 28),
+            date_to=date(2026, 8, 28),
+            daily_orders={
+                "2026-08-28": {"orders_count": 43, "buyout_percent": 80},
+            },
+            margin_snapshots={
+                "2026-08-28": {
+                    "unit_margin": 808.06,
+                    "purchase_price": 1123.9,
+                    "calculation_version": 2,
+                    "inputs_json": json.dumps({"buyout_percent": 80}),
+                },
+            },
+            live_day=date(2026, 8, 29),
+            live_unit_margin=None,
+            live_purchase_price=None,
+            daily_advertising={"2026-08-28": 10_488},
+        )
+
+        self.assertEqual(result["orders"], 34.4)
+        self.assertEqual(result["advertising_spend"], 10_488)
+        self.assertEqual(result["margin"], 17_309.26)
+        self.assertEqual(result["purchase_value"], 38_662.16)
+
+    def test_unit_profit_report_uses_weekly_buyout_when_daily_value_is_zero(self) -> None:
+        result = unit_economics._report_historical_economics(
+            date_from=date(2026, 8, 28),
+            date_to=date(2026, 8, 28),
+            daily_orders={
+                "2026-08-28": {"orders_count": 43, "buyout_percent": 0},
+            },
+            margin_snapshots={
+                "2026-08-28": {
+                    "unit_margin": 808.06,
+                    "purchase_price": 1123.9,
+                    "calculation_version": 2,
+                    "inputs_json": json.dumps({"buyout_percent": 80}),
+                },
+            },
+            live_day=date(2026, 8, 29),
+            live_unit_margin=None,
+            live_purchase_price=None,
+            daily_advertising={"2026-08-28": 10_488},
+            fallback_buyout_percent=78,
+        )
+
+        self.assertEqual(result["orders"], 34.4)
+        self.assertEqual(result["margin"], 17_309.26)
+        self.assertEqual(result["buyout_percent"], 80)
 
         gogol_taxes = unit_economics._unit_economics_1c_mock_product(
             "gogol",
@@ -998,6 +1470,21 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertTrue(result["price_data_refreshed"])
 
     def test_unit_profit_report_supports_period_filters_and_totals(self) -> None:
+        wb_funnel_orders._replace_day(
+            "rimili",
+            datetime(2026, 8, 13).date(),
+            [("949558341", "R-1", "Товар", 4, 2_000, 1, 500, 3, 1_500, 80)],
+        )
+        wb_funnel_orders._replace_day(
+            "rimili",
+            datetime(2026, 8, 19).date(),
+            [("949558341", "R-1", "Товар", 5, 2_500, 1, 500, 4, 2_000, 80)],
+        )
+        wb_funnel_orders._replace_day(
+            "rimili",
+            datetime(2026, 8, 20).date(),
+            [("949558341", "R-1", "Товар", 7, 3_500)],
+        )
         metrics = {
             ("rimili", "949558341"): {
                 "period_from": "2026-08-13",
@@ -1011,10 +1498,35 @@ class WebRouteUnitTests(unittest.TestCase):
                 "cpc": 8.4,
                 "orders_amount": 5000,
                 "orders_count": 10,
+                "cancel_amount": 1000,
+                "cancel_count": 2,
+                "net_orders_amount": 4000,
+                "net_orders_count": 8,
+                "funnel_updated_at": "2026-08-19T08:00:00+00:00",
+                "funnel_source_version": 3,
+                "funnel_vendor_code": "R-1",
+                "funnel_product_name": "Товар WB",
                 "sold_count": 8,
                 "buyout_percent": 80,
+                "range_buyout_percent": 80,
+                "buyout_count": 7,
+                "buyout_amount": 3500,
+                "buyout_percent_weight": 9,
+                "buyout_orders_count": 10,
+                "buyout_orders_amount": 5000,
+                "buyout_cancel_count": 2,
+                "buyout_cancel_amount": 1000,
+                "buyout_net_orders_count": 8,
+                "buyout_net_orders_amount": 4000,
+                "buyout_period_from": "2026-08-13",
+                "buyout_period_to": "2026-08-19",
+                "buyout_updated_at": "2026-08-19T08:00:00+00:00",
+                "buyout_source_version": 2,
                 "drr": 4.2,
-                "daily": [],
+                "daily": [
+                    {"date": "2026-08-13", "advertising_spend": 90},
+                    {"date": "2026-08-19", "advertising_spend": 120},
+                ],
             }
         }
         with mock.patch.object(
@@ -1030,29 +1542,361 @@ class WebRouteUnitTests(unittest.TestCase):
                     "store": "rimili",
                 },
             )
+            download = self.client.get(
+                "/sales/unit-economics-1c/reports/unit-profit.xlsx",
+                params={
+                    "date_from": "2026-08-13",
+                    "date_to": "2026-08-19",
+                    "store": "rimili",
+                },
+            )
 
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         self.assertEqual((payload["period_from"], payload["period_to"]), ("2026-08-13", "2026-08-19"))
         row = next(item for item in payload["rows"] if item["article"] == "949558341")
-        self.assertEqual(row["orders_count"], 10)
-        self.assertEqual(row["orders_amount"], 5000)
+        self.assertEqual(row["orders_count"], 9)
+        self.assertNotIn("funnel_orders_count", row)
+        self.assertEqual(row["orders_amount"], 4500)
+        self.assertEqual(
+            (row["cancel_count"], row["cancel_amount"], row["net_orders_count"], row["net_orders_amount"]),
+            (2, 1000, 7, 3500),
+        )
         self.assertEqual(row["buyout_percent"], 80)
         self.assertEqual(row["ctr"], 2.5)
         self.assertEqual(row["cpc"], 8.4)
         self.assertEqual(row["advertising_spend"], 210)
-        self.assertIn("legal_entity", row)
+        self.assertNotIn("legal_entity", row)
         self.assertIn("subject", row)
-        self.assertEqual(payload["totals"]["orders_count"], 10)
+        orders_amounts = [item["orders_amount"] for item in payload["rows"]]
+        self.assertEqual(orders_amounts, sorted(orders_amounts, reverse=True))
+        self.assertEqual(payload["totals"]["orders_count"], 9)
+        self.assertEqual(payload["totals"]["cancel_count"], 2)
+        self.assertEqual(payload["totals"]["net_orders_count"], 7)
+        self.assertEqual(payload["totals"]["cancel_amount"], 1000)
+        self.assertEqual(payload["totals"]["net_orders_amount"], 3500)
+        self.assertEqual(payload["totals"]["buyout_percent"], 80)
         self.assertEqual(payload["totals"]["ctr"], 2.5)
-        self.assertIn("legal_entities", payload["filters"])
+        self.assertNotIn("legal_entities", payload["filters"])
         self.assertIn("subjects", payload["filters"])
+        self.assertIn("managers", payload["filters"])
+        self.assertIn("articles", payload["filters"])
+        self.assertTrue(payload["funnel_daily_rows"])
+        self.assertTrue(
+            {
+                "retail_price",
+                "customer_price",
+                "acquiring_percent",
+                "acquiring_value",
+                "delivery_with_returns",
+                "advertising_per_unit",
+                "purchase_cost",
+                "tax_value",
+                "net_revenue",
+                "margin_orders_count",
+                "purchase_value",
+                "roi",
+            }.issubset(row)
+        )
+        self.assertNotIn("unit_margin", row)
+
+        self.assertEqual(download.status_code, 200, download.text)
+        self.assertEqual(
+            download.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn(
+            "unit_profit_2026-08-13_2026-08-19.xlsx",
+            download.headers["content-disposition"],
+        )
+        from io import BytesIO
+
+        import openpyxl
+
+        workbook = openpyxl.load_workbook(BytesIO(download.content), data_only=False)
+        self.assertEqual(
+            workbook.sheetnames,
+            ["Расчёт маржи и ROI", "Воронка по дням", "Воронка 7 дней"],
+        )
+        sheet = workbook["Расчёт маржи и ROI"]
+        self.assertEqual(sheet["A1"].value, "Отчёт по юниточной прибыли — полный расчёт")
+        headers = {
+            sheet.cell(row=5, column=column).value: column
+            for column in range(1, sheet.max_column + 1)
+        }
+        for title in (
+            "Всего заказов, шт.",
+            "Всего отмен, шт.",
+            "Заказы − отмены, шт.",
+            "Всего заказов, ₽",
+            "Всего отмен, ₽",
+            "ТО после отмен, ₽",
+            "Выкупы, шт.",
+            "Сумма выкупов, ₽",
+            "Процент выкупа",
+            "Реклама на выкупленную ед., ₽",
+            "Выкупы в расчёте маржи",
+            "Маржа периода, ₽",
+            "Закупка периода, ₽",
+            "ROI",
+        ):
+            self.assertIn(title, headers)
+        self.assertNotIn("Маржа на штуку, ₽", headers)
+        product_row = next(
+            row_index
+            for row_index in range(6, sheet.max_row)
+            if sheet.cell(row=row_index, column=2).value == "949558341"
+        )
+        self.assertEqual(sheet.cell(row=product_row, column=headers["Всего заказов, шт."]).value, 9)
+        self.assertEqual(sheet.cell(row=product_row, column=headers["Всего отмен, шт."]).value, 2)
+        self.assertEqual(sheet.cell(row=product_row, column=headers["Заказы − отмены, шт."]).value, 7)
+        self.assertEqual(sheet.cell(row=product_row, column=headers["Всего заказов, ₽"]).value, 4500)
+        self.assertEqual(sheet.cell(row=product_row, column=headers["Всего отмен, ₽"]).value, 1000)
+        self.assertEqual(sheet.cell(row=product_row, column=headers["ТО после отмен, ₽"]).value, 3500)
+        self.assertEqual(sheet.cell(row=sheet.max_row, column=1).value, "ИТОГО")
+        self.assertEqual(sheet.freeze_panes, "F6")
+        self.assertTrue(sheet.auto_filter.ref.startswith("A5:"))
+        daily_sheet = workbook["Воронка по дням"]
+        daily_headers = [
+            daily_sheet.cell(row=4, column=column).value
+            for column in range(1, daily_sheet.max_column + 1)
+        ]
+        self.assertIn("Всего отмен, шт.", daily_headers)
+        self.assertIn("ТО после отмен, ₽", daily_headers)
+        self.assertIn("Выкупы, шт.", daily_headers)
+        self.assertIn("Сумма выкупов, ₽", daily_headers)
+
+        page = self.client.get("/sales/unit-economics-1c/reports/unit-profit")
+        self.assertNotIn("Юрлицо", page.text)
+        self.assertNotIn('id="ue1cr-legal"', page.text)
+        self.assertNotIn('class="ue1cr-page-head"', page.text)
+        self.assertNotIn('id="ue1cr-summary"', page.text)
+        self.assertNotIn('class="ue1cr-total-row" id="ue1cr-total"', page.text)
+        self.assertIn('data-report-total-count', page.text)
+        self.assertIn('data-report-total="orders_count"', page.text)
+        self.assertIn('data-report-total="cancel_count"', page.text)
+        self.assertIn('data-report-total="net_orders_count"', page.text)
+        self.assertIn('data-report-total="cancel_amount"', page.text)
+        self.assertIn('data-report-total="net_orders_amount"', page.text)
+        self.assertNotIn('data-report-total="funnel_orders_count"', page.text)
+        self.assertNotIn(">Заказов</span>", page.text)
+        self.assertIn("Всего заказов, шт.", page.text)
+        self.assertIn("Всего отмен, шт.", page.text)
+        self.assertIn("Заказы − отмены, шт.", page.text)
+        self.assertIn("Выкуп</span>", page.text)
+        self.assertNotIn("Маржа на штуку, ₽", page.text)
+        self.assertNotIn('data-filter-column="22"', page.text)
+        self.assertNotIn('id="ue1cr-details-dialog"', page.text)
+        self.assertNotIn('<tfoot id="ue1cr-total">', page.text)
+        self.assertIn('<div class="ue1cr-filter"><span>Менеджеры</span>', page.text)
+        self.assertIn('id="ue1cr-manager"', page.text)
+        self.assertIn('id="ue1cr-article-search"', page.text)
+        self.assertIn('id="ue1cr-show-images"', page.text)
+        self.assertIn('id="ue1cr-export"', page.text)
+        self.assertIn("unit-profit.xlsx", page.text)
+        self.assertIn('data-filter-column="7" data-filter-type="number"', page.text)
+        report_script = (
+            Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c-report.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("function turnover(item)", report_script)
+        self.assertIn("+ turnover(row.orders_amount)", report_script)
+        self.assertNotIn("+ rub(row.orders_amount)", report_script)
+        self.assertIn("function sortRowsByTurnover(rows)", report_script)
+        self.assertNotIn("row.unit_margin", report_script)
+        self.assertIn(
+            "numeric(b.orders_amount) - numeric(a.orders_amount)",
+            report_script,
+        )
+        self.assertIn("state.rows = sortRowsByTurnover(result.rows || [])", report_script)
+        self.assertIn("function reportQuery()", report_script)
+        self.assertIn("function updateExportLink()", report_script)
+        self.assertNotIn("data-report-details", report_script)
 
         invalid = self.client.get(
             "/api/unit-economics-1c/reports/unit-profit",
             params={"date_from": "2026-08-20", "date_to": "2026-08-19"},
         )
         self.assertEqual(invalid.status_code, 422)
+        invalid_export = self.client.get(
+            "/sales/unit-economics-1c/reports/unit-profit.xlsx",
+            params={"date_from": "2026-08-20", "date_to": "2026-08-19"},
+        )
+        self.assertEqual(invalid_export.status_code, 422)
+
+    def test_unit_profit_report_filters_by_manager_and_limits_regular_users(self) -> None:
+        stock_item = next(
+            item
+            for item in db.list_unit_economics_1c_active_wb_stock_items()
+            if item["store_slug"] == "rimili" and item["article"] == "949558341"
+        )
+        db.replace_unit_economics_1c_source_values(
+            [
+                {
+                    "stock_item_id": stock_item["id"],
+                    "manager": "Андрей Китов",
+                    "source_sheet_id": 10,
+                    "source_sheet_title": "RIMILI WB",
+                    "source_row": 3,
+                }
+            ],
+            {},
+            NOW,
+        )
+
+        filtered = self.client.get(
+            "/api/unit-economics-1c/reports/unit-profit",
+            params=[("store", "rimili"), ("manager", "Андрей Китов"), ("article", "949558341")],
+        )
+        self.assertEqual(filtered.status_code, 200, filtered.text)
+        self.assertEqual([row["article"] for row in filtered.json()["rows"]], ["949558341"])
+        self.assertEqual(filtered.json()["rows"][0]["manager"], "Андрей Китов")
+
+        self.app.state.container.identity.user_for_token.return_value = {
+            **self.user,
+            "role": "admin",
+        }
+        admin_page = self.client.get("/sales/unit-economics-1c/reports/unit-profit")
+        self.assertIn('<div class="ue1cr-filter"><span>Менеджеры</span>', admin_page.text)
+
+        self.app.state.container.identity.user_for_token.return_value = {
+            **self.user,
+            "id": 4,
+            "full_name": "Андрей Китов",
+            "login": "Kitov",
+            "role": "user",
+            "store_slugs": ["rimili"],
+        }
+        own = self.client.get("/api/unit-economics-1c/reports/unit-profit", params={"store": "rimili"})
+        self.assertEqual([row["article"] for row in own.json()["rows"]], ["949558341"])
+        self.assertTrue(own.json()["manager_scope"]["matched"])
+        manager_page = self.client.get("/sales/unit-economics-1c/reports/unit-profit")
+        self.assertNotIn('id="ue1cr-manager"', manager_page.text)
+        self.assertNotIn('id="ue1cr-manager-summary"', manager_page.text)
+        self.assertNotIn('id="ue1cr-manager-options"', manager_page.text)
+        self.assertNotIn("<span>Менеджеры</span>", manager_page.text)
+        report_script = (
+            Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c-report.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("if (!summaryNodes[kind]) return;", report_script)
+        self.assertIn("if (!optionNodes[kind]) return;", report_script)
+
+        self.app.state.container.identity.user_for_token.return_value = {
+            **self.user,
+            "id": 5,
+            "full_name": "Антон Ефимов",
+            "login": "Efimov",
+            "role": "user",
+            "store_slugs": ["rimili"],
+        }
+        unrelated = self.client.get(
+            "/api/unit-economics-1c/reports/unit-profit",
+            params={"store": "rimili"},
+        )
+        self.assertEqual(unrelated.status_code, 200, unrelated.text)
+        self.assertEqual(unrelated.json()["rows"], [])
+        self.assertFalse(unrelated.json()["manager_scope"]["matched"])
+
+        self.app.state.container.identity.user_for_token.return_value = {
+            **self.user,
+            "id": 6,
+            "full_name": "Андрей Китов Старший",
+            "login": "KitovSenior",
+            "role": "user",
+            "store_slugs": ["rimili"],
+        }
+        partial_name = self.client.get(
+            "/api/unit-economics-1c/reports/unit-profit",
+            params={"store": "rimili"},
+        )
+        self.assertEqual(partial_name.status_code, 200, partial_name.text)
+        self.assertEqual(partial_name.json()["rows"], [])
+        self.assertFalse(partial_name.json()["manager_scope"]["matched"])
+
+        self.app.state.container.identity.user_for_token.return_value = {
+            **self.user,
+            "id": 4,
+            "full_name": "Андрей Китов",
+            "login": "Kitov",
+            "role": "user",
+            "store_slugs": ["rimili"],
+        }
+        with mock.patch.object(
+            unit_economics.db,
+            "get_unit_economics_1c_product_reference_rows",
+            return_value=[],
+        ):
+            no_assignments = self.client.get(
+                "/api/unit-economics-1c/reports/unit-profit",
+                params={"store": "rimili"},
+            )
+        self.assertEqual(no_assignments.status_code, 200, no_assignments.text)
+        self.assertEqual(no_assignments.json()["rows"], [])
+        self.assertTrue(no_assignments.json()["manager_scope"]["restricted"])
+        self.assertFalse(no_assignments.json()["manager_scope"]["matched"])
+
+    def test_unit_economics_column_preferences_are_personal_and_server_backed(self) -> None:
+        conn = core.get_connection()
+        for user_id in (1, 2):
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO users
+                    (id, full_name, google_email, login, password_hash, role, is_active,
+                     can_edit_stock, can_manage_users, created_at)
+                VALUES (?, ?, '', ?, 'hash', 'user', 1, 1, 0, ?)
+                """,
+                (user_id, f"User {user_id}", f"user-{user_id}", NOW),
+            )
+        conn.commit()
+        conn.close()
+        payload = {
+            "order": ["product", "stock", "comments", "current"],
+            "hidden": ["tag", "product"],
+        }
+        saved = self.client.put(
+            "/api/unit-economics-1c/preferences/columns",
+            json=payload,
+            headers={"X-Requested-With": "fetch"},
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["preferences"]["order"][:4], payload["order"])
+        self.assertEqual(saved.json()["preferences"]["hidden"], ["tag"])
+        db.save_ui_preference(2, "unit_economics_1c.columns", {"order": ["product"], "hidden": []})
+        self.assertEqual(db.get_ui_preference(1, "unit_economics_1c.columns")["hidden"], ["tag"])
+        self.assertEqual(db.get_ui_preference(2, "unit_economics_1c.columns")["hidden"], [])
+        page = self.client.get("/sales/unit-economics-1c")
+        self.assertIn('"columnPreferences": {"order": ["product", "stock", "comments", "current"', page.text)
+
+    def test_unit_economics_chart_and_column_drag_controls_are_rendered(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        script = (root / "static" / "unit-economics-1c.js").read_text(encoding="utf-8")
+        styles = (root / "static" / "unit-economics-1c.css").read_text(encoding="utf-8")
+        template = (root / "templates" / "unit_economics_1c_content.html").read_text(encoding="utf-8")
+        self.assertIn('data-chart-series="orders"', template)
+        self.assertIn('data-chart-series="stock"', template)
+        self.assertIn("data-chart-compare", template)
+        self.assertIn('id="ue1c-chart-daily-sales"', template)
+        self.assertIn("Заказы воронки ×10", template)
+        self.assertIn("Воронка неделей ранее", template)
+        self.assertIn("var orderScale = 10", script)
+        self.assertIn("var history = allHistory.slice(-14)", script)
+        self.assertIn("var orderBaselineY = usesMoneyAxis ? moneyY(0) : bottom", script)
+        self.assertIn("data-chart-line-series", script)
+        self.assertIn("showChartSeriesTooltip", script)
+        self.assertIn("renderChartDailySales", script)
+        self.assertNotIn('class="ue1c-chart-bar-value', script)
+        self.assertIn("<table><tbody>", script)
+        self.assertIn('<th scope="row">Заказы воронки</th>', script)
+        self.assertNotIn('Заказы / выкуп</th>', script)
+        self.assertNotIn("line(previousHistory", script)
+        self.assertIn(".ue1c-chart-tooltip td", styles)
+        self.assertIn("width: 620px", styles)
+        self.assertIn("height: 260px", styles)
+        self.assertIn(".ue1c-chart-daily-sales-value", styles)
+        self.assertIn("finite(item.orders_count, 0)", script)
+        self.assertIn("line(history, 'stock_units'", script)
+        self.assertIn('draggable="true"', script)
+        self.assertIn("addEventListener('drop'", script)
+        self.assertIn("/api/unit-economics-1c/preferences/columns", script)
 
     def test_unit_economics_1c_price_preview_endpoint_is_point_only(self) -> None:
         db.replace_catalog(
@@ -1131,10 +1975,15 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(too_many.status_code, 422)
 
     def test_unit_economics_1c_product_settings_save_and_render(self) -> None:
+        wb_funnel_orders._replace_product_metrics(
+            "rimili",
+            datetime(2026, 8, 20).date(),
+            datetime(2026, 8, 26).date(),
+            [("949558341", 10, 10_000, 80)],
+        )
         payload = {
             "article": "949558341",
             "delivery_wb_rub": 100,
-            "buyout_percent": 80,
             "return_cost_rub": 50,
             "volume_l": 1.2,
             "storage_wb_rub": 3,
@@ -1155,10 +2004,17 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('"buyout_percent": 80.0', page.text)
         self.assertIn('"delivery_with_returns": 130.0', page.text)
         self.assertIn('"subject": null', page.text)
+        script = (Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Выкуп WB за 7 дней", script)
+        self.assertNotIn("Выкуп для логистики", script)
+        self.assertNotIn("editableParameter('Выкуп", script)
+        self.assertNotIn("data-product-setting=\"buyout_percent\"", script)
 
         invalid = self.client.put(
             "/api/unit-economics-1c/product-settings/rimili",
-            json={**payload, "buyout_percent": 101},
+            json={**payload, "buyout_percent": 80},
             headers={"X-Requested-With": "fetch"},
         )
         self.assertEqual(invalid.status_code, 422)
