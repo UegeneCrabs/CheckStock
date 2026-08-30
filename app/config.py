@@ -188,7 +188,7 @@ class Settings(BaseModel):
             auto_sync_interval_seconds=_env_int("CHECKSTOCK_AUTO_SYNC_INTERVAL_SECONDS", 30 * 60, minimum=1),
             catalog_sync_hour=_env_int("CHECKSTOCK_CATALOG_SYNC_HOUR", 3, maximum=23),
             wb_advertising_sync_interval_seconds=_env_int(
-                "CHECKSTOCK_WB_ADVERTISING_SYNC_INTERVAL_SECONDS", 60 * 60, minimum=1
+                "CHECKSTOCK_WB_ADVERTISING_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1
             ),
             wb_funnel_orders_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_WB_FUNNEL_ORDERS_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1

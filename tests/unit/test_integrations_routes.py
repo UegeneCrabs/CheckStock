@@ -63,8 +63,8 @@ def test_superadmin_page_never_renders_saved_secrets(container, user_factory, mo
     assert "Воронка продаж WB" in response.text
     assert "Закрытие воронки WB" in response.text
     assert "Реклама WB" in response.text
-    assert "Каждые 15 мин." in response.text
-    assert "Каждый час" in response.text
+    assert response.text.count("Каждые 15 мин.") >= 2
+    assert "Каждый час" not in response.text
     assert "Продажи и реклама" not in response.text
     assert "РНП-аналитика" not in response.text
     assert 'data-sync-history="catalog_sync"' in response.text

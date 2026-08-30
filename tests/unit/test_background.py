@@ -42,13 +42,13 @@ class BackgroundSyncTests(unittest.TestCase):
         self.assertEqual(report.succeeded, ("WB advertising",))
         self.assertEqual(report.failed, ())
 
-    def test_advertising_runs_hourly_without_sales_or_rnp_jobs(self) -> None:
+    def test_advertising_runs_every_fifteen_minutes_without_sales_or_rnp_jobs(self) -> None:
         jobs = {job.name: job for job in background._jobs(mock.Mock())}
 
         self.assertNotIn("sales_sync", jobs)
         self.assertNotIn("rnp_analytics_sync", jobs)
         self.assertIs(jobs["wb_advertising_sync"].callback, background._sync_wb_advertising)
-        self.assertEqual(jobs["wb_advertising_sync"].next_delay(), 60 * 60)
+        self.assertEqual(jobs["wb_advertising_sync"].next_delay(), 15 * 60)
 
     def test_stock_history_jobs_run_at_fixed_moscow_hours(self) -> None:
         ready = mock.Mock()
