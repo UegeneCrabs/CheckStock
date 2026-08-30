@@ -40,7 +40,6 @@ class UnitEconomics1CCabinetSettings(UnitEconomics1CCabinetValues):
 
 class UnitEconomics1CProductValues(DtoModel):
     delivery_wb_rub: float = Field(default=0, ge=0, le=1_000_000)
-    buyout_percent: float = Field(default=0, ge=0, le=100)
     return_cost_rub: float = Field(default=0, ge=0, le=1_000_000)
     volume_l: float = Field(default=0, ge=0, le=1_000_000)
     storage_wb_rub: float = Field(default=0, ge=0, le=1_000_000)
@@ -68,3 +67,8 @@ class UnitEconomics1CPriceChange(DtoModel):
 
 class UnitEconomics1CPriceChangeRequest(DtoModel):
     data: tuple[UnitEconomics1CPriceChange, ...] = Field(min_length=1, max_length=1)
+
+
+class UnitEconomics1CColumnPreferencesRequest(DtoModel):
+    order: tuple[str, ...] = Field(max_length=50)
+    hidden: tuple[str, ...] = Field(max_length=50)

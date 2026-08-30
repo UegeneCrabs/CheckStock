@@ -3,21 +3,33 @@ from types import TracebackType
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.dto.marketplace import Marketplace
 from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
+    CancelTransitCommand,
     CatalogItem,
     CatalogItems,
     CatalogQuery,
+    ReceiveTransitCommand,
     StockIncrement,
+    StockMovementItem,
+    StockMovementItems,
     StockQuantity,
     StockQuantityQuery,
+    TransitActionResult,
 )
+from app.errors import StockValidationError
 from app.infrastructure.orm import (
     FulfillmentStockRecord,
     FulfillmentTransferRecord,
+    FulfillmentTransitBatchRecord,
+    FulfillmentTransitItemRecord,
+    FulfillmentTransitReceiptItemRecord,
+    FulfillmentTransitReceiptRecord,
     StockItemRecord,
     TrashStockRecord,
+    UnitEconomics1CSourceValueRecord,
 )
 
 
@@ -79,8 +91,23 @@ class SqlAlchemyStockRepository:
             if record.quantity == 0:
                 self._session.delete(record)
 
-    def apply_transfer(self, command: ApplyTransferCommand) -> None:
+    def apply_transfer(self, command: ApplyTransferCommand) -> int:
         transfer = command.transfer
+        batch = FulfillmentTransitBatchRecord(
+            store_slug=transfer.store_slug,
+            from_fulfillment=transfer.from_fulfillment,
+            from_marketplace=transfer.from_marketplace.value,
+            to_fulfillment=transfer.to_fulfillment,
+            to_marketplace=transfer.to_marketplace.value,
+            status="in_transit",
+            note=transfer.note,
+            sent_by_user_id=transfer.user_id,
+            sent_by_name=transfer.user_name,
+            sent_at=command.created_at.isoformat(),
+        )
+        self._session.add(batch)
+        self._session.flush()
+
         for item in command.items.root:
             self.increment(
                 StockIncrement(
@@ -92,14 +119,17 @@ class SqlAlchemyStockRepository:
                     updated_at=command.created_at,
                 )
             )
-            self.increment(
-                StockIncrement(
-                    store_slug=transfer.store_slug,
-                    article=item.to_article,
-                    fulfillment=transfer.to_fulfillment,
-                    marketplace=transfer.to_marketplace,
-                    quantity=item.quantity,
-                    updated_at=command.created_at,
+            self._session.add(
+                FulfillmentTransitItemRecord(
+                    batch_id=batch.id,
+                    from_article=item.from_article,
+                    to_article=item.to_article,
+                    barcode=item.barcode,
+                    name=item.name,
+                    sent_quantity=item.quantity,
+                    received_quantity=0,
+                    cancelled_quantity=0,
+                    purchase_price=self._purchase_price(transfer.store_slug, item.from_article),
                 )
             )
             self._session.add(
@@ -116,6 +146,163 @@ class SqlAlchemyStockRepository:
                     created_at=command.created_at.isoformat(),
                 )
             )
+        self._session.flush()
+        return batch.id
+
+    def receive_transfer(self, command: ReceiveTransitCommand) -> TransitActionResult:
+        created_at = command.created_at
+        if created_at is None:
+            raise RuntimeError("Не указано время приёмки перемещения")
+        batch = self._session.scalar(
+            select(FulfillmentTransitBatchRecord)
+            .where(FulfillmentTransitBatchRecord.id == command.transfer_id)
+            .with_for_update()
+        )
+        if batch is None:
+            raise StockValidationError("Перемещение не найдено")
+        if batch.status not in {"in_transit", "partial"}:
+            raise StockValidationError("Это перемещение уже закрыто")
+
+        item_rows = list(
+            self._session.scalars(
+                select(FulfillmentTransitItemRecord)
+                .where(FulfillmentTransitItemRecord.batch_id == batch.id)
+                .order_by(FulfillmentTransitItemRecord.id)
+                .with_for_update()
+            )
+        )
+        by_id = {item.id: item for item in item_rows}
+        requested: dict[int, int] = {}
+        for entry in command.request.items:
+            if entry.item_id in requested:
+                raise StockValidationError("Одна позиция указана несколько раз")
+            requested[entry.item_id] = entry.quantity
+
+        missing = sorted(item_id for item_id in requested if item_id not in by_id)
+        if missing:
+            raise StockValidationError("Позиции не относятся к перемещению: " + ", ".join(map(str, missing)))
+
+        receipt = FulfillmentTransitReceiptRecord(
+            batch_id=batch.id,
+            user_id=command.user_id,
+            user_name=command.user_name,
+            note=command.request.note,
+            received_at=created_at.isoformat(),
+        )
+        self._session.add(receipt)
+        self._session.flush()
+
+        moved: list[StockMovementItem] = []
+        for item_id, quantity in requested.items():
+            item = by_id[item_id]
+            remaining = item.sent_quantity - item.received_quantity - item.cancelled_quantity
+            if quantity > remaining:
+                raise StockValidationError(
+                    f"{item.to_article}: принимается {quantity}, в пути осталось {remaining}"
+                )
+            self.increment(
+                StockIncrement(
+                    store_slug=batch.store_slug,
+                    article=item.to_article,
+                    fulfillment=batch.to_fulfillment,
+                    marketplace=Marketplace(batch.to_marketplace),
+                    quantity=quantity,
+                    updated_at=created_at,
+                )
+            )
+            item.received_quantity += quantity
+            self._session.add(
+                FulfillmentTransitReceiptItemRecord(
+                    receipt_id=receipt.id,
+                    transit_item_id=item.id,
+                    quantity=quantity,
+                )
+            )
+            moved.append(
+                StockMovementItem(
+                    article=item.to_article,
+                    name=item.name or item.to_article,
+                    barcode=item.barcode or "",
+                    quantity=quantity,
+                    purchase_price=item.purchase_price,
+                )
+            )
+
+        remaining_total = sum(
+            item.sent_quantity - item.received_quantity - item.cancelled_quantity for item in item_rows
+        )
+        batch.status = "received" if remaining_total == 0 else "partial"
+        batch.last_received_by_user_id = command.user_id
+        batch.last_received_by_name = command.user_name
+        batch.last_received_at = created_at.isoformat()
+        self._session.flush()
+        return TransitActionResult(
+            transfer_id=batch.id,
+            status=batch.status,
+            moved=StockMovementItems(tuple(moved)),
+        )
+
+    def cancel_transfer(self, command: CancelTransitCommand) -> TransitActionResult:
+        created_at = command.created_at
+        if created_at is None:
+            raise RuntimeError("Не указано время отмены перемещения")
+        batch = self._session.scalar(
+            select(FulfillmentTransitBatchRecord)
+            .where(FulfillmentTransitBatchRecord.id == command.transfer_id)
+            .with_for_update()
+        )
+        if batch is None:
+            raise StockValidationError("Перемещение не найдено")
+        if batch.status not in {"in_transit", "partial"}:
+            raise StockValidationError("Это перемещение уже закрыто")
+
+        item_rows = list(
+            self._session.scalars(
+                select(FulfillmentTransitItemRecord)
+                .where(FulfillmentTransitItemRecord.batch_id == batch.id)
+                .order_by(FulfillmentTransitItemRecord.id)
+                .with_for_update()
+            )
+        )
+        moved: list[StockMovementItem] = []
+        for item in item_rows:
+            remaining = item.sent_quantity - item.received_quantity - item.cancelled_quantity
+            if remaining <= 0:
+                continue
+            self.increment(
+                StockIncrement(
+                    store_slug=batch.store_slug,
+                    article=item.from_article,
+                    fulfillment=batch.from_fulfillment,
+                    marketplace=Marketplace(batch.from_marketplace),
+                    quantity=remaining,
+                    updated_at=created_at,
+                )
+            )
+            item.cancelled_quantity += remaining
+            moved.append(
+                StockMovementItem(
+                    article=item.from_article,
+                    name=item.name or item.from_article,
+                    barcode=item.barcode or "",
+                    quantity=remaining,
+                    purchase_price=item.purchase_price,
+                )
+            )
+
+        if not moved:
+            raise StockValidationError("В перемещении не осталось товара для возврата")
+        batch.status = "cancelled"
+        batch.cancelled_by_user_id = command.user_id
+        batch.cancelled_by_name = command.user_name
+        batch.cancelled_at = created_at.isoformat()
+        batch.cancellation_reason = command.request.reason
+        self._session.flush()
+        return TransitActionResult(
+            transfer_id=batch.id,
+            status=batch.status,
+            moved=StockMovementItems(tuple(moved)),
+        )
 
     def apply_shipment(self, command: ApplyShipmentCommand) -> None:
         shipment = command.shipment
@@ -154,6 +341,22 @@ class SqlAlchemyStockRepository:
                 FulfillmentStockRecord.marketplace == query.marketplace.value,
             )
         )
+
+    def _purchase_price(self, store_slug: str, article: str) -> float | None:
+        value = self._session.scalar(
+            select(UnitEconomics1CSourceValueRecord.purchase_price)
+            .join(
+                StockItemRecord,
+                StockItemRecord.id == UnitEconomics1CSourceValueRecord.stock_item_id,
+            )
+            .where(
+                StockItemRecord.store_slug == store_slug,
+                StockItemRecord.marketplace == "WB",
+                StockItemRecord.article == article,
+                StockItemRecord.is_service == 0,
+            )
+        )
+        return float(value) if value is not None else None
 
     def _adjust_trash(
         self,

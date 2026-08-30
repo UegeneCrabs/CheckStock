@@ -21,6 +21,7 @@ from app.dto.identity import (
     SessionData,
     SessionToken,
     User,
+    UserAccessPolicyChange,
     UserActiveChange,
     UserCollection,
     UserCountQuery,
@@ -43,11 +44,14 @@ from app.dto.rnp import (
 from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
+    CancelTransitCommand,
     CatalogItems,
     CatalogQuery,
+    ReceiveTransitCommand,
     StockIncrement,
     StockQuantity,
     StockQuantityQuery,
+    TransitActionResult,
 )
 
 
@@ -73,6 +77,8 @@ class IdentityRepository(Protocol):
     def set_role(self, command: UserRoleChange) -> None: ...
 
     def set_section_access(self, command: UserSectionAccessChange) -> None: ...
+
+    def set_access_policy(self, command: UserAccessPolicyChange) -> None: ...
 
     def update_password(self, command: UserPasswordChange) -> None: ...
 
@@ -181,7 +187,11 @@ class StockRepository(Protocol):
 
     def increment(self, command: StockIncrement) -> None: ...
 
-    def apply_transfer(self, command: ApplyTransferCommand) -> None: ...
+    def apply_transfer(self, command: ApplyTransferCommand) -> int: ...
+
+    def receive_transfer(self, command: ReceiveTransitCommand) -> TransitActionResult: ...
+
+    def cancel_transfer(self, command: CancelTransitCommand) -> TransitActionResult: ...
 
     def apply_shipment(self, command: ApplyShipmentCommand) -> None: ...
 

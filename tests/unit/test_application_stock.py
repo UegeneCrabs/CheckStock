@@ -70,9 +70,10 @@ def test_add_items_aggregates_catalog_codes_and_commits(stock_service) -> None:
     command = AddFulfillmentItemsCommand(
         store_slug="store",
         request=AddFulfillmentItemsRequest(
-            fulfillment="FF",
-            marketplace=Marketplace.WB,
-            items=(
+                fulfillment="FF",
+                marketplace=Marketplace.WB,
+                note="Initial unit stock",
+                items=(
                 {"code": "A", "quantity": 2},
                 {"code": "barcode-A", "quantity": 3},
             ),
@@ -93,8 +94,9 @@ def test_add_items_rejects_unknown_catalog_code(stock_service) -> None:
     command = AddFulfillmentItemsCommand(
         store_slug="store",
         request=AddFulfillmentItemsRequest(
-            fulfillment="FF",
-            items=({"code": "missing", "quantity": 1},),
+                fulfillment="FF",
+                note="Unknown product check",
+                items=({"code": "missing", "quantity": 1},),
         ),
     )
 
@@ -109,11 +111,13 @@ def test_transfer_moves_available_items_and_reports_target_misses(stock_service)
     service, repository, unit_of_work = stock_service
     repository.catalog.side_effect = [catalog("A", "B"), catalog("A", marketplace=Marketplace.OZON)]
     repository.quantity.return_value = StockQuantity(10)
+    repository.apply_transfer.return_value = 42
 
     result = service.transfer(transfer_command(("A", 2), ("B", 1)))
 
     assert [item.article for item in result.moved.root] == ["A"]
     assert result.skipped.root[0].article == "B"
+    assert result.transfer_id == 42
     repository.apply_transfer.assert_called_once()
     unit_of_work.commit.assert_called_once()
 

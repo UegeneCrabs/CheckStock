@@ -20,7 +20,9 @@ def get_operations_with_items_for_period(
               LEFT JOIN stock_operation_report_flags flags
                 ON flags.operation_id=operation.id
              WHERE operation.store_slug IN ({placeholders})
-               AND operation.kind IN ('delivery', 'manual_add', 'transfer', 'shipment')
+               AND operation.kind IN
+                   ('delivery', 'manual_add', 'transfer', 'transfer_dispatch',
+                    'transfer_receive', 'transfer_cancel', 'shipment', 'fbs_transfer')
                AND operation.created_at>=? AND operation.created_at<?
              ORDER BY operation.created_at DESC, operation.id DESC
             """,
@@ -33,7 +35,8 @@ def get_operations_with_items_for_period(
         item_placeholders = ", ".join("?" for _ in operation_ids)
         item_rows = connection.execute(
             f"""
-            SELECT operation_id, article, barcode, name, quantity
+            SELECT operation_id, article, barcode, name, quantity,
+                   purchase_price, purchase_price_recorded
               FROM stock_operation_items
              WHERE operation_id IN ({item_placeholders})
              ORDER BY id

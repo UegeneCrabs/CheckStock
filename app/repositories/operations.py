@@ -4,7 +4,11 @@ OPERATION_LABELS = {
     "delivery": "Поставка на ФФ",
     "manual_add": "Ручная докладка",
     "transfer": "Перемещение",
+    "transfer_dispatch": "Перемещение отправлено",
+    "transfer_receive": "Перемещение принято",
+    "transfer_cancel": "Перемещение отменено",
     "shipment": "Отгрузка со стока",
+    "fbs_transfer": "Перемещение на FBS",
     "trash": "Списание в мусорку",
 }
 
@@ -31,17 +35,39 @@ def record_operation(
     to_fulfillment: str | None = None,
     to_marketplace: str | None = None,
     note: str | None = None,
+    transit_batch_id: int | None = None,
 ) -> int:
 
     conn = get_connection()
     try:
+        price_rows = conn.execute(
+            """
+            SELECT items.article, items.barcode, source.purchase_price
+              FROM stock_items items
+              JOIN unit_economics_1c_source_values source
+                ON source.stock_item_id=items.id
+             WHERE items.store_slug=? AND items.marketplace='WB'
+               AND items.is_service=0
+            """,
+            (store_slug,),
+        ).fetchall()
+        price_by_article = {
+            str(row["article"]): float(row["purchase_price"])
+            for row in price_rows
+            if row["article"] and row["purchase_price"] is not None
+        }
+        price_by_barcode = {
+            str(row["barcode"]): float(row["purchase_price"])
+            for row in price_rows
+            if row["barcode"] and row["purchase_price"] is not None
+        }
         cur = conn.execute(
             """
             INSERT INTO stock_operations
                 (store_slug, kind, source_type, source_name, sheet_url,
                  from_fulfillment, from_marketplace, to_fulfillment, to_marketplace,
-                 note, user_id, user_name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 note, user_id, user_name, created_at, transit_batch_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             (
@@ -58,13 +84,16 @@ def record_operation(
                 user_id,
                 user_name,
                 created_at,
+                transit_batch_id,
             ),
         )
         operation_id = cur.lastrowid
         conn.executemany(
             """
-            INSERT INTO stock_operation_items (operation_id, article, barcode, name, quantity)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO stock_operation_items
+                (operation_id, article, barcode, name, quantity,
+                 purchase_price, purchase_price_recorded)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
             """,
             [
                 (
@@ -73,6 +102,14 @@ def record_operation(
                     i.get("barcode"),
                     i.get("name"),
                     int(i.get("quantity") or 0),
+                    (
+                        float(i["purchase_price"])
+                        if i.get("purchase_price") is not None
+                        else price_by_article.get(
+                            str(i.get("article") or ""),
+                            price_by_barcode.get(str(i.get("barcode") or "")),
+                        )
+                    ),
                 )
                 for i in items
             ],
@@ -148,8 +185,8 @@ def get_operations_with_items(
 def get_operation_items(operation_id: int) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT article, barcode, name, quantity FROM stock_operation_items "
-        "WHERE operation_id = ? ORDER BY id",
+        "SELECT article, barcode, name, quantity, purchase_price, purchase_price_recorded "
+        "FROM stock_operation_items WHERE operation_id = ? ORDER BY id",
         (operation_id,),
     ).fetchall()
     conn.close()

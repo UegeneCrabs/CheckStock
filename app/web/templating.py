@@ -2,6 +2,7 @@ import html
 from string import Template
 
 from app import auth, db
+from app.access_control import ActionPermission, accessible_marketplaces, profile_has_permission
 from app.config import settings
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.formatting import format_dt
@@ -164,35 +165,20 @@ def render_page(
             '<path d="M4 4h16v16H4Z"></path><path d="M4 9h16M9 4v16"></path>'
             "</svg><span>Выгрузки</span></a>"
         )
+        integrations_cls = "active" if active == "admin_integrations" else ""
+        admin_link += (
+            f'                <a class="nav-item {integrations_cls}" href="/admin/integrations" '
+            'title="API-ключи и фоновые выгрузки" aria-label="API-ключи и фоновые выгрузки">'
+            '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'
+            '<path d="M7 14a5 5 0 1 1 3.9 1.9L8 19H5v-3l2-2Z"></path>'
+            '<path d="m14 8 2 2m-4 2 2 2"></path>'
+            "</svg><span>API</span></a>"
+        )
 
     full_name = user["full_name"] if user else ""
     name_parts = [part for part in full_name.split() if part]
     user_initials = "".join(part[0] for part in name_parts[:2]).upper() or "CS"
-    section_kickers = {
-        "sales": "ПРОДАЖИ И АНАЛИТИКА",
-        "sales_decision": "ПРОДАЖИ И АНАЛИТИКА / WILDBERRIES",
-        "sales_ephemerides": "ПРОДАЖИ И АНАЛИТИКА",
-        "sales_rnp": "ПРОДАЖИ И АНАЛИТИКА",
-        "unit_1c_settings": "ЮНИТ-ЭКОНОМИКА 1С / ВВОД ДАННЫХ ПО КАБИНЕТАМ",
-        "unit_1c_wb": "ЮНИТ-ЭКОНОМИКА 1С / WILDBERRIES",
-        "unit_1c_ozon": "ЮНИТ-ЭКОНОМИКА 1С / OZON",
-        "unit_1c_yandex": "ЮНИТ-ЭКОНОМИКА 1С / ЯНДЕКС МАРКЕТ",
-        "unit_1c_reports": "ОТЧЁТЫ / ЮНИТОЧНАЯ ПРИБЫЛЬ",
-        "supply": "ПОСТАВКИ И ЗАЯВКИ",
-        "stock": "УПРАВЛЕНИЕ ЗАПАСАМИ",
-        "stock_total": "УПРАВЛЕНИЕ ЗАПАСАМИ / ОСТАТКИ ТОТАЛ",
-        "stock2": "УПРАВЛЕНИЕ ЗАПАСАМИ",
-        "stock_supplies": "УПРАВЛЕНИЕ ЗАПАСАМИ / ПОСТАВКИ",
-        "stock_randomizer": "УПРАВЛЕНИЕ ЗАПАСАМИ / СВЕРКА С ФФ",
-        "stock_cost_report": "УПРАВЛЕНИЕ ЗАПАСАМИ / ДВИЖЕНИЕ И ЗЦ",
-        "admin": "НАСТРОЙКИ И ДОСТУПЫ",
-        "admin_activity": "ИСПОЛЬЗОВАНИЕ СИСТЕМЫ",
-        "admin_google_export": "АВТОМАТИЗАЦИЯ / GOOGLE ТАБЛИЦЫ",
-        "profile": "ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ",
-        "access_denied": "ДОСТУП ОГРАНИЧЕН",
-    }
-    page_heading = title.removeprefix("CheckStock — ").replace(" — ", " / ")
-    sales_open = active in {"sales", "sales_ephemerides", "sales_rnp"}
+    sales_open = active in {"sales", "sales_ephemerides"}
     stock_open = active in {
         "stock",
         "stock_total",
@@ -212,7 +198,6 @@ def render_page(
     sales_sections = (
         SectionName.SALES,
         SectionName.EPHEMERIDES,
-        SectionName.RNP,
     )
     stock_sections = (SectionName.STOCK, SectionName.STOCK_OVERVIEW)
     first_sales = next((section for section in sales_sections if visible[section]), None)
@@ -221,7 +206,6 @@ def render_page(
     current_access = (
         access_level(user, current_section) if current_section is not None else SectionAccessLevel.WRITE
     )
-
     def hidden(allowed: bool) -> str:
         return "" if allowed else " hidden"
 
@@ -230,31 +214,29 @@ def render_page(
         decision_active="active" if active == "sales_decision" else "",
         decision_hidden=hidden(visible[SectionName.DECISION_CENTER]),
         sales_active="active" if sales_open else "",
-        sales_open="is-open" if sales_open else "",
-        sales_expanded="true" if sales_open else "false",
+        sales_open="",
+        sales_expanded="false",
         sales_group_hidden=hidden(first_sales is not None),
         sales_href=SECTION_PATHS[first_sales] if first_sales is not None else "/access-denied",
         sales_overview_hidden=hidden(visible[SectionName.SALES]),
         sales_ephemerides_hidden=hidden(visible[SectionName.EPHEMERIDES]),
-        sales_rnp_hidden=hidden(visible[SectionName.RNP]),
         sales_overview_active="active" if active == "sales" else "",
         sales_ephemerides_active="active" if active == "sales_ephemerides" else "",
-        sales_rnp_active="active" if active == "sales_rnp" else "",
-        stock_open="is-open" if stock_open else "",
-        stock_expanded="true" if stock_open else "false",
+        stock_open="",
+        stock_expanded="false",
         stock_group_hidden=hidden(first_stock is not None),
         stock_href=SECTION_PATHS[first_stock] if first_stock is not None else "/access-denied",
         stock_group_active="active" if stock_open else "",
-        unit_1c_open="is-open" if unit_1c_open else "",
-        unit_1c_expanded="true" if unit_1c_open else "false",
+        unit_1c_open="",
+        unit_1c_expanded="false",
         unit_1c_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
         unit_1c_group_active="active" if unit_1c_open else "",
         unit_1c_settings_active="active" if active == "unit_1c_settings" else "",
         unit_1c_wb_active="active" if active == "unit_1c_wb" else "",
         unit_1c_ozon_active="active" if active == "unit_1c_ozon" else "",
         unit_1c_yandex_active="active" if active == "unit_1c_yandex" else "",
-        reports_open="is-open" if reports_open else "",
-        reports_expanded="true" if reports_open else "false",
+        reports_open="",
+        reports_expanded="false",
         reports_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
         reports_group_active="active" if reports_open else "",
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
@@ -263,13 +245,18 @@ def render_page(
         stock_active="active" if active == "stock" else "",
         stock_hidden=hidden(visible[SectionName.STOCK]),
         stock_total_active="active" if active == "stock_total" else "",
-        stock_total_hidden=hidden(visible[SectionName.STOCK]),
+        stock_total_hidden=hidden(
+            visible[SectionName.STOCK]
+            and profile_has_permission(user, ActionPermission.STOCK_TOTAL_VIEW)
+        ),
         stock2_active="active" if active == "stock2" else "",
         stock2_hidden=hidden(visible[SectionName.STOCK_OVERVIEW]),
         stock_supplies_active="active" if active == "stock_supplies" else "",
         stock_supplies_hidden=hidden(visible[SectionName.STOCK]),
         stock_randomizer_active="active" if active == "stock_randomizer" else "",
-        stock_randomizer_hidden=hidden(visible[SectionName.STOCK]),
+        stock_randomizer_hidden=hidden(
+            visible[SectionName.STOCK] and "WB" in accessible_marketplaces(user)
+        ),
         stock_cost_report_active="active" if active == "stock_cost_report" else "",
         stock_cost_report_hidden=hidden(visible[SectionName.STOCK]),
         admin_link=admin_link,
@@ -282,8 +269,6 @@ def render_page(
         "page.html",
         title=title,
         header=header,
-        page_kicker=section_kickers.get(active, "РАБОЧЕЕ ПРОСТРАНСТВО"),
-        page_heading=html.escape(page_heading),
         content_class=html.escape(content_class),
         content=render_system_alerts(user, alerts) + content,
         section=current_section.value if current_section is not None else active,

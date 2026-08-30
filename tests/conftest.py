@@ -15,6 +15,24 @@ from app.repositories import core
 from app.stores import STORES
 
 
+@pytest.fixture(autouse=True)
+def disable_application_background_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep TestClient lifespans from starting real marketplace sync threads."""
+    from app import background
+
+    monkeypatch.setattr(
+        background,
+        "settings",
+        background.settings.model_copy(
+            update={
+                "background_sync_enabled": False,
+                "funnel_orders_sync_enabled": False,
+                "unit_economics_1c_price_sync_enabled": False,
+            }
+        ),
+    )
+
+
 @pytest.fixture
 def database_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     path = tmp_path / "checkstock-test.sqlite3"

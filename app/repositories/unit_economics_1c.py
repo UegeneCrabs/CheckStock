@@ -41,6 +41,20 @@ DAILY_ADVERTISING_COLUMNS = (
     "synced_at",
 )
 
+DAILY_MARGIN_SNAPSHOT_COLUMNS = (
+    "store_slug",
+    "article",
+    "day",
+    "marketplace",
+    "unit_margin",
+    "purchase_price",
+    "price_day",
+    "calculation_version",
+    "inputs_json",
+    "result_json",
+    "captured_at",
+)
+
 
 def list_active_wb_stock_items(store_slug: str | None = None) -> list[dict]:
     params: tuple[object, ...] = ()
@@ -55,15 +69,6 @@ def list_active_wb_stock_items(store_slug: str | None = None) -> list[dict]:
           FROM stock_items items
          WHERE items.marketplace='WB' AND items.is_service=0
            {store_filter}
-           AND NOT EXISTS (
-               SELECT 1 FROM catalog_product_exclusions excluded
-                WHERE excluded.store_slug=items.store_slug
-                  AND excluded.marketplace=items.marketplace
-                  AND (
-                      excluded.nm_id=items.article
-                      OR items.article LIKE excluded.nm_id || ' / %'
-                  )
-           )
          ORDER BY items.store_slug, items.id
         """,
         params,
@@ -236,6 +241,7 @@ def get_product_reference_rows(store_slugs: tuple[str, ...]) -> list[dict]:
                    ELSE 21
                END AS turnover_days,
                source.purchase_price, source.fulfillment_cost, source.team_commission_percent,
+               source.manager,
                source.tag_raw, source.goal_week, source.goal_day,
                source.stock_status, source.stock_end_week,
                source.supplier_external_raw, source.fact_sales, source.plan_sales,
@@ -396,6 +402,103 @@ def get_product_sales_starts(store_slugs: tuple[str, ...]) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_funnel_order_totals(
+    store_slugs: tuple[str, ...],
+    date_from: str,
+    date_to: str,
+) -> list[dict]:
+    """Return persisted WB funnel orders grouped by store and product for a period."""
+
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT store_slug, article,
+               SUM(orders_count) AS orders_count,
+               SUM(orders_amount) AS orders_amount,
+               SUM(cancel_count) AS cancel_count,
+               SUM(cancel_amount) AS cancel_amount,
+               SUM(buyout_count) AS buyout_count,
+               SUM(buyout_amount) AS buyout_amount,
+               CASE
+                   WHEN SUM(CASE WHEN buyout_percent IS NOT NULL THEN orders_count ELSE 0 END) > 0
+                   THEN SUM(CASE WHEN buyout_percent IS NOT NULL
+                                 THEN buyout_percent * orders_count ELSE 0 END)
+                        / SUM(CASE WHEN buyout_percent IS NOT NULL THEN orders_count ELSE 0 END)
+                   ELSE NULL
+               END AS buyout_percent,
+               SUM(orders_count) - SUM(cancel_count) AS net_orders_count,
+               SUM(orders_amount) - SUM(cancel_amount) AS net_orders_amount
+          FROM wb_funnel_daily_orders
+         WHERE store_slug IN ({placeholders})
+           AND day>=? AND day<=?
+           AND source_version>=3
+         GROUP BY store_slug, article
+        """,
+        (*store_slugs, date_from, date_to),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_funnel_daily_order_rows(
+    store_slugs: tuple[str, ...],
+    date_from: str,
+    date_to: str,
+) -> list[dict]:
+    """Return raw WB funnel orderCount and orderSum values by product and day."""
+
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT store_slug, article, day, vendor_code, product_name,
+               orders_count, orders_amount, cancel_count, cancel_amount,
+               buyout_count, buyout_amount, buyout_percent,
+               orders_count - cancel_count AS net_orders_count,
+               orders_amount - cancel_amount AS net_orders_amount,
+               source_version, updated_at
+          FROM wb_funnel_daily_orders
+         WHERE store_slug IN ({placeholders})
+           AND day>=? AND day<=?
+           AND source_version>=3
+         ORDER BY store_slug, article, day
+        """,
+        (*store_slugs, date_from, date_to),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_funnel_product_metrics(store_slugs: tuple[str, ...]) -> list[dict]:
+    """Return the latest persisted seven-day funnel metrics by product."""
+
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT store_slug, article, period_from, period_to,
+               orders_count, orders_amount, cancel_count, cancel_amount,
+               orders_count - cancel_count AS net_orders_count,
+               orders_amount - cancel_amount AS net_orders_amount,
+               buyout_percent, source_version, updated_at
+          FROM wb_funnel_product_metrics
+         WHERE store_slug IN ({placeholders})
+           AND source_version>=2
+         ORDER BY store_slug, article
+        """,
+        store_slugs,
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def replace_source_values(
     rows: list[dict],
     team_commissions: dict[str, float],
@@ -408,6 +511,7 @@ def replace_source_values(
         "purchase_price",
         "fulfillment_cost",
         "team_commission_percent",
+        "manager",
         "tag_raw",
         "goal_week",
         "goal_day",
@@ -640,6 +744,96 @@ def get_latest_daily_prices(store_slugs: tuple[str, ...]) -> list[dict]:
          ORDER BY prices.store_slug, prices.article
         """,
         store_slugs,
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_daily_prices_as_of(store_slugs: tuple[str, ...], day: str) -> list[dict]:
+    """Return the newest saved price not later than the requested business day."""
+
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT prices.*
+          FROM unit_economics_1c_wb_daily_prices prices
+         WHERE prices.store_slug IN ({placeholders})
+           AND prices.day = (
+               SELECT MAX(candidate.day)
+                 FROM unit_economics_1c_wb_daily_prices candidate
+                WHERE candidate.store_slug = prices.store_slug
+                  AND candidate.article = prices.article
+                  AND candidate.day <= ?
+           )
+         ORDER BY prices.store_slug, prices.article
+        """,
+        (*store_slugs, day),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def save_daily_margin_snapshots(rows: list[dict], *, overwrite: bool = False) -> int:
+    """Persist immutable daily margins; explicit overwrite is reserved for repairs."""
+
+    if not rows:
+        return 0
+    placeholders = ", ".join("?" for _ in DAILY_MARGIN_SNAPSHOT_COLUMNS)
+    conflict = (
+        "DO UPDATE SET "
+        + ", ".join(
+            f"{column}=excluded.{column}"
+            for column in DAILY_MARGIN_SNAPSHOT_COLUMNS[3:]
+        )
+        if overwrite
+        else "DO NOTHING"
+    )
+    with WRITE_LOCK:
+        conn = get_connection()
+        try:
+            result = conn.executemany(
+                f"""
+                INSERT INTO unit_economics_1c_daily_margin_snapshots
+                    ({", ".join(DAILY_MARGIN_SNAPSHOT_COLUMNS)})
+                VALUES ({placeholders})
+                ON CONFLICT(store_slug, article, day) {conflict}
+                """,
+                ([row.get(column) for column in DAILY_MARGIN_SNAPSHOT_COLUMNS] for row in rows),
+            )
+            changed = max(result.rowcount, 0)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return changed
+
+
+def get_daily_margin_snapshots(
+    store_slugs: tuple[str, ...],
+    date_from: str,
+    date_to: str,
+) -> list[dict]:
+    if not store_slugs:
+        return []
+    placeholders = ", ".join("?" for _ in store_slugs)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT store_slug, article, day, marketplace, unit_margin,
+               purchase_price, price_day, calculation_version,
+               inputs_json, result_json, captured_at
+          FROM unit_economics_1c_daily_margin_snapshots
+         WHERE store_slug IN ({placeholders})
+           AND marketplace='WB'
+           AND day>=? AND day<=?
+         ORDER BY store_slug, article, day
+        """,
+        (*store_slugs, date_from, date_to),
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]

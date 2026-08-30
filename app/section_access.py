@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from app.access_control import (
+    EXPERIMENTAL_SECTIONS,
+    ActionPermission,
+    accessible_marketplaces,
+    is_experimental_owner,
+    profile_has_permission,
+)
 from app.dto.identity import Role, SectionAccessLevel, SectionName, User, coerce_user
 
 SECTION_LABELS: dict[SectionName, str] = {
@@ -55,8 +62,32 @@ def access_level(user: User | None, section: SectionName) -> SectionAccessLevel:
     user = coerce_user(user)
     if user is None:
         return SectionAccessLevel.NONE
+    if section.value in EXPERIMENTAL_SECTIONS and not is_experimental_owner(user):
+        return SectionAccessLevel.NONE
     if user.role is Role.SUPERADMIN:
         return SectionAccessLevel.WRITE
+    if user.access_profile is not None:
+        if section is SectionName.SALES:
+            return (
+                SectionAccessLevel.READ
+                if profile_has_permission(user, ActionPermission.SALES_VIEW)
+                else SectionAccessLevel.NONE
+            )
+        if section is SectionName.STOCK:
+            return (
+                SectionAccessLevel.WRITE
+                if profile_has_permission(user, ActionPermission.STOCK_BALANCE_VIEW)
+                else SectionAccessLevel.NONE
+            )
+        if section is SectionName.UNIT_ECONOMICS_1C:
+            if "WB" not in accessible_marketplaces(user):
+                return SectionAccessLevel.NONE
+            if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_EDIT):
+                return SectionAccessLevel.WRITE
+            if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW):
+                return SectionAccessLevel.READ
+            return SectionAccessLevel.NONE
+        return SectionAccessLevel.NONE
     configured = user.section_access.get(section)
     if configured is not None:
         return configured

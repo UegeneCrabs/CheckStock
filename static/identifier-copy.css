@@ -1,0 +1,77 @@
+.copy-identifier {
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    line-height: inherit;
+    text-align: inherit;
+}
+
+[data-copy-value] {
+    cursor: copy;
+}
+
+[data-copy-value]:hover,
+[data-copy-value]:focus-visible {
+    color: var(--blue, #315efb);
+    outline: 0;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+}
+
+[data-copy-value].is-copied {
+    color: var(--green, #16835b);
+}
+
+.identifier-copy-tooltip {
+    position: fixed;
+    z-index: 1000;
+    max-width: min(260px, calc(100vw - 16px));
+    padding: 6px 9px;
+    border-radius: 7px;
+    color: #fff;
+    background: #1f2937;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .2);
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.25;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.identifier-copy-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 1000;
+    padding: 9px 12px;
+    opacity: 0;
+    border-radius: 8px;
+    color: #fff;
+    background: #24344e;
+    box-shadow: 0 10px 28px rgba(18, 31, 52, .2);
+    font-size: 12px;
+    font-weight: 650;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition: opacity .15s ease, transform .15s ease;
+}
+
+.identifier-copy-toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.identifier-copy-toast.is-error {
+    background: #9f2f3a;
+}
+
+@media (max-width: 640px) {
+    .identifier-copy-toast {
+        right: 12px;
+        bottom: 12px;
+    }
+}

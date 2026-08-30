@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.application.ports import IdentityRepository
 from app.dto.identity import (
+    AccessProfile,
     ActivityCommand,
     ActivityEntry,
     ActivityLog,
@@ -17,6 +18,7 @@ from app.dto.identity import (
     CreateUserCommand,
     ExpiredSessionsCommand,
     LoginQuery,
+    MarketplaceAccessScope,
     PermissionChange,
     Role,
     SectionAccessLevel,
@@ -24,6 +26,7 @@ from app.dto.identity import (
     SessionData,
     SessionToken,
     User,
+    UserAccessPolicyChange,
     UserActiveChange,
     UserCollection,
     UserCountQuery,
@@ -39,6 +42,8 @@ from app.dto.identity import (
 from app.infrastructure.orm import (
     ActivityLogRecord,
     SessionRecord,
+    UserAccessProfileRecord,
+    UserMarketplaceAccessRecord,
     UserRecord,
     UserSectionAccessRecord,
     UserStoreAccessRecord,
@@ -75,6 +80,19 @@ def _user(record: UserRecord) -> User:
             if access.section in SectionName._value2member_map_
             and access.access_level in SectionAccessLevel._value2member_map_
         },
+        access_profile=(
+            AccessProfile(record.access_profile_record.profile)
+            if record.access_profile_record is not None
+            and record.access_profile_record.profile in AccessProfile._value2member_map_
+            else None
+        ),
+        access_scopes=tuple(
+            MarketplaceAccessScope(
+                store_slug=access.store_slug,
+                marketplace=access.marketplace,
+            )
+            for access in record.marketplace_access
+        ),
     )
 
 
@@ -94,6 +112,17 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         record.store_access = [
             UserStoreAccessRecord(store_slug=slug) for slug in _normalize_store_slugs(command.store_slugs)
         ]
+        if command.access_profile is not None:
+            record.access_profile_record = UserAccessProfileRecord(
+                profile=command.access_profile.value
+            )
+        record.marketplace_access = [
+            UserMarketplaceAccessRecord(
+                store_slug=scope.store_slug,
+                marketplace=scope.marketplace,
+            )
+            for scope in command.access_scopes
+        ]
         self._session.add(record)
         self._session.flush()
         return UserId(record.id)
@@ -104,6 +133,8 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             .options(
                 selectinload(UserRecord.store_access),
                 selectinload(UserRecord.section_access),
+                selectinload(UserRecord.access_profile_record),
+                selectinload(UserRecord.marketplace_access),
             )
             .where(UserRecord.id == query.root)
         )
@@ -115,6 +146,8 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             .options(
                 selectinload(UserRecord.store_access),
                 selectinload(UserRecord.section_access),
+                selectinload(UserRecord.access_profile_record),
+                selectinload(UserRecord.marketplace_access),
             )
             .where(UserRecord.login == query.login)
         )
@@ -126,6 +159,8 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             .options(
                 selectinload(UserRecord.store_access),
                 selectinload(UserRecord.section_access),
+                selectinload(UserRecord.access_profile_record),
+                selectinload(UserRecord.marketplace_access),
             )
             .order_by(UserRecord.id)
         )
@@ -199,6 +234,39 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         stock_level = command.section_access.get(SectionName.STOCK)
         if stock_level is not None:
             record.can_edit_stock = int(stock_level is SectionAccessLevel.WRITE)
+
+    def set_access_policy(self, command: UserAccessPolicyChange) -> None:
+        record = self._session.scalar(
+            select(UserRecord)
+            .options(
+                selectinload(UserRecord.access_profile_record),
+                selectinload(UserRecord.marketplace_access),
+                selectinload(UserRecord.store_access),
+            )
+            .where(UserRecord.id == command.user_id)
+        )
+        if record is None:
+            return
+        if command.access_profile is None:
+            record.access_profile_record = None
+        elif record.access_profile_record is None:
+            record.access_profile_record = UserAccessProfileRecord(
+                profile=command.access_profile.value
+            )
+        else:
+            record.access_profile_record.profile = command.access_profile.value
+        record.marketplace_access = [
+            UserMarketplaceAccessRecord(
+                store_slug=scope.store_slug,
+                marketplace=scope.marketplace,
+            )
+            for scope in command.access_scopes
+        ]
+        if command.access_profile is not None:
+            scoped_stores = tuple(dict.fromkeys(scope.store_slug for scope in command.access_scopes))
+            record.store_access = [
+                UserStoreAccessRecord(store_slug=slug) for slug in _normalize_store_slugs(scoped_stores)
+            ]
 
     def update_password(self, command: UserPasswordChange) -> None:
         record = self._session.get(UserRecord, command.user_id)

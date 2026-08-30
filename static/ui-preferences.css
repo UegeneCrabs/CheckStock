@@ -446,6 +446,42 @@ body {
     background: color-mix(in srgb, var(--red) 12%, var(--paper));
 }
 
+.profile-account-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.profile-account-logout {
+    min-height: 32px;
+    padding: 5px 9px;
+    gap: 6px;
+    border-color: color-mix(in srgb, var(--red) 34%, var(--border));
+    color: var(--red);
+    background: color-mix(in srgb, var(--red) 4%, var(--paper));
+    font-size: 0.6875rem;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.profile-account-logout:hover {
+    border-color: color-mix(in srgb, var(--red) 58%, var(--border));
+    color: var(--red);
+    background: color-mix(in srgb, var(--red) 9%, var(--paper));
+}
+
+.profile-account-logout svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .profile-count-badge {
     min-width: 30px;
     color: var(--blue);
@@ -678,6 +714,11 @@ body {
     gap: 16px;
 }
 
+.admin-page-head.admin-page-head--compact {
+    align-items: center;
+    justify-content: flex-end;
+}
+
 .admin-page-head h2,
 .admin-page-head .page-subtitle {
     margin-bottom: 0;
@@ -744,6 +785,18 @@ body.employee-create-open {
 .employee-create-dialog > .pass-row,
 .employee-create-dialog > .u-store-field {
     margin-top: 10px;
+}
+
+.employee-create-field-hint {
+    margin: -8px 0 0;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.employee-create-dialog .select-control.is-invalid,
+.employee-create-dialog .u-store-field.is-invalid {
+    border-color: #e63946;
+    box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.12);
 }
 
 .employee-create-actions {
@@ -1595,6 +1648,10 @@ body.employee-create-open {
     .profile-section-head {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .profile-account-actions {
+        justify-content: flex-start;
     }
 
     .profile-access-legend {

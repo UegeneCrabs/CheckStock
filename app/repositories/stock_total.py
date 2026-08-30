@@ -3,25 +3,13 @@ from app.repositories.core import get_connection
 
 def get_source_rows(
     store_slugs: tuple[str, ...],
-) -> tuple[list[dict], list[dict], list[dict]]:
-    """Load catalog, marketplace and fulfillment rows for the total stock view."""
+) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Load catalog, marketplace, fulfillment and in-transit stock rows."""
 
     if not store_slugs:
-        return [], [], []
+        return [], [], [], []
 
     placeholders = ", ".join("?" for _ in store_slugs)
-    exclusion = """
-        AND NOT EXISTS (
-            SELECT 1
-              FROM catalog_product_exclusions excluded
-             WHERE excluded.store_slug = source.store_slug
-               AND excluded.marketplace = source.marketplace
-               AND (
-                    excluded.nm_id = source.article
-                    OR source.article LIKE excluded.nm_id || ' / %'
-               )
-        )
-    """
 
     connection = get_connection()
     try:
@@ -32,7 +20,6 @@ def get_source_rows(
               FROM stock_items source
              WHERE source.store_slug IN ({placeholders})
                AND source.is_service = 0
-               {exclusion}
              ORDER BY source.store_slug,
                       CASE source.marketplace
                           WHEN 'WB' THEN 0
@@ -50,7 +37,6 @@ def get_source_rows(
                    source.scheme, SUM(source.quantity) AS quantity
               FROM mp_stock source
              WHERE source.store_slug IN ({placeholders})
-               {exclusion}
              GROUP BY source.store_slug, source.marketplace, source.article, source.scheme
             """,
             store_slugs,
@@ -61,8 +47,21 @@ def get_source_rows(
                    SUM(source.quantity) AS quantity
               FROM ff_stock source
              WHERE source.store_slug IN ({placeholders})
-               {exclusion}
              GROUP BY source.store_slug, source.marketplace, source.article
+            """,
+            store_slugs,
+        ).fetchall()
+        transit_stock = connection.execute(
+            f"""
+            SELECT batch.store_slug, batch.to_marketplace AS marketplace,
+                   item.to_article AS article,
+                   SUM(item.sent_quantity - item.received_quantity - item.cancelled_quantity) AS quantity
+              FROM ff_transit_items item
+              JOIN ff_transit_batches batch ON batch.id = item.batch_id
+             WHERE batch.store_slug IN ({placeholders})
+               AND batch.status IN ('in_transit', 'partial')
+             GROUP BY batch.store_slug, batch.to_marketplace, item.to_article
+            HAVING SUM(item.sent_quantity - item.received_quantity - item.cancelled_quantity) > 0
             """,
             store_slugs,
         ).fetchall()
@@ -73,4 +72,5 @@ def get_source_rows(
         [dict(row) for row in catalog],
         [dict(row) for row in marketplace_stock],
         [dict(row) for row in fulfillment_stock],
+        [dict(row) for row in transit_stock],
     )

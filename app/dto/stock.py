@@ -40,6 +40,7 @@ class TransferStockCommand(DtoModel):
     to_marketplace: Marketplace
     user_id: PositiveInt | None = None
     user_name: str
+    note: str = Field(default="", max_length=200)
 
 
 class ShipmentCommand(DtoModel):
@@ -56,6 +57,7 @@ class StockMovementItem(DtoModel):
     barcode: str
     quantity: int
     reason: str | None = None
+    purchase_price: float | None = None
 
 
 class StockMovementItems(RootModel[tuple[StockMovementItem, ...]]):
@@ -65,6 +67,51 @@ class StockMovementItems(RootModel[tuple[StockMovementItem, ...]]):
 class TransferResult(DtoModel):
     moved: StockMovementItems
     skipped: StockMovementItems
+    transfer_id: int | None = None
+
+
+class TransitReceiptItem(DtoModel):
+    item_id: PositiveInt
+    quantity: PositiveInt
+
+
+class ReceiveTransitRequest(DtoModel):
+    items: tuple[TransitReceiptItem, ...] = Field(min_length=1)
+    note: str = Field(default="", max_length=200)
+
+
+class ReceiveTransitCommand(DtoModel):
+    transfer_id: PositiveInt
+    request: ReceiveTransitRequest
+    user_id: PositiveInt | None = None
+    user_name: str
+    created_at: datetime | None = None
+
+
+class CancelTransitRequest(DtoModel):
+    reason: str = Field(min_length=1, max_length=200)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("reason must not be blank")
+        return value
+
+
+class CancelTransitCommand(DtoModel):
+    transfer_id: PositiveInt
+    request: CancelTransitRequest
+    user_id: PositiveInt | None = None
+    user_name: str
+    created_at: datetime | None = None
+
+
+class TransitActionResult(DtoModel):
+    transfer_id: PositiveInt
+    status: str
+    moved: StockMovementItems
 
 
 class ResolvedStockEntry(DtoModel):
@@ -123,7 +170,8 @@ class StockEntrySplit(DtoModel):
 class AddFulfillmentItemsRequest(DtoModel):
     fulfillment: str = Field(min_length=1, max_length=200)
     marketplace: Marketplace = Marketplace.WB
-    note: str = Field(default="", max_length=200)
+    note: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
     items: tuple[PositiveStockEntry, ...] = Field(min_length=1)
 
 

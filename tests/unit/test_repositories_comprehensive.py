@@ -281,7 +281,41 @@ class RepositoryUnitTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             db.replace_marketplace_stock_daily_history("rimili", "WB", "wrong", "2026-08-20", NOW)
 
-    def test_catalog_exclusion_is_persistent_across_catalog_refresh(self) -> None:
+    def test_legacy_catalog_exclusion_table_is_removed_before_catalog_refresh(self) -> None:
+        connection = core.get_connection()
+        connection.execute(
+            """
+            CREATE TABLE catalog_product_exclusions (
+                store_slug TEXT NOT NULL,
+                marketplace TEXT NOT NULL,
+                nm_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (store_slug, marketplace, nm_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO catalog_product_exclusions
+                (store_slug, marketplace, nm_id, status, updated_at)
+            VALUES ('rimili', 'WB', '200', 'Старье', ?)
+            """,
+            (NOW,),
+        )
+        connection.commit()
+        connection.close()
+        db.init_db()
+        connection = core.get_connection()
+        legacy_table = connection.execute(
+            """
+            SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name = 'catalog_product_exclusions'
+            """
+        ).fetchone()
+        connection.close()
+        self.assertIsNone(legacy_table)
+
         db.replace_catalog(
             "rimili",
             "WB",
@@ -293,20 +327,11 @@ class RepositoryUnitTests(unittest.TestCase):
         )
         db.upsert_mp_stock("rimili", "200", "WB", "fbs", 7, NOW)
 
-        result = db.set_product_exclusions(
-            "rimili",
-            "WB",
-            {"200"},
-            status="Старье",
-            updated_at=NOW,
+        self.assertEqual(
+            [row["article"] for row in db.get_catalog_items("rimili", "WB")],
+            ["100", "200"],
         )
-
-        self.assertEqual(result["marked"], 1)
-        self.assertEqual(result["catalog_removed"], 1)
-        self.assertEqual(db.get_excluded_nm_ids("rimili", "WB"), {"200"})
-        self.assertEqual(db.list_product_exclusions("rimili", "WB")[0]["status"], "Старье")
-        self.assertEqual([row["article"] for row in db.get_catalog_items("rimili", "WB")], ["100"])
-        self.assertNotIn("200", db.get_mp_stock_totals("rimili", "WB", "fbs"))
+        self.assertEqual(db.get_mp_stock_totals("rimili", "WB", "fbs")["200"], 7)
 
         db.replace_catalog(
             "rimili",
@@ -317,7 +342,10 @@ class RepositoryUnitTests(unittest.TestCase):
             ],
             NOW,
         )
-        self.assertEqual([row["article"] for row in db.get_catalog_items("rimili", "WB")], ["100"])
+        self.assertEqual(
+            [row["article"] for row in db.get_catalog_items("rimili", "WB")],
+            ["100", "200"],
+        )
 
     def test_fulfillment_sources_search_and_movements(self) -> None:
         self.add_catalog()
@@ -506,7 +534,6 @@ class RepositoryUnitTests(unittest.TestCase):
     def test_unit_economics_1c_product_settings_defaults_and_save(self) -> None:
         defaults = db.get_unit_economics_1c_product_settings("rimili", "949558341")
         self.assertEqual(defaults.delivery_wb_rub, 0)
-        self.assertEqual(defaults.buyout_percent, 0)
         self.assertIsNone(defaults.updated_at)
 
         saved = db.save_unit_economics_1c_product_settings(
@@ -514,7 +541,6 @@ class RepositoryUnitTests(unittest.TestCase):
             UnitEconomics1CProductSettingsRequest(
                 article="949558341",
                 delivery_wb_rub=120,
-                buyout_percent=80,
                 return_cost_rub=50,
                 volume_l=1.2,
                 storage_wb_rub=2.5,
@@ -524,7 +550,6 @@ class RepositoryUnitTests(unittest.TestCase):
             updated_by_name="Unit Admin",
         )
         self.assertEqual(saved.delivery_wb_rub, 120)
-        self.assertEqual(saved.buyout_percent, 80)
         self.assertEqual(saved.volume_l, 1.2)
         self.assertEqual(saved.updated_by_name, "Unit Admin")
         listed = db.list_unit_economics_1c_product_settings(("rimili", "tris"))
@@ -532,6 +557,21 @@ class RepositoryUnitTests(unittest.TestCase):
 
     def test_operations_sales_and_dashboard_queries(self) -> None:
         self.add_catalog()
+        with core.get_connection() as connection:
+            stock_item = connection.execute(
+                "SELECT id FROM stock_items WHERE store_slug='rimili' "
+                "AND marketplace='WB' AND article='A-1'"
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO unit_economics_1c_source_values
+                    (stock_item_id, purchase_price, source_sheet_id,
+                     source_sheet_title, source_row, synced_at)
+                VALUES (?, 125.5, 1, 'Тест', 2, ?)
+                """,
+                (stock_item["id"], NOW),
+            )
+            connection.commit()
         operation_id = db.record_operation(
             "rimili",
             "delivery",
@@ -550,7 +590,18 @@ class RepositoryUnitTests(unittest.TestCase):
         self.assertEqual(db.get_store_operations("rimili")[0]["positions"], 1)
         self.assertEqual(db.get_store_operations("rimili", ("delivery",), 1)[0]["units"], 2)
         self.assertEqual(db.get_store_operations("rimili", ("trash",)), [])
-        self.assertEqual(db.get_operation_items(operation_id)[0]["quantity"], 2)
+        operation_item = db.get_operation_items(operation_id)[0]
+        self.assertEqual(operation_item["quantity"], 2)
+        self.assertEqual(operation_item["purchase_price"], 125.5)
+        self.assertEqual(operation_item["purchase_price_recorded"], 1)
+        with core.get_connection() as connection:
+            connection.execute(
+                "UPDATE unit_economics_1c_source_values SET purchase_price=999 "
+                "WHERE stock_item_id=?",
+                (stock_item["id"],),
+            )
+            connection.commit()
+        self.assertEqual(db.get_operation_items(operation_id)[0]["purchase_price"], 125.5)
         self.assertEqual(db.get_operations_with_items("rimili")[0]["items"][0]["article"], "A-1")
         self.assertEqual(db.get_operations_with_items("tris"), [])
         db.log_action_for_operation(1, "User", "delivery", "details", NOW, operation_id)

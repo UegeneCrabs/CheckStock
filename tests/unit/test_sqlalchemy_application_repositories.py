@@ -17,6 +17,8 @@ from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
     CatalogQuery,
+    ReceiveTransitCommand,
+    ReceiveTransitRequest,
     ResolvedStockEntries,
     ResolvedStockEntry,
     ShipmentCommand,
@@ -93,10 +95,26 @@ def test_stock_repository_covers_create_update_delete_and_movements(database_pat
         barcode="OZON-A",
     )
     with SqlAlchemyStockUnitOfWork(session_factory) as unit_of_work:
-        unit_of_work.repository.apply_transfer(
+        transfer_id = unit_of_work.repository.apply_transfer(
             ApplyTransferCommand(
                 transfer=transfer,
                 items=TargetStockEntries((target_item,)),
+                created_at=NOW,
+            )
+        )
+        unit_of_work.commit()
+
+    batch = db.get_ff_transit_batch(transfer_id)
+    assert batch is not None
+    with SqlAlchemyStockUnitOfWork(session_factory) as unit_of_work:
+        unit_of_work.repository.receive_transfer(
+            ReceiveTransitCommand(
+                transfer_id=transfer_id,
+                request=ReceiveTransitRequest(
+                    items=({"item_id": batch["items"][0]["id"], "quantity": 2},),
+                ),
+                user_id=1,
+                user_name="User",
                 created_at=NOW,
             )
         )

@@ -11,18 +11,17 @@
             try {
                 var theme = localStorage.getItem('checkstock-theme');
                 if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-                if (localStorage.getItem('checkstock-sidebar') === 'collapsed') {
-                    document.documentElement.classList.add('sidebar-collapsed');
-                }
             } catch (e) {}
         })();
     </script>
-    <link rel="stylesheet" href="/static/style.css?v=60">
-<link rel="stylesheet" href="/static/skladno-theme.css?v=35">
-    <link rel="stylesheet" href="/static/decision-center.css?v=1">
+    <link rel="stylesheet" href="/static/style.css?v=62">
+<link rel="stylesheet" href="/static/skladno-theme.css?v=39">
+    <link rel="stylesheet" href="/static/decision-center.css?v=2">
     <link rel="stylesheet" href="/static/rnp-dashboard.css?v=1">
-    <link rel="stylesheet" href="/static/stock-randomizer.css?v=1">
-    <link rel="stylesheet" href="/static/ui-preferences.css?v=5">
+    <link rel="stylesheet" href="/static/stock-randomizer.css?v=2">
+    <link rel="stylesheet" href="/static/ui-preferences.css?v=7">
+    <link rel="stylesheet" href="/static/app-header.css?v=3">
+    <link rel="stylesheet" href="/static/identifier-copy.css?v=1">
 
 
     <script src="/static/stock-rows.js?v=6"></script>
@@ -31,32 +30,25 @@
     <div class="app-shell">
 $header
         <div class="workspace">
-            <div class="topbar" role="banner">
-                <div class="topbar-heading">
-                    <p class="eyebrow">$page_kicker</p>
-                    <h1>$page_heading</h1>
-                </div>
-                <div class="topbar-state">
-                    <span class="live-dot" aria-hidden="true"></span>
-                    <span>Система работает</span>
-                </div>
-            </div>
             <main class="content $content_class">
 $content
             </main>
         </div>
     </div>
+    <script src="/static/identifier-copy.js?v=1"></script>
     <script src="/static/modal.js?v=2"></script>
     <script src="/static/collapse.js?v=1"></script>
     <script src="/static/select.js?v=1"></script>
-    <script src="/static/table-filter.js?v=8"></script>
-    <script src="/static/stock-table.js?v=3"></script>
+    <script src="/static/table-filter.js?v=9"></script>
+    <script src="/static/stock-table.js?v=6"></script>
+    <script src="/static/store-total.js?v=1"></script>
+    <script src="/static/stock-transit.js?v=2"></script>
 <script src="/static/sales-dashboard.js?v=13"></script>
-    <script src="/static/decision-center.js?v=2"></script>
-    <script src="/static/rnp-dashboard.js?v=3"></script>
-    <script src="/static/stock-randomizer.js?v=1"></script>
+    <script src="/static/decision-center.js?v=3"></script>
+    <script src="/static/rnp-dashboard.js?v=4"></script>
+    <script src="/static/stock-randomizer.js?v=2"></script>
     <script src="/static/system-alerts.js?v=1"></script>
-    <script src="/static/navigation.js?v=6"></script>
+    <script src="/static/navigation.js?v=8"></script>
     <script src="/static/activity-tracker.js?v=1"></script>
 </body>
 </html>

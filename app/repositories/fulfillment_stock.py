@@ -235,26 +235,16 @@ def apply_ff_import_snapshot(
     conn = get_connection()
     scope = (store_slug, fulfillment, marketplace, source_type, source_key)
     try:
-        rows = conn.execute(
-            """
-            SELECT article, quantity
-            FROM ff_import_snapshots
-            WHERE store_slug = ? AND fulfillment = ? AND marketplace = ?
-              AND source_type = ? AND source_key = ?
-            """,
-            scope,
-        ).fetchall()
-        previous = {str(row["article"]): int(row["quantity"] or 0) for row in rows}
-        if not previous:
-            previous = _legacy_delivery_snapshot(
-                conn,
-                store_slug,
-                fulfillment,
-                marketplace,
-                source_type,
-                sheet_url,
-                table_title,
-            )
+        previous = _ff_import_snapshot(
+            conn,
+            store_slug,
+            fulfillment,
+            marketplace,
+            source_type,
+            source_key,
+            sheet_url,
+            table_title,
+        )
 
         for article, quantity in quantities.items():
             delta = quantity - previous.get(article, 0)
@@ -316,6 +306,67 @@ def apply_ff_import_snapshot(
         raise
     finally:
         conn.close()
+
+
+def get_ff_import_snapshot(
+    store_slug: str,
+    fulfillment: str,
+    marketplace: str,
+    source_type: str,
+    source_key: str,
+    *,
+    sheet_url: str | None,
+    table_title: str,
+) -> dict[str, int]:
+    """Read the import baseline without changing FF stock or import history."""
+
+    conn = get_connection()
+    try:
+        return _ff_import_snapshot(
+            conn,
+            store_slug,
+            fulfillment,
+            marketplace,
+            source_type,
+            source_key,
+            sheet_url,
+            table_title,
+        )
+    finally:
+        conn.close()
+
+
+def _ff_import_snapshot(
+    conn,
+    store_slug: str,
+    fulfillment: str,
+    marketplace: str,
+    source_type: str,
+    source_key: str,
+    sheet_url: str | None,
+    table_title: str,
+) -> dict[str, int]:
+    rows = conn.execute(
+        """
+        SELECT article, quantity
+        FROM ff_import_snapshots
+        WHERE store_slug = ? AND fulfillment = ? AND marketplace = ?
+          AND source_type = ? AND source_key = ?
+        """,
+        (store_slug, fulfillment, marketplace, source_type, source_key),
+    ).fetchall()
+    previous = {str(row["article"]): int(row["quantity"] or 0) for row in rows}
+    if previous:
+        return previous
+    return _legacy_delivery_snapshot(
+        conn,
+        store_slug,
+        fulfillment,
+        marketplace,
+        source_type,
+        sheet_url,
+        table_title,
+    )
 
 
 def _legacy_delivery_snapshot(

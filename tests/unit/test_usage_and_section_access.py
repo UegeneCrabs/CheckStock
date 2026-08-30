@@ -51,7 +51,7 @@ def test_section_access_defaults_and_explicit_rules() -> None:
         }
     )
     assert not has_access(restricted, SectionName.SALES)
-    assert landing_path(restricted) == "/sales/decision-center"
+    assert landing_path(restricted) == "/sales/unit-economics-1c"
     assert section_for_path("/") is None
     assert section_for_path("/api/rnp/action") is SectionName.RNP
     assert section_for_path("/sales/unit-economics-1c") is SectionName.UNIT_ECONOMICS_1C
@@ -174,14 +174,14 @@ def test_middleware_enforces_hidden_read_and_write_access() -> None:
         supply_response = client.get("/supply")
         assert supply_response.status_code == 403
         assert 'href="/supply" hidden' in supply_response.text
-        assert client.get("/sales/decision-center").status_code == 200
+        assert client.get("/sales/decision-center").status_code == 403
         response = client.post(
             "/api/decision-center/status",
             json={"fingerprint": "rimili:test", "status": "completed"},
             headers={"X-Requested-With": "fetch"},
         )
         assert response.status_code == 403
-        assert response.json()["error"] == "Раздел доступен только для просмотра"
+        assert response.json()["error"] == "Нет доступа к этому разделу"
     client.close()
 
 
