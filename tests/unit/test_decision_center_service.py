@@ -237,6 +237,7 @@ class DecisionCenterTests(unittest.TestCase):
             product = decision_center._build_products(["store"])[0]
         self.assertEqual(product["name"], "Product")
         self.assertEqual(product["orders"], 22)
+        self.assertAlmostEqual(product["drr"], 0.055)
         self.assertFalse(product["costModelled"])
         self.assertGreater(product["health"], 0)
 

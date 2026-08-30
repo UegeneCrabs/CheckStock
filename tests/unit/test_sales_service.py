@@ -20,7 +20,6 @@ class SalesServiceTests(unittest.TestCase):
             mock.patch.object(sales.wb_tokens, "get_token", return_value="token"),
             mock.patch.object(sales.wb_api, "get_orders", return_value=[]),
             mock.patch.object(sales.wb_api, "get_sales", return_value=[]),
-            mock.patch.object(sales.db, "get_excluded_nm_ids", return_value=set()),
             mock.patch.object(sales, "_normalize_wb", return_value=[{"line": 1}]),
         ):
             lines, warnings = sales._sync_wb("store", date(2026, 8, 1), date(2026, 8, 2))
@@ -30,7 +29,6 @@ class SalesServiceTests(unittest.TestCase):
             mock.patch.object(sales.wb_tokens, "get_token", return_value="token"),
             mock.patch.object(sales.wb_api, "get_orders", return_value=[]),
             mock.patch.object(sales.wb_api, "get_sales", side_effect=ValueError("sales")),
-            mock.patch.object(sales.db, "get_excluded_nm_ids", return_value=set()),
             mock.patch.object(sales, "_normalize_wb", return_value=[]),
         ):
             _, warnings = sales._sync_wb("store", date(2026, 8, 1), date(2026, 8, 2))

@@ -64,6 +64,12 @@
         });
     }
 
+    function copyIdentifier(kind, value, label) {
+        return window.CheckStockIdentifierCopy
+            ? window.CheckStockIdentifierCopy.html(kind, value, label)
+            : escapeHtml(label === undefined ? value : label);
+    }
+
     function formatValue(value, format, emptyZero) {
         if (value == null || value === '') return '—';
         if (format === 'date') {
@@ -331,8 +337,10 @@
         return '<th class="rnp-sticky-product rnp-product-cell" rowspan="' + rowspan + '" scope="rowgroup">' +
             '<div class="rnp-product-head"><span class="rnp-product-image">' + productImage(product) + '</span>' +
             '<div><strong title="' + escapeHtml(product.name) + '">' + escapeHtml(product.name) + '</strong>' +
-            '<small>' + escapeHtml(marketplaceCode()) + ': ' + escapeHtml(product.article) +
-            (product.mp_sku ? ' · SKU: ' + escapeHtml(product.mp_sku) : '') + '</small></div></div>' +
+            '<small>' + escapeHtml(marketplaceCode()) + ': '
+            + copyIdentifier('Артикул', product.article, product.article)
+            + (product.barcode ? ' · ' + copyIdentifier('Баркод', product.barcode, 'Баркод ' + product.barcode) : '')
+            + (product.mp_sku ? ' · SKU: ' + escapeHtml(product.mp_sku) : '') + '</small></div></div>' +
             '<div class="rnp-product-stats">' + priceRows + '</div>' + strategyCard(product) + '</th>';
     }
 

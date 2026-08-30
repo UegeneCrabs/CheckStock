@@ -7,17 +7,18 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import sales as sales_service
+from app.access_control import ActionPermission, accessible_stores, has_action_permission
+from app.domain import MARKETPLACES
 from app.dto.identity import SectionName
 from app.section_access import has_access as has_section_access
 from app.section_access import landing_path
 from app.stores import STORES
+from app.sync_tracking import run_tracked
 from app.wb import api as wb_api
 from app.wb import funnel_orders as wb_funnel_orders
 from app.web.access import (
+    accessible_marketplaces,
     accessible_store_items,
-    accessible_store_slugs,
-    first_accessible_store,
-    has_store_access,
 )
 from app.web.routers.sales_common import render_sales_placeholder
 from app.web.templating import fill_template, render_page
@@ -41,16 +42,23 @@ async def sales(request: Request):
         f'<option value="{html.escape(item.slug)}">{html.escape(item.store.name)}</option>'
         for item in accessible
     )
+    marketplace_labels = {"WB": "Wildberries", "OZON": "Ozon", "YANDEX MARKET": "Яндекс Маркет"}
+    allowed_marketplaces = accessible_marketplaces(request.state.user)
+    marketplace_options = "".join(
+        f'<option value="{html.escape(marketplace)}"{" selected" if index == 0 else ""}>'
+        f"{html.escape(marketplace_labels[marketplace])}</option>"
+        for index, marketplace in enumerate(allowed_marketplaces)
+    )
     content = fill_template(
         "sales_content.html",
         default_from=(today - timedelta(days=29)).isoformat(),
         default_to=today.isoformat(),
         date_max=today.isoformat(),
         sales_store_options="".join(store_options),
+        sales_marketplace_options=marketplace_options,
         ephemerides_hidden=""
         if has_section_access(request.state.user, SectionName.EPHEMERIDES)
         else " hidden",
-        rnp_hidden="" if has_section_access(request.state.user, SectionName.RNP) else " hidden",
     )
     return render_page(
         "CheckStock — Продажи",
@@ -64,13 +72,22 @@ async def sales(request: Request):
 async def sales_data(
     request: Request, date_from: str = "", date_to: str = "", marketplace: str = "WB", store: str = ""
 ):
+    marketplace = marketplace.strip().upper()
+    if marketplace not in MARKETPLACES:
+        return JSONResponse({"ok": False, "error": "Неизвестный маркетплейс"}, status_code=400)
     store_slug = store.lower() or None
-    if store_slug and not has_store_access(request.state.user, store_slug):
-        return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину"}, status_code=403)
-    if store_slug is None and len(accessible_store_slugs(request.state.user)) != len(STORES):
-        store_slug = first_accessible_store(request.state.user)
-    if store_slug is None and not accessible_store_slugs(request.state.user):
-        return JSONResponse({"ok": False, "error": "Нет доступных магазинов"}, status_code=403)
+    scoped_stores = accessible_stores(request.state.user, marketplace)
+    if store_slug and not has_action_permission(
+        request.state.user,
+        ActionPermission.SALES_VIEW,
+        store_slug=store_slug,
+        marketplace=marketplace,
+    ):
+        return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину и площадке"}, status_code=403)
+    if store_slug is None and len(scoped_stores) != len(STORES):
+        store_slug = scoped_stores[0] if scoped_stores else None
+    if store_slug is None and not scoped_stores:
+        return JSONResponse({"ok": False, "error": "Нет доступа к этой площадке"}, status_code=403)
     try:
         payload = await run_in_threadpool(
             sales_service.dashboard,
@@ -95,18 +112,34 @@ async def wb_funnel_orders_data(
     request: Request, date_from: str = "", date_to: str = "", store: str = "", refresh: bool = False
 ):
     store_slug = store.strip().lower() or None
-    if store_slug and not has_store_access(request.state.user, store_slug):
-        return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину"}, status_code=403)
-    if store_slug is None and len(accessible_store_slugs(request.state.user)) != len(STORES):
-        store_slug = first_accessible_store(request.state.user)
-    if store_slug is None and not accessible_store_slugs(request.state.user):
-        return JSONResponse({"ok": False, "error": "Нет доступных магазинов"}, status_code=403)
+    scoped_stores = accessible_stores(request.state.user, "WB")
+    if store_slug and not has_action_permission(
+        request.state.user,
+        ActionPermission.SALES_VIEW,
+        store_slug=store_slug,
+        marketplace="WB",
+    ):
+        return JSONResponse({"ok": False, "error": "Нет доступа к WB этого магазина"}, status_code=403)
+    if store_slug is None and len(scoped_stores) != len(STORES):
+        store_slug = scoped_stores[0] if scoped_stores else None
+    if store_slug is None and not scoped_stores:
+        return JSONResponse({"ok": False, "error": "Нет доступа к WB"}, status_code=403)
     try:
         if refresh:
             if store_slug:
-                await run_in_threadpool(wb_funnel_orders.sync_store, store_slug)
+                await run_in_threadpool(
+                    run_tracked,
+                    "wb_funnel_orders_sync",
+                    "manual",
+                    lambda: wb_funnel_orders.sync_store(store_slug),
+                )
             else:
-                await run_in_threadpool(wb_funnel_orders.sync_all)
+                await run_in_threadpool(
+                    run_tracked,
+                    "wb_funnel_orders_sync",
+                    "manual",
+                    wb_funnel_orders.sync_all,
+                )
         return JSONResponse(
             await run_in_threadpool(wb_funnel_orders.dashboard, date_from, date_to, store_slug or None)
         )
@@ -126,13 +159,22 @@ async def wb_funnel_orders_data(
 async def sales_orders_xlsx(
     request: Request, date_from: str = "", date_to: str = "", marketplace: str = "WB", store: str = ""
 ):
+    marketplace = marketplace.strip().upper()
+    if marketplace not in MARKETPLACES:
+        raise HTTPException(status_code=400, detail="Неизвестный маркетплейс")
     store_slug = store.lower() or None
-    if store_slug and not has_store_access(request.state.user, store_slug):
-        raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
-    if store_slug is None and len(accessible_store_slugs(request.state.user)) != len(STORES):
-        store_slug = first_accessible_store(request.state.user)
-    if store_slug is None and not accessible_store_slugs(request.state.user):
-        raise HTTPException(status_code=403, detail="Нет доступных магазинов")
+    scoped_stores = accessible_stores(request.state.user, marketplace)
+    if store_slug and not has_action_permission(
+        request.state.user,
+        ActionPermission.SALES_EXPORT,
+        store_slug=store_slug,
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к выгрузке этого магазина и площадки")
+    if store_slug is None and len(scoped_stores) != len(STORES):
+        store_slug = scoped_stores[0] if scoped_stores else None
+    if store_slug is None and not scoped_stores:
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     try:
         content = await run_in_threadpool(
             sales_service.export_xlsx,
