@@ -223,6 +223,8 @@ class HttpServerEndToEndTests(unittest.TestCase):
             {
                 "fulfillment": "E2E Source",
                 "marketplace": "WB",
+                "note": "E2E initial stock",
+                "confirmed": True,
                 "items": [{"code": "A-1", "quantity": 6}],
             },
         )
@@ -241,11 +243,26 @@ class HttpServerEndToEndTests(unittest.TestCase):
                 "from_marketplace": "WB",
                 "to_fulfillment": "E2E Destination",
                 "to_marketplace": "WB",
+                "note": "E2E transfer",
                 "items": json.dumps([{"code": "A-1", "quantity": 4}]),
             },
         )
         self.assertEqual(status, 200)
         self.assertEqual(transferred["results"][0]["quantity"], 4)
+        with opener.open(
+            self.url("/stock/rimili/transfers/in-transit?mp=WB"), timeout=5
+        ) as response:
+            transit = json.loads(response.read().decode("utf-8"))["batches"][0]
+        status, received = self.post_json(
+            opener,
+            f"/stock/rimili/transfers/{transferred['transfer_id']}/receive",
+            {
+                "items": [{"item_id": transit["items"][0]["id"], "quantity": 4}],
+                "note": "E2E received",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(received["status"], "received")
 
         status, shipped = self.post_form(
             opener,

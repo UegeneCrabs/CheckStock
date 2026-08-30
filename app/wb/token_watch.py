@@ -14,13 +14,15 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def refresh_token_info() -> int:
+def refresh_token_info(store_slugs: tuple[str, ...] | None = None) -> int:
 
     now_iso = _now().isoformat()
     processed = 0
 
     with db.WRITE_LOCK:
-        for slug in STORES:
+        for slug in (tuple(STORES) if store_slugs is None else store_slugs):
+            if slug not in STORES:
+                continue
             if not wb_tokens.has_token(slug):
                 continue
             expiry = wb_tokens.get_token_expiry(wb_tokens.get_token(slug))

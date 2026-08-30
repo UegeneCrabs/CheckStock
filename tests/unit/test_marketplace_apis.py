@@ -70,7 +70,7 @@ class WildberriesApiTests(unittest.TestCase):
         )
         self.assertEqual(request.call_args_list[0].kwargs["json_body"]["nmIds"], [10])
         self.assertEqual(request.call_args_list[1].kwargs["json_body"]["offset"], 2)
-        sleep.assert_called_once_with(20.0)
+        sleep.assert_not_called()
 
         with (
             mock.patch.object(wb_api, "get_cards_list", return_value=cards),
@@ -142,7 +142,7 @@ class WildberriesApiTests(unittest.TestCase):
             prices = wb_api.get_goods_prices("token", page_limit=2)
         self.assertEqual([row["nmID"] for row in prices], [1, 2, 3])
         self.assertEqual(request.call_args_list[1].kwargs["params"]["offset"], 2)
-        sleep.assert_called_once_with(wb_api.PRICES_PAGE_PAUSE_SECONDS)
+        sleep.assert_not_called()
 
         with mock.patch.object(
             wb_api,
@@ -460,12 +460,21 @@ class YandexApiTests(unittest.TestCase):
             yandex_api,
             "_request",
             side_effect=[
-                {"campaigns": [{"id": 1}], "pager": {"pagesCount": 2}},
-                {"campaigns": [{"id": 2}], "pager": {"pagesCount": 2}},
+                {"campaigns": [{"id": 1}], "paging": {"nextPageToken": "next"}},
+                {"campaigns": [{"id": 2}], "paging": {}},
             ],
-        ):
+        ) as request:
             campaigns = yandex_api.get_campaigns("key")
         self.assertEqual(len(campaigns), 2)
+        self.assertEqual(request.call_args_list[0].kwargs["params"], {"limit": 100})
+        self.assertEqual(
+            request.call_args_list[1].kwargs["params"],
+            {"limit": 100, "pageToken": "next"},
+        )
+        for call in request.call_args_list:
+            self.assertNotIn("page", call.kwargs["params"])
+            self.assertNotIn("pageSize", call.kwargs["params"])
+            self.assertNotIn("clientId", call.kwargs["params"])
         normalized = yandex_api.normalize_campaign(
             {
                 "id": 1,

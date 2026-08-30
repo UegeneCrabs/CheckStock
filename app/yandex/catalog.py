@@ -77,7 +77,7 @@ def sync_store(store_slug: str) -> dict:
         result = db.replace_catalog(store_slug, MARKETPLACE, items, _now())
 
     report = {"total": len(items), "no_barcode": no_barcode, **result}
-    logger.info("Каталог Яндекса %s: %s", _store_label(store_slug), report)
+    logger.debug("Каталог Яндекса %s: %s", _store_label(store_slug), report)
     return report
 
 

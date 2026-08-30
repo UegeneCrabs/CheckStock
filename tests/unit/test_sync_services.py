@@ -38,18 +38,12 @@ class WildberriesSyncTests(unittest.TestCase):
             {"nmID": 11, "sizes": []},
         ]
         self.assertEqual(wb_catalog.clean_name(" A__B "), "A B")
-        self.assertTrue(wb_catalog.card_has_tag(cards[0], " old "))
-        self.assertFalse(wb_catalog.card_has_tag(cards[0], "new"))
-        self.assertEqual(wb_catalog.tagged_nm_ids(cards, "Old"), {"10"})
-        self.assertEqual(wb_catalog.articles_for_nm_ids({"10 / S", "12"}, {"10"}), {"10 / S"})
         items, stats = wb_catalog.build_items(cards)
         self.assertEqual(len(items), 2)
         self.assertEqual(stats["multi_size"], 1)
         self.assertEqual(stats["no_article"], 1)
         self.assertEqual(stats["no_barcode"], 1)
-        excluded, excluded_stats = wb_catalog.build_items(cards, "Old")
-        self.assertEqual(excluded, [])
-        self.assertEqual(excluded_stats["excluded_tag"], 1)
+        self.assertNotIn("excluded_tag", stats)
 
         normalized = {
             "nm_id": "10",

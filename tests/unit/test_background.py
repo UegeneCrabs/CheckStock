@@ -28,32 +28,27 @@ class BackgroundSyncTests(unittest.TestCase):
         self.assertEqual(report.failed[0].error_type, "RuntimeError")
         log_exception.assert_called_once()
 
-    def test_sales_sync_refreshes_orders_and_wb_advertising(self) -> None:
+    def test_advertising_sync_refreshes_only_wb_advertising(self) -> None:
         calls = []
 
-        with (
-            mock.patch.object(
-                background.sales_service,
-                "sync_all",
-                side_effect=lambda: calls.append("orders"),
-            ),
-            mock.patch.object(
-                background.advertising_sync,
-                "sync_all",
-                side_effect=lambda: calls.append("advertising"),
-            ),
+        with mock.patch.object(
+            background.advertising_sync,
+            "sync_all",
+            side_effect=lambda: calls.append("advertising"),
         ):
-            report = background._sync_sales_and_advertising()
+            report = background._sync_wb_advertising()
 
-        self.assertEqual(calls, ["orders", "advertising"])
-        self.assertEqual(report.succeeded, ("orders", "WB advertising"))
+        self.assertEqual(calls, ["advertising"])
+        self.assertEqual(report.succeeded, ("WB advertising",))
         self.assertEqual(report.failed, ())
 
-    def test_sales_background_job_uses_combined_refresh(self) -> None:
+    def test_advertising_runs_hourly_without_sales_or_rnp_jobs(self) -> None:
         jobs = {job.name: job for job in background._jobs(mock.Mock())}
 
-        self.assertIs(jobs["sales_sync"].callback, background._sync_sales_and_advertising)
-        self.assertEqual(jobs["sales_sync"].next_delay(), background.settings.sales_sync_interval_seconds)
+        self.assertNotIn("sales_sync", jobs)
+        self.assertNotIn("rnp_analytics_sync", jobs)
+        self.assertIs(jobs["wb_advertising_sync"].callback, background._sync_wb_advertising)
+        self.assertEqual(jobs["wb_advertising_sync"].next_delay(), 60 * 60)
 
     def test_stock_history_jobs_run_at_fixed_moscow_hours(self) -> None:
         ready = mock.Mock()
@@ -95,6 +90,28 @@ class BackgroundSyncTests(unittest.TestCase):
             sync.assert_called_once_with()
         self.assertEqual(report.succeeded, ("WB", "OZON", "YANDEX MARKET"))
 
+    def test_configured_stock_job_only_passes_enabled_targets(self) -> None:
+        selected = {
+            "WB": ("rimili", "tris"),
+            "OZON": (),
+            "YANDEX MARKET": ("tris",),
+        }
+        with (
+            mock.patch.object(
+                background.sync_settings,
+                "enabled_stores",
+                side_effect=lambda name, marketplace: selected[marketplace],
+            ),
+            mock.patch.object(background.wb_sync, "sync_all", return_value={}) as wb,
+            mock.patch.object(background.ozon_sync, "sync_all", return_value={}) as ozon,
+            mock.patch.object(background.ya_sync, "sync_all", return_value={}) as yandex,
+        ):
+            background._sync_stocks_configured()
+
+        wb.assert_called_once_with(("rimili", "tris"))
+        ozon.assert_called_once_with(())
+        yandex.assert_called_once_with(("tris",))
+
     def test_decision_center_has_no_background_job(self) -> None:
         jobs = {job.name: job for job in background._jobs(mock.Mock())}
 
@@ -106,6 +123,34 @@ class BackgroundSyncTests(unittest.TestCase):
         job = jobs["unit_economics_1c_reference_sync"]
         self.assertIs(job.callback, background.unit_reference_sync.sync_due)
         self.assertEqual(job.next_delay(), 24 * 60 * 60)
+
+    def test_funnel_buyout_metrics_run_at_startup_and_daily_at_one_moscow(self) -> None:
+        with mock.patch.object(background, "_seconds_until_next_moscow_run", return_value=123) as delay:
+            jobs = {job.name: job for job in background._funnel_jobs()}
+            next_delay = jobs["wb_funnel_weekly_metrics_sync"].next_delay()
+
+        job = jobs["wb_funnel_weekly_metrics_sync"]
+        self.assertIs(job.callback, background.wb_funnel_orders.sync_weekly_metrics_all)
+        self.assertEqual(job.startup_delay_seconds, 0)
+        self.assertEqual(next_delay, 123)
+        delay.assert_any_call(0)
+        delay.assert_any_call(1)
+
+        close_job = jobs["wb_funnel_previous_day_close_00_msk"]
+        self.assertIs(close_job.callback, background.wb_funnel_orders.sync_previous_day_all)
+        self.assertEqual(close_job.startup_delay_seconds, 123)
+
+        refresh_job = jobs["wb_funnel_orders_sync"]
+        self.assertEqual(refresh_job.next_delay(), 15 * 60)
+        self.assertTrue(refresh_job.interval_from_start)
+
+    def test_daily_margin_snapshot_runs_at_midnight_moscow(self) -> None:
+        with mock.patch.object(background, "_seconds_until_next_moscow_run", return_value=123):
+            jobs = {job.name: job for job in background._jobs(mock.Mock())}
+
+        job = jobs["unit_economics_1c_daily_margin_snapshot_00_msk"]
+        self.assertIs(job.callback, background.unit_margin_history.save_daily_margin_snapshots)
+        self.assertEqual(job.startup_delay_seconds, 123)
 
     def test_wallet_price_job_runs_every_five_minutes_without_replacing_full_sync(self) -> None:
         jobs = {job.name: job for job in background._unit_economics_1c_price_jobs()}

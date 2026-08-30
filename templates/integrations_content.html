@@ -1,0 +1,53 @@
+<link rel="stylesheet" href="/static/integrations.css?v=4">
+
+<section class="panel integration-section">
+    <div class="integration-section-head">
+        <div>
+            <h2>API-ключи маркетплейсов</h2>
+            <p>Сохранённые ключи не отображаются. Новое значение заменяет старое.</p>
+        </div>
+    </div>
+    <div class="integration-store-tabs" role="tablist" aria-label="Магазины">
+$store_tabs
+    </div>
+$store_panels
+</section>
+
+<section class="panel integration-section">
+    <div class="integration-section-head">
+        <div>
+            <h2>Все выгрузки</h2>
+            <p>Последний запуск фиксируется вместе со способом запуска и ближайшим временем по расписанию.</p>
+        </div>
+    </div>
+    <div class="integration-sync-table-wrap">
+        <table class="integration-sync-table">
+            <thead><tr><th>Что обновляет</th><th>Статус</th><th>Последняя выгрузка</th><th>Способ</th><th>Автовыгрузка</th><th><span class="visually-hidden">Действия</span></th></tr></thead>
+            <tbody>
+$sync_rows
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<dialog class="integration-history-dialog" id="integration-history-dialog" aria-labelledby="integration-history-title">
+    <div class="integration-history-shell">
+        <header class="integration-history-head">
+            <div>
+                <p class="eyebrow">ИСТОРИЯ ВЫГРУЗКИ</p>
+                <h2 id="integration-history-title">История</h2>
+                <p>Хранятся запуски за последние 30 дней.</p>
+            </div>
+            <button type="button" class="integration-history-close" data-history-close aria-label="Закрыть">×</button>
+        </header>
+        <p class="integration-history-message" data-history-message role="status" aria-live="polite"></p>
+        <div class="integration-history-table-wrap" data-history-table hidden>
+            <table class="integration-history-table">
+                <thead><tr><th>Начало</th><th>Статус</th><th>Способ</th><th>Длительность</th><th>Ошибка</th></tr></thead>
+                <tbody data-history-rows></tbody>
+            </table>
+        </div>
+    </div>
+</dialog>
+
+<script src="/static/integrations.js?v=3"></script>

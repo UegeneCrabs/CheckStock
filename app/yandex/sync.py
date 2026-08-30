@@ -204,9 +204,18 @@ def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
         try:
             report[slug]["yandex"] = {"ok": True, "count": sync_store(slug)}
             db.record_sync_health(slug, MARKETPLACE, "stocks", True, None, _now())
+        except ya_api.YandexApiError as e:
+            logger.warning(
+                "yandex_stock_sync_failed store=%s status=%s error=%s",
+                _store_label(slug),
+                e.status or "network",
+                e.friendly,
+            )
+            report[slug]["yandex"] = {"ok": False, "error": e.friendly}
+            db.record_sync_health(slug, MARKETPLACE, "stocks", False, e.friendly, _now())
         except Exception as e:
             logger.exception(
-                "Яндекс %s: остатки не выгружены — %s",
+                "yandex_stock_sync_crashed store=%s error=%s",
                 _store_label(slug),
                 _error_message(e),
             )

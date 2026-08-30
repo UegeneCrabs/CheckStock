@@ -50,6 +50,10 @@ def _env_int(name: str, default: int, *, minimum: int = 0, maximum: int | None =
     return parsed
 
 
+def _env_csv(name: str) -> tuple[str, ...]:
+    return tuple(value.strip() for value in os.getenv(name, "").split(",") if value.strip())
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
 
@@ -73,19 +77,17 @@ class Settings(BaseModel):
     unit_economics_1c_source_sync_hour: int = Field(ge=0, le=23)
     token_check_interval_seconds: int = Field(ge=1)
     unit_economics_1c_price_sync_startup_delay_seconds: int = Field(ge=0)
-    sales_sync_startup_delay_seconds: int = Field(ge=0)
+    wb_advertising_sync_startup_delay_seconds: int = Field(ge=0)
     decision_sync_startup_delay_seconds: int = Field(ge=0)
-    rnp_sync_startup_delay_seconds: int = Field(ge=0)
     auto_sync_interval_seconds: int = Field(ge=1)
     catalog_sync_hour: int = Field(ge=0, le=23)
-    sales_sync_interval_seconds: int = Field(ge=1)
+    wb_advertising_sync_interval_seconds: int = Field(ge=1)
     wb_funnel_orders_sync_interval_seconds: int = Field(ge=1)
     unit_economics_1c_price_sync_interval_seconds: int = Field(ge=1)
     unit_economics_1c_wallet_sync_interval_seconds: int = Field(ge=1)
     wb_storefront_dest: str = Field(min_length=1)
     wb_storefront_batch_size: int = Field(ge=1, le=1_000)
     decision_sync_check_interval_seconds: int = Field(ge=1)
-    rnp_analytics_sync_interval_seconds: int = Field(ge=1)
     session_ttl_days: int = Field(ge=1)
     session_cookie_secure: bool
     pbkdf2_iterations: int = Field(ge=MIN_PBKDF2_ITERATIONS, le=MAX_PBKDF2_ITERATIONS)
@@ -111,6 +113,13 @@ class Settings(BaseModel):
     rnp_report_download_timeout_seconds: int = Field(ge=1)
     rnp_report_poll_attempts: int = Field(ge=1)
     rnp_report_poll_interval_seconds: int = Field(ge=0)
+    experimental_owner_logins: tuple[str, ...] = ()
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65_535)
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = ""
+    smtp_starttls: bool = True
 
     @model_validator(mode="after")
     def validate_stock_thresholds(self) -> "Settings":
@@ -170,22 +179,19 @@ class Settings(BaseModel):
             unit_economics_1c_price_sync_startup_delay_seconds=_env_int(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_STARTUP_DELAY_SECONDS", 5, minimum=0
             ),
-            sales_sync_startup_delay_seconds=_env_int(
-                "CHECKSTOCK_SALES_SYNC_STARTUP_DELAY_SECONDS", 10, minimum=0
+            wb_advertising_sync_startup_delay_seconds=_env_int(
+                "CHECKSTOCK_WB_ADVERTISING_SYNC_STARTUP_DELAY_SECONDS", 10, minimum=0
             ),
             decision_sync_startup_delay_seconds=_env_int(
                 "CHECKSTOCK_DECISION_SYNC_STARTUP_DELAY_SECONDS", 20, minimum=0
             ),
-            rnp_sync_startup_delay_seconds=_env_int(
-                "CHECKSTOCK_RNP_SYNC_STARTUP_DELAY_SECONDS", 90, minimum=0
-            ),
             auto_sync_interval_seconds=_env_int("CHECKSTOCK_AUTO_SYNC_INTERVAL_SECONDS", 30 * 60, minimum=1),
             catalog_sync_hour=_env_int("CHECKSTOCK_CATALOG_SYNC_HOUR", 3, maximum=23),
-            sales_sync_interval_seconds=_env_int(
-                "CHECKSTOCK_SALES_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
+            wb_advertising_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_WB_ADVERTISING_SYNC_INTERVAL_SECONDS", 60 * 60, minimum=1
             ),
             wb_funnel_orders_sync_interval_seconds=_env_int(
-                "CHECKSTOCK_WB_FUNNEL_ORDERS_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
+                "CHECKSTOCK_WB_FUNNEL_ORDERS_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1
             ),
             unit_economics_1c_price_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_INTERVAL_SECONDS",
@@ -203,9 +209,6 @@ class Settings(BaseModel):
             ),
             decision_sync_check_interval_seconds=_env_int(
                 "CHECKSTOCK_DECISION_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1
-            ),
-            rnp_analytics_sync_interval_seconds=_env_int(
-                "CHECKSTOCK_RNP_SYNC_INTERVAL_SECONDS", 4 * 60 * 60, minimum=1
             ),
             session_ttl_days=_env_int("CHECKSTOCK_SESSION_TTL_DAYS", 14, minimum=1),
             session_cookie_secure=_env_bool("CHECKSTOCK_SESSION_COOKIE_SECURE", False),
@@ -243,6 +246,13 @@ class Settings(BaseModel):
             rnp_report_poll_interval_seconds=_env_int(
                 "CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS", 1, minimum=0
             ),
+            experimental_owner_logins=_env_csv("CHECKSTOCK_EXPERIMENTAL_OWNER_LOGINS"),
+            smtp_host=os.getenv("CHECKSTOCK_SMTP_HOST", "").strip(),
+            smtp_port=_env_int("CHECKSTOCK_SMTP_PORT", 587, minimum=1, maximum=65_535),
+            smtp_username=os.getenv("CHECKSTOCK_SMTP_USERNAME", "").strip(),
+            smtp_password=os.getenv("CHECKSTOCK_SMTP_PASSWORD", ""),
+            smtp_sender=os.getenv("CHECKSTOCK_SMTP_SENDER", "").strip(),
+            smtp_starttls=_env_bool("CHECKSTOCK_SMTP_STARTTLS", True),
         )
 
 

@@ -22,54 +22,41 @@ def _card(nm_id: int, tag: str | None = None, tech_size: str = "") -> dict:
     return card
 
 
-class WBCatalogTagTests(unittest.TestCase):
-    def test_build_items_excludes_stale_tag_with_normalized_name(self) -> None:
+class WBCatalogTests(unittest.TestCase):
+    def test_build_items_includes_cards_regardless_of_tags(self) -> None:
         cards = [_card(101, "  СТАРЬЁ  "), _card(102, "Активный")]
 
-        items, stats = catalog.build_items(cards, excluded_tag="Старье")
+        items, stats = catalog.build_items(cards)
 
-        self.assertEqual([item["article"] for item in items], ["102"])
-        self.assertEqual(stats["excluded_tag"], 1)
+        self.assertEqual([item["article"] for item in items], ["101", "102"])
+        self.assertNotIn("excluded_tag", stats)
 
     @mock.patch.object(catalog.db, "replace_catalog")
-    @mock.patch.object(catalog.db, "get_catalog_items")
     @mock.patch.object(catalog.wb_api, "get_cards_list")
     @mock.patch.object(catalog.wb_tokens, "get_token", return_value="token")
-    @mock.patch.object(catalog.logger, "info")
-    def test_sync_filters_only_selected_stores(
+    def test_sync_includes_tagged_cards_for_every_store(
         self,
-        _info: mock.Mock,
         _get_token: mock.Mock,
         get_cards_list: mock.Mock,
-        get_catalog_items: mock.Mock,
         replace_catalog: mock.Mock,
     ) -> None:
         get_cards_list.return_value = [_card(201, "Старье"), _card(202)]
-        get_catalog_items.return_value = [
-            {"article": "201"},
-            {"article": "202"},
-        ]
         replace_catalog.return_value = {
             "added": 0,
             "updated": 0,
-            "removed": 1,
+            "removed": 0,
             "kept": 0,
-            "forced_removed": 1,
         }
 
-        catalog.sync_store("rimili")
-        target_call = replace_catalog.call_args
-        self.assertEqual([item["article"] for item in target_call.args[2]], ["202"])
-        self.assertEqual(target_call.kwargs["force_remove_articles"], {"201"})
-
-        replace_catalog.reset_mock()
-        catalog.sync_store("trusthome")
-        other_call = replace_catalog.call_args
-        self.assertEqual(
-            [item["article"] for item in other_call.args[2]],
-            ["201", "202"],
-        )
-        self.assertEqual(other_call.kwargs["force_remove_articles"], set())
+        for store_slug in ("rimili", "tris", "toyka", "rockkiddo", "trusthome"):
+            replace_catalog.reset_mock()
+            catalog.sync_store(store_slug)
+            target_call = replace_catalog.call_args
+            self.assertEqual(
+                [item["article"] for item in target_call.args[2]],
+                ["201", "202"],
+            )
+            self.assertNotIn("force_remove_articles", target_call.kwargs)
 
     def test_forced_removal_overrides_own_stock_protection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -105,14 +92,6 @@ class WBCatalogTagTests(unittest.TestCase):
                     marketplace TEXT NOT NULL,
                     fulfillment TEXT NOT NULL,
                     quantity INTEGER NOT NULL
-                );
-                CREATE TABLE catalog_product_exclusions (
-                    store_slug TEXT NOT NULL,
-                    marketplace TEXT NOT NULL,
-                    nm_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (store_slug, marketplace, nm_id)
                 );
                 """
             )

@@ -92,7 +92,7 @@ def sync_store(store_slug: str) -> dict:
         "no_barcode": no_barcode,
         **result,
     }
-    logger.info("Каталог Ozon %s: %s", _store_label(store_slug), report)
+    logger.debug("Каталог Ozon %s: %s", _store_label(store_slug), report)
     ozon_api.clear_store_context()
     return report
 

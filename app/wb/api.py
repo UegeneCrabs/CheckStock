@@ -1,10 +1,12 @@
 import json
 import logging
 import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from hashlib import sha256
 
 from app.config import settings
 
@@ -31,11 +33,24 @@ FBS_ORDERS_PER_REQUEST = 1000
 REQUEST_TIMEOUT = settings.wb_request_timeout_seconds
 
 FBO_STOCK_PAGE_LIMIT = 250_000
-FBO_STOCK_PAGE_INTERVAL_SECONDS = 20.0
 
 
 REQUEST_ATTEMPTS = settings.wb_request_attempts
 RETRY_BACKOFF_SECONDS = settings.wb_retry_backoff_seconds
+
+_WB_RATE_LIMIT_RULES: tuple[tuple[str, str, float], ...] = (
+    ("advert_stats", "advert-api.wildberries.ru/adv/v3/fullstats", 20.1),
+    ("advertising", "advert-api.wildberries.ru/", 0.21),
+    ("analytics", "seller-analytics-api.wildberries.ru/", 20.1),
+    ("statistics", "statistics-api.wildberries.ru/", 60.1),
+    ("supplies", "supplies-api.wildberries.ru/", 2.05),
+    ("content", "content-api.wildberries.ru/", 0.61),
+    ("prices", "discounts-prices-api.wildberries.ru/", 0.61),
+    ("marketplace", "marketplace-api.wildberries.ru/", 0.21),
+)
+_WB_RATE_STATE_LOCK = threading.Lock()
+_WB_RATE_LOCKS: dict[str, threading.Lock] = {}
+_WB_LAST_REQUEST_AT: dict[str, float] = {}
 
 _FRIENDLY_BY_STATUS = {
     400: "WB не принял запрос — неверные параметры",
@@ -80,17 +95,65 @@ def _parse_error_body(raw: str) -> tuple[str, str]:
 
 
 def _retry_after_seconds(http_error: urllib.error.HTTPError, attempt: int) -> float:
-
     headers = getattr(http_error, "headers", None)
     if headers:
         for key in ("X-Ratelimit-Retry", "X-Ratelimit-Reset", "Retry-After"):
             val = headers.get(key)
             if val:
                 try:
-                    return max(float(val), 0.5)
+                    seconds = float(val)
+                    if key == "X-Ratelimit-Reset":
+                        if seconds > 10**12:
+                            seconds /= 1000
+                        if seconds > 10**9:
+                            seconds -= time.time()
+                    return max(seconds, 0.5)
                 except (TypeError, ValueError):
                     pass
     return RETRY_BACKOFF_SECONDS * attempt
+
+
+def _rate_limit_for_url(url: str) -> tuple[str, float] | None:
+    normalized = url.casefold()
+    for scope, marker, interval_seconds in _WB_RATE_LIMIT_RULES:
+        if marker in normalized:
+            return scope, interval_seconds
+    return None
+
+
+def _endpoint_name(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    return f"{parsed.netloc}{parsed.path}" or url.split("?", 1)[0]
+
+
+def _short_error(value: str, limit: int = 180) -> str:
+    return " ".join(str(value or "").split())[:limit] or "-"
+
+
+def _throttle_request(url: str, token: str) -> None:
+    rate_limit = _rate_limit_for_url(url)
+    if rate_limit is None:
+        return
+    scope, interval_seconds = rate_limit
+    token_hash = sha256(token.encode("utf-8")).hexdigest()
+    key = f"{scope}:{token_hash}"
+    with _WB_RATE_STATE_LOCK:
+        request_lock = _WB_RATE_LOCKS.setdefault(key, threading.Lock())
+    with request_lock:
+        with _WB_RATE_STATE_LOCK:
+            last_request_at = _WB_LAST_REQUEST_AT.get(key)
+        if last_request_at is not None:
+            wait = interval_seconds - (time.monotonic() - last_request_at)
+            if wait > 0:
+                logger.debug(
+                    "wb_rate_wait scope=%s endpoint=%s wait_seconds=%.2f",
+                    scope,
+                    _endpoint_name(url),
+                    wait,
+                )
+                time.sleep(wait)
+        with _WB_RATE_STATE_LOCK:
+            _WB_LAST_REQUEST_AT[key] = time.monotonic()
 
 
 def _request(method: str, url: str, token: str, params: dict | None = None, json_body=None):
@@ -104,6 +167,7 @@ def _request(method: str, url: str, token: str, params: dict | None = None, json
         headers["Content-Type"] = "application/json"
 
     for attempt in range(1, REQUEST_ATTEMPTS + 1):
+        _throttle_request(url, token)
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
@@ -111,22 +175,46 @@ def _request(method: str, url: str, token: str, params: dict | None = None, json
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", errors="replace")
             title, detail = _parse_error_body(raw)
-            if e.code == 429 and attempt < REQUEST_ATTEMPTS:
+            if (e.code == 429 or e.code >= 500) and attempt < REQUEST_ATTEMPTS:
                 wait = _retry_after_seconds(e, attempt)
                 logger.warning(
-                    "WB 429 (попытка %s/%s), ждём %.1fс: %s",
+                    "wb_retry endpoint=%s status=%s attempt=%s/%s wait_seconds=%.1f reason=%s",
+                    _endpoint_name(url),
+                    e.code,
                     attempt,
                     REQUEST_ATTEMPTS,
                     wait,
-                    url,
+                    _short_error(detail or title),
                 )
                 time.sleep(wait)
                 continue
             raise WBApiError(e.code, title, detail) from e
         except TimeoutError as e:
+            if attempt < REQUEST_ATTEMPTS:
+                wait = RETRY_BACKOFF_SECONDS * attempt
+                logger.warning(
+                    "wb_retry endpoint=%s status=timeout attempt=%s/%s wait_seconds=%.1f",
+                    _endpoint_name(url),
+                    attempt,
+                    REQUEST_ATTEMPTS,
+                    wait,
+                )
+                time.sleep(wait)
+                continue
             raise WBApiError(None, detail=f"WB не ответил за {REQUEST_TIMEOUT}с (таймаут)") from e
         except urllib.error.URLError as e:
             if isinstance(e.reason, (socket.timeout, TimeoutError)):
+                if attempt < REQUEST_ATTEMPTS:
+                    wait = RETRY_BACKOFF_SECONDS * attempt
+                    logger.warning(
+                        "wb_retry endpoint=%s status=timeout attempt=%s/%s wait_seconds=%.1f",
+                        _endpoint_name(url),
+                        attempt,
+                        REQUEST_ATTEMPTS,
+                        wait,
+                    )
+                    time.sleep(wait)
+                    continue
                 raise WBApiError(None, detail=f"WB не ответил за {REQUEST_TIMEOUT}с (таймаут)") from e
             raise WBApiError(None, detail=f"сеть: {e.reason}") from e
 
@@ -167,12 +255,12 @@ def _public_request(url: str, params: dict | None = None):
             if retryable and attempt < REQUEST_ATTEMPTS:
                 wait = _retry_after_seconds(error, attempt)
                 logger.warning(
-                    "Витрина WB %s (попытка %s/%s), ждём %.1fс: %s",
+                    "wb_storefront_retry endpoint=%s status=%s attempt=%s/%s wait_seconds=%.1f",
+                    _endpoint_name(url),
                     error.code,
                     attempt,
                     REQUEST_ATTEMPTS,
                     wait,
-                    url,
                 )
                 time.sleep(wait)
                 continue
@@ -412,7 +500,6 @@ def get_fbo_stock_by_warehouse(token: str) -> dict[tuple[str, str], int]:
         if len(rows) < FBO_STOCK_PAGE_LIMIT:
             return by_warehouse
         offset += len(rows)
-        time.sleep(FBO_STOCK_PAGE_INTERVAL_SECONDS)
 
 
 def get_cards_list(token: str, page_limit: int = CARDS_PAGE_LIMIT) -> list[dict]:
@@ -501,9 +588,7 @@ def normalize_card(card: dict) -> dict:
 ORDERS_PAGE_SIZE = 80000
 
 
-ORDERS_PAGE_PAUSE_SECONDS = 61
 PRICES_PAGE_LIMIT = 1000
-PRICES_PAGE_PAUSE_SECONDS = 0.65
 STOREFRONT_BATCH_PAUSE_SECONDS = 1.0
 STOREFRONT_MAX_BATCH_SIZE = 1_000
 
@@ -517,16 +602,8 @@ def _get_statistics_rows(
     seen: set[str] = set()
 
     for page in range(max_pages):
-        if page:
-            logger.info(
-                "WB API: перед следующей страницей «%s» ждём %.0f с",
-                label,
-                ORDERS_PAGE_PAUSE_SECONDS,
-            )
-            time.sleep(ORDERS_PAGE_PAUSE_SECONDS)
-
-        logger.info(
-            "WB API: загружаем «%s», страница %s/%s, dateFrom=%s",
+        logger.debug(
+            "wb_statistics_page report=%s page=%s/%s date_from=%s",
             label,
             page + 1,
             max_pages,
@@ -544,7 +621,7 @@ def _get_statistics_rows(
 
         if not isinstance(rows, list):
             raise WBApiError(None, detail=f"неожиданный формат {label} WB: {rows!r}"[:300])
-        logger.info("WB API: «%s», страница %s — получено строк: %s", label, page + 1, len(rows))
+        logger.debug("wb_statistics_page_done report=%s page=%s rows=%s", label, page + 1, len(rows))
 
         for index, row in enumerate(rows):
             key = str(row.get("saleID") or row.get("srid") or "")
@@ -594,8 +671,6 @@ def get_goods_prices(token: str, page_limit: int = PRICES_PAGE_LIMIT) -> list[di
     offset = 0
     goods: list[dict] = []
     while True:
-        if offset:
-            time.sleep(PRICES_PAGE_PAUSE_SECONDS)
         payload = _request(
             "GET",
             f"{DISCOUNTS_PRICES_BASE}/api/v2/list/goods/filter",
@@ -738,14 +813,14 @@ def get_storefront_products(
     errors: list[str] = []
     for start in range(0, len(unique), limit):
         if start:
-            logger.info(
+            logger.debug(
                 "Витрина WB: перед следующей пачкой ждём %.1f с",
                 STOREFRONT_BATCH_PAUSE_SECONDS,
             )
             time.sleep(STOREFRONT_BATCH_PAUSE_SECONDS)
         chunk = unique[start : start + limit]
         batch_number = start // limit + 1
-        logger.info(
+        logger.debug(
             "Витрина WB: запрашиваем пачку %s/%s, товаров=%s, артикулы=%s…%s",
             batch_number,
             total_batches,
@@ -797,7 +872,7 @@ def get_storefront_products(
                 products_by_nm[nm_id] = row
                 returned.add(nm_id)
         failed_nm_ids.update(set(chunk) - returned)
-        logger.info(
+        logger.debug(
             "Витрина WB: пачка %s/%s готова за %.1f с, получено=%s, пропущено=%s",
             batch_number,
             total_batches,

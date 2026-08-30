@@ -17,7 +17,7 @@ from app.web.access import has_store_access
 from app.web.templating import render_access_denied_page
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
-QUIET_PATH_PREFIXES = ("/static/",)
+QUIET_PATH_PREFIXES = ("/static/", "/api/activity/heartbeat")
 logger = logging.getLogger(__name__)
 
 
