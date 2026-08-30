@@ -199,12 +199,13 @@ def sync_store_fbo(store_slug: str) -> int:
     return updated
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
     active_slugs = []
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if not wb_tokens.has_token(slug):
             report[slug] = {"token": False, "fbs": None, "fbo": None}
         else:
@@ -230,11 +231,21 @@ def sync_all() -> dict:
                 count = future.result()
                 report[slug][kind] = {"ok": True, "count": count}
                 db.record_sync_health(slug, "WB", kind, True, None, _now())
+            except wb_api.WBApiError as e:
+                logger.warning(
+                    "wb_stock_sync_failed store=%s scheme=%s status=%s error=%s",
+                    _store_label(slug),
+                    kind,
+                    e.status or "network",
+                    e.friendly,
+                )
+                report[slug][kind] = {"ok": False, "error": e.friendly}
+                db.record_sync_health(slug, "WB", kind, False, e.friendly, _now())
             except Exception as e:
                 logger.exception(
-                    "WB %s / %s: %s",
+                    "wb_stock_sync_crashed store=%s scheme=%s error=%s",
                     _store_label(slug),
-                    kind.upper(),
+                    kind,
                     _error_message(e),
                 )
                 report[slug][kind] = {"ok": False, "error": _error_message(e)}

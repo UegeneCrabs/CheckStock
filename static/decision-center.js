@@ -15,6 +15,9 @@
         .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    const copyIdentifier = (kind, value, label) => window.CheckStockIdentifierCopy
+        ? window.CheckStockIdentifierCopy.html(kind, value, label)
+        : escapeHtml(label ?? value);
     const number = (value, digits = 0) => new Intl.NumberFormat("ru-RU", {
         maximumFractionDigits: digits,
     }).format(Number(value || 0));
@@ -127,7 +130,7 @@
                         <span class="dc-state-pill ${statusClass}">${escapeHtml(statusLabel(item.status))}</span>
                     </div>
                     <h4>${escapeHtml(item.title)}</h4>
-                    <p class="dc-decision-product">${escapeHtml(item.product)} · арт. ${escapeHtml(item.article)} · ${escapeHtml(item.storeName)}</p>
+                    <p class="dc-decision-product">${escapeHtml(item.product)} · ${copyIdentifier("Артикул", item.article, `арт. ${item.article}`)} · ${escapeHtml(item.storeName)}</p>
                     <p class="dc-decision-summary">${escapeHtml(item.summary)}</p>
                     <div class="dc-evidence">${evidence}</div>
                 </div>
@@ -177,7 +180,7 @@
         $("[data-dc-reallocations]").innerHTML = rows.length ? rows.map((item) => `
             <div class="dc-reallocation">
                 <div class="dc-reallocation-flow">
-                    <div class="dc-reallocation-product"><span>Снять · ДРР ${percent(item.fromDrr, 1)}</span><strong title="${escapeHtml(item.from)}">${escapeHtml(item.from)}</strong></div>
+                    <div class="dc-reallocation-product"><span>Снять · ДРР с выкупом ${percent(item.fromDrr, 1)}</span><strong title="${escapeHtml(item.from)}">${escapeHtml(item.from)}</strong></div>
                     <span class="dc-reallocation-arrow">→</span>
                     <div class="dc-reallocation-product"><span>Добавить · CVR ${percent(item.toConversion, 1)}</span><strong title="${escapeHtml(item.to)}">${escapeHtml(item.to)}</strong></div>
                 </div>
@@ -189,7 +192,7 @@
     function portfolioAction(item) {
         if (item.stockDays < 10 && item.weeklyOrders > .5) return "Защитить сток";
         if (item.stockDays > 90) return "Высвободить";
-        if (item.drr > .3) return "Снизить ДРР";
+        if (item.drr > .3) return "Снизить ДРР с выкупом";
         if (item.growth > 20) return "Масштабировать";
         if (item.health < 60) return "Починить";
         return "Наблюдать";
@@ -205,7 +208,7 @@
             const healthClass = item.health >= 72 ? "is-good" : item.health < 50 ? "is-risk" : "";
             const growthClass = item.growth > 0 ? "dc-positive" : item.growth < 0 ? "dc-negative" : "";
             return `<tr>
-                <td><div class="dc-product-cell"><span class="dc-product-avatar">${avatar}</span><span class="dc-product-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small>арт. ${escapeHtml(item.article)}</small></span></div></td>
+                <td><div class="dc-product-cell"><span class="dc-product-avatar">${avatar}</span><span class="dc-product-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small>${copyIdentifier("Артикул", item.article, `арт. ${item.article}`)}</small></span></div></td>
                 <td>${escapeHtml(item.storeName)}</td><td><strong>${escapeHtml(portfolioAction(item))}</strong></td>
                 <td><span class="dc-health ${healthClass}"><i></i>${number(item.health)}</span></td>
                 <td class="${growthClass}">${item.growth > 0 ? "+" : ""}${number(item.growth, 0)}%</td>

@@ -162,18 +162,27 @@ def request(
 def get_campaigns(api_key: str) -> list[dict]:
 
     campaigns: list[dict] = []
-    page = 1
+    page_token = ""
+    seen_page_tokens: set[str] = set()
 
     while True:
-        data = _request("/v2/campaigns", api_key, params={"page": page, "pageSize": 50}, method="GET")
+        params: dict[str, int | str] = {"limit": 100}
+        if page_token:
+            params["pageToken"] = page_token
+
+        data = _request("/v2/campaigns", api_key, params=params, method="GET")
         chunk = data.get("campaigns") or []
         campaigns.extend(chunk)
 
-        pager = data.get("pager") or {}
-        total_pages = int(pager.get("pagesCount") or 1)
-        if page >= total_pages or not chunk:
+        next_page_token = str((data.get("paging") or {}).get("nextPageToken") or "").strip()
+        if not next_page_token:
             return campaigns
-        page += 1
+        if next_page_token in seen_page_tokens:
+            logger.warning("Яндекс вернул повторяющийся токен страницы списка кабинетов")
+            return campaigns
+
+        seen_page_tokens.add(next_page_token)
+        page_token = next_page_token
 
 
 def normalize_campaign(row: dict) -> dict:

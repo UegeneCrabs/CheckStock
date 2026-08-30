@@ -15,14 +15,22 @@ class RequestContextFilter(logging.Filter):
         return True
 
 
+class CompactFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        record.short_name = record.name.removeprefix("app.")
+        request_id = getattr(record, "request_id", "-")
+        record.request_context = f" request={request_id[:8]}" if request_id != "-" else ""
+        return super().format(record)
+
+
 def configure_logging(app_settings: Settings = settings) -> None:
     level = getattr(logging, app_settings.log_level, logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(RequestContextFilter())
     handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S%z",
+        CompactFormatter(
+            "%(asctime)s %(levelname)s %(short_name)s%(request_context)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
     )
     root = logging.getLogger()

@@ -1,0 +1,34 @@
+        <link rel="stylesheet" href="/static/unit-economics-1c-cabinet-settings.css?v=5">
+
+        <section class="ue1cs-page" id="ue1cs-page" aria-label="Параметры кабинетов Wildberries">
+            <div class="ue1cs-hero ue1cs-hero--compact">
+                <div class="ue1cs-hero-copy">
+                    <div class="ue1cs-summary" aria-label="Сводка по кабинетам">
+                        <span class="ue1cs-count">Кабинетов <strong id="ue1cs-cabinet-count">—</strong></span>
+                        <button class="ue1cs-source-sync" id="ue1cs-source-sync" type="button">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></svg>
+                            <span data-source-sync-label>Выгрузить себес</span>
+                        </button>
+                        <button class="ue1cs-source-sync" id="ue1cs-price-sync" type="button">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></svg>
+                            <span data-price-sync-label>Выгрузить цены</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ue1cs-notice" role="note">
+                <span class="ue1cs-notice-copy">
+                    Комиссия команды обновляется ночью из Google Sheets и не редактируется вручную.
+                </span>
+            </div>
+
+            <div class="ue1cs-grid" id="ue1cs-grid"></div>
+            <div class="ue1cs-empty" id="ue1cs-empty" hidden>
+                Для вашей учётной записи нет доступных кабинетов.
+            </div>
+            <div class="ue1cs-toast" id="ue1cs-toast" role="status" aria-live="polite"></div>
+        </section>
+
+        <script type="application/json" id="ue1cs-config">$cabinet_settings_config</script>
+        <script src="/static/unit-economics-1c-cabinet-settings.js?v=10"></script>

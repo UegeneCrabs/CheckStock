@@ -190,11 +190,12 @@ def sync_store(store_slug: str) -> int:
     return len(covered)
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if not ya_tokens.has_credentials(slug):
             report[slug] = {"token": False, "yandex": None}
             continue
@@ -203,9 +204,18 @@ def sync_all() -> dict:
         try:
             report[slug]["yandex"] = {"ok": True, "count": sync_store(slug)}
             db.record_sync_health(slug, MARKETPLACE, "stocks", True, None, _now())
+        except ya_api.YandexApiError as e:
+            logger.warning(
+                "yandex_stock_sync_failed store=%s status=%s error=%s",
+                _store_label(slug),
+                e.status or "network",
+                e.friendly,
+            )
+            report[slug]["yandex"] = {"ok": False, "error": e.friendly}
+            db.record_sync_health(slug, MARKETPLACE, "stocks", False, e.friendly, _now())
         except Exception as e:
             logger.exception(
-                "Яндекс %s: остатки не выгружены — %s",
+                "yandex_stock_sync_crashed store=%s error=%s",
                 _store_label(slug),
                 _error_message(e),
             )

@@ -1,0 +1,86 @@
+    <link rel="stylesheet" href="/static/unit-economics-1c-report.css?v=12">
+    <section class="ue1cr-page" id="unit-economics-1c-report" aria-label="Отчёт по юниточной прибыли">
+        <form class="ue1cr-filters" id="ue1cr-filters" aria-label="Параметры отчёта">
+            <div class="ue1cr-period">
+                <span class="ue1cr-label">Период</span>
+                <div class="ue1cr-date-range">
+                    <label><span>с</span><input type="date" id="ue1cr-date-from" aria-label="Начало периода" required></label>
+                    <span class="ue1cr-date-separator" aria-hidden="true">—</span>
+                    <label><span>по</span><input type="date" id="ue1cr-date-to" aria-label="Конец периода" required></label>
+                </div>
+            </div>
+            <div class="ue1cr-filter"><span>Магазины</span><details class="ue1cr-multi" id="ue1cr-store">
+                <summary id="ue1cr-store-summary">Все магазины</summary>
+                <div class="ue1cr-multi-options" id="ue1cr-store-options"></div>
+            </details></div>
+            <div class="ue1cr-filter"><span>Предметы</span><details class="ue1cr-multi" id="ue1cr-subject">
+                <summary id="ue1cr-subject-summary">Все предметы</summary>
+                <div class="ue1cr-multi-options" id="ue1cr-subject-options"></div>
+            </details></div>
+            $unit_1c_manager_filter
+            <div class="ue1cr-filter ue1cr-filter--articles"><span>Артикулы</span><details class="ue1cr-multi" id="ue1cr-article">
+                <summary id="ue1cr-article-summary">Все товары</summary>
+                <div class="ue1cr-article-picker">
+                    <input type="search" id="ue1cr-article-search" placeholder="Название или артикул" autocomplete="off">
+                    <div class="ue1cr-multi-options" id="ue1cr-article-options"></div>
+                </div>
+            </details></div>
+            <label class="ue1cr-images-toggle"><input type="checkbox" id="ue1cr-show-images"><span>Показывать изображения</span></label>
+            <div class="ue1cr-actions">
+                <button type="submit" id="ue1cr-submit">Показать</button>
+                <a class="ue1cr-export" id="ue1cr-export" href="/sales/unit-economics-1c/reports/unit-profit.xlsx" download>Excel</a>
+            </div>
+        </form>
+        <div class="ue1cr-error" id="ue1cr-error" role="alert" hidden></div>
+        <div class="ue1cr-scope-note" id="ue1cr-scope-note" hidden></div>
+        <div class="ue1cr-scope-note" id="ue1cr-margin-coverage-note" hidden></div>
+        <section class="ue1cr-table-card" aria-labelledby="ue1cr-table-title">
+            <header class="ue1cr-table-head">
+                <h2 id="ue1cr-table-title">Товары</h2>
+            </header>
+            <div class="ue1cr-table-wrap">
+                <table class="data-table ue1cr-table" aria-label="Продажи, реклама и прибыль по товарам">
+                    <thead>
+                        <tr class="ue1cr-groups">
+                            <th rowspan="2" scope="col" data-filter-column="0">
+                                <span class="ue1cr-head-heading">
+                                    <span class="ue1cr-head-label">Товар</span>
+                                    <strong class="ue1cr-head-total ue1cr-head-total--label" data-report-total-count>Итого: 0 поз.</strong>
+                                </span>
+                            </th>
+                            <th rowspan="2" scope="col" data-filter-column="1"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Магазин</span><strong class="ue1cr-head-total ue1cr-head-total--empty" aria-hidden="true">&nbsp;</strong></span></th>
+                            <th rowspan="2" scope="col" data-filter-column="2"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Категория</span><strong class="ue1cr-head-total ue1cr-head-total--empty" aria-hidden="true">&nbsp;</strong></span></th>
+                            <th rowspan="2" scope="col" data-filter-column="3"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Менеджер</span><strong class="ue1cr-head-total ue1cr-head-total--empty" aria-hidden="true">&nbsp;</strong></span></th>
+                            <th colspan="7" scope="colgroup">Воронка продаж</th>
+                            <th colspan="1" scope="colgroup">Остатки</th>
+                            <th colspan="5" scope="colgroup">Реклама</th>
+                            <th colspan="4" scope="colgroup">Результат</th>
+                        </tr>
+                        <tr>
+                            <th class="num" scope="col" data-filter-column="4"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Всего заказов, шт.</span><strong class="ue1cr-head-total" data-report-total="orders_count">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="5"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Всего отмен, шт.</span><strong class="ue1cr-head-total" data-report-total="cancel_count">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="6"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Заказы − отмены, шт.</span><strong class="ue1cr-head-total" data-report-total="net_orders_count">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="7" data-filter-type="number"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">ТО заказов, ₽</span><strong class="ue1cr-head-total" data-report-total="orders_amount">0 ₽</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="8"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Сумма отмен, ₽</span><strong class="ue1cr-head-total" data-report-total="cancel_amount">0 ₽</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="9"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">ТО после отмен, ₽</span><strong class="ue1cr-head-total" data-report-total="net_orders_amount">0 ₽</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="10"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Выкуп</span><strong class="ue1cr-head-total" data-report-total="buyout_percent">—</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="11"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Остаток</span><strong class="ue1cr-head-total" data-report-total="stock">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="12"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Показы</span><strong class="ue1cr-head-total" data-report-total="impressions">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="13"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Клики</span><strong class="ue1cr-head-total" data-report-total="clicks">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="14"><span class="ue1cr-head-heading"><span class="ue1cr-head-label"><abbr title="Доля кликов от показов">CTR</abbr></span><strong class="ue1cr-head-total" data-report-total="ctr">0%</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="15"><span class="ue1cr-head-heading"><span class="ue1cr-head-label"><abbr title="Средняя стоимость клика">CPC</abbr></span><strong class="ue1cr-head-total" data-report-total="cpc">0 ₽</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="16"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Расходы, ₽</span><strong class="ue1cr-head-total" data-report-total="advertising_spend">0 ₽</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="17"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Расчётные выкупы</span><strong class="ue1cr-head-total" data-report-total="margin_orders_count">0</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="18"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Маржа периода, ₽</span><strong class="ue1cr-head-total" data-report-total="margin">—</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="19"><span class="ue1cr-head-heading"><span class="ue1cr-head-label">Закупка периода, ₽</span><strong class="ue1cr-head-total" data-report-total="purchase_value">—</strong></span></th>
+                            <th class="num" scope="col" data-filter-column="20"><span class="ue1cr-head-heading"><span class="ue1cr-head-label"><abbr title="Окупаемость вложений">ROI</abbr></span><strong class="ue1cr-head-total" data-report-total="roi">—</strong></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="ue1cr-rows"></tbody>
+                </table>
+                <div class="ue1cr-empty" id="ue1cr-empty" hidden>За выбранный период данных нет.</div>
+            </div>
+        </section>
+    </section>
+    <script type="application/json" id="ue1cr-config">$unit_1c_report_config</script>
+    <script src="/static/unit-economics-1c-report.js?v=20"></script>

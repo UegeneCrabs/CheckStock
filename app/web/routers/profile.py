@@ -69,15 +69,12 @@ def _render_section_rows(user) -> tuple[str, int]:
 async def profile_page(request: Request):
     user = request.state.user
     section_rows, writable_sections = _render_section_rows(user)
-    name_parts = [part for part in user.full_name.split() if part]
-    initials = "".join(part[0] for part in name_parts[:2]).upper() or "CS"
     stock_edit_allowed = (
         user.can_edit_stock and access_level(user, SectionName.STOCK) is SectionAccessLevel.WRITE
     )
     users_manage_allowed = can_manage_users(user)
     content = fill_template(
         "profile_content.html",
-        user_initials=html.escape(initials),
         full_name=html.escape(user.full_name),
         email=html.escape(user.google_email or "Не указана"),
         login=html.escape(user.login),

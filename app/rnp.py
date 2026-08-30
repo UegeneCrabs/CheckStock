@@ -226,8 +226,8 @@ METRICS = (
         "format": "money",
         "hint": "Расходы рекламных кампаний из рекламного API площадки",
         "children": (
-            {"id": "ad_drr_orders", "label": "ДРР", "format": "percent"},
-            {"id": "ad_drr_sales", "label": "ДРР (продажи)", "format": "percent"},
+            {"id": "ad_drr_orders", "label": "ДРР с выкупом", "format": "percent"},
+            {"id": "ad_drr_sales", "label": "ДРР по продажам", "format": "percent"},
             {"id": "ad_media", "label": "Медиа", "format": "money"},
             {"id": "ad_internal", "label": "Внутр. реклама", "format": "money"},
             {"id": "ad_external", "label": "Внеш. реклама", "format": "money"},
@@ -458,6 +458,14 @@ def _ratio(numerator, denominator, multiplier: float = 100.0):
     return round(_number(numerator) / _number(denominator) * multiplier, 2)
 
 
+def _expected_buyout_amount(orders_amount, buyout_percent):
+    if orders_amount is None:
+        return None
+    ratio = min(max(_number(buyout_percent), 0.0), 100.0) / 100
+    effective_ratio = ratio if ratio > 0 else 1.0
+    return _number(orders_amount) * effective_ratio
+
+
 def _derive_metrics(item: dict) -> dict:
     if item.get("traffic_orders") is None:
         item["traffic_orders"] = _integer(item.get("orders_count"))
@@ -472,7 +480,10 @@ def _derive_metrics(item: dict) -> dict:
     item["traffic_cr_cart"] = _ratio(item.get("traffic_carts"), item.get("traffic_clicks"))
     item["traffic_cr_order"] = _ratio(item.get("traffic_orders"), item.get("traffic_carts"))
     item["traffic_cr_total"] = _ratio(item.get("traffic_orders"), item.get("traffic_clicks"))
-    item["ad_drr_orders"] = _ratio(item.get("ad_spend"), item.get("orders_amount"))
+    item["ad_drr_orders"] = _ratio(
+        item.get("ad_spend"),
+        _expected_buyout_amount(item.get("orders_amount"), item.get("buyout_percent")),
+    )
     item["ad_drr_sales"] = _ratio(item.get("ad_spend"), item.get("sales_amount"))
     item["ad_ctr"] = _ratio(item.get("ad_clicks"), item.get("ad_impressions"))
     item["ad_cpc"] = _ratio(item.get("ad_spend"), item.get("ad_clicks"), 1.0)

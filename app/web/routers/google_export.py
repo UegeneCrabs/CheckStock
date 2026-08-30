@@ -17,6 +17,7 @@ from app.repositories.stock_sheet_export import (
     StockSheetExportSettings,
 )
 from app.stores import STORES
+from app.sync_tracking import run_tracked
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -274,7 +275,12 @@ async def run_google_export(request: Request, store_slug: str):
     if store_slug not in STORES:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     try:
-        report = await run_in_threadpool(stock_sheet_export.run_store, store_slug)
+        report = await run_in_threadpool(
+            run_tracked,
+            "stock_sheet_export",
+            "manual",
+            lambda: stock_sheet_export.run_store(store_slug),
+        )
     except Exception as error:
         return JSONResponse(
             {"ok": False, "error": f"{type(error).__name__}: {error}"},

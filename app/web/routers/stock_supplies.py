@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from app import auth, db, supply_planning
+from app.access_control import accessible_stores
 from app.domain import MOSCOW_TIMEZONE
 from app.dto.supply_planning import ManualSupplyInput, ManualSupplyReadyInput
 from app.stores import STORES
@@ -67,7 +68,7 @@ async def wb_planned_supplies(
     date_from: date | None = None,
     date_to: date | None = None,
 ):
-    allowed = accessible_store_slugs(request.state.user)
+    allowed = accessible_stores(request.state.user, "WB")
     if store:
         store_slug = store.strip().lower()
         if store_slug not in allowed:
@@ -109,6 +110,7 @@ async def create_manual_supply(request: Request, payload: ManualSupplyInput):
         payload.origin,
         payload.destination,
         payload.supply_type,
+        payload.note.strip(),
         payload.ready,
         user_id,
         user_name,
@@ -119,7 +121,8 @@ async def create_manual_supply(request: Request, payload: ManualSupplyInput):
         user_id,
         user_name,
         "Добавлена запланированная поставка",
-        f"{STORES[store_slug].name}: {payload.origin} → {payload.destination} · {payload.supply_type}",
+        f"{STORES[store_slug].name}: {payload.origin} → {payload.destination} · "
+        f"{payload.supply_type} · {payload.note.strip()}",
         now,
     )
     return JSONResponse({"ok": True, "supply": _with_urgency([row])[0]}, status_code=201)
@@ -148,6 +151,7 @@ async def update_manual_supply(
         payload.origin,
         payload.destination,
         payload.supply_type,
+        payload.note.strip(),
         payload.ready,
         now,
     )

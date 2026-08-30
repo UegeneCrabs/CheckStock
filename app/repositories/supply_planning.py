@@ -9,6 +9,7 @@ def _manual_supply(row) -> dict:
         "origin": str(row["origin"]),
         "destination": str(row["destination"]),
         "supply_type": str(row["supply_type"]),
+        "note": str(row["note"]),
         "ready": bool(row["ready"]),
         "created_by_name": str(row["created_by_name"]),
         "created_at": str(row["created_at"]),
@@ -23,7 +24,7 @@ def list_manual_supplies(store_slugs: tuple[str, ...]) -> list[dict]:
     with get_connection() as connection:
         rows = connection.execute(
             f"""
-            SELECT id, store_slug, delivery_at, origin, destination, supply_type, ready,
+            SELECT id, store_slug, delivery_at, origin, destination, supply_type, note, ready,
                    created_by_name, created_at, updated_at
               FROM manual_supplies
              WHERE ready = 0 AND store_slug IN ({placeholders})
@@ -38,7 +39,7 @@ def get_manual_supply(supply_id: int) -> dict | None:
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, store_slug, delivery_at, origin, destination, supply_type, ready,
+            SELECT id, store_slug, delivery_at, origin, destination, supply_type, note, ready,
                    created_by_name, created_at, updated_at
               FROM manual_supplies
              WHERE id = ?
@@ -54,6 +55,7 @@ def create_manual_supply(
     origin: str,
     destination: str,
     supply_type: str,
+    note: str,
     ready: bool,
     created_by_user_id: int | None,
     created_by_name: str,
@@ -63,9 +65,9 @@ def create_manual_supply(
         cursor = connection.execute(
             """
             INSERT INTO manual_supplies
-                (store_slug, delivery_at, origin, destination, supply_type, ready,
+                (store_slug, delivery_at, origin, destination, supply_type, note, ready,
                  created_by_user_id, created_by_name, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 store_slug,
@@ -73,6 +75,7 @@ def create_manual_supply(
                 origin,
                 destination,
                 supply_type,
+                note,
                 int(ready),
                 created_by_user_id,
                 created_by_name,
@@ -95,6 +98,7 @@ def update_manual_supply(
     origin: str,
     destination: str,
     supply_type: str,
+    note: str,
     ready: bool,
     now: str,
 ) -> dict | None:
@@ -103,7 +107,7 @@ def update_manual_supply(
             """
             UPDATE manual_supplies
                SET store_slug = ?, delivery_at = ?, origin = ?, destination = ?, supply_type = ?,
-                   ready = ?, updated_at = ?
+                   note = ?, ready = ?, updated_at = ?
              WHERE id = ?
             """,
             (
@@ -112,6 +116,7 @@ def update_manual_supply(
                 origin,
                 destination,
                 supply_type,
+                note,
                 int(ready),
                 now,
                 supply_id,

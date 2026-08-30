@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app import rnp as rnp_service
 from app import sales as sales_service
 from app.dto.rnp import RnpActionRequest, RnpStrategyRequest, RnpSyncRequest
+from app.sync_tracking import run_tracked
 from app.web.access import accessible_store_items, first_accessible_store, has_store_access
 from app.web.dependencies import RnpCommandServiceDependency
 from app.web.templating import fill_template, render_page
@@ -94,12 +95,16 @@ async def rnp_sync(request: Request, payload: RnpSyncRequest):
             sales_lookback,
         )
         report = await run_in_threadpool(
-            rnp_service.sync_metrics,
-            payload.month,
-            marketplace,
-            store_slug,
-            True,
-            list(payload.articles) if payload.articles else None,
+            run_tracked,
+            "rnp_analytics_sync",
+            "manual",
+            lambda: rnp_service.sync_metrics(
+                payload.month,
+                marketplace,
+                store_slug,
+                True,
+                list(payload.articles) if payload.articles else None,
+            ),
         )
         return JSONResponse({"ok": True, "sales_sync": sales_report, "metric_sync": report})
     except ValueError as exc:

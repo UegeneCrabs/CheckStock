@@ -5,14 +5,14 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from app import auth, db
+from app import db
+from app.access_control import ActionPermission, has_action_permission, scope_pairs
 from app.config import settings
 from app.ff_import import export as ff_export
 from app.formatting import format_dt
 from app.stores import STORES
 from app.web.common import _fmt_num
 from app.web.downloads import _download_headers
-from app.web.routers.stock_mutations import _guard_stock_edit
 from app.web.stock_rendering import (
     render_trash_table,
     render_warehouse_table,
@@ -28,9 +28,27 @@ OPERATION_FILTERS = [
     ("", "Все"),
     ("delivery", "Поставки"),
     ("transfer", "Перемещения"),
+    ("fbs_transfer", "На FBS"),
     ("shipment", "Отгрузки"),
     ("manual_add", "Ручные докладки"),
 ]
+
+TRANSFER_KINDS = ("transfer", "transfer_dispatch", "transfer_receive", "transfer_cancel")
+
+
+def _operations_in_scope(operations: list[dict], allowed_pairs: tuple[tuple[str, str], ...]) -> list[dict]:
+    allowed = set(allowed_pairs)
+    result = []
+    for operation in operations:
+        store_slug = str(operation.get("store_slug") or "")
+        marketplaces = {
+            str(value)
+            for value in (operation.get("from_marketplace"), operation.get("to_marketplace"))
+            if value
+        }
+        if not marketplaces or any((store_slug, marketplace) in allowed for marketplace in marketplaces):
+            result.append(operation)
+    return result
 
 
 def render_kind_tabs(slug: str, active: str, counts: dict[str, int]) -> str:
@@ -82,7 +100,7 @@ def render_operation_rows(operations: list[dict]) -> str:
     for op in operations:
         note = op.get("note") or ""
         source = op.get("source_name") or db.SOURCE_LABELS.get(op.get("source_type"), "")
-        detail = note or source or "Без примечания"
+        detail = " · ".join(part for part in (note, source) if part) or "Без примечания"
         kind = op["kind"] if op["kind"] in db.OPERATION_LABELS else "other"
         created = format_dt(op["created_at"])
         created_parts = created.split(" ", 1)
@@ -91,7 +109,11 @@ def render_operation_rows(operations: list[dict]) -> str:
         from_fallback = (
             "Поставка" if kind == "delivery" else ("Ручной ввод" if kind == "manual_add" else "Не указано")
         )
-        to_fallback = "Отгрузка" if kind == "shipment" else ("Мусорка" if kind == "trash" else "Не указано")
+        to_fallback = (
+            "Отгрузка"
+            if kind == "shipment"
+            else ("FBS" if kind == "fbs_transfer" else ("Мусорка" if kind == "trash" else "Не указано"))
+        )
         units = int(op.get("units") or 0)
         unit_class = " ops-volume-value--negative" if units < 0 else ""
         rows.append(
@@ -129,6 +151,8 @@ def _history_kinds(kind: str) -> tuple[str, ...] | None:
 
     kind = (kind or "").strip()
     known = {k for k, _ in OPERATION_FILTERS if k}
+    if kind == "transfer":
+        return TRANSFER_KINDS
     return (kind,) if kind in known else None
 
 
@@ -140,14 +164,16 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     kinds = _history_kinds(kind)
-    active = kinds[0] if kinds else ""
+    active = kind if kinds else ""
     all_operations = await run_in_threadpool(
         db.get_store_operations, slug.lower(), None, settings.operation_history_limit
     )
+    allowed_pairs = scope_pairs(request.state.user)
+    all_operations = _operations_in_scope(all_operations, allowed_pairs)
     operations = (
-        await run_in_threadpool(
+        _operations_in_scope(await run_in_threadpool(
             db.get_store_operations, slug.lower(), kinds, settings.operation_history_limit
-        )
+        ), allowed_pairs)
         if kinds
         else all_operations
     )
@@ -155,15 +181,12 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
     for operation in all_operations:
         op_kind = operation.get("kind") or ""
         counts[op_kind] = counts.get(op_kind, 0) + 1
+    counts["transfer"] = sum(counts.get(item, 0) for item in TRANSFER_KINDS)
 
     content = fill_template(
         "operations_content.html",
         slug=slug.lower(),
         store_name=store["name"],
-        store_color=store["color"],
-        store_initials=store["initials"],
-        store_text=store["text"],
-        limit=str(settings.operation_history_limit),
         kind=active,
         kind_tabs=render_kind_tabs(slug.lower(), active, counts),
         summary=render_operation_summary(operations),
@@ -179,16 +202,29 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
 
 
 @router.get("/stock/{slug}/operations/xlsx")
-async def stock_store_operations_xlsx(slug: str, kind: str = ""):
+async def stock_store_operations_xlsx(request: Request, slug: str, kind: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     kinds = _history_kinds(kind)
+    if not any(
+        store_slug == slug.lower()
+        and has_action_permission(
+            request.state.user,
+            ActionPermission.STOCK_OPERATIONS_EXPORT,
+            store_slug=store_slug,
+            marketplace=marketplace,
+        )
+        for store_slug, marketplace in scope_pairs(request.state.user)
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к выгрузке операций")
+    allowed_pairs = scope_pairs(request.state.user)
 
     def _build():
         operations = db.get_operations_with_items(slug.lower(), kinds, settings.operation_history_limit)
+        operations = _operations_in_scope(operations, allowed_pairs)
         return ff_export.build_history_xlsx(slug.lower(), store["name"], operations)
 
     try:
@@ -221,13 +257,20 @@ def _fbs_warehouse_rows(store_slug: str, marketplace: str) -> list[dict]:
 
 
 @router.get("/stock/{slug}/stock.xlsx")
-async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
+async def stock_store_xlsx(request: Request, slug: str, mp: str = "", ff: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp if mp in db.MARKETPLACES else db.DEFAULT_MARKETPLACE
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_OPERATIONS_EXPORT,
+        store_slug=slug.lower(),
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к выгрузке этой площадки")
     store_slug = slug.lower()
     schemes = schemes_for(marketplace, store_slug)
 
@@ -241,7 +284,15 @@ async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
             if ff and (scheme == "fbs" or scheme.startswith("fbs_"))
         }
 
-        columns = ["АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ТОТАЛ", "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ"]
+        transit_map = db.get_ff_transit_totals(store_slug, marketplace, ff or None)
+        columns = [
+            "АРТИКУЛ",
+            "ШТРИХКОД",
+            "НАЗВАНИЕ",
+            "ТОТАЛ",
+            "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ",
+            "В ПУТИ МЕЖДУ ФФ",
+        ]
         columns += [title.upper() for _scheme, title in schemes]
 
         rows = []
@@ -249,6 +300,7 @@ async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
         for item in items:
             article = item["article"]
             ff_available = ff_map.get(article, 0) or 0
+            transit_quantity = transit_map.get(article, 0) or 0
 
             by_scheme = []
             for scheme, _title in schemes:
@@ -257,10 +309,23 @@ async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
                 else:
                     by_scheme.append(item[f"{scheme}_stock"] or 0)
 
-            row_total = ff_available + sum(by_scheme)
-            rows.append([article, item["barcode"], item["name"], row_total, ff_available, *by_scheme])
+            row_total = ff_available + transit_quantity + sum(by_scheme)
+            rows.append(
+                [
+                    article,
+                    item["barcode"],
+                    item["name"],
+                    row_total,
+                    ff_available,
+                    transit_quantity,
+                    *by_scheme,
+                ]
+            )
 
-            for index, value in enumerate([row_total, ff_available, *by_scheme], start=3):
+            for index, value in enumerate(
+                [row_total, ff_available, transit_quantity, *by_scheme],
+                start=3,
+            ):
                 totals[index] += value
 
         totals[0] = "ИТОГО"
@@ -290,13 +355,20 @@ async def stock_store_xlsx(slug: str, mp: str = "", ff: str = ""):
 
 
 @router.get("/stock/{slug}/warehouses/xlsx")
-async def stock_store_warehouses_xlsx(slug: str, mp: str = ""):
+async def stock_store_warehouses_xlsx(request: Request, slug: str, mp: str = ""):
 
     store = STORES.get(slug.lower())
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp or db.DEFAULT_MARKETPLACE
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_OPERATIONS_EXPORT,
+        store_slug=slug.lower(),
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к выгрузке этой площадки")
 
     def _build():
         tables = _warehouse_tables(slug.lower(), marketplace)
@@ -327,9 +399,13 @@ async def toggle_trash_checked(
     if slug.lower() not in STORES:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
-    denied = _guard_stock_edit(request.state.user)
-    if denied:
-        return JSONResponse({"ok": False, "error": denied}, status_code=403)
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_WRITEOFF,
+        store_slug=slug.lower(),
+        marketplace=marketplace.strip(),
+    ):
+        return JSONResponse({"ok": False, "error": "Нет доступа к списанию этой площадки"}, status_code=403)
 
     value = checked.strip().lower() in ("1", "true", "on", "yes")
     await run_in_threadpool(
@@ -349,14 +425,18 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     marketplace = mp or db.DEFAULT_MARKETPLACE
+    if not has_action_permission(
+        request.state.user,
+        ActionPermission.STOCK_BALANCE_VIEW,
+        store_slug=slug.lower(),
+        marketplace=marketplace,
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
     def build_content() -> str:
         return fill_template(
             "warehouse_content.html",
             store_name=store["name"],
-            store_color=store["color"],
-            store_text=store["text"],
-            store_initials=store["initials"],
             slug=slug.lower(),
             marketplace=html.escape(marketplace),
             fbo_table=render_warehouse_table(
@@ -373,7 +453,14 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
                 "Пока нет остатков на фулфилментах — загрузите поставку на странице магазина",
             ),
             trash_table=render_trash_table(
-                slug.lower(), marketplace, auth.can_edit_stock(request.state.user)
+                slug.lower(),
+                marketplace,
+                has_action_permission(
+                    request.state.user,
+                    ActionPermission.STOCK_WRITEOFF,
+                    store_slug=slug.lower(),
+                    marketplace=marketplace,
+                ),
             ),
         )
 

@@ -34,6 +34,8 @@ class RnpMetricTests(unittest.TestCase):
         self.assertEqual(result["traffic_cr_cart"], 20)
         self.assertEqual(result["traffic_cr_total"], 10)
         self.assertEqual(result["buyout_percent"], 60)
+        self.assertEqual(result["ad_drr_orders"], 12.5)
+        self.assertEqual(result["ad_drr_sales"], 10)
         self.assertEqual(result["ad_ctr"], 5)
         self.assertEqual(result["profit_after_ads"], 450)
         self.assertEqual(result["margin_after_ads"], 30)

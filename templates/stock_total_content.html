@@ -1,0 +1,65 @@
+<link rel="stylesheet" href="/static/stock-total.css?v=6">
+
+<section class="stock-total-panel">
+    <div class="stock-total-controls">
+        <label for="stock-total-store">
+            <span>Магазин</span>
+            <select id="stock-total-store">$store_options</select>
+        </label>
+        <p><span class="stock-total-legend stock-total-legend--ff"></span>ФФ</p>
+        <p><span class="stock-total-legend stock-total-legend--transit"></span>В пути</p>
+        <p><span class="stock-total-legend stock-total-legend--fbs"></span>FBS</p>
+        <p><span class="stock-total-legend stock-total-legend--rfbs"></span>RFBS</p>
+        <p><span class="stock-total-legend stock-total-legend--fbo"></span>FBO</p>
+        <a class="btn-primary stock-total-download" href="$download_href" download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+            Скачать XLSX
+        </a>
+    </div>
+
+    <div class="table-wrap stock-total-table-wrap">
+        <table class="data-table data-table--stock-total" data-table-filter id="stock-total-table">
+            <colgroup>
+                <col class="stock-total-col stock-total-col--article">
+                <col class="stock-total-col stock-total-col--barcode">
+                <col class="stock-total-col stock-total-col--name">
+                <col class="stock-total-col stock-total-col--grand">
+                <col class="stock-total-col stock-total-col--quantity" span="15">
+            </colgroup>
+            <thead>
+                <tr class="stock-total-groups">
+                    <th rowspan="2" data-filter-column="0">АРТИКУЛ</th>
+                    <th rowspan="2" data-filter-column="1">ШТРИХКОД</th>
+                    <th rowspan="2" data-filter-column="2">НАЗВАНИЕ</th>
+                    <th rowspan="2" data-filter-column="3" data-filter-type="number">ГРАНД ТОТАЛ</th>
+                    <th colspan="3" class="stock-total-group stock-total-group--ff">ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ</th>
+                    <th colspan="3" class="stock-total-group stock-total-group--transit">В ПУТИ МЕЖДУ ФФ</th>
+                    <th colspan="3" class="stock-total-group stock-total-group--fbs">ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBS</th>
+                    <th colspan="3" class="stock-total-group stock-total-group--rfbs">ТЕКУЩИЙ СТОК В ПРОДАЖЕ RFBS</th>
+                    <th colspan="3" class="stock-total-group stock-total-group--fbo">ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO</th>
+                </tr>
+                <tr class="stock-total-marketplaces">
+                    <th data-filter-column="4" data-filter-type="number">ВБ</th>
+                    <th data-filter-column="5" data-filter-type="number">ОЗОН</th>
+                    <th data-filter-column="6" data-filter-type="number">ЯМ</th>
+                    <th data-filter-column="7" data-filter-type="number">ВБ</th>
+                    <th data-filter-column="8" data-filter-type="number">ОЗОН</th>
+                    <th data-filter-column="9" data-filter-type="number">ЯМ</th>
+                    <th data-filter-column="10" data-filter-type="number">ВБ</th>
+                    <th data-filter-column="11" data-filter-type="number">ОЗОН</th>
+                    <th data-filter-column="12" data-filter-type="number">ЯМ</th>
+                    <th data-filter-column="13" data-filter-type="number">ВБ</th>
+                    <th data-filter-column="14" data-filter-type="number">ОЗОН</th>
+                    <th data-filter-column="15" data-filter-type="number">ЯМ</th>
+                    <th data-filter-column="16" data-filter-type="number">ВБ</th>
+                    <th data-filter-column="17" data-filter-type="number">ОЗОН</th>
+                    <th data-filter-column="18" data-filter-type="number">ЯМ</th>
+                </tr>
+$total_row
+            </thead>
+            <tbody>$rows</tbody>
+        </table>
+    </div>
+</section>
+
+<script src="/static/stock-total.js?v=3"></script>

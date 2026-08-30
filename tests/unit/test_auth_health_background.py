@@ -8,7 +8,7 @@ from unittest import mock
 
 from fastapi import FastAPI
 
-from app import background, health, unit_costs
+from app import background, health
 
 
 class HealthTests(unittest.TestCase):
@@ -70,6 +70,24 @@ class HealthTests(unittest.TestCase):
                 "error": "таймаут API",
                 "checked_at": now.isoformat(),
             },
+            {
+                "marketplace": "WB",
+                "scope": "orders",
+                "error": "ошибка выгрузки заказов",
+                "checked_at": now.isoformat(),
+            },
+            {
+                "marketplace": "WB",
+                "scope": "unit_economics_1c_prices",
+                "error": "цены WB не обновились",
+                "checked_at": now.isoformat(),
+            },
+            {
+                "marketplace": "WB",
+                "scope": "unit_economics_1c_advertising",
+                "error": "реклама WB не обновилась",
+                "checked_at": now.isoformat(),
+            },
         ]
         with (
             mock.patch.object(health.db, "get_sync_health", return_value=health_rows),
@@ -82,47 +100,13 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(problems[0]["kind"], "invalid")
         self.assertEqual(problems[1]["kind"], "sync")
         self.assertIn("ранее загруженные", problems[1]["detail"])
+        self.assertNotIn("orders", str(problems))
+        self.assertNotIn("unit_economics_1c", str(problems))
         with (
             mock.patch("app.stores.STORES", {"a": {}, "b": {}}),
             mock.patch.object(health, "store_problems", side_effect=lambda slug: [slug]),
         ):
             self.assertEqual(health.stores_with_problems(), {"a": ["a"], "b": ["b"]})
-
-
-class UnitCostsTests(unittest.TestCase):
-    def setUp(self) -> None:
-        logging.disable(logging.CRITICAL)
-
-    def tearDown(self) -> None:
-        logging.disable(logging.NOTSET)
-
-    def test_parsing_and_sync(self) -> None:
-        headers = [["АртикулВБ", "Себес, руб", "Проч. затр, руб"], ["1001.0", "1 234,5", "10"]]
-        parsed = unit_costs.parse_cost_rows(headers)
-        self.assertEqual(parsed[0]["article"], "1001")
-        self.assertEqual(parsed[0]["purchase_price"], 1234.5)
-        self.assertEqual(unit_costs._parse_decimal("bad"), None)
-        self.assertEqual(unit_costs._normalize_article(" 100.0 "), "100")
-        self.assertIn("gid=1", unit_costs._sheet_url("1"))
-        with self.assertRaises(unit_costs.UnitCostSyncError):
-            unit_costs.parse_cost_rows([["wrong"]])
-        with self.assertRaises(unit_costs.UnitCostSyncError):
-            unit_costs.parse_cost_rows([["АртикулВБ", "Себес, руб"], ["", ""]])
-
-        with (
-            mock.patch.object(unit_costs, "WB_COST_SHEETS", (("1", ("good",)), ("2", ("bad",)))),
-            mock.patch.object(
-                unit_costs.importer,
-                "fetch_google_sheet_rows",
-                side_effect=[headers, ValueError("boom")],
-            ),
-            mock.patch.object(unit_costs.db, "replace_unit_costs", return_value=1),
-            mock.patch.object(unit_costs.db, "record_sync_health") as health_record,
-        ):
-            report = unit_costs.sync_all()
-        self.assertTrue(report["good"]["ok"])
-        self.assertFalse(report["bad"]["ok"])
-        self.assertEqual(health_record.call_count, 2)
 
 
 class BackgroundTests(unittest.IsolatedAsyncioTestCase):
@@ -146,7 +130,6 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertEqual(set(background._sync_catalogs().succeeded), {"WB", "OZON", "YANDEX MARKET"})
         with (
-            mock.patch.object(background.wb_sync, "sync_all", return_value={}),
             mock.patch.object(background.ozon_sync, "sync_all", return_value={}),
             mock.patch.object(background.ya_sync, "sync_all", return_value={}),
         ):
@@ -165,7 +148,7 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
         refresh.assert_called_once()
         self.assertEqual(background._fixed_delay(5)(), 5)
         self.assertGreater(background._daily_delay(3)(), 0)
-        self.assertEqual(len(background._jobs(asyncio.Event())), 11)
+        self.assertEqual(len(background._jobs(asyncio.Event())), 13)
 
         with (
             mock.patch.object(background.db, "init_db") as init_db,
@@ -183,6 +166,7 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
         lifespan_settings = mock.Mock(
             background_sync_enabled=False,
             funnel_orders_sync_enabled=False,
+            unit_economics_1c_price_sync_enabled=False,
             database_path="test.sqlite3",
         )
         with (

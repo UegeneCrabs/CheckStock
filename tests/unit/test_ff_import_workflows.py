@@ -147,10 +147,10 @@ def test_import_delivery_application_and_wrappers() -> None:
     ]
     with (
         mock.patch.object(importer.db, "get_catalog_items", return_value=catalog),
+        mock.patch.object(importer.db, "get_ff_import_snapshot", return_value={"A": 5}),
         mock.patch.object(
             importer.db,
             "apply_ff_import_snapshot",
-            return_value={"A": 5},
         ) as apply_snapshot,
     ):
         result = importer._apply_entries(
@@ -165,6 +165,8 @@ def test_import_delivery_application_and_wrappers() -> None:
         )
     assert result["matched"] == 1
     assert result["unmatched"] == 1
+    assert result["source_quantity"] == 9
+    assert result["unmatched_quantity"] == 4
     assert result["items"] == []
     assert result["unchanged"][0]["article"] == "A"
     assert result["negative_skipped"] == [{"article": "B", "quantity": -1}]
@@ -172,10 +174,10 @@ def test_import_delivery_application_and_wrappers() -> None:
 
     with (
         mock.patch.object(importer.db, "get_catalog_items", return_value=catalog),
+        mock.patch.object(importer.db, "get_ff_import_snapshot", return_value={"A": 2}),
         mock.patch.object(
             importer.db,
             "apply_ff_import_snapshot",
-            return_value={"A": 2},
         ),
     ):
         changed = importer._apply_entries(
@@ -190,6 +192,46 @@ def test_import_delivery_application_and_wrappers() -> None:
     assert changed["added_quantity"] == 6
     assert changed["increased"][0]["quantity"] == 3
     assert changed["new_items"][0]["article"] == "B"
+
+    with (
+        mock.patch.object(importer.db, "get_catalog_items", return_value=catalog),
+        mock.patch.object(importer.db, "get_ff_import_snapshot", return_value={"A": 2}),
+        mock.patch.object(importer.db, "apply_ff_import_snapshot") as apply_snapshot,
+    ):
+        preview = importer._apply_entries(
+            "store",
+            "FF",
+            [("bc", "", 5), ("x", "missing", 4)],
+            marketplace="WB",
+            source_type="file",
+            sheet_url=None,
+            table_title="delivery.xlsx",
+            preview=True,
+        )
+    assert preview["preview"] is True
+    assert preview["source_quantity"] == 9
+    assert preview["added_quantity"] == 3
+    assert preview["unmatched_quantity"] == 4
+    assert len(preview["confirmation_token"]) == 64
+    apply_snapshot.assert_not_called()
+
+    with (
+        mock.patch.object(importer.db, "get_catalog_items", return_value=catalog),
+        mock.patch.object(importer.db, "get_ff_import_snapshot", return_value={"A": 3}),
+        mock.patch.object(importer.db, "apply_ff_import_snapshot") as apply_snapshot,
+        pytest.raises(importer.FFImportConfirmationError),
+    ):
+        importer._apply_entries(
+            "store",
+            "FF",
+            [("bc", "", 5)],
+            marketplace="WB",
+            source_type="file",
+            sheet_url=None,
+            table_title="delivery.xlsx",
+            confirmation_token=preview["confirmation_token"],
+        )
+    apply_snapshot.assert_not_called()
 
     rows = [["BARCODE", "ARTICLE", "QTY"], ["bc", "A", "2"]]
     with (

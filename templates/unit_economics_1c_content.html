@@ -1,0 +1,205 @@
+    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=41">
+
+        <section class="ue1c-page" id="unit-economics-1c" aria-label="Юнит-экономика Wildberries">
+            <div class="ue1c-toolbar">
+                <label class="ue1c-field ue1c-search-field">
+                    <span aria-hidden="true">⌕</span>
+                    <input id="ue1c-search" type="search" placeholder="Поиск по всем столбцам"
+                           aria-label="Поиск по всем столбцам таблицы" autocomplete="off">
+                </label>
+                <select class="ue1c-select" id="ue1c-store-filter" aria-label="Магазин">
+                    <option value="all">Все магазины</option>
+                </select>
+                <div class="ue1c-segments" aria-label="Фильтр состояния">
+                    <button class="ue1c-segment is-active" data-state-filter="all" type="button">Все</button>
+                    <button class="ue1c-segment" data-state-filter="negative" type="button">Товары в минус</button>
+                    <button class="ue1c-segment" data-state-filter="new" type="button">Новинки</button>
+                </div>
+                <div class="ue1c-column-settings">
+                    <button class="ue1c-ghost-button" id="ue1c-columns-toggle" type="button"
+                            aria-expanded="false">Колонки</button>
+                    <div class="ue1c-column-panel" id="ue1c-column-panel" hidden>
+                        <strong>Порядок и видимость</strong>
+                        <div id="ue1c-column-list"></div>
+                    </div>
+                </div>
+                <button class="ue1c-ghost-button" id="ue1c-refresh" type="button">Обновить</button>
+            </div>
+
+            <section class="ue1c-table-card" aria-label="Таблица товаров">
+                <div class="ue1c-table-wrap" id="ue1c-table-wrap">
+                    <table class="data-table ue1c-redesign-table" id="ue1c-table">
+                        <colgroup id="ue1c-colgroup"></colgroup>
+                        <thead id="ue1c-table-head"></thead>
+                        <tbody id="ue1c-product-rows"></tbody>
+                    </table>
+                    <div class="ue1c-empty" id="ue1c-empty" hidden>
+                        Ничего не найдено. Измените поиск или фильтр.
+                    </div>
+                </div>
+                <footer class="ue1c-table-footer">
+                    <span id="ue1c-pagination-summary">Показано 0 товаров</span>
+                    <div class="ue1c-footer-actions">
+                        <label class="ue1c-page-size">На странице
+                            <select id="ue1c-page-size" aria-label="Товаров на странице">
+                                <option value="20" selected>20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </label>
+                        <nav class="ue1c-pagination" id="ue1c-pagination" aria-label="Страницы">
+                            <button class="ue1c-page-button" id="ue1c-page-prev" type="button"
+                                    aria-label="Предыдущая страница">‹</button>
+                            <div class="ue1c-page-numbers" id="ue1c-page-numbers"></div>
+                            <button class="ue1c-page-button" id="ue1c-page-next" type="button"
+                                    aria-label="Следующая страница">›</button>
+                        </nav>
+                    </div>
+                </footer>
+            </section>
+
+            <div class="ue1c-overlay" id="ue1c-overlay"></div>
+            <aside class="ue1c-drawer" id="ue1c-detail" aria-hidden="true" aria-labelledby="ue1c-drawer-title">
+                <header class="ue1c-drawer-head">
+                    <div class="ue1c-drawer-thumb" id="ue1c-drawer-thumb"></div>
+                    <div>
+                        <h2 id="ue1c-drawer-title">Карточка товара</h2>
+                        <div class="ue1c-drawer-meta" id="ue1c-drawer-meta"></div>
+                    </div>
+                    <button class="ue1c-close" id="ue1c-detail-close" type="button" aria-label="Закрыть">×</button>
+                </header>
+
+                <div class="ue1c-drawer-tabs" role="tablist">
+                    <button class="ue1c-drawer-tab is-active" data-detail-tab="economics" type="button"
+                            role="tab" aria-selected="true">Экономика</button>
+                    <button class="ue1c-drawer-tab" data-detail-tab="params" type="button"
+                            role="tab" aria-selected="false">Параметры 1С</button>
+                </div>
+
+                <div class="ue1c-drawer-body">
+                    <section class="ue1c-tab-panel" id="ue1c-panel-economics" role="tabpanel">
+                        <section class="ue1c-calculator" aria-labelledby="ue1c-calculator-title">
+                            <header class="ue1c-calculator-head">
+                                <h3 class="visually-hidden" id="ue1c-calculator-title">Расчёт чистой прибыли</h3>
+                                <div class="ue1c-calculator-tools">
+                                    <label class="ue1c-calculator-mode" for="ue1c-calculator-mode">
+                                        <span>Подробный расчёт</span>
+                                        <input id="ue1c-calculator-mode" type="checkbox" role="switch"
+                                               aria-controls="ue1c-calculator-inputs">
+                                        <i aria-hidden="true"></i>
+                                    </label>
+                                    <details class="ue1c-formula-popover">
+                                        <summary aria-label="Показать формулу чистой прибыли">?</summary>
+                                        <div>
+                                            <p><strong>Чистая прибыль</strong> = чистая выручка − закупочная цена − фулфилмент − комиссия компании − НДС − УСН/ОСНО.</p>
+                                            <p><strong>Чистая выручка</strong> = цена без СПП − эквайринг − логистика − хранение − комиссия WB − реклама на единицу.</p>
+                                            <p><strong>Реклама на единицу</strong> = рекламные расходы за 7 дней ÷ заказы воронки за 7 дней ÷ (процент выкупа ÷ 100).</p>
+                                            <p><strong>ДРР с выкупом</strong> = рекламные расходы за 7 дней ÷ (оборот заказов за 7 дней × процент выкупа ÷ 100) × 100%.</p>
+                                            <p><strong>НДС</strong> = цена с СПП ÷ (100 + ставка) × ставка.</p>
+                                            <p><strong>УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100.</p>
+                                        </div>
+                                    </details>
+                                    <button class="ue1c-calculator-reset" id="ue1c-calculator-reset" type="button">Сбросить</button>
+                                </div>
+                            </header>
+                            <div class="ue1c-calculator-body">
+                                <div class="ue1c-calculator-inputs" id="ue1c-calculator-inputs">
+                                    <label class="ue1c-calculator-row" style="--compact-order:0;--expanded-order:0"><span><span class="ue1c-compact-label">Цена без СПП</span><span class="ue1c-expanded-label">Цена без СПП, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-price-input" data-calculator-input="retail" type="number" min="1" step="1"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:1"><span>СПП, %</span><span class="ue1c-calculator-field"><input id="ue1c-spp-percent" data-calculator-input="spp" type="number" min="0" max="99.99" step="0.01"><b>%</b></span></label>
+                                    <label class="ue1c-calculator-row" style="--compact-order:1;--expanded-order:2"><span><span class="ue1c-compact-label">Цена с СПП</span><span class="ue1c-expanded-label">Цена с СПП, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-spp-price-input" data-calculator-input="client" type="number" min="1" step="1"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:3"><span>WB Кошелёк, %</span><span class="ue1c-calculator-field"><input id="ue1c-wallet-percent" data-calculator-input="walletPercent" type="number" min="0" max="99.99" step="0.01"><b>%</b></span></label>
+                                    <label class="ue1c-calculator-row" style="--compact-order:2;--expanded-order:4"><span><span class="ue1c-compact-label">Цена с WB Кошельком</span><span class="ue1c-expanded-label">Цена с WB Кошельком, руб</span></span><span class="ue1c-calculator-field"><input id="ue1c-wallet-price-input" data-calculator-input="wallet" type="number" min="1" step="1" placeholder="недоступна"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Предмет</span><span class="ue1c-calculator-field ue1c-calculator-field--select"><input id="ue1c-subject-select" type="search" list="ue1c-subject-options" aria-label="Предмет товара" placeholder="Начните вводить…" autocomplete="off"><datalist id="ue1c-subject-options"></datalist></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:5"><span>Комиссия WB, %</span><span class="ue1c-calculator-field"><input data-calculator-input="commission" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:6"><span>Комиссия WB, руб</span><span class="ue1c-calculator-field"><input id="ue1c-commission-rub" data-calculator-input="commissionRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:7"><span>Логистика, руб</span><span class="ue1c-calculator-field"><input data-calculator-input="logistics" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row" style="--compact-order:3;--expanded-order:8"><span><span class="ue1c-compact-label">ДРР с выкупом</span><span class="ue1c-expanded-label">ДРР с выкупом, % (7 дней)</span></span><span class="ue1c-calculator-field"><input data-calculator-input="drr" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:9"><span>Рекламные расходы на выкупленную единицу, руб</span><span class="ue1c-calculator-field"><input id="ue1c-advertising-rub" data-calculator-input="advertisingRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:10"><span>Эквайринг, %</span><span class="ue1c-calculator-field"><input id="ue1c-acquiring-percent" data-calculator-input="acquiringPercent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:11"><span>Эквайринг, руб</span><span class="ue1c-calculator-field"><input id="ue1c-acquiring-rub" data-calculator-input="acquiringRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:12"><span>Хранение, руб</span><span class="ue1c-calculator-field"><input id="ue1c-storage-rub" data-calculator-input="storageTotal" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row" style="--compact-order:5;--expanded-order:13"><span title="Закупочная цена для расчёта юнит-экономики">Закупочная стоимость</span><span class="ue1c-calculator-field"><input id="ue1c-purchase-rub" data-calculator-input="purchase" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row" style="--compact-order:4;--expanded-order:14"><span><span class="ue1c-compact-label">Затраты на ФФ</span><span class="ue1c-expanded-label">Затраты на ФФ, руб</span></span><span class="ue1c-calculator-field"><input data-calculator-input="fulfillment" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:15"><span>Комиссия компании, %</span><span class="ue1c-calculator-field"><input data-calculator-input="team" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:16"><span>Комиссия компании, руб</span><span class="ue1c-calculator-field"><input id="ue1c-team-rub" data-calculator-input="teamRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:17"><span>Налог НДС, руб</span><span class="ue1c-calculator-field"><input id="ue1c-vat-rub" data-calculator-input="vatRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" style="--expanded-order:18"><span id="ue1c-secondary-tax-label">Налог УСН, руб</span><span class="ue1c-calculator-field"><input id="ue1c-secondary-tax-rub" data-calculator-input="secondaryTaxRub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                                    <div class="ue1c-calculator-hidden" hidden>
+                                        <input data-calculator-input="storage" type="number">
+                                        <input data-calculator-input="vat" type="number">
+                                        <input data-calculator-input="usn" type="number">
+                                        <input data-calculator-input="osno" type="number">
+                                    </div>
+                                </div>
+                                <aside class="ue1c-calculator-results" id="ue1c-price-metrics" aria-live="polite"></aside>
+                            </div>
+                            <footer class="ue1c-calculator-actions">
+                                <button class="ue1c-break-even" id="ue1c-break-even" type="button">Цена без убытка</button>
+                                <button class="ue1c-save-price" id="ue1c-save-price" type="button">Сохранить цену</button>
+                            </footer>
+                        </section>
+
+                        <section class="ue1c-calculator ue1c-drawer-section">
+                            <header class="ue1c-calculator-head">
+                                <h3>Динамика за 14 дней</h3>
+                            </header>
+                            <div class="ue1c-chart-card" id="ue1c-chart-wrap">
+                                <div class="ue1c-chart-controls" aria-label="Показатели графика">
+                                    <label class="is-orders" title="Высота столбиков увеличена в 10 раз; в подсказке показано фактическое значение"><input type="checkbox" data-chart-series="orders">Заказы воронки ×10</label>
+                                    <label class="is-stock"><input type="checkbox" data-chart-series="stock">Остатки</label>
+                                    <label class="is-margin"><input type="checkbox" data-chart-series="margin">Прибыль</label>
+                                    <label class="is-ads"><input type="checkbox" data-chart-series="ads">Реклама</label>
+                                    <label class="is-drr"><input type="checkbox" data-chart-series="drr">ДРР с выкупом</label>
+                                    <label class="is-compare"><input type="checkbox" data-chart-compare>Воронка неделей ранее</label>
+                                </div>
+                                <div class="ue1c-chart-daily-sales" id="ue1c-chart-daily-sales"
+                                     aria-label="Продажи по дням в штуках" hidden></div>
+                                <svg class="ue1c-chart" id="ue1c-chart" viewBox="0 0 440 220"
+                                     role="img" aria-label="Динамика товара за четырнадцать дней"></svg>
+                                <div class="ue1c-chart-series-tooltip" id="ue1c-chart-series-tooltip" hidden></div>
+                                <div class="ue1c-chart-tooltip" id="ue1c-chart-tooltip" hidden></div>
+                            </div>
+                        </section>
+
+                        <section class="ue1c-calculator ue1c-drawer-section" id="ue1c-glued-section" hidden>
+                            <header class="ue1c-calculator-head"><h3>Связанные артикулы</h3></header>
+                            <div class="ue1c-glued-products" id="ue1c-glued-products"></div>
+                        </section>
+
+                    </section>
+
+                    <section class="ue1c-tab-panel" id="ue1c-panel-params" role="tabpanel" hidden>
+                        <div class="ue1c-section-head">
+                            <h3>Параметры расчёта</h3><span>данные 1С</span>
+                        </div>
+                        <div class="ue1c-parameter-groups" id="ue1c-parameter-groups"></div>
+                    </section>
+                </div>
+            </aside>
+
+            <div class="ue1c-modal-backdrop" id="ue1c-price-confirm-modal" aria-hidden="true">
+                <section class="ue1c-modal" role="dialog" aria-modal="true" aria-labelledby="ue1c-price-confirm-title">
+                    <header class="ue1c-modal-head">
+                        <div><h2 id="ue1c-price-confirm-title">Подтвердите изменение цены</h2>
+                            <p id="ue1c-price-confirm-product">Проверьте артикул и рассчитанные параметры WB.</p></div>
+                        <button class="ue1c-close" id="ue1c-price-confirm-close" type="button"
+                                aria-label="Закрыть подтверждение">×</button>
+                    </header>
+                    <div class="ue1c-price-confirm-body">
+                        <strong class="ue1c-price-confirm-target" id="ue1c-price-confirm-target"></strong>
+                        <div class="ue1c-price-confirm-grid" id="ue1c-price-confirm-grid"></div>
+                        <p class="ue1c-price-confirm-warning" id="ue1c-price-confirm-warning" hidden></p>
+                    </div>
+                    <footer class="ue1c-modal-foot">
+                        <button class="ue1c-modal-tool" id="ue1c-price-confirm-cancel" type="button">Отмена</button>
+                        <button class="ue1c-primary-button" id="ue1c-price-confirm-send" type="button">
+                            Подтвердить и отправить
+                        </button>
+                    </footer>
+                </section>
+            </div>
+            <div class="ue1c-toast" id="ue1c-toast" role="status" aria-live="polite"></div>
+        </section>
+
+        <script type="application/json" id="ue1c-config">$unit_1c_config</script>
+    <script src="/static/unit-economics-1c.js?v=62"></script>

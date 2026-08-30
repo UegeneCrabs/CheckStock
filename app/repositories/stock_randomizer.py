@@ -150,9 +150,7 @@ def generate_stock_audit_sample(
     }
 
 
-def get_stock_audit_state(
-    store_slugs: tuple[str, ...], fulfillment: str, month_key: str
-) -> dict:
+def get_stock_audit_state(store_slugs: tuple[str, ...], fulfillment: str, month_key: str) -> dict:
     if not store_slugs:
         return {"generated_at": None, "items": []}
 

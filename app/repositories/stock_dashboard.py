@@ -19,6 +19,16 @@ def get_inventory_rows(sales_since: str, frozen_since: str) -> list[dict]:
                   FROM ff_stock
                  GROUP BY store_slug, marketplace, article
             ),
+            transit AS (
+                SELECT batch.store_slug, batch.to_marketplace AS marketplace,
+                       item.to_article AS article,
+                       SUM(item.sent_quantity - item.received_quantity - item.cancelled_quantity)
+                           AS transit_stock
+                  FROM ff_transit_items item
+                  JOIN ff_transit_batches batch ON batch.id = item.batch_id
+                 WHERE batch.status IN ('in_transit', 'partial')
+                 GROUP BY batch.store_slug, batch.to_marketplace, item.to_article
+            ),
             sales AS (
                 SELECT store_slug, marketplace, article,
                        SUM(CASE WHEN sold_at >= ? THEN sold_quantity ELSE 0 END) AS sold_30,
@@ -36,12 +46,6 @@ def get_inventory_rows(sales_since: str, frozen_since: str) -> list[dict]:
                   FROM sales_sync_state
                  GROUP BY store_slug, marketplace
             ),
-            costs AS (
-                SELECT store_slug, article,
-                       MAX(purchase_price) AS purchase_price
-                  FROM unit_costs
-                 GROUP BY store_slug, article
-            ),
             keys AS (
                 SELECT store_slug, marketplace, article
                   FROM stock_items
@@ -50,11 +54,14 @@ def get_inventory_rows(sales_since: str, frozen_since: str) -> list[dict]:
                 SELECT store_slug, marketplace, article FROM mp
                 UNION
                 SELECT store_slug, marketplace, article FROM ff
+                UNION
+                SELECT store_slug, marketplace, article FROM transit
             )
             SELECT keys.store_slug, keys.marketplace, keys.article,
                    si.id AS catalog_id, si.barcode, si.name,
                    COALESCE(mp.marketplace_stock, 0) AS marketplace_stock,
                    COALESCE(ff.fulfillment_stock, 0) AS fulfillment_stock,
+                   COALESCE(transit.transit_stock, 0) AS transit_stock,
                    COALESCE(sales.sold_30, 0) AS sold_30,
                    COALESCE(sales.sold_60, 0) AS sold_60,
                    sales.last_sold_at,
@@ -62,7 +69,7 @@ def get_inventory_rows(sales_since: str, frozen_since: str) -> list[dict]:
                               OR COALESCE(sales.sale_rows, 0) > 0
                         THEN 1 ELSE 0 END AS sales_loaded,
                    COALESCE(sales_state.has_error, 0) AS sales_error,
-                   costs.purchase_price,
+                   NULL AS purchase_price,
                    mp.stock_updated_at
               FROM keys
               LEFT JOIN stock_items si
@@ -78,6 +85,10 @@ def get_inventory_rows(sales_since: str, frozen_since: str) -> list[dict]:
                 ON ff.store_slug = keys.store_slug
                AND ff.marketplace = keys.marketplace
                AND ff.article = keys.article
+              LEFT JOIN transit
+                ON transit.store_slug = keys.store_slug
+               AND transit.marketplace = keys.marketplace
+               AND transit.article = keys.article
               LEFT JOIN sales
                 ON sales.store_slug = keys.store_slug
                AND sales.marketplace = keys.marketplace
@@ -85,9 +96,6 @@ def get_inventory_rows(sales_since: str, frozen_since: str) -> list[dict]:
               LEFT JOIN sales_state
                 ON sales_state.store_slug = keys.store_slug
                AND sales_state.marketplace = keys.marketplace
-              LEFT JOIN costs
-                ON costs.store_slug = keys.store_slug
-               AND costs.article = keys.article
              ORDER BY keys.store_slug, keys.marketplace, COALESCE(si.id, 999999), keys.article
             """,
             (sales_since, frozen_since),

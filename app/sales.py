@@ -134,7 +134,11 @@ def _wb_sale_totals(rows: list[dict]) -> dict[str, dict]:
     return result
 
 
-def _normalize_wb(store_slug: str, orders: list[dict], sales_rows: list[dict]) -> list[dict]:
+def _normalize_wb(
+    store_slug: str,
+    orders: list[dict],
+    sales_rows: list[dict],
+) -> list[dict]:
     sale_totals = _wb_sale_totals(sales_rows)
     lines: list[dict] = []
     for index, row in enumerate(orders):

@@ -269,9 +269,22 @@ def get_last_sync_at(marketplace: str | None = None) -> str | None:
     return row["last_sync"] if row is not None else None
 
 
-def get_stock_overview() -> dict[str, dict]:
+def get_stock_overview(
+    allowed_pairs: tuple[tuple[str, str], ...] | None = None,
+) -> dict[str, dict]:
 
     conn = get_connection()
+    if allowed_pairs is not None and not allowed_pairs:
+        conn.close()
+        return {}
+    scope_clause = ""
+    scope_params: list[str] = []
+    if allowed_pairs is not None:
+        scope_clause = " AND (" + " OR ".join(
+            "(store_slug = ? AND marketplace = ?)" for _pair in allowed_pairs
+        ) + ")"
+        for store_slug, marketplace in allowed_pairs:
+            scope_params.extend((store_slug, marketplace))
     marketplaces_aggregate = (
         "STRING_AGG(DISTINCT marketplace, ',')"
         if conn.dialect_name == "postgresql"
@@ -283,24 +296,49 @@ def get_stock_overview() -> dict[str, dict]:
                COUNT(DISTINCT marketplace) AS marketplace_count,
                {marketplaces_aggregate} AS marketplaces
         FROM stock_items
-        WHERE is_service = 0
+        WHERE is_service = 0 {scope_clause}
         GROUP BY store_slug
-        """
+        """,
+        scope_params,
     ).fetchall()
     marketplace_rows = conn.execute(
-        """
+        f"""
         SELECT store_slug, COALESCE(SUM(quantity), 0) AS quantity,
                MAX(updated_at) AS last_sync
         FROM mp_stock
+        WHERE 1=1 {scope_clause}
         GROUP BY store_slug
-        """
+        """,
+        scope_params,
     ).fetchall()
     fulfillment_rows = conn.execute(
-        """
+        f"""
         SELECT store_slug, COALESCE(SUM(quantity), 0) AS quantity
         FROM ff_stock
+        WHERE 1=1 {scope_clause}
         GROUP BY store_slug
-        """
+        """,
+        scope_params,
+    ).fetchall()
+    transit_scope_clause = ""
+    transit_scope_params: list[str] = []
+    if allowed_pairs is not None:
+        transit_scope_clause = " AND (" + " OR ".join(
+            "(batch.store_slug = ? AND batch.to_marketplace = ?)" for _pair in allowed_pairs
+        ) + ")"
+        for store_slug, marketplace in allowed_pairs:
+            transit_scope_params.extend((store_slug, marketplace))
+    transit_rows = conn.execute(
+        f"""
+        SELECT batch.store_slug,
+               COALESCE(SUM(item.sent_quantity - item.received_quantity - item.cancelled_quantity), 0)
+                   AS quantity
+          FROM ff_transit_items item
+          JOIN ff_transit_batches batch ON batch.id = item.batch_id
+         WHERE batch.status IN ('in_transit', 'partial') {transit_scope_clause}
+         GROUP BY batch.store_slug
+        """,
+        transit_scope_params,
     ).fetchall()
     conn.close()
 
@@ -312,6 +350,7 @@ def get_stock_overview() -> dict[str, dict]:
             "marketplaces": [value for value in str(row["marketplaces"] or "").split(",") if value],
             "marketplace_stock": 0,
             "fulfillment_stock": 0,
+            "transit_stock": 0,
             "last_sync": None,
         }
 
@@ -324,12 +363,19 @@ def get_stock_overview() -> dict[str, dict]:
         item = result.setdefault(row["store_slug"], {})
         item["fulfillment_stock"] = int(row["quantity"] or 0)
 
+    for row in transit_rows:
+        item = result.setdefault(row["store_slug"], {})
+        item["transit_stock"] = int(row["quantity"] or 0)
+
     for item in result.values():
         item.setdefault("sku_count", 0)
         item.setdefault("marketplace_count", 0)
         item.setdefault("marketplaces", [])
         item.setdefault("marketplace_stock", 0)
         item.setdefault("fulfillment_stock", 0)
+        item.setdefault("transit_stock", 0)
         item.setdefault("last_sync", None)
-        item["total_stock"] = item["marketplace_stock"] + item["fulfillment_stock"]
+        item["total_stock"] = (
+            item["marketplace_stock"] + item["fulfillment_stock"] + item["transit_stock"]
+        )
     return result

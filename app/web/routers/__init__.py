@@ -3,6 +3,7 @@ from app.web.routers import (
     admin,
     auth,
     google_export,
+    integrations,
     profile,
     sales,
     stock,
@@ -20,6 +21,7 @@ ROUTERS = (
     stock.router,
     admin.router,
     google_export.router,
+    integrations.router,
 )
 
 __all__ = ("ROUTERS",)

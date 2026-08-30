@@ -2,7 +2,11 @@ from app.infrastructure.database import DatabaseConnection
 from app.repositories.core import get_connection
 
 
-def get_catalog_items(store_slug: str, marketplace: str = "WB", include_service: bool = False) -> list[dict]:
+def get_catalog_items(
+    store_slug: str,
+    marketplace: str = "WB",
+    include_service: bool = False,
+) -> list[dict]:
 
     conn = get_connection()
     sql = """
@@ -97,7 +101,6 @@ def replace_catalog(
     conn = get_connection()
 
     protected = articles_with_own_stock(store_slug, marketplace, conn)
-    forced = {str(article).strip() for article in (force_remove_articles or set()) if str(article).strip()}
 
     existing = {
         row["article"]: row
@@ -107,6 +110,9 @@ def replace_catalog(
             " WHERE store_slug = ? AND marketplace = ?",
             (store_slug, marketplace),
         )
+    }
+    forced = {
+        str(article).strip() for article in (force_remove_articles or set()) if str(article).strip()
     }
 
     seen: set[str] = set()

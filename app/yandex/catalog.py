@@ -77,15 +77,16 @@ def sync_store(store_slug: str) -> dict:
         result = db.replace_catalog(store_slug, MARKETPLACE, items, _now())
 
     report = {"total": len(items), "no_barcode": no_barcode, **result}
-    logger.info("Каталог Яндекса %s: %s", _store_label(store_slug), report)
+    logger.debug("Каталог Яндекса %s: %s", _store_label(store_slug), report)
     return report
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if not ya_tokens.has_credentials(slug):
             continue
         try:

@@ -15,7 +15,7 @@ from app.dto.decision import DecisionAction, DecisionStatus
 from app.main import create_app
 from app.repositories import core
 from app.stores import STORES
-from app.web.routers import admin, sales_overview, unit_economics
+from app.web.routers import admin, sales_overview
 from app.web.routers import decision_center as decision_routes
 from app.web.routers import rnp as rnp_routes
 
@@ -108,14 +108,15 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/sales/decision-center",
             "/sales/ephemerides",
             "/sales/rnp",
-            "/sales/unit-economics",
-            "/sales/unit-economics/wb-fbs",
-            "/sales/unit-economics/ozon",
-            "/sales/unit-economics/yandex-market",
+            "/sales/unit-economics-1c",
+            "/sales/unit-economics-1c/cabinet-settings",
+            "/sales/unit-economics-1c/ozon",
+            "/sales/unit-economics-1c/yandex-market",
             "/supply",
             "/stock",
-            "/stock/supplies",
+            "/stock/total",
             "/stock/randomizer",
+            "/stock/planning/wb",
             "/stock-2",
             "/stock-2/details/zero",
             "/stock/rimili",
@@ -128,6 +129,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
         downloads = (
+            "/stock/total.xlsx",
             f"/admin/operations/{operation_id}/xlsx",
             "/stock/rimili/operations/xlsx",
             "/stock/rimili/warehouses/xlsx",
@@ -250,6 +252,8 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             json={
                 "fulfillment": "FF One",
                 "marketplace": "WB",
+                "note": "Начальный остаток",
+                "confirmed": True,
                 "items": [{"code": "A-1", "quantity": 5}],
             },
         )
@@ -262,6 +266,8 @@ class HttpServiceIntegrationTests(unittest.TestCase):
                 json={
                     "fulfillment": "FF One",
                     "marketplace": "WB",
+                    "note": "Проверка отсутствующего товара",
+                    "confirmed": True,
                     "items": [{"code": "missing", "quantity": 1}],
                 },
             ).status_code,
@@ -275,12 +281,50 @@ class HttpServiceIntegrationTests(unittest.TestCase):
                 "from_marketplace": "WB",
                 "to_fulfillment": "FF Two",
                 "to_marketplace": "WB",
+                "note": "Перенос между зонами",
                 "items": json.dumps([{"code": "A-1", "quantity": 3}]),
             },
         )
         self.assertEqual(transferred.status_code, 200, transferred.text)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF One", "WB"), 2)
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF Two", "WB"), 0)
+        transit = self.client.get(
+            "/stock/rimili/transfers/in-transit", params={"mp": "WB"}
+        ).json()["batches"][0]
+        received = self.client.post(
+            f"/stock/rimili/transfers/{transferred.json()['transfer_id']}/receive",
+            json={
+                "items": [{"item_id": transit["items"][0]["id"], "quantity": 3}],
+                "note": "Принято полностью",
+            },
+        )
+        self.assertEqual(received.status_code, 200, received.text)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF Two", "WB"), 3)
+        active_transfers = self.client.get(
+            "/stock/rimili/transfers/in-transit",
+            params={"mp": "WB", "view": "active"},
+        )
+        self.assertEqual(active_transfers.status_code, 200, active_transfers.text)
+        self.assertEqual(active_transfers.json()["batches"], [])
+        transfer_history = self.client.get(
+            "/stock/rimili/transfers/in-transit",
+            params={"mp": "WB", "view": "history"},
+        )
+        self.assertEqual(transfer_history.status_code, 200, transfer_history.text)
+        history_batch = transfer_history.json()["batches"][0]
+        self.assertEqual(history_batch["id"], transferred.json()["transfer_id"])
+        self.assertEqual(history_batch["status"], "received")
+        self.assertEqual(history_batch["receipts"][0]["received_units"], 3)
+        self.assertEqual(history_batch["receipts"][0]["note"], "Принято полностью")
+        self.assertFalse(history_batch["can_receive"])
+        self.assertFalse(history_batch["can_cancel"])
+        self.assertEqual(
+            self.client.get(
+                "/stock/rimili/transfers/in-transit",
+                params={"mp": "WB", "view": "unknown"},
+            ).status_code,
+            400,
+        )
         self.assertEqual(
             self.client.post(
                 "/stock/rimili/transfer",
@@ -289,6 +333,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
                     "from_marketplace": "WB",
                     "to_fulfillment": "FF Two",
                     "to_marketplace": "WB",
+                    "note": "Проверка неверного ввода",
                     "items": "{bad",
                 },
             ).status_code,
@@ -306,12 +351,28 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(shipped.status_code, 200, shipped.text)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF Two", "WB"), 1)
+
+        fbs_transfer = self.client.post(
+            "/stock/rimili/shipment",
+            data={
+                "fulfillment": "FF One",
+                "marketplace": "WB",
+                "note": "Выставили недельный запас на FBS",
+                "to_fbs": "1",
+                "items": json.dumps([{"code": "A-1", "quantity": 2}]),
+            },
+        )
+        self.assertEqual(fbs_transfer.status_code, 200, fbs_transfer.text)
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF One", "WB"), 2)
+        self.assertEqual(db.get_store_operations("rimili")[0]["kind"], "fbs_transfer")
+
         self.assertEqual(
             self.client.post(
                 "/stock/rimili/shipment",
                 data={
                     "fulfillment": "FF Two",
                     "marketplace": "WB",
+                    "note": "Проверка недостаточного остатка",
                     "items": json.dumps([{"code": "A-1", "quantity": 99}]),
                 },
             ).status_code,
@@ -326,29 +387,56 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         output = io.BytesIO()
         workbook.save(output)
         workbook.close()
-        response = self.client.post(
-            "/stock/rimili/upload-ff-stock",
-            data={"fulfillment": "Imported FF", "marketplace": "WB"},
-            files={
-                "file": (
-                    "delivery.xlsx",
-                    output.getvalue(),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            },
-        )
+
+        def upload_confirmed(file_bytes: bytes, note: str):
+            stock_before_preview = db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB")
+            preview = self.client.post(
+                "/stock/rimili/upload-ff-stock",
+                data={
+                    "fulfillment": "Imported FF",
+                    "marketplace": "WB",
+                    "note": note,
+                    "preview": "1",
+                },
+                files={
+                    "file": (
+                        "delivery.xlsx",
+                        file_bytes,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+            self.assertEqual(preview.status_code, 200, preview.text)
+            self.assertEqual(
+                db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB"),
+                stock_before_preview,
+            )
+            token = preview.json()["preview"]["confirmation_token"]
+            response = self.client.post(
+                "/stock/rimili/upload-ff-stock",
+                data={
+                    "fulfillment": "Imported FF",
+                    "marketplace": "WB",
+                    "note": note,
+                    "confirmation_token": token,
+                },
+                files={
+                    "file": (
+                        "delivery.xlsx",
+                        file_bytes,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+            return preview, response
+
+        preview, response = upload_confirmed(output.getvalue(), "Импорт поставки")
+        self.assertEqual(preview.json()["preview"]["source_quantity"], 4)
+        self.assertEqual(preview.json()["preview"]["added_quantity"], 4)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB"), 4)
-        duplicate = self.client.post(
-            "/stock/rimili/upload-ff-stock",
-            data={"fulfillment": "Imported FF", "marketplace": "WB"},
-            files={
-                "file": (
-                    "delivery.xlsx",
-                    output.getvalue(),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            },
+        _preview, duplicate = upload_confirmed(
+            output.getvalue(), "Повторная сверка поставки"
         )
         self.assertEqual(duplicate.status_code, 200, duplicate.text)
         self.assertEqual(duplicate.json()["report"]["added_quantity"], 0)
@@ -362,53 +450,14 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         changed_output = io.BytesIO()
         changed_workbook.save(changed_output)
         changed_workbook.close()
-        changed = self.client.post(
-            "/stock/rimili/upload-ff-stock",
-            data={"fulfillment": "Imported FF", "marketplace": "WB"},
-            files={
-                "file": (
-                    "delivery.xlsx",
-                    changed_output.getvalue(),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            },
-        )
+        _preview, changed = upload_confirmed(changed_output.getvalue(), "Догрузка поставки")
         self.assertEqual(changed.status_code, 200, changed.text)
         self.assertEqual(changed.json()["report"]["added_quantity"], 3)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB"), 7)
         operations = self.client.get("/stock/rimili/operations")
         self.assertEqual(operations.status_code, 200)
+        self.assertIn("Импорт поставки", operations.text)
         self.assertIn("delivery.xlsx", operations.text)
-
-    def test_unit_economics_good_and_bad_outcomes(self) -> None:
-        db.upsert_ff_stock("rimili", "A-1", "FF", 1, "2026-08-12T10:00:00+00:00", "WB")
-        with mock.patch.object(
-            unit_economics.wb_unit_economics,
-            "load_wb_fbs_data",
-            return_value={"ok": True, "store": "rimili", "rows": [], "warnings": []},
-        ):
-            response = self.client.post("/sales/unit-economics/wb-fbs/calculate", json={"store": "rimili"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            self.client.post("/sales/unit-economics/wb-fbs/calculate", json={"store": "unknown"}).status_code,
-            404,
-        )
-        fulfillment_names = db.get_fulfillments()
-        rates = self.client.post(
-            "/sales/unit-economics/wb-fbs/fulfillment-rates",
-            json={
-                "rates": [
-                    {"name": name, "storage": 1, "accept": 2, "fulfillment": 3} for name in fulfillment_names
-                ]
-            },
-        )
-        self.assertEqual(rates.status_code, 200, rates.text)
-        self.assertEqual(
-            self.client.post(
-                "/sales/unit-economics/wb-fbs/fulfillment-rates", json={"rates": "wrong"}
-            ).status_code,
-            422,
-        )
 
     def test_admin_good_and_bad_outcomes(self) -> None:
         created = self.client.post(
@@ -499,14 +548,30 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/api/rnp/sync",
             "/api/rnp/strategy",
             "/api/rnp/action",
-            "/sales/unit-economics",
-            "/sales/unit-economics/wb-fbs",
-            "/sales/unit-economics/wb-fbs/calculate",
-            "/sales/unit-economics/wb-fbs/fulfillment-rates",
-            "/sales/unit-economics/ozon",
-            "/sales/unit-economics/yandex-market",
+            "/sales/unit-economics-1c",
+            "/sales/unit-economics-1c/cabinet-settings",
+            "/api/unit-economics-1c/cabinet-settings",
+            "/api/unit-economics-1c/cabinet-settings/{store_slug}",
+            "/api/unit-economics-1c/source-data/sync",
+            "/api/unit-economics-1c/prices",
+            "/api/unit-economics-1c/prices/jobs/{job_id}",
+            "/api/unit-economics-1c/prices/preview",
+            "/api/unit-economics-1c/prices/sync",
+            "/api/unit-economics-1c/sync",
+            "/api/unit-economics-1c/product-settings/{store_slug}",
+            "/sales/unit-economics-1c/reports/unit-profit",
+            "/sales/unit-economics-1c/reports/unit-profit.xlsx",
+            "/api/unit-economics-1c/reports/unit-profit",
+            "/api/unit-economics-1c/preferences/columns",
+            "/sales/unit-economics-1c/ozon",
+            "/sales/unit-economics-1c/yandex-market",
             "/supply",
             "/stock",
+            "/stock/total",
+            "/stock/total.xlsx",
+            "/stock/cost-report",
+            "/stock/cost-report.xlsx",
+            "/stock/cost-report/operations/{operation_id}/fbs-transfer",
             "/stock/supplies",
             "/stock/randomizer",
             "/stock/randomizer/generate",
@@ -517,6 +582,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/stock-2",
             "/stock-2/details/{kind}",
             "/stock/{slug}",
+            "/stock/{slug}/total-data",
             "/stock/{slug}/fbs",
             "/stock/{slug}/warehouses",
             "/stock/{slug}/warehouses/xlsx",
@@ -526,10 +592,14 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/stock/{slug}/catalog-search",
             "/stock/{slug}/ff-cell",
             "/stock/{slug}/ff-available",
+            "/stock/{slug}/transit",
             "/stock/{slug}/article-detail",
             "/stock/{slug}/add-ff-items",
             "/stock/{slug}/upload-ff-stock",
             "/stock/{slug}/transfer",
+            "/stock/{slug}/transfers/in-transit",
+            "/stock/{slug}/transfers/{transfer_id}/receive",
+            "/stock/{slug}/transfers/{transfer_id}/cancel",
             "/stock/{slug}/shipment",
             "/stock/{slug}/trash/checked",
             "/admin",
@@ -543,11 +613,18 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/admin/users/{user_id}/stores",
             "/admin/users/{user_id}/role",
             "/admin/users/{user_id}/sections",
+            "/admin/users/{user_id}/access-policy",
+            "/admin/access-requests/{request_id}/decision",
+            "/admin/access-grants/{grant_id}/revoke",
             "/admin/operations/{operation_id}/xlsx",
             "/admin/sync-stock",
             "/admin/google-export",
             "/admin/google-export/{store_slug}",
             "/admin/google-export/{store_slug}/run",
+            "/admin/integrations",
+            "/api/admin/integrations/{store_slug}/{marketplace}",
+            "/api/admin/integrations/sync-jobs/{job_name}/history",
+            "/api/admin/integrations/sync-jobs/{job_name}/settings",
         }
         self.assertEqual(schema_paths, owned)
 

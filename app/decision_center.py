@@ -532,18 +532,14 @@ def _local_products(store_slugs: list[str]) -> dict[tuple[str, int], dict]:
     catalog_rows = _select_in(
         """
         SELECT si.store_slug, si.article, si.name, si.image_url,
-               COALESCE(wm.nm_id, 0) AS metric_nm_id,
-               COALESCE(wm.buyer_price, wm.discounted_price, wm.list_price, 0) AS price,
-               COALESCE(wm.commission_fbs_rate, 0) AS commission_rate,
-               COALESCE(uc.purchase_price, 0) AS purchase_price,
-               COALESCE(uc.other_cost, 0) AS other_cost,
+               0 AS metric_nm_id,
+               0 AS price,
+               0 AS commission_rate,
+               0 AS purchase_price,
+               0 AS other_cost,
                COALESCE(ms.quantity, 0) AS mp_stock,
                COALESCE(fs.quantity, 0) AS ff_stock
           FROM stock_items si
-          LEFT JOIN wb_unit_metrics wm
-            ON wm.store_slug = si.store_slug AND wm.article = si.article
-          LEFT JOIN unit_costs uc
-            ON uc.store_slug = si.store_slug AND uc.article = si.article
           LEFT JOIN (
               SELECT store_slug, article, SUM(quantity) AS quantity
                 FROM mp_stock WHERE marketplace = 'WB'
@@ -698,7 +694,8 @@ def _build_products(store_slugs: list[str]) -> list[dict]:
         ad_spend = _number(live.get("ad_spend"))
         ad_orders = _integer(live.get("ad_orders"))
         ctr = ad_clicks / max(ad_impressions, 1)
-        drr = ad_spend / max(revenue, 1)
+        effective_buyout_rate = _clamp(buyout_rate, 0, 1) if buyout_rate > 0 else 1.0
+        drr = ad_spend / max(revenue * effective_buyout_rate, 1)
         cart_rate = carts / max(views, 1)
         checkout_rate = orders / max(carts, 1)
         previous_orders = _integer(old.get("orders"))
@@ -901,7 +898,7 @@ def _opportunities(products: list[dict], action_states: dict[str, str]) -> list[
                 "Доля рекламных расходов выше нормы портфеля; часть бюджета стоит вернуть товарам с сильной конверсией.",
                 "Снизить ставки на слабых кластерах и оставить контрольную группу",
                 [
-                    _evidence("ДРР", f"{product['drr']:.1%}", "danger"),
+                    _evidence("ДРР с выкупом", f"{product['drr']:.1%}", "danger"),
                     _evidence("Портфель", f"{median_drr:.1%}"),
                     _evidence("Расход", f"{product['adSpend']:,.0f} ₽"),
                 ],
@@ -909,7 +906,7 @@ def _opportunities(products: list[dict], action_states: dict[str, str]) -> list[
                 saving,
                 0.84,
                 2,
-                "ДРР",
+                "ДРР с выкупом",
                 f"{product['drr']:.1%}",
                 f"≤ {drr_limit:.1%}",
                 14,
@@ -1054,7 +1051,7 @@ def _opportunities(products: list[dict], action_states: dict[str, str]) -> list[
                 f"{product['avgPosition']:.0f}",
                 "≤ 25",
                 21,
-                "ДРР остаётся в пределах нормы",
+                "ДРР с выкупом остаётся в пределах нормы",
                 True,
             )
         if product["growth"] > 25 and 8 <= product["stockDays"] < 35:

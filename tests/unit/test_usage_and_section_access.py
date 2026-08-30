@@ -51,10 +51,20 @@ def test_section_access_defaults_and_explicit_rules() -> None:
         }
     )
     assert not has_access(restricted, SectionName.SALES)
-    assert landing_path(restricted) == "/sales/decision-center"
+    assert landing_path(restricted) == "/sales/unit-economics-1c"
     assert section_for_path("/") is None
     assert section_for_path("/api/rnp/action") is SectionName.RNP
+    assert section_for_path("/sales/unit-economics-1c") is SectionName.UNIT_ECONOMICS_1C
     assert section_for_path("/stock-2/details/marketplace") is SectionName.STOCK_OVERVIEW
+
+    independent_unit_access = user.model_copy(
+        update={
+            "section_access": {
+                SectionName.UNIT_ECONOMICS_1C: SectionAccessLevel.READ,
+            }
+        }
+    )
+    assert has_access(independent_unit_access, SectionName.UNIT_ECONOMICS_1C)
 
     superadmin = restricted.model_copy(update={"role": Role.SUPERADMIN})
     assert access_level(superadmin, SectionName.SALES) is SectionAccessLevel.WRITE
@@ -164,12 +174,64 @@ def test_middleware_enforces_hidden_read_and_write_access() -> None:
         supply_response = client.get("/supply")
         assert supply_response.status_code == 403
         assert 'href="/supply" hidden' in supply_response.text
-        assert client.get("/sales/decision-center").status_code == 200
+        assert client.get("/sales/decision-center").status_code == 403
         response = client.post(
             "/api/decision-center/status",
             json={"fingerprint": "rimili:test", "status": "completed"},
             headers={"X-Requested-With": "fetch"},
         )
         assert response.status_code == 403
+        assert response.json()["error"] == "Нет доступа к этому разделу"
+    client.close()
+
+
+def test_middleware_enforces_unit_economics_1c_access() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    identities = client.app.state.container.identity
+    user = _user(
+        section_access={
+            SectionName.UNIT_ECONOMICS_1C: SectionAccessLevel.NONE,
+        }
+    )
+    client.cookies.set(auth_routes.auth.SESSION_COOKIE, "test-session")
+    with mock.patch.object(identities, "user_for_token", return_value=user):
+        response = client.get("/sales/unit-economics-1c")
+        assert response.status_code == 403
+        assert "Юнит-экономика 1С" in response.text
+    client.close()
+
+
+def test_middleware_blocks_cabinet_settings_save_for_read_only_access() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    identities = client.app.state.container.identity
+    user = _user(
+        section_access={
+            SectionName.UNIT_ECONOMICS_1C: SectionAccessLevel.READ,
+        }
+    )
+    payload = {
+        "acceptance_coefficient": 0,
+        "wb_extra_tariff_percent": 0,
+        "acquiring_percent": 3.8,
+        "team_commission_percent": 0,
+        "vat_percent": 9,
+        "usn_percent": 6,
+        "osno_percent": 0,
+        "tax_system": "usn",
+    }
+    client.cookies.set(auth_routes.auth.SESSION_COOKIE, "test-session")
+    with mock.patch.object(identities, "user_for_token", return_value=user):
+        response = client.put(
+            "/api/unit-economics-1c/cabinet-settings/rimili",
+            json=payload,
+            headers={"X-Requested-With": "fetch"},
+        )
+        assert response.status_code == 403
         assert response.json()["error"] == "Раздел доступен только для просмотра"
+        source_sync = client.post(
+            "/api/unit-economics-1c/source-data/sync",
+            headers={"X-Requested-With": "fetch"},
+        )
+        assert source_sync.status_code == 403
+        assert source_sync.json()["error"] == "Раздел доступен только для просмотра"
     client.close()

@@ -1,18 +1,55 @@
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.config import Settings
+from app.config import Settings, _load_local_env
 
 
 class SettingsTests(unittest.TestCase):
+    def test_price_sync_defaults_to_two_hours(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            configured = Settings.from_env()
+
+        self.assertEqual(configured.unit_economics_1c_price_sync_interval_seconds, 2 * 60 * 60)
+        self.assertEqual(configured.unit_economics_1c_wallet_sync_interval_seconds, 5 * 60)
+        self.assertEqual(configured.unit_economics_1c_source_sync_hour, 2)
+        self.assertEqual(configured.token_check_interval_seconds, 24 * 60 * 60)
+        self.assertEqual(configured.wb_advertising_sync_interval_seconds, 60 * 60)
+        self.assertEqual(configured.wb_funnel_orders_sync_interval_seconds, 15 * 60)
+        self.assertEqual(configured.wb_storefront_dest, "-1257786")
+        self.assertEqual(configured.wb_storefront_batch_size, 1_000)
+
+    def test_local_env_sets_defaults_without_overriding_process_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_path = Path(temporary_directory) / ".env"
+            env_path.write_text(
+                "CHECKSTOCK_DISABLE_BACKGROUND_SYNC=1\nCHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED=0\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"CHECKSTOCK_DISABLE_BACKGROUND_SYNC": "0"},
+                clear=True,
+            ):
+                _load_local_env(env_path)
+
+                self.assertEqual(os.environ["CHECKSTOCK_DISABLE_BACKGROUND_SYNC"], "0")
+                self.assertEqual(os.environ["CHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED"], "0")
+
     def test_environment_overrides_runtime_values(self) -> None:
         environment = {
             "CHECKSTOCK_DB_PATH": "custom/checkstock.db",
             "CHECKSTOCK_DATABASE_URL": "postgresql+psycopg://checkstock:secret@db/checkstock",
             "CHECKSTOCK_LOG_LEVEL": "debug",
             "CHECKSTOCK_DISABLE_BACKGROUND_SYNC": "true",
+            "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_ENABLED": "true",
+            "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_INTERVAL_SECONDS": "7200",
+            "CHECKSTOCK_UNIT_ECONOMICS_1C_WALLET_SYNC_INTERVAL_SECONDS": "600",
+            "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR": "1",
+            "CHECKSTOCK_WB_STOREFRONT_DEST": "-7777777",
+            "CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE": "40",
             "CHECKSTOCK_STOCK_DETAIL_PAGE_SIZE": "42",
             "CHECKSTOCK_OZON_REQUEST_ATTEMPTS": "7",
             "CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS": "25",
@@ -27,6 +64,12 @@ class SettingsTests(unittest.TestCase):
         )
         self.assertEqual(configured.log_level, "DEBUG")
         self.assertFalse(configured.background_sync_enabled)
+        self.assertTrue(configured.unit_economics_1c_price_sync_enabled)
+        self.assertEqual(configured.unit_economics_1c_price_sync_interval_seconds, 7200)
+        self.assertEqual(configured.unit_economics_1c_wallet_sync_interval_seconds, 600)
+        self.assertEqual(configured.unit_economics_1c_source_sync_hour, 1)
+        self.assertEqual(configured.wb_storefront_dest, "-7777777")
+        self.assertEqual(configured.wb_storefront_batch_size, 40)
         self.assertEqual(configured.stock_detail_page_size, 42)
         self.assertEqual(configured.ozon_request_attempts, 7)
         self.assertEqual(configured.rnp_report_poll_attempts, 25)

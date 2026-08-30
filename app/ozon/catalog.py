@@ -92,16 +92,17 @@ def sync_store(store_slug: str) -> dict:
         "no_barcode": no_barcode,
         **result,
     }
-    logger.info("Каталог Ozon %s: %s", _store_label(store_slug), report)
+    logger.debug("Каталог Ozon %s: %s", _store_label(store_slug), report)
     ozon_api.clear_store_context()
     return report
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if not ozon_tokens.has_credentials(slug):
             continue
         try:

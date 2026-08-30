@@ -4,7 +4,6 @@ import json
 import logging
 import math
 import time
-import urllib.parse
 import urllib.request
 import zipfile
 from datetime import UTC, date, datetime, timedelta
@@ -984,28 +983,19 @@ def _wb_current_reputation(rows: list[dict]) -> dict[str, tuple[float | None, in
                 nm_to_article[value] = str(row["article"])
                 break
     result: dict[str, tuple[float | None, int | None]] = {}
-    ids = list(nm_to_article)
-    for start in range(0, len(ids), 100):
-        chunk = ids[start : start + 100]
-        try:
-            url = "https://card.wb.ru/cards/v4/detail?dest=123586302&locale=ru&nm=" + urllib.parse.quote(
-                ";".join(chunk)
+    try:
+        report = wb_api.get_storefront_products(list(nm_to_article))
+    except Exception as exc:
+        logger.warning("WB: рейтинг и отзывы для снимка РНП недоступны: %s", exc)
+        return result
+    for raw in _items(_mapping(report).get("products")):
+        item = _mapping(raw)
+        article = nm_to_article.get(str(item.get("id") or item.get("nmId") or item.get("nmID") or ""))
+        if article:
+            result[article] = (
+                _number(item.get("reviewRating"), 0.0) if item.get("reviewRating") is not None else None,
+                _integer(item.get("feedbacks")) if item.get("feedbacks") is not None else None,
             )
-            request = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(request, timeout=settings.wb_request_timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            products = _items(_mapping(_mapping(payload).get("data")).get("products"))
-            for raw in products:
-                item = _mapping(raw)
-                article = nm_to_article.get(str(item.get("id") or ""))
-                if article:
-                    result[article] = (
-                        _number(item.get("reviewRating"), 0.0) or None,
-                        _integer(item.get("feedbacks")) if item.get("feedbacks") is not None else None,
-                    )
-        except Exception as exc:
-            logger.warning("WB: рейтинг и отзывы для снимка РНП недоступны: %s", exc)
-            break
     return result
 
 
@@ -1024,9 +1014,9 @@ def _current_snapshot_rows(
             "WITH stock AS (SELECT article,SUM(quantity) AS quantity FROM mp_stock "
             "WHERE store_slug=? AND marketplace=? GROUP BY article) "
             "SELECT si.article,si.mp_sku,si.mp_product_id,COALESCE(stock.quantity,0) AS stock_units,"
-            "wm.nm_id,wm.list_price,wm.discounted_price,wm.buyer_price,wm.spp_percent "
+            "NULL AS nm_id,NULL AS list_price,NULL AS discounted_price,"
+            "NULL AS buyer_price,NULL AS spp_percent "
             "FROM stock_items si LEFT JOIN stock ON stock.article=si.article "
-            "LEFT JOIN wb_unit_metrics wm ON wm.store_slug=si.store_slug AND wm.article=si.article "
             "WHERE si.store_slug=? AND si.marketplace=? AND si.is_service=0" + article_sql,
             [store_slug, marketplace, store_slug, marketplace, *(articles or [])],
         ).fetchall()

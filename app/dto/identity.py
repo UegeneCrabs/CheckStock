@@ -13,6 +13,19 @@ class Role(StrEnum):
     SUPERADMIN = "superadmin"
 
 
+class AccessProfile(StrEnum):
+    MARKETPLACE_MANAGER = "marketplace_manager"
+    SENIOR_MARKETPLACE_MANAGER = "senior_marketplace_manager"
+    MARKETPLACE_LEAD = "marketplace_lead"
+    STORE_MANAGER = "store_manager"
+    PROCUREMENT = "procurement"
+
+
+class MarketplaceAccessScope(DtoModel):
+    store_slug: str = Field(min_length=1, max_length=100)
+    marketplace: str = Field(min_length=1, max_length=100)
+
+
 class PermissionName(StrEnum):
     EDIT_STOCK = "can_edit_stock"
     MANAGE_USERS = "can_manage_users"
@@ -23,7 +36,7 @@ class SectionName(StrEnum):
     DECISION_CENTER = "decision_center"
     EPHEMERIDES = "ephemerides"
     RNP = "rnp"
-    UNIT_ECONOMICS = "unit_economics"
+    UNIT_ECONOMICS_1C = "unit_economics_1c"
     SUPPLY = "supply"
     STOCK = "stock"
     STOCK_OVERVIEW = "stock_overview"
@@ -52,6 +65,8 @@ class User(DtoModel):
     created_at: datetime
     store_slugs: tuple[str, ...] = ()
     section_access: dict[SectionName, SectionAccessLevel] = Field(default_factory=dict)
+    access_profile: AccessProfile | None = None
+    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class UserCollection(RootModel[tuple[User, ...]]):
@@ -93,6 +108,8 @@ class CreateUserCommand(DtoModel):
     role: Role
     created_at: datetime
     store_slugs: tuple[str, ...] = ()
+    access_profile: AccessProfile | None = None
+    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class CreateUserForm(DtoModel):
@@ -102,6 +119,8 @@ class CreateUserForm(DtoModel):
     password: SecretStr = Field(min_length=8, max_length=1024)
     role: Role
     store_slugs: tuple[str, ...] = Field(min_length=1)
+    access_profile: AccessProfile | None = None
+    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class SuperadminSeed(DtoModel):
@@ -174,6 +193,12 @@ class UserSectionAccessChange(DtoModel):
     section_access: dict[SectionName, SectionAccessLevel]
 
 
+class UserAccessPolicyChange(DtoModel):
+    user_id: PositiveInt
+    access_profile: AccessProfile | None = None
+    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
+
+
 class UserCountQuery(DtoModel):
     exclude_user_id: PositiveInt | None = None
 
@@ -198,6 +223,7 @@ class UserMutationKind(StrEnum):
     PASSWORD = "password"
     ROLE = "role"
     SECTIONS = "sections"
+    ACCESS_POLICY = "access_policy"
 
 
 class AuditedUserMutation(DtoModel):
@@ -211,6 +237,8 @@ class AuditedUserMutation(DtoModel):
     password_hash: str | None = Field(default=None, repr=False)
     role: Role | None = None
     section_access: dict[SectionName, SectionAccessLevel] = Field(default_factory=dict)
+    access_profile: AccessProfile | None = None
+    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class AuditedCreateUser(DtoModel):
@@ -259,6 +287,8 @@ def coerce_user(value: object) -> User | None:
     raw.setdefault("created_at", datetime(1970, 1, 1, tzinfo=UTC))
     raw.setdefault("store_slugs", ())
     raw.setdefault("section_access", {})
+    raw.setdefault("access_profile", None)
+    raw.setdefault("access_scopes", ())
     return User.model_validate(raw)
 
 

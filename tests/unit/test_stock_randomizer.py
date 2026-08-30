@@ -38,18 +38,10 @@ def test_randomizer_uses_only_unused_articles_and_resets_next_month(database_pat
         side_effect=lambda values: values[0],
     )
     with choose_first:
-        first = db.generate_stock_audit_sample(
-            ("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW
-        )
-        second = db.generate_stock_audit_sample(
-            ("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW
-        )
-        exhausted = db.generate_stock_audit_sample(
-            ("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW
-        )
-        next_month = db.generate_stock_audit_sample(
-            ("rimili",), FULFILLMENT, "2026-09", 1, "Tester", NOW
-        )
+        first = db.generate_stock_audit_sample(("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW)
+        second = db.generate_stock_audit_sample(("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW)
+        exhausted = db.generate_stock_audit_sample(("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW)
+        next_month = db.generate_stock_audit_sample(("rimili",), FULFILLMENT, "2026-09", 1, "Tester", NOW)
 
     assert first["items"][0]["article"] == "A-1"
     assert first["items"][0]["ff_quantity"] == 7
@@ -87,12 +79,8 @@ def test_randomizer_accepts_positive_stock_in_either_source(database_path) -> No
         "app.repositories.stock_randomizer.secrets.choice",
         side_effect=lambda values: values[0],
     ):
-        first = db.generate_stock_audit_sample(
-            ("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW
-        )
-        second = db.generate_stock_audit_sample(
-            ("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW
-        )
+        first = db.generate_stock_audit_sample(("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW)
+        second = db.generate_stock_audit_sample(("rimili",), FULFILLMENT, "2026-08", 1, "Tester", NOW)
 
     assert first["items"][0]["article"] == "FBS-ONLY"
     assert first["items"][0]["ff_quantity"] == 0
@@ -118,9 +106,7 @@ def test_randomizer_does_not_repeat_an_article_between_stores(database_path) -> 
             [("SHARED", FULFILLMENT, None, 2, NOW)],
         )
 
-    result = db.generate_stock_audit_sample(
-        ("rimili", "tris"), FULFILLMENT, "2026-08", 1, "Tester", NOW
-    )
+    result = db.generate_stock_audit_sample(("rimili", "tris"), FULFILLMENT, "2026-08", 1, "Tester", NOW)
 
     assert result["items"][0]["article"] == "SHARED"
     assert result["items"][1]["article"] is None

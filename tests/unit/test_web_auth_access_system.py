@@ -71,6 +71,15 @@ class WebAuthAccessSystemTests(unittest.TestCase):
             self.client.get("/logout", follow_redirects=False)
         end.assert_not_called()
 
+    def test_profile_has_logout_button(self) -> None:
+        with mock.patch.object(self.identities, "user_for_token", return_value=self.user):
+            self.client.cookies.set(auth_routes.auth.SESSION_COOKIE, "session")
+            response = self.client.get("/profile")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="btn-secondary profile-account-logout" href="/logout"', response.text)
+        self.assertIn("Выйти из аккаунта", response.text)
+
     def test_access_helpers(self) -> None:
         superadmin = self.user
         user = self.user.model_copy(update={"id": 2, "role": Role.USER, "store_slugs": ("rimili", "wrong")})

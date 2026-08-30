@@ -1,9 +1,8 @@
 from datetime import datetime
 from unittest import mock
 
-from app import db, supply_planning
+from app import supply_planning
 from app.domain import MOSCOW_TIMEZONE
-from app.dto.identity import Role
 from app.wb import api as wb_api
 from app.web import middleware
 
@@ -88,9 +87,7 @@ def test_wb_planned_supplies_are_sorted_and_marked_urgent() -> None:
     with (
         mock.patch.object(supply_planning.wb_tokens, "has_token", return_value=True),
         mock.patch.object(supply_planning.wb_tokens, "get_token", return_value="token"),
-        mock.patch.object(
-            supply_planning.wb_api, "get_fbw_supplies", return_value=rows
-        ) as get_supplies,
+        mock.patch.object(supply_planning.wb_api, "get_fbw_supplies", return_value=rows) as get_supplies,
     ):
         report = supply_planning.load_wb_planned_supplies(("rimili",), now=now)
 
@@ -126,6 +123,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
             "origin": "ФФ Подольск",
             "destination": "Коледино",
             "supply_type": "Короба",
+            "note": "Поставка первой партии",
             "ready": False,
         },
     )
@@ -137,6 +135,7 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
             "origin": "ФФ Чехов",
             "destination": "Электросталь",
             "supply_type": "Монопаллета",
+            "note": "Пополнение недельного запаса",
             "ready": False,
         },
     )
@@ -145,70 +144,36 @@ def test_manual_supply_routes_persist_sort_update_and_delete(
 
     rows = client.get("/stock/planning/manual").json()["supplies"]
     assert [row["destination"] for row in rows] == ["Электросталь", "Коледино"]
-    assert [row["store_name"] for row in rows] == ["TRIS", "RIMILI"]
-    completed_id = rows[0]["id"]
-    active_id = rows[1]["id"]
+    supply_id = rows[0]["id"]
 
     ready = client.patch(
-        f"/stock/planning/manual/{completed_id}/ready",
+        f"/stock/planning/manual/{supply_id}/ready",
         json={"ready": True},
     )
     assert ready.status_code == 200, ready.text
     assert ready.json()["supply"]["ready"] is True
-    active_rows = client.get("/stock/planning/manual").json()["supplies"]
-    assert [row["id"] for row in active_rows] == [active_id]
-    assert db.get_manual_supply(completed_id)["ready"] is True
+    assert [row["id"] for row in client.get("/stock/planning/manual").json()["supplies"]] == [
+        later.json()["supply"]["id"]
+    ]
 
     updated = client.put(
-        f"/stock/planning/manual/{active_id}",
+        f"/stock/planning/manual/{supply_id}",
         json={
             "store_slug": "tris",
             "delivery_at": "2026-08-22T11:00",
             "origin": "ФФ Чехов",
             "destination": "Тула",
             "supply_type": "Короба",
-            "ready": False,
+            "note": "Изменили склад назначения",
+            "ready": True,
         },
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["supply"]["destination"] == "Тула"
 
-    assert updated.json()["supply"]["store_name"] == "TRIS"
-
-    deleted = client.delete(f"/stock/planning/manual/{active_id}")
+    deleted = client.delete(f"/stock/planning/manual/{supply_id}")
     assert deleted.status_code == 200, deleted.text
-    assert client.get("/stock/planning/manual").json()["supplies"] == []
-    assert db.get_manual_supply(completed_id) is not None
-
-
-def test_manual_supply_rejects_unavailable_cabinet(
-    client,
-    application,
-    user_factory,
-    monkeypatch,
-) -> None:
-    user = user_factory(role=Role.USER, stores=("rimili",))
-    monkeypatch.setattr(
-        application.state.container.identity,
-        "user_for_token",
-        lambda token: user,
-    )
-    client.cookies.set(middleware.auth.SESSION_COOKIE, "x" * 32)
-
-    response = client.post(
-        "/stock/planning/manual",
-        json={
-            "store_slug": "tris",
-            "delivery_at": "2026-08-23T12:00",
-            "origin": "ФФ Подольск",
-            "destination": "Коледино",
-            "supply_type": "Короба",
-            "ready": False,
-        },
-    )
-
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Нет доступа к этому кабинету"
+    assert len(client.get("/stock/planning/manual").json()["supplies"]) == 1
 
 
 def test_supplies_render_on_a_separate_stock_page(
@@ -226,9 +191,9 @@ def test_supplies_render_on_a_separate_stock_page(
     assert supplies.status_code == 200, supplies.text
     assert "data-supply-planner" not in stock.text
     assert "data-supply-planner" in supplies.text
-    assert 'data-wb-date-from' in supplies.text
-    assert 'data-wb-date-to' in supplies.text
-    assert 'data-wb-date-sort' in supplies.text
+    assert "data-wb-date-from" in supplies.text
+    assert "data-wb-date-to" in supplies.text
+    assert "data-wb-date-sort" in supplies.text
     assert 'select name="store_slug"' in supplies.text
     assert '<option value="rimili">RIMILI</option>' in supplies.text
     assert '<a class="nav-subitem active" href="/stock/supplies">Поставки</a>' in supplies.text

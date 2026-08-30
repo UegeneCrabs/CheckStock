@@ -17,7 +17,7 @@ from app.web.access import has_store_access
 from app.web.templating import render_access_denied_page
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
-QUIET_PATH_PREFIXES = ("/static/",)
+QUIET_PATH_PREFIXES = ("/static/", "/api/activity/heartbeat")
 logger = logging.getLogger(__name__)
 
 
@@ -46,11 +46,8 @@ async def authentication_middleware(request: Request, call_next):
         return RedirectResponse("/login", status_code=303)
 
     section = section_for_path(path)
-    read_only_post_paths = {"/sales/unit-economics/wb-fbs/calculate"}
     required_access = (
-        SectionAccessLevel.READ
-        if request.method in {"GET", "HEAD", "OPTIONS"} or path in read_only_post_paths
-        else SectionAccessLevel.WRITE
+        SectionAccessLevel.READ if request.method in {"GET", "HEAD", "OPTIONS"} else SectionAccessLevel.WRITE
     )
     if section is not None and not has_section_access(user, section, required_access):
         wants_json = "application/json" in request.headers.get("accept", "") or (

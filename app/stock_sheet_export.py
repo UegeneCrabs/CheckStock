@@ -610,10 +610,16 @@ def run_store(store_slug: str, now: datetime | None = None) -> dict:
     return report
 
 
-def run_due(now: datetime | None = None) -> dict[str, dict]:
+def run_due(
+    now: datetime | None = None,
+    store_slugs: tuple[str, ...] | None = None,
+) -> dict[str, dict]:
     current = now or datetime.now(MOSCOW_TIMEZONE)
+    allowed_stores = set(STORES if store_slugs is None else store_slugs)
     report: dict[str, dict] = {}
     for settings in list_settings():
+        if settings.store_slug not in allowed_stores:
+            continue
         if not is_due(settings, current):
             continue
         try:
@@ -625,7 +631,5 @@ def run_due(now: datetime | None = None) -> dict[str, dict]:
             }
     failed_stores = [store_slug for store_slug, item in report.items() if not item["ok"]]
     if failed_stores:
-        raise StockSheetExportError(
-            "Не выполнена выгрузка магазинов: " + ", ".join(failed_stores)
-        )
+        raise StockSheetExportError("Не выполнена выгрузка магазинов: " + ", ".join(failed_stores))
     return report

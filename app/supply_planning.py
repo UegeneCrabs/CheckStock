@@ -119,9 +119,7 @@ def load_wb_planned_supplies(
             )
         except Exception as error:
             message = error.friendly if isinstance(error, wb_api.WBApiError) else str(error)
-            errors.append(
-                {"store_slug": store_slug, "store_name": store.name, "error": message}
-            )
+            errors.append({"store_slug": store_slug, "store_name": store.name, "error": message})
             continue
 
         for row in rows:
@@ -131,9 +129,7 @@ def load_wb_planned_supplies(
             parsed_supply_date = parse_datetime(supply_date)
             if parsed_supply_date is None or not start <= parsed_supply_date.date() <= end:
                 continue
-            warehouse_name = str(
-                row.get("warehouseName") or row.get("actualWarehouseName") or ""
-            ).strip()
+            warehouse_name = str(row.get("warehouseName") or row.get("actualWarehouseName") or "").strip()
             supplies.append(
                 {
                     "store_slug": store_slug,
@@ -153,8 +149,7 @@ def load_wb_planned_supplies(
     supplies.sort(
         key=lambda item: (
             parse_datetime(item["supply_date"]) is None,
-            parse_datetime(item["supply_date"])
-            or datetime.max.replace(tzinfo=MOSCOW_TIMEZONE),
+            parse_datetime(item["supply_date"]) or datetime.max.replace(tzinfo=MOSCOW_TIMEZONE),
             item["store_name"],
         )
     )

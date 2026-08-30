@@ -257,6 +257,13 @@ def upsert_wb_token_info(store_slug: str, expires_at: str | None, checked_at: st
     conn.close()
 
 
+def delete_wb_token_info(store_slug: str) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM wb_token_info WHERE store_slug = ?", (store_slug,))
+    conn.commit()
+    conn.close()
+
+
 def get_wb_token_infos() -> list[dict]:
     conn = get_connection()
     rows = conn.execute(

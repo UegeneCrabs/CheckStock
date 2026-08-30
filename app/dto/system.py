@@ -15,6 +15,7 @@ class ReadinessStatus(DtoModel):
 class SyncFailure(DtoModel):
     target: str
     error_type: str
+    message: str = ""
 
 
 class SyncGroupReport(DtoModel):

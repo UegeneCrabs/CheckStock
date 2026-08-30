@@ -13,6 +13,9 @@
         .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    const copyIdentifier = (kind, value, label) => window.CheckStockIdentifierCopy
+        ? window.CheckStockIdentifierCopy.html(kind, value, label)
+        : escapeHtml(label ?? value);
 
     const resultHtml = (item) => {
         if (!item.article) {
@@ -21,10 +24,11 @@
                 <p>${escapeHtml(item.message || "Подходящих артикулов не осталось")}</p>
             </div>`;
         }
-        const barcode = item.barcode ? `<small>Баркод ${escapeHtml(item.barcode)}</small>` : "";
+        const barcode = item.barcode
+            ? `<small>${copyIdentifier("Баркод", item.barcode, `Баркод ${item.barcode}`)}</small>` : "";
         return `<div class="randomizer-result is-ready" data-randomizer-result>
             <span>АРТИКУЛ ДЛЯ СВЕРКИ</span>
-            <strong>${escapeHtml(item.article)}</strong>
+            <strong>${copyIdentifier("Артикул", item.article, item.article)}</strong>
             <p>${escapeHtml(item.name || "Без названия")}</p>
             ${barcode}
             <div class="randomizer-stock-pair">

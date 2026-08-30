@@ -22,6 +22,7 @@ from app.dto.identity import (
     RoleCheck,
     SessionToken,
     User,
+    UserAccessPolicyChange,
     UserActiveChange,
     UserCollection,
     UserCountQuery,
@@ -170,6 +171,14 @@ class IdentityService:
                     UserSectionAccessChange(
                         user_id=command.user_id,
                         section_access=command.section_access,
+                    )
+                )
+            elif command.kind is UserMutationKind.ACCESS_POLICY:
+                repository.set_access_policy(
+                    UserAccessPolicyChange(
+                        user_id=command.user_id,
+                        access_profile=command.access_profile,
+                        access_scopes=command.access_scopes,
                     )
                 )
             repository.add_activity(command.activity)

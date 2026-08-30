@@ -1,16 +1,13 @@
-        <h2>Остатки</h2>
-        <p class="page-subtitle">Сводка по кабинетам, маркетплейсам и текущему запасу</p>
-
 $stock_summary
 
-        <div class="sync-panel stock-sync-panel" id="sync-wb-panel">
+        <div class="sync-panel stock-sync-panel" id="sync-products-panel">
             <div class="stock-sync-main">
                 <span class="stock-sync-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3"></path><path d="M4 4v5h5"></path><path d="M4 13a8 8 0 0 0 14.9 3"></path><path d="M20 20v-5h-5"></path></svg>
                 </span>
                 <span class="stock-sync-copy">
-                    <strong>Синхронизация остатков</strong>
-                    <small>WB, Ozon и Яндекс Маркет по всем магазинам</small>
+                    <strong>Обновление остатков</strong>
+                    <small>Обновляет каталоги и текущие остатки WB, Ozon и Яндекс Маркета</small>
                 </span>
             </div>
 
@@ -23,14 +20,14 @@ $stock_summary
                     <polyline points="12 7 12 12 15 14"></polyline>
                 </svg>
                 <span>Последняя выгрузка:</span>
-                <strong id="sync-wb-last">$last_sync</strong>
+                <strong id="sync-products-last">$last_sync</strong>
             </p>
-                <button class="btn-primary btn-sync" type="button" id="sync-wb-btn">Обновить данные</button>
+$sync_products_button
             </div>
 
-            <span class="sync-status" id="sync-wb-status"></span>
+            <span class="sync-status" id="sync-products-status" role="status" aria-live="polite"></span>
 
-            <div class="sync-results" id="sync-wb-results"></div>
+            <div class="sync-results" id="sync-products-results" aria-label="Результаты синхронизации"></div>
         </div>
 
         <div class="store-grid stock-store-grid">
@@ -52,24 +49,37 @@ $store_cards
             })();
 
             (function () {
-                var panel = document.getElementById('sync-wb-panel');
-                var btn = document.getElementById('sync-wb-btn');
-                var status = document.getElementById('sync-wb-status');
-                var results = document.getElementById('sync-wb-results');
-                var lastSync = document.getElementById('sync-wb-last');
+                var panel = document.getElementById('sync-products-panel');
+                var btn = document.getElementById('sync-products-btn');
+                var status = document.getElementById('sync-products-status');
+                var results = document.getElementById('sync-products-results');
+                var lastSync = document.getElementById('sync-products-last');
                 if (!btn) return;
 
                 var AUTO_HIDE_MS = 60000;
                 var hideTimer = null;
 
+                function escapeHtml(value) {
+                    return String(value == null ? '' : value)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }
+
                 function badge(label, state, text) {
-                    return '<span class="sync-badge sync-badge--' + state + '">' + label + (text ? ': ' + text : '') + '</span>';
+                    var suffix = text === undefined || text === null || text === ''
+                        ? ''
+                        : ': ' + escapeHtml(text);
+                    return '<span class="sync-badge sync-badge--' + state + '">'
+                        + escapeHtml(label) + suffix + '</span>';
                 }
 
                 function renderEndpoint(label, entry) {
                     if (!entry) return badge(label, 'muted', '—');
                     if (entry.ok) return badge(label, 'ok', String(entry.count));
-                    return badge(label, 'error', entry.error);
+                    return badge(label, 'error', entry.error || 'ошибка');
                 }
 
 
@@ -88,14 +98,14 @@ $store_cards
 
 
                 function catalogBadge(cat) {
+                    if (!cat) return badge('товаров', 'muted', '—');
                     if (cat && cat.ok === false) return badge('каталог', 'error', cat.error);
-                    if (!cat || !cat.total) return '';
 
                     var changes = [];
                     if (cat.added) changes.push('+' + cat.added);
                     if (cat.removed) changes.push('−' + cat.removed);
                     return badge('товаров', 'ok',
-                        cat.total + (changes.length ? ' (' + changes.join(', ') + ')' : ''));
+                        Number(cat.total || 0) + (changes.length ? ' (' + changes.join(', ') + ')' : ''));
                 }
 
                 function ozonBody(entry) {
@@ -113,7 +123,8 @@ $store_cards
                         var name = slug.toUpperCase();
 
                         var wb = mpBlock('WB', entry.token,
-                            renderEndpoint('FBS', entry.fbs) + renderEndpoint('FBO', entry.fbo));
+                            catalogBadge(entry.wb_catalog)
+                            + renderEndpoint('FBS', entry.fbs) + renderEndpoint('FBO', entry.fbo));
                         var ozon = mpBlock('OZON', entry.ozon_token, ozonBody(entry));
                         var yandex = mpBlock('ЯНДЕКС', entry.yandex_token,
                             catalogBadge(entry.yandex_catalog) + renderEndpoint('остатки', entry.yandex));
@@ -123,6 +134,39 @@ $store_cards
                             + wb + ozon + yandex
                             + '</div>';
                     }).join('');
+                }
+
+                function reportHasErrors(report) {
+                    var fields = ['wb_catalog', 'fbs', 'fbo', 'ozon_catalog', 'ozon', 'yandex_catalog', 'yandex'];
+                    return Object.keys(report || {}).some(function (slug) {
+                        var entry = report[slug] || {};
+                        return fields.some(function (field) {
+                            return entry[field] && entry[field].ok === false;
+                        });
+                    });
+                }
+
+                function responseData(response) {
+                    return response.text().then(function (body) {
+                        var data = {};
+                        if (body) {
+                            try {
+                                data = JSON.parse(body);
+                            } catch (e) {
+                                data = {};
+                            }
+                        }
+                        if (!response.ok) {
+                            throw new Error(data.error || data.detail || ('HTTP ' + response.status));
+                        }
+                        return data;
+                    });
+                }
+
+                function setBusy(isBusy) {
+                    btn.disabled = isBusy;
+                    btn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+                    panel.classList.toggle('is-syncing', isBusy);
                 }
 
                 function scheduleAutoHide() {
@@ -140,23 +184,31 @@ $store_cards
                 btn.addEventListener('click', function () {
                     if (hideTimer) clearTimeout(hideTimer);
                     panel.classList.remove('is-fading');
-                    btn.disabled = true;
-                    status.textContent = 'Синхронизация...';
+                    setBusy(true);
+                    status.textContent = 'Обновление остатков...';
                     results.innerHTML = '';
-                    fetch('/admin/sync-stock', { method: 'POST' })
-                        .then(function (r) { return r.json(); })
+                    fetch('/admin/sync-stock', {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' }
+                    })
+                        .then(responseData)
                         .then(function (data) {
-                            status.textContent = 'Готово';
+                            if (!data.report || typeof data.report !== 'object') {
+                                throw new Error('Сервер не вернул отчёт о синхронизации');
+                            }
+                            status.textContent = reportHasErrors(data.report)
+                                ? 'Синхронизация завершена с ошибками'
+                                : 'Товары и остатки обновлены';
                             renderResults(data.report);
                             if (data.last_sync && lastSync) {
                                 lastSync.textContent = data.last_sync;
                             }
                         })
                         .catch(function (err) {
-                            status.textContent = 'Ошибка синхронизации: ' + err;
+                            status.textContent = 'Ошибка синхронизации: ' + (err.message || String(err));
                         })
                         .finally(function () {
-                            btn.disabled = false;
+                            setBusy(false);
                             scheduleAutoHide();
                         });
                 });

@@ -4,7 +4,3 @@ class ApplicationError(Exception):
 
 class StockValidationError(ApplicationError):
     pass
-
-
-class UnitEconomicsValidationError(ApplicationError):
-    pass

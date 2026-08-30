@@ -17,6 +17,8 @@ from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
     CatalogQuery,
+    ReceiveTransitCommand,
+    ReceiveTransitRequest,
     ResolvedStockEntries,
     ResolvedStockEntry,
     ShipmentCommand,
@@ -28,15 +30,8 @@ from app.dto.stock import (
     TargetStockEntry,
     TransferStockCommand,
 )
-from app.dto.unit_economics import (
-    FulfillmentRateInputs,
-    SaveFulfillmentRatesCommand,
-)
 from app.infrastructure.database import database_for_path
 from app.infrastructure.decision_repository import SqlAlchemyDecisionUnitOfWork
-from app.infrastructure.fulfillment_rate_repository import (
-    SqlAlchemyFulfillmentRateUnitOfWork,
-)
 from app.infrastructure.rnp_repository import SqlAlchemyRnpUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 
@@ -100,10 +95,26 @@ def test_stock_repository_covers_create_update_delete_and_movements(database_pat
         barcode="OZON-A",
     )
     with SqlAlchemyStockUnitOfWork(session_factory) as unit_of_work:
-        unit_of_work.repository.apply_transfer(
+        transfer_id = unit_of_work.repository.apply_transfer(
             ApplyTransferCommand(
                 transfer=transfer,
                 items=TargetStockEntries((target_item,)),
+                created_at=NOW,
+            )
+        )
+        unit_of_work.commit()
+
+    batch = db.get_ff_transit_batch(transfer_id)
+    assert batch is not None
+    with SqlAlchemyStockUnitOfWork(session_factory) as unit_of_work:
+        unit_of_work.repository.receive_transfer(
+            ReceiveTransitCommand(
+                transfer_id=transfer_id,
+                request=ReceiveTransitRequest(
+                    items=({"item_id": batch["items"][0]["id"], "quantity": 2},),
+                ),
+                user_id=1,
+                user_name="User",
                 created_at=NOW,
             )
         )
@@ -238,33 +249,3 @@ def test_rnp_and_decision_repositories_create_and_update(database_path: Path) ->
         with pytest.raises(RuntimeError):
             inactive.commit()
         assert inactive.__exit__(None, None, None) is None
-
-
-@pytest.mark.unit
-def test_fulfillment_rate_repository_loads_and_upserts(database_path: Path) -> None:
-    session_factory = database_for_path(database_path).session_factory
-    rates = FulfillmentRateInputs(
-        (
-            {
-                "name": db.get_fulfillments()[0],
-                "storage": 1,
-                "accept": 2,
-                "fulfillment": 3,
-            },
-        )
-    )
-    with SqlAlchemyFulfillmentRateUnitOfWork(session_factory) as unit_of_work:
-        assert unit_of_work.repository.fulfillment_names().root
-        assert unit_of_work.repository.rates().root
-        unit_of_work.repository.save(SaveFulfillmentRatesCommand(rates=rates, updated_at=NOW))
-        unit_of_work.repository.save(
-            SaveFulfillmentRatesCommand(
-                rates=FulfillmentRateInputs((rates.root[0].model_copy(update={"storage": 4}),)),
-                updated_at=NOW,
-            )
-        )
-        unit_of_work.commit()
-    inactive = SqlAlchemyFulfillmentRateUnitOfWork(session_factory)
-    with pytest.raises(RuntimeError):
-        inactive.commit()
-    assert inactive.__exit__(None, None, None) is None

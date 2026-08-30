@@ -39,7 +39,19 @@
             return row.classList.contains('row-alert') ? COLOR_RED : COLOR_NONE;
         }
         var cell = row.children[colIndex];
-        return cell ? cell.textContent.trim() : '';
+        if (!cell) return '';
+        if (cell.hasAttribute('data-filter-value')) return cell.getAttribute('data-filter-value');
+        return cell.textContent.trim();
+    }
+
+    function isNumericColumn(table, colIndex, values) {
+        var cell = table.querySelector('thead [data-filter-column="' + colIndex + '"]');
+        if (!cell) {
+            var header = table.querySelector('thead tr');
+            cell = header && header.children[colIndex];
+        }
+        if (cell && cell.getAttribute('data-filter-type') === 'number') return true;
+        return isNumericSeries(values);
     }
 
     function isNumericSeries(values) {
@@ -70,15 +82,18 @@
     function uniqueValues(table, colIndex) {
         var seen = {};
         var out = [];
-        dataRows(table).forEach(function (row) {
-            var v = cellValue(row, colIndex);
+        var values = table._tfAdapter && typeof table._tfAdapter.values === 'function'
+            ? table._tfAdapter.values(colIndex)
+            : dataRows(table).map(function (row) { return cellValue(row, colIndex); });
+        values.forEach(function (value) {
+            var v = String(value === null || value === undefined ? '' : value);
             if (!Object.prototype.hasOwnProperty.call(seen, v)) {
                 seen[v] = true;
                 out.push(v);
             }
         });
 
-        var numeric = isNumericSeries(out);
+        var numeric = isNumericColumn(table, colIndex, out);
         out.sort(function (a, b) { return compareValues(a, b, numeric); });
         return out;
     }
@@ -88,8 +103,14 @@
         var activeCols = Object.keys(filters);
         var query = table._tfSearch || '';
 
+        if (table._tfAdapter && typeof table._tfAdapter.filter === 'function') {
+            table._tfAdapter.filter(filters, query);
+            table.dispatchEvent(new CustomEvent('tablefilterchange'));
+            return;
+        }
+
         dataRows(table).forEach(function (row) {
-            var visible = true;
+            var visible = row.dataset.externalHidden !== 'true';
 
             for (var i = 0; i < activeCols.length; i++) {
                 var col = activeCols[i];
@@ -106,6 +127,7 @@
 
             row.style.display = visible ? '' : 'none';
         });
+        table.dispatchEvent(new CustomEvent('tablefilterchange'));
     }
 
     function updateButtonState(table, colIndex, button) {
@@ -114,9 +136,15 @@
     }
 
     function sortColumn(table, colIndex, dir) {
+        if (table._tfAdapter && typeof table._tfAdapter.sort === 'function') {
+            table._tfAdapter.sort(colIndex, dir);
+            table.dispatchEvent(new CustomEvent('tablefilterchange'));
+            return;
+        }
         var tbody = table.querySelector('tbody');
         var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-        var numeric = isNumericSeries(rows.map(function (r) { return cellValue(r, colIndex); }));
+        var values = rows.map(function (r) { return cellValue(r, colIndex); });
+        var numeric = isNumericColumn(table, colIndex, values);
 
         rows.sort(function (a, b) {
             var cmp = compareValues(cellValue(a, colIndex), cellValue(b, colIndex), numeric);
@@ -124,6 +152,7 @@
         });
 
         rows.forEach(function (row) { tbody.appendChild(row); });
+        table.dispatchEvent(new CustomEvent('tablefilterchange'));
     }
 
     function closePopover() {
@@ -136,7 +165,7 @@
     function renderPopoverContent(table, colIndex) {
         var values = uniqueValues(table, colIndex);
         var existing = table._tfFilters ? table._tfFilters[colIndex] : null;
-        var numeric = isNumericSeries(values);
+        var numeric = isNumericColumn(table, colIndex, values);
         var ascLabel = numeric ? 'По возрастанию' : 'Сортировать А &rarr; Я';
         var descLabel = numeric ? 'По убыванию' : 'Сортировать Я &rarr; А';
 
@@ -278,6 +307,8 @@
     }
 
     function buildHeaderButton(th, table, colIndex) {
+        if (th.querySelector('.tf-th-inner')) return;
+
         var inner = document.createElement('span');
         inner.className = 'tf-th-inner';
 
@@ -305,6 +336,7 @@
     function buildToolbar(table) {
         var wrap = table.closest('.table-wrap');
         if (!wrap || !wrap.parentNode) return;
+        if (wrap.previousElementSibling && wrap.previousElementSibling.classList.contains('tf-toolbar')) return;
 
         var bar = document.createElement('div');
         bar.className = 'tf-toolbar';
@@ -355,12 +387,21 @@
         var headerRow = table.querySelector('thead tr');
         if (!headerRow) return;
 
-        Array.prototype.forEach.call(headerRow.children, function (th, colIndex) {
-            if (th.classList.contains('col-filler')) return;
-            buildHeaderButton(th, table, colIndex);
-        });
+        var explicitHeaders = table.querySelectorAll('thead th[data-filter-column]');
+        if (explicitHeaders.length) {
+            Array.prototype.forEach.call(explicitHeaders, function (th) {
+                if (th.classList.contains('col-filler')) return;
+                buildHeaderButton(th, table, Number(th.getAttribute('data-filter-column')));
+            });
+        } else {
+            Array.prototype.forEach.call(headerRow.children, function (th, colIndex) {
+                if (th.classList.contains('col-filler')) return;
+                buildHeaderButton(th, table, colIndex);
+            });
+        }
 
         buildToolbar(table);
+        applyAllFilters(table);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -382,4 +423,17 @@
 
         if (current && popover && !popover.contains(e.target)) closePopover();
     }, true);
+
+    window.CheckStockTableFilter = {
+        refresh: function (table) {
+            if (!table) return;
+            closePopover();
+            table.querySelectorAll('thead th[data-filter-column]').forEach(function (th) {
+                if (th.classList.contains('col-filler') || th.querySelector('.tf-th-inner')) return;
+                buildHeaderButton(th, table, Number(th.getAttribute('data-filter-column')));
+            });
+            buildToolbar(table);
+            applyAllFilters(table);
+        }
+    };
 })();

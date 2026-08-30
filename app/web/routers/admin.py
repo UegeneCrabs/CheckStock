@@ -7,8 +7,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
 
-from app import auth, db
+from app import access_notifications, auth, db
+from app.access_control import PROFILE_LABELS, profile_label, scope_pairs
+from app.domain import MARKETPLACES
 from app.dto.identity import (
+    AccessProfile,
     ActivityCommand,
     ActivityLog,
     ActivityLogQuery,
@@ -17,6 +20,7 @@ from app.dto.identity import (
     CreateUserCommand,
     CreateUserForm,
     LoginQuery,
+    MarketplaceAccessScope,
     PasswordHashRequest,
     PermissionName,
     Role,
@@ -35,6 +39,7 @@ from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
 from app.section_access import SECTION_LABELS, access_level
 from app.stores import STORES
+from app.sync_tracking import run_tracked
 from app.wb import catalog as wb_catalog
 from app.wb import sync as wb_sync
 from app.web.access import accessible_store_slugs, has_store_access
@@ -55,6 +60,40 @@ def _activity(actor: User, action: str, details: str) -> ActivityCommand:
         details=details,
         created_at=datetime.now(UTC),
     )
+
+
+def _create_user_validation_error(error: ValidationError) -> tuple[str, str]:
+    issue = error.errors()[0] if error.errors() else {}
+    field = str((issue.get("loc") or ("form",))[-1])
+    labels = {
+        "full_name": "ФИО",
+        "google_email": "электронная почта",
+        "login": "логин",
+        "password": "пароль",
+        "role": "роль",
+        "store_slugs": "кабинеты",
+    }
+    issue_type = str(issue.get("type") or "")
+    if field == "login" and issue_type == "string_pattern_mismatch":
+        message = "Логин: используйте только латинские буквы, цифры и символы . _ @ + -"
+    elif field == "password" and issue_type == "string_too_short":
+        message = "Пароль: нужно не меньше 8 символов"
+    elif issue_type in {"missing", "string_too_short", "too_short"}:
+        message = f"Поле «{labels.get(field, field)}» обязательно"
+    elif field == "role":
+        message = "Выберите допустимую роль сотрудника"
+    else:
+        message = f"Проверьте поле «{labels.get(field, field)}»"
+    return field, message
+
+
+def _access_policy_error_field(message: str) -> str:
+    normalized = message.casefold()
+    if "маркетплейс" in normalized or "площадк" in normalized:
+        return "marketplaces"
+    if "кабинет" in normalized:
+        return "stores"
+    return "access_profile"
 
 
 def _guard_user_action(actor: User, target: User | None, what: str) -> str | None:
@@ -295,6 +334,107 @@ async def admin_update_user_role(
     return JSONResponse({"ok": True, "role": new_role.value})
 
 
+@router.post("/admin/users/{user_id}/access-policy")
+async def admin_update_user_access_policy(
+    request: Request,
+    user_id: int,
+    identities: IdentityServiceDependency,
+):
+    actor = request.state.user
+    if not auth.has_role(actor, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    target = await run_in_threadpool(identities.get_user, UserId(user_id))
+    error = _guard_user_action(actor, target, "изменять должность и площадки")
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    form = await request.form()
+    profile, store_slugs, scopes, policy_error = _access_policy_from_form(actor, form)
+    if policy_error:
+        return JSONResponse(
+            {
+                "ok": False,
+                "field": _access_policy_error_field(policy_error),
+                "error": policy_error,
+            },
+            status_code=400,
+        )
+    if profile is None and not store_slugs:
+        return JSONResponse(
+            {"ok": False, "error": "для старой модели прав выберите хотя бы один кабинет"},
+            status_code=400,
+        )
+    scope_labels = ", ".join(f"{STORES[item.store_slug].name}/{item.marketplace}" for item in scopes)
+    command = AuditedUserMutation(
+        kind=UserMutationKind.ACCESS_POLICY,
+        user_id=user_id,
+        access_profile=profile,
+        access_scopes=scopes,
+        activity=_activity(
+            actor,
+            "Изменён должностной профиль сотрудника",
+            f"{target.full_name}: {profile_label(profile, tuple(item.marketplace for item in scopes))}"
+            + (f" · {scope_labels}" if scope_labels else ""),
+        ),
+    )
+    await run_in_threadpool(identities.mutate_user, command)
+    if profile is None and tuple(target.store_slugs) != tuple(store_slugs):
+        await run_in_threadpool(
+            identities.mutate_user,
+            AuditedUserMutation(
+                kind=UserMutationKind.STORES,
+                user_id=user_id,
+                store_slugs=store_slugs,
+                activity=_activity(
+                    actor,
+                    "Изменён доступ сотрудника к кабинетам",
+                    f"{target.full_name}: {', '.join(STORES[slug].name for slug in store_slugs)}",
+                ),
+            ),
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.post("/admin/access-requests/{request_id}/decision")
+async def admin_decide_access_request(
+    request: Request,
+    request_id: int,
+    approved: str = Form(...),
+    note: str = Form("", max_length=500),
+):
+    actor = request.state.user
+    if not auth.has_role(actor, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    is_approved = approved.strip().lower() in {"1", "true", "yes", "on"}
+    result = await run_in_threadpool(
+        db.decide_access_request,
+        request_id,
+        approved=is_approved,
+        decided_by_user_id=actor.id,
+        decision_note=note,
+    )
+    if result is None:
+        return JSONResponse({"ok": False, "error": "запрос не найден"}, status_code=404)
+    if result.get("status") not in {"approved", "rejected"}:
+        return JSONResponse({"ok": False, "error": "запрос уже обработан"}, status_code=409)
+    await run_in_threadpool(access_notifications.notify_request_decided, result)
+    return JSONResponse({"ok": True, "request": result})
+
+
+@router.post("/admin/access-grants/{grant_id}/revoke")
+async def admin_revoke_access_grant(request: Request, grant_id: int):
+    actor = request.state.user
+    if not auth.has_role(actor, "superadmin"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    revoked = await run_in_threadpool(
+        db.revoke_access_grant,
+        grant_id,
+        revoked_by_user_id=actor.id,
+    )
+    if not revoked:
+        return JSONResponse({"ok": False, "error": "разрешение не найдено или уже отозвано"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 @router.post("/admin/users/{user_id}/sections")
 async def admin_update_user_sections(
     request: Request,
@@ -366,6 +506,63 @@ def render_role_options(actor: User) -> str:
     )
 
 
+def render_profile_options(selected: AccessProfile | None = None) -> str:
+    legacy_selected = " selected" if selected is None else ""
+    options = [f'<option value=""{legacy_selected}>Без должностного профиля (старые права)</option>']
+    options.extend(
+        f'<option value="{profile.value}"{" selected" if profile is selected else ""}>'
+        f"{html.escape(label)}</option>"
+        for profile, label in PROFILE_LABELS.items()
+    )
+    return "".join(options)
+
+
+def render_marketplace_checkboxes(selected: tuple[str, ...] = ()) -> str:
+    selected_set = set(selected)
+    return '<div class="u-store-grid">' + "".join(
+        '<label class="u-store-option">'
+        f'<input type="checkbox" name="marketplaces" value="{html.escape(marketplace)}"'
+        f'{" checked" if marketplace in selected_set else ""}>'
+        f"<span>{html.escape(marketplace)}</span></label>"
+        for marketplace in MARKETPLACES
+    ) + "</div>"
+
+
+def _access_policy_from_form(
+    actor: User,
+    form,
+) -> tuple[AccessProfile | None, tuple[str, ...], tuple[MarketplaceAccessScope, ...], str | None]:
+    profile_raw = str(form.get("access_profile") or "").strip()
+    try:
+        profile = AccessProfile(profile_raw) if profile_raw else None
+    except ValueError:
+        return None, (), (), "неизвестный должностной профиль"
+    store_slugs = normalize_admin_store_selection(actor, tuple(form.getlist("stores")))
+    marketplaces = tuple(
+        marketplace
+        for marketplace in MARKETPLACES
+        if marketplace in {str(value).strip().upper() for value in form.getlist("marketplaces")}
+    )
+    if profile is None:
+        return None, store_slugs, (), None
+    if not store_slugs:
+        return None, (), (), "выберите хотя бы один кабинет"
+    if not marketplaces:
+        return None, (), (), "выберите хотя бы один маркетплейс"
+    if profile in {
+        AccessProfile.MARKETPLACE_MANAGER,
+        AccessProfile.SENIOR_MARKETPLACE_MANAGER,
+        AccessProfile.MARKETPLACE_LEAD,
+    } and len(marketplaces) != 1:
+        return None, (), (), "для этой должности нужно выбрать ровно один маркетплейс"
+    scopes = tuple(
+        MarketplaceAccessScope(store_slug=store_slug, marketplace=marketplace)
+        for store_slug in store_slugs
+        for marketplace in marketplaces
+    )
+    return profile, store_slugs, scopes, None
+
+
 def render_user_role_options(user: User) -> str:
     return "".join(
         f'<option value="{role.value}"{" selected" if user.role is role else ""}>'
@@ -397,6 +594,17 @@ def render_store_badges(store_slugs: tuple[str, ...]) -> str:
     if not slugs:
         return '<span class="u-note">—</span>'
     return "".join(f'<span class="u-store-badge">{html.escape(STORES[slug].name)}</span>' for slug in slugs)
+
+
+def render_scope_badges(scopes: tuple[MarketplaceAccessScope, ...]) -> str:
+    if not scopes:
+        return '<span class="u-note">Нет назначенных площадок</span>'
+    return "".join(
+        f'<span class="u-store-badge">{html.escape(STORES[scope.store_slug].name)} · '
+        f"{html.escape(scope.marketplace)}</span>"
+        for scope in scopes
+        if scope.store_slug in STORES
+    )
 
 
 def render_store_checkboxes(
@@ -434,12 +642,20 @@ def render_user_rows(actor: User, users: UserCollection) -> str:
 
         can_edit = auth.can_edit_stock(user)
         edit_status = (
-            '<span class="u-status u-status--on">разрешены</span>'
-            if can_edit
-            else '<span class="u-status u-status--off">запрещены</span>'
+            '<span class="u-status u-status--on">по должности</span>'
+            if user.access_profile is not None
+            else (
+                '<span class="u-status u-status--on">разрешены</span>'
+                if can_edit
+                else '<span class="u-status u-status--off">запрещены</span>'
+            )
         )
         if can_manage_user(actor, user):
-            store_cell = render_store_checkboxes(actor, user.store_slugs)
+            store_cell = (
+                render_scope_badges(user.access_scopes)
+                if user.access_profile is not None
+                else render_store_checkboxes(actor, user.store_slugs)
+            )
             superadmin_controls = ""
             stock_control = (
                 f'<button type="button" class="u-act u-act--stock">'
@@ -454,18 +670,34 @@ def render_user_rows(actor: User, users: UserCollection) -> str:
                     "</div>"
                 )
                 if user.role is not Role.SUPERADMIN:
+                    if user.access_profile is None:
+                        superadmin_controls += (
+                            f'<button type="button" class="u-act u-act--sections" data-section-access="'
+                            f'{html.escape(json.dumps(permissions, ensure_ascii=False), quote=True)}">'
+                            "Права доступа</button>"
+                        )
+                    selected_marketplaces = tuple(
+                        dict.fromkeys(scope.marketplace for scope in user.access_scopes)
+                    )
                     superadmin_controls += (
-                        f'<button type="button" class="u-act u-act--sections" data-section-access="'
-                        f'{html.escape(json.dumps(permissions, ensure_ascii=False), quote=True)}">'
-                        "Права доступа</button>"
+                        '<button type="button" class="u-act u-act--access-policy" '
+                        f'data-access-profile="{user.access_profile.value if user.access_profile else ""}" '
+                        f'data-access-stores="{html.escape(json.dumps(list(user.store_slugs)), quote=True)}" '
+                        f'data-access-marketplaces="{html.escape(json.dumps(list(selected_marketplaces)), quote=True)}">'
+                        "Должность и площадки</button>"
                     )
                 stock_control = ""
+            store_control = (
+                ""
+                if user.access_profile is not None
+                else '<button type="button" class="u-act u-act--stores">Сохранить доступ</button>'
+            )
             actions = (
                 f'<div class="u-actions" data-user-id="{user.id}" '
                 f'data-user-name="{html.escape(user.full_name, quote=True)}" '
                 f'data-active="{"1" if active else "0"}" '
                 f'data-can-edit="{"1" if can_edit else "0"}">'
-                '<button type="button" class="u-act u-act--stores">Сохранить доступ</button>'
+                f"{store_control}"
                 '<button type="button" class="u-act u-act--reset">Сбросить пароль</button>'
                 f'<button type="button" class="u-act u-act--toggle">{"Заблокировать" if active else "Разблокировать"}</button>'
                 f"{stock_control}"
@@ -485,12 +717,60 @@ def render_user_rows(actor: User, users: UserCollection) -> str:
             f"<td>{html.escape(user.full_name)}</td>"
             f"<td>{html.escape(user.google_email)}</td>"
             f"<td>{html.escape(user.login)}</td>"
-            f"<td>{html.escape(ROLE_LABELS[user.role])}</td>"
+            f"<td>{html.escape(ROLE_LABELS[user.role])}<small class=\"usage-login\">"
+            f"{html.escape(profile_label(user.access_profile, tuple(scope.marketplace for scope in user.access_scopes)))}</small></td>"
             f"<td>{status}</td>"
             f"<td>{edit_status}</td>"
             f"<td>{store_cell}</td>"
             f"<td>{actions}</td>"
             "</tr>"
+        )
+    return "".join(rows)
+
+
+def render_access_request_rows(requests: list[dict]) -> str:
+    if not requests:
+        return '<tr class="empty-row"><td colspan="7">Запросов доступа пока нет</td></tr>'
+    permission_labels = {
+        "stock.transfer.cross_marketplace": "Перемещение на чужую площадку",
+        "stock.transfer.receive": "Приёмка перемещения между ФФ",
+        "stock.transfer.cancel": "Отмена перемещения между ФФ",
+        "stock.receive.create": "Добавление стока",
+        "stock.transfer.create": "Перемещение стока",
+        "stock.shipment.create": "Отгрузка",
+        "stock.writeoff.create": "Списание",
+    }
+    rows = []
+    for item in requests:
+        status = str(item.get("status") or "pending")
+        destination = str(item.get("source_marketplace") or "")
+        if item.get("target_marketplace"):
+            destination += f" → {item['target_marketplace']}"
+        controls = '<span class="u-note">—</span>'
+        if status == "pending":
+            controls = (
+                f'<div class="access-request-actions" data-request-id="{item["id"]}">'
+                '<button type="button" class="u-act access-request-approve">Разрешить на 7 дней</button>'
+                '<button type="button" class="u-act access-request-reject">Отклонить</button></div>'
+            )
+        elif status == "approved" and item.get("grant_id") and not item.get("revoked_at"):
+            controls = (
+                f'<button type="button" class="u-act access-grant-revoke" data-grant-id="{item["grant_id"]}">'
+                "Отозвать</button>"
+            )
+        status_label = {"pending": "ожидает", "approved": "разрешён", "rejected": "отклонён"}.get(
+            status, status
+        )
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(format_dt(str(item.get('created_at') or '')))}</td>"
+            f"<td>{html.escape(str(item.get('user_name') or ''))}</td>"
+            f"<td>{html.escape(STORES.get(str(item.get('store_slug')), {}).get('name', str(item.get('store_slug') or '')))}</td>"
+            f"<td>{html.escape(destination)}</td>"
+            f"<td>{html.escape(permission_labels.get(str(item.get('permission')), str(item.get('permission') or '')))}</td>"
+            f"<td><span class=\"u-status u-status--{'on' if status == 'approved' else 'off'}\">{html.escape(status_label)}</span>"
+            f"<small class=\"usage-login\">{html.escape(str(item.get('reason') or ''))}</small></td>"
+            f"<td>{controls}</td></tr>"
         )
     return "".join(rows)
 
@@ -693,11 +973,20 @@ async def admin_page(request: Request, identities: IdentityServiceDependency):
     users = await run_in_threadpool(identities.list_users)
     activity = await run_in_threadpool(identities.get_activity, ActivityLogQuery())
     log_rows = await run_in_threadpool(render_log_rows, user, activity)
+    access_requests = (
+        await run_in_threadpool(db.list_access_requests, None, 200)
+        if auth.has_role(user, "superadmin")
+        else []
+    )
     content = fill_template(
         "admin_content.html",
         role_options=render_role_options(user),
+        profile_options=render_profile_options(),
+        marketplace_options=render_marketplace_checkboxes(),
         store_options=render_store_checkboxes(user, disabled=read_only),
         user_rows=render_user_rows(user, users),
+        access_request_rows=render_access_request_rows(access_requests),
+        access_requests_hidden="" if auth.has_role(user, "superadmin") else " hidden",
         log_rows=log_rows,
         create_hint=(
             '<p class="panel-desc panel-desc--warn">Режим просмотра: '
@@ -719,6 +1008,18 @@ async def download_operation(request: Request, operation_id: int):
     operation = await run_in_threadpool(db.get_operation, operation_id)
     if operation is not None and not has_store_access(request.state.user, operation["store_slug"]):
         raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
+    if operation is not None:
+        allowed_pairs = set(scope_pairs(request.state.user))
+        operation_marketplaces = {
+            str(value)
+            for value in (operation.get("from_marketplace"), operation.get("to_marketplace"))
+            if value
+        }
+        if operation_marketplaces and not any(
+            (str(operation["store_slug"]), marketplace) in allowed_pairs
+            for marketplace in operation_marketplaces
+        ):
+            raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
     try:
         content, filename = await run_in_threadpool(ff_export.build_operation_xlsx, operation_id)
@@ -745,7 +1046,18 @@ async def admin_create_user(
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
     form = await request.form()
-    store_slugs = normalize_admin_store_selection(actor, tuple(form.getlist("stores")))
+    access_profile, store_slugs, access_scopes, policy_error = _access_policy_from_form(actor, form)
+    if policy_error:
+        return JSONResponse(
+            {
+                "ok": False,
+                "field": _access_policy_error_field(policy_error),
+                "error": policy_error,
+            },
+            status_code=400,
+        )
+    if not store_slugs:
+        return JSONResponse({"ok": False, "error": "выберите хотя бы один кабинет"}, status_code=400)
     try:
         payload = CreateUserForm(
             full_name=str(form.get("full_name") or ""),
@@ -754,9 +1066,15 @@ async def admin_create_user(
             password=str(form.get("password") or ""),
             role=str(form.get("role") or ""),
             store_slugs=store_slugs,
+            access_profile=access_profile,
+            access_scopes=access_scopes,
         )
-    except ValidationError:
-        return JSONResponse({"ok": False, "error": "проверьте заполнение полей"}, status_code=400)
+    except ValidationError as error:
+        field, message = _create_user_validation_error(error)
+        return JSONResponse(
+            {"ok": False, "field": field, "error": message},
+            status_code=400,
+        )
     if payload.role not in creatable_roles(actor):
         return JSONResponse(
             {"ok": False, "error": "у вас нет прав заводить сотрудников с этой ролью"},
@@ -767,7 +1085,10 @@ async def admin_create_user(
         LoginQuery(login=payload.login),
     )
     if existing is not None:
-        return JSONResponse({"ok": False, "error": "такой логин уже занят"}, status_code=400)
+        return JSONResponse(
+            {"ok": False, "field": "login", "error": "Такой логин уже занят"},
+            status_code=400,
+        )
     password_hash = await run_in_threadpool(
         container.passwords.hash,
         PasswordHashRequest(password=payload.password),
@@ -781,6 +1102,8 @@ async def admin_create_user(
         role=payload.role,
         created_at=created_at,
         store_slugs=payload.store_slugs,
+        access_profile=payload.access_profile,
+        access_scopes=payload.access_scopes,
     )
     store_labels = ", ".join(STORES[slug].name for slug in payload.store_slugs)
     command = AuditedCreateUser(
@@ -788,7 +1111,9 @@ async def admin_create_user(
         activity=_activity(
             actor,
             "Создан сотрудник",
-            f"{payload.full_name} ({payload.login}), роль: {ROLE_LABELS[payload.role]}, кабинеты: {store_labels}",
+            f"{payload.full_name} ({payload.login}), роль: {ROLE_LABELS[payload.role]}, "
+            f"должность: {profile_label(payload.access_profile, tuple(scope.marketplace for scope in payload.access_scopes))}, "
+            f"кабинеты: {store_labels}",
         ),
     )
     await run_in_threadpool(identities.create_user_with_activity, command)
@@ -797,25 +1122,44 @@ async def admin_create_user(
 
 @router.post("/admin/sync-stock")
 async def sync_stock(request: Request):
-    if not auth.has_role(request.state.user, "admin"):
+    actor = request.state.user
+    if (
+        not auth.has_role(actor, "admin")
+        or access_level(actor, SectionName.STOCK) is not SectionAccessLevel.WRITE
+    ):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
-    wb_catalog_report = await run_in_threadpool(wb_catalog.sync_all)
-    report = await run_in_threadpool(wb_sync.sync_all)
+    store_slugs = accessible_store_slugs(actor)
+    def sync_catalogs():
+        return (
+            wb_catalog.sync_all(store_slugs),
+            ozon_catalog.sync_all(store_slugs),
+            ya_catalog.sync_all(store_slugs),
+        )
+
+    def sync_stocks():
+        return (
+            wb_sync.sync_all(store_slugs),
+            ozon_sync.sync_all(store_slugs),
+            ya_sync.sync_all(store_slugs),
+        )
+
+    wb_catalog_report, catalog_report, ya_catalog_report = await run_in_threadpool(
+        run_tracked, "catalog_sync", "manual", sync_catalogs
+    )
+    report, ozon_report, ya_report = await run_in_threadpool(
+        run_tracked, "stock_sync", "manual", sync_stocks
+    )
     for slug, entry in wb_catalog_report.items():
         if slug in report:
             report[slug]["wb_catalog"] = entry
 
-    catalog_report = await run_in_threadpool(ozon_catalog.sync_all)
-    ozon_report = await run_in_threadpool(ozon_sync.sync_all)
     for slug, entry in ozon_report.items():
         if slug in report:
             report[slug]["ozon"] = entry.get("ozon")
             report[slug]["ozon_token"] = entry.get("token")
             report[slug]["ozon_catalog"] = catalog_report.get(slug)
 
-    ya_catalog_report = await run_in_threadpool(ya_catalog.sync_all)
-    ya_report = await run_in_threadpool(ya_sync.sync_all)
     for slug, entry in ya_report.items():
         if slug in report:
             report[slug]["yandex"] = entry.get("yandex")

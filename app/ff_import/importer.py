@@ -1,6 +1,8 @@
 import csv
+import hashlib
 import html
 import io
+import json
 import re
 import urllib.error
 import urllib.request
@@ -17,6 +19,10 @@ REQUEST_TIMEOUT = settings.ff_import_timeout_seconds
 
 
 class FFImportError(Exception):
+    pass
+
+
+class FFImportConfirmationError(FFImportError):
     pass
 
 
@@ -257,6 +263,8 @@ def _apply_entries(
     sheet_url: str | None,
     table_title: str,
     negative_skipped: list[tuple[str, str, int]] | None = None,
+    preview: bool = False,
+    confirmation_token: str | None = None,
 ) -> dict:
     table_title = (table_title or "").strip() or "(без названия)"
     negative_skipped = negative_skipped or []
@@ -275,6 +283,7 @@ def _apply_entries(
 
     resolved: dict[str, int] = {}
     unmatched = 0
+    unmatched_quantity = 0
 
     for barcode, article, quantity in entries:
         target_article = by_barcode.get(barcode)
@@ -282,6 +291,7 @@ def _apply_entries(
             target_article = article
         if target_article is None:
             unmatched += 1
+            unmatched_quantity += quantity
             continue
 
         resolved[target_article] = resolved.get(target_article, 0) + quantity
@@ -291,23 +301,90 @@ def _apply_entries(
         for barcode, article, quantity in negative_skipped
     ]
 
-    now = _now()
     source_key = _source_key(source_type, sheet_url, table_title)
-    with db.WRITE_LOCK:
-        previous = db.apply_ff_import_snapshot(
+    source_quantity = sum(quantity for _barcode, _article, quantity in entries)
+
+    def calculate(previous: dict[str, int]) -> dict:
+        report = _build_import_report(
+            resolved,
+            previous,
+            meta_by_article,
+            table_title=table_title,
+            total_rows=len(entries),
+            source_quantity=source_quantity,
+            unmatched=unmatched,
+            unmatched_quantity=unmatched_quantity,
+            negative_skipped=skipped_labels,
+        )
+        report["confirmation_token"] = _confirmation_token(
             store_slug,
             fulfillment,
             marketplace,
             source_type,
             source_key,
             resolved,
-            now,
+            previous,
+            source_quantity,
+            unmatched_quantity,
+        )
+        return report
+
+    if preview:
+        previous = db.get_ff_import_snapshot(
+            store_slug,
+            fulfillment,
+            marketplace,
+            source_type,
+            source_key,
+            sheet_url=sheet_url,
+            table_title=table_title,
+        )
+        return calculate(previous) | {"preview": True}
+
+    with db.WRITE_LOCK:
+        previous = db.get_ff_import_snapshot(
+            store_slug,
+            fulfillment,
+            marketplace,
+            source_type,
+            source_key,
+            sheet_url=sheet_url,
+            table_title=table_title,
+        )
+        report = calculate(previous)
+        if confirmation_token is not None and confirmation_token != report["confirmation_token"]:
+            raise FFImportConfirmationError(
+                "Расчёт изменился после проверки. Сток не внесён — проверьте цифры ещё раз."
+            )
+        db.apply_ff_import_snapshot(
+            store_slug,
+            fulfillment,
+            marketplace,
+            source_type,
+            source_key,
+            resolved,
+            _now(),
             sheet_url=sheet_url,
             table_title=table_title,
             total_rows=len(entries),
             unmatched=unmatched,
         )
+    report.pop("confirmation_token", None)
+    return report
 
+
+def _build_import_report(
+    resolved: dict[str, int],
+    previous: dict[str, int],
+    meta_by_article: dict[str, dict],
+    *,
+    table_title: str,
+    total_rows: int,
+    source_quantity: int,
+    unmatched: int,
+    unmatched_quantity: int,
+    negative_skipped: list[dict],
+) -> dict:
     new_items = []
     increased = []
     unchanged = []
@@ -344,13 +421,15 @@ def _apply_entries(
         for article, quantity in previous.items()
         if article not in resolved
     ]
-
     return {
-        "total_rows": len(entries),
+        "total_rows": total_rows,
+        "source_quantity": source_quantity,
+        "matched_source_quantity": sum(resolved.values()),
         "matched": len(resolved),
         "unmatched": unmatched,
+        "unmatched_quantity": unmatched_quantity,
         "table_title": table_title,
-        "negative_skipped": skipped_labels,
+        "negative_skipped": negative_skipped,
         "applied": len(applied_items),
         "added_quantity": sum(int(item["quantity"]) for item in applied_items),
         "new_items": new_items,
@@ -362,6 +441,31 @@ def _apply_entries(
     }
 
 
+def _confirmation_token(
+    store_slug: str,
+    fulfillment: str,
+    marketplace: str,
+    source_type: str,
+    source_key: str,
+    resolved: dict[str, int],
+    previous: dict[str, int],
+    source_quantity: int,
+    unmatched_quantity: int,
+) -> str:
+    payload = json.dumps(
+        {
+            "target": [store_slug, fulfillment, marketplace, source_type, source_key],
+            "resolved": sorted(resolved.items()),
+            "previous": sorted(previous.items()),
+            "source_quantity": source_quantity,
+            "unmatched_quantity": unmatched_quantity,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _source_key(source_type: str, sheet_url: str | None, table_title: str) -> str:
     if source_type == "sheet" and sheet_url:
         sheet_id, gid = _parse_sheet_id_and_gid(sheet_url)
@@ -370,7 +474,13 @@ def _source_key(source_type: str, sheet_url: str | None, table_title: str) -> st
 
 
 def import_ff_stock_from_sheet(
-    store_slug: str, fulfillment: str, sheet_url: str, marketplace: str = db.DEFAULT_MARKETPLACE
+    store_slug: str,
+    fulfillment: str,
+    sheet_url: str,
+    marketplace: str = db.DEFAULT_MARKETPLACE,
+    *,
+    preview: bool = False,
+    confirmation_token: str | None = None,
 ) -> dict:
 
     try:
@@ -388,6 +498,8 @@ def import_ff_stock_from_sheet(
         sheet_url=sheet_url,
         table_title=table_title,
         negative_skipped=negative_skipped,
+        preview=preview,
+        confirmation_token=confirmation_token,
     )
 
 
@@ -397,6 +509,9 @@ def import_ff_stock_from_xlsx(
     file_bytes: bytes,
     file_name: str = "",
     marketplace: str = db.DEFAULT_MARKETPLACE,
+    *,
+    preview: bool = False,
+    confirmation_token: str | None = None,
 ) -> dict:
     rows = _parse_xlsx_rows(file_bytes)
     entries, negative_skipped = _rows_to_entries(rows)
@@ -410,4 +525,6 @@ def import_ff_stock_from_xlsx(
         sheet_url=None,
         table_title=table_title,
         negative_skipped=negative_skipped,
+        preview=preview,
+        confirmation_token=confirmation_token,
     )

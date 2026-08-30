@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from app.access_control import (
+    EXPERIMENTAL_SECTIONS,
+    ActionPermission,
+    accessible_marketplaces,
+    is_experimental_owner,
+    profile_has_permission,
+)
 from app.dto.identity import Role, SectionAccessLevel, SectionName, User, coerce_user
 
 SECTION_LABELS: dict[SectionName, str] = {
@@ -7,7 +14,7 @@ SECTION_LABELS: dict[SectionName, str] = {
     SectionName.DECISION_CENTER: "Центр решений",
     SectionName.EPHEMERIDES: "Эфемериды",
     SectionName.RNP: "РНП",
-    SectionName.UNIT_ECONOMICS: "Юнит-экономика",
+    SectionName.UNIT_ECONOMICS_1C: "Юнит-экономика 1С",
     SectionName.SUPPLY: "Снабжение",
     SectionName.STOCK: "Сток · Остатки",
     SectionName.STOCK_OVERVIEW: "Сток · Аналитика остатков",
@@ -18,7 +25,7 @@ SECTION_PATHS: dict[SectionName, str] = {
     SectionName.DECISION_CENTER: "/sales/decision-center",
     SectionName.EPHEMERIDES: "/sales/ephemerides",
     SectionName.RNP: "/sales/rnp",
-    SectionName.UNIT_ECONOMICS: "/sales/unit-economics",
+    SectionName.UNIT_ECONOMICS_1C: "/sales/unit-economics-1c",
     SectionName.SUPPLY: "/supply",
     SectionName.STOCK: "/stock",
     SectionName.STOCK_OVERVIEW: "/stock-2",
@@ -38,8 +45,8 @@ def section_for_path(path: str) -> SectionName | None:
         return SectionName.EPHEMERIDES
     if path.startswith("/api/rnp") or path.startswith("/sales/rnp"):
         return SectionName.RNP
-    if path.startswith("/sales/unit-economics"):
-        return SectionName.UNIT_ECONOMICS
+    if path.startswith("/sales/unit-economics-1c") or path.startswith("/api/unit-economics-1c"):
+        return SectionName.UNIT_ECONOMICS_1C
     if path.startswith("/api/sales") or path.startswith("/sales"):
         return SectionName.SALES
     if path.startswith("/supply"):
@@ -55,8 +62,32 @@ def access_level(user: User | None, section: SectionName) -> SectionAccessLevel:
     user = coerce_user(user)
     if user is None:
         return SectionAccessLevel.NONE
+    if section.value in EXPERIMENTAL_SECTIONS and not is_experimental_owner(user):
+        return SectionAccessLevel.NONE
     if user.role is Role.SUPERADMIN:
         return SectionAccessLevel.WRITE
+    if user.access_profile is not None:
+        if section is SectionName.SALES:
+            return (
+                SectionAccessLevel.READ
+                if profile_has_permission(user, ActionPermission.SALES_VIEW)
+                else SectionAccessLevel.NONE
+            )
+        if section is SectionName.STOCK:
+            return (
+                SectionAccessLevel.WRITE
+                if profile_has_permission(user, ActionPermission.STOCK_BALANCE_VIEW)
+                else SectionAccessLevel.NONE
+            )
+        if section is SectionName.UNIT_ECONOMICS_1C:
+            if "WB" not in accessible_marketplaces(user):
+                return SectionAccessLevel.NONE
+            if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_EDIT):
+                return SectionAccessLevel.WRITE
+            if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW):
+                return SectionAccessLevel.READ
+            return SectionAccessLevel.NONE
+        return SectionAccessLevel.NONE
     configured = user.section_access.get(section)
     if configured is not None:
         return configured
@@ -89,14 +120,17 @@ def active_section(active: str) -> SectionName | None:
         "sales_decision": SectionName.DECISION_CENTER,
         "sales_ephemerides": SectionName.EPHEMERIDES,
         "sales_rnp": SectionName.RNP,
-        "sales_unit": SectionName.UNIT_ECONOMICS,
-        "sales_wb_fbs": SectionName.UNIT_ECONOMICS,
-        "sales_ozon": SectionName.UNIT_ECONOMICS,
-        "sales_yandex": SectionName.UNIT_ECONOMICS,
+        "unit_1c_settings": SectionName.UNIT_ECONOMICS_1C,
+        "unit_1c_wb": SectionName.UNIT_ECONOMICS_1C,
+        "unit_1c_ozon": SectionName.UNIT_ECONOMICS_1C,
+        "unit_1c_yandex": SectionName.UNIT_ECONOMICS_1C,
+        "unit_1c_reports": SectionName.UNIT_ECONOMICS_1C,
         "supply": SectionName.SUPPLY,
         "stock": SectionName.STOCK,
+        "stock_total": SectionName.STOCK,
         "stock2": SectionName.STOCK_OVERVIEW,
         "stock_supplies": SectionName.STOCK,
         "stock_randomizer": SectionName.STOCK,
+        "stock_cost_report": SectionName.STOCK,
     }
     return mapping.get(active)

@@ -1,0 +1,29 @@
+        <link rel="stylesheet" href="/static/stock-cost-report.css?v=4">
+
+        <section class="cost-report-shell">
+            <div class="cost-report-actions">
+                <a class="cost-export" href="$export_url"$export_hidden>Excel · 2 листа</a>
+            </div>
+
+            <form class="cost-filters" method="get" action="/stock/cost-report">
+                <label><span>Начало</span><input type="date" name="date_from" value="$date_from"></label>
+                <label><span>Конец</span><input type="date" name="date_to" value="$date_to"></label>
+                <label><span>Магазин</span><select name="store">$store_options</select></label>
+                <label><span>Маркетплейс</span><select name="marketplace">$marketplace_options</select></label>
+                <button type="submit">Показать</button>
+                <div class="cost-quick-periods">
+                    <a href="$current_week_url">Эта неделя</a>
+                    <a href="$previous_week_url">Прошлая неделя</a>
+                </div>
+            </form>
+
+            <aside class="cost-report-note">
+                <strong>Как считается ЗЦ</strong>
+                <span>Для новых операций фиксируется закупочная цена из 1С на момент проведения × количество. Старые операции без снимка используют текущую ЗЦ и отдельно помечают товары без цены.</span>
+                <strong>Продажи FBS</strong>
+                <span>Основная цифра: остаток FBS перед периодом + перемещения на FBS − остаток FBS в конце периода. Продажи из API маркетплейса показаны рядом только для сверки.</span>
+            </aside>
+
+            <nav class="cost-report-tabs" aria-label="Виды отчёта">$tabs</nav>
+            $detail
+        </section>

@@ -152,12 +152,13 @@ def sync_store(store_slug: str) -> int:
     return covered
 
 
-def sync_all() -> dict:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
 
     report: dict = {}
     active_slugs = []
+    targets = tuple(STORES) if store_slugs is None else store_slugs
 
-    for slug in STORES:
+    for slug in targets:
         if ozon_tokens.has_credentials(slug):
             report[slug] = {"token": True, "ozon": None}
             active_slugs.append(slug)

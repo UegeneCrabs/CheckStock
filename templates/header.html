@@ -1,13 +1,9 @@
-        <aside class="sidebar" id="app-sidebar">
+        <header class="sidebar app-header" id="app-header">
             <div class="sidebar-brand-row">
                 <a class="brand" href="/" aria-label="РАКЕТА — на главную">
                     <span class="brand-mark">Р</span>
                     <span class="brand-label">РАКЕТА</span>
                 </a>
-                <button class="sidebar-collapse" id="sidebar-collapse" type="button"
-                        aria-label="Свернуть боковое меню" aria-pressed="false">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l-6-6 6-6"></path><path d="M3 12h18"></path></svg>
-                </button>
             </div>
 
             <nav class="side-nav" aria-label="Основная навигация">
@@ -19,53 +15,67 @@
 
                 <div class="nav-group $sales_open" data-nav-group$sales_group_hidden>
                     <div class="nav-group-head">
-                        <a class="nav-item $sales_active" href="$sales_href" title="Продажи">
+                        <button class="nav-item nav-group-trigger $sales_active" type="button" title="Продажи"
+                                aria-expanded="$sales_expanded" aria-controls="nav-sales-submenu" data-nav-toggle>
                             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M22 19H2"></path></svg>
                             <span>Продажи</span>
-                        </a>
-                        <button class="nav-group-toggle" type="button" aria-label="Показать разделы продаж" aria-expanded="$sales_expanded" data-nav-toggle>
                             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
                         </button>
                     </div>
-                    <div class="nav-submenu" data-nav-submenu>
+                    <div class="nav-submenu" id="nav-sales-submenu" data-nav-submenu>
                         <a class="nav-subitem $sales_overview_active" href="/sales"$sales_overview_hidden>Обзор продаж</a>
                         <a class="nav-subitem $sales_ephemerides_active" href="/sales/ephemerides"$sales_ephemerides_hidden>Эфемериды</a>
-                        <a class="nav-subitem $sales_rnp_active" href="/sales/rnp"$sales_rnp_hidden>РНП</a>
                     </div>
                 </div>
 
                 <div class="nav-group $stock_open" data-nav-group$stock_group_hidden>
                     <div class="nav-group-head">
-                        <a class="nav-item $stock_group_active" href="$stock_href" title="Сток">
+                        <button class="nav-item nav-group-trigger $stock_group_active" type="button" title="Сток"
+                                aria-expanded="$stock_expanded" aria-controls="nav-stock-submenu" data-nav-toggle>
                             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
                             <span>Сток</span>
-                        </a>
-                        <button class="nav-group-toggle" type="button" aria-label="Показать разделы стока" aria-expanded="$stock_expanded" data-nav-toggle>
                             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
                         </button>
                     </div>
-                    <div class="nav-submenu" data-nav-submenu>
+                    <div class="nav-submenu" id="nav-stock-submenu" data-nav-submenu>
                         <a class="nav-subitem $stock_active" href="/stock"$stock_hidden>Остатки</a>
+                        <a class="nav-subitem $stock_total_active" href="/stock/total"$stock_total_hidden>Остатки Тотал</a>
                         <a class="nav-subitem $stock2_active" href="/stock-2"$stock2_hidden>Аналитика остатков</a>
                         <a class="nav-subitem $stock_supplies_active" href="/stock/supplies"$stock_supplies_hidden>Поставки</a>
                         <a class="nav-subitem $stock_randomizer_active" href="/stock/randomizer"$stock_randomizer_hidden>Рандомайзер</a>
+                        <a class="nav-subitem $stock_cost_report_active" href="/stock/cost-report"$stock_cost_report_hidden>Движение и ЗЦ</a>
                     </div>
                 </div>
 
-                <div class="nav-group $unit_open" data-nav-group$unit_group_hidden>
+                <div class="nav-group $unit_1c_open" data-nav-group$unit_1c_group_hidden>
                     <div class="nav-group-head">
-                        <a class="nav-item $unit_group_active" href="$unit_href" title="Юнит-экономика">
-                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path><path d="M12 8v8"></path></svg>
-                            <span>Юнит-экономика</span>
-                        </a>
-                        <button class="nav-group-toggle" type="button" aria-label="Показать юнит-экономику" aria-expanded="$unit_expanded" data-nav-toggle>
+                        <button class="nav-item nav-group-trigger $unit_1c_group_active" type="button"
+                                title="Юнит-экономика 1С" aria-expanded="$unit_1c_expanded"
+                                aria-controls="nav-unit-1c-submenu" data-nav-toggle>
+                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4Z"></path><path d="M8 9h8"></path><path d="M8 13h3"></path><path d="M14 13h2"></path><path d="M8 17h3"></path><path d="M14 17h2"></path></svg>
+                            <span>Юнит-экономика 1С</span>
                             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
                         </button>
                     </div>
-                    <div class="nav-submenu" data-nav-submenu>
-                        <a class="nav-subitem $sales_wb_fbs_active" href="/sales/unit-economics/wb-fbs">Wildberries</a>
-                        <a class="nav-subitem $sales_ozon_active" href="/sales/unit-economics/ozon">Ozon</a>
-                        <a class="nav-subitem $sales_yandex_active" href="/sales/unit-economics/yandex-market">Яндекс Маркет</a>
+                    <div class="nav-submenu" id="nav-unit-1c-submenu" data-nav-submenu>
+                        <a class="nav-subitem $unit_1c_settings_active" href="/sales/unit-economics-1c/cabinet-settings">Ввод данных по кабинетам</a>
+                        <a class="nav-subitem $unit_1c_wb_active" href="/sales/unit-economics-1c">Wildberries</a>
+                        <a class="nav-subitem $unit_1c_ozon_active" href="/sales/unit-economics-1c/ozon">Ozon</a>
+                        <a class="nav-subitem $unit_1c_yandex_active" href="/sales/unit-economics-1c/yandex-market">Яндекс Маркет</a>
+                    </div>
+                </div>
+
+                <div class="nav-group $reports_open" data-nav-group$reports_group_hidden>
+                    <div class="nav-group-head">
+                        <button class="nav-item nav-group-trigger $reports_group_active" type="button" title="Отчёты"
+                                aria-expanded="$reports_expanded" aria-controls="nav-reports-submenu" data-nav-toggle>
+                            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="m7 15 4-4 3 2 5-6"></path></svg>
+                            <span>Отчёты</span>
+                            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                        </button>
+                    </div>
+                    <div class="nav-submenu" id="nav-reports-submenu" data-nav-submenu>
+                        <a class="nav-subitem $unit_1c_reports_active" href="/sales/unit-economics-1c/reports/unit-profit">Юниточная прибыль</a>
                     </div>
                 </div>
 
@@ -121,4 +131,4 @@
                     </a>
                 </div>
             </div>
-        </aside>
+        </header>

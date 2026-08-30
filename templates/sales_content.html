@@ -2,11 +2,7 @@
                  data-sales-dashboard
                  data-default-from="$default_from"
                  data-default-to="$default_to">
-            <div class="sales-head">
-                <div>
-                    <h2>Продажи по магазинам и схемам</h2>
-                    <p class="page-subtitle">WB, Ozon и Яндекс Маркет · данные кабинетов</p>
-                </div>
+            <div class="sales-head sales-head--compact">
                 <div class="sales-period-badge">
                     <span class="sales-sync-dot" data-sales-sync-dot></span>
                     <div>
@@ -45,9 +41,7 @@
                 <label class="sales-field">
                     <span>Маркетплейс</span>
                     <select class="select-control" name="marketplace">
-                        <option value="WB" selected>Wildberries</option>
-                        <option value="OZON">Ozon</option>
-                        <option value="YANDEX MARKET">Яндекс Маркет</option>
+$sales_marketplace_options
                     </select>
                 </label>
                 <div class="sales-filter-actions">

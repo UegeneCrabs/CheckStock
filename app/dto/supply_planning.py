@@ -11,6 +11,7 @@ class ManualSupplyInput(DtoModel):
     origin: str = Field(min_length=1, max_length=200)
     destination: str = Field(min_length=1, max_length=200)
     supply_type: str = Field(min_length=1, max_length=100)
+    note: str = Field(min_length=1, max_length=500)
     ready: bool = False
 
 
