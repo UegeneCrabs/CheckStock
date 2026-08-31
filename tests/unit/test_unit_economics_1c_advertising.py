@@ -395,9 +395,27 @@ class UnitEconomics1CAdvertisingTests(unittest.TestCase):
             )
 
         self.assertIn("Кабинет TRIS", banner)
-        self.assertIn("из-за доступа у API-ключа", banner)
+        self.assertIn("проверьте права API-ключа WB", banner)
+        self.assertIn("Продвижение", banner)
         self.assertEqual(banner.count("data-system-alert-item"), 2)
         self.assertIn("data-system-alerts", banner)
+
+    def test_transient_advertising_error_is_not_rendered_in_banner(self) -> None:
+        db.record_unit_economics_1c_advertising_sync_state(
+            "tris",
+            status="error",
+            date_from="2026-08-13",
+            date_to="2026-08-19",
+            attempted_at=NOW,
+            rows_saved=0,
+            campaigns_count=0,
+            error="WB 429: rate limit exceeded",
+        )
+        user = {"store_slugs": ["tris"], "role": "admin", "full_name": "Test User"}
+        with mock.patch.object(templating.token_watch, "get_warnings", return_value=[]):
+            banner = templating.render_system_alerts(user)
+
+        self.assertEqual(banner, "")
 
 
 if __name__ == "__main__":

@@ -218,7 +218,7 @@
     border: 1px solid var(--line);
     border-radius: 14px;
     background: var(--card);
-    overflow: hidden;
+    overflow: visible;
 }
 .ue1cr-table-head {
     position: static;
@@ -249,6 +249,7 @@
     background: var(--bg);
 }
 .ue1cr-view-switch button,
+.ue1cr-columns-toggle,
 .ue1cr-daily-toggle {
     min-height: 34px;
     padding: 0 13px;
@@ -261,6 +262,44 @@
     font-weight: 800;
     cursor: pointer;
 }
+.ue1cr-column-settings { position: relative; }
+.ue1cr-column-panel {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 7px);
+    right: 0;
+    width: 280px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 14px 38px rgba(25, 38, 62, .18);
+}
+.ue1cr-column-panel > strong { display: block; margin-bottom: 8px; font-size: 12px; }
+.ue1cr-column-option {
+    min-height: 36px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--line);
+}
+.ue1cr-column-option.is-dragging { opacity: .45; }
+.ue1cr-column-option.is-drag-target { box-shadow: inset 0 2px 0 #6750d8; }
+.ue1cr-column-grip { color: var(--muted); cursor: grab; letter-spacing: -3px; user-select: none; }
+.ue1cr-column-option label { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12px; }
+.ue1cr-column-option label input { width: 15px; height: 15px; margin: 0; accent-color: #6750d8; }
+.ue1cr-column-option button {
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+}
+.ue1cr-column-option button:disabled { opacity: .35; cursor: default; }
 .ue1cr-view-switch button.is-active,
 .ue1cr-daily-toggle.is-active {
     background: #6750d8;
@@ -294,6 +333,23 @@
 .ue1cr-table th,
 .ue1cr-table td {
     padding: 10px 12px;
+}
+.ue1cr-table th[data-report-group="product"] {
+    left: 0;
+    z-index: 6 !important;
+    min-width: 260px;
+    box-shadow: 2px 0 0 var(--line);
+}
+.ue1cr-table tbody td[data-report-group="product"] {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 260px;
+    background: var(--card);
+    box-shadow: 2px 0 0 var(--line);
+}
+.ue1cr-table tbody tr:hover td[data-report-group="product"] {
+    background: color-mix(in srgb, #6750d8 4%, var(--card));
 }
 .ue1cr-table thead .ue1cr-groups th {
     top: 0;
@@ -554,6 +610,7 @@
         margin-left: 0;
     }
     .ue1cr-view-switch,
+    .ue1cr-column-settings,
     .ue1cr-daily-toggle {
         flex: 1 1 auto;
     }

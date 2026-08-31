@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app import (
     db,
+    health,
     unit_economics_1c,
     unit_economics_1c_history,
     unit_economics_1c_prices,
@@ -48,6 +49,7 @@ UNIT_ECONOMICS_COLUMN_GROUPS = (
     "tag",
     "stock",
 )
+UNIT_ECONOMICS_PERIOD_DAYS = (7, 14, 30)
 
 
 def _cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
@@ -853,6 +855,10 @@ def _unit_economics_1c_product_summary(product: dict) -> dict:
             "period_to",
         )
     }
+    summary["price"] = {
+        key: (product.get("price") or {}).get(key)
+        for key in ("current", "with_spp")
+    }
     summary["stock"] = {
         key: (product.get("stock") or {}).get(key)
         for key in (
@@ -900,6 +906,16 @@ def _unit_economics_1c_price_warnings(store_slugs: tuple[str, ...]) -> list[dict
 async def sales_unit_economics_1c(request: Request):
     accessible_store_slugs = accessible_stores(request.state.user, "WB")
     data_request = request.query_params.get("data") == "1"
+    request_today = datetime.now(MOSCOW_TIMEZONE).date()
+    try:
+        requested_period_days = int(request.query_params.get("period_days") or 7)
+    except (TypeError, ValueError):
+        requested_period_days = 7
+    period_days = (
+        requested_period_days
+        if requested_period_days in UNIT_ECONOMICS_PERIOD_DAYS
+        else 7
+    )
     detail_store = (
         str(request.query_params.get("store") or "").strip().lower() if data_request else ""
     )
@@ -912,13 +928,17 @@ async def sales_unit_economics_1c(request: Request):
     def load_products() -> tuple[list[dict], list[dict]]:
         latest_rows = db.get_unit_economics_1c_latest_daily_prices(store_slugs)
         prices = {(str(row["store_slug"]), str(row["article"])): row for row in latest_rows}
-        today = datetime.now(MOSCOW_TIMEZONE).date()
+        today = request_today
         closed_period_to = today - timedelta(days=1)
-        closed_period_from = closed_period_to - timedelta(days=6)
-        history_from = today - timedelta(days=20) if include_history else closed_period_from
+        closed_period_from = closed_period_to - timedelta(days=period_days - 1)
+        history_from = (
+            min(today - timedelta(days=20), closed_period_from)
+            if include_history
+            else closed_period_from
+        )
         metrics = unit_economics_1c.load_product_metrics(
             store_slugs,
-            period_days=7,
+            period_days=period_days,
             today=closed_period_to,
         )
         current_metrics = unit_economics_1c.load_product_metrics(
@@ -1028,7 +1048,7 @@ async def sales_unit_economics_1c(request: Request):
                 period_product_metrics = metrics.get((store_slug, nm_id))
                 if period_product_metrics is None:
                     period_product_metrics = unit_economics_1c.empty_product_metrics(
-                        period_days=7,
+                        period_days=period_days,
                         today=closed_period_to,
                     )
                 current_product_metrics = current_metrics.get((store_slug, nm_id))
@@ -1191,6 +1211,11 @@ async def sales_unit_economics_1c(request: Request):
                 "ok": True,
                 "products": [_unit_economics_1c_product_summary(item) for item in products],
                 "warnings": price_warnings,
+                "period_days": period_days,
+                "period_from": (
+                    request_today - timedelta(days=period_days)
+                ).isoformat(),
+                "period_to": (request_today - timedelta(days=1)).isoformat(),
             }
         )
 
@@ -1200,14 +1225,14 @@ async def sales_unit_economics_1c(request: Request):
     )
     price_alerts = [
         {
-            "title": (
-                f"Кабинет {warning['store_name']}: использована резервная цена"
-                if warning["status"] == "fallback"
-                else f"Кабинет {warning['store_name']}: цены не обновились"
+            "title": f"Кабинет {warning['store_name']}: проверьте права API-ключа WB",
+            "text": (
+                "Цены не обновляются. Добавьте ключу доступ к разделу «Цены и скидки» "
+                "или замените ключ, затем повторите выгрузку."
             ),
-            "text": warning["message"],
         }
         for warning in price_warnings
+        if health.requires_team_action(warning["message"])
     ]
     unit_config = {
         "userKey": str(request.state.user["id"]),
@@ -1228,6 +1253,7 @@ async def sales_unit_economics_1c(request: Request):
         ],
         "products": [],
         "productsEndpoint": "/sales/unit-economics-1c?data=1",
+        "periodDays": 7,
         "subjectCommissions": [],
         "commissionsEndpoint": "/sales/unit-economics-1c?data=1&commissions=1",
         "canEdit": has_section_access(
@@ -1778,6 +1804,10 @@ def _aggregate_report_daily_calculations(rows: list[dict]) -> list[dict]:
 
 def _unit_profit_report_totals(rows: list[dict]) -> dict:
     margin_complete = all(bool(row.get("margin_complete")) for row in rows)
+    margin_rows = [row for row in rows if row.get("margin") is not None]
+    purchase_rows = [row for row in rows if row.get("purchase_value") is not None]
+    margin_available = bool(margin_rows) or not rows
+    purchase_available = bool(purchase_rows) or not rows
     totals = {
         "orders_count": sum(int(row.get("orders_count") or 0) for row in rows),
         "orders_amount": round(sum(float(row.get("orders_amount") or 0) for row in rows), 2),
@@ -1808,8 +1838,8 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
             2,
         ),
         "margin": (
-            round(sum(float(row.get("margin") or 0) for row in rows), 2)
-            if margin_complete
+            round(sum(float(row["margin"]) for row in margin_rows), 2)
+            if margin_available
             else None
         ),
         "margin_orders_count": round(
@@ -1817,8 +1847,8 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
             2,
         ),
         "purchase_value": (
-            round(sum(float(row.get("purchase_value") or 0) for row in rows), 2)
-            if margin_complete
+            round(sum(float(row["purchase_value"]) for row in purchase_rows), 2)
+            if purchase_available
             else None
         ),
         "margin_complete": margin_complete,
@@ -1863,9 +1893,9 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
     )
     totals["roi"] = (
         round(float(totals["margin"]) / float(totals["purchase_value"]) * 100, 2)
-        if margin_complete and totals["purchase_value"]
+        if totals["margin"] is not None and totals["purchase_value"]
         else 0.0
-        if margin_complete
+        if totals["margin"] is not None
         else None
     )
     return totals

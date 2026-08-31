@@ -22,8 +22,13 @@ SCOPES = {
 ACCESS_ERROR_MARKERS = (
     "нет доступа",
     "доступ запрещён",
+    "не хватает прав",
+    "ключ отозван",
+    "api_disabled",
     "ошибка 401",
     "ошибка 403",
+    " 401",
+    " 403",
 )
 
 
@@ -87,16 +92,13 @@ def has_token(marketplace: str, store_slug: str) -> bool:
     return False
 
 
-def _is_access_error(row: dict) -> bool:
-    error = str(row.get("error") or "").casefold()
+def requires_team_action(message: object) -> bool:
+    error = str(message or "").casefold()
     return any(marker in error for marker in ACCESS_ERROR_MARKERS)
 
 
-def _sync_problem_detail(rows: list[dict]) -> str:
-    errors = list(dict.fromkeys(str(row.get("error") or "").strip() for row in rows))
-    errors = [error.rstrip(".") for error in errors if error]
-    prefix = "; ".join(errors) if errors else "Маркетплейс временно не вернул данные"
-    return f"{prefix}. Отображаются ранее загруженные данные."
+def _is_access_error(row: dict) -> bool:
+    return requires_team_action(row.get("error"))
 
 
 def store_problems(store_slug: str) -> list[dict]:
@@ -108,6 +110,19 @@ def store_problems(store_slug: str) -> list[dict]:
         title = TITLES.get(marketplace, marketplace)
 
         if not has_token(marketplace, store_slug):
+            if is_listed(marketplace, store_slug):
+                problems.append(
+                    {
+                        "marketplace": marketplace,
+                        "title": title,
+                        "kind": "invalid",
+                        "status": "Нужно проверить API-ключ: ключ не заполнен или недействителен.",
+                        "detail": (
+                            "Обновите ключ в настройках интеграции и повторите выгрузку. "
+                            "До исправления показываем ранее загруженные данные."
+                        ),
+                    }
+                )
             continue
 
         stock_scopes = SCOPES.get(marketplace, {})
@@ -122,28 +137,21 @@ def store_problems(store_slug: str) -> list[dict]:
         if not rows:
             continue
 
-        broken = [stock_scopes[row["scope"]] for row in rows]
-
-        access_error = all(_is_access_error(row) for row in rows)
-        partial = len(broken) < len(stock_scopes)
-        if access_error:
-            status = (
-                f"Ключ недействителен для раздела «{', '.join(broken)}»."
-                if partial
-                else "Ключ недействителен."
-            )
-            detail = "Данные по площадке не обновляются."
-            kind = "invalid"
-        else:
-            status = f"Не удалось обновить раздел «{', '.join(broken)}»."
-            detail = _sync_problem_detail(rows)
-            kind = "sync"
+        actionable_rows = [row for row in rows if _is_access_error(row)]
+        if not actionable_rows:
+            continue
+        broken = list(dict.fromkeys(stock_scopes[row["scope"]] for row in actionable_rows))
+        status = f"Нужно проверить права API-ключа для раздела «{', '.join(broken)}»."
+        detail = (
+            "Добавьте ключу доступ к этому разделу или замените ключ, затем повторите выгрузку. "
+            "До исправления показываем ранее загруженные данные."
+        )
 
         problems.append(
             {
                 "marketplace": marketplace,
                 "title": title,
-                "kind": kind,
+                "kind": "invalid",
                 "status": status,
                 "detail": detail,
             }

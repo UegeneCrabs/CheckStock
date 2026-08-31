@@ -19,6 +19,7 @@
         submit: document.getElementById('ue1cr-submit'),
         export: document.getElementById('ue1cr-export'),
         table: root.querySelector('.ue1cr-table'),
+        tableHead: document.getElementById('ue1cr-table-head'),
         tableTitle: document.getElementById('ue1cr-table-title'),
         groupHead: root.querySelector('.ue1cr-groups'),
         metricHead: root.querySelector('.ue1cr-table thead tr:nth-child(2)'),
@@ -38,6 +39,9 @@
         managerSummary: document.getElementById('ue1cr-manager-summary'),
         articleSummary: document.getElementById('ue1cr-article-summary'),
         viewButtons: root.querySelectorAll('[data-report-view]'),
+        columnsToggle: document.getElementById('ue1cr-columns-toggle'),
+        columnPanel: document.getElementById('ue1cr-column-panel'),
+        columnList: document.getElementById('ue1cr-column-list'),
         dailyToggle: document.getElementById('ue1cr-daily-toggle'),
         pagination: document.getElementById('ue1cr-pagination'),
         pageSize: document.getElementById('ue1cr-page-size'),
@@ -125,6 +129,66 @@
         { key: 'vat_value', label: 'НДС, ₽', format: 'money' },
         { key: 'usn_value', label: 'УСН, ₽', format: 'money' }
     ];
+    var reportColumnGroups = [
+        { key: 'product', label: 'Товар', fixed: true, columns: [
+            { key: 'identity', label: 'Товар', format: 'identity' }
+        ] },
+        { key: 'store', label: 'Магазин', columns: [
+            { key: 'store_name', label: 'Магазин', format: 'text' }
+        ] },
+        { key: 'subject', label: 'Категория', columns: [
+            { key: 'subject', label: 'Категория', format: 'text' }
+        ] },
+        { key: 'manager', label: 'Менеджер', columns: [
+            { key: 'manager', label: 'Менеджер', format: 'text' }
+        ] },
+        { key: 'funnel', label: 'Воронка продаж', columns: [
+            { key: 'orders_count', label: 'Всего заказов, шт.', format: 'number' },
+            { key: 'cancel_count', label: 'Всего отмен, шт.', format: 'number' },
+            { key: 'net_orders_count', label: 'Заказы − отмены, шт.', format: 'number' },
+            { key: 'orders_amount', label: 'ТО заказов, ₽', format: 'turnover' },
+            { key: 'cancel_amount', label: 'Сумма отмен, ₽', format: 'turnover' },
+            { key: 'net_orders_amount', label: 'ТО после отмен, ₽', format: 'turnover' },
+            { key: 'buyout_percent', label: 'Выкуп', format: 'percent' }
+        ] },
+        { key: 'stock', label: 'Остатки', columns: [
+            { key: 'stock', label: 'Остаток', format: 'number' }
+        ] },
+        { key: 'advertising', label: 'Реклама', columns: [
+            { key: 'impressions', label: 'Показы', format: 'number' },
+            { key: 'clicks', label: 'Клики', format: 'number' },
+            { key: 'ctr', label: 'CTR', format: 'percent', help: 'Доля кликов от показов' },
+            { key: 'cpc', label: 'CPC', format: 'money', help: 'Средняя стоимость клика' },
+            { key: 'advertising_spend', label: 'Расходы, ₽', format: 'money' },
+            { key: 'drr', label: 'ДРР', format: 'percent', help: 'Доля рекламных расходов с учётом выкупа' }
+        ] },
+        { key: 'result', label: 'Результат', columns: [
+            { key: 'margin_orders_count', label: 'Расчётные выкупы', format: 'number' },
+            { key: 'margin', label: 'Маржа периода, ₽', format: 'number', tone: true, coverage: true },
+            { key: 'purchase_value', label: 'Закупка периода, ₽', format: 'money', coverage: true },
+            { key: 'roi', label: 'ROI', format: 'percent', tone: true, coverage: true,
+                help: 'Окупаемость вложений' }
+        ] }
+    ];
+    var defaultColumnOrder = reportColumnGroups.map(function (group) { return group.key; });
+    var savedColumnPreferences = preferences.columns || {};
+    var columnPreferences = {
+        order: Array.isArray(savedColumnPreferences.order)
+            ? savedColumnPreferences.order.filter(function (key) {
+                return defaultColumnOrder.indexOf(key) !== -1;
+            }) : defaultColumnOrder.slice(),
+        hidden: Array.isArray(savedColumnPreferences.hidden)
+            ? savedColumnPreferences.hidden.filter(function (key) {
+                return defaultColumnOrder.indexOf(key) !== -1 && key !== 'product';
+            }) : []
+    };
+    defaultColumnOrder.forEach(function (key) {
+        if (columnPreferences.order.indexOf(key) === -1) columnPreferences.order.push(key);
+    });
+    columnPreferences.order = ['product'].concat(columnPreferences.order.filter(function (key) {
+        return key !== 'product';
+    }));
+    var draggedColumnKey = null;
 
     function savePreferences() {
         try {
@@ -132,7 +196,8 @@
                 viewMode: state.viewMode,
                 pageSize: state.pageSize,
                 showDailyDetails: state.showDailyDetails,
-                showImages: state.showImages
+                showImages: state.showImages,
+                columns: columnPreferences
             }));
         } catch (error) {
             // The report remains fully usable when browser storage is unavailable.
@@ -245,8 +310,67 @@
             }).join('');
         }).join('');
     }
+    function reportGroupByKey(key) {
+        return reportColumnGroups.find(function (group) { return group.key === key; });
+    }
+    function visibleColumnGroups() {
+        return columnPreferences.order.map(reportGroupByKey).filter(function (group) {
+            return group && (group.fixed || columnPreferences.hidden.indexOf(group.key) === -1);
+        });
+    }
+    function reportColumnLabel(column) {
+        var label = state.viewMode === 'categories' && column.key === 'identity'
+            ? 'Категория' : column.label;
+        var content = escapeHtml(label);
+        if (column.help) {
+            content = '<abbr title="' + escapeHtml(column.help) + '">' + content + '</abbr>';
+        }
+        return content;
+    }
+    function headerTotalHtml(column) {
+        if (column.key === 'identity') {
+            return '<strong class="ue1cr-head-total ue1cr-head-total--label" '
+                + 'data-report-total-count>Итого: 0 поз.</strong>';
+        }
+        if (!column.key || ['store_name', 'subject', 'manager'].indexOf(column.key) !== -1) {
+            return '<strong class="ue1cr-head-total ue1cr-head-total--empty" aria-hidden="true">&nbsp;</strong>';
+        }
+        return '<strong class="ue1cr-head-total" data-report-total="' + column.key + '">—</strong>';
+    }
+    function reportColumnHeader(column, columnIndex, groupKey) {
+        var numeric = ['number', 'turnover', 'money', 'percent'].indexOf(column.format) !== -1;
+        return '<th class="' + (numeric ? 'num' : '') + '" scope="col" data-report-group="'
+            + escapeHtml(groupKey) + '" data-filter-column="' + columnIndex + '"'
+            + (numeric ? ' data-filter-type="number"' : '') + '><span class="ue1cr-head-heading">'
+            + '<span class="ue1cr-head-label">' + reportColumnLabel(column) + '</span>'
+            + headerTotalHtml(column) + '</span></th>';
+    }
+    function renderBaseHeaders() {
+        var groups = visibleColumnGroups();
+        var groupHtml = '';
+        var metricHtml = '';
+        var columnIndex = 0;
+        groups.forEach(function (group) {
+            if (group.columns.length === 1) {
+                groupHtml += reportColumnHeader(group.columns[0], columnIndex, group.key)
+                    .replace('<th ', '<th rowspan="2" ');
+                columnIndex += 1;
+                return;
+            }
+            groupHtml += '<th colspan="' + group.columns.length + '" scope="colgroup" data-report-group="'
+                + escapeHtml(group.key) + '">' + escapeHtml(group.label) + '</th>';
+            group.columns.forEach(function (column) {
+                metricHtml += reportColumnHeader(column, columnIndex, group.key);
+                columnIndex += 1;
+            });
+        });
+        nodes.tableHead.innerHTML = '<tr class="ue1cr-groups">' + groupHtml
+            + '</tr><tr>' + metricHtml + '</tr>';
+        nodes.groupHead = nodes.tableHead.querySelector('.ue1cr-groups');
+        nodes.metricHead = nodes.tableHead.querySelector('tr:nth-child(2)');
+    }
     function renderDailyHeaders() {
-        root.querySelectorAll('.ue1cr-daily-column').forEach(function (node) { node.remove(); });
+        renderBaseHeaders();
         if (!state.dailyDetailsLoaded) return;
         state.dailyDates.forEach(function (day, dayIndex) {
             var group = document.createElement('th');
@@ -275,24 +399,34 @@
             + copyIdentifier('Артикул', row.article, 'Арт. ' + row.article)
             + '</span></div></div>';
     }
+    function reportCellHtml(row, column) {
+        if (column.key === 'identity') return '<td>' + identityHtml(row) + '</td>';
+        var raw = row[column.key];
+        var content;
+        if (column.format === 'turnover') content = turnover(raw);
+        else if (column.format === 'money') content = rub(raw);
+        else if (column.format === 'percent') content = value(raw, '%');
+        else if (column.format === 'number') content = value(raw);
+        else content = escapeHtml(raw === null || raw === undefined || raw === '' ? '—' : raw);
+        var classes = column.format === 'text' ? '' : 'num';
+        if (column.tone) classes += tone(raw);
+        var title = column.coverage ? marginCoverageTitle(row) : '';
+        var parsed = Number(raw);
+        var filterValue = Number.isFinite(parsed) && column.format !== 'text'
+            ? ' data-filter-value="' + String(parsed) + '"' : '';
+        return '<td class="' + classes + '"' + filterValue + title + '>' + content + '</td>';
+    }
+    function reportCellsHtml(row) {
+        return visibleColumnGroups().map(function (group) {
+            return group.columns.map(function (column) {
+                var cell = reportCellHtml(row, column);
+                return cell.replace('<td', '<td data-report-group="' + escapeHtml(group.key) + '"');
+            }).join('');
+        }).join('');
+    }
     function rowHtml(row, index) {
         return '<tr data-row-index="' + index + '" data-row-kind="' + escapeHtml(row.row_kind || 'product')
-            + '"><td>' + identityHtml(row) + '</td><td>' + escapeHtml(row.store_name)
-            + '</td><td>' + escapeHtml(row.subject) + '</td><td>' + escapeHtml(row.manager || '—')
-            + '</td><td class="num">' + value(row.orders_count) + '</td><td class="num">'
-            + value(row.cancel_count) + '</td><td class="num">' + value(row.net_orders_count)
-            + '</td><td class="num">' + turnover(row.orders_amount) + '</td><td class="num">'
-            + turnover(row.cancel_amount) + '</td><td class="num">' + turnover(row.net_orders_amount)
-            + '</td><td class="num">' + value(row.buyout_percent, '%') + '</td><td class="num">'
-            + value(row.stock) + '</td><td class="num">' + value(row.impressions) + '</td><td class="num">'
-            + value(row.clicks) + '</td><td class="num">' + value(row.ctr, '%')
-            + '</td><td class="num">' + rub(row.cpc) + '</td><td class="num">'
-            + rub(row.advertising_spend) + '</td><td class="num">' + value(row.drr, '%')
-            + '</td><td class="num">' + value(row.margin_orders_count)
-            + '</td><td class="num' + tone(row.margin) + '"' + marginCoverageTitle(row) + '>' + rub(row.margin)
-            + '</td><td class="num"' + marginCoverageTitle(row) + '>' + rub(row.purchase_value) + '</td><td class="num'
-            + tone(row.roi) + '"' + marginCoverageTitle(row) + '>' + value(row.roi, '%') + '</td>'
-            + dailyCellsHtml(row) + '</tr>';
+            + '">' + reportCellsHtml(row) + dailyCellsHtml(row) + '</tr>';
     }
     function setHeaderTotal(key, text, toneValue) {
         var node = root.querySelector('[data-report-total="' + key + '"]');
@@ -323,7 +457,7 @@
         setHeaderTotal('advertising_spend', rub(total.advertising_spend));
         setHeaderTotal('drr', value(total.drr, '%'));
         setHeaderTotal('margin_orders_count', value(total.margin_orders_count));
-        setHeaderTotal('margin', rub(total.margin), total.margin);
+        setHeaderTotal('margin', value(total.margin), total.margin);
         setHeaderTotal('purchase_value', rub(total.purchase_value));
         setHeaderTotal('roi', value(total.roi, '%'), total.roi);
     }
@@ -346,9 +480,15 @@
             result.clicks += numeric(row.clicks);
             result.advertising_spend += numeric(row.advertising_spend);
             result.expected_buyout_amount += numeric(row.expected_buyout_amount);
-            result.margin += numeric(row.margin);
+            if (row.margin !== null && row.margin !== undefined) {
+                result.margin += numeric(row.margin);
+                result.margin_available = true;
+            }
             result.margin_orders_count += numeric(row.margin_orders_count);
-            result.purchase_value += numeric(row.purchase_value);
+            if (row.purchase_value !== null && row.purchase_value !== undefined) {
+                result.purchase_value += numeric(row.purchase_value);
+                result.purchase_available = true;
+            }
             if (row.margin_complete === false) result.margin_complete = false;
             return result;
         }, {
@@ -357,7 +497,8 @@
             buyout_orders_count: 0, buyout_weighted: 0, stock: 0,
             impressions: 0, clicks: 0, advertising_spend: 0,
             expected_buyout_amount: 0,
-            margin_orders_count: 0, margin: 0, purchase_value: 0, margin_complete: true
+            margin_orders_count: 0, margin: 0, purchase_value: 0, margin_complete: true,
+            margin_available: rows.length === 0, purchase_available: rows.length === 0
         });
         total.orders_amount = Math.round(total.orders_amount * 100) / 100;
         total.cancel_amount = Math.round(total.cancel_amount * 100) / 100;
@@ -374,14 +515,11 @@
         total.drr = total.expected_buyout_amount
             ? Math.round(total.advertising_spend / total.expected_buyout_amount * 10000) / 100
             : total.advertising_spend ? 100 : 0;
-        if (total.margin_complete) {
-            total.roi = total.purchase_value
-                ? Math.round(total.margin / total.purchase_value * 10000) / 100 : 0;
-        } else {
-            total.margin = null;
-            total.purchase_value = null;
-            total.roi = null;
-        }
+        if (!total.margin_available) total.margin = null;
+        if (!total.purchase_available) total.purchase_value = null;
+        total.roi = total.margin !== null && total.purchase_value
+            ? Math.round(total.margin / total.purchase_value * 10000) / 100
+            : total.margin !== null ? 0 : null;
         return total;
     }
     function visibleReportRows() {
@@ -442,6 +580,32 @@
         nodes.table.querySelectorAll('.tf-btn').forEach(function (button) {
             button.classList.remove('tf-btn--active');
         });
+    }
+    function renderColumnSettings() {
+        nodes.columnList.innerHTML = columnPreferences.order.map(function (key, index) {
+            var group = reportGroupByKey(key);
+            if (!group) return '';
+            var checked = group.fixed || columnPreferences.hidden.indexOf(key) === -1;
+            var canMoveUp = !group.fixed && index > 1;
+            var canMoveDown = !group.fixed && index < columnPreferences.order.length - 1;
+            return '<div class="ue1cr-column-option" data-column-key="' + escapeHtml(key)
+                + '" draggable="' + (group.fixed ? 'false' : 'true') + '" aria-grabbed="false">'
+                + '<span class="ue1cr-column-grip" title="Перетащить">⋮⋮</span>'
+                + '<label><input type="checkbox"' + (checked ? ' checked' : '')
+                + (group.fixed ? ' disabled' : '') + '><span>' + escapeHtml(group.label) + '</span></label>'
+                + '<div><button type="button" data-column-move="up"' + (canMoveUp ? '' : ' disabled')
+                + ' aria-label="Выше">↑</button><button type="button" data-column-move="down"'
+                + (canMoveDown ? '' : ' disabled') + ' aria-label="Ниже">↓</button></div></div>';
+        }).join('');
+    }
+    function applyColumnPreferences() {
+        columnPreferences.order = ['product'].concat(columnPreferences.order.filter(function (key) {
+            return key !== 'product';
+        }));
+        resetTableFilters();
+        savePreferences();
+        renderColumnSettings();
+        renderRows();
     }
     function setView(mode) {
         state.viewMode = mode === 'categories' ? 'categories' : 'products';
@@ -718,6 +882,74 @@
     nodes.viewButtons.forEach(function (button) {
         button.addEventListener('click', function () { setView(button.dataset.reportView); });
     });
+    nodes.columnsToggle.addEventListener('click', function () {
+        var open = nodes.columnPanel.hidden;
+        nodes.columnPanel.hidden = !open;
+        nodes.columnsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (event) {
+        if (nodes.columnPanel.hidden || nodes.columnPanel.contains(event.target)
+            || nodes.columnsToggle.contains(event.target)) return;
+        nodes.columnPanel.hidden = true;
+        nodes.columnsToggle.setAttribute('aria-expanded', 'false');
+    });
+    nodes.columnList.addEventListener('change', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || event.target.type !== 'checkbox' || option.dataset.columnKey === 'product') return;
+        var key = option.dataset.columnKey;
+        columnPreferences.hidden = columnPreferences.hidden.filter(function (item) { return item !== key; });
+        if (!event.target.checked) columnPreferences.hidden.push(key);
+        applyColumnPreferences();
+    });
+    nodes.columnList.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-column-move]');
+        var option = event.target.closest('[data-column-key]');
+        if (!button || !option || option.dataset.columnKey === 'product') return;
+        var index = columnPreferences.order.indexOf(option.dataset.columnKey);
+        var next = button.dataset.columnMove === 'up' ? index - 1 : index + 1;
+        if (index < 1 || next < 1 || next >= columnPreferences.order.length) return;
+        var moved = columnPreferences.order.splice(index, 1)[0];
+        columnPreferences.order.splice(next, 0, moved);
+        applyColumnPreferences();
+    });
+    nodes.columnList.addEventListener('dragstart', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || option.dataset.columnKey === 'product') return;
+        draggedColumnKey = option.dataset.columnKey;
+        option.classList.add('is-dragging');
+        option.setAttribute('aria-grabbed', 'true');
+        if (event.dataTransfer) event.dataTransfer.setData('text/plain', draggedColumnKey);
+    });
+    nodes.columnList.addEventListener('dragover', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || !draggedColumnKey || option.dataset.columnKey === 'product'
+            || option.dataset.columnKey === draggedColumnKey) return;
+        event.preventDefault();
+        option.classList.add('is-drag-target');
+    });
+    nodes.columnList.addEventListener('dragleave', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (option) option.classList.remove('is-drag-target');
+    });
+    nodes.columnList.addEventListener('drop', function (event) {
+        var option = event.target.closest('[data-column-key]');
+        if (!option || !draggedColumnKey || option.dataset.columnKey === 'product') return;
+        event.preventDefault();
+        var from = columnPreferences.order.indexOf(draggedColumnKey);
+        var to = columnPreferences.order.indexOf(option.dataset.columnKey);
+        if (from >= 1 && to >= 1 && from !== to) {
+            var moved = columnPreferences.order.splice(from, 1)[0];
+            columnPreferences.order.splice(to, 0, moved);
+            applyColumnPreferences();
+        }
+    });
+    nodes.columnList.addEventListener('dragend', function () {
+        draggedColumnKey = null;
+        nodes.columnList.querySelectorAll('.is-dragging, .is-drag-target').forEach(function (item) {
+            item.classList.remove('is-dragging', 'is-drag-target');
+            item.setAttribute('aria-grabbed', 'false');
+        });
+    });
     nodes.dailyToggle.addEventListener('click', function () {
         setDailyDetails(!state.showDailyDetails);
     });
@@ -769,6 +1001,8 @@
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     updateDailyVisibility();
+    renderColumnSettings();
+    renderDailyHeaders();
     renderPagination();
     renderOptions('store', config.stores || []);
     renderOptions('subject', []);

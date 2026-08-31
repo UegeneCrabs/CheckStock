@@ -33,6 +33,7 @@
     var userKey = String(config.userKey || 'anonymous');
     var commentsKey = 'checkstock.unit-economics-1c.comments.' + userKey;
     var columnsKey = 'checkstock.unit-economics-1c.columns.' + userKey;
+    var periodKey = 'checkstock.unit-economics-1c.period.' + userKey;
     var chartKey = 'checkstock.unit-economics-1c.chart.' + userKey;
     var priceJobsKey = 'checkstock.unit-economics-1c.price-jobs.' + userKey;
     var comments = readJson(commentsKey, {});
@@ -47,12 +48,15 @@
     var pendingPriceChange = null;
     var state = {
         query: '', store: 'all', status: 'all', page: 1, pageSize: 20,
+        periodDays: [7, 14, 30].indexOf(Number(readJson(periodKey, config.periodDays || 7))) !== -1
+            ? Number(readJson(periodKey, config.periodDays || 7)) : 7,
         selected: null, sortColumn: 4, sortDirection: -1, tableFilters: {},
         productsLoading: products.length === 0, productsRefreshing: false
     };
     var nodes = {
         table: id('ue1c-table'), rows: id('ue1c-product-rows'), empty: id('ue1c-empty'), search: id('ue1c-search'),
-        store: id('ue1c-store-filter'), tableWrap: id('ue1c-table-wrap'), pageSize: id('ue1c-page-size'),
+        store: id('ue1c-store-filter'), periodDays: id('ue1c-period-days'),
+        tableWrap: id('ue1c-table-wrap'), pageSize: id('ue1c-page-size'),
         pagePrev: id('ue1c-page-prev'), pageNext: id('ue1c-page-next'), pageNumbers: id('ue1c-page-numbers'),
         summary: id('ue1c-pagination-summary'), refresh: id('ue1c-refresh'), overlay: id('ue1c-overlay'),
         productsLoading: id('ue1c-products-loading'), productsError: id('ue1c-products-error'),
@@ -88,8 +92,15 @@
         { key: 'newness', label: 'Новинка', columns: [{ index: 23, label: 'Новинка', width: 90 }] },
         { key: 'comments', label: 'Комментарии', columns: [{ index: 1, label: 'Комментарии', width: 260 }] },
         { key: 'current', label: 'Текущая экономика', columns: [
-            { index: 2, label: 'Маржа на шт., ₽', number: true, width: 112 },
-            { index: 3, label: 'ROI, %', number: true, width: 85 }
+            {
+                index: 2,
+                label: 'Маржа на шт., ₽',
+                help: 'Потенциальная чистая прибыль с одной выкупленной единицы по текущим ценам, комиссиям, налогам и расходам за сегодняшний день.',
+                number: true,
+                width: 112
+            },
+            { index: 3, label: 'ROI, %', number: true, width: 85 },
+            { index: 24, label: 'СПП, %', number: true, width: 82 }
         ] },
         { key: 'actual', label: 'Экономика за 7 дней', columns: [
             { index: 4, label: 'ТО, ₽', number: true, width: 105 },
@@ -128,6 +139,9 @@
         }) : defaultColumnOrder.slice(),
         hidden: Array.isArray(savedColumns.hidden) ? savedColumns.hidden.slice() : []
     };
+    columnPreferences.order = ['product'].concat(columnPreferences.order.filter(function (key) {
+        return key !== 'product';
+    }));
     if (Array.isArray(savedColumns.order) && columnPreferences.order.indexOf('newness') === -1) {
         columnPreferences.order.splice(Math.max(columnPreferences.order.indexOf('product') + 1, 0), 0, 'newness');
     }
@@ -204,7 +218,7 @@
         }
         return label + ': данные за ' + coverage.dates.map(coverageDate).join(', ')
             + ' (' + integer.format(finite(coverage.days, coverage.dates.length)) + ' из '
-            + integer.format(finite(coverage.expected_days, 7)) + ' дней)';
+            + integer.format(finite(coverage.expected_days, state.periodDays)) + ' дней)';
     }
     function isPartialCoverage(coverage) {
         return Boolean(coverage && finite(coverage.days, 0) > 0 && coverage.complete !== true);
@@ -259,6 +273,24 @@
             return group && (group.fixed || columnPreferences.hidden.indexOf(group.key) === -1);
         });
     }
+    function pluralDays(value) {
+        var mod10 = value % 10;
+        var mod100 = value % 100;
+        if (mod10 === 1 && mod100 !== 11) return 'день';
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
+        return 'дней';
+    }
+    function columnGroupLabel(group) {
+        if (group.key === 'actual') return 'Экономика за ' + state.periodDays + ' ' + pluralDays(state.periodDays);
+        if (group.key === 'advertising') return 'Реклама за ' + state.periodDays + ' ' + pluralDays(state.periodDays);
+        return group.label;
+    }
+    function columnLabel(column) {
+        var label = escapeHtml(column.label);
+        if (!column.help) return label;
+        return label + '<span class="ue1c-header-help" title="' + escapeHtml(column.help)
+            + '" aria-label="' + escapeHtml(column.help) + '">?</span>';
+    }
     function renderTableHeader() {
         var groups = visibleColumnGroups();
         nodes.colgroup.innerHTML = groups.map(function (group) {
@@ -272,23 +304,26 @@
             if (group.columns.length === 1) {
                 var only = group.columns[0];
                 top += '<th rowspan="2" data-column-group="' + group.key + '" data-filter-column="'
-                    + only.index + '">' + escapeHtml(only.label) + '</th>';
+                    + only.index + '">' + columnLabel(only) + '</th>';
                 return;
             }
             top += '<th colspan="' + group.columns.length + '" data-column-group="' + group.key
                 + '" class="ue1c-header-group ue1c-group-start">'
-                + escapeHtml(group.label) + '</th>';
+                + escapeHtml(columnGroupLabel(group)) + '</th>';
             sub += group.columns.map(function (column, index) {
                 return '<th data-column-group="' + group.key + '" class="' + (column.number ? 'ue1c-num ' : '')
                     + (index === 0 ? 'ue1c-group-start' : '') + '" data-filter-column="'
                     + column.index + '"' + (column.number ? ' data-filter-type="number"' : '') + '>'
-                    + escapeHtml(column.label) + '</th>';
+                    + columnLabel(column) + '</th>';
             }).join('');
         });
         nodes.tableHead.innerHTML = '<tr class="ue1c-group-row">' + top
             + '</tr><tr class="ue1c-subhead-row">' + sub + '</tr>';
     }
     function saveColumnPreferences() {
+        columnPreferences.order = ['product'].concat(columnPreferences.order.filter(function (key) {
+            return key !== 'product';
+        }));
         writeJson(columnsKey, columnPreferences);
         window.clearTimeout(columnSaveTimer);
         columnSaveTimer = window.setTimeout(function () {
@@ -310,13 +345,15 @@
             var group = groupByKey(key);
             if (!group) return '';
             var checked = group.fixed || columnPreferences.hidden.indexOf(key) === -1;
-            return '<div class="ue1c-column-option" data-column-key="' + key + '" draggable="true"'
+            return '<div class="ue1c-column-option" data-column-key="' + key + '" draggable="'
+                + (group.fixed ? 'false' : 'true') + '"'
                 + ' aria-grabbed="false"><span class="ue1c-column-grip" title="Перетащить">⋮⋮</span>'
                 + '<label><input type="checkbox"'
                 + (checked ? ' checked' : '') + (group.fixed ? ' disabled' : '') + '> <span>'
                 + escapeHtml(group.label) + '</span></label><div><button type="button" data-column-move="up"'
-                + (index === 0 ? ' disabled' : '') + ' aria-label="Выше">↑</button><button type="button"'
+                + (group.fixed || index <= 1 ? ' disabled' : '') + ' aria-label="Выше">↑</button><button type="button"'
                 + ' data-column-move="down"' + (index === columnPreferences.order.length - 1 ? ' disabled' : '')
+                + (group.fixed ? ' disabled' : '')
                 + ' aria-label="Ниже">↓</button></div></div>';
         }).join('');
     }
@@ -337,6 +374,7 @@
             product.advertising.ctr, product.advertising.cpc,
             product.current_economics && product.current_economics.margin,
             product.current_economics && product.current_economics.roi,
+            calculateSppPercent(product),
             product.economics_7d && product.economics_7d.turnover,
             product.economics_7d && product.economics_7d.margin,
             product.economics_7d && product.economics_7d.roi, product.stock.total, product.stock.fbs,
@@ -357,7 +395,8 @@
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.stock.total, product.stock.fbs, product.stock.fbo,
             product.stock.fulfillment, product.stock.days,
-            product.is_new ? 'Новинка' : 'Нет'
+            product.is_new ? 'Новинка' : 'Нет',
+            calculateSppPercent(product)
         ];
         var value = values[Number(columnIndex)];
         return String(value === null || value === undefined ? '—' : value);
@@ -411,11 +450,13 @@
             + (product.is_new ? ' is-new' : '') + '">' + (product.is_new ? 'Новинка' : 'Обычный')
             + '</span><small>' + (product.sales_days === null || product.sales_days === undefined
                 ? 'нет данных' : integer.format(product.sales_days) + ' дн.') + '</small></td>';
+        var currentSpp = calculateSppPercent(product);
         cells.current = '<td class="ue1c-num ue1c-group-start"><strong title="'
             + escapeHtml(currentTitle) + '">'
             + nullable(current.margin, money) + '</strong></td><td class="ue1c-num"><strong>'
             + '<span title="' + escapeHtml(currentTitle) + '">'
-            + nullable(current.roi, decimal, '%') + '</span></strong></td>';
+            + nullable(current.roi, decimal, '%') + '</span></strong></td>'
+            + '<td class="ue1c-num"><strong>' + nullable(currentSpp, decimal, '%') + '</strong></td>';
         cells.actual = '<td class="ue1c-num ue1c-group-start' + coverageCellClass(turnoverCoverage)
             + '"><strong>' + coverageValue('ТО после отмен', economics.turnover, money, turnoverCoverage)
             + '</strong></td><td class="ue1c-num' + coverageCellClass(marginCoverage) + '"><strong>'
@@ -541,7 +582,9 @@
         products = (Array.isArray(items) ? items : []).map(function (product) {
             var previous = preserveDetails ? previousProducts[product.id] : null;
             if (!previous || !previous._detailLoaded) return product;
+            var mergedPrice = Object.assign({}, previous.price || {}, product.price || {});
             Object.assign(previous, product);
+            previous.price = mergedPrice;
             return previous;
         });
         productsById = {};
@@ -556,10 +599,17 @@
         nodes.productsLoading.hidden = !loading;
         nodes.search.disabled = loading;
         nodes.store.disabled = loading;
+        nodes.periodDays.disabled = loading;
         nodes.pageSize.disabled = loading;
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
             button.disabled = loading;
         });
+    }
+    function productsRequestUrl(parameters) {
+        var separator = productsEndpoint.indexOf('?') === -1 ? '?' : '&';
+        var query = new URLSearchParams(parameters || {});
+        query.set('period_days', String(state.periodDays));
+        return productsEndpoint + separator + query.toString();
     }
     async function loadProducts(options) {
         options = options || {};
@@ -574,7 +624,7 @@
             renderPage();
         }
         try {
-            var response = await window.fetch(productsEndpoint, {
+            var response = await window.fetch(productsRequestUrl(), {
                 headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
             });
             var result = await response.json();
@@ -1424,9 +1474,8 @@
         });
     }
     async function fetchProductDetail(product) {
-        var separator = productsEndpoint.indexOf('?') === -1 ? '?' : '&';
         var query = new URLSearchParams({ store: product.store_slug, article: product.article });
-        var response = await window.fetch(productsEndpoint + separator + query.toString(), {
+        var response = await window.fetch(productsRequestUrl(query), {
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
         });
         var result = await response.json();
@@ -1909,6 +1958,18 @@
         state.pageSize = [20, 50, 100].indexOf(value) === -1 ? 20 : value;
         resetPageAndRender();
     });
+    nodes.periodDays.addEventListener('change', function () {
+        var value = Number(nodes.periodDays.value);
+        state.periodDays = [7, 14, 30].indexOf(value) !== -1 ? value : 7;
+        writeJson(periodKey, state.periodDays);
+        state.page = 1;
+        state.tableFilters = {};
+        renderTableHeader();
+        if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
+            window.CheckStockTableFilter.refresh(nodes.table);
+        }
+        loadProducts();
+    });
     nodes.pagePrev.addEventListener('click', function () {
         if (state.page <= 1) return;
         state.page -= 1;
@@ -2096,6 +2157,7 @@
     window.setInterval(function () { refreshProductsIfStale(true); }, AUTO_REFRESH_INTERVAL_MS);
 
     renderStores();
+    nodes.periodDays.value = String(state.periodDays);
     Array.prototype.forEach.call(root.querySelectorAll('[data-chart-series]'), function (input) {
         input.checked = chartPreferences.series.indexOf(input.dataset.chartSeries) !== -1;
     });

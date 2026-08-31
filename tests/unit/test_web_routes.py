@@ -518,6 +518,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertTrue(any(item["article"] == "949558341" for item in products))
         summary = next(item for item in products if item["article"] == "949558341")
         self.assertTrue(summary["name"])
+        self.assertEqual(set(summary["price"]), {"current", "with_spp"})
         self.assertNotIn("details", summary)
         self.assertNotIn("history", summary)
         detail = self._unit_economics_product("rimili", "949558341")
@@ -558,6 +559,26 @@ class WebRouteUnitTests(unittest.TestCase):
             'class="nav-subitem active" href="/sales/unit-economics-1c/yandex-market"',
             yandex.text,
         )
+
+    def test_unit_economics_1c_accepts_closed_period_length(self) -> None:
+        with mock.patch.object(
+            unit_economics.unit_economics_1c,
+            "load_product_metrics",
+            return_value={},
+        ) as load_metrics:
+            response = self.client.get(
+                "/sales/unit-economics-1c",
+                params={"data": "1", "period_days": "14"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["period_days"], 14)
+        self.assertEqual(
+            (date.fromisoformat(payload["period_to"]) - date.fromisoformat(payload["period_from"])).days,
+            13,
+        )
+        self.assertEqual(load_metrics.call_args_list[0].kwargs["period_days"], 14)
 
     def test_unit_economics_1c_ignores_legacy_catalog_exclusions(self) -> None:
         connection = core.get_connection()
@@ -897,6 +918,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("ue1c-store-row", script)
         self.assertIn("function calculateSppPercent(product)", script)
         self.assertIn("(withoutSpp - withSpp) / withoutSpp * 100", script)
+        self.assertIn("{ index: 24, label: 'СПП, %'", script)
+        self.assertIn("nullable(currentSpp, decimal, '%')", script)
         self.assertIn(
             "parameter('СПП', nullable(calculateSppPercent(product), decimal, '%'))",
             script,
@@ -1448,6 +1471,36 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(daily["advertising_per_unit"], 13.64)
         self.assertEqual(daily["net_profit"], 41.82)
 
+    def test_unit_profit_totals_keep_available_margin_when_some_rows_are_missing(self) -> None:
+        totals = unit_economics._unit_profit_report_totals(
+            [
+                {
+                    "margin": -100,
+                    "purchase_value": 200,
+                    "margin_complete": True,
+                    "margin_missing_days": [],
+                },
+                {
+                    "margin": None,
+                    "purchase_value": None,
+                    "margin_complete": False,
+                    "margin_missing_days": ["2026-08-29"],
+                },
+                {
+                    "margin": 50,
+                    "purchase_value": 100,
+                    "margin_complete": True,
+                    "margin_missing_days": [],
+                },
+            ]
+        )
+
+        self.assertEqual(totals["margin"], -50)
+        self.assertEqual(totals["purchase_value"], 300)
+        self.assertEqual(totals["roi"], -16.67)
+        self.assertFalse(totals["margin_complete"])
+        self.assertEqual(totals["margin_missing_days"], ["2026-08-29"])
+
     def test_unit_profit_report_exposes_daily_margin_inputs(self) -> None:
         inputs = {
             "retail_price": 1000,
@@ -1990,6 +2043,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1cr-manager"', page.text)
         self.assertIn('id="ue1cr-article-search"', page.text)
         self.assertIn('id="ue1cr-show-images"', page.text)
+        self.assertIn('id="ue1cr-columns-toggle"', page.text)
+        self.assertIn('id="ue1cr-column-list"', page.text)
         self.assertIn('id="ue1cr-export"', page.text)
         self.assertIn('id="ue1cr-submit">Сформировать</button>', page.text)
         self.assertIn('Настройте параметры и нажмите «Сформировать».', page.text)
@@ -2001,7 +2056,10 @@ class WebRouteUnitTests(unittest.TestCase):
             Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c-report.js"
         ).read_text(encoding="utf-8")
         self.assertIn("function turnover(item)", report_script)
-        self.assertIn("+ turnover(row.orders_amount)", report_script)
+        self.assertIn("if (column.format === 'turnover') content = turnover(raw)", report_script)
+        self.assertIn("{ key: 'margin', label: 'Маржа периода, ₽', format: 'number'", report_script)
+        self.assertIn("data-filter-value", report_script)
+        self.assertIn("setHeaderTotal('margin', value(total.margin)", report_script)
         self.assertNotIn("+ rub(row.orders_amount)", report_script)
         self.assertNotIn("row.unit_margin", report_script)
         self.assertIn("query.set('page', String(state.page))", report_script)
@@ -2276,7 +2334,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn(".ue1c-chart-daily-sales-value", styles)
         self.assertIn("finite(item.orders_count, 0)", script)
         self.assertIn("line(history, 'stock_units'", script)
-        self.assertIn('draggable="true"', script)
+        self.assertIn("(group.fixed ? 'false' : 'true')", script)
         self.assertIn("addEventListener('drop'", script)
         self.assertIn("/api/unit-economics-1c/preferences/columns", script)
 

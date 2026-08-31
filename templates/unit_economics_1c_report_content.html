@@ -1,4 +1,4 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c-report.css?v=15">
+    <link rel="stylesheet" href="/static/unit-economics-1c-report.css?v=16">
     <section class="ue1cr-page" id="unit-economics-1c-report" aria-label="Отчёт по юниточной прибыли">
         <form class="ue1cr-filters" id="ue1cr-filters" aria-label="Параметры отчёта">
             <div class="ue1cr-period">
@@ -42,12 +42,20 @@
                         <button type="button" class="is-active" data-report-view="products" aria-pressed="true">Товары</button>
                         <button type="button" data-report-view="categories" aria-pressed="false">Категории</button>
                     </div>
+                    <div class="ue1cr-column-settings">
+                        <button type="button" class="ue1cr-columns-toggle" id="ue1cr-columns-toggle"
+                                aria-expanded="false">Колонки</button>
+                        <div class="ue1cr-column-panel" id="ue1cr-column-panel" hidden>
+                            <strong>Порядок и видимость</strong>
+                            <div id="ue1cr-column-list"></div>
+                        </div>
+                    </div>
                     <button type="button" class="ue1cr-daily-toggle" id="ue1cr-daily-toggle" aria-pressed="false">Показатели по дням</button>
                 </div>
             </header>
             <div class="ue1cr-table-wrap">
                 <table class="data-table ue1cr-table" aria-label="Продажи, реклама и прибыль по товарам">
-                    <thead>
+                    <thead id="ue1cr-table-head">
                         <tr class="ue1cr-groups">
                             <th rowspan="2" scope="col" data-filter-column="0">
                                 <span class="ue1cr-head-heading">
@@ -106,4 +114,4 @@
         </section>
     </section>
     <script type="application/json" id="ue1cr-config">$unit_1c_report_config</script>
-    <script src="/static/unit-economics-1c-report.js?v=25"></script>
+    <script src="/static/unit-economics-1c-report.js?v=27"></script>

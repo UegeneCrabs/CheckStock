@@ -1,4 +1,4 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=42">
+    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=43">
 
         <section class="ue1c-page" id="unit-economics-1c" aria-label="Юнит-экономика Wildberries">
             <div class="ue1c-toolbar">
@@ -15,6 +15,14 @@
                     <button class="ue1c-segment" data-state-filter="negative" type="button">Товары в минус</button>
                     <button class="ue1c-segment" data-state-filter="new" type="button">Новинки</button>
                 </div>
+                <label class="ue1c-period-select">
+                    <span>Период</span>
+                    <select class="ue1c-select" id="ue1c-period-days" aria-label="Период экономики">
+                        <option value="7" selected>7 дней</option>
+                        <option value="14">14 дней</option>
+                        <option value="30">30 дней</option>
+                    </select>
+                </label>
                 <div class="ue1c-column-settings">
                     <button class="ue1c-ghost-button" id="ue1c-columns-toggle" type="button"
                             aria-expanded="false">Колонки</button>
@@ -216,4 +224,4 @@
         </section>
 
         <script type="application/json" id="ue1c-config">$unit_1c_config</script>
-    <script src="/static/unit-economics-1c.js?v=65"></script>
+    <script src="/static/unit-economics-1c.js?v=67"></script>

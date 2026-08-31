@@ -112,11 +112,26 @@ body:has(.content--unit-1c) { overflow: hidden; }
 
 .ue1c-toolbar {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) 160px auto auto auto;
+    grid-template-columns: minmax(220px, 1fr) 160px auto 112px auto auto;
     gap: 10px;
     align-items: center;
     flex: 0 0 auto;
 }
+.ue1c-period-select {
+    position: relative;
+    min-width: 0;
+}
+.ue1c-period-select > span {
+    position: absolute;
+    z-index: 2;
+    top: 5px;
+    left: 12px;
+    color: var(--ue-muted);
+    font-size: 9px;
+    font-weight: 750;
+    pointer-events: none;
+}
+.ue1c-period-select .ue1c-select { padding-top: 11px; font-weight: 720; }
 
 .ue1c-field { position: relative; min-width: 0; }
 .ue1c-search-field > span {
@@ -214,7 +229,7 @@ body:has(.content--unit-1c) { overflow: hidden; }
 @keyframes ue1c-loading-spin { to { transform: rotate(360deg); } }
 .ue1c-redesign-table {
     width: 100%;
-    min-width: 1940px;
+    min-width: 2020px;
     margin: 0;
     border: 0;
     border-collapse: separate;
@@ -271,6 +286,32 @@ body:has(.content--unit-1c) { overflow: hidden; }
 }
 .ue1c-redesign-table th.ue1c-group-start, .ue1c-redesign-table td.ue1c-group-start {
     border-left: 2px solid #d7dde7;
+}
+.ue1c-redesign-table th[data-column-group="product"] {
+    left: 0;
+    z-index: 8;
+    box-shadow: 2px 0 0 var(--ue-line-strong);
+}
+.ue1c-redesign-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    box-shadow: 2px 0 0 var(--ue-line-strong);
+}
+.ue1c-redesign-table tbody tr:hover td:first-child { background: #fbfcff; }
+.ue1c-redesign-table tbody tr.is-selected td:first-child { background: var(--ue-accent-soft); }
+.ue1c-header-help {
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    cursor: help;
+    font-size: 9px;
+    line-height: 1;
+    text-transform: none;
 }
 .ue1c-num { text-align: right !important; }
 
@@ -426,7 +467,7 @@ body:has(.content--unit-1c) { overflow: hidden; }
 .ue1c-page-gap { width: 24px; text-align: center; }
 
 .ue1c-page.has-detail { padding-right: 620px; }
-.ue1c-page.has-detail .ue1c-redesign-table { min-width: 1940px; }
+.ue1c-page.has-detail .ue1c-redesign-table { min-width: 2020px; }
 .ue1c-page.has-detail .ue1c-redesign-table col[data-column-group="comments"],
 .ue1c-page.has-detail .ue1c-redesign-table col[data-column-group="tag"],
 .ue1c-page.has-detail .ue1c-redesign-table th[data-column-group="comments"],
@@ -831,6 +872,8 @@ html[data-theme="dark"] .ue1c-redesign-table th:not(:first-child),
 html[data-theme="dark"] .ue1c-redesign-table td:not(:first-child) { border-left-color: #28364c; }
 html[data-theme="dark"] .ue1c-redesign-table td { border-bottom-color: #26344a; }
 html[data-theme="dark"] .ue1c-redesign-table tbody tr:hover td { background: #142239; }
+html[data-theme="dark"] .ue1c-redesign-table tbody tr:hover td:first-child { background: #142239; }
+html[data-theme="dark"] .ue1c-redesign-table tbody tr.is-selected td:first-child { background: var(--ue-accent-soft); }
 html[data-theme="dark"] .ue1c-redesign-table tbody tr.is-located td { background: #4a3b16; }
 html[data-theme="dark"] .ue1c-comment-input { background: #142036; }
 html[data-theme="dark"] .ue1c-tag-status, html[data-theme="dark"] .ue1c-code-pill { background: #202d43; }
@@ -842,7 +885,7 @@ html[data-theme="dark"] .ue1c-chart-series-tooltip { background: rgba(17,27,45,.
 
 @media (max-width: 1300px) {
     .ue1c-segments { display: none; }
-    .ue1c-toolbar { grid-template-columns: minmax(240px,1fr) 170px auto; }
+    .ue1c-toolbar { grid-template-columns: minmax(240px,1fr) 170px 112px auto auto; }
 }
 
 @media (max-width: 1050px) {
@@ -873,6 +916,7 @@ html[data-theme="dark"] .ue1c-chart-series-tooltip { background: rgba(17,27,45,.
     .ue1c-toolbar { grid-template-columns: 1fr 1fr; }
     .ue1c-search-field { grid-column: 1 / -1; }
     .ue1c-select { grid-column: 1 / -1; }
+    .ue1c-period-select .ue1c-select { grid-column: auto; }
     .ue1c-table-footer { align-items: flex-start; flex-direction: column; }
     .ue1c-footer-actions { width: 100%; overflow-x: auto; }
     .ue1c-calculator-body { grid-template-columns: 1fr; }

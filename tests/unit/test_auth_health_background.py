@@ -95,13 +95,27 @@ class HealthTests(unittest.TestCase):
             mock.patch.object(health, "_credentials_updated_at", return_value=None),
         ):
             problems = health.store_problems("store")
-        self.assertEqual(len(problems), 2)
-        self.assertNotEqual(problems[0]["status"], problems[1]["status"])
+        self.assertEqual(len(problems), 1)
         self.assertEqual(problems[0]["kind"], "invalid")
-        self.assertEqual(problems[1]["kind"], "sync")
-        self.assertIn("ранее загруженные", problems[1]["detail"])
+        self.assertIn("права API-ключа", problems[0]["status"])
+        self.assertIn("ранее загруженные", problems[0]["detail"])
+        self.assertNotIn("таймаут", str(problems))
         self.assertNotIn("orders", str(problems))
         self.assertNotIn("unit_economics_1c", str(problems))
+
+        with (
+            mock.patch.object(health.db, "get_sync_health", return_value=[]),
+            mock.patch.object(health, "has_token", return_value=False),
+            mock.patch.object(
+                health,
+                "is_listed",
+                side_effect=lambda marketplace, _store: marketplace == "WB",
+            ),
+        ):
+            missing_token_problems = health.store_problems("store")
+        self.assertEqual(len(missing_token_problems), 1)
+        self.assertEqual(missing_token_problems[0]["marketplace"], "WB")
+        self.assertIn("не заполнен или недействителен", missing_token_problems[0]["status"])
         with (
             mock.patch("app.stores.STORES", {"a": {}, "b": {}}),
             mock.patch.object(health, "store_problems", side_effect=lambda slug: [slug]),

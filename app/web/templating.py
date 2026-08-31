@@ -1,7 +1,7 @@
 import html
 from string import Template
 
-from app import auth, db
+from app import auth, db, health
 from app.access_control import ActionPermission, accessible_marketplaces, profile_has_permission
 from app.config import settings
 from app.dto.identity import SectionAccessLevel, SectionName
@@ -83,13 +83,17 @@ def _advertising_alerts(user: dict | None = None) -> list[dict[str, str]]:
         store_slug = str(state.get("store_slug") or "")
         store_name = STORES[store_slug]["name"] if store_slug in STORES else store_slug.upper()
         message = str(state.get("error") or "ошибка синхронизации")
-        access_error = any(
-            marker in message.casefold() for marker in ("доступ", "токен", "авторизац", "401", "403")
+        if not health.requires_team_action(message):
+            continue
+        alerts.append(
+            {
+                "title": f"Кабинет {store_name}: проверьте права API-ключа WB",
+                "text": (
+                    "Реклама не обновляется. Добавьте ключу доступ к разделу «Продвижение» "
+                    "или замените ключ, затем повторите выгрузку."
+                ),
+            }
         )
-        title = f"Кабинет {store_name}: затраты на рекламу не обновились"
-        if access_error:
-            title += " из-за доступа у API-ключа"
-        alerts.append({"title": title, "text": "" if access_error else message})
     return alerts
 
 
