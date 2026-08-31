@@ -33,12 +33,14 @@
     var userKey = String(config.userKey || 'anonymous');
     var commentsKey = 'checkstock.unit-economics-1c.comments.' + userKey;
     var columnsKey = 'checkstock.unit-economics-1c.columns.' + userKey;
-    var periodKey = 'checkstock.unit-economics-1c.period.' + userKey;
     var chartKey = 'checkstock.unit-economics-1c.chart.' + userKey;
     var priceJobsKey = 'checkstock.unit-economics-1c.price-jobs.' + userKey;
     var comments = readJson(commentsKey, {});
     var pendingPriceJobs = readJson(priceJobsKey, []);
     if (!Array.isArray(pendingPriceJobs)) pendingPriceJobs = [];
+    var configuredPeriodDays = [7, 14, 30].indexOf(Number(config.periodDays)) !== -1
+        ? Number(config.periodDays) : 7;
+    var maxPeriodDays = Math.max(1, Number(config.maxPeriodDays) || 366);
     var toastTimer = 0;
     var rowHighlightTimer = 0;
     var columnSaveTimer = 0;
@@ -48,14 +50,17 @@
     var pendingPriceChange = null;
     var state = {
         query: '', store: 'all', status: 'all', page: 1, pageSize: 20,
-        periodDays: [7, 14, 30].indexOf(Number(readJson(periodKey, config.periodDays || 7))) !== -1
-            ? Number(readJson(periodKey, config.periodDays || 7)) : 7,
+        periodMode: 'preset', periodDays: configuredPeriodDays,
+        periodFrom: String(config.periodFrom || ''), periodTo: String(config.periodTo || ''),
+        lastCompleteDay: String(config.lastCompleteDay || config.periodTo || ''),
         selected: null, sortColumn: 4, sortDirection: -1, tableFilters: {},
         productsLoading: products.length === 0, productsRefreshing: false
     };
     var nodes = {
         table: id('ue1c-table'), rows: id('ue1c-product-rows'), empty: id('ue1c-empty'), search: id('ue1c-search'),
         store: id('ue1c-store-filter'), periodDays: id('ue1c-period-days'),
+        periodFrom: id('ue1c-period-from'), periodTo: id('ue1c-period-to'),
+        periodApply: id('ue1c-period-apply'),
         tableWrap: id('ue1c-table-wrap'), pageSize: id('ue1c-page-size'),
         pagePrev: id('ue1c-page-prev'), pageNext: id('ue1c-page-next'), pageNumbers: id('ue1c-page-numbers'),
         summary: id('ue1c-pagination-summary'), refresh: id('ue1c-refresh'), overlay: id('ue1c-overlay'),
@@ -169,6 +174,39 @@
         try { window.localStorage.setItem(key, JSON.stringify(value)); return true; }
         catch (error) { return false; }
     }
+    function validIsoDay(value) {
+        var text = String(value || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+        var parts = text.split('-').map(Number);
+        var parsed = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+        return parsed.toISOString().slice(0, 10) === text;
+    }
+    function periodDayCount(dateFrom, dateTo) {
+        if (!validIsoDay(dateFrom) || !validIsoDay(dateTo)) return 0;
+        var fromParts = dateFrom.split('-').map(Number);
+        var toParts = dateTo.split('-').map(Number);
+        return Math.floor(
+            (Date.UTC(toParts[0], toParts[1] - 1, toParts[2])
+                - Date.UTC(fromParts[0], fromParts[1] - 1, fromParts[2])) / 86400000
+        ) + 1;
+    }
+    function shiftIsoDay(value, offset) {
+        if (!validIsoDay(value)) return '';
+        var parts = value.split('-').map(Number);
+        var parsed = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + offset));
+        return parsed.toISOString().slice(0, 10);
+    }
+    function shortPeriodDate(value) {
+        var parts = String(value || '').split('-');
+        return parts.length === 3 ? parts[2] + '.' + parts[1] : String(value || '');
+    }
+    function syncPeriodControls() {
+        nodes.periodDays.value = state.periodMode === 'custom' ? 'custom' : String(state.periodDays);
+        nodes.periodFrom.value = state.periodFrom;
+        nodes.periodTo.value = state.periodTo;
+        nodes.periodFrom.max = state.lastCompleteDay;
+        nodes.periodTo.max = state.lastCompleteDay;
+    }
     function escapeHtml(value) {
         return String(value === null || value === undefined ? '' : value)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -281,6 +319,10 @@
         return 'дней';
     }
     function columnGroupLabel(group) {
+        var customRange = state.periodMode === 'custom' && state.periodFrom && state.periodTo
+            ? shortPeriodDate(state.periodFrom) + '–' + shortPeriodDate(state.periodTo) : '';
+        if (group.key === 'actual' && customRange) return 'Экономика ' + customRange;
+        if (group.key === 'advertising' && customRange) return 'Реклама ' + customRange;
         if (group.key === 'actual') return 'Экономика за ' + state.periodDays + ' ' + pluralDays(state.periodDays);
         if (group.key === 'advertising') return 'Реклама за ' + state.periodDays + ' ' + pluralDays(state.periodDays);
         return group.label;
@@ -600,6 +642,9 @@
         nodes.search.disabled = loading;
         nodes.store.disabled = loading;
         nodes.periodDays.disabled = loading;
+        nodes.periodFrom.disabled = loading;
+        nodes.periodTo.disabled = loading;
+        nodes.periodApply.disabled = loading;
         nodes.pageSize.disabled = loading;
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
             button.disabled = loading;
@@ -608,7 +653,12 @@
     function productsRequestUrl(parameters) {
         var separator = productsEndpoint.indexOf('?') === -1 ? '?' : '&';
         var query = new URLSearchParams(parameters || {});
-        query.set('period_days', String(state.periodDays));
+        if (state.periodMode === 'custom') {
+            query.set('date_from', state.periodFrom);
+            query.set('date_to', state.periodTo);
+        } else {
+            query.set('period_days', String(state.periodDays));
+        }
         return productsEndpoint + separator + query.toString();
     }
     async function loadProducts(options) {
@@ -630,6 +680,16 @@
             var result = await response.json();
             if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось загрузить данные WB');
             replaceProducts(result.products, silent);
+            state.periodDays = Math.max(1, Number(result.period_days) || state.periodDays);
+            state.periodFrom = String(result.period_from || state.periodFrom);
+            state.periodTo = String(result.period_to || state.periodTo);
+            state.lastCompleteDay = String(result.last_complete_day || state.lastCompleteDay);
+            state.periodMode = result.period_mode === 'custom' ? 'custom' : 'preset';
+            syncPeriodControls();
+            renderTableHeader();
+            if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
+                window.CheckStockTableFilter.refresh(nodes.table);
+            }
             if (!silent) {
                 state.page = 1;
                 state.tableFilters = {};
@@ -1958,10 +2018,7 @@
         state.pageSize = [20, 50, 100].indexOf(value) === -1 ? 20 : value;
         resetPageAndRender();
     });
-    nodes.periodDays.addEventListener('change', function () {
-        var value = Number(nodes.periodDays.value);
-        state.periodDays = [7, 14, 30].indexOf(value) !== -1 ? value : 7;
-        writeJson(periodKey, state.periodDays);
+    function reloadForPeriod() {
         state.page = 1;
         state.tableFilters = {};
         renderTableHeader();
@@ -1969,6 +2026,59 @@
             window.CheckStockTableFilter.refresh(nodes.table);
         }
         loadProducts();
+    }
+    function markCustomPeriod() {
+        nodes.periodDays.value = 'custom';
+    }
+    function applyCustomPeriod() {
+        var dateFrom = String(nodes.periodFrom.value || '');
+        var dateTo = String(nodes.periodTo.value || '');
+        var days = periodDayCount(dateFrom, dateTo);
+        if (!dateFrom || !dateTo) {
+            showToast('Укажите начало и конец периода', 'error');
+            return;
+        }
+        if (!days || dateFrom > dateTo) {
+            showToast('Дата начала должна быть не позже даты окончания', 'error');
+            return;
+        }
+        if (dateTo > state.lastCompleteDay) {
+            showToast('Можно выбрать только завершённые дни — не позднее вчера', 'error');
+            return;
+        }
+        if (days > maxPeriodDays) {
+            showToast('Период не может превышать ' + maxPeriodDays + ' дней', 'error');
+            return;
+        }
+        state.periodMode = 'custom';
+        state.periodDays = days;
+        state.periodFrom = dateFrom;
+        state.periodTo = dateTo;
+        syncPeriodControls();
+        reloadForPeriod();
+    }
+    nodes.periodDays.addEventListener('change', function () {
+        if (nodes.periodDays.value === 'custom') {
+            markCustomPeriod();
+            return;
+        }
+        var value = Number(nodes.periodDays.value);
+        state.periodMode = 'preset';
+        state.periodDays = [7, 14, 30].indexOf(value) !== -1 ? value : 7;
+        state.periodTo = state.lastCompleteDay;
+        state.periodFrom = shiftIsoDay(state.periodTo, 1 - state.periodDays);
+        syncPeriodControls();
+        reloadForPeriod();
+    });
+    nodes.periodFrom.addEventListener('input', markCustomPeriod);
+    nodes.periodTo.addEventListener('input', markCustomPeriod);
+    nodes.periodApply.addEventListener('click', applyCustomPeriod);
+    [nodes.periodFrom, nodes.periodTo].forEach(function (input) {
+        input.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            applyCustomPeriod();
+        });
     });
     nodes.pagePrev.addEventListener('click', function () {
         if (state.page <= 1) return;
@@ -2157,7 +2267,7 @@
     window.setInterval(function () { refreshProductsIfStale(true); }, AUTO_REFRESH_INTERVAL_MS);
 
     renderStores();
-    nodes.periodDays.value = String(state.periodDays);
+    syncPeriodControls();
     Array.prototype.forEach.call(root.querySelectorAll('[data-chart-series]'), function (input) {
         input.checked = chartPreferences.series.indexOf(input.dataset.chartSeries) !== -1;
     });

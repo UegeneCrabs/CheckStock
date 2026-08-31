@@ -112,7 +112,7 @@ body:has(.content--unit-1c) { overflow: hidden; }
 
 .ue1c-toolbar {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) 160px auto 112px auto auto;
+    grid-template-columns: minmax(220px, 1fr) 150px auto 112px minmax(330px, auto) auto auto;
     gap: 10px;
     align-items: center;
     flex: 0 0 auto;
@@ -132,6 +132,37 @@ body:has(.content--unit-1c) { overflow: hidden; }
     pointer-events: none;
 }
 .ue1c-period-select .ue1c-select { padding-top: 11px; font-weight: 720; }
+.ue1c-period-range {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(112px, 1fr) 10px minmax(112px, 1fr) auto;
+    gap: 6px;
+    align-items: center;
+}
+.ue1c-period-range label { position: relative; min-width: 0; }
+.ue1c-period-range label > span {
+    position: absolute;
+    z-index: 1;
+    top: 5px;
+    left: 11px;
+    color: var(--ue-muted);
+    font-size: 9px;
+    font-weight: 750;
+    pointer-events: none;
+}
+.ue1c-period-range input,
+.ue1c-period-apply {
+    width: 100%;
+    height: 42px;
+    border: 1px solid var(--ue-line-strong);
+    border-radius: 10px;
+    background: var(--ue-surface);
+    color: var(--ue-text);
+}
+.ue1c-period-range input { min-width: 0; padding: 12px 8px 0 10px; font-weight: 700; }
+.ue1c-period-apply { width: auto; padding: 0 12px; cursor: pointer; font-weight: 720; white-space: nowrap; }
+.ue1c-period-apply:hover { border-color: #aeb9cb; background: var(--ue-surface-2); }
+.ue1c-period-separator { color: var(--ue-quiet); text-align: center; }
 
 .ue1c-field { position: relative; min-width: 0; }
 .ue1c-search-field > span {
@@ -885,7 +916,9 @@ html[data-theme="dark"] .ue1c-chart-series-tooltip { background: rgba(17,27,45,.
 
 @media (max-width: 1300px) {
     .ue1c-segments { display: none; }
-    .ue1c-toolbar { grid-template-columns: minmax(240px,1fr) 170px 112px auto auto; }
+    .ue1c-toolbar {
+        grid-template-columns: minmax(220px,1fr) 150px 112px minmax(320px,auto) auto auto;
+    }
 }
 
 @media (max-width: 1050px) {
@@ -917,6 +950,7 @@ html[data-theme="dark"] .ue1c-chart-series-tooltip { background: rgba(17,27,45,.
     .ue1c-search-field { grid-column: 1 / -1; }
     .ue1c-select { grid-column: 1 / -1; }
     .ue1c-period-select .ue1c-select { grid-column: auto; }
+    .ue1c-period-range { grid-column: 1 / -1; }
     .ue1c-table-footer { align-items: flex-start; flex-direction: column; }
     .ue1c-footer-actions { width: 100%; overflow-x: auto; }
     .ue1c-calculator-body { grid-template-columns: 1fr; }

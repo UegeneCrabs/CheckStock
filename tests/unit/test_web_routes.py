@@ -580,6 +580,43 @@ class WebRouteUnitTests(unittest.TestCase):
         )
         self.assertEqual(load_metrics.call_args_list[0].kwargs["period_days"], 14)
 
+    def test_unit_economics_1c_accepts_custom_closed_date_range(self) -> None:
+        with mock.patch.object(
+            unit_economics.unit_economics_1c,
+            "load_product_metrics",
+            return_value={},
+        ) as load_metrics:
+            response = self.client.get(
+                "/sales/unit-economics-1c",
+                params={
+                    "data": "1",
+                    "date_from": "2026-08-10",
+                    "date_to": "2026-08-19",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["period_mode"], "custom")
+        self.assertEqual(payload["period_days"], 10)
+        self.assertEqual(payload["period_from"], "2026-08-10")
+        self.assertEqual(payload["period_to"], "2026-08-19")
+        self.assertEqual(load_metrics.call_args_list[0].kwargs["period_days"], 10)
+        self.assertEqual(load_metrics.call_args_list[0].kwargs["today"], date(2026, 8, 19))
+
+    def test_unit_economics_1c_rejects_invalid_custom_date_range(self) -> None:
+        response = self.client.get(
+            "/sales/unit-economics-1c",
+            params={
+                "data": "1",
+                "date_from": "2026-08-20",
+                "date_to": "2026-08-19",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("начала периода", response.json()["error"])
+
     def test_unit_economics_1c_ignores_legacy_catalog_exclusions(self) -> None:
         connection = core.get_connection()
         connection.execute(
@@ -796,6 +833,13 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("loadProducts({ silent: true, refreshDetail: true })", script)
         self.assertIn("document.addEventListener('visibilitychange'", script)
         self.assertIn("async function refreshSelectedDetail()", script)
+        self.assertIn('id="ue1c-period-from" type="date"', template)
+        self.assertIn('id="ue1c-period-to" type="date"', template)
+        self.assertIn('id="ue1c-period-apply"', template)
+        self.assertIn('<option value="custom">Свои даты</option>', template)
+        self.assertIn("query.set('date_from', state.periodFrom)", script)
+        self.assertIn("query.set('date_to', state.periodTo)", script)
+        self.assertIn("if (group.key === 'advertising' && customRange)", script)
         self.assertIn("ue1c-partial-cell", styles)
         self.assertIn(".ue1c-coverage-value.is-partial", styles)
 

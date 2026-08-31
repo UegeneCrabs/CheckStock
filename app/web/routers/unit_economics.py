@@ -50,6 +50,7 @@ UNIT_ECONOMICS_COLUMN_GROUPS = (
     "stock",
 )
 UNIT_ECONOMICS_PERIOD_DAYS = (7, 14, 30)
+UNIT_ECONOMICS_MAX_PERIOD_DAYS = 366
 
 
 def _cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
@@ -907,6 +908,7 @@ async def sales_unit_economics_1c(request: Request):
     accessible_store_slugs = accessible_stores(request.state.user, "WB")
     data_request = request.query_params.get("data") == "1"
     request_today = datetime.now(MOSCOW_TIMEZONE).date()
+    last_complete_day = request_today - timedelta(days=1)
     try:
         requested_period_days = int(request.query_params.get("period_days") or 7)
     except (TypeError, ValueError):
@@ -916,6 +918,39 @@ async def sales_unit_economics_1c(request: Request):
         if requested_period_days in UNIT_ECONOMICS_PERIOD_DAYS
         else 7
     )
+    closed_period_to = last_complete_day
+    closed_period_from = closed_period_to - timedelta(days=period_days - 1)
+    requested_date_from = str(request.query_params.get("date_from") or "").strip()
+    requested_date_to = str(request.query_params.get("date_to") or "").strip()
+    custom_period = bool(requested_date_from or requested_date_to)
+    period_error = None
+    if custom_period:
+        if not requested_date_from or not requested_date_to:
+            period_error = "Укажите обе даты периода"
+        else:
+            try:
+                custom_from = date.fromisoformat(requested_date_from)
+                custom_to = date.fromisoformat(requested_date_to)
+            except ValueError:
+                period_error = "Некорректный формат дат периода"
+            else:
+                custom_days = (custom_to - custom_from).days + 1
+                if custom_from > custom_to:
+                    period_error = "Дата начала периода не может быть позже даты окончания"
+                elif custom_to > last_complete_day:
+                    period_error = "Период может заканчиваться не позднее вчерашнего дня"
+                elif custom_days > UNIT_ECONOMICS_MAX_PERIOD_DAYS:
+                    period_error = (
+                        f"Период не может превышать {UNIT_ECONOMICS_MAX_PERIOD_DAYS} дней"
+                    )
+                else:
+                    closed_period_from = custom_from
+                    closed_period_to = custom_to
+                    period_days = custom_days
+    if period_error and data_request:
+        return JSONResponse({"ok": False, "error": period_error}, status_code=400)
+    if period_error:
+        custom_period = False
     detail_store = (
         str(request.query_params.get("store") or "").strip().lower() if data_request else ""
     )
@@ -929,8 +964,6 @@ async def sales_unit_economics_1c(request: Request):
         latest_rows = db.get_unit_economics_1c_latest_daily_prices(store_slugs)
         prices = {(str(row["store_slug"]), str(row["article"])): row for row in latest_rows}
         today = request_today
-        closed_period_to = today - timedelta(days=1)
-        closed_period_from = closed_period_to - timedelta(days=period_days - 1)
         history_from = (
             min(today - timedelta(days=20), closed_period_from)
             if include_history
@@ -1212,10 +1245,10 @@ async def sales_unit_economics_1c(request: Request):
                 "products": [_unit_economics_1c_product_summary(item) for item in products],
                 "warnings": price_warnings,
                 "period_days": period_days,
-                "period_from": (
-                    request_today - timedelta(days=period_days)
-                ).isoformat(),
-                "period_to": (request_today - timedelta(days=1)).isoformat(),
+                "period_from": closed_period_from.isoformat(),
+                "period_to": closed_period_to.isoformat(),
+                "period_mode": "custom" if custom_period else "preset",
+                "last_complete_day": last_complete_day.isoformat(),
             }
         )
 
@@ -1254,6 +1287,10 @@ async def sales_unit_economics_1c(request: Request):
         "products": [],
         "productsEndpoint": "/sales/unit-economics-1c?data=1",
         "periodDays": 7,
+        "periodFrom": (last_complete_day - timedelta(days=6)).isoformat(),
+        "periodTo": last_complete_day.isoformat(),
+        "lastCompleteDay": last_complete_day.isoformat(),
+        "maxPeriodDays": UNIT_ECONOMICS_MAX_PERIOD_DAYS,
         "subjectCommissions": [],
         "commissionsEndpoint": "/sales/unit-economics-1c?data=1&commissions=1",
         "canEdit": has_section_access(
