@@ -20,6 +20,12 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(configured.wb_funnel_orders_sync_interval_seconds, 15 * 60)
         self.assertEqual(configured.wb_storefront_dest, "-1257786")
         self.assertEqual(configured.wb_storefront_batch_size, 1_000)
+        self.assertTrue(configured.ftp_export_enabled)
+        self.assertEqual(configured.ftp_export_start_hour, 3)
+        self.assertEqual(configured.ftp_export_start_minute, 15)
+        self.assertEqual(configured.ftp_export_deadline_hour, 6)
+        self.assertEqual(configured.ftp_export_retry_interval_seconds, 20 * 60)
+        self.assertEqual(configured.ftp_tls, "auto")
 
     def test_local_env_sets_defaults_without_overriding_process_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -53,6 +59,14 @@ class SettingsTests(unittest.TestCase):
             "CHECKSTOCK_STOCK_DETAIL_PAGE_SIZE": "42",
             "CHECKSTOCK_OZON_REQUEST_ATTEMPTS": "7",
             "CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS": "25",
+            "CHECKSTOCK_FTP_EXPORT_START_HOUR": "4",
+            "CHECKSTOCK_FTP_EXPORT_START_MINUTE": "30",
+            "CHECKSTOCK_FTP_EXPORT_DEADLINE_HOUR": "7",
+            "CHECKSTOCK_FTP_EXPORT_RETRY_INTERVAL_SECONDS": "600",
+            "CHECKSTOCK_FTP_HOST_WB": "ftp.example.test",
+            "CHECKSTOCK_FTP_TLS": "true",
+            "CHECKSTOCK_FTP_MODE": "active",
+            "CHECKSTOCK_FTP_PROT": "clear",
         }
         with mock.patch.dict(os.environ, environment, clear=True):
             configured = Settings.from_env()
@@ -73,6 +87,14 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(configured.stock_detail_page_size, 42)
         self.assertEqual(configured.ozon_request_attempts, 7)
         self.assertEqual(configured.rnp_report_poll_attempts, 25)
+        self.assertEqual(configured.ftp_export_start_hour, 4)
+        self.assertEqual(configured.ftp_export_start_minute, 30)
+        self.assertEqual(configured.ftp_export_deadline_hour, 7)
+        self.assertEqual(configured.ftp_export_retry_interval_seconds, 600)
+        self.assertEqual(configured.ftp_host_wb, "ftp.example.test")
+        self.assertEqual(configured.ftp_tls, "on")
+        self.assertEqual(configured.ftp_mode, "active")
+        self.assertEqual(configured.ftp_prot, "clear")
 
     def test_invalid_integer_fails_during_startup(self) -> None:
         with mock.patch.dict(
@@ -126,6 +148,27 @@ class SettingsTests(unittest.TestCase):
             clear=True,
         ):
             with self.assertRaisesRegex(ValueError, "at most 20"):
+                Settings.from_env()
+
+    def test_ftp_window_requires_start_before_deadline(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CHECKSTOCK_FTP_EXPORT_START_HOUR": "6",
+                "CHECKSTOCK_FTP_EXPORT_DEADLINE_HOUR": "6",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "FTP export start"):
+                Settings.from_env()
+
+    def test_invalid_ftp_mode_fails_during_startup(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"CHECKSTOCK_FTP_MODE": "sometimes"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "CHECKSTOCK_FTP_MODE"):
                 Settings.from_env()
 
 

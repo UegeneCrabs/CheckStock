@@ -54,6 +54,20 @@ def _env_csv(name: str) -> tuple[str, ...]:
     return tuple(value.strip() for value in os.getenv(name, "").split(",") if value.strip())
 
 
+def _env_choice(
+    name: str,
+    default: str,
+    choices: set[str],
+    *,
+    aliases: dict[str, str] | None = None,
+) -> str:
+    value = os.getenv(name, default).strip().lower()
+    normalized = (aliases or {}).get(value, value)
+    if normalized not in choices:
+        raise ValueError(f"{name} must be one of: {', '.join(sorted(choices))}")
+    return normalized
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
 
@@ -75,6 +89,21 @@ class Settings(BaseModel):
     funnel_orders_sync_enabled: bool
     unit_economics_1c_price_sync_enabled: bool
     unit_economics_1c_source_sync_hour: int = Field(ge=0, le=23)
+    ftp_export_enabled: bool
+    ftp_export_start_hour: int = Field(ge=0, le=23)
+    ftp_export_start_minute: int = Field(ge=0, le=59)
+    ftp_export_deadline_hour: int = Field(ge=1, le=23)
+    ftp_export_retry_interval_seconds: int = Field(ge=60)
+    ftp_timeout_seconds: int = Field(ge=1)
+    ftp_host_wb: str = ""
+    ftp_user_wb: str = ""
+    ftp_password_wb: str = ""
+    ftp_host_ozon: str = ""
+    ftp_user_ozon: str = ""
+    ftp_password_ozon: str = ""
+    ftp_tls: str = "auto"
+    ftp_mode: str = "auto"
+    ftp_prot: str = "auto"
     token_check_interval_seconds: int = Field(ge=1)
     unit_economics_1c_price_sync_startup_delay_seconds: int = Field(ge=0)
     wb_advertising_sync_startup_delay_seconds: int = Field(ge=0)
@@ -125,6 +154,9 @@ class Settings(BaseModel):
     def validate_stock_thresholds(self) -> "Settings":
         if self.stock_frozen_days > self.stock_excess_days:
             raise ValueError("stock_frozen_days must not exceed stock_excess_days")
+        start_minutes = self.ftp_export_start_hour * 60 + self.ftp_export_start_minute
+        if start_minutes >= self.ftp_export_deadline_hour * 60:
+            raise ValueError("FTP export start must be earlier than its deadline")
         return self
 
     @classmethod
@@ -172,6 +204,45 @@ class Settings(BaseModel):
             ),
             unit_economics_1c_source_sync_hour=_env_int(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR", 2, maximum=23
+            ),
+            ftp_export_enabled=_env_bool("CHECKSTOCK_FTP_EXPORT_ENABLED", True),
+            ftp_export_start_hour=_env_int(
+                "CHECKSTOCK_FTP_EXPORT_START_HOUR", 3, maximum=23
+            ),
+            ftp_export_start_minute=_env_int(
+                "CHECKSTOCK_FTP_EXPORT_START_MINUTE", 15, maximum=59
+            ),
+            ftp_export_deadline_hour=_env_int(
+                "CHECKSTOCK_FTP_EXPORT_DEADLINE_HOUR", 6, minimum=1, maximum=23
+            ),
+            ftp_export_retry_interval_seconds=_env_int(
+                "CHECKSTOCK_FTP_EXPORT_RETRY_INTERVAL_SECONDS", 20 * 60, minimum=60
+            ),
+            ftp_timeout_seconds=_env_int("CHECKSTOCK_FTP_TIMEOUT_SECONDS", 60, minimum=1),
+            ftp_host_wb=os.getenv("CHECKSTOCK_FTP_HOST_WB", "").strip(),
+            ftp_user_wb=os.getenv("CHECKSTOCK_FTP_USER_WB", "").strip(),
+            ftp_password_wb=os.getenv("CHECKSTOCK_FTP_PASSWORD_WB", ""),
+            ftp_host_ozon=os.getenv("CHECKSTOCK_FTP_HOST_OZON", "").strip(),
+            ftp_user_ozon=os.getenv("CHECKSTOCK_FTP_USER_OZON", "").strip(),
+            ftp_password_ozon=os.getenv("CHECKSTOCK_FTP_PASSWORD_OZON", ""),
+            ftp_tls=_env_choice(
+                "CHECKSTOCK_FTP_TLS",
+                "auto",
+                {"auto", "on", "off"},
+                aliases={
+                    "1": "on",
+                    "true": "on",
+                    "yes": "on",
+                    "0": "off",
+                    "false": "off",
+                    "no": "off",
+                },
+            ),
+            ftp_mode=_env_choice(
+                "CHECKSTOCK_FTP_MODE", "auto", {"auto", "passive", "active"}
+            ),
+            ftp_prot=_env_choice(
+                "CHECKSTOCK_FTP_PROT", "auto", {"auto", "private", "clear"}
             ),
             token_check_interval_seconds=_env_int(
                 "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 24 * 60 * 60, minimum=1

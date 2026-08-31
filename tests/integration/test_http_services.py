@@ -625,6 +625,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/admin/integrations",
             "/api/admin/integrations/{store_slug}/{marketplace}",
             "/api/admin/integrations/sync-jobs/{job_name}/history",
+            "/api/admin/integrations/sync-jobs/{job_name}/run",
             "/api/admin/integrations/sync-jobs/{job_name}/settings",
         }
         self.assertEqual(schema_paths, owned)

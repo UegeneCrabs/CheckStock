@@ -8,11 +8,19 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, SecretStr
 
-from app import auth, db, marketplace_credentials, sync_settings
+from app import (
+    auth,
+    db,
+    ftp_export,
+    ftp_export_schedule,
+    marketplace_credentials,
+    sync_settings,
+)
 from app.domain import MOSCOW_TIMEZONE
 from app.formatting import format_dt
 from app.stores import STORES
 from app.sync_catalog import job_definitions
+from app.sync_tracking import run_tracked, set_next_run
 from app.wb import token_watch
 from app.web.templating import fill_template, render_page
 
@@ -216,6 +224,14 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
             f'data-sync-targets-toggle="{html.escape(definition.name)}" aria-expanded="false">'
             f'Магазины · {config["enabled_target_count"]}/{config["target_count"]}</button>'
         )
+    manual_button = ""
+    if definition.manual_run:
+        manual_button = (
+            '<button class="btn-primary integration-run-button" type="button" '
+            f'data-sync-run="{html.escape(definition.name)}" '
+            f'data-sync-title="{html.escape(definition.title)}"'
+            f'{"" if definition.enabled else " disabled"}>Запустить сейчас</button>'
+        )
     row = (
         f'<tr data-sync-job="{html.escape(definition.name)}">'
         f'<td><strong>{html.escape(definition.title)}</strong><small>{html.escape(definition.description)}</small></td>'
@@ -234,6 +250,7 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
         + '</div></td>'
         '<td><div class="integration-sync-actions">'
         + target_button
+        + manual_button
         + '<button class="btn-secondary integration-history-button" type="button" '
         f'data-sync-history="{html.escape(definition.name)}" '
         f'data-sync-title="{html.escape(definition.title)}">История</button></div></td>'
@@ -318,6 +335,59 @@ async def sync_job_history(request: Request, job_name: str, limit: int = 50):
         "retention_days": 30,
         "runs": runs,
     }
+
+
+@router.post("/api/admin/integrations/sync-jobs/{job_name}/run")
+async def run_sync_job(request: Request, job_name: str):
+    _require_superadmin(request)
+    definition = next(
+        (item for item in job_definitions() if item.name == job_name and item.manual_run),
+        None,
+    )
+    platform = ftp_export.platform_for_job(job_name)
+    if definition is None or platform is None:
+        return JSONResponse(
+            {"ok": False, "error": "Ручной запуск этой выгрузки недоступен"},
+            status_code=404,
+        )
+    if not definition.enabled:
+        return JSONResponse(
+            {"ok": False, "error": "Выгрузка системно отключена"},
+            status_code=409,
+        )
+    if ftp_export.is_running(platform):
+        return JSONResponse(
+            {"ok": False, "error": f"Выгрузка FTP {platform.upper()} уже выполняется"},
+            status_code=409,
+        )
+
+    try:
+        result = await run_in_threadpool(
+            run_tracked,
+            job_name,
+            "manual",
+            lambda: ftp_export.run_platform(platform),
+        )
+    except ftp_export.FTPExportBusyError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
+    except Exception as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
+
+    await run_in_threadpool(
+        set_next_run,
+        job_name,
+        ftp_export_schedule.next_delay_seconds(job_name),
+    )
+    actor = request.state.user
+    await run_in_threadpool(
+        db.log_action,
+        actor.id,
+        actor.full_name,
+        "Запущена FTP-выгрузка",
+        definition.title,
+        datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
+    )
+    return {"ok": True, "result": result}
 
 
 @router.put("/api/admin/integrations/sync-jobs/{job_name}/settings")
