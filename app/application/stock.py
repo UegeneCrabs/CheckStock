@@ -297,25 +297,29 @@ class StockMovementService:
         query: TargetResolutionQuery,
     ) -> TargetResolution:
         target = repository.catalog(CatalogQuery(store_slug=query.store_slug, marketplace=query.marketplace))
-        target_articles = {item.article for item in target.root}
+        target_by_article = {item.article: item for item in target.root}
+        target_by_barcode = {item.barcode: item for item in target.root if item.barcode}
         movable: list[TargetStockEntry] = []
         skipped: list[StockMovementItem] = []
         for entry in query.entries.root:
-            if entry.article not in target_articles:
+            target_item = target_by_article.get(entry.article)
+            if target_item is None and entry.barcode:
+                target_item = target_by_barcode.get(entry.barcode)
+            if target_item is None:
                 skipped.append(
                     StockMovementItem(
                         article=entry.article,
                         name=entry.name,
                         barcode=entry.barcode,
                         quantity=entry.quantity,
-                        reason=f"Артикул не найден в каталоге {query.marketplace.value}",
+                        reason=f"Товар не найден по артикулу или баркоду в каталоге {query.marketplace.value}",
                     )
                 )
                 continue
             movable.append(
                 TargetStockEntry(
                     from_article=entry.article,
-                    to_article=entry.article,
+                    to_article=target_item.article,
                     quantity=entry.quantity,
                     name=entry.name,
                     barcode=entry.barcode,

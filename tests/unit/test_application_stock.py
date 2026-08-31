@@ -123,6 +123,42 @@ def test_transfer_moves_available_items_and_reports_target_misses(stock_service)
 
 
 @pytest.mark.unit
+def test_transfer_uses_target_barcode_when_article_is_missing(stock_service) -> None:
+    service, repository, unit_of_work = stock_service
+    source = CatalogItems(
+        (
+            CatalogItem(
+                article="WB-A",
+                barcode="shared-barcode",
+                name="Product A",
+                marketplace=Marketplace.WB,
+            ),
+        )
+    )
+    target = CatalogItems(
+        (
+            CatalogItem(
+                article="OZON-A",
+                barcode="shared-barcode",
+                name="Product A",
+                marketplace=Marketplace.OZON,
+            ),
+        )
+    )
+    repository.catalog.side_effect = [source, target]
+    repository.quantity.return_value = StockQuantity(10)
+    repository.apply_transfer.return_value = 43
+
+    result = service.transfer(transfer_command(("WB-A", 2)))
+
+    persisted = repository.apply_transfer.call_args.args[0].items.root[0]
+    assert persisted.from_article == "WB-A"
+    assert persisted.to_article == "OZON-A"
+    assert result.moved.root[0].article == "OZON-A"
+    unit_of_work.commit.assert_called_once()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("source", "target", "quantity", "message"),
     [

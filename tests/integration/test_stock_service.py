@@ -88,6 +88,60 @@ def test_stock_service_persists_full_movement_chain(stock_container: Application
 
 
 @pytest.mark.integration
+def test_stock_service_maps_different_target_article_by_barcode(
+    stock_container: ApplicationContainer,
+) -> None:
+    db.replace_catalog(
+        "rimili",
+        "OZON",
+        [{"article": "OZON-A", "barcode": "barcode-A", "name": "Product A"}],
+        "2026-08-12T10:00:00+00:00",
+    )
+    stock_container.stock.add_items(
+        AddFulfillmentItemsCommand(
+            store_slug="rimili",
+            request=AddFulfillmentItemsRequest(
+                fulfillment="Source",
+                marketplace=Marketplace.WB,
+                note="Initial barcode mapping stock",
+                items=({"code": "A", "quantity": 5},),
+            ),
+        )
+    )
+
+    transfer = stock_container.stock.transfer(
+        TransferStockCommand(
+            store_slug="rimili",
+            entries=SignedStockEntries((SignedStockEntry(code="A", quantity=2),)),
+            from_fulfillment="Source",
+            from_marketplace=Marketplace.WB,
+            to_fulfillment="Target",
+            to_marketplace=Marketplace.OZON,
+            user_id=1,
+            user_name="Integration User",
+        )
+    )
+    batch = db.get_ff_transit_batch(transfer.transfer_id)
+    assert batch is not None
+    assert batch["items"][0]["from_article"] == "A"
+    assert batch["items"][0]["to_article"] == "OZON-A"
+
+    stock_container.stock.receive_transfer(
+        ReceiveTransitCommand(
+            transfer_id=transfer.transfer_id,
+            request=ReceiveTransitRequest(
+                items=({"item_id": batch["items"][0]["id"], "quantity": 2},),
+            ),
+            user_id=1,
+            user_name="Integration User",
+        )
+    )
+
+    assert db.get_ff_stock_one("rimili", "A", "Source", "WB") == 3
+    assert db.get_ff_stock_one("rimili", "OZON-A", "Target", "OZON") == 2
+
+
+@pytest.mark.integration
 def test_stock_service_partially_receives_and_cancels_transit_remainder(
     stock_container: ApplicationContainer,
 ) -> None:
