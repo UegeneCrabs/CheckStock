@@ -221,11 +221,18 @@ def test_writer_replaces_a2_g_with_header_and_complete_catalog_snapshot() -> Non
             "range": "'WB'!A2:G4",
             "values": [
                 list(stock_sheet_export.EXPORT_HEADERS),
-                ["A-1", "46001", "Первый товар", 15, 3, 5, 7],
-                ["A-2", "46002", "Второй товар", 18, 4, 6, 8],
+                ["A-1", 46001, "Первый товар", 15, 3, 5, 7],
+                ["A-2", 46002, "Второй товар", 18, 4, 6, 8],
             ],
         }
     ]
+
+
+def test_sheet_identifiers_are_numeric_without_apostrophes() -> None:
+    assert stock_sheet_export._sheet_identifier("'964286427") == 964286427
+    assert stock_sheet_export._sheet_identifier("'2050453811850") == 2050453811850
+    assert stock_sheet_export._sheet_identifier("OZON-42") == "OZON-42"
+    assert stock_sheet_export._sheet_identifier("1234567890123456") == "1234567890123456"
 
 
 def test_record_result_success_uses_postgresql_safe_parameters(monkeypatch) -> None:

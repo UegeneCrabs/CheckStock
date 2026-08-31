@@ -379,6 +379,13 @@ def _quote_sheet(name: str) -> str:
     return "'" + name.replace("'", "''") + "'"
 
 
+def _sheet_identifier(value: object) -> str | int:
+    text = str(value or "").strip().removeprefix("'").strip()
+    if text.isdecimal() and len(text) <= 15:
+        return int(text)
+    return text
+
+
 def _find_header(rows: list[list[object]], name: str, sheet_name: str) -> tuple[int, int]:
     needle = _header_key(name)
     matches = [
@@ -567,8 +574,8 @@ def _write_marketplace(
         fbo_stock = int(values_by_metric.get("fbo_stock", {}).get(article, 0) or 0)
         data_rows.append(
             [
-                article,
-                str(item.get("barcode") or "").strip(),
+                _sheet_identifier(article),
+                _sheet_identifier(item.get("barcode")),
                 str(item.get("name") or "").strip(),
                 ff_stock + fbs_stock + fbo_stock,
                 ff_stock,
