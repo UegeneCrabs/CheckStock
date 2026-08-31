@@ -160,6 +160,40 @@ $total_download_button
                         <div class="stock-transit-empty">Загрузка перемещений...</div>
                     </div>
                 </section>
+                <dialog class="stock-transit-reopen-dialog" data-stock-transit-reopen-dialog
+                        aria-labelledby="stock-transit-reopen-title">
+                    <form class="stock-transit-reopen-form" data-stock-transit-reopen-form novalidate>
+                        <header class="stock-transit-reopen-head">
+                            <div>
+                                <span>Корректировка перемещения</span>
+                                <h3 id="stock-transit-reopen-title">Вернуть приёмку в путь</h3>
+                            </div>
+                            <button type="button" data-stock-transit-reopen-close
+                                    aria-label="Закрыть форму">×</button>
+                        </header>
+                        <div class="stock-transit-reopen-body">
+                            <p class="stock-transit-reopen-description" data-stock-transit-reopen-description></p>
+                            <div class="stock-transit-reopen-warning">
+                                <span>Со склада назначения будет снято</span>
+                                <strong data-stock-transit-reopen-quantity>0 ед.</strong>
+                            </div>
+                            <label class="stock-transit-reopen-reason">
+                                <span>Причина возврата <b>*</b></span>
+                                <textarea class="select-control" data-stock-transit-reopen-reason
+                                          maxlength="200" rows="3" required
+                                          placeholder="Например: машина ещё в пути"></textarea>
+                                <small>Причина сохранится в журнале операций.</small>
+                            </label>
+                            <p class="stock-transit-reopen-error" data-stock-transit-reopen-error hidden></p>
+                        </div>
+                        <footer class="stock-transit-reopen-foot">
+                            <button class="btn-secondary" type="button"
+                                    data-stock-transit-reopen-close>Отмена</button>
+                            <button class="btn-primary" type="submit"
+                                    data-stock-transit-reopen-submit>Вернуть в путь</button>
+                        </footer>
+                    </form>
+                </dialog>
                 <section class="panel panel--collapsible stock-operation-card stock-operation-card--upload" data-collapse-id="ff-upload" data-collapsed>
                     <h3 class="panel-title">Загрузка остатков на фулфилмент</h3>
                     <p class="stock-operation-summary">Пополнить ФФ вручную, из Excel или Google Таблицы.</p>

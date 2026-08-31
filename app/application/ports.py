@@ -48,6 +48,7 @@ from app.dto.stock import (
     CatalogItems,
     CatalogQuery,
     ReceiveTransitCommand,
+    ReopenTransitCommand,
     StockIncrement,
     StockQuantity,
     StockQuantityQuery,
@@ -190,6 +191,8 @@ class StockRepository(Protocol):
     def apply_transfer(self, command: ApplyTransferCommand) -> int: ...
 
     def receive_transfer(self, command: ReceiveTransitCommand) -> TransitActionResult: ...
+
+    def reopen_transfer(self, command: ReopenTransitCommand) -> TransitActionResult: ...
 
     def cancel_transfer(self, command: CancelTransitCommand) -> TransitActionResult: ...
 

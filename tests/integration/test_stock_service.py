@@ -12,6 +12,8 @@ from app.dto.stock import (
     CancelTransitRequest,
     ReceiveTransitCommand,
     ReceiveTransitRequest,
+    ReopenTransitCommand,
+    ReopenTransitRequest,
     ShipmentCommand,
     SignedStockEntries,
     SignedStockEntry,
@@ -139,6 +141,144 @@ def test_stock_service_maps_different_target_article_by_barcode(
 
     assert db.get_ff_stock_one("rimili", "A", "Source", "WB") == 3
     assert db.get_ff_stock_one("rimili", "OZON-A", "Target", "OZON") == 2
+
+
+@pytest.mark.integration
+def test_stock_service_reopens_received_transfer(stock_container: ApplicationContainer) -> None:
+    stock_container.stock.add_items(
+        AddFulfillmentItemsCommand(
+            store_slug="rimili",
+            request=AddFulfillmentItemsRequest(
+                fulfillment="Source",
+                marketplace=Marketplace.WB,
+                note="Initial stock",
+                items=({"code": "A", "quantity": 5},),
+            ),
+        )
+    )
+    transfer = stock_container.stock.transfer(
+        TransferStockCommand(
+            store_slug="rimili",
+            entries=SignedStockEntries((SignedStockEntry(code="A", quantity=2),)),
+            from_fulfillment="Source",
+            from_marketplace=Marketplace.WB,
+            to_fulfillment="Target",
+            to_marketplace=Marketplace.OZON,
+            user_id=1,
+            user_name="Sender",
+        )
+    )
+    batch = db.get_ff_transit_batch(transfer.transfer_id)
+    assert batch is not None
+    stock_container.stock.receive_transfer(
+        ReceiveTransitCommand(
+            transfer_id=transfer.transfer_id,
+            request=ReceiveTransitRequest(
+                items=({"item_id": batch["items"][0]["id"], "quantity": 2},),
+                note="Accepted by mistake",
+            ),
+            user_id=2,
+            user_name="Receiver",
+        )
+    )
+
+    reopened = stock_container.stock.reopen_transfer(
+        ReopenTransitCommand(
+            transfer_id=transfer.transfer_id,
+            request=ReopenTransitRequest(reason="Goods are still in transit"),
+            user_id=1,
+            user_name="Senior manager",
+        )
+    )
+
+    assert reopened.status == "in_transit"
+    assert [(item.article, item.quantity) for item in reopened.moved.root] == [("A", 2)]
+    assert db.get_ff_stock_one("rimili", "A", "Source", "WB") == 3
+    assert db.get_ff_stock_one("rimili", "A", "Target", "OZON") == 0
+    assert db.get_ff_transit_totals("rimili", "OZON") == {"A": 2}
+    restored = db.get_ff_transit_batch(transfer.transfer_id)
+    assert restored is not None
+    assert restored["status"] == "in_transit"
+    assert restored["received_units"] == 0
+    assert restored["remaining_units"] == 2
+    assert restored["receipts"] == []
+    assert restored["last_received_at"] is None
+
+    with pytest.raises(StockValidationError, match="нет принятого товара"):
+        stock_container.stock.reopen_transfer(
+            ReopenTransitCommand(
+                transfer_id=transfer.transfer_id,
+                request=ReopenTransitRequest(reason="Duplicate rollback"),
+                user_id=1,
+                user_name="Senior manager",
+            )
+        )
+
+
+@pytest.mark.integration
+def test_stock_service_rejects_reopen_when_destination_stock_was_used(
+    stock_container: ApplicationContainer,
+) -> None:
+    stock_container.stock.add_items(
+        AddFulfillmentItemsCommand(
+            store_slug="rimili",
+            request=AddFulfillmentItemsRequest(
+                fulfillment="Source",
+                marketplace=Marketplace.WB,
+                note="Initial stock",
+                items=({"code": "A", "quantity": 3},),
+            ),
+        )
+    )
+    transfer = stock_container.stock.transfer(
+        TransferStockCommand(
+            store_slug="rimili",
+            entries=SignedStockEntries((SignedStockEntry(code="A", quantity=2),)),
+            from_fulfillment="Source",
+            from_marketplace=Marketplace.WB,
+            to_fulfillment="Target",
+            to_marketplace=Marketplace.OZON,
+            user_id=1,
+            user_name="Sender",
+        )
+    )
+    batch = db.get_ff_transit_batch(transfer.transfer_id)
+    assert batch is not None
+    stock_container.stock.receive_transfer(
+        ReceiveTransitCommand(
+            transfer_id=transfer.transfer_id,
+            request=ReceiveTransitRequest(
+                items=({"item_id": batch["items"][0]["id"], "quantity": 2},),
+            ),
+            user_id=2,
+            user_name="Receiver",
+        )
+    )
+    stock_container.stock.ship(
+        ShipmentCommand(
+            store_slug="rimili",
+            entries=SignedStockEntries((SignedStockEntry(code="A", quantity=1),)),
+            fulfillment="Target",
+            marketplace=Marketplace.OZON,
+        )
+    )
+
+    with pytest.raises(StockValidationError, match="осталось 1, требуется 2"):
+        stock_container.stock.reopen_transfer(
+            ReopenTransitCommand(
+                transfer_id=transfer.transfer_id,
+                request=ReopenTransitRequest(reason="Too late"),
+                user_id=1,
+                user_name="Senior manager",
+            )
+        )
+
+    assert db.get_ff_stock_one("rimili", "A", "Target", "OZON") == 1
+    unchanged = db.get_ff_transit_batch(transfer.transfer_id)
+    assert unchanged is not None
+    assert unchanged["status"] == "received"
+    assert unchanged["received_units"] == 2
+    assert len(unchanged["receipts"]) == 1
 
 
 @pytest.mark.integration

@@ -318,6 +318,35 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(history_batch["receipts"][0]["note"], "Принято полностью")
         self.assertFalse(history_batch["can_receive"])
         self.assertFalse(history_batch["can_cancel"])
+        self.assertTrue(history_batch["can_reopen"])
+        reopened = self.client.post(
+            f"/stock/rimili/transfers/{transferred.json()['transfer_id']}/reopen",
+            json={"reason": "Машина ещё в пути"},
+        )
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["status"], "in_transit")
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF Two", "WB"), 0)
+        reopened_batch = self.client.get(
+            "/stock/rimili/transfers/in-transit",
+            params={"mp": "WB", "view": "active"},
+        ).json()["batches"][0]
+        self.assertEqual(reopened_batch["received_units"], 0)
+        self.assertEqual(reopened_batch["remaining_units"], 3)
+        self.assertEqual(reopened_batch["receipts"], [])
+        self.assertFalse(reopened_batch["can_reopen"])
+        revert_operation = db.get_store_operations("rimili")[0]
+        self.assertEqual(revert_operation["kind"], "transfer_receive_revert")
+        self.assertEqual(db.get_operation_items(revert_operation["id"])[0]["quantity"], -3)
+
+        received_again = self.client.post(
+            f"/stock/rimili/transfers/{transferred.json()['transfer_id']}/receive",
+            json={
+                "items": [{"item_id": reopened_batch["items"][0]["id"], "quantity": 3}],
+                "note": "Принято после фактического прибытия",
+            },
+        )
+        self.assertEqual(received_again.status_code, 200, received_again.text)
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF Two", "WB"), 3)
         self.assertEqual(
             self.client.get(
                 "/stock/rimili/transfers/in-transit",
@@ -600,6 +629,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/stock/{slug}/transfer",
             "/stock/{slug}/transfers/in-transit",
             "/stock/{slug}/transfers/{transfer_id}/receive",
+            "/stock/{slug}/transfers/{transfer_id}/reopen",
             "/stock/{slug}/transfers/{transfer_id}/cancel",
             "/stock/{slug}/shipment",
             "/stock/{slug}/trash/checked",

@@ -7,7 +7,13 @@ from app.stores import STORES
 VIEW_KINDS = {
     "summary": None,
     "deliveries": {"delivery", "manual_add"},
-    "transfers": {"transfer", "transfer_dispatch", "transfer_receive", "transfer_cancel"},
+    "transfers": {
+        "transfer",
+        "transfer_dispatch",
+        "transfer_receive",
+        "transfer_receive_revert",
+        "transfer_cancel",
+    },
     "shipments": {"shipment"},
     "fbs_transfers": {"fbs_transfer"},
     "fbs_sales": set(),
@@ -350,6 +356,10 @@ def build_report(
                 _add_items(summary_by_key[key]["moved_out"], operation["items"])
         elif kind == "transfer_receive":
             key = (operation["store_slug"], operation.get("to_marketplace"))
+            if key in summary_by_key:
+                _add_items(summary_by_key[key]["moved_in"], operation["items"])
+        elif kind == "transfer_receive_revert":
+            key = (operation["store_slug"], operation.get("from_marketplace"))
             if key in summary_by_key:
                 _add_items(summary_by_key[key]["moved_in"], operation["items"])
         elif kind == "transfer_cancel":

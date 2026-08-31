@@ -15,6 +15,8 @@ from app.dto.stock import (
     CancelTransitRequest,
     ReceiveTransitCommand,
     ReceiveTransitRequest,
+    ReopenTransitCommand,
+    ReopenTransitRequest,
     ShipmentCommand,
     SignedStockEntries,
     TransferStockCommand,
@@ -610,6 +612,17 @@ async def list_in_transit_transfers(
             store_slug=store_slug,
             marketplace=batch["from_marketplace"],
         )
+        batch["can_reopen"] = (
+            batch["status"] in {"received", "partial"}
+            and int(batch.get("received_units") or 0) > 0
+            and int(batch.get("cancelled_units") or 0) == 0
+            and has_action_permission(
+                request.state.user,
+                ActionPermission.STOCK_TRANSFER_CANCEL,
+                store_slug=store_slug,
+                marketplace=batch["to_marketplace"],
+            )
+        )
     return JSONResponse({"ok": True, "view": view, "batches": batches})
 
 
@@ -684,6 +697,85 @@ async def receive_in_transit_transfer(
             "transfer_id": transfer_id,
             "status": result.status,
             "results": items,
+        }
+    )
+
+
+@router.post("/stock/{slug}/transfers/{transfer_id}/reopen")
+async def reopen_received_transfer(
+    request: Request,
+    slug: str,
+    transfer_id: int,
+    payload: ReopenTransitRequest,
+    stock: StockMovementServiceDependency,
+):
+    store_slug = slug.lower()
+    batch = await run_in_threadpool(db.get_ff_transit_batch, transfer_id)
+    if batch is None or batch["store_slug"] != store_slug:
+        return JSONResponse({"ok": False, "error": "Перемещение не найдено"}, status_code=404)
+    actor = request.state.user
+    if not has_action_permission(
+        actor,
+        ActionPermission.STOCK_TRANSFER_CANCEL,
+        store_slug=store_slug,
+        marketplace=batch["to_marketplace"],
+    ):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Возвращать приёмку в путь может старший менеджер или суперадминистратор",
+            },
+            status_code=403,
+        )
+
+    try:
+        result = await run_in_threadpool(
+            stock.reopen_transfer,
+            ReopenTransitCommand(
+                transfer_id=transfer_id,
+                request=payload,
+                user_id=actor.id,
+                user_name=actor.full_name,
+            ),
+        )
+    except StockValidationError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+
+    now = _now_iso()
+    moved_items = result.moved.model_dump(mode="json")
+    operation_items = [item | {"quantity": -abs(int(item["quantity"]))} for item in moved_items]
+    operation_id = await run_in_threadpool(
+        db.record_operation,
+        store_slug,
+        "transfer_receive_revert",
+        "manual",
+        operation_items,
+        actor.id,
+        actor.full_name,
+        now,
+        from_fulfillment=batch["to_fulfillment"],
+        from_marketplace=batch["to_marketplace"],
+        to_fulfillment=f"В пути №{transfer_id}",
+        to_marketplace=batch["to_marketplace"],
+        note=payload.reason,
+        transit_batch_id=transfer_id,
+    )
+    moved = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
+    await run_in_threadpool(
+        db.log_action_for_operation,
+        actor.id,
+        actor.full_name,
+        "Приёмка перемещения возвращена в путь",
+        f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved} · {payload.reason}",
+        now,
+        operation_id,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "transfer_id": transfer_id,
+            "status": result.status,
+            "results": moved_items,
         }
     )
 

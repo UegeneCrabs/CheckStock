@@ -9,10 +9,19 @@
     var refreshButton = panel.querySelector('[data-stock-transit-refresh]');
     var viewButtons = panel.querySelectorAll('[data-stock-transit-view]');
     var layout = document.getElementById('store-layout');
+    var reopenDialog = document.querySelector('[data-stock-transit-reopen-dialog]');
+    var reopenForm = document.querySelector('[data-stock-transit-reopen-form]');
+    var reopenReason = document.querySelector('[data-stock-transit-reopen-reason]');
+    var reopenDescription = document.querySelector('[data-stock-transit-reopen-description]');
+    var reopenQuantity = document.querySelector('[data-stock-transit-reopen-quantity]');
+    var reopenError = document.querySelector('[data-stock-transit-reopen-error]');
+    var reopenSubmit = document.querySelector('[data-stock-transit-reopen-submit]');
     var pathParts = window.location.pathname.split('/').filter(Boolean);
     var storeSlug = pathParts[0] === 'stock' ? pathParts[1] : '';
     var requestNumber = 0;
     var currentView = 'active';
+    var reopenContext = null;
+    var reopenBusy = false;
     var numberFormat = new Intl.NumberFormat('ru-RU');
 
     function marketplace() {
@@ -210,6 +219,69 @@
         }).finally(function () { button.disabled = false; });
     }
 
+    function showReopenError(text) {
+        if (!reopenError) return;
+        reopenError.textContent = text || '';
+        reopenError.hidden = !text;
+    }
+
+    function openReopenForm(batch, button) {
+        if (
+            !reopenDialog || !reopenForm || !reopenReason ||
+            !reopenDescription || !reopenQuantity || !reopenSubmit
+        ) {
+            message('Не удалось открыть форму возврата приёмки', true);
+            return;
+        }
+        reopenContext = { batch: batch, button: button };
+        reopenForm.reset();
+        showReopenError('');
+        reopenDescription.textContent =
+            'Партия №' + batch.id + ' вернётся в статус «В пути». ' +
+            batch.to_fulfillment + ' · ' + batch.to_marketplace;
+        reopenQuantity.textContent = numberFormat.format(batch.received_units || 0) + ' ед.';
+        reopenDialog.showModal();
+        window.setTimeout(function () { reopenReason.focus(); }, 0);
+    }
+
+    function submitReopenForm(event) {
+        event.preventDefault();
+        if (!reopenContext || reopenBusy) return;
+        var reason = reopenReason.value.trim();
+        if (!reason) {
+            showReopenError('Укажите причину возврата приёмки в путь');
+            reopenReason.focus();
+            return;
+        }
+
+        var context = reopenContext;
+        reopenBusy = true;
+        context.button.disabled = true;
+        reopenSubmit.disabled = true;
+        reopenReason.disabled = true;
+        showReopenError('');
+        message('Возвращаем приёмку партии №' + context.batch.id + ' в путь...', false);
+        request('/stock/' + storeSlug + '/transfers/' + context.batch.id + '/reopen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+            body: JSON.stringify({ reason: reason })
+        }).then(function () {
+            reopenBusy = false;
+            reopenDialog.close();
+            message('Приёмка отменена, товар снова числится в пути', false);
+            reloadStocks();
+            return refresh();
+        }).catch(function (error) {
+            showReopenError(error.message);
+            message('Ошибка: ' + error.message, true);
+        }).finally(function () {
+            reopenBusy = false;
+            context.button.disabled = false;
+            reopenSubmit.disabled = false;
+            reopenReason.disabled = false;
+        });
+    }
+
     function renderBatch(batch) {
         var card = el('article', 'stock-transit-card');
         var head = el('div', 'stock-transit-card-head');
@@ -267,6 +339,24 @@
             receiveActions.appendChild(note);
             receiveActions.appendChild(receiveButton);
             card.appendChild(receiveActions);
+        }
+
+        if (batch.can_reopen) {
+            var reopenActions = el(
+                'div',
+                'stock-transit-actions stock-transit-actions--cancel stock-transit-actions--reopen'
+            );
+            var reopenButton = el(
+                'button',
+                'btn-secondary stock-transit-cancel',
+                'Вернуть приёмку в путь'
+            );
+            reopenButton.type = 'button';
+            reopenButton.addEventListener('click', function () {
+                openReopenForm(batch, reopenButton);
+            });
+            reopenActions.appendChild(reopenButton);
+            card.appendChild(reopenActions);
         }
 
         if (batch.can_cancel) {
@@ -336,6 +426,26 @@
             refresh();
         });
     });
+    if (reopenForm) reopenForm.addEventListener('submit', submitReopenForm);
+    if (reopenDialog) {
+        reopenDialog.querySelectorAll('[data-stock-transit-reopen-close]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                if (!reopenBusy) reopenDialog.close();
+            });
+        });
+        reopenDialog.addEventListener('cancel', function (event) {
+            if (reopenBusy) event.preventDefault();
+        });
+        reopenDialog.addEventListener('click', function (event) {
+            if (event.target === reopenDialog && !reopenBusy) reopenDialog.close();
+        });
+        reopenDialog.addEventListener('close', function () {
+            var trigger = reopenContext && reopenContext.button;
+            reopenContext = null;
+            showReopenError('');
+            if (trigger && trigger.isConnected) trigger.focus();
+        });
+    }
     if (refreshButton) refreshButton.addEventListener('click', refresh);
     window.stockTransit = { refresh: refresh };
     refresh();

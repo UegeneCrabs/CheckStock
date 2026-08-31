@@ -10,11 +10,14 @@ from app.dto.stock import (
     AddFulfillmentItemsRequest,
     CatalogItem,
     CatalogItems,
+    ReopenTransitCommand,
+    ReopenTransitRequest,
     ShipmentCommand,
     SignedStockEntries,
     SignedStockEntry,
     StockQuantity,
     TransferStockCommand,
+    TransitActionResult,
 )
 from app.errors import StockValidationError
 
@@ -201,6 +204,31 @@ def test_transfer_rejects_same_route_and_unknown_source(stock_service) -> None:
     repository.catalog.return_value = catalog("A")
     with pytest.raises(StockValidationError, match="missing"):
         service.transfer(transfer_command(("missing", 1)))
+
+
+@pytest.mark.unit
+def test_reopen_transfer_adds_clock_and_commits(stock_service) -> None:
+    service, repository, unit_of_work = stock_service
+    repository.reopen_transfer.return_value = TransitActionResult(
+        transfer_id=7,
+        status="in_transit",
+        moved=(),
+    )
+
+    result = service.reopen_transfer(
+        ReopenTransitCommand(
+            transfer_id=7,
+            request=ReopenTransitRequest(reason="Ошибочная приёмка"),
+            user_id=1,
+            user_name="User",
+        )
+    )
+
+    assert result.status == "in_transit"
+    persisted = repository.reopen_transfer.call_args.args[0]
+    assert persisted.created_at == NOW
+    assert persisted.request.reason == "Ошибочная приёмка"
+    unit_of_work.commit.assert_called_once()
 
 
 @pytest.mark.unit

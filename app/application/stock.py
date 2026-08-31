@@ -12,6 +12,7 @@ from app.dto.stock import (
     CatalogItem,
     CatalogQuery,
     ReceiveTransitCommand,
+    ReopenTransitCommand,
     ResolvedStockEntries,
     ResolvedStockEntry,
     ResolveStockEntriesCommand,
@@ -150,6 +151,14 @@ class StockMovementService:
     def receive_transfer(self, command: ReceiveTransitCommand) -> TransitActionResult:
         with self._unit_of_work_factory() as unit_of_work:
             result = unit_of_work.repository.receive_transfer(
+                command.model_copy(update={"created_at": self._clock()})
+            )
+            unit_of_work.commit()
+            return result
+
+    def reopen_transfer(self, command: ReopenTransitCommand) -> TransitActionResult:
+        with self._unit_of_work_factory() as unit_of_work:
+            result = unit_of_work.repository.reopen_transfer(
                 command.model_copy(update={"created_at": self._clock()})
             )
             unit_of_work.commit()

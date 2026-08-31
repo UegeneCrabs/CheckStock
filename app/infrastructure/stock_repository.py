@@ -1,6 +1,6 @@
 from types import TracebackType
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.dto.marketplace import Marketplace
@@ -12,6 +12,7 @@ from app.dto.stock import (
     CatalogItems,
     CatalogQuery,
     ReceiveTransitCommand,
+    ReopenTransitCommand,
     StockIncrement,
     StockMovementItem,
     StockMovementItems,
@@ -304,6 +305,121 @@ class SqlAlchemyStockRepository:
             moved=StockMovementItems(tuple(moved)),
         )
 
+    def reopen_transfer(self, command: ReopenTransitCommand) -> TransitActionResult:
+        created_at = command.created_at
+        if created_at is None:
+            raise RuntimeError("Не указано время возврата приёмки в путь")
+        batch = self._session.scalar(
+            select(FulfillmentTransitBatchRecord)
+            .where(FulfillmentTransitBatchRecord.id == command.transfer_id)
+            .with_for_update()
+        )
+        if batch is None:
+            raise StockValidationError("Перемещение не найдено")
+        if batch.status not in {"received", "partial"}:
+            raise StockValidationError("В партии нет принятого товара для возврата в путь")
+
+        item_rows = list(
+            self._session.scalars(
+                select(FulfillmentTransitItemRecord)
+                .where(FulfillmentTransitItemRecord.batch_id == batch.id)
+                .order_by(FulfillmentTransitItemRecord.id)
+                .with_for_update()
+            )
+        )
+        if any(item.cancelled_quantity for item in item_rows):
+            raise StockValidationError("Нельзя вернуть в путь приёмку уже отменённой партии")
+
+        received_by_article: dict[str, dict[str, object]] = {}
+        for item in item_rows:
+            if item.received_quantity <= 0:
+                continue
+            entry = received_by_article.setdefault(
+                item.to_article,
+                {
+                    "quantity": 0,
+                    "name": item.name or item.to_article,
+                    "barcode": item.barcode or "",
+                    "purchase_price": item.purchase_price,
+                },
+            )
+            entry["quantity"] = int(entry["quantity"]) + item.received_quantity
+
+        if not received_by_article:
+            raise StockValidationError("В партии нет принятого товара для возврата в путь")
+
+        destination_records: dict[str, FulfillmentStockRecord] = {}
+        for article, entry in received_by_article.items():
+            quantity = int(entry["quantity"])
+            record = self._stock_record(
+                StockQuantityQuery(
+                    store_slug=batch.store_slug,
+                    article=article,
+                    fulfillment=batch.to_fulfillment,
+                    marketplace=Marketplace(batch.to_marketplace),
+                ),
+                for_update=True,
+            )
+            available = record.quantity if record is not None else 0
+            if record is None or record.quantity < quantity:
+                raise StockValidationError(
+                    f"Нельзя вернуть приёмку в путь: {article} — на складе назначения "
+                    f"осталось {available}, требуется {quantity}"
+                )
+            destination_records[article] = record
+
+        moved: list[StockMovementItem] = []
+        for article, entry in received_by_article.items():
+            quantity = int(entry["quantity"])
+            record = destination_records[article]
+            record.quantity -= quantity
+            record.updated_at = created_at.isoformat()
+            if record.quantity == 0:
+                self._session.delete(record)
+            moved.append(
+                StockMovementItem(
+                    article=article,
+                    name=str(entry["name"]),
+                    barcode=str(entry["barcode"]),
+                    quantity=quantity,
+                    purchase_price=(
+                        float(entry["purchase_price"]) if entry["purchase_price"] is not None else None
+                    ),
+                )
+            )
+
+        receipt_ids = tuple(
+            self._session.scalars(
+                select(FulfillmentTransitReceiptRecord.id).where(
+                    FulfillmentTransitReceiptRecord.batch_id == batch.id
+                )
+            )
+        )
+        if receipt_ids:
+            self._session.execute(
+                delete(FulfillmentTransitReceiptItemRecord).where(
+                    FulfillmentTransitReceiptItemRecord.receipt_id.in_(receipt_ids)
+                )
+            )
+            self._session.execute(
+                delete(FulfillmentTransitReceiptRecord).where(
+                    FulfillmentTransitReceiptRecord.id.in_(receipt_ids)
+                )
+            )
+
+        for item in item_rows:
+            item.received_quantity = 0
+        batch.status = "in_transit"
+        batch.last_received_by_user_id = None
+        batch.last_received_by_name = None
+        batch.last_received_at = None
+        self._session.flush()
+        return TransitActionResult(
+            transfer_id=batch.id,
+            status=batch.status,
+            moved=StockMovementItems(tuple(moved)),
+        )
+
     def apply_shipment(self, command: ApplyShipmentCommand) -> None:
         shipment = command.shipment
         for item in command.surplus.root:
@@ -332,15 +448,21 @@ class SqlAlchemyStockRepository:
             if shipment.to_trash:
                 self._adjust_trash(command, item.article, item.quantity)
 
-    def _stock_record(self, query: StockQuantityQuery) -> FulfillmentStockRecord | None:
-        return self._session.scalar(
-            select(FulfillmentStockRecord).where(
-                FulfillmentStockRecord.store_slug == query.store_slug,
-                FulfillmentStockRecord.article == query.article,
-                FulfillmentStockRecord.fulfillment == query.fulfillment,
-                FulfillmentStockRecord.marketplace == query.marketplace.value,
-            )
+    def _stock_record(
+        self,
+        query: StockQuantityQuery,
+        *,
+        for_update: bool = False,
+    ) -> FulfillmentStockRecord | None:
+        statement = select(FulfillmentStockRecord).where(
+            FulfillmentStockRecord.store_slug == query.store_slug,
+            FulfillmentStockRecord.article == query.article,
+            FulfillmentStockRecord.fulfillment == query.fulfillment,
+            FulfillmentStockRecord.marketplace == query.marketplace.value,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
 
     def _purchase_price(self, store_slug: str, article: str) -> float | None:
         value = self._session.scalar(

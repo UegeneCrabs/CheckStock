@@ -95,6 +95,15 @@ class StockCostReportTests(unittest.TestCase):
                 "is_fbs_transfer": 0,
                 "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": 1}],
             },
+            common
+            | {
+                "id": 9,
+                "kind": "transfer_receive_revert",
+                "from_marketplace": "OZON",
+                "to_marketplace": "OZON",
+                "is_fbs_transfer": 0,
+                "items": [{"article": "A", "barcode": "B", "name": "Товар", "quantity": -2}],
+            },
         ]
         snapshots = [
             {
@@ -174,8 +183,8 @@ class StockCostReportTests(unittest.TestCase):
         self.assertEqual((wb["shipped"]["units"], wb["shipped"]["cost"]), (4, 40.0))
         self.assertEqual((wb["fbs_sales"]["units"], wb["fbs_sales"]["cost"]), (7, 70.0))
         self.assertEqual((wb["fbs_actual_sales"]["units"], wb["fbs_actual_sales"]["cost"]), (5, 50.0))
-        self.assertEqual(ozon["moved_in"]["units"], 3)
-        self.assertEqual(len(stock_cost_report.operations_for_view(report, "transfers")), 4)
+        self.assertEqual(ozon["moved_in"]["units"], 1)
+        self.assertEqual(len(stock_cost_report.operations_for_view(report, "transfers")), 5)
         self.assertTrue(wb["fbs_formula"]["available"])
         self.assertEqual(wb["fbs_formula"]["metric"]["units"], 7)
 

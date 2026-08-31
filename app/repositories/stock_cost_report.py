@@ -22,7 +22,8 @@ def get_operations_with_items_for_period(
              WHERE operation.store_slug IN ({placeholders})
                AND operation.kind IN
                    ('delivery', 'manual_add', 'transfer', 'transfer_dispatch',
-                    'transfer_receive', 'transfer_cancel', 'shipment', 'fbs_transfer')
+                    'transfer_receive', 'transfer_receive_revert', 'transfer_cancel',
+                    'shipment', 'fbs_transfer')
                AND operation.created_at>=? AND operation.created_at<?
              ORDER BY operation.created_at DESC, operation.id DESC
             """,

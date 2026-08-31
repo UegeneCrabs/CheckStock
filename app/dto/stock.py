@@ -108,6 +108,26 @@ class CancelTransitCommand(DtoModel):
     created_at: datetime | None = None
 
 
+class ReopenTransitRequest(DtoModel):
+    reason: str = Field(min_length=1, max_length=200)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("reason must not be blank")
+        return value
+
+
+class ReopenTransitCommand(DtoModel):
+    transfer_id: PositiveInt
+    request: ReopenTransitRequest
+    user_id: PositiveInt | None = None
+    user_name: str
+    created_at: datetime | None = None
+
+
 class TransitActionResult(DtoModel):
     transfer_id: PositiveInt
     status: str

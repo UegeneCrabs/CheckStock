@@ -33,7 +33,13 @@ OPERATION_FILTERS = [
     ("manual_add", "Ручные докладки"),
 ]
 
-TRANSFER_KINDS = ("transfer", "transfer_dispatch", "transfer_receive", "transfer_cancel")
+TRANSFER_KINDS = (
+    "transfer",
+    "transfer_dispatch",
+    "transfer_receive",
+    "transfer_receive_revert",
+    "transfer_cancel",
+)
 
 
 def _operations_in_scope(operations: list[dict], allowed_pairs: tuple[tuple[str, str], ...]) -> list[dict]:

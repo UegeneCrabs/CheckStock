@@ -6,6 +6,7 @@ OPERATION_LABELS = {
     "transfer": "Перемещение",
     "transfer_dispatch": "Перемещение отправлено",
     "transfer_receive": "Перемещение принято",
+    "transfer_receive_revert": "Приёмка возвращена в путь",
     "transfer_cancel": "Перемещение отменено",
     "shipment": "Отгрузка со стока",
     "fbs_transfer": "Перемещение на FBS",
