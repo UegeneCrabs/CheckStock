@@ -103,11 +103,11 @@ def list_access_requests(status: str | None = None, limit: int = 200) -> list[di
             f"""
             SELECT request.*, users.full_name AS user_name, users.google_email AS user_email,
                    approver.full_name AS decided_by_name,
-                   grant.id AS grant_id, grant.valid_until, grant.revoked_at
+                   access_grant.id AS grant_id, access_grant.valid_until, access_grant.revoked_at
               FROM access_requests request
               JOIN users ON users.id=request.user_id
               LEFT JOIN users approver ON approver.id=request.decided_by_user_id
-              LEFT JOIN temporary_access_grants grant ON grant.request_id=request.id
+              LEFT JOIN temporary_access_grants access_grant ON access_grant.request_id=request.id
               {where}
              ORDER BY CASE request.status WHEN 'pending' THEN 0 ELSE 1 END,
                       request.created_at DESC
@@ -182,10 +182,10 @@ def decide_access_request(
             updated = conn.execute(
                 """
                 SELECT request.*, users.full_name AS user_name, users.google_email AS user_email,
-                       grant.id AS grant_id, grant.valid_until, grant.revoked_at
+                       access_grant.id AS grant_id, access_grant.valid_until, access_grant.revoked_at
                   FROM access_requests request
                   JOIN users ON users.id=request.user_id
-                  LEFT JOIN temporary_access_grants grant ON grant.request_id=request.id
+                  LEFT JOIN temporary_access_grants access_grant ON access_grant.request_id=request.id
                  WHERE request.id=?
                 """,
                 (request_id,),
