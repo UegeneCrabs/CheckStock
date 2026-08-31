@@ -7,7 +7,17 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
 
-from app import auth, db, rnp_analytics, stock_history, stock_sheet_export, sync_settings, unit_economics_1c
+from app import (
+    auth,
+    db,
+    ftp_export,
+    ftp_export_schedule,
+    rnp_analytics,
+    stock_history,
+    stock_sheet_export,
+    sync_settings,
+    unit_economics_1c,
+)
 from app import decision_center as decision_service
 from app import unit_economics_1c_advertising as advertising_sync
 from app import unit_economics_1c_history as unit_margin_history
@@ -302,6 +312,24 @@ def _wb_stock_history_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob,
     )
 
 
+def _ftp_export_jobs() -> tuple[BackgroundJob, ...]:
+    jobs = []
+    for job_name, platform in ftp_export.JOB_PLATFORMS.items():
+        jobs.append(
+            BackgroundJob(
+                job_name,
+                lambda current_platform=platform: ftp_export.run_platform(current_platform),
+                lambda current_job=job_name: ftp_export_schedule.next_delay_seconds(current_job),
+                startup_delay_seconds=ftp_export_schedule.startup_delay_seconds(),
+                is_enabled=lambda current_job=job_name: (
+                    _job_enabled(current_job)
+                    and ftp_export_schedule.should_attempt(current_job)
+                ),
+            )
+        )
+    return tuple(jobs)
+
+
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -369,6 +397,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             ready_event=catalog_ready,
             is_enabled=lambda: _job_enabled("unit_economics_1c_reference_sync"),
         ),
+        *_ftp_export_jobs(),
     )
 
 

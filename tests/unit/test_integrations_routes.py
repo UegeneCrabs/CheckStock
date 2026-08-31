@@ -12,6 +12,7 @@ from app.main import create_app
 from app.ozon import tokens as ozon_tokens
 from app.sync_tracking import run_tracked, set_next_run
 from app.wb import tokens as wb_tokens
+from app.web.routers import integrations
 from app.yandex import tokens as yandex_tokens
 
 
@@ -70,6 +71,10 @@ def test_superadmin_page_never_renders_saved_secrets(container, user_factory, mo
     assert 'data-sync-history="catalog_sync"' in response.text
     assert 'data-sync-setting-toggle' in response.text
     assert 'data-sync-targets-toggle="stock_sync"' in response.text
+    assert "FTP — себестоимость WB" in response.text
+    assert "FTP — себестоимость Ozon" in response.text
+    assert 'data-sync-run="ftp_wb_export"' in response.text
+    assert 'data-sync-run="ftp_ozon_export"' in response.text
     assert 'data-marketplace="OZON"' in response.text
     assert 'id="integration-history-dialog"' in response.text
     assert "••••5678" in response.text
@@ -305,3 +310,53 @@ def test_sync_history_exposes_exact_error_to_superadmin(
     assert payload["runs"][0]["error"] == (
         "RuntimeError: WB ответил 403: доступ к ценам запрещён"
     )
+
+
+def test_superadmin_can_run_ftp_export_from_integrations(
+    container, user_factory, database_path, monkeypatch
+) -> None:
+    run = mock.Mock(
+        return_value={
+            "ok": True,
+            "platform": "wb",
+            "filename": "data.json",
+            "items": 42,
+        }
+    )
+    monkeypatch.setattr(integrations.ftp_export, "run_platform", run)
+    monkeypatch.setattr(integrations.ftp_export, "is_running", lambda platform: False)
+    monkeypatch.setattr(
+        integrations.ftp_export_schedule,
+        "next_delay_seconds",
+        lambda job_name: 3600,
+    )
+    application = create_app(container)
+    user = user_factory()
+    with (
+        mock.patch.object(application.state.container.identity, "user_for_token", return_value=user),
+        TestClient(application, raise_server_exceptions=False) as client,
+    ):
+        client.cookies.set(auth.SESSION_COOKIE, "session")
+        response = client.post("/api/admin/integrations/sync-jobs/ftp_wb_export/run")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["result"]["items"] == 42
+    run.assert_called_once_with("wb")
+    state = {item["name"]: item for item in db.list_sync_job_states()}["ftp_wb_export"]
+    assert state["last_trigger"] == "manual"
+    assert state["status"] == "success"
+    assert state["next_run_at"]
+
+
+def test_manual_run_rejects_non_ftp_job(container, user_factory) -> None:
+    application = create_app(container)
+    user = user_factory()
+    with (
+        mock.patch.object(application.state.container.identity, "user_for_token", return_value=user),
+        TestClient(application, raise_server_exceptions=False) as client,
+    ):
+        client.cookies.set(auth.SESSION_COOKIE, "session")
+        response = client.post("/api/admin/integrations/sync-jobs/catalog_sync/run")
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "Ручной запуск этой выгрузки недоступен"

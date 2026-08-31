@@ -168,6 +168,26 @@
         });
     });
 
+    document.querySelectorAll('[data-sync-run]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var job = button.getAttribute('data-sync-run');
+            button.disabled = true;
+            syncMessage(job, 'Выгрузка выполняется…', false);
+            request('/api/admin/integrations/sync-jobs/' + encodeURIComponent(job) + '/run', {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'X-Requested-With': 'fetch'}
+            }).then(function (data) {
+                var result = data.result || {};
+                var suffix = result.items === undefined ? '' : ': ' + result.items + ' товаров';
+                syncMessage(job, 'FTP-выгрузка завершена' + suffix, false);
+                window.setTimeout(function () { window.location.reload(); }, 900);
+            }).catch(function (error) {
+                syncMessage(job, error.message, true);
+                button.disabled = false;
+            });
+        });
+    });
+
     var historyDialog = document.getElementById('integration-history-dialog');
     if (!historyDialog) return;
     var historyTitle = document.getElementById('integration-history-title');

@@ -14,6 +14,7 @@ class SyncJobDefinition:
     enabled: bool
     scope: str = "global"
     marketplaces: tuple[str, ...] = ()
+    manual_run: bool = False
 
 
 def _interval(seconds: int) -> str:
@@ -145,6 +146,32 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "Проверка каждую минуту; время задаётся для магазина",
             base,
             "stores",
+        ),
+        SyncJobDefinition(
+            "ftp_wb_export",
+            "FTP — себестоимость WB",
+            "Собирает себестоимость из шести WB-листов и отправляет файл data.json на FTP.",
+            (
+                f"Ежедневно с {settings.ftp_export_start_hour:02d}:"
+                f"{settings.ftp_export_start_minute:02d} до "
+                f"{settings.ftp_export_deadline_hour:02d}:00 МСК; повтор каждые "
+                f"{settings.ftp_export_retry_interval_seconds // 60} мин. при ошибке"
+            ),
+            base and settings.ftp_export_enabled,
+            manual_run=True,
+        ),
+        SyncJobDefinition(
+            "ftp_ozon_export",
+            "FTP — себестоимость Ozon",
+            "Собирает себестоимость из пяти Ozon-листов и отправляет data_ozon.json на FTP.",
+            (
+                f"Ежедневно с {settings.ftp_export_start_hour:02d}:"
+                f"{settings.ftp_export_start_minute:02d} до "
+                f"{settings.ftp_export_deadline_hour:02d}:00 МСК; повтор каждые "
+                f"{settings.ftp_export_retry_interval_seconds // 60} мин. при ошибке"
+            ),
+            base and settings.ftp_export_enabled,
+            manual_run=True,
         ),
         SyncJobDefinition(
             "wb_token_check",

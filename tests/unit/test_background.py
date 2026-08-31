@@ -185,6 +185,36 @@ class BackgroundSyncTests(unittest.TestCase):
         self.assertFalse(result.refreshed)
         refresh.assert_not_called()
 
+    def test_ftp_exports_are_independent_nightly_jobs(self) -> None:
+        with (
+            mock.patch.object(background.ftp_export_schedule, "startup_delay_seconds", return_value=0),
+            mock.patch.object(background.ftp_export_schedule, "next_delay_seconds", return_value=1200),
+            mock.patch.object(background.ftp_export, "run_platform", return_value={"ok": True}) as run,
+        ):
+            jobs = {job.name: job for job in background._ftp_export_jobs()}
+            wb_result = jobs["ftp_wb_export"].callback()
+            ozon_result = jobs["ftp_ozon_export"].callback()
+            wb_delay = jobs["ftp_wb_export"].next_delay()
+
+        self.assertEqual(set(jobs), {"ftp_wb_export", "ftp_ozon_export"})
+        self.assertEqual(wb_result, {"ok": True})
+        self.assertEqual(ozon_result, {"ok": True})
+        self.assertEqual(wb_delay, 1200)
+        self.assertEqual(run.call_args_list, [mock.call("wb"), mock.call("ozon")])
+
+    def test_ftp_job_requires_enabled_setting_and_open_retry_window(self) -> None:
+        with (
+            mock.patch.object(background.ftp_export_schedule, "startup_delay_seconds", return_value=0),
+            mock.patch.object(background, "_job_enabled", return_value=True) as enabled,
+            mock.patch.object(background.ftp_export_schedule, "should_attempt", return_value=True) as due,
+        ):
+            job = {item.name: item for item in background._ftp_export_jobs()}["ftp_wb_export"]
+            is_enabled = job.is_enabled()
+
+        self.assertTrue(is_enabled)
+        enabled.assert_called_once_with("ftp_wb_export")
+        due.assert_called_once_with("ftp_wb_export")
+
 
 if __name__ == "__main__":
     unittest.main()
