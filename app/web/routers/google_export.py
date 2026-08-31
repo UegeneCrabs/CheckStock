@@ -37,7 +37,6 @@ METRIC_LABELS = {
     "ff_stock": "Остатки ФФ",
     "fbs_stock": "Текущий сток FBS",
     "fbo_stock": "Текущий сток FBO",
-    "fbs_orders": "Заказы FBS",
 }
 
 
@@ -57,46 +56,11 @@ def _render_weekdays(selected: int) -> str:
     )
 
 
-def _metric_options(marketplace: str, selected: str = "") -> str:
-    placeholder = (
-        '<option value="" disabled' + (" selected" if not selected else "") + ">Выберите данные</option>"
-    )
-    options = "".join(
-        f'<option value="{metric}"{" selected" if metric == selected else ""}>'
-        f"{html.escape(METRIC_LABELS[metric])}</option>"
-        for metric in stock_sheet_export.repository.allowed_metrics(marketplace)
-    )
-    return placeholder + options
-
-
-def _render_target_row(marketplace: str, target: ExportTarget | None = None) -> str:
-    prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
-    metric = target.metric if target is not None else ""
-    sheet_name = target.sheet_name if target is not None else ""
-    key_column_name = target.key_column_name if target is not None else ""
-    value_column_name = target.value_column_name if target is not None else ""
-    return (
-        "<tr data-export-target-row>"
-        f'<td><select class="select-control" name="{prefix}_target_metric" required>'
-        f"{_metric_options(marketplace, metric)}</select></td>"
-        f'<td><input class="input-control" name="{prefix}_target_sheet" '
-        f'value="{_input(sheet_name)}" maxlength="200" required></td>'
-        f'<td><input class="input-control" name="{prefix}_target_key" '
-        f'value="{_input(key_column_name)}" maxlength="200" required></td>'
-        f'<td><input class="input-control" name="{prefix}_target_value" '
-        f'value="{_input(value_column_name)}" maxlength="200" required></td>'
-        '<td><button class="btn-icon export-remove-row" type="button" '
-        'data-export-remove-row aria-label="Удалить строку">×</button></td>'
-        "</tr>"
-    )
-
-
-def _render_target_rows(settings: StockSheetExportSettings, marketplace: str) -> str:
-    return "".join(
-        _render_target_row(marketplace, target)
-        for target in settings.targets
-        if target.marketplace == marketplace
-    )
+def _sheet_name(settings: StockSheetExportSettings, marketplace: str) -> str:
+    for target in settings.targets:
+        if target.marketplace == marketplace:
+            return target.sheet_name
+    return marketplace
 
 
 def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> str:
@@ -121,17 +85,15 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         marketplace_sections.append(
             '<section class="export-marketplace">'
             f'<div class="export-marketplace-head"><div><span>{marketplace}</span>'
-            f"<h3>{html.escape(marketplace_label)}</h3></div>"
-            f'<button class="btn-secondary export-add-row" type="button" data-export-add-row="{marketplace}">'
-            "Добавить строку</button></div>"
+            f"<h3>{html.escape(marketplace_label)}</h3></div></div>"
             '<label class="export-url-field"><span>Ссылка на Google Таблицу</span>'
             f'<input class="input-control" type="url" name="{prefix}_spreadsheet_url" '
             f'value="{_input(settings.spreadsheet_url_for(marketplace))}" '
             f'placeholder="Таблица для {html.escape(marketplace_label)}" required></label>'
-            '<div class="table-wrap"><table class="data-table export-target-table" data-no-filter><thead><tr>'
-            "<th>Что выгружать</th><th>Лист</th><th>Колонка с артикулом / SKU</th><th>Колонка для значения</th><th></th>"
-            f'</tr></thead><tbody data-export-targets="{marketplace}">{_render_target_rows(settings, marketplace)}</tbody></table></div>'
-            f'<template data-export-row-template="{marketplace}">{_render_target_row(marketplace)}</template>'
+            '<label class="export-url-field"><span>Название листа</span>'
+            f'<input class="input-control" name="{prefix}_sheet_name" '
+            f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" required></label>'
+            '<p class="panel-desc">Диапазон A2:G будет полностью заменён: шапка в строке 2, товары — с строки 3.</p>'
             "</section>"
         )
     return (
@@ -181,23 +143,16 @@ def _settings_from_form(
                 spreadsheet_url=_value(form, f"{prefix}_spreadsheet_url"),
             )
         )
-        metrics = [str(value).strip() for value in form.getlist(f"{prefix}_target_metric")]
-        sheets = [str(value).strip() for value in form.getlist(f"{prefix}_target_sheet")]
-        keys = [str(value).strip() for value in form.getlist(f"{prefix}_target_key")]
-        values = [str(value).strip() for value in form.getlist(f"{prefix}_target_value")]
-        if not (len(metrics) == len(sheets) == len(keys) == len(values)):
-            raise ValueError("Некорректный набор строк выгрузки")
+        sheet_name = _value(form, f"{prefix}_sheet_name")
         targets.extend(
             ExportTarget(
                 marketplace=marketplace,
                 metric=metric,
                 sheet_name=sheet_name,
-                key_column_name=key_column_name,
-                value_column_name=value_column_name,
+                key_column_name=stock_sheet_export.EXPORT_HEADERS[0],
+                value_column_name=stock_sheet_export.EXPORT_METRIC_HEADERS[metric],
             )
-            for metric, sheet_name, key_column_name, value_column_name in zip(
-                metrics, sheets, keys, values, strict=True
-            )
+            for metric in stock_sheet_export.repository.STOCK_METRICS
         )
     return replace(
         existing,

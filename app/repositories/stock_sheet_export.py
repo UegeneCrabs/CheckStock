@@ -6,12 +6,8 @@ from app.repositories.core import WRITE_LOCK, get_connection
 
 MARKETPLACES = ("WB", "OZON", "YANDEX MARKET")
 STOCK_METRICS = ("ff_stock", "fbs_stock", "fbo_stock")
-METRICS = (*STOCK_METRICS, "fbs_orders")
-METRICS_BY_MARKETPLACE = {
-    "WB": (*STOCK_METRICS, "fbs_orders"),
-    "OZON": (*STOCK_METRICS, "fbs_orders"),
-    "YANDEX MARKET": STOCK_METRICS,
-}
+METRICS = STOCK_METRICS
+METRICS_BY_MARKETPLACE = {marketplace: STOCK_METRICS for marketplace in MARKETPLACES}
 
 
 def allowed_metrics(marketplace: str) -> tuple[str, ...]:

@@ -2,7 +2,7 @@
             <h2 class="panel-title">Доступ к таблице</h2>
             <p>Откройте сервисному аккаунту права <strong>Редактор</strong> на каждую целевую таблицу:</p>
             <code>$service_account_email</code>
-            <p class="panel-desc">Периодичность задаётся отдельно для каждого магазина. Заказы WB берутся за предыдущие 7 полных московских дней и проходят свежую проверку статусов.</p>
+            <p class="panel-desc">Периодичность задаётся отдельно для каждого магазина. При выгрузке диапазон A2:G очищается и заполняется актуальным снимком каталога и остатков. Если несколько кабинетов настроены на одну таблицу и лист, их товары объединяются, а остатки одинаковых артикулов суммируются. Для такой группы достаточно включить автовыгрузку у одного кабинета.</p>
         </section>
 
         <div class="export-store-tabs" role="tablist" aria-label="Магазины">
@@ -53,22 +53,6 @@ $store_cards
                     }
                     schedule.addEventListener('change', refreshSchedule);
                     refreshSchedule();
-
-                    form.addEventListener('click', function (event) {
-                        var addButton = event.target.closest('[data-export-add-row]');
-                        if (addButton) {
-                            var marketplace = addButton.getAttribute('data-export-add-row');
-                            var template = form.querySelector('[data-export-row-template="' + marketplace + '"]');
-                            var tbody = form.querySelector('[data-export-targets="' + marketplace + '"]');
-                            if (template && tbody) tbody.appendChild(template.content.cloneNode(true));
-                            return;
-                        }
-                        var removeButton = event.target.closest('[data-export-remove-row]');
-                        if (removeButton) {
-                            var row = removeButton.closest('[data-export-target-row]');
-                            if (row) row.remove();
-                        }
-                    });
 
                     function show(message, isError) {
                         status.textContent = message;

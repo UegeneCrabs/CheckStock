@@ -33,6 +33,20 @@ METRIC_LABELS = {
     "fbo_stock": "Текущий сток в продаже FBO",
     "fbs_orders": "Заказы по ФБС",
 }
+EXPORT_HEADERS = (
+    "АРТИКУЛ",
+    "ШТРИХКОД",
+    "НАЗВАНИЕ",
+    "ТОТАЛ",
+    "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ",
+    "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBS",
+    "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO",
+)
+EXPORT_METRIC_HEADERS = {
+    "ff_stock": EXPORT_HEADERS[4],
+    "fbs_stock": EXPORT_HEADERS[5],
+    "fbo_stock": EXPORT_HEADERS[6],
+}
 
 ExportTarget = repository.ExportTarget
 MarketplaceSpreadsheet = repository.MarketplaceSpreadsheet
@@ -49,8 +63,8 @@ def _default_targets() -> tuple[ExportTarget, ...]:
             marketplace=marketplace,
             metric=metric,
             sheet_name=marketplace,
-            key_column_name="ARTICLE",
-            value_column_name=METRIC_LABELS[metric],
+            key_column_name=EXPORT_HEADERS[0],
+            value_column_name=EXPORT_METRIC_HEADERS[metric],
         )
         for marketplace in repository.MARKETPLACES
         for metric in repository.allowed_metrics(marketplace)
@@ -84,25 +98,44 @@ def default_settings(store_slug: str, now: datetime | None = None) -> StockSheet
 
 
 def _normalise_legacy_targets(settings: StockSheetExportSettings) -> StockSheetExportSettings:
-    """Upgrade the former fixed matrix without re-adding rows removed by a user."""
-    allowed = {
-        (marketplace, metric)
-        for marketplace in repository.MARKETPLACES
-        for metric in repository.allowed_metrics(marketplace)
-    }
+    """Collapse legacy per-metric mappings to one fixed snapshot sheet per marketplace."""
     configured = {(target.marketplace, target.metric): target for target in settings.targets}
-    is_legacy = any(
-        target.metric == "fbs_orders" and target.marketplace == "YANDEX MARKET" for target in settings.targets
-    )
-    if not is_legacy:
-        targets = tuple(
-            target for target in settings.targets if (target.marketplace, target.metric) in allowed
+    targets: list[ExportTarget] = []
+    for marketplace in repository.MARKETPLACES:
+        marketplace_targets = [target for target in settings.targets if target.marketplace == marketplace]
+        preferred_target = next(
+            (
+                configured.get((marketplace, metric))
+                for metric in repository.STOCK_METRICS
+                if configured.get((marketplace, metric)) is not None
+                and configured[(marketplace, metric)].sheet_name.strip()
+            ),
+            None,
         )
-        return settings if targets == settings.targets else replace(settings, targets=targets)
-
-    targets = tuple(
-        configured.get((target.marketplace, target.metric), target) for target in _default_targets()
-    )
+        sheet_name = (
+            preferred_target.sheet_name.strip()
+            if preferred_target is not None
+            else next(
+                (target.sheet_name.strip() for target in marketplace_targets if target.sheet_name.strip()),
+                marketplace,
+            )
+        )
+        for metric in repository.STOCK_METRICS:
+            previous = configured.get((marketplace, metric))
+            targets.append(
+                ExportTarget(
+                    marketplace=marketplace,
+                    metric=metric,
+                    sheet_name=sheet_name,
+                    key_column_name=EXPORT_HEADERS[0],
+                    value_column_name=EXPORT_METRIC_HEADERS[metric],
+                    id=previous.id if previous is not None else None,
+                )
+            )
+    normalized_targets = tuple(targets)
+    if normalized_targets == settings.targets:
+        return settings
+    targets = normalized_targets
     return replace(settings, targets=targets)
 
 
@@ -142,8 +175,13 @@ def validate_settings(settings: StockSheetExportSettings) -> None:
         for metric in repository.allowed_metrics(marketplace)
     }
     actual = {(target.marketplace, target.metric) for target in settings.targets}
-    if not actual.issubset(expected):
-        raise ValueError("Для выбранного маркетплейса указан недоступный показатель")
+    if actual != expected or len(settings.targets) != len(expected):
+        raise ValueError("Для каждого маркетплейса должен быть указан один лист выгрузки")
+    if any(
+        len({target.sheet_name for target in settings.targets if target.marketplace == marketplace}) != 1
+        for marketplace in repository.MARKETPLACES
+    ):
+        raise ValueError("Для каждого маркетплейса должен быть указан один лист выгрузки")
     configured_spreadsheets = [item.marketplace for item in settings.spreadsheets]
     if set(configured_spreadsheets) != set(repository.MARKETPLACES) or len(configured_spreadsheets) != len(
         repository.MARKETPLACES
@@ -434,6 +472,74 @@ def _sheet_names(service, spreadsheet_id: str) -> set[str]:
     return {str(sheet.get("properties", {}).get("title") or "") for sheet in metadata.get("sheets") or ()}
 
 
+def _target_sheet_name(settings: StockSheetExportSettings, marketplace: str) -> str:
+    for target in settings.targets:
+        if target.marketplace == marketplace:
+            return target.sheet_name
+    return ""
+
+
+def _stores_for_destination(
+    settings: StockSheetExportSettings,
+    marketplace: str,
+    known_settings: list[StockSheetExportSettings],
+) -> tuple[str, ...]:
+    spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(marketplace))
+    sheet_name = _target_sheet_name(settings, marketplace)
+    settings_by_store = {item.store_slug: item for item in known_settings}
+    settings_by_store[settings.store_slug] = settings
+    matched: set[str] = set()
+    for store_slug, candidate in settings_by_store.items():
+        if _target_sheet_name(candidate, marketplace) != sheet_name:
+            continue
+        try:
+            candidate_spreadsheet_id = _spreadsheet_id(candidate.spreadsheet_url_for(marketplace))
+        except (KeyError, StockSheetExportError):
+            continue
+        if candidate_spreadsheet_id == spreadsheet_id:
+            matched.add(store_slug)
+    return tuple(store_slug for store_slug in STORES if store_slug in matched)
+
+
+def _combined_stock_snapshot(
+    store_slugs: tuple[str, ...],
+    marketplace: str,
+    *,
+    now: datetime | None = None,
+) -> tuple[list[dict], dict[str, dict[str, int]]]:
+    catalog_by_key: dict[str, dict] = {}
+    values_by_metric: dict[str, dict[str, int]] = {metric: {} for metric in repository.STOCK_METRICS}
+    for store_slug in store_slugs:
+        catalog = db.get_catalog_items(store_slug, marketplace)
+        store_values = _metric_values(
+            store_slug,
+            marketplace,
+            catalog,
+            repository.STOCK_METRICS,
+            now=now,
+        )
+        for item in catalog:
+            article = str(item.get("article") or "").strip()
+            if not article:
+                continue
+            article_key = article.casefold()
+            combined_item = catalog_by_key.get(article_key)
+            if combined_item is None:
+                combined_item = dict(item)
+                combined_item["article"] = article
+                catalog_by_key[article_key] = combined_item
+            else:
+                for field in ("barcode", "name"):
+                    if not combined_item.get(field) and item.get(field):
+                        combined_item[field] = item[field]
+            combined_article = str(combined_item["article"])
+            for metric in repository.STOCK_METRICS:
+                quantity = int(store_values.get(metric, {}).get(article, 0) or 0)
+                metric_values = values_by_metric[metric]
+                metric_values[combined_article] = metric_values.get(combined_article, 0) + quantity
+    return list(catalog_by_key.values()), values_by_metric
+
+
 def _write_marketplace(
     service,
     spreadsheet_id: str,
@@ -446,87 +552,49 @@ def _write_marketplace(
     if not targets:
         return {"marketplace": marketplace, "metrics": {}, "updated_cells": 0}
     existing_sheets = _sheet_names(service, spreadsheet_id)
-    missing = sorted({target.sheet_name for target in targets} - existing_sheets)
+    sheet_names = list(dict.fromkeys(target.sheet_name for target in targets))
+    missing = sorted(set(sheet_names) - existing_sheets)
     if missing:
         raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
 
-    aliases, catalog_articles = _catalog_aliases(catalog)
-    header_cache: dict[str, list[list[object]]] = {}
-    key_cache: dict[tuple[str, int, int], list[list[object]]] = {}
-    updates: list[dict] = []
-    metric_report: dict[str, dict] = {}
+    data_rows: list[list[object]] = []
+    for item in catalog:
+        article = str(item.get("article") or "").strip()
+        if not article:
+            continue
+        ff_stock = int(values_by_metric.get("ff_stock", {}).get(article, 0) or 0)
+        fbs_stock = int(values_by_metric.get("fbs_stock", {}).get(article, 0) or 0)
+        fbo_stock = int(values_by_metric.get("fbo_stock", {}).get(article, 0) or 0)
+        data_rows.append(
+            [
+                article,
+                str(item.get("barcode") or "").strip(),
+                str(item.get("name") or "").strip(),
+                ff_stock + fbs_stock + fbo_stock,
+                ff_stock,
+                fbs_stock,
+                fbo_stock,
+            ]
+        )
 
-    for target in targets:
-        rows = header_cache.get(target.sheet_name)
-        if rows is None:
-            result = (
-                service.spreadsheets()
-                .values()
-                .get(
-                    spreadsheetId=spreadsheet_id,
-                    range=f"{_quote_sheet(target.sheet_name)}!1:{HEADER_SCAN_ROWS}",
-                )
-                .execute()
-            )
-            rows = result.get("values") or []
-            header_cache[target.sheet_name] = rows
-
-        key_row, key_column = _find_header(rows, target.key_column_name, target.sheet_name)
-        value_row, value_column = _find_header(rows, target.value_column_name, target.sheet_name)
-        data_start_row = max(key_row, value_row) + 2
-        cache_key = (target.sheet_name, key_column, data_start_row)
-        key_rows = key_cache.get(cache_key)
-        if key_rows is None:
-            key_letter = _column_letter(key_column)
-            key_result = (
-                service.spreadsheets()
-                .values()
-                .get(
-                    spreadsheetId=spreadsheet_id,
-                    range=(f"{_quote_sheet(target.sheet_name)}!{key_letter}{data_start_row}:{key_letter}"),
-                )
-                .execute()
-            )
-            key_rows = key_result.get("values") or []
-            key_cache[cache_key] = key_rows
-
-        value_letter = _column_letter(value_column)
-        matched_articles: set[str] = set()
-        matched_rows = 0
-        skipped_unmatched_rows = 0
-        for offset, row in enumerate(key_rows):
-            key = _article_key(row[0] if row else "")
-            if not key:
-                continue
-            articles = aliases.get(key)
-            if not articles:
-                skipped_unmatched_rows += 1
-                continue
-            row_number = data_start_row + offset
-            value = sum(values_by_metric[target.metric].get(article, 0) for article in articles)
-            matched_articles.update(articles)
-            matched_rows += 1
-            updates.append(
-                {
-                    "range": (
-                        f"{_quote_sheet(target.sheet_name)}!"
-                        f"{value_letter}{row_number}:{value_letter}{row_number}"
-                    ),
-                    "values": [[value]],
-                }
-            )
-
-        if not matched_rows and catalog_articles:
-            raise StockSheetExportError(
-                f"Лист «{target.sheet_name}»: в колонке «{target.key_column_name}» "
-                f"не найдено товаров {marketplace}"
-            )
-        metric_report[target.metric] = {
-            "rows": matched_rows,
-            "skipped_unmatched_rows": skipped_unmatched_rows,
-            "unmatched_catalog_items": len(catalog_articles - matched_articles),
+    values = [list(EXPORT_HEADERS), *data_rows]
+    clear_ranges = [f"{_quote_sheet(sheet_name)}!A2:G" for sheet_name in sheet_names]
+    (
+        service.spreadsheets()
+        .values()
+        .batchClear(
+            spreadsheetId=spreadsheet_id,
+            body={"ranges": clear_ranges},
+        )
+        .execute()
+    )
+    updates = [
+        {
+            "range": f"{_quote_sheet(sheet_name)}!A2:G{len(values) + 1}",
+            "values": values,
         }
-
+        for sheet_name in sheet_names
+    ]
     if updates:
         (
             service.spreadsheets()
@@ -537,12 +605,20 @@ def _write_marketplace(
             )
             .execute()
         )
-    return {"marketplace": marketplace, "metrics": metric_report, "updated_cells": len(updates)}
+    row_count = len(data_rows)
+    return {
+        "marketplace": marketplace,
+        "sheets": sheet_names,
+        "rows": row_count,
+        "metrics": {metric: {"rows": row_count} for metric in repository.STOCK_METRICS},
+        "updated_cells": len(values) * len(EXPORT_HEADERS) * len(sheet_names),
+    }
 
 
 def export_store(store_slug: str, now: datetime | None = None) -> dict:
     settings = get_settings(store_slug)
     validate_settings(settings)
+    known_settings = list_settings()
     service = _google_service()
     reports = []
     spreadsheet_ids: dict[str, str] = {}
@@ -552,24 +628,26 @@ def export_store(store_slug: str, now: datetime | None = None) -> dict:
             continue
         spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(marketplace))
         spreadsheet_ids[marketplace] = spreadsheet_id
-        catalog = db.get_catalog_items(store_slug, marketplace)
-        values_by_metric = _metric_values(
-            store_slug,
+        combined_store_slugs = _stores_for_destination(
+            settings,
             marketplace,
-            catalog,
-            tuple(target.metric for target in targets),
+            known_settings,
+        )
+        catalog, values_by_metric = _combined_stock_snapshot(
+            combined_store_slugs,
+            marketplace,
             now=now,
         )
-        reports.append(
-            _write_marketplace(
-                service,
-                spreadsheet_id,
-                settings,
-                marketplace,
-                catalog,
-                values_by_metric,
-            )
+        marketplace_report = _write_marketplace(
+            service,
+            spreadsheet_id,
+            settings,
+            marketplace,
+            catalog,
+            values_by_metric,
         )
+        marketplace_report["store_slugs"] = combined_store_slugs
+        reports.append(marketplace_report)
     return {
         "store_slug": store_slug,
         "spreadsheet_ids": spreadsheet_ids,

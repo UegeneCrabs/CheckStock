@@ -19,11 +19,7 @@ def _form_data() -> dict[str, str | list[str]]:
     for marketplace in repository.MARKETPLACES:
         prefix = google_export.MARKETPLACE_FORM_PREFIXES[marketplace]
         data[f"{prefix}_spreadsheet_url"] = f"https://docs.google.com/spreadsheets/d/{prefix}-sheet-id/edit"
-        metrics = repository.allowed_metrics(marketplace)
-        data[f"{prefix}_target_metric"] = list(metrics)
-        data[f"{prefix}_target_sheet"] = [marketplace] * len(metrics)
-        data[f"{prefix}_target_key"] = [f"Артикул {marketplace}"] * len(metrics)
-        data[f"{prefix}_target_value"] = [stock_sheet_export.METRIC_LABELS[metric] for metric in metrics]
+        data[f"{prefix}_sheet_name"] = f"Остатки {marketplace}"
     return data
 
 
@@ -49,29 +45,16 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
     assert saved.schedule_kind == "daily"
     assert saved.spreadsheet_url_for("WB").endswith("/wb-sheet-id/edit")
     assert saved.spreadsheet_url_for("OZON").endswith("/ozon-sheet-id/edit")
-    assert saved.target("WB", "ff_stock").key_column_name == "Артикул WB"
-    assert saved.target("WB", "fbo_stock").value_column_name == "Текущий сток в продаже FBO"
-    assert saved.target("OZON", "fbs_orders").value_column_name == "Заказы по ФБС"
+    assert saved.target("WB", "ff_stock").key_column_name == "АРТИКУЛ"
+    assert saved.target("WB", "fbo_stock").value_column_name == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO"
+    assert saved.target("OZON", "fbs_stock").sheet_name == "Остатки OZON"
 
 
-def test_saved_target_rows_keep_the_submitted_order_after_reload(container, user_factory) -> None:
+def test_saved_sheet_is_used_for_all_stock_columns_after_reload(container, user_factory) -> None:
     application = create_app(container)
     user = user_factory()
     data = _form_data()
-    data["wb_target_metric"] = ["fbs_orders", "ff_stock", "fbo_stock", "fbs_stock"]
-    data["wb_target_sheet"] = [
-        "Лист заказов",
-        "Лист ФФ",
-        "Лист FBO",
-        "Лист FBS",
-    ]
-    data["wb_target_key"] = ["Ключ заказов", "Ключ ФФ", "Ключ FBO", "Ключ FBS"]
-    data["wb_target_value"] = [
-        "Значение заказов",
-        "Значение ФФ",
-        "Значение FBO",
-        "Значение FBS",
-    ]
+    data["wb_sheet_name"] = "Полный остаток WB"
 
     with (
         mock.patch("app.background._jobs", return_value=()),
@@ -86,21 +69,9 @@ def test_saved_target_rows_keep_the_submitted_order_after_reload(container, user
     assert reloaded_page.status_code == 200
     saved = stock_sheet_export.get_settings("rimili")
     wb_targets = [target for target in saved.targets if target.marketplace == "WB"]
-    assert [target.metric for target in wb_targets] == [
-        "fbs_orders",
-        "ff_stock",
-        "fbo_stock",
-        "fbs_stock",
-    ]
-    assert [target.sheet_name for target in wb_targets] == [
-        "Лист заказов",
-        "Лист ФФ",
-        "Лист FBO",
-        "Лист FBS",
-    ]
-    assert reloaded_page.text.index('value="Лист заказов"') < reloaded_page.text.index('value="Лист ФФ"')
-    assert reloaded_page.text.index('value="Лист ФФ"') < reloaded_page.text.index('value="Лист FBO"')
-    assert reloaded_page.text.index('value="Лист FBO"') < reloaded_page.text.index('value="Лист FBS"')
+    assert [target.metric for target in wb_targets] == list(repository.STOCK_METRICS)
+    assert {target.sheet_name for target in wb_targets} == {"Полный остаток WB"}
+    assert 'name="wb_sheet_name" value="Полный остаток WB"' in reloaded_page.text
 
 
 def test_manual_export_endpoint_reports_success(container, user_factory) -> None:

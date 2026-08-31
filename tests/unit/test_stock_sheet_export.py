@@ -19,26 +19,12 @@ class _Execute:
 class _FakeValues:
     def __init__(self):
         self.updates = []
+        self.cleared_ranges = []
 
-    def get(self, *, spreadsheetId, range):
+    def batchClear(self, *, spreadsheetId, body):
         assert spreadsheetId == "sheet-id"
-        if range.endswith("!1:25"):
-            return _Execute(
-                {
-                    "values": [
-                        [
-                            "ARTICLE",
-                            "Доступно ФФ для распределения",
-                            "Текущий сток в продаже FBS",
-                            "Текущий сток в продаже FBO",
-                            "Заказы по ФБС",
-                        ]
-                    ]
-                }
-            )
-        if range.endswith("!A2:A"):
-            return _Execute({"values": [["A-1"], ["46002"], ["Не наш товар"]]})
-        raise AssertionError(range)
+        self.cleared_ranges.extend(body["ranges"])
+        return _Execute({})
 
     def batchUpdate(self, *, spreadsheetId, body):
         assert spreadsheetId == "sheet-id"
@@ -76,8 +62,8 @@ def test_default_rimili_schedule_is_daily_at_one() -> None:
     assert settings.run_time == "01:00"
     assert settings.spreadsheet_url_for("WB") == stock_sheet_export.RIMILI_SPREADSHEET_URL
     assert settings.spreadsheet_url_for("OZON") == stock_sheet_export.RIMILI_SPREADSHEET_URL
-    assert settings.target("WB", "fbs_orders").value_column_name == "Заказы по ФБС"
-    assert settings.target("OZON", "fbs_orders").value_column_name == "Заказы по ФБС"
+    assert settings.target("WB", "ff_stock").key_column_name == "АРТИКУЛ"
+    assert settings.target("OZON", "fbo_stock").value_column_name == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO"
     assert settings.target("YANDEX MARKET", "fbs_stock").sheet_name == "YANDEX MARKET"
 
 
@@ -205,18 +191,17 @@ def test_ozon_order_totals_exclude_terminal_statuses_and_deduplicate() -> None:
     )
 
 
-def test_writer_updates_catalog_rows_without_touching_unmatched_sheet_rows() -> None:
+def test_writer_replaces_a2_g_with_header_and_complete_catalog_snapshot() -> None:
     settings = stock_sheet_export.default_settings("rimili")
     service = _FakeService()
     catalog = [
-        {"article": "A-1", "barcode": "46001"},
-        {"article": "A-2", "barcode": "46002"},
+        {"article": "A-1", "barcode": "46001", "name": "Первый товар"},
+        {"article": "A-2", "barcode": "46002", "name": "Второй товар"},
     ]
     values = {
         "ff_stock": {"A-1": 3, "A-2": 4},
         "fbs_stock": {"A-1": 5, "A-2": 6},
         "fbo_stock": {"A-1": 7, "A-2": 8},
-        "fbs_orders": {"A-1": 9, "A-2": 10},
     }
 
     report = stock_sheet_export._write_marketplace(
@@ -228,27 +213,18 @@ def test_writer_updates_catalog_rows_without_touching_unmatched_sheet_rows() -> 
         values,
     )
 
-    assert report["updated_cells"] == 8
-    assert report["metrics"]["ff_stock"]["skipped_unmatched_rows"] == 1
-    assert {update["range"] for update in service.sheets.value_api.updates} == {
-        "'WB'!B2:B2",
-        "'WB'!B3:B3",
-        "'WB'!C2:C2",
-        "'WB'!C3:C3",
-        "'WB'!D2:D2",
-        "'WB'!D3:D3",
-        "'WB'!E2:E2",
-        "'WB'!E3:E3",
-    }
-    assert [update["values"][0][0] for update in service.sheets.value_api.updates] == [
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
+    assert report["updated_cells"] == 21
+    assert report["rows"] == 2
+    assert service.sheets.value_api.cleared_ranges == ["'WB'!A2:G"]
+    assert service.sheets.value_api.updates == [
+        {
+            "range": "'WB'!A2:G4",
+            "values": [
+                list(stock_sheet_export.EXPORT_HEADERS),
+                ["A-1", "46001", "Первый товар", 15, 3, 5, 7],
+                ["A-2", "46002", "Второй товар", 18, 4, 6, 8],
+            ],
+        }
     ]
 
 
@@ -348,6 +324,7 @@ def test_export_store_uses_separate_spreadsheet_for_each_marketplace() -> None:
     )
     with (
         mock.patch.object(stock_sheet_export, "get_settings", return_value=settings),
+        mock.patch.object(stock_sheet_export, "list_settings", return_value=[settings]),
         mock.patch.object(stock_sheet_export, "_google_service", return_value=object()),
         mock.patch.object(stock_sheet_export.db, "get_catalog_items", return_value=[]),
         mock.patch.object(stock_sheet_export, "_metric_values", return_value={}),
@@ -372,6 +349,73 @@ def test_export_store_uses_separate_spreadsheet_for_each_marketplace() -> None:
         "ozon-id",
         "yandex-market-id",
     ]
+
+
+def test_shared_destination_combines_stores_and_sums_duplicate_articles() -> None:
+    rockkiddo = stock_sheet_export.default_settings("rockkiddo")
+    toyka = stock_sheet_export.default_settings("toyka")
+    shared_spreadsheets = tuple(
+        stock_sheet_export.MarketplaceSpreadsheet(
+            marketplace=marketplace,
+            spreadsheet_url=f"https://docs.google.com/spreadsheets/d/shared-{marketplace.lower().replace(' ', '-')}/edit",
+        )
+        for marketplace in stock_sheet_export.repository.MARKETPLACES
+    )
+    rockkiddo = replace(rockkiddo, spreadsheets=shared_spreadsheets)
+    toyka = replace(toyka, spreadsheets=shared_spreadsheets)
+
+    catalogs = {
+        "rockkiddo": [
+            {"article": "COMMON", "barcode": "100", "name": "Общий товар"},
+            {"article": "ROCK", "barcode": "101", "name": "Товар Rockkiddo"},
+        ],
+        "toyka": [
+            {"article": "common", "barcode": "100", "name": "Общий товар"},
+            {"article": "TOY", "barcode": "102", "name": "Товар Toyka"},
+        ],
+    }
+
+    def metric_values(store_slug, _marketplace, catalog, _metrics, **_kwargs):
+        quantities = {
+            "rockkiddo": {"COMMON": (1, 2, 3), "ROCK": (4, 5, 6)},
+            "toyka": {"common": (10, 20, 30), "TOY": (40, 50, 60)},
+        }
+        return {
+            metric: {item["article"]: quantities[store_slug][item["article"]][index] for item in catalog}
+            for index, metric in enumerate(stock_sheet_export.repository.STOCK_METRICS)
+        }
+
+    with (
+        mock.patch.object(stock_sheet_export, "get_settings", return_value=rockkiddo),
+        mock.patch.object(stock_sheet_export, "list_settings", return_value=[rockkiddo, toyka]),
+        mock.patch.object(stock_sheet_export, "_google_service", return_value=object()),
+        mock.patch.object(
+            stock_sheet_export.db,
+            "get_catalog_items",
+            side_effect=lambda store_slug, _marketplace: catalogs[store_slug],
+        ),
+        mock.patch.object(stock_sheet_export, "_metric_values", side_effect=metric_values),
+        mock.patch.object(
+            stock_sheet_export,
+            "_write_marketplace",
+            side_effect=lambda _service, _sheet_id, _settings, marketplace, catalog, values: {
+                "marketplace": marketplace,
+                "catalog": catalog,
+                "values": values,
+                "updated_cells": 0,
+            },
+        ),
+    ):
+        report = stock_sheet_export.export_store("rockkiddo")
+
+    wb_report = report["marketplaces"][0]
+    assert wb_report["store_slugs"] == ("rockkiddo", "toyka")
+    assert [item["article"] for item in wb_report["catalog"]] == ["COMMON", "ROCK", "TOY"]
+    assert wb_report["values"] == {
+        "ff_stock": {"COMMON": 11, "ROCK": 4, "TOY": 40},
+        "fbs_stock": {"COMMON": 22, "ROCK": 5, "TOY": 50},
+        "fbo_stock": {"COMMON": 33, "ROCK": 6, "TOY": 60},
+    }
 
 
 def test_size_variants_are_aggregated_for_base_article_row() -> None:
