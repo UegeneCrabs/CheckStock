@@ -2,7 +2,7 @@
             <h2 class="panel-title">Доступ к таблице</h2>
             <p>Откройте сервисному аккаунту права <strong>Редактор</strong> на каждую целевую таблицу:</p>
             <code>$service_account_email</code>
-            <p class="panel-desc">Периодичность задаётся отдельно для каждого магазина. При выгрузке диапазон A2:G очищается и заполняется актуальным снимком каталога и остатков. Если несколько кабинетов настроены на одну таблицу и лист, их товары объединяются, а остатки одинаковых артикулов суммируются. Для такой группы достаточно включить автовыгрузку у одного кабинета.</p>
+            <p class="panel-desc">Периодичность задаётся отдельно для каждого магазина. Листы стоков и FBS-заказов необязательны: пустое название отключает соответствующую выгрузку. Кнопками внутри маркетплейса можно запустить только стоки или только заказы. Если несколько кабинетов настроены на одну таблицу и лист, их товары и значения объединяются. Для такой группы достаточно включить автовыгрузку у одного кабинета.</p>
         </section>
 
         <div class="export-store-tabs" role="tablist" aria-label="Магазины">
@@ -47,6 +47,7 @@ $store_cards
                     var schedule = form.querySelector('[data-schedule-kind]');
                     var weekday = form.querySelector('[data-weekday-field]');
                     var runButton = form.querySelector('[data-export-now]');
+                    var scopeButtons = form.querySelectorAll('[data-export-scope]');
 
                     function refreshSchedule() {
                         weekday.hidden = schedule.value !== 'weekly';
@@ -84,6 +85,23 @@ $store_cards
                             })
                             .catch(function (error) { show(error.message, true); })
                             .finally(function () { runButton.disabled = false; });
+                    });
+
+                    scopeButtons.forEach(function (button) {
+                        button.addEventListener('click', function () {
+                            var body = new FormData();
+                            body.set('marketplace', button.getAttribute('data-marketplace'));
+                            body.set('export_kind', button.getAttribute('data-export-kind'));
+                            button.disabled = true;
+                            show('Выполняю выбранную выгрузку…', false);
+                            request('/admin/google-export/' + store + '/run', body)
+                                .then(function (result) {
+                                    if (!result.ok) throw new Error(result.data.error || 'Выгрузка не выполнена');
+                                    show('Выбранная выгрузка завершена успешно', false);
+                                })
+                                .catch(function (error) { show(error.message, true); })
+                                .finally(function () { button.disabled = false; });
+                        });
                     });
                 });
             })();

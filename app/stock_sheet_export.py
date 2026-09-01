@@ -4,13 +4,11 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import replace
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from app import db
 from app.domain import MOSCOW_TIMEZONE
 from app.ff_import import google_service_account
-from app.ozon import api as ozon_api
-from app.ozon import tokens as ozon_tokens
 from app.repositories import stock_sheet_export as repository
 from app.stores import STORES
 from app.wb import api as wb_api
@@ -24,9 +22,25 @@ RIMILI_SPREADSHEET_URL = (
 SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 HEADER_SCAN_ROWS = 25
+FBS_ORDER_LOOKBACK_DAYS = 30
+EXPORT_KINDS = ("stocks", "fbs_orders")
+DESTINATION_STORE_COMPANIONS = {"rockkiddo": ("toyka",)}
 WB_SUPPLIER_STATUSES = {"complete", "confirm", "new"}
 WB_SYSTEM_STATUSES = {"ready_for_pickup", "sorted", "waiting"}
-OZON_EXCLUDED_FBS_STATUSES = {"delivered", "cancelled", "not_accepted"}
+OZON_FBS_EXPORT_STATUSES = {
+    "awaiting_packaging",
+    "awaiting_deliver",
+    "delivering",
+}
+YANDEX_FBS_EXPORT_STATUSES = {
+    "PLACING",
+    "RESERVED",
+    "UNPAID",
+    "PENDING",
+    "PROCESSING",
+    "DELIVERY",
+    "PICKUP",
+}
 METRIC_LABELS = {
     "ff_stock": "Доступно ФФ для распределения",
     "fbs_stock": "Текущий сток в продаже FBS",
@@ -46,7 +60,9 @@ EXPORT_METRIC_HEADERS = {
     "ff_stock": EXPORT_HEADERS[4],
     "fbs_stock": EXPORT_HEADERS[5],
     "fbo_stock": EXPORT_HEADERS[6],
+    "fbs_orders": "ЗАКАЗЫ FBS ЗА 30 ДНЕЙ",
 }
+ORDER_EXPORT_HEADERS = (EXPORT_HEADERS[0], EXPORT_METRIC_HEADERS["fbs_orders"])
 
 ExportTarget = repository.ExportTarget
 MarketplaceSpreadsheet = repository.MarketplaceSpreadsheet
@@ -62,7 +78,7 @@ def _default_targets() -> tuple[ExportTarget, ...]:
         ExportTarget(
             marketplace=marketplace,
             metric=metric,
-            sheet_name=marketplace,
+            sheet_name=marketplace if metric in repository.STOCK_METRICS else "",
             key_column_name=EXPORT_HEADERS[0],
             value_column_name=EXPORT_METRIC_HEADERS[metric],
         )
@@ -98,11 +114,15 @@ def default_settings(store_slug: str, now: datetime | None = None) -> StockSheet
 
 
 def _normalise_legacy_targets(settings: StockSheetExportSettings) -> StockSheetExportSettings:
-    """Collapse legacy per-metric mappings to one fixed snapshot sheet per marketplace."""
+    """Collapse stock mappings and add the optional monthly FBS-order target."""
     configured = {(target.marketplace, target.metric): target for target in settings.targets}
     targets: list[ExportTarget] = []
     for marketplace in repository.MARKETPLACES:
-        marketplace_targets = [target for target in settings.targets if target.marketplace == marketplace]
+        stock_targets = [
+            target
+            for target in settings.targets
+            if target.marketplace == marketplace and target.metric in repository.STOCK_METRICS
+        ]
         preferred_target = next(
             (
                 configured.get((marketplace, metric))
@@ -112,14 +132,12 @@ def _normalise_legacy_targets(settings: StockSheetExportSettings) -> StockSheetE
             ),
             None,
         )
-        sheet_name = (
-            preferred_target.sheet_name.strip()
-            if preferred_target is not None
-            else next(
-                (target.sheet_name.strip() for target in marketplace_targets if target.sheet_name.strip()),
-                marketplace,
-            )
-        )
+        if preferred_target is not None:
+            sheet_name = preferred_target.sheet_name.strip()
+        elif stock_targets:
+            sheet_name = ""
+        else:
+            sheet_name = marketplace
         for metric in repository.STOCK_METRICS:
             previous = configured.get((marketplace, metric))
             targets.append(
@@ -132,6 +150,17 @@ def _normalise_legacy_targets(settings: StockSheetExportSettings) -> StockSheetE
                     id=previous.id if previous is not None else None,
                 )
             )
+        previous_orders = configured.get((marketplace, "fbs_orders"))
+        targets.append(
+            ExportTarget(
+                marketplace=marketplace,
+                metric="fbs_orders",
+                sheet_name=previous_orders.sheet_name.strip() if previous_orders is not None else "",
+                key_column_name=EXPORT_HEADERS[0],
+                value_column_name=EXPORT_METRIC_HEADERS["fbs_orders"],
+                id=previous_orders.id if previous_orders is not None else None,
+            )
+        )
     normalized_targets = tuple(targets)
     if normalized_targets == settings.targets:
         return settings
@@ -178,24 +207,37 @@ def validate_settings(settings: StockSheetExportSettings) -> None:
     if actual != expected or len(settings.targets) != len(expected):
         raise ValueError("Для каждого маркетплейса должен быть указан один лист выгрузки")
     if any(
-        len({target.sheet_name for target in settings.targets if target.marketplace == marketplace}) != 1
+        len(
+            {
+                target.sheet_name
+                for target in settings.targets
+                if target.marketplace == marketplace and target.metric in repository.STOCK_METRICS
+            }
+        )
+        != 1
         for marketplace in repository.MARKETPLACES
     ):
-        raise ValueError("Для каждого маркетплейса должен быть указан один лист выгрузки")
+        raise ValueError("Для каждого маркетплейса должен быть указан один лист стоков")
     configured_spreadsheets = [item.marketplace for item in settings.spreadsheets]
     if set(configured_spreadsheets) != set(repository.MARKETPLACES) or len(configured_spreadsheets) != len(
         repository.MARKETPLACES
     ):
         raise ValueError("Для каждого маркетплейса должна быть указана одна Google Таблица")
-    target_marketplaces = {target.marketplace for target in settings.targets}
-    if settings.enabled:
-        for marketplace in target_marketplaces:
-            if not SPREADSHEET_ID_RE.search(settings.spreadsheet_url_for(marketplace)):
-                raise ValueError(f"Укажите корректную ссылку на Google Таблицу для {marketplace}")
+    for marketplace in repository.MARKETPLACES:
+        has_configured_target = any(
+            target.sheet_name.strip()
+            for target in settings.targets
+            if target.marketplace == marketplace
+        )
+        spreadsheet_url = settings.spreadsheet_url_for(marketplace).strip()
+        if spreadsheet_url and not SPREADSHEET_ID_RE.search(spreadsheet_url):
+            raise ValueError(f"Укажите корректную ссылку на Google Таблицу для {marketplace}")
+        if settings.enabled and has_configured_target and not spreadsheet_url:
+            raise ValueError(f"Укажите корректную ссылку на Google Таблицу для {marketplace}")
     for target in settings.targets:
+        if any(not value.strip() for value in (target.key_column_name, target.value_column_name)):
+            raise ValueError("Название колонок не может быть пустым")
         values = (target.sheet_name, target.key_column_name, target.value_column_name)
-        if any(not value.strip() for value in values):
-            raise ValueError("Название листа и колонок не может быть пустым")
         if any(len(value) > 200 for value in values):
             raise ValueError("Название листа или колонки слишком длинное")
 
@@ -253,35 +295,35 @@ def _unix_bounds(start: date, end: date) -> tuple[int, int]:
     return date_from, date_to
 
 
+def fbs_completed_period(now: datetime | None = None) -> tuple[date, date]:
+    """Return the 30 complete Moscow calendar days before the export date."""
+    export_day = (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE).date()
+    return export_day - timedelta(days=FBS_ORDER_LOOKBACK_DAYS), export_day
+
+
 def wb_completed_week(now: datetime | None = None) -> tuple[date, date]:
-    """Return the seven complete Moscow calendar days before the export date."""
+    """Compatibility helper retained for callers that still need seven complete days."""
     export_day = (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE).date()
     return export_day - timedelta(days=7), export_day
 
 
-def _ozon_rfc3339_bounds(start: date, end: date) -> tuple[str, str]:
-    """Convert a Moscow [start, end) interval to UTC RFC3339 bounds for Ozon."""
-    start_at = datetime.combine(start, time.min, tzinfo=MOSCOW_TIMEZONE).astimezone(UTC)
-    end_at = datetime.combine(end, time.min, tzinfo=MOSCOW_TIMEZONE).astimezone(UTC)
-    return (
-        start_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
-        end_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
-    )
-
-
 def _wb_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
-    """Get one current WB FBS weekly snapshot and validate both order statuses."""
+    """Get active WB FBS orders for the last 30 complete Moscow days."""
     token = wb_tokens.get_token(store_slug)
     orders_by_id: dict[int, dict] = {}
-    start, end = wb_completed_week(now)
-    date_from, date_to = _unix_bounds(start, end)
-    for order in wb_api.get_fbs_orders(token, date_from, date_to):
-        try:
-            order_id = int(order.get("id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if order_id:
-            orders_by_id[order_id] = order
+    start, end = fbs_completed_period(now)
+    window_start = start
+    while window_start < end:
+        window_end = min(window_start + timedelta(days=30), end)
+        date_from, date_to = _unix_bounds(window_start, window_end)
+        for order in wb_api.get_fbs_orders(token, date_from, date_to):
+            try:
+                order_id = int(order.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if order_id:
+                orders_by_id[order_id] = order
+        window_start = window_end
 
     statuses = wb_api.get_fbs_order_statuses(token, list(orders_by_id))
     totals: dict[str, int] = defaultdict(int)
@@ -291,42 +333,34 @@ def _wb_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[s
         wb_status = str(status.get("wbStatus") or "").casefold()
         if supplier_status not in WB_SUPPLIER_STATUSES or wb_status not in WB_SYSTEM_STATUSES:
             continue
-        skus = order.get("skus") or ()
-        article = str((skus[0] if skus else "") or order.get("nmId") or order.get("article") or "").strip()
+        article = str(order.get("nmId") or "").strip()
         if article:
             totals[article] += 1
     return dict(totals)
 
 
 def _ozon_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
-    """Get Ozon FBS units for the same seven complete Moscow days as WB."""
-    client_id, api_key = ozon_tokens.get_credentials(store_slug)
-    start, end = wb_completed_week(now)
-    since, to = _ozon_rfc3339_bounds(start, end)
-    postings_by_id: dict[str, dict] = {}
-    for posting in ozon_api.get_fbs_postings_v4(client_id, api_key, since, to):
-        posting_id = str(
-            posting.get("posting_number") or posting.get("order_number") or posting.get("order_id") or ""
-        ).strip()
-        if posting_id:
-            postings_by_id[posting_id] = posting
+    """Get persisted Ozon FBS units in the configured export statuses."""
+    start, end = fbs_completed_period(now)
+    return db.get_fbs_order_totals_for_period(
+        store_slug,
+        "OZON",
+        start.isoformat(),
+        end.isoformat(),
+        tuple(sorted(OZON_FBS_EXPORT_STATUSES)),
+    )
 
-    totals: dict[str, int] = defaultdict(int)
-    for posting in postings_by_id.values():
-        status = str(posting.get("status") or "").strip().casefold()
-        if status in OZON_EXCLUDED_FBS_STATUSES:
-            continue
-        for product in posting.get("products") or posting.get("items") or ():
-            article = str(
-                product.get("offer_id") or product.get("sku") or product.get("product_id") or ""
-            ).strip()
-            try:
-                quantity = max(1, int(product.get("quantity") or 1))
-            except (TypeError, ValueError):
-                quantity = 1
-            if article:
-                totals[article] += quantity
-    return dict(totals)
+
+def _yandex_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
+    """Get persisted Yandex Market FBS units in the configured export statuses."""
+    start, end = fbs_completed_period(now)
+    return db.get_fbs_order_totals_for_period(
+        store_slug,
+        "YANDEX MARKET",
+        start.isoformat(),
+        end.isoformat(),
+        tuple(sorted(YANDEX_FBS_EXPORT_STATUSES)),
+    )
 
 
 def _spreadsheet_id(url: str) -> str:
@@ -460,6 +494,8 @@ def _metric_values(
             order_totals = _wb_fbs_order_totals(store_slug, now)
         elif marketplace == "OZON":
             order_totals = _ozon_fbs_order_totals(store_slug, now)
+        elif marketplace == "YANDEX MARKET":
+            order_totals = _yandex_fbs_order_totals(store_slug, now)
         else:
             raise StockSheetExportError("Заказы FBS пока не поддерживаются для этого маркетплейса")
         values["fbs_orders"] = with_zeroes(order_totals)
@@ -479,9 +515,13 @@ def _sheet_names(service, spreadsheet_id: str) -> set[str]:
     return {str(sheet.get("properties", {}).get("title") or "") for sheet in metadata.get("sheets") or ()}
 
 
-def _target_sheet_name(settings: StockSheetExportSettings, marketplace: str) -> str:
+def _target_sheet_name(
+    settings: StockSheetExportSettings,
+    marketplace: str,
+    metric: str = "ff_stock",
+) -> str:
     for target in settings.targets:
-        if target.marketplace == marketplace:
+        if target.marketplace == marketplace and target.metric == metric:
             return target.sheet_name
     return ""
 
@@ -490,14 +530,17 @@ def _stores_for_destination(
     settings: StockSheetExportSettings,
     marketplace: str,
     known_settings: list[StockSheetExportSettings],
+    metric: str = "ff_stock",
 ) -> tuple[str, ...]:
     spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(marketplace))
-    sheet_name = _target_sheet_name(settings, marketplace)
+    sheet_name = _target_sheet_name(settings, marketplace, metric)
+    if not sheet_name.strip():
+        return ()
     settings_by_store = {item.store_slug: item for item in known_settings}
     settings_by_store[settings.store_slug] = settings
     matched: set[str] = set()
     for store_slug, candidate in settings_by_store.items():
-        if _target_sheet_name(candidate, marketplace) != sheet_name:
+        if _target_sheet_name(candidate, marketplace, metric) != sheet_name:
             continue
         try:
             candidate_spreadsheet_id = _spreadsheet_id(candidate.spreadsheet_url_for(marketplace))
@@ -505,6 +548,11 @@ def _stores_for_destination(
             continue
         if candidate_spreadsheet_id == spreadsheet_id:
             matched.add(store_slug)
+    matched.update(
+        companion
+        for companion in DESTINATION_STORE_COMPANIONS.get(settings.store_slug, ())
+        if companion in settings_by_store
+    )
     return tuple(store_slug for store_slug in STORES if store_slug in matched)
 
 
@@ -547,6 +595,31 @@ def _combined_stock_snapshot(
     return list(catalog_by_key.values()), values_by_metric
 
 
+def _combined_fbs_order_totals(
+    store_slugs: tuple[str, ...],
+    marketplace: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    combined: dict[str, int] = {}
+    article_by_key: dict[str, str] = {}
+    loader = {
+        "WB": _wb_fbs_order_totals,
+        "OZON": _ozon_fbs_order_totals,
+        "YANDEX MARKET": _yandex_fbs_order_totals,
+    }[marketplace]
+    for store_slug in store_slugs:
+        for raw_article, raw_quantity in loader(store_slug, now).items():
+            article = str(raw_article or "").strip()
+            quantity = int(raw_quantity or 0)
+            if not article or quantity <= 0:
+                continue
+            key = article.casefold()
+            target_article = article_by_key.setdefault(key, article)
+            combined[target_article] = combined.get(target_article, 0) + quantity
+    return combined
+
+
 def _write_marketplace(
     service,
     spreadsheet_id: str,
@@ -555,7 +628,11 @@ def _write_marketplace(
     catalog: list[dict],
     values_by_metric: dict[str, dict[str, int]],
 ) -> dict:
-    targets = [target for target in settings.targets if target.marketplace == marketplace]
+    targets = [
+        target
+        for target in settings.targets
+        if target.marketplace == marketplace and target.metric in repository.STOCK_METRICS
+    ]
     if not targets:
         return {"marketplace": marketplace, "metrics": {}, "updated_cells": 0}
     existing_sheets = _sheet_names(service, spreadsheet_id)
@@ -622,38 +699,176 @@ def _write_marketplace(
     }
 
 
-def export_store(store_slug: str, now: datetime | None = None) -> dict:
+def _order_article_sort_key(article: str) -> tuple[int, int | str]:
+    return (0, int(article)) if article.isdecimal() else (1, article.casefold())
+
+
+def _write_fbs_orders(
+    service,
+    spreadsheet_id: str,
+    settings: StockSheetExportSettings,
+    marketplace: str,
+    totals: dict[str, int],
+) -> dict:
+    target = settings.target(marketplace, "fbs_orders")
+    sheet_name = target.sheet_name.strip()
+    if not sheet_name:
+        return {"marketplace": marketplace, "skipped": True, "rows": 0, "updated_cells": 0}
+    if sheet_name not in _sheet_names(service, spreadsheet_id):
+        raise StockSheetExportError(f"В таблице нет листа: {sheet_name}")
+
+    data_rows = [
+        [_sheet_identifier(article), int(totals[article])]
+        for article in sorted(totals, key=_order_article_sort_key)
+        if int(totals[article] or 0) > 0
+    ]
+    values = [list(ORDER_EXPORT_HEADERS), *data_rows]
+    quoted_sheet = _quote_sheet(sheet_name)
+    (
+        service.spreadsheets()
+        .values()
+        .batchClear(
+            spreadsheetId=spreadsheet_id,
+            body={"ranges": [f"{quoted_sheet}!A2:B"]},
+        )
+        .execute()
+    )
+    (
+        service.spreadsheets()
+        .values()
+        .batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                "valueInputOption": "RAW",
+                "data": [
+                    {
+                        "range": f"{quoted_sheet}!A2:B{len(values) + 1}",
+                        "values": values,
+                    }
+                ],
+            },
+        )
+        .execute()
+    )
+    return {
+        "marketplace": marketplace,
+        "sheet": sheet_name,
+        "period_days": FBS_ORDER_LOOKBACK_DAYS,
+        "rows": len(data_rows),
+        "updated_cells": len(values) * len(ORDER_EXPORT_HEADERS),
+    }
+
+
+def export_store(
+    store_slug: str,
+    now: datetime | None = None,
+    *,
+    marketplace: str | None = None,
+    export_kind: str | None = None,
+) -> dict:
+    if marketplace is not None and marketplace not in repository.MARKETPLACES:
+        raise ValueError("Неизвестный маркетплейс")
+    if export_kind is not None and export_kind not in EXPORT_KINDS:
+        raise ValueError("Неизвестный тип выгрузки")
     settings = get_settings(store_slug)
     validate_settings(settings)
     known_settings = list_settings()
-    service = _google_service()
+    service = None
+
+    def google_service():
+        nonlocal service
+        if service is None:
+            service = _google_service()
+        return service
+
     reports = []
     spreadsheet_ids: dict[str, str] = {}
-    for marketplace in repository.MARKETPLACES:
-        targets = tuple(target for target in settings.targets if target.marketplace == marketplace)
+    selected_marketplaces = (marketplace,) if marketplace is not None else repository.MARKETPLACES
+    for current_marketplace in selected_marketplaces:
+        targets = tuple(
+            target for target in settings.targets if target.marketplace == current_marketplace
+        )
         if not targets:
             continue
-        spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(marketplace))
-        spreadsheet_ids[marketplace] = spreadsheet_id
-        combined_store_slugs = _stores_for_destination(
-            settings,
-            marketplace,
-            known_settings,
+        stock_sheet_name = _target_sheet_name(settings, current_marketplace).strip()
+        order_sheet_name = _target_sheet_name(settings, current_marketplace, "fbs_orders").strip()
+        include_stocks = export_kind in (None, "stocks") and bool(stock_sheet_name)
+        include_orders = export_kind in (None, "fbs_orders") and bool(order_sheet_name)
+        if export_kind == "stocks" and not stock_sheet_name:
+            raise StockSheetExportError(f"Лист стоков для {current_marketplace} не настроен")
+        if export_kind == "fbs_orders" and not order_sheet_name:
+            raise StockSheetExportError(f"Лист заказов FBS для {current_marketplace} не настроен")
+        if not include_stocks and not include_orders:
+            reports.append(
+                {
+                    "marketplace": current_marketplace,
+                    "skipped": True,
+                    "updated_cells": 0,
+                }
+            )
+            continue
+
+        spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(current_marketplace))
+        spreadsheet_ids[current_marketplace] = spreadsheet_id
+        if include_stocks:
+            combined_store_slugs = _stores_for_destination(
+                settings,
+                current_marketplace,
+                known_settings,
+            )
+            catalog, values_by_metric = _combined_stock_snapshot(
+                combined_store_slugs,
+                current_marketplace,
+                now=now,
+            )
+            marketplace_report = _write_marketplace(
+                google_service(),
+                spreadsheet_id,
+                settings,
+                current_marketplace,
+                catalog,
+                values_by_metric,
+            )
+            marketplace_report["store_slugs"] = combined_store_slugs
+        else:
+            marketplace_report = {
+                "marketplace": current_marketplace,
+                "stocks": {"skipped": True},
+                "updated_cells": 0,
+            }
+
+        if include_orders:
+            order_store_slugs = _stores_for_destination(
+                settings,
+                current_marketplace,
+                known_settings,
+                "fbs_orders",
+            )
+            order_totals = _combined_fbs_order_totals(
+                order_store_slugs,
+                current_marketplace,
+                now=now,
+            )
+            orders_report = _write_fbs_orders(
+                google_service(),
+                spreadsheet_id,
+                settings,
+                current_marketplace,
+                order_totals,
+            )
+            orders_report["store_slugs"] = order_store_slugs
+        else:
+            orders_report = {
+                "marketplace": current_marketplace,
+                "skipped": True,
+                "rows": 0,
+                "updated_cells": 0,
+                "store_slugs": (),
+            }
+        marketplace_report["fbs_orders"] = orders_report
+        marketplace_report["updated_cells"] = int(marketplace_report.get("updated_cells") or 0) + int(
+            orders_report.get("updated_cells") or 0
         )
-        catalog, values_by_metric = _combined_stock_snapshot(
-            combined_store_slugs,
-            marketplace,
-            now=now,
-        )
-        marketplace_report = _write_marketplace(
-            service,
-            spreadsheet_id,
-            settings,
-            marketplace,
-            catalog,
-            values_by_metric,
-        )
-        marketplace_report["store_slugs"] = combined_store_slugs
         reports.append(marketplace_report)
     return {
         "store_slug": store_slug,
@@ -662,7 +877,27 @@ def export_store(store_slug: str, now: datetime | None = None) -> dict:
     }
 
 
-def run_store(store_slug: str, now: datetime | None = None) -> dict:
+def run_store(
+    store_slug: str,
+    now: datetime | None = None,
+    *,
+    marketplace: str | None = None,
+    export_kind: str | None = None,
+) -> dict:
+    if marketplace is not None or export_kind is not None:
+        logger.info(
+            "stock_sheet_export_scoped_started store=%s marketplace=%s export_kind=%s",
+            store_slug,
+            marketplace,
+            export_kind,
+        )
+        return export_store(
+            store_slug,
+            now,
+            marketplace=marketplace,
+            export_kind=export_kind,
+        )
+
     attempted_at = _now_iso(now)
     logger.info("stock_sheet_export_started store=%s", store_slug)
     try:
@@ -671,7 +906,12 @@ def run_store(store_slug: str, now: datetime | None = None) -> dict:
         logger.exception("stock_sheet_export_attempt_record_failed store=%s", store_slug)
         raise
     try:
-        report = export_store(store_slug, now)
+        report = export_store(
+            store_slug,
+            now,
+            marketplace=marketplace,
+            export_kind=export_kind,
+        )
     except Exception as error:
         message = f"{type(error).__name__}: {error}"[:2000]
         logger.exception("stock_sheet_export_failed store=%s", store_slug)

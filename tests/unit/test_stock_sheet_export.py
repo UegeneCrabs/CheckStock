@@ -33,20 +33,23 @@ class _FakeValues:
 
 
 class _FakeSpreadsheets:
-    def __init__(self):
+    def __init__(self, sheet_names=("WB",)):
         self.value_api = _FakeValues()
+        self.sheet_names = sheet_names
 
     def get(self, **kwargs):
         assert kwargs["spreadsheetId"] == "sheet-id"
-        return _Execute({"sheets": [{"properties": {"title": "WB"}}]})
+        return _Execute(
+            {"sheets": [{"properties": {"title": title}} for title in self.sheet_names]}
+        )
 
     def values(self):
         return self.value_api
 
 
 class _FakeService:
-    def __init__(self):
-        self.sheets = _FakeSpreadsheets()
+    def __init__(self, sheet_names=("WB",)):
+        self.sheets = _FakeSpreadsheets(sheet_names)
 
     def spreadsheets(self):
         return self.sheets
@@ -65,6 +68,7 @@ def test_default_rimili_schedule_is_daily_at_one() -> None:
     assert settings.target("WB", "ff_stock").key_column_name == "АРТИКУЛ"
     assert settings.target("OZON", "fbo_stock").value_column_name == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO"
     assert settings.target("YANDEX MARKET", "fbs_stock").sheet_name == "YANDEX MARKET"
+    assert settings.target("WB", "fbs_orders").sheet_name == ""
 
 
 def test_schedule_due_uses_each_store_last_attempt() -> None:
@@ -105,9 +109,9 @@ def test_new_weekly_schedule_waits_for_configured_time() -> None:
 
 def test_wb_order_totals_require_both_requested_statuses() -> None:
     orders = [
-        {"id": 1, "article": "A", "skus": ["barcode-a"]},
-        {"id": 2, "article": "A"},
-        {"id": 3, "article": "B"},
+        {"id": 1, "nmId": 101, "article": "A", "skus": ["barcode-a"]},
+        {"id": 2, "nmId": 102, "article": "A"},
+        {"id": 3, "nmId": 103, "article": "B"},
     ]
     statuses = {
         1: {"supplierStatus": "new", "wbStatus": "waiting"},
@@ -122,7 +126,37 @@ def test_wb_order_totals_require_both_requested_statuses() -> None:
     ):
         assert stock_sheet_export._wb_fbs_order_totals(
             "rimili", datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)
-        ) == {"barcode-a": 1, "B": 1}
+        ) == {"101": 1, "103": 1}
+
+
+def test_wb_order_totals_split_periods_longer_than_thirty_days() -> None:
+    statuses = {
+        1: {"supplierStatus": "new", "wbStatus": "waiting"},
+        2: {"supplierStatus": "complete", "wbStatus": "sorted"},
+    }
+    with (
+        mock.patch.object(stock_sheet_export, "FBS_ORDER_LOOKBACK_DAYS", 31),
+        mock.patch.object(stock_sheet_export, "_unix_bounds", side_effect=[(1, 2), (3, 4)]) as bounds,
+        mock.patch.object(stock_sheet_export.wb_tokens, "get_token", return_value="token"),
+        mock.patch.object(
+            stock_sheet_export.wb_api,
+            "get_fbs_orders",
+            side_effect=[
+                [{"id": 1, "nmId": 101}],
+                [{"id": 1, "nmId": 101}, {"id": 2, "nmId": 102}],
+            ],
+        ) as orders,
+        mock.patch.object(stock_sheet_export.wb_api, "get_fbs_order_statuses", return_value=statuses),
+    ):
+        assert stock_sheet_export._wb_fbs_order_totals(
+            "rimili", datetime(2026, 9, 1, tzinfo=MOSCOW_TIMEZONE)
+        ) == {"101": 1, "102": 1}
+
+    assert bounds.call_args_list == [
+        mock.call(date(2026, 8, 1), date(2026, 8, 31)),
+        mock.call(date(2026, 8, 31), date(2026, 9, 1)),
+    ]
+    assert orders.call_args_list == [mock.call("token", 1, 2), mock.call("token", 3, 4)]
 
 
 def test_wb_completed_week_uses_the_seven_finished_moscow_days() -> None:
@@ -132,62 +166,47 @@ def test_wb_completed_week_uses_the_seven_finished_moscow_days() -> None:
     )
 
 
-def test_ozon_week_uses_the_same_moscow_days_as_wb() -> None:
-    assert stock_sheet_export._ozon_rfc3339_bounds(date(2026, 8, 9), date(2026, 8, 16)) == (
-        "2026-08-08T21:00:00Z",
-        "2026-08-15T21:00:00Z",
+def test_fbs_period_uses_thirty_finished_moscow_days() -> None:
+    assert stock_sheet_export.fbs_completed_period(
+        datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)
+    ) == (date(2026, 7, 17), date(2026, 8, 16))
+
+
+def test_ozon_order_totals_read_the_requested_period_and_statuses_from_db() -> None:
+    now = datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)
+    with mock.patch.object(
+        stock_sheet_export.db,
+        "get_fbs_order_totals_for_period",
+        return_value={"A-1": 3, "F-6": 8},
+    ) as loader:
+        result = stock_sheet_export._ozon_fbs_order_totals("rimili", now)
+
+    assert result == {"A-1": 3, "F-6": 8}
+    loader.assert_called_once_with(
+        "rimili",
+        "OZON",
+        "2026-07-17",
+        "2026-08-16",
+        tuple(sorted(stock_sheet_export.OZON_FBS_EXPORT_STATUSES)),
     )
 
 
-def test_ozon_order_totals_exclude_terminal_statuses_and_deduplicate() -> None:
-    postings = [
-        {
-            "posting_number": "posting-1",
-            "status": "awaiting_packaging",
-            "products": [{"offer_id": "A-1", "quantity": 1}],
-        },
-        {
-            "posting_number": "posting-1",
-            "status": "awaiting_deliver",
-            "products": [{"offer_id": "A-1", "quantity": 3}],
-        },
-        {
-            "posting_number": "posting-2",
-            "status": "delivered",
-            "products": [{"offer_id": "B-2", "quantity": 4}],
-        },
-        {
-            "posting_number": "posting-3",
-            "status": "CANCELLED",
-            "products": [{"offer_id": "C-3", "quantity": 5}],
-        },
-        {
-            "posting_number": "posting-4",
-            "status": "not_accepted",
-            "products": [{"offer_id": "D-4", "quantity": 6}],
-        },
-    ]
+def test_yandex_order_totals_read_the_requested_period_and_statuses_from_db() -> None:
     now = datetime(2026, 8, 16, 1, tzinfo=MOSCOW_TIMEZONE)
-    with (
-        mock.patch.object(
-            stock_sheet_export.ozon_tokens,
-            "get_credentials",
-            return_value=("client", "key"),
-        ),
-        mock.patch.object(
-            stock_sheet_export.ozon_api,
-            "get_fbs_postings_v4",
-            return_value=postings,
-        ) as loader,
-    ):
-        result = stock_sheet_export._ozon_fbs_order_totals("rimili", now)
+    with mock.patch.object(
+        stock_sheet_export.db,
+        "get_fbs_order_totals_for_period",
+        return_value={"YA-1": 3, "YA-4": 6, "YA-5": 7},
+    ) as loader:
+        result = stock_sheet_export._yandex_fbs_order_totals("rimili", now)
 
-    assert result == {"A-1": 3}
+    assert result == {"YA-1": 3, "YA-4": 6, "YA-5": 7}
     loader.assert_called_once_with(
-        "client",
-        "key",
-        "2026-08-08T21:00:00Z",
-        "2026-08-15T21:00:00Z",
+        "rimili",
+        "YANDEX MARKET",
+        "2026-07-17",
+        "2026-08-16",
+        tuple(sorted(stock_sheet_export.YANDEX_FBS_EXPORT_STATUSES)),
     )
 
 
@@ -223,6 +242,39 @@ def test_writer_replaces_a2_g_with_header_and_complete_catalog_snapshot() -> Non
                 list(stock_sheet_export.EXPORT_HEADERS),
                 ["A-1", 46001, "Первый товар", 15, 3, 5, 7],
                 ["A-2", 46002, "Второй товар", 18, 4, 6, 8],
+            ],
+        }
+    ]
+
+
+def test_fbs_order_writer_replaces_a2_b_and_excludes_zero_articles() -> None:
+    settings = replace(
+        stock_sheet_export.default_settings("rimili"),
+        targets=tuple(
+            replace(target, sheet_name="WB FBS заказы")
+            if target.marketplace == "WB" and target.metric == "fbs_orders"
+            else target
+            for target in stock_sheet_export.default_settings("rimili").targets
+        ),
+    )
+    service = _FakeService(("WB", "WB FBS заказы"))
+
+    report = stock_sheet_export._write_fbs_orders(
+        service,
+        "sheet-id",
+        settings,
+        "WB",
+        {"412648673": 12, "0": 0},
+    )
+
+    assert report["rows"] == 1
+    assert service.sheets.value_api.cleared_ranges == ["'WB FBS заказы'!A2:B"]
+    assert service.sheets.value_api.updates == [
+        {
+            "range": "'WB FBS заказы'!A2:B3",
+            "values": [
+                list(stock_sheet_export.ORDER_EXPORT_HEADERS),
+                [412648673, 12],
             ],
         }
     ]
@@ -278,6 +330,31 @@ def test_run_store_records_attempt_before_writing_to_google(monkeypatch) -> None
 
     assert stock_sheet_export.run_store("rimili") == report
     assert events == ["attempt", "google", "result"]
+
+
+def test_scoped_run_does_not_mark_the_full_schedule_as_completed(monkeypatch) -> None:
+    report = {"marketplaces": []}
+    writer = mock.Mock(return_value=report)
+    attempt = mock.Mock()
+    result = mock.Mock()
+    monkeypatch.setattr(stock_sheet_export, "export_store", writer)
+    monkeypatch.setattr(stock_sheet_export.repository, "record_attempt", attempt)
+    monkeypatch.setattr(stock_sheet_export.repository, "record_result", result)
+
+    assert stock_sheet_export.run_store(
+        "rimili",
+        marketplace="WB",
+        export_kind="fbs_orders",
+    ) == report
+
+    writer.assert_called_once_with(
+        "rimili",
+        None,
+        marketplace="WB",
+        export_kind="fbs_orders",
+    )
+    attempt.assert_not_called()
+    result.assert_not_called()
 
 
 def test_run_store_does_not_write_to_google_when_attempt_cannot_be_recorded(monkeypatch) -> None:
@@ -358,6 +435,77 @@ def test_export_store_uses_separate_spreadsheet_for_each_marketplace() -> None:
     ]
 
 
+def test_export_store_can_run_only_fbs_orders_with_stock_sheet_disabled() -> None:
+    settings = stock_sheet_export.default_settings("rimili")
+    settings = replace(
+        settings,
+        targets=tuple(
+            replace(
+                target,
+                sheet_name=(
+                    "WB FBS заказы"
+                    if target.marketplace == "WB" and target.metric == "fbs_orders"
+                    else ""
+                    if target.marketplace == "WB"
+                    else target.sheet_name
+                ),
+            )
+            for target in settings.targets
+        ),
+    )
+    stock_writer = mock.Mock()
+    with (
+        mock.patch.object(stock_sheet_export, "get_settings", return_value=settings),
+        mock.patch.object(stock_sheet_export, "list_settings", return_value=[settings]),
+        mock.patch.object(stock_sheet_export, "_google_service", return_value=object()),
+        mock.patch.object(stock_sheet_export, "_combined_stock_snapshot") as stock_loader,
+        mock.patch.object(stock_sheet_export, "_write_marketplace", stock_writer),
+        mock.patch.object(
+            stock_sheet_export,
+            "_combined_fbs_order_totals",
+            return_value={"123": 4},
+        ) as order_loader,
+        mock.patch.object(
+            stock_sheet_export,
+            "_write_fbs_orders",
+            return_value={"marketplace": "WB", "rows": 1, "updated_cells": 4},
+        ) as order_writer,
+    ):
+        report = stock_sheet_export.export_store(
+            "rimili",
+            marketplace="WB",
+            export_kind="fbs_orders",
+        )
+
+    stock_loader.assert_not_called()
+    stock_writer.assert_not_called()
+    order_loader.assert_called_once_with(("rimili",), "WB", now=None)
+    order_writer.assert_called_once()
+    assert report["spreadsheet_ids"] == {
+        "WB": stock_sheet_export._spreadsheet_id(stock_sheet_export.RIMILI_SPREADSHEET_URL)
+    }
+    assert report["marketplaces"][0]["stocks"] == {"skipped": True}
+
+
+def test_export_store_rejects_requested_export_without_a_sheet() -> None:
+    settings = stock_sheet_export.default_settings("rimili")
+    settings = replace(
+        settings,
+        targets=tuple(
+            replace(target, sheet_name="")
+            if target.marketplace == "WB" and target.metric in stock_sheet_export.repository.STOCK_METRICS
+            else target
+            for target in settings.targets
+        ),
+    )
+    with (
+        mock.patch.object(stock_sheet_export, "get_settings", return_value=settings),
+        mock.patch.object(stock_sheet_export, "list_settings", return_value=[settings]),
+        pytest.raises(stock_sheet_export.StockSheetExportError, match="Лист стоков для WB"),
+    ):
+        stock_sheet_export.export_store("rimili", marketplace="WB", export_kind="stocks")
+
+
 def test_shared_destination_combines_stores_and_sums_duplicate_articles() -> None:
     rockkiddo = stock_sheet_export.default_settings("rockkiddo")
     toyka = stock_sheet_export.default_settings("toyka")
@@ -423,6 +571,34 @@ def test_shared_destination_combines_stores_and_sums_duplicate_articles() -> Non
         "fbs_stock": {"COMMON": 22, "ROCK": 5, "TOY": 50},
         "fbo_stock": {"COMMON": 33, "ROCK": 6, "TOY": 60},
     }
+
+
+def test_rockkiddo_destination_includes_toyka_without_a_toyka_target() -> None:
+    rockkiddo = stock_sheet_export.default_settings("rockkiddo")
+    toyka = stock_sheet_export.default_settings("toyka")
+    rockkiddo = replace(
+        rockkiddo,
+        spreadsheets=tuple(
+            stock_sheet_export.MarketplaceSpreadsheet(
+                marketplace=marketplace,
+                spreadsheet_url=f"https://docs.google.com/spreadsheets/d/rockkiddo-{marketplace.lower().replace(' ', '-')}/edit",
+            )
+            for marketplace in stock_sheet_export.repository.MARKETPLACES
+        ),
+        targets=tuple(
+            replace(target, sheet_name="Rockkiddo FBS")
+            if target.marketplace == "WB" and target.metric == "fbs_orders"
+            else target
+            for target in rockkiddo.targets
+        ),
+    )
+
+    assert stock_sheet_export._stores_for_destination(
+        rockkiddo,
+        "WB",
+        [rockkiddo, toyka],
+        "fbs_orders",
+    ) == ("rockkiddo", "toyka")
 
 
 def test_size_variants_are_aggregated_for_base_article_row() -> None:

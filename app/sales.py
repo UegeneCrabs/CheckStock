@@ -28,6 +28,16 @@ INITIAL_LOOKBACK_DAYS = {"WB": 90, "OZON": 365, "YANDEX MARKET": 365}
 
 REFRESH_LOOKBACK_DAYS = 2
 
+WB_FBS_CANCELLED_SUPPLIER_STATUSES = {"cancel"}
+WB_FBS_CANCELLED_STATUSES = {
+    "canceled",
+    "canceled_by_client",
+    "canceled_by_missed_call",
+    "declined_by_client",
+    "defect",
+}
+WB_FBS_SOLD_STATUSES = {"sold"}
+
 
 def _now_iso() -> str:
     return datetime.now(MOSCOW).isoformat(timespec="seconds")
@@ -163,7 +173,7 @@ def _normalize_wb(
                 "scheme": "fbs" if any(word in warehouse_type for word in ("продав", "постав")) else "fbo",
                 "status": "cancelled" if cancelled else "ordered",
                 "substatus": "",
-                "article": str(row.get("supplierArticle") or row.get("nmId") or ""),
+                "article": str(row.get("nmId") or ""),
                 "barcode": str(row.get("barcode") or ""),
                 "name": str(row.get("subject") or row.get("category") or ""),
                 "ordered_at": _timestamp(row.get("date") or row.get("lastChangeDate")),
@@ -184,6 +194,111 @@ def _normalize_wb(
             }
         )
     return lines
+
+
+def _wb_fbs_amount(order: dict) -> float:
+    """Return the buyer price in the seller's currency from WB's amount x100 fields."""
+
+    for field in ("convertedFinalPrice", "convertedPrice", "finalPrice", "price"):
+        value = order.get(field)
+        if value is not None:
+            return round(_number(value) / 100, 2)
+    return 0.0
+
+
+def _normalize_wb_fbs(
+    store_slug: str,
+    orders: list[dict],
+    statuses: dict[int, dict],
+) -> list[dict]:
+    lines: list[dict] = []
+    for index, order in enumerate(orders):
+        order_id = _integer(order.get("id"))
+        current_status = statuses.get(order_id) or {}
+        supplier_status = str(current_status.get("supplierStatus") or "").strip().casefold()
+        wb_status = str(current_status.get("wbStatus") or "").strip().casefold()
+        cancelled = (
+            supplier_status in WB_FBS_CANCELLED_SUPPLIER_STATUSES
+            or wb_status in WB_FBS_CANCELLED_STATUSES
+        )
+        sold = wb_status in WB_FBS_SOLD_STATUSES and not cancelled
+        skus = [str(value).strip() for value in order.get("skus") or () if str(value).strip()]
+        barcode = skus[0] if skus else ""
+        order_key = str(order.get("rid") or order_id or f"wb-fbs-row-{index}")
+        line_key = barcode or str(order.get("nmId") or order_id or index)
+        amount = _wb_fbs_amount(order)
+        raw = dict(order)
+        raw["supplierStatus"] = supplier_status
+        raw["wbStatus"] = wb_status
+        ordered_at = _timestamp(order.get("createdAt"))
+        lines.append(
+            {
+                "store_slug": store_slug,
+                "marketplace": "WB",
+                "order_key": order_key,
+                "line_key": line_key,
+                "external_order_id": str(order.get("orderUid") or order_id or order_key),
+                "scheme": "fbs",
+                "status": supplier_status,
+                "substatus": wb_status,
+                "article": str(order.get("nmId") or ""),
+                "barcode": barcode,
+                "name": "",
+                "ordered_at": ordered_at,
+                "source_updated_at": ordered_at,
+                "cancelled_at": None,
+                "sold_at": None,
+                "returned_at": None,
+                "quantity": 1,
+                "cancelled_quantity": 1 if cancelled else 0,
+                "sold_quantity": 1 if sold else 0,
+                "return_quantity": 0,
+                "order_amount": amount,
+                "cancelled_amount": amount if cancelled else 0.0,
+                "sale_amount": amount if sold else 0.0,
+                "return_amount": 0.0,
+                "currency": "RUB",
+                "raw_json": _compact_json(raw),
+            }
+        )
+    return lines
+
+
+def _merge_wb_lines(statistics_lines: list[dict], fbs_lines: list[dict]) -> list[dict]:
+    """Enrich statistics rows with Marketplace statuses and retain FBS-only orders."""
+
+    merged = list(statistics_lines)
+    by_order_key = {str(line.get("order_key") or ""): line for line in merged}
+    for fbs_line in fbs_lines:
+        existing = by_order_key.get(str(fbs_line.get("order_key") or ""))
+        if existing is None:
+            merged.append(fbs_line)
+            by_order_key[str(fbs_line.get("order_key") or "")] = fbs_line
+            continue
+
+        existing["scheme"] = "fbs"
+        existing["status"] = fbs_line["status"]
+        existing["substatus"] = fbs_line["substatus"]
+        for field in ("external_order_id", "article", "barcode", "name"):
+            if not existing.get(field) and fbs_line.get(field):
+                existing[field] = fbs_line[field]
+        existing["cancelled_quantity"] = max(
+            _integer(existing.get("cancelled_quantity")),
+            _integer(fbs_line.get("cancelled_quantity")),
+        )
+        existing["sold_quantity"] = max(
+            _integer(existing.get("sold_quantity")),
+            _integer(fbs_line.get("sold_quantity")),
+        )
+        existing["cancelled_amount"] = max(
+            _number(existing.get("cancelled_amount")),
+            _number(fbs_line.get("cancelled_amount")),
+        )
+        existing["sale_amount"] = max(
+            _number(existing.get("sale_amount")),
+            _number(fbs_line.get("sale_amount")),
+        )
+    return merged
 
 
 def _ozon_financial_products(posting: dict) -> dict[str, dict]:
@@ -349,17 +464,51 @@ def _normalize_yandex(store_slug: str, orders: list[dict]) -> list[dict]:
     return lines
 
 
+def _load_wb_fbs_lines(
+    store_slug: str,
+    token: str,
+    start: date,
+    end: date,
+) -> tuple[list[dict], list[str]]:
+    orders_by_id: dict[int, dict] = {}
+    warnings: list[str] = []
+    for window_start, window_end in _windows(start, end, 30):
+        date_from = int(datetime.combine(window_start, time.min, tzinfo=MOSCOW).timestamp())
+        date_to = int(datetime.combine(window_end, time.min, tzinfo=MOSCOW).timestamp()) - 1
+        try:
+            for order in wb_api.get_fbs_orders(token, date_from, date_to):
+                order_id = _integer(order.get("id"))
+                if order_id:
+                    orders_by_id[order_id] = order
+        except Exception as exc:
+            warnings.append(
+                f"FBS {window_start:%d.%m}-{window_end - timedelta(days=1):%d.%m}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+    statuses: dict[int, dict] = {}
+    if orders_by_id:
+        try:
+            statuses = wb_api.get_fbs_order_statuses(token, list(orders_by_id))
+        except Exception as exc:
+            warnings.append(f"FBS статусы: {type(exc).__name__}: {exc}")
+    return _normalize_wb_fbs(store_slug, list(orders_by_id.values()), statuses), warnings
+
+
 def _sync_wb(store_slug: str, start: date, end: date) -> tuple[list[dict], list[str]]:
     token = wb_tokens.get_token(store_slug)
     date_from = datetime.combine(start, time.min).isoformat(timespec="seconds")
     orders = wb_api.get_orders(token, date_from, max_pages=settings.wb_sales_max_pages)
     warnings: list[str] = []
+    fbs_lines, fbs_warnings = _load_wb_fbs_lines(store_slug, token, start, end)
+    warnings.extend(fbs_warnings)
     try:
         sales_rows = wb_api.get_sales(token, date_from, max_pages=settings.wb_sales_max_pages)
     except Exception as exc:
         sales_rows = []
         warnings.append(f"продажи: {type(exc).__name__}: {exc}")
-    return _normalize_wb(store_slug, orders, sales_rows), warnings
+    statistics_lines = _normalize_wb(store_slug, orders, sales_rows)
+    return _merge_wb_lines(statistics_lines, fbs_lines), warnings
 
 
 def _sync_ozon(store_slug: str, start: date, end: date) -> tuple[list[dict], list[str]]:
@@ -369,7 +518,10 @@ def _sync_ozon(store_slug: str, start: date, end: date) -> tuple[list[dict], lis
     for window_start, window_end in _windows(start, end, SOURCE_WINDOW_DAYS["OZON"]):
         since = datetime.combine(window_start, time.min, tzinfo=UTC).isoformat().replace("+00:00", "Z")
         to = datetime.combine(window_end, time.min, tzinfo=UTC).isoformat().replace("+00:00", "Z")
-        for scheme, loader in (("fbo", ozon_api.get_fbo_postings), ("fbs", ozon_api.get_fbs_postings)):
+        for scheme, loader in (
+            ("fbo", ozon_api.get_fbo_postings),
+            ("fbs", ozon_api.get_fbs_postings_v4),
+        ):
             try:
                 postings = loader(client_id, api_key, since, to)
                 lines.extend(_normalize_ozon(store_slug, postings, scheme))
@@ -421,14 +573,28 @@ def _sync_yandex(store_slug: str, start: date, end: date) -> tuple[list[dict], l
     return _normalize_yandex(store_slug, orders), warnings
 
 
-def sync_store(store_slug: str, marketplace: str, lookback_days: int = REFRESH_LOOKBACK_DAYS) -> dict:
+def _sync_store_range(
+    store_slug: str,
+    marketplace: str,
+    start: date,
+    end: date,
+    lookback_days: int,
+    *,
+    exact_order_period: bool,
+) -> dict:
     marketplace = marketplace.upper()
     attempted_at = _now_iso()
-    end = datetime.now(MOSCOW).date() + timedelta(days=1)
-    start = end - timedelta(days=max(lookback_days, 1))
     loader = {"WB": _sync_wb, "OZON": _sync_ozon, "YANDEX MARKET": _sync_yandex}[marketplace]
     try:
         lines, warnings = loader(store_slug, start, end)
+        if exact_order_period:
+            start_key = start.isoformat()
+            end_key = end.isoformat()
+            lines = [
+                line
+                for line in lines
+                if start_key <= str(line.get("ordered_at") or "")[:10] < end_key
+            ]
         rows = db.upsert_sales_order_lines(lines, attempted_at)
         ok = not warnings
         error = "; ".join(warnings)[:1500] or None
@@ -441,6 +607,34 @@ def sync_store(store_slug: str, marketplace: str, lookback_days: int = REFRESH_L
         db.record_sync_health(store_slug, marketplace, "orders", False, error, attempted_at)
         logger.warning("Продажи %s/%s не обновлены: %s", marketplace, store_slug, error)
         return {"ok": False, "rows": 0, "error": error}
+
+
+def sync_store(store_slug: str, marketplace: str, lookback_days: int = REFRESH_LOOKBACK_DAYS) -> dict:
+    end = datetime.now(MOSCOW).date() + timedelta(days=1)
+    start = end - timedelta(days=max(lookback_days, 1))
+    return _sync_store_range(
+        store_slug,
+        marketplace,
+        start,
+        end,
+        lookback_days,
+        exact_order_period=False,
+    )
+
+
+def sync_store_period(store_slug: str, marketplace: str, start: date, end: date) -> dict:
+    """Sync an exact half-open order period [start, end)."""
+
+    if end <= start:
+        raise ValueError("Дата окончания периода должна быть позже даты начала")
+    return _sync_store_range(
+        store_slug,
+        marketplace,
+        start,
+        end,
+        (end - start).days,
+        exact_order_period=True,
+    )
 
 
 def _configured_stores(marketplace: str) -> list[str]:

@@ -3830,6 +3830,13 @@ body.modal-open {
     border-top: 1px solid var(--border, #dfe4ea);
 }
 
+.export-marketplace-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .export-key-field {
     width: min(100%, 360px);
 }
@@ -3872,5 +3879,9 @@ body.modal-open {
 
     .export-key-field {
         width: 100%;
+    }
+
+    .export-marketplace-actions .btn-secondary {
+        flex: 1 1 180px;
     }
 }

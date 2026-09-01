@@ -108,6 +108,7 @@ from app.repositories.rnp import (
     save_rnp_strategy,
 )
 from app.repositories.sales import (
+    get_fbs_order_totals_for_period,
     get_open_fbs_order_totals,
     get_sales_available_range,
     get_sales_daily,
@@ -325,6 +326,7 @@ __all__ = (
     "get_ff_transit_batches",
     "get_ff_transit_totals",
     "get_fbs_sales_for_period",
+    "get_fbs_order_totals_for_period",
     "get_fbs_stock_snapshots",
     "get_fulfillment_stock_daily_history",
     "get_ff_stock_one",

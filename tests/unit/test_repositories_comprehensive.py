@@ -652,6 +652,26 @@ class RepositoryUnitTests(unittest.TestCase):
         )
 
         self.assertEqual(db.get_open_fbs_order_totals("rimili", "OZON"), {"A-1": 2})
+        self.assertEqual(
+            db.get_fbs_order_totals_for_period(
+                "rimili",
+                "OZON",
+                "2026-08-01",
+                "2026-09-01",
+                ("awaiting_packaging", "awaiting_deliver", "delivering"),
+            ),
+            {"A-1": 2},
+        )
+        self.assertEqual(
+            db.get_fbs_order_totals_for_period(
+                "rimili",
+                "OZON",
+                "2026-09-01",
+                "2026-10-01",
+                ("awaiting_packaging",),
+            ),
+            {},
+        )
 
     def test_rnp_repository_queries_and_mutations(self) -> None:
         self.add_catalog()

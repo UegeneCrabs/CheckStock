@@ -37,6 +37,7 @@ METRIC_LABELS = {
     "ff_stock": "Остатки ФФ",
     "fbs_stock": "Текущий сток FBS",
     "fbo_stock": "Текущий сток FBO",
+    "fbs_orders": "Заказы FBS за 30 дней",
 }
 
 
@@ -56,11 +57,15 @@ def _render_weekdays(selected: int) -> str:
     )
 
 
-def _sheet_name(settings: StockSheetExportSettings, marketplace: str) -> str:
+def _sheet_name(
+    settings: StockSheetExportSettings,
+    marketplace: str,
+    metric: str = "ff_stock",
+) -> str:
     for target in settings.targets:
-        if target.marketplace == marketplace:
+        if target.marketplace == marketplace and target.metric == metric:
             return target.sheet_name
-    return marketplace
+    return marketplace if metric in stock_sheet_export.repository.STOCK_METRICS else ""
 
 
 def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> str:
@@ -79,6 +84,13 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         )
     )
     marketplace_sections = []
+    combined_store_hint = (
+        '<p class="panel-desc"><strong>TOYKA добавляется автоматически:</strong> '
+        'стоки и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. '
+        'Ручной запуск и расписание настраиваются у ROCKKIDDO.</p>'
+        if settings.store_slug == "rockkiddo"
+        else ""
+    )
     for marketplace in stock_sheet_export.repository.MARKETPLACES:
         prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
         marketplace_label = MARKETPLACE_LABELS[marketplace]
@@ -89,11 +101,23 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             '<label class="export-url-field"><span>Ссылка на Google Таблицу</span>'
             f'<input class="input-control" type="url" name="{prefix}_spreadsheet_url" '
             f'value="{_input(settings.spreadsheet_url_for(marketplace))}" '
-            f'placeholder="Таблица для {html.escape(marketplace_label)}" required></label>'
-            '<label class="export-url-field"><span>Название листа</span>'
+            f'placeholder="Таблица для {html.escape(marketplace_label)}"></label>'
+            '<label class="export-url-field"><span>Название листа со стоками</span>'
             f'<input class="input-control" name="{prefix}_sheet_name" '
-            f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" required></label>'
-            '<p class="panel-desc">Диапазон A2:G будет полностью заменён: шапка в строке 2, товары — с строки 3.</p>'
+            f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" '
+            'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
+            '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:G будет полностью заменён: шапка в строке 2, товары — с строки 3.</p>'
+            '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
+            f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
+            f'value="{_input(_sheet_name(settings, marketplace, "fbs_orders"))}" maxlength="200" '
+            'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
+            '<p class="panel-desc">Необязательно. В A2:B выгружаются только артикулы с ненулевым числом активных FBS-заказов.</p>'
+            '<div class="export-marketplace-actions">'
+            f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
+            'data-export-kind="stocks">Выгрузить стоки</button>'
+            f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
+            'data-export-kind="fbs_orders">Выгрузить FBS-заказы</button>'
+            '</div>'
             "</section>"
         )
     return (
@@ -112,6 +136,7 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         f"{_render_weekdays(settings.weekday)}</select></label>"
         '<label><span>Время (Москва)</span><input class="input-control" type="time" name="run_time" '
         f'value="{_input(settings.run_time)}" required></label></div>'
+        + combined_store_hint
         + "".join(marketplace_sections)
         + f'<p class="export-status {status_class}" data-export-status>{html.escape(status_text)}</p>'
         '<div class="export-actions"><button class="btn-primary" type="submit">Сохранить настройки</button>'
@@ -153,6 +178,15 @@ def _settings_from_form(
                 value_column_name=stock_sheet_export.EXPORT_METRIC_HEADERS[metric],
             )
             for metric in stock_sheet_export.repository.STOCK_METRICS
+        )
+        targets.append(
+            ExportTarget(
+                marketplace=marketplace,
+                metric="fbs_orders",
+                sheet_name=_value(form, f"{prefix}_fbs_orders_sheet_name"),
+                key_column_name=stock_sheet_export.ORDER_EXPORT_HEADERS[0],
+                value_column_name=stock_sheet_export.ORDER_EXPORT_HEADERS[1],
+            )
         )
     return replace(
         existing,
@@ -229,12 +263,28 @@ async def run_google_export(request: Request, store_slug: str):
     _require_superadmin(request)
     if store_slug not in STORES:
         raise HTTPException(status_code=404, detail="Магазин не найден")
+    form = await request.form()
+    marketplace = _value(form, "marketplace") or None
+    export_kind = _value(form, "export_kind") or None
+    if (marketplace is None) != (export_kind is None):
+        return JSONResponse(
+            {"ok": False, "error": "Укажите маркетплейс и тип выгрузки вместе"},
+            status_code=400,
+        )
+    if marketplace is not None and marketplace not in stock_sheet_export.repository.MARKETPLACES:
+        return JSONResponse({"ok": False, "error": "Неизвестный маркетплейс"}, status_code=400)
+    if export_kind is not None and export_kind not in stock_sheet_export.EXPORT_KINDS:
+        return JSONResponse({"ok": False, "error": "Неизвестный тип выгрузки"}, status_code=400)
     try:
         report = await run_in_threadpool(
             run_tracked,
             "stock_sheet_export",
             "manual",
-            lambda: stock_sheet_export.run_store(store_slug),
+            lambda: stock_sheet_export.run_store(
+                store_slug,
+                marketplace=marketplace,
+                export_kind=export_kind,
+            ),
         )
     except Exception as error:
         return JSONResponse(

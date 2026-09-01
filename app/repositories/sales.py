@@ -118,6 +118,41 @@ def get_open_fbs_order_totals(store_slug: str, marketplace: str) -> dict[str, in
     return {str(row["article"]): int(row["total"] or 0) for row in rows}
 
 
+def get_fbs_order_totals_for_period(
+    store_slug: str,
+    marketplace: str,
+    date_from: str,
+    date_to: str,
+    statuses: tuple[str, ...],
+) -> dict[str, int]:
+    """Return FBS units grouped by article for the exact order period and statuses."""
+    normalized_statuses = tuple(
+        dict.fromkeys(str(status or "").strip().casefold() for status in statuses if str(status or "").strip())
+    )
+    if not normalized_statuses:
+        return {}
+    placeholders = ", ".join("?" for _ in normalized_statuses)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT article, SUM(quantity) AS total
+          FROM sales_order_lines
+         WHERE store_slug = ?
+           AND marketplace = ?
+           AND scheme = 'fbs'
+           AND ordered_at >= ?
+           AND ordered_at < ?
+           AND article <> ''
+           AND LOWER(COALESCE(status, '')) IN ({placeholders})
+         GROUP BY article
+        HAVING SUM(quantity) > 0
+        """,
+        (store_slug, marketplace, date_from, date_to, *normalized_statuses),
+    ).fetchall()
+    conn.close()
+    return {str(row["article"]): int(row["total"] or 0) for row in rows}
+
+
 def record_sales_sync(
     store_slug: str,
     marketplace: str,
