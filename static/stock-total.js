@@ -11,6 +11,10 @@
         return Math.round(value).toLocaleString('ru-RU');
     }
 
+    var moneyFormat = new Intl.NumberFormat('ru-RU', {
+        style: 'currency', currency: 'RUB', minimumFractionDigits: 0, maximumFractionDigits: 2
+    });
+
     function visibleRows(table) {
         return Array.prototype.filter.call(table.querySelectorAll('tbody tr:not(.empty-row)'), function (row) {
             return row.style.display !== 'none';
@@ -28,6 +32,22 @@
                 return sum + numberValue(row.children[column]);
             }, 0);
             target.textContent = formatNumber(total);
+        });
+
+        var pricedRows = rows.filter(function (row) {
+            return row.dataset.purchasePrice !== '' && Number.isFinite(Number(row.dataset.purchasePrice));
+        });
+        var costPositions = table.querySelector('[data-cost-total-positions]');
+        if (costPositions) {
+            costPositions.textContent = 'ЗЦ: ' + formatNumber(pricedRows.length)
+                + ' из ' + formatNumber(rows.length) + ' поз.';
+        }
+        table.querySelectorAll('[data-cost-total-column]').forEach(function (target) {
+            var column = Number(target.getAttribute('data-cost-total-column'));
+            var total = pricedRows.reduce(function (sum, row) {
+                return sum + numberValue(row.children[column]) * Number(row.dataset.purchasePrice);
+            }, 0);
+            target.textContent = moneyFormat.format(total);
         });
 
     }

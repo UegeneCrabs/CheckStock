@@ -21,22 +21,26 @@ def _quantity_cell(value: int) -> str:
     return f'<td data-filter-value="{number}">{_fmt_num(number)}</td>'
 
 
+def _money(value: float) -> str:
+    return f"{float(value):,.2f}".replace(",", " ") + " ₽"
+
+
 def _render_rows(rows: list[dict]) -> str:
     if not rows:
-        return '<tr class="empty-row"><td colspan="19">Пока нет товаров и остатков</td></tr>'
+        return '<tr class="empty-row"><td colspan="22">Пока нет товаров и остатков</td></tr>'
 
     result = []
     for row in rows:
         article = str(row.get("article") or "")
         barcode = str(row.get("barcode") or "")
         name = str(row.get("name") or article or "Без названия")
-        quantities = [
-            int(row["grand_total"] or 0),
-            *(int(row[key] or 0) for key in stock_total_service.QUANTITY_KEYS),
-        ]
+        quantities = [int(row.get(key) or 0) for key in stock_total_service.VALUE_KEYS]
+        purchase_price = row.get("purchase_price")
+        purchase_price_value = "" if purchase_price is None else str(float(purchase_price))
         result.append(
             f'<tr data-store="{html.escape(str(row["store_slug"]), quote=True)}" '
-            f'data-grand-total="{quantities[0]}">'
+            f'data-grand-total="{quantities[0]}" '
+            f'data-purchase-price="{html.escape(purchase_price_value, quote=True)}">'
             f"<td>{copy_identifier(article, 'Артикул')}</td>"
             f"<td>{copy_identifier(barcode, 'Баркод')}</td>"
             f'<td title="{html.escape(name, quote=True)}">{html.escape(name)}</td>'
@@ -48,18 +52,38 @@ def _render_rows(rows: list[dict]) -> str:
 
 def _render_totals(rows: list[dict]) -> str:
     values = [
-        sum(int(row["grand_total"] or 0) for row in rows),
-        *(sum(int(row[key] or 0) for row in rows) for key in stock_total_service.QUANTITY_KEYS),
+        sum(int(row.get(key) or 0) for row in rows)
+        for key in stock_total_service.VALUE_KEYS
     ]
     cells = "".join(
         f'<th data-total-column="{column}">{_fmt_num(value)}</th>'
         for column, value in enumerate(values, start=3)
     )
+    cost_values = [
+        round(
+            sum(
+                float(row.get("purchase_price") or 0) * int(row.get(key) or 0)
+                for row in rows
+                if row.get("purchase_price") is not None
+            ),
+            2,
+        )
+        for key in stock_total_service.VALUE_KEYS
+    ]
+    cost_cells = "".join(
+        f'<th data-cost-total-column="{column}">{_money(value)}</th>'
+        for column, value in enumerate(cost_values, start=3)
+    )
+    priced_positions = sum(1 for row in rows if row.get("purchase_price") is not None)
     return (
         '<tr class="totals-row">'
         "<th>ИТОГО</th><th></th>"
         f"<th data-total-positions>позиций: {len(rows)}</th>"
         f"{cells}</tr>"
+        '<tr class="totals-row totals-row--cost">'
+        "<th>ИТОГО В ЗЦ</th><th></th>"
+        f"<th data-cost-total-positions>ЗЦ: {priced_positions} из {len(rows)} поз.</th>"
+        f"{cost_cells}</tr>"
     )
 
 

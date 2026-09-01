@@ -171,6 +171,9 @@
         ] }
     ];
     var defaultColumnOrder = reportColumnGroups.map(function (group) { return group.key; });
+    var defaultMetricKeys = reportColumnGroups.reduce(function (keys, group) {
+        return keys.concat(group.columns.map(function (column) { return column.key; }));
+    }, []);
     var savedColumnPreferences = preferences.columns || {};
     var columnPreferences = {
         order: Array.isArray(savedColumnPreferences.order)
@@ -180,6 +183,10 @@
         hidden: Array.isArray(savedColumnPreferences.hidden)
             ? savedColumnPreferences.hidden.filter(function (key) {
                 return defaultColumnOrder.indexOf(key) !== -1 && key !== 'product';
+            }) : [],
+        hiddenColumns: Array.isArray(savedColumnPreferences.hiddenColumns)
+            ? savedColumnPreferences.hiddenColumns.filter(function (key) {
+                return defaultMetricKeys.indexOf(key) !== -1 && key !== 'identity';
             }) : []
     };
     defaultColumnOrder.forEach(function (key) {
@@ -313,10 +320,22 @@
     function reportGroupByKey(key) {
         return reportColumnGroups.find(function (group) { return group.key === key; });
     }
-    function visibleColumnGroups() {
-        return columnPreferences.order.map(reportGroupByKey).filter(function (group) {
-            return group && (group.fixed || columnPreferences.hidden.indexOf(group.key) === -1);
+    function visibleColumnsForGroup(group) {
+        if (!group || group.fixed) return group ? group.columns.slice() : [];
+        if (columnPreferences.hidden.indexOf(group.key) !== -1) return [];
+        return group.columns.filter(function (column) {
+            return columnPreferences.hiddenColumns.indexOf(column.key) === -1;
         });
+    }
+    function visibleColumnGroups() {
+        return columnPreferences.order.map(reportGroupByKey).filter(Boolean).map(function (group) {
+            return {
+                key: group.key,
+                label: group.label,
+                fixed: group.fixed === true,
+                columns: visibleColumnsForGroup(group)
+            };
+        }).filter(function (group) { return group.columns.length > 0; });
     }
     function reportColumnLabel(column) {
         var label = state.viewMode === 'categories' && column.key === 'identity'
@@ -585,18 +604,34 @@
         nodes.columnList.innerHTML = columnPreferences.order.map(function (key, index) {
             var group = reportGroupByKey(key);
             if (!group) return '';
-            var checked = group.fixed || columnPreferences.hidden.indexOf(key) === -1;
+            var visibleColumns = visibleColumnsForGroup(group);
+            var checked = group.fixed || visibleColumns.length > 0;
             var canMoveUp = !group.fixed && index > 1;
             var canMoveDown = !group.fixed && index < columnPreferences.order.length - 1;
+            var metricOptions = !group.fixed && group.columns.length > 1
+                ? '<div class="ue1cr-column-metrics">' + group.columns.map(function (column) {
+                    var metricChecked = columnPreferences.hiddenColumns.indexOf(column.key) === -1;
+                    return '<label><input type="checkbox" data-column-metric="'
+                        + escapeHtml(column.key) + '"' + (metricChecked ? ' checked' : '')
+                        + '><span>' + escapeHtml(column.label) + '</span></label>';
+                }).join('') + '</div>' : '';
             return '<div class="ue1cr-column-option" data-column-key="' + escapeHtml(key)
                 + '" draggable="' + (group.fixed ? 'false' : 'true') + '" aria-grabbed="false">'
-                + '<span class="ue1cr-column-grip" title="Перетащить">⋮⋮</span>'
-                + '<label><input type="checkbox"' + (checked ? ' checked' : '')
+                + '<div class="ue1cr-column-option-head"><span class="ue1cr-column-grip" title="Перетащить">⋮⋮</span>'
+                + '<label><input type="checkbox" data-column-group-toggle' + (checked ? ' checked' : '')
                 + (group.fixed ? ' disabled' : '') + '><span>' + escapeHtml(group.label) + '</span></label>'
                 + '<div><button type="button" data-column-move="up"' + (canMoveUp ? '' : ' disabled')
                 + ' aria-label="Выше">↑</button><button type="button" data-column-move="down"'
-                + (canMoveDown ? '' : ' disabled') + ' aria-label="Ниже">↓</button></div></div>';
+                + (canMoveDown ? '' : ' disabled') + ' aria-label="Ниже">↓</button></div></div>'
+                + metricOptions + '</div>';
         }).join('');
+        nodes.columnList.querySelectorAll('[data-column-group-toggle]').forEach(function (input) {
+            var option = input.closest('[data-column-key]');
+            var group = option ? reportGroupByKey(option.dataset.columnKey) : null;
+            if (!group || group.fixed || group.columns.length < 2) return;
+            var visibleCount = visibleColumnsForGroup(group).length;
+            input.indeterminate = visibleCount > 0 && visibleCount < group.columns.length;
+        });
     }
     function applyColumnPreferences() {
         columnPreferences.order = ['product'].concat(columnPreferences.order.filter(function (key) {
@@ -897,8 +932,28 @@
         var option = event.target.closest('[data-column-key]');
         if (!option || event.target.type !== 'checkbox' || option.dataset.columnKey === 'product') return;
         var key = option.dataset.columnKey;
+        var metricKey = event.target.dataset.columnMetric;
+        if (metricKey) {
+            columnPreferences.hiddenColumns = columnPreferences.hiddenColumns.filter(function (item) {
+                return item !== metricKey;
+            });
+            if (!event.target.checked) columnPreferences.hiddenColumns.push(metricKey);
+            else columnPreferences.hidden = columnPreferences.hidden.filter(function (item) {
+                return item !== key;
+            });
+            applyColumnPreferences();
+            return;
+        }
+        if (!event.target.hasAttribute('data-column-group-toggle')) return;
         columnPreferences.hidden = columnPreferences.hidden.filter(function (item) { return item !== key; });
         if (!event.target.checked) columnPreferences.hidden.push(key);
+        else {
+            var group = reportGroupByKey(key);
+            var metricKeys = group ? group.columns.map(function (column) { return column.key; }) : [];
+            columnPreferences.hiddenColumns = columnPreferences.hiddenColumns.filter(function (item) {
+                return metricKeys.indexOf(item) === -1;
+            });
+        }
         applyColumnPreferences();
     });
     nodes.columnList.addEventListener('click', function (event) {

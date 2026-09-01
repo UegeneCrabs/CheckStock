@@ -217,6 +217,10 @@
         var parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : fallback;
     }
+    function negativeValueClass(value) {
+        var parsed = finite(value, null);
+        return parsed !== null && parsed < 0 ? ' ue1c-roi-negative' : '';
+    }
     function pluralProducts(value) {
         var mod10 = value % 10;
         var mod100 = value % 100;
@@ -495,7 +499,8 @@
         var currentSpp = calculateSppPercent(product);
         cells.current = '<td class="ue1c-num ue1c-group-start"><strong title="'
             + escapeHtml(currentTitle) + '">'
-            + nullable(current.margin, money) + '</strong></td><td class="ue1c-num"><strong>'
+            + nullable(current.margin, money) + '</strong></td><td class="ue1c-num'
+            + negativeValueClass(current.roi) + '"><strong>'
             + '<span title="' + escapeHtml(currentTitle) + '">'
             + nullable(current.roi, decimal, '%') + '</span></strong></td>'
             + '<td class="ue1c-num"><strong>' + nullable(currentSpp, decimal, '%') + '</strong></td>';
@@ -503,7 +508,8 @@
             + '"><strong>' + coverageValue('ТО после отмен', economics.turnover, money, turnoverCoverage)
             + '</strong></td><td class="ue1c-num' + coverageCellClass(marginCoverage) + '"><strong>'
             + coverageValue('Маржа', economics.margin, money, marginCoverage)
-            + '</strong></td><td class="ue1c-num' + coverageCellClass(roiCoverage) + '"><strong>'
+            + '</strong></td><td class="ue1c-num' + coverageCellClass(roiCoverage)
+            + negativeValueClass(economics.roi) + '"><strong>'
             + coverageValue('ROI', economics.roi, decimal, roiCoverage, '%') + '</strong></td>';
         cells.advertising = '<td class="ue1c-num ue1c-group-start"><span class="ue1c-drr' + drrClass + '" title="'
             + escapeHtml(advertisingTitle) + '">' + (drr === null ? '—' : decimal.format(drr) + '%')

@@ -16,8 +16,10 @@ def get_source_rows(
         catalog = connection.execute(
             f"""
             SELECT source.id, source.store_slug, source.marketplace, source.article,
-                   source.barcode, source.name
+                   source.barcode, source.name, prices.purchase_price
               FROM stock_items source
+              LEFT JOIN unit_economics_1c_source_values prices
+                ON prices.stock_item_id=source.id
              WHERE source.store_slug IN ({placeholders})
                AND source.is_service = 0
              ORDER BY source.store_slug,

@@ -25,6 +25,12 @@ QUANTITY_KEYS = tuple(
     for group, _group_label in STOCK_GROUPS
     for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES
 )
+MARKETPLACE_TOTAL_KEYS = tuple(
+    f"total_{marketplace_key}"
+    for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES
+)
+TOTAL_KEYS = ("grand_total", *MARKETPLACE_TOTAL_KEYS)
+VALUE_KEYS = (*TOTAL_KEYS, *QUANTITY_KEYS)
 
 
 def _normalized(value: object) -> str:
@@ -48,8 +54,10 @@ def _empty_row(store_slug: str, identity: tuple[str, ...]) -> dict:
         "article": "",
         "barcode": "",
         "name": "",
+        "purchase_price": None,
         "grand_total": 0,
     }
+    row.update({key: 0 for key in MARKETPLACE_TOTAL_KEYS})
     row.update({key: 0 for key in QUANTITY_KEYS})
     return row
 
@@ -125,6 +133,9 @@ def build_rows(
         name = str(item.get("name") or "").strip()
         if not row["name"] and name:
             row["name"] = name
+        purchase_price = item.get("purchase_price")
+        if row["purchase_price"] is None and purchase_price is not None:
+            row["purchase_price"] = float(purchase_price)
 
     identities_by_article: dict[tuple[str, str], set[tuple[str, ...]]] = defaultdict(set)
     for (store_slug, _marketplace, article), identity in identity_by_offer.items():
@@ -181,7 +192,12 @@ def build_rows(
 
     rows = list(buckets.values())
     for row in rows:
-        row["grand_total"] = sum(int(row[key] or 0) for key in QUANTITY_KEYS)
+        for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES:
+            row[f"total_{marketplace_key}"] = sum(
+                int(row[f"{group}_{marketplace_key}"] or 0)
+                for group, _group_label in STOCK_GROUPS
+            )
+        row["grand_total"] = sum(int(row[key] or 0) for key in MARKETPLACE_TOTAL_KEYS)
         row.pop("identity", None)
     rows.sort(
         key=lambda row: (
@@ -209,12 +225,13 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
     sheet.title = "Остатки Тотал"
     sheet.sheet_view.showGridLines = False
 
-    fixed_headers = ("МАГАЗИН", "АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ГРАНД ТОТАЛ")
+    fixed_headers = ("МАГАЗИН", "АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ")
     for column, title in enumerate(fixed_headers, start=1):
         sheet.cell(row=1, column=column, value=title)
         sheet.merge_cells(start_row=1, start_column=column, end_row=2, end_column=column)
 
     group_fills = {
+        "total": "E4E7F7",
         "ff": "FFF2CC",
         "transit": "FCE4D6",
         "fbs": "DDEBF7",
@@ -222,6 +239,18 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
         "fbo": "E2F0D9",
     }
     column = len(fixed_headers) + 1
+    total_start = column
+    total_end = column + len(TOTAL_KEYS) - 1
+    sheet.cell(row=1, column=total_start, value="ТОТАЛ")
+    sheet.merge_cells(start_row=1, start_column=total_start, end_row=1, end_column=total_end)
+    for offset, label in enumerate(("ГРАНД ТОТАЛ", "ВБ", "ОЗОН", "ЯМ")):
+        sheet.cell(row=2, column=total_start + offset, value=label)
+    for row_number in (1, 2):
+        for group_column in range(total_start, total_end + 1):
+            sheet.cell(row=row_number, column=group_column).fill = PatternFill(
+                "solid", fgColor=group_fills["total"]
+            )
+    column = total_end + 1
     for group, label in STOCK_GROUPS:
         start = column
         end = column + len(MARKETPLACES) - 1
@@ -251,14 +280,28 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
             cell.border = Border(left=thin, right=thin, top=thin, bottom=medium)
 
     total_values = ["ИТОГО", "", "", f"позиций: {len(rows)}"]
-    total_values.append(sum(int(row["grand_total"] or 0) for row in rows))
-    total_values.extend(sum(int(row[key] or 0) for row in rows) for key in QUANTITY_KEYS)
+    total_values.extend(sum(int(row.get(key) or 0) for row in rows) for key in VALUE_KEYS)
     sheet.append(total_values)
-    for cell in sheet[3]:
-        cell.font = Font(bold=True, color="172033")
-        cell.fill = PatternFill("solid", fgColor="FFF4E5")
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = Border(left=thin, right=thin, bottom=medium)
+    priced_positions = sum(1 for row in rows if row.get("purchase_price") is not None)
+    cost_values = ["ИТОГО В ЗЦ", "", "", f"ЗЦ: {priced_positions} из {len(rows)} поз."]
+    cost_values.extend(
+        round(
+            sum(
+                float(row.get("purchase_price") or 0) * int(row.get(key) or 0)
+                for row in rows
+                if row.get("purchase_price") is not None
+            ),
+            2,
+        )
+        for key in VALUE_KEYS
+    )
+    sheet.append(cost_values)
+    for total_row_number, fill_color in ((3, "FFF4E5"), (4, "EAF4EE")):
+        for cell in sheet[total_row_number]:
+            cell.font = Font(bold=True, color="172033")
+            cell.fill = PatternFill("solid", fgColor=fill_color)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = Border(left=thin, right=thin, bottom=medium)
 
     for row in rows:
         sheet.append(
@@ -267,12 +310,11 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
                 str(row["article"]),
                 str(row["barcode"]),
                 row["name"],
-                int(row["grand_total"] or 0),
-                *(int(row[key] or 0) for key in QUANTITY_KEYS),
+                *(int(row.get(key) or 0) for key in VALUE_KEYS),
             ]
         )
 
-    for row_number in range(4, sheet.max_row + 1):
+    for row_number in range(5, sheet.max_row + 1):
         for column_number in range(1, sheet.max_column + 1):
             cell = sheet.cell(row=row_number, column=column_number)
             cell.border = Border(bottom=Side(style="hair", color="D9E1E8"))
@@ -285,14 +327,18 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
         sheet.cell(row=row_number, column=3).number_format = "@"
         for column_number in range(5, sheet.max_column + 1):
             sheet.cell(row=row_number, column=column_number).number_format = "#,##0"
+    for column_number in range(5, sheet.max_column + 1):
+        sheet.cell(row=3, column=column_number).number_format = "#,##0"
+        sheet.cell(row=4, column=column_number).number_format = '#,##0.00 "₽"'
 
-    widths = [18, 18, 20, 54, 16] + [12] * len(QUANTITY_KEYS)
+    widths = [18, 18, 20, 54, 16, 12, 12, 12] + [12] * len(QUANTITY_KEYS)
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.row_dimensions[1].height = 38
     sheet.row_dimensions[2].height = 26
     sheet.row_dimensions[3].height = 24
-    sheet.freeze_panes = "F4"
+    sheet.row_dimensions[4].height = 24
+    sheet.freeze_panes = "I5"
 
     buffer = io.BytesIO()
     workbook.save(buffer)

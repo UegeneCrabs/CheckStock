@@ -447,6 +447,7 @@ async def stock_store_total_data(request: Request, slug: str):
         {
             "ok": True,
             "store": store_slug,
+            "total_keys": stock_total_service.TOTAL_KEYS,
             "quantity_keys": stock_total_service.QUANTITY_KEYS,
             "rows": rows,
         }

@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/stock-total.css?v=8">
+<link rel="stylesheet" href="/static/stock-total.css?v=10">
 
         <a class="back-link" href="/stock">&larr; Все магазины</a>
 
@@ -56,18 +56,20 @@ $stock_rows
 
             <section class="stock-total-panel stock-store-total-view" data-stock-store-total-view hidden>
                 <div class="stock-store-total-head">
-                    <div>
+                    <div class="stock-store-total-copy">
                         <h3 class="panel-title">Тотал по трём площадкам — $store_name</h3>
                         <p class="stock-operation-summary">Остатки WB, OZON и Яндекс Маркета объединены по товару внутри этого магазина.</p>
                     </div>
+                    <div class="stock-store-total-actions">
+                        <div class="stock-total-controls stock-store-total-legend" aria-label="Обозначения колонок">
+                            <p><span class="stock-total-legend stock-total-legend--ff"></span>ФФ</p>
+                            <p><span class="stock-total-legend stock-total-legend--transit"></span>В пути</p>
+                            <p><span class="stock-total-legend stock-total-legend--fbs"></span>FBS</p>
+                            <p><span class="stock-total-legend stock-total-legend--rfbs"></span>rFBS</p>
+                            <p><span class="stock-total-legend stock-total-legend--fbo"></span>FBO</p>
+                        </div>
 $total_download_button
-                </div>
-                <div class="stock-total-controls stock-store-total-legend" aria-label="Обозначения колонок">
-                    <p><span class="stock-total-legend stock-total-legend--ff"></span>ФФ</p>
-                    <p><span class="stock-total-legend stock-total-legend--transit"></span>В пути</p>
-                    <p><span class="stock-total-legend stock-total-legend--fbs"></span>FBS</p>
-                    <p><span class="stock-total-legend stock-total-legend--rfbs"></span>rFBS</p>
-                    <p><span class="stock-total-legend stock-total-legend--fbo"></span>FBO</p>
+                    </div>
                 </div>
                 <div class="table-wrap stock-total-table-wrap">
                     <table class="data-table data-table--stock-total" data-table-filter id="store-stock-total-table">
@@ -76,6 +78,7 @@ $total_download_button
                             <col class="stock-total-col stock-total-col--barcode">
                             <col class="stock-total-col stock-total-col--name">
                             <col class="stock-total-col stock-total-col--grand">
+                            <col class="stock-total-col stock-total-col--marketplace-total" span="3">
                             <col class="stock-total-col stock-total-col--quantity" span="15">
                         </colgroup>
                         <thead>
@@ -83,7 +86,7 @@ $total_download_button
                                 <th rowspan="2" data-filter-column="0">АРТИКУЛ</th>
                                 <th rowspan="2" data-filter-column="1">ШТРИХКОД</th>
                                 <th rowspan="2" data-filter-column="2">НАЗВАНИЕ</th>
-                                <th rowspan="2" data-filter-column="3" data-filter-type="number">ГРАНД ТОТАЛ</th>
+                                <th colspan="4" class="stock-total-group stock-total-group--total">ТОТАЛ</th>
                                 <th colspan="3" class="stock-total-group stock-total-group--ff">ДОСТУПНО ФФ</th>
                                 <th colspan="3" class="stock-total-group stock-total-group--transit">В ПУТИ МЕЖДУ ФФ</th>
                                 <th colspan="3" class="stock-total-group stock-total-group--fbs">СТОК В ПРОДАЖЕ FBS</th>
@@ -91,6 +94,7 @@ $total_download_button
                                 <th colspan="3" class="stock-total-group stock-total-group--fbo">СТОК В ПРОДАЖЕ FBO</th>
                             </tr>
                             <tr class="stock-total-marketplaces">
+                                <th data-filter-column="3" data-filter-type="number">ГРАНД ТОТАЛ</th>
                                 <th data-filter-column="4" data-filter-type="number">ВБ</th>
                                 <th data-filter-column="5" data-filter-type="number">ОЗОН</th>
                                 <th data-filter-column="6" data-filter-type="number">ЯМ</th>
@@ -106,12 +110,18 @@ $total_download_button
                                 <th data-filter-column="16" data-filter-type="number">ВБ</th>
                                 <th data-filter-column="17" data-filter-type="number">ОЗОН</th>
                                 <th data-filter-column="18" data-filter-type="number">ЯМ</th>
+                                <th data-filter-column="19" data-filter-type="number">ВБ</th>
+                                <th data-filter-column="20" data-filter-type="number">ОЗОН</th>
+                                <th data-filter-column="21" data-filter-type="number">ЯМ</th>
                             </tr>
                             <tr class="totals-row">
                                 <th>ИТОГО</th>
                                 <th></th>
                                 <th data-store-total-positions>позиций: 0</th>
                                 <th data-store-total-key="grand_total">0</th>
+                                <th data-store-total-key="total_wb">0</th>
+                                <th data-store-total-key="total_ozon">0</th>
+                                <th data-store-total-key="total_yandex">0</th>
                                 <th data-store-total-key="ff_wb">0</th>
                                 <th data-store-total-key="ff_ozon">0</th>
                                 <th data-store-total-key="ff_yandex">0</th>
@@ -128,9 +138,33 @@ $total_download_button
                                 <th data-store-total-key="fbo_ozon">0</th>
                                 <th data-store-total-key="fbo_yandex">0</th>
                             </tr>
+                            <tr class="totals-row totals-row--cost">
+                                <th>ИТОГО В ЗЦ</th>
+                                <th></th>
+                                <th data-store-cost-positions>ЗЦ: 0 из 0 поз.</th>
+                                <th data-store-cost-key="grand_total">0 ₽</th>
+                                <th data-store-cost-key="total_wb">0 ₽</th>
+                                <th data-store-cost-key="total_ozon">0 ₽</th>
+                                <th data-store-cost-key="total_yandex">0 ₽</th>
+                                <th data-store-cost-key="ff_wb">0 ₽</th>
+                                <th data-store-cost-key="ff_ozon">0 ₽</th>
+                                <th data-store-cost-key="ff_yandex">0 ₽</th>
+                                <th data-store-cost-key="transit_wb">0 ₽</th>
+                                <th data-store-cost-key="transit_ozon">0 ₽</th>
+                                <th data-store-cost-key="transit_yandex">0 ₽</th>
+                                <th data-store-cost-key="fbs_wb">0 ₽</th>
+                                <th data-store-cost-key="fbs_ozon">0 ₽</th>
+                                <th data-store-cost-key="fbs_yandex">0 ₽</th>
+                                <th data-store-cost-key="rfbs_wb">0 ₽</th>
+                                <th data-store-cost-key="rfbs_ozon">0 ₽</th>
+                                <th data-store-cost-key="rfbs_yandex">0 ₽</th>
+                                <th data-store-cost-key="fbo_wb">0 ₽</th>
+                                <th data-store-cost-key="fbo_ozon">0 ₽</th>
+                                <th data-store-cost-key="fbo_yandex">0 ₽</th>
+                            </tr>
                         </thead>
                         <tbody>
-                            <tr class="empty-row"><td colspan="19">Нажмите «ТОТАЛ», чтобы загрузить остатки</td></tr>
+                            <tr class="empty-row"><td colspan="22">Нажмите «ТОТАЛ», чтобы загрузить остатки</td></tr>
                         </tbody>
                     </table>
                 </div>

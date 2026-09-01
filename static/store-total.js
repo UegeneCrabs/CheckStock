@@ -14,6 +14,10 @@
     var body = table.tBodies[0];
     var storeSlug = window.location.pathname.split('/').filter(Boolean)[1] || '';
     var numberFormat = new Intl.NumberFormat('ru-RU');
+    var moneyFormat = new Intl.NumberFormat('ru-RU', {
+        style: 'currency', currency: 'RUB', minimumFractionDigits: 0, maximumFractionDigits: 2
+    });
+    var totalKeys = ['grand_total', 'total_wb', 'total_ozon', 'total_yandex'];
     var quantityKeys = [
         'ff_wb', 'ff_ozon', 'ff_yandex',
         'transit_wb', 'transit_ozon', 'transit_yandex',
@@ -21,6 +25,7 @@
         'rfbs_wb', 'rfbs_ozon', 'rfbs_yandex',
         'fbo_wb', 'fbo_ozon', 'fbo_yandex'
     ];
+    var valueKeys = totalKeys.concat(quantityKeys);
     var loaded = false;
     var loading = false;
 
@@ -54,7 +59,7 @@
             var empty = document.createElement('tr');
             empty.className = 'empty-row';
             var message = cell('В этом магазине пока нет товаров и остатков');
-            message.colSpan = 19;
+            message.colSpan = 22;
             empty.appendChild(message);
             body.appendChild(empty);
             updateTotals();
@@ -64,13 +69,17 @@
         rows.forEach(function (item) {
             var row = document.createElement('tr');
             row.setAttribute('data-grand-total', String(number(item.grand_total)));
+            row.setAttribute(
+                'data-purchase-price',
+                item.purchase_price === null || item.purchase_price === undefined
+                    ? '' : String(number(item.purchase_price))
+            );
             row.appendChild(cell(String(item.article || '')));
             row.appendChild(cell(String(item.barcode || '')));
             var name = cell(String(item.name || item.article || 'Без названия'));
             name.title = name.textContent;
             row.appendChild(name);
-            row.appendChild(quantityCell(item.grand_total));
-            quantityKeys.forEach(function (key) {
+            valueKeys.forEach(function (key) {
                 row.appendChild(quantityCell(item[key]));
             });
             body.appendChild(row);
@@ -89,7 +98,7 @@
         var rows = visibleRows();
         var positions = table.querySelector('[data-store-total-positions]');
         if (positions) positions.textContent = 'позиций: ' + numberFormat.format(rows.length);
-        ['grand_total'].concat(quantityKeys).forEach(function (key, index) {
+        valueKeys.forEach(function (key, index) {
             var target = table.querySelector('[data-store-total-key="' + key + '"]');
             if (!target) return;
             var total = rows.reduce(function (sum, row) {
@@ -97,6 +106,24 @@
                 return sum + number(valueCell && valueCell.getAttribute('data-filter-value'));
             }, 0);
             target.textContent = numberFormat.format(total);
+        });
+        var pricedRows = rows.filter(function (row) {
+            return row.dataset.purchasePrice !== '' && Number.isFinite(Number(row.dataset.purchasePrice));
+        });
+        var costPositions = table.querySelector('[data-store-cost-positions]');
+        if (costPositions) {
+            costPositions.textContent = 'ЗЦ: ' + numberFormat.format(pricedRows.length)
+                + ' из ' + numberFormat.format(rows.length) + ' поз.';
+        }
+        valueKeys.forEach(function (key, index) {
+            var target = table.querySelector('[data-store-cost-key="' + key + '"]');
+            if (!target) return;
+            var total = pricedRows.reduce(function (sum, row) {
+                var valueCell = row.children[index + 3];
+                return sum + number(valueCell && valueCell.getAttribute('data-filter-value'))
+                    * number(row.dataset.purchasePrice);
+            }, 0);
+            target.textContent = moneyFormat.format(total);
         });
     }
 
@@ -142,7 +169,7 @@
                 setStatus('Показан общий остаток WB + OZON + Яндекс Маркета', false);
             })
             .catch(function (error) {
-                body.innerHTML = '<tr class="empty-row"><td colspan="19">Не удалось загрузить остатки</td></tr>';
+                body.innerHTML = '<tr class="empty-row"><td colspan="22">Не удалось загрузить остатки</td></tr>';
                 setStatus('Ошибка: ' + error.message, true);
             })
             .finally(function () {
