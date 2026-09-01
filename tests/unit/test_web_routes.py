@@ -1307,6 +1307,51 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIsNone(empty["roi"])
         self.assertEqual(empty["coverage"]["days"], 0)
 
+    def test_unit_profit_warning_lists_days_below_seventy_percent_coverage(self) -> None:
+        rows = [
+            {"store_slug": "rimili", "article": str(index)}
+            for index in range(10)
+        ]
+        snapshots = {
+            ("rimili", str(index)): {
+                "2026-08-28": {},
+                "2026-08-29": {},
+            }
+            for index in range(6)
+        }
+        for index in range(6, 7):
+            snapshots[("rimili", str(index))] = {"2026-08-29": {}}
+
+        missing_days = unit_economics._undercovered_margin_days(
+            rows=rows,
+            date_from=date(2026, 8, 28),
+            date_to=date(2026, 8, 29),
+            margin_snapshots_by_product=snapshots,
+            daily_contexts={},
+            live_day=date(2026, 9, 2),
+        )
+
+        self.assertEqual(missing_days, ["2026-08-28"])
+
+    def test_unit_profit_warning_counts_live_snapshots_toward_coverage(self) -> None:
+        rows = [
+            {"store_slug": "rimili", "article": str(index)}
+            for index in range(10)
+        ]
+        missing_days = unit_economics._undercovered_margin_days(
+            rows=rows,
+            date_from=date(2026, 9, 2),
+            date_to=date(2026, 9, 2),
+            margin_snapshots_by_product={},
+            daily_contexts={
+                ("rimili", str(index)): {"live_snapshot": {"unit_margin": 100}}
+                for index in range(7)
+            },
+            live_day=date(2026, 9, 2),
+        )
+
+        self.assertEqual(missing_days, [])
+
     def test_unit_profit_report_never_substitutes_current_margin_for_missing_history(self) -> None:
         result = unit_economics._report_historical_economics(
             date_from=date(2026, 8, 23),
@@ -2118,6 +2163,14 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("hiddenColumns", report_script)
         self.assertIn("data-column-metric", report_script)
         self.assertIn("function visibleColumnsForGroup(group)", report_script)
+        self.assertIn("margin_undercovered_days", report_script)
+        self.assertIn("ue1cr-margin-cell--partial", report_script)
+        self.assertIn("Маржа рассчитана только по датам с доступными снимками", report_script)
+        report_styles = (
+            Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c-report.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn("td.ue1cr-margin-cell--partial", report_styles)
+        self.assertIn("text-decoration-style: dotted", report_styles)
         self.assertIn("ue1cr-page--daily-hidden", report_script)
         self.assertIn("function reportQuery(includeView)", report_script)
         self.assertIn("function updateExportLink()", report_script)

@@ -51,6 +51,7 @@ UNIT_ECONOMICS_COLUMN_GROUPS = (
 )
 UNIT_ECONOMICS_PERIOD_DAYS = (7, 14, 30)
 UNIT_ECONOMICS_MAX_PERIOD_DAYS = 366
+UNIT_PROFIT_MARGIN_SNAPSHOT_MIN_COVERAGE = 0.7
 
 
 def _cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
@@ -137,6 +138,7 @@ def _report_historical_economics(
     daily_advertising: dict[str, float] | None = None,
     fallback_buyout_percent: float | None = None,
     allow_partial: bool = False,
+    include_uncovered_advertising: bool = False,
 ) -> dict:
     """Sum daily expected-buyout profit without substituting current values for history."""
 
@@ -165,6 +167,8 @@ def _report_historical_economics(
                 raw_buyout_percent = 100.0
         buyout_percent = min(max(float(raw_buyout_percent), 0.0), 100.0)
         expected_buyouts = orders_count * buyout_percent / 100
+        weighted_buyout_percent += buyout_percent * orders_count
+        buyout_orders_count += orders_count
         expected_buyout_amount += (
             max(float(daily_row.get("orders_amount") or 0), 0.0)
             * buyout_percent
@@ -186,17 +190,15 @@ def _report_historical_economics(
         if allow_partial:
             if unit_margin is None or purchase_price is None:
                 missing_days.append(day_key)
+                if include_uncovered_advertising:
+                    advertising_spend += day_advertising
             else:
                 covered_days.append(day_key)
-                weighted_buyout_percent += buyout_percent * orders_count
-                buyout_orders_count += orders_count
                 advertising_spend += day_advertising
                 margin += unit_margin * expected_buyouts - day_advertising
                 purchase_value += purchase_price * expected_buyouts
                 calculated_buyouts += expected_buyouts
         else:
-            weighted_buyout_percent += buyout_percent * orders_count
-            buyout_orders_count += orders_count
             advertising_spend += day_advertising
             margin -= day_advertising
             if expected_buyouts > 0:
@@ -1942,6 +1944,45 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
     return totals
 
 
+def _undercovered_margin_days(
+    *,
+    rows: list[dict],
+    date_from: date,
+    date_to: date,
+    margin_snapshots_by_product: dict[tuple[str, str], dict[str, dict]],
+    daily_contexts: dict[tuple[str, str], dict],
+    live_day: date,
+) -> list[str]:
+    if not rows:
+        return []
+
+    product_keys = {
+        (str(row.get("store_slug") or ""), str(row.get("article") or ""))
+        for row in rows
+    }
+    coverage_by_day: dict[str, int] = {}
+    for key in product_keys:
+        covered_days = set(margin_snapshots_by_product.get(key) or {})
+        context = daily_contexts.get(key) or {}
+        if date_from <= live_day <= date_to and context.get("live_snapshot") is not None:
+            covered_days.add(live_day.isoformat())
+        for value in covered_days:
+            parsed = _optional_day(value)
+            if parsed is not None and date_from <= parsed <= date_to:
+                day_key = parsed.isoformat()
+                coverage_by_day[day_key] = coverage_by_day.get(day_key, 0) + 1
+
+    expected_days = (date_to - date_from).days + 1
+    product_count = len(product_keys)
+    return [
+        day_key
+        for offset in range(expected_days)
+        for day_key in ((date_from + timedelta(days=offset)).isoformat(),)
+        if coverage_by_day.get(day_key, 0) / product_count
+        < UNIT_PROFIT_MARGIN_SNAPSHOT_MIN_COVERAGE
+    ]
+
+
 def _unit_profit_category_rows(rows: list[dict]) -> list[dict]:
     grouped: dict[str, list[dict]] = {}
     for row in rows:
@@ -2375,6 +2416,8 @@ async def _unit_economics_1c_unit_profit_report_data(
                     ),
                     daily_advertising=product_daily_advertising,
                     fallback_buyout_percent=period_product_metrics.get("buyout_percent"),
+                    allow_partial=True,
+                    include_uncovered_advertising=True,
                 )
                 report_advertising_per_unit = (
                     round(
@@ -2488,6 +2531,14 @@ async def _unit_economics_1c_unit_profit_report_data(
             )
         )
         totals = _unit_profit_report_totals(rows)
+        totals["margin_undercovered_days"] = _undercovered_margin_days(
+            rows=rows,
+            date_from=date_from,
+            date_to=date_to,
+            margin_snapshots_by_product=margin_snapshots_by_product,
+            daily_contexts=daily_contexts,
+            live_day=live_day,
+        )
         category_rows = _unit_profit_category_rows(rows) if group_by == "subject" else []
         all_view_rows = category_rows if group_by == "subject" else rows
         total_count = len(all_view_rows)

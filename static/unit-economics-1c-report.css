@@ -572,6 +572,15 @@
 .metric--negative {
     color: #c74343;
 }
+.ue1cr-table tbody td.ue1cr-margin-cell--partial,
+.ue1cr-table tbody tr:hover td.ue1cr-margin-cell--partial {
+    background: color-mix(in srgb, #d49a22 14%, var(--card));
+    cursor: help;
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: #b27a08;
+    text-underline-offset: 4px;
+}
 .ue1cr-empty,
 .ue1cr-error {
     padding: 24px;

@@ -245,9 +245,10 @@
     }
     function marginCoverageTitle(row) {
         if (row.margin_complete !== false) return '';
-        var days = Array.isArray(row.margin_missing_days) ? row.margin_missing_days.join(', ') : '';
-        return ' title="Нет исторического снимка маржи'
-            + (days ? ' за: ' + escapeHtml(days) : ' за часть периода') + '"';
+        var days = Array.isArray(row.margin_missing_days)
+            ? row.margin_missing_days.map(dayLabel).join(', ') : '';
+        return ' title="Маржа рассчитана только по датам с доступными снимками.'
+            + (days ? ' Нет снимка маржи за: ' + escapeHtml(days) : '') + '"';
     }
     function summary(kind) {
         var count = state[kind].size;
@@ -429,6 +430,9 @@
         else content = escapeHtml(raw === null || raw === undefined || raw === '' ? '—' : raw);
         var classes = column.format === 'text' ? '' : 'num';
         if (column.tone) classes += tone(raw);
+        if (column.key === 'margin' && row.margin_complete === false) {
+            classes += ' ue1cr-margin-cell--partial';
+        }
         var title = column.coverage ? marginCoverageTitle(row) : '';
         var parsed = Number(raw);
         var filterValue = Number.isFinite(parsed) && column.format !== 'text'
@@ -809,10 +813,12 @@
             renderOptions('manager', result.filters.managers || []);
             renderArticleOptions();
             renderRows();
-            if (result.totals && result.totals.margin_complete === false) {
-                var missingDays = result.totals.margin_missing_days || [];
-                nodes.marginCoverageNote.textContent = 'Маржа не рассчитана полностью: нет дневных снимков'
-                    + (missingDays.length ? ' за ' + missingDays.join(', ') : ' за часть периода') + '.';
+            var undercoveredDays = result.totals
+                ? result.totals.margin_undercovered_days || [] : [];
+            if (undercoveredDays.length) {
+                nodes.marginCoverageNote.textContent = 'Снимки маржи есть менее чем у 70% товаров за '
+                    + undercoveredDays.map(dayLabel).join(', ')
+                    + '. Маржа рассчитана по остальным датам.';
                 nodes.marginCoverageNote.hidden = false;
             }
             if (result.manager_scope && result.manager_scope.restricted && !result.manager_scope.matched) {
