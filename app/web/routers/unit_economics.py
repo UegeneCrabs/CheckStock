@@ -885,7 +885,11 @@ def _unit_economics_1c_price_warnings(store_slugs: tuple[str, ...]) -> list[dict
     warnings: list[dict] = []
     for store_slug in store_slugs:
         state = states.get(store_slug)
-        if state is not None and state.get("status") == "ok":
+        # A partial/fallback sync still refreshes usable prices.  Treating it as
+        # a broken API key produces a misleading banner after a successful
+        # price upload (for example when only out-of-stock cards have no public
+        # price).  The key warning is reserved for a fully failed sync.
+        if state is not None and state.get("status") != "error":
             continue
         message = (
             str(state.get("error") or "цены обновились не полностью")
