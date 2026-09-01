@@ -63,7 +63,7 @@
         periodApply: id('ue1c-period-apply'),
         tableWrap: id('ue1c-table-wrap'), pageSize: id('ue1c-page-size'),
         pagePrev: id('ue1c-page-prev'), pageNext: id('ue1c-page-next'), pageNumbers: id('ue1c-page-numbers'),
-        summary: id('ue1c-pagination-summary'), refresh: id('ue1c-refresh'), overlay: id('ue1c-overlay'),
+        summary: id('ue1c-pagination-summary'), overlay: id('ue1c-overlay'),
         productsLoading: id('ue1c-products-loading'), productsError: id('ue1c-products-error'),
         productsErrorText: id('ue1c-products-error-text'), productsRetry: id('ue1c-products-retry'),
         colgroup: id('ue1c-colgroup'), tableHead: id('ue1c-table-head'),
@@ -2125,22 +2125,6 @@
         field.value = commentText(field.dataset.commentId);
         showToast('Комментарий сохранён');
         if (state.query || state.tableFilters[1] || state.sortColumn === 1) renderPage();
-    });
-    nodes.refresh.addEventListener('click', async function () {
-        nodes.refresh.disabled = true;
-        var originalText = nodes.refresh.textContent;
-        nodes.refresh.textContent = 'Обновляем…';
-        try {
-            var response = await window.fetch('/api/unit-economics-1c/prices/sync', {
-                method: 'POST', headers: { 'X-Requested-With': 'fetch' }
-            });
-            if (!response.ok) throw new Error('HTTP ' + response.status);
-            window.location.reload();
-        } catch (error) {
-            nodes.refresh.disabled = false;
-            nodes.refresh.textContent = originalText;
-            showToast('Не удалось обновить цены');
-        }
     });
     nodes.detailClose.addEventListener('click', closeDetail);
     nodes.overlay.addEventListener('click', closeDetail);

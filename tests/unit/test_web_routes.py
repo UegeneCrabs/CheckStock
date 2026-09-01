@@ -837,6 +837,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-period-to" type="date"', template)
         self.assertIn('id="ue1c-period-apply"', template)
         self.assertIn('<option value="custom">Свои даты</option>', template)
+        self.assertNotIn('id="ue1c-refresh"', template)
+        self.assertNotIn("nodes.refresh", script)
         self.assertIn("query.set('date_from', state.periodFrom)", script)
         self.assertIn("query.set('date_to', state.periodTo)", script)
         self.assertIn("if (group.key === 'advertising' && customRange)", script)
