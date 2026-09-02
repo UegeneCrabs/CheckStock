@@ -105,12 +105,12 @@ def unit_margin_without_advertising(
 
 
 def snapshot_buyout_percent(snapshot: dict | None) -> float | None:
-    """Return the weekly buyout value captured for a historical report day."""
+    """Return the configured-window buyout value captured for a report day."""
 
     if snapshot is None:
         return None
     value = _price_value(_json_object(snapshot.get("inputs_json")).get("buyout_percent"))
-    return value if value is not None and value > 0 else None
+    return round(min(max(value, 0.0), 100.0), 2) if value is not None else None
 
 
 def calculate_snapshot_row(
@@ -148,9 +148,7 @@ def calculate_snapshot_row(
     if economics_retail_price is None:
         return None
 
-    raw_buyout_percent = product_metrics.get("range_buyout_percent")
-    if raw_buyout_percent is None or float(raw_buyout_percent) <= 0:
-        raw_buyout_percent = product_metrics.get("buyout_percent")
+    raw_buyout_percent = product_metrics.get("buyout_percent")
     buyout_percent = round(min(max(float(raw_buyout_percent or 0), 0.0), 100.0), 2)
     paid_acceptance_cost = unit_economics_1c.calculate_paid_acceptance_cost(
         product_settings.volume_l,
@@ -232,6 +230,7 @@ def calculate_snapshot_row(
         "advertising_per_unit": advertising_per_unit,
         "advertising_included_in_unit_margin": False,
         "buyout_percent": buyout_percent,
+        "buyout_period_days": int(getattr(cabinet, "buyout_period_days", 14) or 14),
         "buyout_period_from": product_metrics.get("buyout_period_from"),
         "buyout_period_to": product_metrics.get("buyout_period_to"),
         "purchase_price": purchase_price,

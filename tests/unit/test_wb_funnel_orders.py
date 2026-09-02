@@ -1,10 +1,11 @@
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
 from app import db
+from app.dto.unit_economics_1c import UnitEconomics1CCabinetSettingsRequest
 from app.repositories import core
 from app.wb import funnel_orders
 
@@ -262,7 +263,33 @@ class WbFunnelOrdersTests(unittest.TestCase):
         body = request.call_args.kwargs["json_body"]
         self.assertEqual(
             (date.fromisoformat(body["selectedPeriod"]["end"]) - date.fromisoformat(body["selectedPeriod"]["start"])).days,
-            6,
+            13,
+        )
+        self.assertEqual(
+            date.fromisoformat(body["selectedPeriod"]["end"]),
+            datetime.now(funnel_orders.MOSCOW).date() - timedelta(days=1),
+        )
+
+    def test_buyout_metrics_use_each_cabinet_period(self) -> None:
+        db.save_unit_economics_1c_cabinet_settings(
+            "rimili",
+            UnitEconomics1CCabinetSettingsRequest(buyout_period_days=21),
+            updated_at="2026-09-02T10:00:00+00:00",
+            updated_by_user_id=1,
+            updated_by_name="Test",
+        )
+        with (
+            mock.patch.object(funnel_orders.wb_tokens, "has_token", return_value=True),
+            mock.patch.object(funnel_orders.wb_tokens, "get_token", return_value="token"),
+            mock.patch.object(funnel_orders.wb_api, "request", return_value={"data": {}}) as request,
+        ):
+            funnel_orders.sync_weekly_metrics_store("rimili")
+
+        body = request.call_args.kwargs["json_body"]
+        selected = body["selectedPeriod"]
+        self.assertEqual(
+            (date.fromisoformat(selected["end"]) - date.fromisoformat(selected["start"])).days,
+            20,
         )
 
     def test_sync_window_does_not_trigger_an_unbounded_legacy_backfill(self) -> None:

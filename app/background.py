@@ -247,7 +247,8 @@ def _funnel_jobs() -> tuple[BackgroundJob, ...]:
         BackgroundJob(
             "wb_funnel_weekly_metrics_sync",
             wb_funnel_orders.sync_weekly_metrics_all,
-            _moscow_daily_delay(1),
+            _fixed_delay(wb_funnel_orders.BUYOUT_SYNC_INTERVAL_SECONDS),
+            interval_from_start=True,
             is_enabled=lambda: _job_enabled("wb_funnel_weekly_metrics_sync"),
             run_callback=lambda: _sync_funnel_configured(
                 "wb_funnel_weekly_metrics_sync",

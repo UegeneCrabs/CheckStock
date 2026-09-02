@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 ENDPOINT = f"{wb_api.ANALYTICS_BASE}/api/analytics/v3/sales-funnel/products"
 PAGE_SIZE = 1_000
 MAX_PAGES = 100
-BUYOUT_PERIOD_DAYS = 7
+DEFAULT_BUYOUT_PERIOD_DAYS = 14
+MIN_BUYOUT_PERIOD_DAYS = 1
+MAX_BUYOUT_PERIOD_DAYS = 29
+BUYOUT_SYNC_INTERVAL_SECONDS = 4 * 60 * 60
 RECENT_REFRESH_DAYS = 7
 MOSCOW = MOSCOW_TIMEZONE
 _SYNC_LOCK = Lock()
@@ -400,7 +403,7 @@ def sync_store(store_slug: str) -> dict:
 
 
 def sync_weekly_metrics_store(store_slug: str) -> dict:
-    """Refresh the current seven-day WB funnel metrics for every product."""
+    """Refresh WB buyout metrics for the cabinet's completed-day window."""
 
     store = store_slug.strip().lower()
     if store not in STORES:
@@ -408,8 +411,13 @@ def sync_weekly_metrics_store(store_slug: str) -> dict:
     if not wb_tokens.has_token(store):
         return {"store": store, "status": "skipped", "records": 0}
     with _STORE_SYNC_LOCKS[store]:
-        date_to = datetime.now(MOSCOW).date()
-        date_from = date_to - timedelta(days=BUYOUT_PERIOD_DAYS - 1)
+        configured_days = db.get_unit_economics_1c_cabinet_settings(store).buyout_period_days
+        period_days = min(
+            max(int(configured_days or DEFAULT_BUYOUT_PERIOD_DAYS), MIN_BUYOUT_PERIOD_DAYS),
+            MAX_BUYOUT_PERIOD_DAYS,
+        )
+        date_to = datetime.now(MOSCOW).date() - timedelta(days=1)
+        date_from = date_to - timedelta(days=period_days - 1)
         try:
             products = _period_product_metrics(
                 wb_tokens.get_token(store),
@@ -420,7 +428,7 @@ def sync_weekly_metrics_store(store_slug: str) -> dict:
             _replace_product_metrics(store, date_from, date_to, products)
         except Exception as exc:
             message = str(exc)[:700]
-            logger.warning("Недельные метрики воронки WB %s не обновлены: %s", store, message)
+            logger.warning("Процент выкупа WB %s не обновлён: %s", store, message)
             return {"store": store, "status": "error", "records": 0, "error": message}
         return {"store": store, "status": "success", "records": len(products)}
 
@@ -488,7 +496,7 @@ def sync_previous_day_all(store_slugs: tuple[str, ...] | None = None) -> dict[st
 
 
 def sync_weekly_metrics_all(store_slugs: tuple[str, ...] | None = None) -> dict[str, dict]:
-    """Refresh persisted seven-day buyout percentages at startup and nightly."""
+    """Refresh persisted cabinet-specific buyout percentages every four hours."""
 
     with _SYNC_LOCK:
         return _parallel_store_results(sync_weekly_metrics_store, store_slugs)

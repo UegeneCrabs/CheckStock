@@ -158,13 +158,11 @@ def _report_historical_economics(
         daily_row = daily_orders.get(day_key) or {}
         orders_count = max(int(daily_row.get("orders_count") or 0), 0)
         snapshot = margin_snapshots.get(day_key)
-        raw_buyout_percent = daily_row.get("buyout_percent")
-        if raw_buyout_percent is None or float(raw_buyout_percent) <= 0:
-            raw_buyout_percent = unit_economics_1c_history.snapshot_buyout_percent(snapshot)
-            if raw_buyout_percent is None:
-                raw_buyout_percent = fallback_buyout_percent
-            if raw_buyout_percent is None or float(raw_buyout_percent) <= 0:
-                raw_buyout_percent = 100.0
+        raw_buyout_percent = unit_economics_1c_history.snapshot_buyout_percent(snapshot)
+        if raw_buyout_percent is None:
+            raw_buyout_percent = fallback_buyout_percent
+        if raw_buyout_percent is None:
+            raw_buyout_percent = 100.0
         buyout_percent = min(max(float(raw_buyout_percent), 0.0), 100.0)
         expected_buyouts = orders_count * buyout_percent / 100
         weighted_buyout_percent += buyout_percent * orders_count
@@ -345,13 +343,7 @@ def _unit_economics_1c_mock_product(
         max(float(product_metrics.get("buyout_percent") or 0), 0.0),
         100.0,
     )
-    raw_current_buyout_percent = current_product_metrics.get("range_buyout_percent")
-    if raw_current_buyout_percent is None or float(raw_current_buyout_percent) <= 0:
-        raw_current_buyout_percent = current_product_metrics.get("buyout_percent")
-    current_buyout_percent = min(
-        max(float(raw_current_buyout_percent or 0), 0.0),
-        100.0,
-    )
+    current_buyout_percent = measured_buyout_percent
     store = STORES[store_slug]
     paid_acceptance_cost = unit_economics_1c.calculate_paid_acceptance_cost(
         product_settings.volume_l,
@@ -528,14 +520,6 @@ def _unit_economics_1c_mock_product(
     average_daily_advertising = round(period_advertising_spend / period_days, 2)
     period_orders_count = max(int(product_metrics.get("orders_count") or 0), 0)
     period_buyout_percent = measured_buyout_percent
-    if (
-        closed_period_economics is not None
-        and closed_period_economics.get("buyout_percent") is not None
-    ):
-        period_buyout_percent = min(
-            max(float(closed_period_economics["buyout_percent"]), 0.0),
-            100.0,
-        )
     advertising_per_unit = unit_economics_1c.calculate_advertising_per_unit(
         period_advertising_spend,
         period_orders_count,
@@ -1643,13 +1627,11 @@ def _report_daily_calculations(
         orders_count = max(int(daily_row.get("orders_count") or 0), 0)
         cancel_count = max(int(daily_row.get("cancel_count") or 0), 0)
         advertising_spend = round(max(float(daily_advertising.get(day_key) or 0), 0.0), 2)
-        raw_buyout_percent = daily_row.get("buyout_percent")
-        if raw_buyout_percent is None or float(raw_buyout_percent) <= 0:
-            raw_buyout_percent = unit_economics_1c_history.snapshot_buyout_percent(snapshot)
-            if raw_buyout_percent is None:
-                raw_buyout_percent = fallback_buyout_percent
-            if raw_buyout_percent is None or float(raw_buyout_percent) <= 0:
-                raw_buyout_percent = 100.0
+        raw_buyout_percent = unit_economics_1c_history.snapshot_buyout_percent(snapshot)
+        if raw_buyout_percent is None:
+            raw_buyout_percent = fallback_buyout_percent
+        if raw_buyout_percent is None:
+            raw_buyout_percent = 100.0
         buyout_percent = round(min(max(float(raw_buyout_percent), 0.0), 100.0), 2)
         expected_buyouts = round(orders_count * buyout_percent / 100, 2)
         advertising_per_unit = unit_economics_1c.calculate_advertising_per_unit(

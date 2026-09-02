@@ -124,7 +124,7 @@ class BackgroundSyncTests(unittest.TestCase):
         self.assertIs(job.callback, background.unit_reference_sync.sync_due)
         self.assertEqual(job.next_delay(), 24 * 60 * 60)
 
-    def test_funnel_buyout_metrics_run_at_startup_and_daily_at_one_moscow(self) -> None:
+    def test_funnel_buyout_metrics_run_at_startup_and_every_four_hours(self) -> None:
         with mock.patch.object(background, "_seconds_until_next_moscow_run", return_value=123) as delay:
             jobs = {job.name: job for job in background._funnel_jobs()}
             next_delay = jobs["wb_funnel_weekly_metrics_sync"].next_delay()
@@ -132,9 +132,9 @@ class BackgroundSyncTests(unittest.TestCase):
         job = jobs["wb_funnel_weekly_metrics_sync"]
         self.assertIs(job.callback, background.wb_funnel_orders.sync_weekly_metrics_all)
         self.assertEqual(job.startup_delay_seconds, 0)
-        self.assertEqual(next_delay, 123)
-        delay.assert_any_call(0)
-        delay.assert_any_call(1)
+        self.assertEqual(next_delay, 4 * 60 * 60)
+        self.assertTrue(job.interval_from_start)
+        delay.assert_called_once_with(0)
 
         close_job = jobs["wb_funnel_previous_day_close_00_msk"]
         self.assertIs(close_job.callback, background.wb_funnel_orders.sync_previous_day_all)

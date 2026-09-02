@@ -494,6 +494,7 @@ class RepositoryUnitTests(unittest.TestCase):
 
     def test_unit_economics_1c_cabinet_settings_defaults_and_save(self) -> None:
         defaults = db.get_unit_economics_1c_cabinet_settings("rimili")
+        self.assertEqual(defaults.buyout_period_days, 14)
         self.assertEqual(defaults.acquiring_percent, 3.8)
         self.assertEqual(defaults.team_commission_percent, 0)
         self.assertEqual(defaults.vat_percent, 9)
@@ -505,6 +506,7 @@ class RepositoryUnitTests(unittest.TestCase):
         saved = db.save_unit_economics_1c_cabinet_settings(
             "rimili",
             UnitEconomics1CCabinetSettingsRequest(
+                buyout_period_days=21,
                 acceptance_coefficient=1.25,
                 wb_extra_tariff_percent=3.5,
                 acquiring_percent=4.15,
@@ -519,6 +521,7 @@ class RepositoryUnitTests(unittest.TestCase):
             updated_by_name="Unit Admin",
         )
         self.assertEqual(saved.acceptance_coefficient, 1.25)
+        self.assertEqual(saved.buyout_period_days, 21)
         self.assertEqual(saved.acquiring_percent, 4.15)
         self.assertEqual(saved.team_commission_percent, 2.5)
         self.assertEqual(saved.vat_percent, 20)

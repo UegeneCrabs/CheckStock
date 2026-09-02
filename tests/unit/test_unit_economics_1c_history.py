@@ -90,6 +90,7 @@ class UnitEconomics1CHistoryTests(unittest.TestCase):
                 "source_synced_at": "source-sync",
             },
             cabinet=SimpleNamespace(
+                buyout_period_days=21,
                 acceptance_coefficient=1,
                 wb_extra_tariff_percent=1,
                 acquiring_percent=3,
@@ -112,6 +113,7 @@ class UnitEconomics1CHistoryTests(unittest.TestCase):
         self.assertEqual(inputs["purchase_price"], 300)
         self.assertEqual(inputs["fulfillment_cost"], 40)
         self.assertEqual(inputs["buyout_percent"], 80)
+        self.assertEqual(inputs["buyout_period_days"], 21)
         self.assertFalse(inputs["advertising_included_in_unit_margin"])
         self.assertEqual(inputs["advertising_per_unit"], 62.5)
         self.assertEqual(result["advertising"], 0)
@@ -130,6 +132,14 @@ class UnitEconomics1CHistoryTests(unittest.TestCase):
         )
 
         self.assertEqual(margin, 808.06)
+
+    def test_snapshot_buyout_percent_keeps_valid_zero(self) -> None:
+        self.assertEqual(
+            unit_economics_1c_history.snapshot_buyout_percent(
+                {"inputs_json": json.dumps({"buyout_percent": 0})}
+            ),
+            0,
+        )
 
 
 if __name__ == "__main__":

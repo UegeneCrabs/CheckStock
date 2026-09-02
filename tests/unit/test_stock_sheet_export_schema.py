@@ -153,7 +153,7 @@ def test_cabinet_settings_are_migrated_to_current_commissions_and_taxes(tmp_path
         columns = connection.column_names("unit_economics_1c_cabinet_settings")
         row = connection.execute(
             """
-            SELECT acquiring_percent, team_commission_percent, vat_percent,
+            SELECT buyout_period_days, acquiring_percent, team_commission_percent, vat_percent,
                    usn_percent, osno_percent, tax_system, updated_by_name
               FROM unit_economics_1c_cabinet_settings
              WHERE store_slug='rimili' AND marketplace='WB'
@@ -161,6 +161,7 @@ def test_cabinet_settings_are_migrated_to_current_commissions_and_taxes(tmp_path
         ).fetchone()
 
     assert "acquiring_percent" in columns
+    assert "buyout_period_days" in columns
     assert "team_commission_percent" in columns
     assert "vat_percent" in columns
     assert "usn_percent" in columns
@@ -177,6 +178,7 @@ def test_cabinet_settings_are_migrated_to_current_commissions_and_taxes(tmp_path
         "tax_percent",
     }.isdisjoint(columns)
     assert row is not None
+    assert row["buyout_period_days"] == 14
     assert row["acquiring_percent"] == 3.8
     assert row["team_commission_percent"] == 2.27
     assert row["vat_percent"] == 11

@@ -372,12 +372,15 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1cs-price-sync"', page.text)
         self.assertIn("Выгрузить цены", page.text)
         self.assertIn('"acquiring_percent": 3.8', page.text)
+        self.assertIn('"buyout_period_days": 14', page.text)
         self.assertIn('"team_commission_percent": 0.0', page.text)
         self.assertIn('"vat_percent": 9.0', page.text)
         self.assertIn('"usn_percent": 0.0', page.text)
         self.assertIn('"tax_system": "usn"', page.text)
         self.assertIn("Google Sheets", page.text)
         self.assertIn("key: 'vat_percent', label: 'Налог НДС'", settings_script)
+        self.assertIn("key: 'buyout_period_days', label: 'Период расчёта'", settings_script)
+        self.assertIn("Введите целое число от 1 до 29.", settings_script)
         self.assertIn("key: 'usn_percent', label: 'Налог УСН'", settings_script)
         self.assertIn("key: 'osno_percent', label: 'Налог ОСНО'", settings_script)
         self.assertIn("key: 'tax_system', label: 'Система налогообложения'", settings_script)
@@ -387,6 +390,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn(".ue1cs-field[hidden]", settings_styles)
 
         payload = {
+            "buyout_period_days": 21,
             "acceptance_coefficient": 1.2,
             "wb_extra_tariff_percent": 2.3,
             "acquiring_percent": 4.2,
@@ -401,6 +405,7 @@ class WebRouteUnitTests(unittest.TestCase):
             headers={"X-Requested-With": "fetch"},
         )
         self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["settings"]["buyout_period_days"], 21)
         self.assertEqual(saved.json()["settings"]["acquiring_percent"], 4.2)
         self.assertEqual(saved.json()["settings"]["team_commission_percent"], 0)
         self.assertEqual(saved.json()["settings"]["vat_percent"], 10)
@@ -411,6 +416,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(loaded.status_code, 200)
         rimili = next(item for item in loaded.json()["items"] if item["store_slug"] == "rimili")
         self.assertEqual(rimili["acquiring_percent"], 4.2)
+        self.assertEqual(rimili["buyout_period_days"], 21)
         self.assertEqual(rimili["team_commission_percent"], 0)
         self.assertEqual(rimili["vat_percent"], 10)
         self.assertEqual(rimili["usn_percent"], 6)
@@ -442,6 +448,13 @@ class WebRouteUnitTests(unittest.TestCase):
         gogol = next(item for item in gogol_loaded.json()["items"] if item["store_slug"] == "gogol")
         self.assertEqual(gogol["usn_percent"], 5)
         self.assertEqual(gogol["osno_percent"], 0)
+        for invalid_days in (0, 30, 1.5):
+            invalid = self.client.put(
+                "/api/unit-economics-1c/cabinet-settings/rimili",
+                json={**payload, "buyout_period_days": invalid_days},
+                headers={"X-Requested-With": "fetch"},
+            )
+            self.assertEqual(invalid.status_code, 422)
         unit_product = self._unit_economics_product("rimili", "949558341")
         self.assertEqual(unit_product["details"]["acquiring"], 4.2)
         self.assertEqual(unit_product["details"]["team_commission_percent"], 0)
@@ -1215,18 +1228,18 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(product["advertising"]["period_from"], "2026-08-23")
         self.assertEqual(product["advertising"]["period_to"], "2026-08-29")
         self.assertEqual(product["advertising"]["spend"], 700)
-        self.assertEqual(product["advertising"]["drr"], 14.29)
-        self.assertEqual(product["advertising"]["spend_per_order"], 142.86)
+        self.assertEqual(product["advertising"]["drr"], 12.5)
+        self.assertEqual(product["advertising"]["spend_per_order"], 125)
         self.assertEqual(
             (product["current_economics"]["period_from"], product["current_economics"]["period_to"]),
             ("2026-08-30", "2026-08-30"),
         )
-        self.assertEqual(product["current_economics"]["margin"], 452)
-        self.assertEqual(product["current_economics"]["roi"], 150.67)
+        self.assertEqual(product["current_economics"]["margin"], 455.75)
+        self.assertEqual(product["current_economics"]["roi"], 151.92)
         self.assertEqual(product["current_economics"]["orders"], 2)
         self.assertEqual(product["current_economics"]["advertising_spend"], 90)
-        self.assertEqual(product["details"]["buyout_percent"], 75)
-        self.assertEqual(product["details"]["advertising_per_unit"], 60)
+        self.assertEqual(product["details"]["buyout_percent"], 80)
+        self.assertEqual(product["details"]["advertising_per_unit"], 56.25)
 
     def test_unit_profit_report_sums_margin_and_orders_for_each_day(self) -> None:
         result = unit_economics._report_historical_economics(
@@ -1238,9 +1251,9 @@ class WebRouteUnitTests(unittest.TestCase):
                 "2026-08-25": {"orders_count": 4, "buyout_percent": 100},
             },
             margin_snapshots={
-                "2026-08-23": {"unit_margin": 100, "purchase_price": 50},
-                "2026-08-24": {"unit_margin": 200, "purchase_price": 60},
-                "2026-08-25": {"unit_margin": 300, "purchase_price": 70},
+                "2026-08-23": {"unit_margin": 100, "purchase_price": 50, "inputs_json": json.dumps({"buyout_percent": 50})},
+                "2026-08-24": {"unit_margin": 200, "purchase_price": 60, "inputs_json": json.dumps({"buyout_percent": 80})},
+                "2026-08-25": {"unit_margin": 300, "purchase_price": 70, "inputs_json": json.dumps({"buyout_percent": 100})},
             },
             live_day=date(2026, 8, 28),
             live_unit_margin=None,
@@ -1268,8 +1281,8 @@ class WebRouteUnitTests(unittest.TestCase):
                 "2026-08-25": {"orders_count": 4, "buyout_percent": 100},
             },
             margin_snapshots={
-                "2026-08-24": {"unit_margin": 200, "purchase_price": 60},
-                "2026-08-25": {"unit_margin": 300, "purchase_price": 70},
+                "2026-08-24": {"unit_margin": 200, "purchase_price": 60, "inputs_json": json.dumps({"buyout_percent": 80})},
+                "2026-08-25": {"unit_margin": 300, "purchase_price": 70, "inputs_json": json.dumps({"buyout_percent": 100})},
             },
             live_day=date(2026, 8, 28),
             live_unit_margin=None,

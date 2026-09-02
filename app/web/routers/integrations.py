@@ -21,6 +21,7 @@ from app.formatting import format_dt
 from app.stores import STORES
 from app.sync_catalog import job_definitions
 from app.sync_tracking import run_tracked, set_next_run
+from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import token_watch
 from app.web.templating import fill_template, render_page
 
@@ -42,6 +43,9 @@ class SyncSettingUpdate(BaseModel):
     enabled: bool
     store_slug: str = Field(default="", max_length=100)
     marketplace: str = Field(default="", max_length=100)
+
+
+WB_BUYOUT_JOB_NAME = "wb_funnel_weekly_metrics_sync"
 
 
 def _require_superadmin(request: Request) -> None:
@@ -344,8 +348,7 @@ async def run_sync_job(request: Request, job_name: str):
         (item for item in job_definitions() if item.name == job_name and item.manual_run),
         None,
     )
-    platform = ftp_export.platform_for_job(job_name)
-    if definition is None or platform is None:
+    if definition is None:
         return JSONResponse(
             {"ok": False, "error": "Ручной запуск этой выгрузки недоступен"},
             status_code=404,
@@ -355,39 +358,78 @@ async def run_sync_job(request: Request, job_name: str):
             {"ok": False, "error": "Выгрузка системно отключена"},
             status_code=409,
         )
-    if ftp_export.is_running(platform):
-        return JSONResponse(
-            {"ok": False, "error": f"Выгрузка FTP {platform.upper()} уже выполняется"},
-            status_code=409,
-        )
-
-    try:
-        result = await run_in_threadpool(
-            run_tracked,
+    platform = ftp_export.platform_for_job(job_name)
+    if platform is not None:
+        if ftp_export.is_running(platform):
+            return JSONResponse(
+                {"ok": False, "error": f"Выгрузка FTP {platform.upper()} уже выполняется"},
+                status_code=409,
+            )
+        try:
+            result = await run_in_threadpool(
+                run_tracked,
+                job_name,
+                "manual",
+                lambda: ftp_export.run_platform(platform),
+            )
+        except ftp_export.FTPExportBusyError as error:
+            return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
+        except Exception as error:
+            return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
+        await run_in_threadpool(
+            set_next_run,
             job_name,
-            "manual",
-            lambda: ftp_export.run_platform(platform),
+            ftp_export_schedule.next_delay_seconds(job_name),
         )
-    except ftp_export.FTPExportBusyError as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
-    except Exception as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
-
-    await run_in_threadpool(
-        set_next_run,
-        job_name,
-        ftp_export_schedule.next_delay_seconds(job_name),
-    )
+        message = f"{definition.title}: выгрузка завершена"
+    elif job_name == WB_BUYOUT_JOB_NAME:
+        config = await run_in_threadpool(sync_settings.configuration, job_name)
+        store_slugs = tuple(
+            str(target["store_slug"])
+            for target in config["targets"]
+            if target["enabled"]
+        )
+        if not store_slugs:
+            return JSONResponse(
+                {"ok": False, "error": "Для обновления не выбран ни один магазин"},
+                status_code=409,
+            )
+        try:
+            result = await run_in_threadpool(
+                run_tracked,
+                job_name,
+                "manual",
+                lambda: wb_funnel_orders.sync_weekly_metrics_all(store_slugs),
+            )
+        except Exception as error:
+            return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
+        succeeded = sum(
+            1 for item in result.values() if item.get("status") == "success"
+        )
+        skipped = sum(
+            1 for item in result.values() if item.get("status") == "skipped"
+        )
+        failed = len(result) - succeeded - skipped
+        message = f"Процент выкупа обновлён: {succeeded} из {len(result)} магазинов"
+        if skipped:
+            message += f"; пропущено: {skipped}"
+        if failed:
+            message += f"; ошибок: {failed}"
+    else:
+        return JSONResponse(
+            {"ok": False, "error": "Ручной запуск этой выгрузки недоступен"},
+            status_code=404,
+        )
     actor = request.state.user
     await run_in_threadpool(
         db.log_action,
         actor.id,
         actor.full_name,
-        "Запущена FTP-выгрузка",
+        "Запущена выгрузка вручную",
         definition.title,
         datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
     )
-    return {"ok": True, "result": result}
+    return {"ok": True, "message": message, "result": result}
 
 
 @router.put("/api/admin/integrations/sync-jobs/{job_name}/settings")

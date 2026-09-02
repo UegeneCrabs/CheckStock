@@ -478,6 +478,22 @@
     opacity: 0.62;
 }
 
+.ue1cs-input-wrap input[aria-invalid="true"] {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #dc3545 12%, transparent);
+}
+
+.ue1cs-field-warning {
+    color: #c92a3a;
+    font-size: 0.66rem;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.ue1cs-field-warning[hidden] {
+    display: none;
+}
+
 .ue1cs-input-wrap b {
     position: absolute;
     right: 11px;

@@ -6,6 +6,7 @@ from app.dto.common import DtoModel
 
 
 class UnitEconomics1CCabinetValues(DtoModel):
+    buyout_period_days: int = Field(default=14, ge=1, le=29)
     acceptance_coefficient: float = Field(default=0, ge=0, le=1_000_000)
     wb_extra_tariff_percent: float = Field(default=0, ge=0, le=1_000_000)
     acquiring_percent: float = Field(default=3.8, ge=0, le=100)
@@ -21,6 +22,7 @@ class UnitEconomics1CCabinetSettingsRequest(UnitEconomics1CCabinetValues):
 
 
 class UnitEconomics1CCabinetSettingsWebRequest(DtoModel):
+    buyout_period_days: int = Field(default=14, ge=1, le=29)
     acceptance_coefficient: float = Field(default=0, ge=0, le=1_000_000)
     wb_extra_tariff_percent: float = Field(default=0, ge=0, le=1_000_000)
     acquiring_percent: float = Field(default=3.8, ge=0, le=100)

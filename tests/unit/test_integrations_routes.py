@@ -73,6 +73,9 @@ def test_superadmin_page_never_renders_saved_secrets(container, user_factory, mo
     assert 'data-sync-targets-toggle="stock_sync"' in response.text
     assert "FTP — себестоимость WB" in response.text
     assert "FTP — себестоимость Ozon" in response.text
+    assert "Процент выкупа WB" in response.text
+    assert "Каждые 4 ч." in response.text
+    assert 'data-sync-run="wb_funnel_weekly_metrics_sync"' in response.text
     assert 'data-sync-run="ftp_wb_export"' in response.text
     assert 'data-sync-run="ftp_ozon_export"' in response.text
     assert 'data-marketplace="OZON"' in response.text
@@ -346,6 +349,51 @@ def test_superadmin_can_run_ftp_export_from_integrations(
     assert state["last_trigger"] == "manual"
     assert state["status"] == "success"
     assert state["next_run_at"]
+
+
+def test_superadmin_can_refresh_wb_buyout_from_integrations(
+    container, user_factory, database_path, monkeypatch
+) -> None:
+    sync_settings.save_setting(
+        "wb_funnel_weekly_metrics_sync",
+        enabled=False,
+        store_slug="toyka",
+    )
+
+    def refresh(store_slugs: tuple[str, ...]) -> dict[str, dict]:
+        return {
+            store_slug: {"store": store_slug, "status": "success", "records": 10}
+            for store_slug in store_slugs
+        }
+
+    run = mock.Mock(side_effect=refresh)
+    monkeypatch.setattr(
+        integrations.wb_funnel_orders,
+        "sync_weekly_metrics_all",
+        run,
+    )
+    application = create_app(container)
+    user = user_factory()
+    with (
+        mock.patch.object(application.state.container.identity, "user_for_token", return_value=user),
+        TestClient(application, raise_server_exceptions=False) as client,
+    ):
+        client.cookies.set(auth.SESSION_COOKIE, "session")
+        response = client.post(
+            "/api/admin/integrations/sync-jobs/wb_funnel_weekly_metrics_sync/run"
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["message"] == "Процент выкупа обновлён: 6 из 6 магазинов"
+    selected_stores = run.call_args.args[0]
+    assert "toyka" not in selected_stores
+    assert selected_stores == tuple(store for store in sync_settings.STORES if store != "toyka")
+    state = {
+        item["name"]: item for item in db.list_sync_job_states()
+    }["wb_funnel_weekly_metrics_sync"]
+    assert state["last_trigger"] == "manual"
+    assert state["status"] == "success"
+    assert state["last_finished_at"]
 
 
 def test_manual_run_rejects_non_ftp_job(container, user_factory) -> None:

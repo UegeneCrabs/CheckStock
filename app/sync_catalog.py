@@ -80,10 +80,11 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         SyncJobDefinition(
             "wb_funnel_weekly_metrics_sync",
             "Процент выкупа WB",
-            "Обновляет недельные метрики и процент выкупа по товарам.",
-            "Ежедневно в 01:00 МСК",
+            "Обновляет процент выкупа по товарам за заданное в кабинете число завершённых дней.",
+            _interval(4 * 60 * 60),
             funnel,
             "stores",
+            manual_run=True,
         ),
         SyncJobDefinition(
             "unit_economics_1c_sync",

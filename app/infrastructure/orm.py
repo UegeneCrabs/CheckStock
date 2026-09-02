@@ -800,6 +800,9 @@ class UnitEconomics1CCabinetSettingRecord(OrmBase):
 
     store_slug: Mapped[str] = mapped_column(String, primary_key=True)
     marketplace: Mapped[str] = mapped_column(String, primary_key=True, default="WB", server_default="WB")
+    buyout_period_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=14, server_default="14"
+    )
     acceptance_coefficient: Mapped[float] = mapped_column(
         Float, nullable=False, default=0, server_default="0"
     )

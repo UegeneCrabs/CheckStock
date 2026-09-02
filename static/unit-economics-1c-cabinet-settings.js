@@ -16,6 +16,8 @@
     var priceSync = document.getElementById('ue1cs-price-sync');
     var toastTimer = 0;
     var fields = [
+        { key: 'buyout_period_days', label: 'Период расчёта', step: '1', min: '1', max: '29', suffix: 'дн.', group: 'buyout', integer: true,
+            warning: 'Введите целое число от 1 до 29.' },
         { key: 'acceptance_coefficient', label: 'КФ приёмки', step: '0.01', group: 'logistics' },
         { key: 'wb_extra_tariff_percent', label: 'Доп. тарифы WB', step: '0.01', suffix: '%', group: 'logistics' },
         { key: 'acquiring_percent', label: 'Процент эквайринга', step: '0.01', max: '100', suffix: '%', group: 'expenses' },
@@ -27,6 +29,7 @@
         { key: 'osno_percent', label: 'Налог ОСНО', step: '0.01', max: '100', suffix: '%', group: 'expenses', gogolOnly: true, taxSystems: ['osno'] }
     ];
     var fieldGroups = [
+        { key: 'buyout', title: 'Процент выкупа WB', hint: 'Завершённые дни, сегодня не включается' },
         { key: 'logistics', title: 'Логистика WB', hint: 'Приёмка и тарифы' },
         { key: 'expenses', title: 'Расходы', hint: 'Доли в процентах' }
     ];
@@ -60,13 +63,15 @@
                         + (option.value === item[field.key] ? ' selected' : '') + '>'
                         + escapeHtml(option.label) + '</option>';
                 }).join('') + '</select>'
-            : '<input type="number" min="0"' + (field.max ? ' max="' + field.max + '"' : '')
+            : '<input type="number" min="' + (field.min || '0') + '"' + (field.max ? ' max="' + field.max + '"' : '')
                 + ' step="' + field.step + '" data-setting="' + field.key
                 + '" value="' + escapeHtml(item[field.key]) + '"' + (fieldDisabled ? ' disabled' : '') + '>';
         return '<label class="ue1cs-field"' + (field.taxSystems ? ' data-tax-systems="' + field.taxSystems.join(',') + '"' : '')
             + (taxSystemHidden ? ' hidden' : '') + '><span>' + escapeHtml(field.label) + '</span><span class="ue1cs-input-wrap">'
             + control
-            + (field.suffix ? '<b>' + field.suffix + '</b>' : '') + '</span></label>';
+            + (field.suffix ? '<b>' + field.suffix + '</b>' : '') + '</span>'
+            + (field.warning ? '<small class="ue1cs-field-warning" data-field-warning hidden>'
+                + escapeHtml(field.warning) + '</small>' : '') + '</label>';
     }
     function fieldGroupHtml(group, item) {
         var groupFields = fields.filter(function (field) {
@@ -105,6 +110,27 @@
         }
         return payload;
     }
+    function validateField(input) {
+        var field = fields.find(function (item) { return item.key === input.dataset.setting; });
+        if (!field || !field.warning) return true;
+        var value = Number(input.value);
+        var minimum = Number(field.min);
+        var maximum = Number(field.max);
+        var valid = input.value.trim() !== '' && Number.isFinite(value)
+            && (!field.integer || Number.isInteger(value))
+            && value >= minimum && value <= maximum;
+        var warning = input.closest('.ue1cs-field').querySelector('[data-field-warning]');
+        input.setAttribute('aria-invalid', valid ? 'false' : 'true');
+        input.setCustomValidity(valid ? '' : field.warning);
+        if (warning) warning.hidden = valid;
+        return valid;
+    }
+    function validateCard(card) {
+        return fields.every(function (field) {
+            var input = card.querySelector('[data-setting="' + field.key + '"]');
+            return !input || validateField(input);
+        });
+    }
     function syncTaxSystemFields(card, resetInactive) {
         var input = card.querySelector('[data-setting="tax_system"]');
         if (!input) return;
@@ -120,7 +146,10 @@
     function applySavedSettings(card, settings) {
         fields.forEach(function (field) {
             var input = card.querySelector('[data-setting="' + field.key + '"]');
-            if (input && settings[field.key] !== undefined) input.value = settings[field.key];
+            if (input && settings[field.key] !== undefined) {
+                input.value = settings[field.key];
+                validateField(input);
+            }
         });
         syncTaxSystemFields(card, false);
     }
@@ -139,6 +168,10 @@
     }
     async function saveCard(card) {
         if (!canEdit) return;
+        if (!validateCard(card)) {
+            showToast('Период выкупа должен быть целым числом от 1 до 29', true);
+            return;
+        }
         var store = card.dataset.store;
         var payload = payloadFromCard(card);
         if (Object.keys(payload).some(function (key) {
@@ -255,5 +288,9 @@
     grid.addEventListener('change', function (event) {
         if (!event.target.matches('[data-setting="tax_system"]')) return;
         syncTaxSystemFields(event.target.closest('[data-store]'), true);
+    });
+    grid.addEventListener('input', function (event) {
+        if (!event.target.matches('[data-setting]')) return;
+        validateField(event.target);
     });
 })();
