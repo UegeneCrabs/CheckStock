@@ -224,7 +224,7 @@ class WebRouteUnitTests(unittest.TestCase):
             response.text,
         )
         self.assertIn('href="/sales/unit-economics-1c"', response.text)
-        self.assertIn('href="/sales/unit-economics-1c/cabinet-settings"', response.text)
+        self.assertNotIn('href="/sales/unit-economics-1c/cabinet-settings"', response.text)
         self.assertIn('title="Отчёты"', response.text)
         self.assertIn(">Юниточная прибыль</a>", response.text)
         self.assertNotIn('href="/sales/unit-economics/wb-fbs"', response.text)
@@ -361,7 +361,12 @@ class WebRouteUnitTests(unittest.TestCase):
         settings_styles = (root / "static" / "unit-economics-1c-cabinet-settings.css").read_text(
             encoding="utf-8"
         )
-        page = self.client.get("/sales/unit-economics-1c/cabinet-settings")
+        redirect = self.client.get("/sales/unit-economics-1c/cabinet-settings", follow_redirects=False)
+        self.assertEqual(redirect.status_code, 303)
+        self.assertEqual(redirect.headers["location"], "/admin/integrations#cabinet-settings")
+        page = self.client.get("/admin/integrations")
+        self.assertLess(page.text.index("API-ключи маркетплейсов"), page.text.index('id="cabinet-settings"'))
+        self.assertLess(page.text.index('id="cabinet-settings"'), page.text.index("<h2>Все выгрузки</h2>"))
         self.assertEqual(page.status_code, 200)
         self.assertIn("Ввод данных по кабинетам", page.text)
         self.assertIn("Комиссия команды обновляется ночью", page.text)
@@ -391,6 +396,7 @@ class WebRouteUnitTests(unittest.TestCase):
 
         payload = {
             "buyout_period_days": 21,
+            "default_buyout_percent": 85.5,
             "acceptance_coefficient": 1.2,
             "wb_extra_tariff_percent": 2.3,
             "acquiring_percent": 4.2,
@@ -417,6 +423,7 @@ class WebRouteUnitTests(unittest.TestCase):
         rimili = next(item for item in loaded.json()["items"] if item["store_slug"] == "rimili")
         self.assertEqual(rimili["acquiring_percent"], 4.2)
         self.assertEqual(rimili["buyout_period_days"], 21)
+        self.assertEqual(rimili["default_buyout_percent"], 85.5)
         self.assertEqual(rimili["team_commission_percent"], 0)
         self.assertEqual(rimili["vat_percent"], 10)
         self.assertEqual(rimili["usn_percent"], 6)
@@ -448,6 +455,13 @@ class WebRouteUnitTests(unittest.TestCase):
         gogol = next(item for item in gogol_loaded.json()["items"] if item["store_slug"] == "gogol")
         self.assertEqual(gogol["usn_percent"], 5)
         self.assertEqual(gogol["osno_percent"], 0)
+        for invalid_percent in (0, -1, 100.01):
+            invalid = self.client.put(
+                "/api/unit-economics-1c/cabinet-settings/rimili",
+                json={**payload, "default_buyout_percent": invalid_percent},
+                headers={"X-Requested-With": "fetch"},
+            )
+            self.assertEqual(invalid.status_code, 422)
         for invalid_days in (0, 30, 1.5):
             invalid = self.client.put(
                 "/api/unit-economics-1c/cabinet-settings/rimili",
@@ -456,6 +470,7 @@ class WebRouteUnitTests(unittest.TestCase):
             )
             self.assertEqual(invalid.status_code, 422)
         unit_product = self._unit_economics_product("rimili", "949558341")
+        self.assertEqual(unit_product["details"]["buyout_percent"], 85.5)
         self.assertEqual(unit_product["details"]["acquiring"], 4.2)
         self.assertEqual(unit_product["details"]["team_commission_percent"], 0)
         self.assertEqual(unit_product["details"]["vat_percent"], 10)
@@ -1494,6 +1509,11 @@ class WebRouteUnitTests(unittest.TestCase):
                 "buyout_orders_count": 10,
                 "expected_buyout_amount": 800,
                 "stock": 3,
+                "stock_fbs": 1,
+                "stock_fbo": 2,
+                "stock_fulfillment": 0,
+                "stock_days": 3,
+                "stock_average_daily_orders": 1,
                 "impressions": 100,
                 "clicks": 10,
                 "advertising_spend": 100,
@@ -1532,6 +1552,11 @@ class WebRouteUnitTests(unittest.TestCase):
                 "buyout_orders_count": 5,
                 "expected_buyout_amount": 300,
                 "stock": 2,
+                "stock_fbs": 0,
+                "stock_fbo": 0,
+                "stock_fulfillment": 2,
+                "stock_days": 1,
+                "stock_average_daily_orders": 2,
                 "impressions": 100,
                 "clicks": 20,
                 "advertising_spend": 50,
@@ -1572,6 +1597,16 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(category["drr"], 13.64)
         self.assertEqual(category["margin"], 500)
         self.assertEqual(category["roi"], 50)
+        self.assertEqual(category["stock"], 5)
+        self.assertEqual(category["stock_fbs"], 1)
+        self.assertEqual(category["stock_fbo"], 2)
+        self.assertEqual(category["stock_fulfillment"], 2)
+        self.assertEqual(category["stock_days"], 1.67)
+        self.assertEqual(category["stock_average_daily_orders"], 3)
+        totals = unit_economics._unit_profit_report_totals(rows)
+        self.assertEqual(totals, unit_economics._unit_profit_report_totals(categories))
+        for field in ("stock", "stock_fbs", "stock_fbo", "stock_fulfillment", "stock_days"):
+            self.assertEqual(unit_economics._unit_profit_report_totals([])[field], 0)
         daily = category["daily_calculations"][0]
         self.assertEqual(daily["advertising_spend"], 150)
         self.assertEqual(daily["buyout_percent"], 73.33)
@@ -1816,6 +1851,69 @@ class WebRouteUnitTests(unittest.TestCase):
         )
         finalize.assert_called_once_with("rimili", report)
         self.assertTrue(result["price_data_refreshed"])
+
+    def test_unit_profit_report_stock_matches_wb_unit_and_export(self) -> None:
+        from io import BytesIO
+
+        import openpyxl
+
+        db.upsert_mp_stock("rimili", "949558341", "WB", "fbo", 2, NOW)
+        params = {"store": "rimili", "article": "949558341",
+                  "date_from": "2026-08-01", "date_to": "2026-08-31"}
+        stock_fields = {
+            "stock": ("total", "Всего, шт."),
+            "stock_fbs": ("fbs", "FBS, шт."),
+            "stock_fbo": ("fbo", "FBO, шт."),
+            "stock_fulfillment": ("fulfillment", "ФФ, шт."),
+            "stock_days": ("days", "Хватит, дней"),
+        }
+        # A single order also catches premature rounding of average daily demand.
+        for orders_count in (0, 1, 42):
+            with self.subTest(orders_count=orders_count), mock.patch.object(
+                unit_economics.unit_economics_1c,
+                "load_product_average_daily_orders",
+                return_value={
+                    ("rimili", "949558341"): {"orders_count": orders_count, "period_days": 21},
+                },
+            ) as demand:
+                product = self._unit_economics_product("rimili", "949558341")
+                response = self.client.get("/api/unit-economics-1c/reports/unit-profit", params=params)
+                categories = self.client.get(
+                    "/api/unit-economics-1c/reports/unit-profit",
+                    params={**params, "group_by": "subject"},
+                )
+                download = self.client.get(
+                    "/sales/unit-economics-1c/reports/unit-profit.xlsx", params=params,
+                )
+                for result in (response, categories, download):
+                    self.assertEqual(result.status_code, 200)
+                payload = response.json()
+                self.assertEqual(len(payload["rows"]), 1)
+                row = payload["rows"][0]
+                self.assertEqual((row["stock_fbs"], row["stock_fbo"], row["stock_fulfillment"]), (3, 2, 5))
+                self.assertEqual(row["stock"], 10)
+                self.assertEqual(row["stock_average_daily_orders"], orders_count / 21)
+                self.assertEqual(row["stock_days"], round(210 / orders_count, 2) if orders_count else 0)
+                for field, (source_key, _) in stock_fields.items():
+                    self.assertEqual(row[field], product["stock"][source_key])
+                    self.assertEqual(payload["totals"][field], row[field])
+                    self.assertEqual(categories.json()["rows"][0][field], row[field])
+                # A past report uses the same current stock demand as the WB unit page.
+                for call in demand.call_args_list:
+                    self.assertEqual(call.kwargs, {"period_days": 21})
+
+                workbook = openpyxl.load_workbook(BytesIO(download.content))
+                sheet = workbook["Расчёт маржи и ROI"]
+                headers = {cell.value: cell.column for cell in sheet[5]}
+                self.assertIn("U4:Y4", {str(cell_range) for cell_range in sheet.merged_cells.ranges})
+                self.assertEqual(sheet["U4"].value, "Остатки")
+                self.assertEqual(sheet["Z4"].value, "Реклама")
+                self.assertEqual(sheet["BP4"].value, "Результат")
+                for field, (_, label) in stock_fields.items():
+                    self.assertEqual(sheet.cell(6, headers[label]).value, row[field])
+                    self.assertEqual(sheet.cell(sheet.max_row, headers[label]).value, row[field])
+                self.assertEqual(sheet.cell(6, headers["Хватит, дней"]).number_format, "#,##0.00")
+                workbook.close()
 
     def test_unit_profit_report_supports_period_filters_and_totals(self) -> None:
         wb_funnel_orders._replace_day(
@@ -2087,7 +2185,7 @@ class WebRouteUnitTests(unittest.TestCase):
             "Отчёт по юниточной прибыли — по категориям",
         )
         self.assertEqual(category_sheet["G2"].value, 1)
-        self.assertEqual(category_sheet.max_column, 67)
+        self.assertEqual(category_sheet.max_column, 71)
 
         self.assertEqual(filtered_daily_download.status_code, 200, filtered_daily_download.text)
         filtered_daily_workbook = openpyxl.load_workbook(
@@ -2096,16 +2194,16 @@ class WebRouteUnitTests(unittest.TestCase):
         )
         filtered_daily_sheet = filtered_daily_workbook["Расчёт маржи и ROI"]
         self.assertEqual(filtered_daily_sheet["G2"].value, 1)
-        self.assertEqual(filtered_daily_sheet.max_column, 67 + 7 * 20)
+        self.assertEqual(filtered_daily_sheet.max_column, 71 + 7 * 20)
         self.assertEqual(
-            filtered_daily_sheet.cell(row=4, column=68).value.date(),
+            filtered_daily_sheet.cell(row=4, column=72).value.date(),
             date(2026, 8, 13),
         )
         self.assertEqual(
             sum(
                 filtered_daily_sheet.cell(row=5, column=column).value
                 == "Расходы на рекламу, ₽"
-                for column in range(68, filtered_daily_sheet.max_column + 1)
+                for column in range(72, filtered_daily_sheet.max_column + 1)
             ),
             7,
         )
@@ -2143,7 +2241,9 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("Заказы − отмены, шт.", page.text)
         self.assertIn("Выкуп</span>", page.text)
         self.assertNotIn("Маржа на штуку, ₽", page.text)
-        self.assertNotIn('data-filter-column="22"', page.text)
+        self.assertNotIn('data-filter-column="26"', page.text)
+        for field in ("stock", "stock_fbs", "stock_fbo", "stock_fulfillment", "stock_days"):
+            self.assertIn(f'data-report-total="{field}"', page.text)
         self.assertNotIn('id="ue1cr-details-dialog"', page.text)
         self.assertNotIn('<tfoot id="ue1cr-total">', page.text)
         self.assertIn('<div class="ue1cr-filter"><span>Менеджеры</span>', page.text)
@@ -2564,7 +2664,8 @@ class WebRouteUnitTests(unittest.TestCase):
         script = (Path(__file__).resolve().parents[2] / "static" / "unit-economics-1c.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Выкуп WB за 7 дней", script)
+        self.assertIn("Выкуп WB · период кабинета", script)
+        self.assertIn("Выкуп · значение кабинета", script)
         self.assertNotIn("Выкуп для логистики", script)
         self.assertNotIn("editableParameter('Выкуп", script)
         self.assertNotIn("data-product-setting=\"buyout_percent\"", script)

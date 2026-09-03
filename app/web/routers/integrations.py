@@ -23,6 +23,7 @@ from app.sync_catalog import job_definitions
 from app.sync_tracking import run_tracked, set_next_run
 from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import token_watch
+from app.web.cabinet_settings import render_cabinet_settings
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -283,6 +284,7 @@ async def integrations_page(request: Request):
     content = fill_template(
         "integrations_content.html",
         store_tabs=store_tabs,
+        cabinet_settings=await run_in_threadpool(render_cabinet_settings, request.state.user),
         store_panels="".join(
             _store_panel(slug, active=index == 0) for index, slug in enumerate(STORES)
         ),

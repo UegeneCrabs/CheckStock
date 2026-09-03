@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app import db, stock_total
 from app.container import ApplicationContainer
 from app.dto.identity import User
+from app.stores import STORES
 from app.web import middleware
 
 NOW = "2026-08-21T12:00:00+03:00"
@@ -138,6 +139,23 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
     assert tris["grand_total"] == 11
     assert zero["grand_total"] == 0
     assert all(row["grand_total"] >= rows[index + 1]["grand_total"] for index, row in enumerate(rows[:-1]))
+    # Both total views load today's source value, not yesterday's margin snapshot.
+    with db.get_connection() as connection:
+        connection.execute(
+            "UPDATE unit_economics_1c_source_values SET purchase_price=125.5 WHERE stock_item_id=?",
+            (wb_stock_item_id,),
+        )
+        connection.commit()
+    refreshed = stock_total.build_rows(("rimili",))
+    updated = next(row for row in refreshed if row["article"] == "WB-ARTICLE")
+    assert updated["purchase_price"] == 125.5
+    from app.web.routers.stock_total import _render_rows, _render_totals
+
+    rendered = _render_rows([updated])
+    assert '<td data-filter-value="125.5">125,50 ₽</td>' in rendered
+    assert rendered.count("<td") == 23
+    assert '<th data-cost-total-column="4">3 012,00 ₽</th>' in _render_totals([updated])
+    assert _render_totals([updated]).count("<th") == 46
 
 
 def test_total_stock_xlsx_has_store_column_grouped_headers_and_zeroes(database_path) -> None:
@@ -164,37 +182,42 @@ def test_total_stock_xlsx_has_store_column_grouped_headers_and_zeroes(database_p
 
     assert filename.startswith("ostatki_total_")
     assert sheet["A1"].value == "МАГАЗИН"
-    assert sheet["E1"].value == "ТОТАЛ"
-    assert sheet["E2"].value == "ГРАНД ТОТАЛ"
-    assert sheet["F2"].value == "ВБ"
-    assert sheet["G2"].value == "ОЗОН"
-    assert sheet["H2"].value == "ЯМ"
-    assert sheet["I1"].value == "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ"
-    assert sheet["L1"].value == "В ПУТИ МЕЖДУ ФФ"
-    assert sheet["O1"].value == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBS"
-    assert sheet["R1"].value == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ RFBS"
-    assert sheet["U1"].value == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO"
+    assert sheet["E1"].value == "ТЕКУЩАЯ ЗЦ, ₽"
+    assert sheet["E5"].value == 100
+    assert sheet["E5"].number_format == '#,##0.00 "₽"'
+    assert sheet["E3"].value is None
+    assert sheet["E4"].value is None
+    assert sheet["F1"].value == "ТОТАЛ"
+    assert sheet["F2"].value == "ГРАНД ТОТАЛ"
+    assert sheet["G2"].value == "ВБ"
+    assert sheet["H2"].value == "ОЗОН"
+    assert sheet["I2"].value == "ЯМ"
+    assert sheet["J1"].value == "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ"
+    assert sheet["M1"].value == "В ПУТИ МЕЖДУ ФФ"
+    assert sheet["P1"].value == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBS"
+    assert sheet["S1"].value == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ RFBS"
+    assert sheet["V1"].value == "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO"
     assert {str(item) for item in sheet.merged_cells.ranges} >= {
         "A1:A2",
-        "E1:H1",
-        "I1:K1",
-        "L1:N1",
-        "O1:Q1",
-        "R1:T1",
-        "U1:W1",
+        "F1:I1",
+        "J1:L1",
+        "M1:O1",
+        "P1:R1",
+        "S1:U1",
+        "V1:X1",
     }
     assert sheet["A3"].value == "ИТОГО"
     assert sheet["A4"].value == "ИТОГО В ЗЦ"
-    assert sheet["E4"].value == 900
+    assert sheet["F4"].value == 900
     assert sheet["A5"].value == "RIMILI"
     assert sheet["B5"].value == "ARTICLE-1"
     assert sheet["C5"].value == "0012345678901"
-    assert sheet["E5"].value == 9
     assert sheet["F5"].value == 9
-    assert sheet["I5"].value == 0
-    assert sheet["L5"].value == 0
-    assert sheet["O5"].value == 9
-    assert sheet.freeze_panes == "I5"
+    assert sheet["G5"].value == 9
+    assert sheet["J5"].value == 0
+    assert sheet["M5"].value == 0
+    assert sheet["P5"].value == 9
+    assert sheet.freeze_panes == "J5"
 
 
 def test_total_routes_resolve_before_the_dynamic_store_route(
@@ -215,6 +238,9 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     filtered_download = client.get("/stock/total.xlsx", params={"store": "rimili"})
 
     assert page.status_code == 200
+    assert "ТЕКУЩАЯ ЗЦ, ₽" in page.text
+    assert "ТЕКУЩАЯ ЗЦ, ₽" in store_page.text
+    assert 'data-filter-column="22"' in page.text
     assert "Остатки Тотал" in page.text
     assert 'id="stock-total-table"' in page.text
     assert 'class="topbar"' not in page.text
@@ -227,6 +253,15 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     assert 'data-store-total>ТОТАЛ</button>' in store_page.text
     assert 'href="/stock/total?store=rimili">ТОТАЛ</a>' not in store_page.text
     assert 'id="store-stock-total-table"' in store_page.text
+    assert store_page.text.count('id="store-stock-total-table"') == 1
+    assert 'data-stock-store-total-view hidden' in store_page.text
+    assert "Тотал по трём площадкам" not in store_page.text
+    for store_slug in STORES:
+        cabinet_page = client.get(f"/stock/{store_slug}", params={"mp": "WB"})
+        assert cabinet_page.status_code == 200
+        assert cabinet_page.text.count('id="store-stock-total-table"') == 1
+        assert "Тотал по трём площадкам" not in cabinet_page.text
+        assert 'data-stock-store-total-view hidden' in cabinet_page.text
     assert 'href="/stock/total.xlsx?store=rimili"' in store_page.text
     store_total_data = client.get("/stock/rimili/total-data")
     assert store_total_data.status_code == 200
@@ -269,3 +304,10 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     assert "data-store-cost-key" in store_total_script
     assert "button.addEventListener('click', loadTotal)" in store_total_script
     assert "window.location =" not in store_total_script
+
+    total_styles = (Path(__file__).resolve().parents[2] / "static" / "stock-total.css").read_text(
+        encoding="utf-8"
+    )
+    assert "[data-stock-store-total-view][hidden]" in total_styles
+    assert "width: calc(47% / 15)" in total_styles
+    assert "scrollbar-gutter: auto" in total_styles

@@ -22,7 +22,11 @@ _SUMMARY_COLUMNS = (
     ("buyout_count", "Выкупы, шт.", 16, "integer"),
     ("buyout_amount", "Сумма выкупов, ₽", 18, "money"),
     ("buyout_percent", "Процент выкупа", 16, "percent"),
-    ("stock", "Остаток, шт.", 14, "integer"),
+    ("stock", "Всего, шт.", 14, "integer"),
+    ("stock_fbs", "FBS, шт.", 14, "integer"),
+    ("stock_fbo", "FBO, шт.", 14, "integer"),
+    ("stock_fulfillment", "ФФ, шт.", 14, "integer"),
+    ("stock_days", "Хватит, дней", 16, "number"),
     ("impressions", "Показы", 14, "integer"),
     ("clicks", "Клики", 14, "integer"),
     ("ctr", "CTR", 12, "percent"),
@@ -75,13 +79,13 @@ _SUMMARY_GROUPS = (
     (1, 5, "Товар"),
     (6, 17, "Воронка за период отчёта"),
     (18, 20, "Выкуп за период отчёта"),
-    (21, 21, "Остатки"),
-    (22, 30, "Реклама"),
-    (31, 34, "Цены"),
-    (35, 41, "Логистика"),
-    (42, 52, "Комиссии и хранение"),
-    (53, 63, "Себестоимость и налоги"),
-    (64, 67, "Результат"),
+    (21, 25, "Остатки"),
+    (26, 34, "Реклама"),
+    (35, 38, "Цены"),
+    (39, 45, "Логистика"),
+    (46, 56, "Комиссии и хранение"),
+    (57, 67, "Себестоимость и налоги"),
+    (68, 71, "Результат"),
 )
 
 _DAILY_COLUMNS = (
@@ -302,7 +306,7 @@ def _build_summary(workbook, report: dict) -> None:
         cell.font = Font(name="Arial", size=10, bold=True, color="18233F")
     sheet.merge_cells(f"A3:{last_column}3")
     sheet["A3"] = (
-        "Источники: воронка продаж WB, рекламная статистика WB, остатки и параметры "
+        "Источники: воронка продаж WB, рекламная статистика WB, текущие остатки и параметры "
         "юнит-экономики 1С. Маржа периода = сумма дневных произведений маржи на штуку "
         "и заказов соответствующего дня; отмены показаны отдельно."
     )
@@ -354,6 +358,10 @@ def _build_summary(workbook, report: dict) -> None:
         "buyout_amount": totals.get("buyout_amount"),
         "buyout_percent": totals.get("buyout_percent"),
         "stock": totals.get("stock"),
+        "stock_fbs": totals.get("stock_fbs"),
+        "stock_fbo": totals.get("stock_fbo"),
+        "stock_fulfillment": totals.get("stock_fulfillment"),
+        "stock_days": totals.get("stock_days"),
         "impressions": totals.get("impressions"),
         "clicks": totals.get("clicks"),
         "ctr": totals.get("ctr"),

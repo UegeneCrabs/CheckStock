@@ -169,6 +169,11 @@ def _migrate_unit_economics_1c_cabinet_settings(database: Database) -> None:
     table_name = "unit_economics_1c_cabinet_settings"
     with database.connect() as connection:
         columns = connection.column_names(table_name)
+        if columns and "default_buyout_percent" not in columns:
+            connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN default_buyout_percent FLOAT"
+            )
+            columns.add("default_buyout_percent")
         if columns and "buyout_period_days" not in columns:
             connection.execute(
                 f"ALTER TABLE {table_name} ADD COLUMN buyout_period_days INTEGER NOT NULL DEFAULT 14"

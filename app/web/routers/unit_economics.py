@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import (
     db,
@@ -31,6 +31,7 @@ from app.dto.unit_economics_1c import (
 from app.section_access import has_access as has_section_access
 from app.stores import STORES
 from app.sync_tracking import run_tracked
+from app.web.cabinet_settings import cabinet_settings_payload as _cabinet_settings_payload
 from app.web.downloads import _download_headers
 from app.web.templating import fill_template, render_page
 
@@ -52,20 +53,6 @@ UNIT_ECONOMICS_COLUMN_GROUPS = (
 UNIT_ECONOMICS_PERIOD_DAYS = (7, 14, 30)
 UNIT_ECONOMICS_MAX_PERIOD_DAYS = 366
 UNIT_PROFIT_MARGIN_SNAPSHOT_MIN_COVERAGE = 0.7
-
-
-def _cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
-    settings = db.list_unit_economics_1c_cabinet_settings(store_slugs)
-    return [
-        {
-            **item.model_dump(mode="json"),
-            "store_name": STORES[item.store_slug]["name"],
-            "store_initials": STORES[item.store_slug]["initials"],
-            "store_color": STORES[item.store_slug]["color"],
-            "store_text": STORES[item.store_slug]["text"],
-        }
-        for item in settings
-    ]
 
 
 def _price_value(value: object) -> float | None:
@@ -275,11 +262,14 @@ def _unit_economics_1c_mock_product(
     history_days: int = 7,
     first_sale_at: str | None = None,
     sales_age_today: date | None = None,
+    default_buyout_percent: float | None = None,
 ) -> dict:
     """Build the 1C layout while keeping WB prices, orders and advertising real."""
     article = str(product.get("article") or "").strip()
     price_snapshot = price_snapshot or {}
-    product_metrics = product_metrics or unit_economics_1c.empty_product_metrics()
+    product_metrics = unit_economics_1c.apply_buyout_default(
+        product_metrics or unit_economics_1c.empty_product_metrics(), default_buyout_percent,
+    )
     current_product_metrics = current_product_metrics or product_metrics
     history_product_metrics = history_product_metrics or product_metrics
     history_day_economics = history_day_economics or {}
@@ -641,6 +631,8 @@ def _unit_economics_1c_mock_product(
             "orders": int(product_metrics.get("orders_count") or 0),
             "sold": int(product_metrics.get("sold_count") or 0),
             "buyout_percent": period_buyout_percent,
+            "raw_buyout_percent": product_metrics.get("raw_buyout_percent"),
+            "buyout_default_applied": product_metrics.get("buyout_default_applied", False),
             "buyout_orders_count": int(product_metrics.get("buyout_orders_count") or 0),
             "buyout_period_from": product_metrics.get("buyout_period_from"),
             "buyout_period_to": product_metrics.get("buyout_period_to"),
@@ -1084,6 +1076,15 @@ async def sales_unit_economics_1c(request: Request):
                     )
                 elif history_product_metrics is None:
                     history_product_metrics = period_product_metrics
+                period_product_metrics = unit_economics_1c.apply_buyout_default(
+                    period_product_metrics, cabinet.default_buyout_percent,
+                )
+                current_product_metrics = unit_economics_1c.apply_buyout_default(
+                    current_product_metrics, cabinet.default_buyout_percent,
+                )
+                history_product_metrics = unit_economics_1c.apply_buyout_default(
+                    history_product_metrics, cabinet.default_buyout_percent,
+                )
                 product_margin_snapshots = (
                     margin_snapshots_by_product.get((store_slug, article)) or {}
                 )
@@ -1179,6 +1180,7 @@ async def sales_unit_economics_1c(request: Request):
                         product=product,
                         price_snapshot=prices.get((store_slug, article)),
                         acquiring_percent=cabinet.acquiring_percent,
+                        default_buyout_percent=cabinet.default_buyout_percent,
                         product_metrics=period_product_metrics,
                         current_product_metrics=current_product_metrics,
                         closed_period_economics=closed_period_economics,
@@ -1852,6 +1854,12 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
             2,
         ),
         "stock": sum(int(row.get("stock") or 0) for row in rows),
+        "stock_fbs": sum(int(row.get("stock_fbs") or 0) for row in rows),
+        "stock_fbo": sum(int(row.get("stock_fbo") or 0) for row in rows),
+        "stock_fulfillment": sum(int(row.get("stock_fulfillment") or 0) for row in rows),
+        "stock_average_daily_orders": sum(
+            float(row.get("stock_average_daily_orders") or 0) for row in rows
+        ),
         "impressions": sum(int(row.get("impressions") or 0) for row in rows),
         "clicks": sum(int(row.get("clicks") or 0) for row in rows),
         "advertising_spend": round(
@@ -1881,6 +1889,9 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
             }
         ),
     }
+    totals["stock_days"] = unit_economics_1c.calculate_stock_coverage_days(
+        totals["stock"], totals["stock_average_daily_orders"], period_days=1,
+    )
     totals["buyout_percent"] = (
         round(
             sum(
@@ -2234,7 +2245,6 @@ async def _unit_economics_1c_unit_profit_report_data(
         stock_metrics = unit_economics_1c.load_product_average_daily_orders(
             store_slugs,
             period_days=unit_economics_1c.STOCK_COVERAGE_PERIOD_DAYS,
-            today=date_to,
         )
         cabinets = {item.store_slug: item for item in db.list_unit_economics_1c_cabinet_settings(store_slugs)}
         product_settings = {
@@ -2299,6 +2309,9 @@ async def _unit_economics_1c_unit_profit_report_data(
                         period_days=period_days,
                         today=date_to,
                     )
+                period_product_metrics = unit_economics_1c.apply_buyout_default(
+                    period_product_metrics, cabinet.default_buyout_percent,
+                )
                 effective_product_settings = product_settings.get((store_slug, article))
                 if effective_product_settings is None:
                     effective_product_settings = UnitEconomics1CProductSettings(
@@ -2310,6 +2323,7 @@ async def _unit_economics_1c_unit_profit_report_data(
                     product=catalog_item,
                     price_snapshot=prices.get((store_slug, article)),
                     acquiring_percent=cabinet.acquiring_percent,
+                    default_buyout_percent=cabinet.default_buyout_percent,
                     product_metrics=period_product_metrics,
                     product_settings=effective_product_settings,
                     acceptance_coefficient=cabinet.acceptance_coefficient,
@@ -2451,6 +2465,13 @@ async def _unit_economics_1c_unit_profit_report_data(
                         "funnel_period_from": advertising["period_from"],
                         "funnel_period_to": advertising["period_to"],
                         "stock": product["stock"]["total"],
+                        "stock_fbs": product["stock"]["fbs"],
+                        "stock_fbo": product["stock"]["fbo"],
+                        "stock_fulfillment": product["stock"]["fulfillment"],
+                        "stock_days": product["stock"]["days"],
+                        "stock_average_daily_orders": (
+                            product["stock"]["orders_21d"] / product["stock"]["period_days"]
+                        ),
                         "impressions": advertising["impressions"],
                         "clicks": advertising["clicks"],
                         "ctr": advertising["ctr"],
@@ -2698,7 +2719,9 @@ async def unit_economics_1c_product_settings_save(
             ),
             {},
         )
-        buyout_percent = min(max(float(funnel_metric.get("buyout_percent") or 0), 0.0), 100.0)
+        buyout_percent = unit_economics_1c.resolve_buyout_percent(
+            funnel_metric.get("buyout_percent"), cabinet.default_buyout_percent,
+        )
         delivery = unit_economics_1c.calculate_delivery_with_returns(
             saved.delivery_wb_rub,
             buyout_percent,
@@ -2724,30 +2747,7 @@ async def unit_economics_1c_product_settings_save(
 
 @router.get("/sales/unit-economics-1c/cabinet-settings", response_class=HTMLResponse)
 async def sales_unit_economics_1c_cabinet_settings(request: Request):
-    store_slugs = accessible_stores(request.state.user, "WB")
-    settings = await run_in_threadpool(_cabinet_settings_payload, store_slugs)
-    content = fill_template(
-        "unit_economics_1c_cabinet_settings_content.html",
-        cabinet_settings_config=json.dumps(
-            {
-                "marketplace": "WB",
-                "canEdit": has_section_access(
-                    request.state.user,
-                    SectionName.UNIT_ECONOMICS_1C,
-                    SectionAccessLevel.WRITE,
-                ),
-                "items": settings,
-            },
-            ensure_ascii=False,
-        ).replace("</", "<\\/"),
-    )
-    return render_page(
-        "CheckStock — Юнит-экономика 1С — Ввод данных по кабинетам",
-        "unit_1c_settings",
-        content,
-        request.state.user,
-        content_class="content--unit-1c-settings",
-    )
+    return RedirectResponse("/admin/integrations#cabinet-settings", status_code=303)
 
 
 @router.get("/api/unit-economics-1c/cabinet-settings")

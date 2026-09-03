@@ -108,7 +108,7 @@ class UnitEconomics1CHistoryTests(unittest.TestCase):
         assert row is not None
         inputs = json.loads(row["inputs_json"])
         result = json.loads(row["result_json"])
-        self.assertEqual(row["calculation_version"], 2)
+        self.assertEqual(row["calculation_version"], 3)
         self.assertEqual(row["price_day"], "2026-08-27")
         self.assertEqual(inputs["purchase_price"], 300)
         self.assertEqual(inputs["fulfillment_cost"], 40)

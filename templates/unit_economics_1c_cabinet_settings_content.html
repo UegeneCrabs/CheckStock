@@ -20,7 +20,9 @@
             <div class="ue1cs-notice" role="note">
                 <span class="ue1cs-notice-copy">
                     Процент выкупа WB обновляется каждые 4 часа за указанное число завершённых дней;
-                    сегодняшний день не входит. Комиссия команды обновляется ночью из Google Sheets.
+                    сегодняшний день не входит. Если WB возвращает 0 или данных ещё нет, в расчётах используется заданный выкуп по умолчанию.
+                    Этот процент сохраняется в дневном снимке маржи.
+                    Для кабинетов с пустым полем сначала задайте процент: до этого подстановка не применяется. Комиссия команды обновляется ночью из Google Sheets.
                 </span>
             </div>
 
@@ -32,4 +34,4 @@
         </section>
 
         <script type="application/json" id="ue1cs-config">$cabinet_settings_config</script>
-        <script src="/static/unit-economics-1c-cabinet-settings.js?v=11"></script>
+        <script src="/static/unit-economics-1c-cabinet-settings.js?v=12"></script>

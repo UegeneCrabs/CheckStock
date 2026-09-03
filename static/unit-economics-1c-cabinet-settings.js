@@ -18,6 +18,8 @@
     var fields = [
         { key: 'buyout_period_days', label: 'Период расчёта', step: '1', min: '1', max: '29', suffix: 'дн.', group: 'buyout', integer: true,
             warning: 'Введите целое число от 1 до 29.' },
+        { key: 'default_buyout_percent', label: 'Выкуп по умолчанию', step: '0.01', min: '0.01', max: '100', suffix: '%', group: 'buyout',
+            warning: 'Введите процент от 0,01 до 100. Он используется при нулевом выкупе WB или отсутствии данных.' },
         { key: 'acceptance_coefficient', label: 'КФ приёмки', step: '0.01', group: 'logistics' },
         { key: 'wb_extra_tariff_percent', label: 'Доп. тарифы WB', step: '0.01', suffix: '%', group: 'logistics' },
         { key: 'acquiring_percent', label: 'Процент эквайринга', step: '0.01', max: '100', suffix: '%', group: 'expenses' },
@@ -64,6 +66,7 @@
                         + escapeHtml(option.label) + '</option>';
                 }).join('') + '</select>'
             : '<input type="number" min="' + (field.min || '0') + '"' + (field.max ? ' max="' + field.max + '"' : '')
+                + (field.key === 'default_buyout_percent' ? ' placeholder="Не задан"' : '')
                 + ' step="' + field.step + '" data-setting="' + field.key
                 + '" value="' + escapeHtml(item[field.key]) + '"' + (fieldDisabled ? ' disabled' : '') + '>';
         return '<label class="ue1cs-field"' + (field.taxSystems ? ' data-tax-systems="' + field.taxSystems.join(',') + '"' : '')
@@ -169,7 +172,7 @@
     async function saveCard(card) {
         if (!canEdit) return;
         if (!validateCard(card)) {
-            showToast('Период выкупа должен быть целым числом от 1 до 29', true);
+            showToast('Проверьте значения в полях процента выкупа', true);
             return;
         }
         var store = card.dataset.store;

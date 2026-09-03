@@ -588,6 +588,8 @@ def save_cabinet_settings(
     updated_by_name: str,
 ) -> UnitEconomics1CCabinetSettings:
     payload = values.model_dump(mode="python")
+    if "default_buyout_percent" not in values.model_fields_set:
+        payload.pop("default_buyout_percent", None)
     columns = tuple(payload)
     with WRITE_LOCK:
         conn = get_connection()

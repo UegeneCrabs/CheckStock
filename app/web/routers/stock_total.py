@@ -22,12 +22,12 @@ def _quantity_cell(value: int) -> str:
 
 
 def _money(value: float) -> str:
-    return f"{float(value):,.2f}".replace(",", " ") + " ₽"
+    return f"{float(value):,.2f}".replace(",", " ").replace(".", ",") + " ₽"
 
 
 def _render_rows(rows: list[dict]) -> str:
     if not rows:
-        return '<tr class="empty-row"><td colspan="22">Пока нет товаров и остатков</td></tr>'
+        return '<tr class="empty-row"><td colspan="23">Пока нет товаров и остатков</td></tr>'
 
     result = []
     for row in rows:
@@ -44,6 +44,10 @@ def _render_rows(rows: list[dict]) -> str:
             f"<td>{copy_identifier(article, 'Артикул')}</td>"
             f"<td>{copy_identifier(barcode, 'Баркод')}</td>"
             f'<td title="{html.escape(name, quote=True)}">{html.escape(name)}</td>'
+            + (
+                f'<td data-filter-value="{purchase_price_value}">'
+                f'{_money(purchase_price) if purchase_price is not None else "—"}</td>'
+            )
             + "".join(_quantity_cell(value) for value in quantities)
             + "</tr>"
         )
@@ -57,7 +61,7 @@ def _render_totals(rows: list[dict]) -> str:
     ]
     cells = "".join(
         f'<th data-total-column="{column}">{_fmt_num(value)}</th>'
-        for column, value in enumerate(values, start=3)
+        for column, value in enumerate(values, start=4)
     )
     cost_values = [
         round(
@@ -72,18 +76,18 @@ def _render_totals(rows: list[dict]) -> str:
     ]
     cost_cells = "".join(
         f'<th data-cost-total-column="{column}">{_money(value)}</th>'
-        for column, value in enumerate(cost_values, start=3)
+        for column, value in enumerate(cost_values, start=4)
     )
     priced_positions = sum(1 for row in rows if row.get("purchase_price") is not None)
     return (
         '<tr class="totals-row">'
         "<th>ИТОГО</th><th></th>"
         f"<th data-total-positions>позиций: {len(rows)}</th>"
-        f"{cells}</tr>"
+        f"<th></th>{cells}</tr>"
         '<tr class="totals-row totals-row--cost">'
         "<th>ИТОГО В ЗЦ</th><th></th>"
         f"<th data-cost-total-positions>ЗЦ: {priced_positions} из {len(rows)} поз.</th>"
-        f"{cost_cells}</tr>"
+        f"<th></th>{cost_cells}</tr>"
     )
 
 

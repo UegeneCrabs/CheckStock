@@ -152,7 +152,12 @@
             { key: 'buyout_percent', label: 'Выкуп', format: 'percent' }
         ] },
         { key: 'stock', label: 'Остатки', columns: [
-            { key: 'stock', label: 'Остаток', format: 'number' }
+            { key: 'stock', label: 'Всего', format: 'number', help: 'Текущие остатки WB: FBS + FBO + ФФ' },
+            { key: 'stock_fbs', label: 'FBS', format: 'number' },
+            { key: 'stock_fbo', label: 'FBO', format: 'number' },
+            { key: 'stock_fulfillment', label: 'ФФ', format: 'number' },
+            { key: 'stock_days', label: 'Хватит, дней', format: 'number',
+                help: 'Текущие остатки / среднесуточные заказы за последние 21 день, как в юнитке WB. Без заказов — 0.' }
         ] },
         { key: 'advertising', label: 'Реклама', columns: [
             { key: 'impressions', label: 'Показы', format: 'number' },
@@ -473,6 +478,10 @@
         setHeaderTotal('net_orders_amount', rub(total.net_orders_amount));
         setHeaderTotal('buyout_percent', value(total.buyout_percent, '%'));
         setHeaderTotal('stock', value(total.stock));
+        setHeaderTotal('stock_fbs', value(total.stock_fbs));
+        setHeaderTotal('stock_fbo', value(total.stock_fbo));
+        setHeaderTotal('stock_fulfillment', value(total.stock_fulfillment));
+        setHeaderTotal('stock_days', value(total.stock_days));
         setHeaderTotal('impressions', value(total.impressions));
         setHeaderTotal('clicks', value(total.clicks));
         setHeaderTotal('ctr', value(total.ctr, '%'));
@@ -499,6 +508,10 @@
             result.buyout_orders_count += numeric(row.buyout_orders_count);
             result.buyout_weighted += numeric(row.buyout_percent) * numeric(row.buyout_orders_count);
             result.stock += numeric(row.stock);
+            result.stock_fbs += numeric(row.stock_fbs);
+            result.stock_fbo += numeric(row.stock_fbo);
+            result.stock_fulfillment += numeric(row.stock_fulfillment);
+            result.stock_average_daily_orders += numeric(row.stock_average_daily_orders);
             result.impressions += numeric(row.impressions);
             result.clicks += numeric(row.clicks);
             result.advertising_spend += numeric(row.advertising_spend);
@@ -518,6 +531,7 @@
             orders_count: 0, cancel_count: 0, net_orders_count: 0,
             orders_amount: 0, cancel_amount: 0, net_orders_amount: 0,
             buyout_orders_count: 0, buyout_weighted: 0, stock: 0,
+            stock_fbs: 0, stock_fbo: 0, stock_fulfillment: 0, stock_average_daily_orders: 0,
             impressions: 0, clicks: 0, advertising_spend: 0,
             expected_buyout_amount: 0,
             margin_orders_count: 0, margin: 0, purchase_value: 0, margin_complete: true,
@@ -529,6 +543,8 @@
         total.advertising_spend = Math.round(total.advertising_spend * 100) / 100;
         total.margin = Math.round(total.margin * 100) / 100;
         total.purchase_value = Math.round(total.purchase_value * 100) / 100;
+        total.stock_days = total.stock_average_daily_orders > 0
+            ? Math.round(total.stock / total.stock_average_daily_orders * 100) / 100 : 0;
         total.buyout_percent = total.buyout_orders_count
             ? Math.round(total.buyout_weighted / total.buyout_orders_count * 100) / 100 : null;
         total.ctr = total.impressions

@@ -13,7 +13,7 @@ from app.stores import STORES
 
 logger = logging.getLogger(__name__)
 
-CALCULATION_VERSION = 2
+CALCULATION_VERSION = 3
 
 
 def _price_value(value: object) -> float | None:
@@ -148,8 +148,10 @@ def calculate_snapshot_row(
     if economics_retail_price is None:
         return None
 
-    raw_buyout_percent = product_metrics.get("buyout_percent")
-    buyout_percent = round(min(max(float(raw_buyout_percent or 0), 0.0), 100.0), 2)
+    product_metrics = unit_economics_1c.apply_buyout_default(
+        product_metrics, getattr(cabinet, "default_buyout_percent", None),
+    )
+    buyout_percent = product_metrics["buyout_percent"]
     paid_acceptance_cost = unit_economics_1c.calculate_paid_acceptance_cost(
         product_settings.volume_l,
         float(getattr(cabinet, "acceptance_coefficient", 0) or 0),
@@ -230,6 +232,9 @@ def calculate_snapshot_row(
         "advertising_per_unit": advertising_per_unit,
         "advertising_included_in_unit_margin": False,
         "buyout_percent": buyout_percent,
+        "raw_buyout_percent": product_metrics["raw_buyout_percent"],
+        "default_buyout_percent": product_metrics["default_buyout_percent"],
+        "buyout_default_applied": product_metrics["buyout_default_applied"],
         "buyout_period_days": int(getattr(cabinet, "buyout_period_days", 14) or 14),
         "buyout_period_from": product_metrics.get("buyout_period_from"),
         "buyout_period_to": product_metrics.get("buyout_period_to"),

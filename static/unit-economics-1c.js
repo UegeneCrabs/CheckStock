@@ -478,6 +478,7 @@
             + integer.format(finite(current.orders, 0)) + ' · выкуп '
             + (finite(current.buyout_percent, null) === null
                 ? '—' : decimal.format(finite(current.buyout_percent, 0)) + '%')
+            + (product.advertising.buyout_default_applied ? ' · выкуп по умолчанию' : '')
             + ' · реклама ' + nullable(current.advertising_spend, preciseMoney);
         var cells = {};
         cells.product = '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')
@@ -1168,7 +1169,7 @@
                 parameter('Комиссия команды', nullable(item.team_commission_percent, decimal, '%'))
             ]],
             ['Продажи и реклама', [
-                parameter('Выкуп WB за 7 дней', nullable(product.advertising.buyout_percent, decimal, '%')),
+                parameter(product.advertising.buyout_default_applied ? 'Выкуп · значение кабинета' : 'Выкуп WB · период кабинета', nullable(product.advertising.buyout_percent, decimal, '%')),
                 parameter('СПП', nullable(calculateSppPercent(product), decimal, '%')),
                 parameter('ДРР с выкупом', nullable(product.advertising.drr, decimal, '%')),
                 parameter('Реклама факт', nullable(item.actual_advertising, preciseMoney))

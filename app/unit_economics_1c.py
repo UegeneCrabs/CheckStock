@@ -15,6 +15,38 @@ LOW_STOCK_COVERAGE_DAYS = 14
 OVERSTOCK_COVERAGE_DAYS = 90
 
 
+def resolve_buyout_percent(raw: object, default: float | None = None) -> float:
+    """Resolve current WB buyout; historical snapshots must not use today's default."""
+    measured = round(min(max(_number(raw), 0.0), 100.0), 2)
+    return measured if measured > 0 else round(min(max(_number(default), 0.0), 100.0), 2)
+
+
+def apply_buyout_default(metrics: dict, default: float | None) -> dict:
+    """Keep WB's raw value while recalculating dependent metrics with the effective one."""
+    raw = metrics.get("raw_buyout_percent", metrics.get("buyout_percent"))
+    effective = resolve_buyout_percent(raw, default)
+    return {
+        **metrics,
+        "raw_buyout_percent": raw,
+        "buyout_percent": effective,
+        "default_buyout_percent": default,
+        "buyout_default_applied": _number(raw) <= 0 and effective > 0,
+        "spend_per_order": calculate_advertising_per_unit(
+            metrics.get("spend"), metrics.get("orders_count"), effective,
+        ),
+        "drr": calculate_drr_percent(metrics.get("spend"), metrics.get("orders_amount"), effective),
+        "daily": [
+            {
+                **day,
+                "drr": calculate_drr_percent(
+                    day.get("advertising_spend"), day.get("orders_amount"), effective,
+                ),
+            }
+            for day in metrics.get("daily") or []
+        ],
+    }
+
+
 def calculate_paid_acceptance_cost(volume_l: float, acceptance_coefficient: float) -> float:
     volume = max(float(volume_l or 0), 0.0)
     coefficient = max(float(acceptance_coefficient or 0), 0.0)
@@ -357,6 +389,9 @@ def load_product_metrics(
     for key in funnel_metrics:
         daily[key]
 
+    cabinets = {
+        item.store_slug: item for item in db.list_unit_economics_1c_cabinet_settings(store_slugs)
+    }
     result: dict[tuple[str, str], dict] = {}
     for key, by_day in daily.items():
         funnel_metric = funnel_metrics.get(key) or {}
@@ -530,6 +565,7 @@ def load_product_metrics(
             "drr": calculate_drr_percent(spend, orders_amount, buyout_percent),
             "daily": history,
         }
+        result[key] = apply_buyout_default(result[key], cabinets[key[0]].default_buyout_percent)
     return result
 
 

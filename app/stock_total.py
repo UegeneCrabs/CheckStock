@@ -225,7 +225,7 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
     sheet.title = "Остатки Тотал"
     sheet.sheet_view.showGridLines = False
 
-    fixed_headers = ("МАГАЗИН", "АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ")
+    fixed_headers = ("МАГАЗИН", "АРТИКУЛ", "ШТРИХКОД", "НАЗВАНИЕ", "ТЕКУЩАЯ ЗЦ, ₽")
     for column, title in enumerate(fixed_headers, start=1):
         sheet.cell(row=1, column=column, value=title)
         sheet.merge_cells(start_row=1, start_column=column, end_row=2, end_column=column)
@@ -279,11 +279,11 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = Border(left=thin, right=thin, top=thin, bottom=medium)
 
-    total_values = ["ИТОГО", "", "", f"позиций: {len(rows)}"]
+    total_values = ["ИТОГО", "", "", f"позиций: {len(rows)}", None]
     total_values.extend(sum(int(row.get(key) or 0) for row in rows) for key in VALUE_KEYS)
     sheet.append(total_values)
     priced_positions = sum(1 for row in rows if row.get("purchase_price") is not None)
-    cost_values = ["ИТОГО В ЗЦ", "", "", f"ЗЦ: {priced_positions} из {len(rows)} поз."]
+    cost_values = ["ИТОГО В ЗЦ", "", "", f"ЗЦ: {priced_positions} из {len(rows)} поз.", None]
     cost_values.extend(
         round(
             sum(
@@ -310,6 +310,7 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
                 str(row["article"]),
                 str(row["barcode"]),
                 row["name"],
+                row.get("purchase_price"),
                 *(int(row.get(key) or 0) for key in VALUE_KEYS),
             ]
         )
@@ -325,20 +326,21 @@ def build_xlsx(rows: list[dict]) -> tuple[bytes, str]:
             )
         sheet.cell(row=row_number, column=2).number_format = "@"
         sheet.cell(row=row_number, column=3).number_format = "@"
-        for column_number in range(5, sheet.max_column + 1):
+        sheet.cell(row=row_number, column=5).number_format = '#,##0.00 "₽"'
+        for column_number in range(6, sheet.max_column + 1):
             sheet.cell(row=row_number, column=column_number).number_format = "#,##0"
-    for column_number in range(5, sheet.max_column + 1):
+    for column_number in range(6, sheet.max_column + 1):
         sheet.cell(row=3, column=column_number).number_format = "#,##0"
         sheet.cell(row=4, column=column_number).number_format = '#,##0.00 "₽"'
 
-    widths = [18, 18, 20, 54, 16, 12, 12, 12] + [12] * len(QUANTITY_KEYS)
+    widths = [18, 18, 20, 54, 16, 16, 12, 12, 12] + [12] * len(QUANTITY_KEYS)
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.row_dimensions[1].height = 38
     sheet.row_dimensions[2].height = 26
     sheet.row_dimensions[3].height = 24
     sheet.row_dimensions[4].height = 24
-    sheet.freeze_panes = "I5"
+    sheet.freeze_panes = "J5"
 
     buffer = io.BytesIO()
     workbook.save(buffer)

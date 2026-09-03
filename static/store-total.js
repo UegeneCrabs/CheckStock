@@ -59,7 +59,7 @@
             var empty = document.createElement('tr');
             empty.className = 'empty-row';
             var message = cell('В этом магазине пока нет товаров и остатков');
-            message.colSpan = 22;
+            message.colSpan = 23;
             empty.appendChild(message);
             body.appendChild(empty);
             updateTotals();
@@ -79,6 +79,10 @@
             var name = cell(String(item.name || item.article || 'Без названия'));
             name.title = name.textContent;
             row.appendChild(name);
+            var priceValue = row.getAttribute("data-purchase-price");
+            var price = cell(priceValue === "" ? "—" : moneyFormat.format(Number(priceValue)));
+            price.setAttribute("data-filter-value", priceValue);
+            row.appendChild(price);
             valueKeys.forEach(function (key) {
                 row.appendChild(quantityCell(item[key]));
             });
@@ -102,7 +106,7 @@
             var target = table.querySelector('[data-store-total-key="' + key + '"]');
             if (!target) return;
             var total = rows.reduce(function (sum, row) {
-                var valueCell = row.children[index + 3];
+                var valueCell = row.children[index + 4];
                 return sum + number(valueCell && valueCell.getAttribute('data-filter-value'));
             }, 0);
             target.textContent = numberFormat.format(total);
@@ -119,7 +123,7 @@
             var target = table.querySelector('[data-store-cost-key="' + key + '"]');
             if (!target) return;
             var total = pricedRows.reduce(function (sum, row) {
-                var valueCell = row.children[index + 3];
+                var valueCell = row.children[index + 4];
                 return sum + number(valueCell && valueCell.getAttribute('data-filter-value'))
                     * number(row.dataset.purchasePrice);
             }, 0);
@@ -169,7 +173,7 @@
                 setStatus('Показан общий остаток WB + OZON + Яндекс Маркета', false);
             })
             .catch(function (error) {
-                body.innerHTML = '<tr class="empty-row"><td colspan="22">Не удалось загрузить остатки</td></tr>';
+                body.innerHTML = '<tr class="empty-row"><td colspan="23">Не удалось загрузить остатки</td></tr>';
                 setStatus('Ошибка: ' + error.message, true);
             })
             .finally(function () {
