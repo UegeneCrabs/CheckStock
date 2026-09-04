@@ -801,6 +801,8 @@ class UnitEconomics1CCabinetSettingRecord(OrmBase):
     store_slug: Mapped[str] = mapped_column(String, primary_key=True)
     marketplace: Mapped[str] = mapped_column(String, primary_key=True, default="WB", server_default="WB")
     default_buyout_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_drr_percent: Mapped[float] = mapped_column(Float, nullable=False, default=8, server_default="8")
+    target_roi_percent: Mapped[float] = mapped_column(Float, nullable=False, default=50, server_default="50")
     buyout_period_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=14, server_default="14"
     )
@@ -833,6 +835,8 @@ class UnitEconomics1CProductSettingRecord(OrmBase):
     return_cost_rub: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
     volume_l: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
     storage_wb_rub: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    target_drr_percent: Mapped[float | None] = mapped_column(Float)
+    target_roi_percent: Mapped[float | None] = mapped_column(Float)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_by_name: Mapped[str] = mapped_column(String, nullable=False)

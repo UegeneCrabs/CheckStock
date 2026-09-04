@@ -588,8 +588,9 @@ def save_cabinet_settings(
     updated_by_name: str,
 ) -> UnitEconomics1CCabinetSettings:
     payload = values.model_dump(mode="python")
-    if "default_buyout_percent" not in values.model_fields_set:
-        payload.pop("default_buyout_percent", None)
+    for field in ("default_buyout_percent", "target_drr_percent", "target_roi_percent"):
+        if field not in values.model_fields_set:
+            payload.pop(field, None)
     columns = tuple(payload)
     with WRITE_LOCK:
         conn = get_connection()
@@ -698,6 +699,37 @@ def save_product_settings(
         finally:
             conn.close()
     return get_product_settings(store_slug, values.article)
+
+
+def save_product_targets(store_slug: str, article: str, target_drr_percent: float | None,
+                         target_roi_percent: float | None, *, updated_at: str,
+                         updated_by_user_id: int, updated_by_name: str) -> UnitEconomics1CProductSettings:
+    with WRITE_LOCK:
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO unit_economics_1c_product_settings
+                    (store_slug, marketplace, article, target_drr_percent, target_roi_percent,
+                     updated_at, updated_by_user_id, updated_by_name)
+                VALUES (?, 'WB', ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(store_slug, marketplace, article) DO UPDATE SET
+                    target_drr_percent=excluded.target_drr_percent,
+                    target_roi_percent=excluded.target_roi_percent,
+                    updated_at=excluded.updated_at,
+                    updated_by_user_id=excluded.updated_by_user_id,
+                    updated_by_name=excluded.updated_by_name
+                """,
+                (store_slug, article, target_drr_percent, target_roi_percent, updated_at,
+                 updated_by_user_id, updated_by_name),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return get_product_settings(store_slug, article)
 
 
 def upsert_daily_prices(rows: list[dict]) -> int:

@@ -125,6 +125,7 @@ def active_section(active: str) -> SectionName | None:
         "unit_1c_ozon": SectionName.UNIT_ECONOMICS_1C,
         "unit_1c_yandex": SectionName.UNIT_ECONOMICS_1C,
         "unit_1c_reports": SectionName.UNIT_ECONOMICS_1C,
+        "unit_1c_target_price": SectionName.UNIT_ECONOMICS_1C,
         "supply": SectionName.SUPPLY,
         "stock": SectionName.STOCK,
         "stock_total": SectionName.STOCK,

@@ -18,8 +18,12 @@
     var fields = [
         { key: 'buyout_period_days', label: 'Период расчёта', step: '1', min: '1', max: '29', suffix: 'дн.', group: 'buyout', integer: true,
             warning: 'Введите целое число от 1 до 29.' },
-        { key: 'default_buyout_percent', label: 'Выкуп по умолчанию', step: '0.01', min: '0.01', max: '100', suffix: '%', group: 'buyout',
+        { key: 'default_buyout_percent', label: 'Выкуп по умолчанию', step: '0.01', min: '0.01', max: '100', suffix: '%', group: 'buyout', optional: true,
             warning: 'Введите процент от 0,01 до 100. Он используется при нулевом выкупе WB или отсутствии данных.' },
+        { key: 'target_drr_percent', label: 'Цель по ДРР', step: '0.01', min: '0', max: '100', suffix: '%', group: 'goals',
+            warning: 'Введите цель по ДРР от 0 до 100%.' },
+        { key: 'target_roi_percent', label: 'Цель по ROI', step: '0.01', min: '0', max: '1000000', suffix: '%', group: 'goals',
+            warning: 'Введите цель по ROI от 0 до 1 000 000%.' },
         { key: 'acceptance_coefficient', label: 'КФ приёмки', step: '0.01', group: 'logistics' },
         { key: 'wb_extra_tariff_percent', label: 'Доп. тарифы WB', step: '0.01', suffix: '%', group: 'logistics' },
         { key: 'acquiring_percent', label: 'Процент эквайринга', step: '0.01', max: '100', suffix: '%', group: 'expenses' },
@@ -32,6 +36,7 @@
     ];
     var fieldGroups = [
         { key: 'buyout', title: 'Процент выкупа WB', hint: 'Завершённые дни, сегодня не включается' },
+        { key: 'goals', title: 'Целевая цена', hint: 'Цели отчёта для этого кабинета · ДРР с учётом выкупа' },
         { key: 'logistics', title: 'Логистика WB', hint: 'Приёмка и тарифы' },
         { key: 'expenses', title: 'Расходы', hint: 'Доли в процентах' }
     ];
@@ -101,6 +106,10 @@
         fields.filter(function (field) { return !field.readOnly; }).forEach(function (field) {
             var input = card.querySelector('[data-setting="' + field.key + '"]');
             if (!input) return;
+            if (field.optional && input.value.trim() === '') {
+                payload[field.key] = null;
+                return;
+            }
             payload[field.key] = field.type === 'select'
                 ? input.value
                 : field.integer ? Number.parseInt(input.value, 10) : Number(input.value);
@@ -122,6 +131,7 @@
         var valid = input.value.trim() !== '' && Number.isFinite(value)
             && (!field.integer || Number.isInteger(value))
             && value >= minimum && value <= maximum;
+        if (field.optional && input.value.trim() === '' && !input.validity.badInput) valid = true;
         var warning = input.closest('.ue1cs-field').querySelector('[data-field-warning]');
         input.setAttribute('aria-invalid', valid ? 'false' : 'true');
         input.setCustomValidity(valid ? '' : field.warning);
@@ -172,7 +182,7 @@
     async function saveCard(card) {
         if (!canEdit) return;
         if (!validateCard(card)) {
-            showToast('Проверьте значения в полях процента выкупа', true);
+            showToast('Проверьте значения в отмеченных полях', true);
             return;
         }
         var store = card.dataset.store;

@@ -1,0 +1,72 @@
+<link rel="stylesheet" href="/static/unit-economics-1c-target-price.css?v=13">
+<section class="uetp" id="uetp" aria-label="Отчёт Целевая цена">
+    <div class="uetp-heading"><h1>Целевая цена <small>WB</small></h1>
+        <div class="uetp-heading-actions">
+            <a href="/admin/integrations#cabinet-settings">Настроить цели</a>
+            <details class="uetp-help" id="uetp-help">
+                <summary aria-label="Как считаем целевую цену">?</summary>
+                <div class="uetp-help-content" tabindex="0" aria-label="Формулы расчёта">
+                    <strong>Как считаем</strong>
+                    <p>ДРР с выкупом = сумма рекламы ÷ (сумма заказов × процент выкупа ÷ 100) × 100%. Период всегда 7 завершённых дней по Москве, без сегодня. Складываем доступные дни с данными и рекламы, и заказов; дневные проценты не усредняем. Пустые данные не считаются нулевыми.</p>
+                    <p>Цена, ДРР и ROI слева берутся по тем же правилам, что в юнит-экономике WB и отчёте «Юниточная прибыль» за такой же период. Справа используются индивидуальные цели товара, если они сохранены; иначе — цели из «Ввод данных по кабинетам» (по умолчанию ДРР 8%, ROI 50%).</p>
+                    <p>Реклама на штуку для целевой цены = цена без СПП × целевой ДРР ÷ 100 × процент выкупа ÷ 100. ЗЦ, комиссии, логистика, налоги, СПП и скидка кошелька сохраняются из калькулятора. Цена подбирается так, чтобы итоговый ROI был максимально близок к цели; допустимое отклонение из-за округления цены — 0,1 процентного пункта.</p>
+                    <p>Жёлтый «—» означает, что для расчёта не хватает обязательных данных. Если за неделю нет ни рекламы, ни заказов, ДРР показывается равным 0. Подробности — при наведении или переходе к ячейке клавишей Tab. Жёлтая целевая цена предупреждает о неполных исходных данных.</p>
+                </div>
+            </details>
+        </div>
+    </div>
+    <div class="uetp-controls">
+        <label>Магазин<select id="uetp-store"><option value="">Все магазины</option></select></label>
+        <label class="uetp-search">Поиск<input type="search" id="uetp-search" placeholder="Поиск по всем столбцам" aria-label="Поиск по всем столбцам таблицы" autocomplete="off"></label>
+        <button class="uetp-export" type="button" id="uetp-export">Скачать XLSX</button>
+        <button type="button" id="uetp-reload">Обновить</button>
+    </div>
+    <div class="uetp-status" id="uetp-status" role="status" aria-live="polite" hidden></div>
+    <div class="uetp-table-wrap" id="uetp-table-wrap"><table class="data-table uetp-table" id="uetp-table" aria-label="Текущие показатели и целевые цены товаров">
+        <colgroup><col class="uetp-product-col"><col class="uetp-store-col"><col span="6"></colgroup>
+        <thead><tr><th rowspan="2" scope="col" data-filter-column="0"><button type="button" data-sort="product">Товар</button></th><th rowspan="2" scope="col" data-filter-column="1"><button type="button" data-sort="store_name">Магазин</button></th><th colspan="3" scope="colgroup">Текущая цена · по калькулятору</th><th class="uetp-target" colspan="3" scope="colgroup">Целевая цена</th></tr>
+            <tr><th scope="col" data-filter-column="2" data-filter-type="number"><button type="button" data-sort="current_price">Цена с СПП и кошельком, ₽</button></th><th scope="col" data-filter-column="3" data-filter-type="number"><button type="button" data-sort="current_drr">ДРР с выкупом, %</button></th><th scope="col" data-filter-column="4" data-filter-type="number"><button type="button" data-sort="current_roi">ROI, %</button></th>
+                <th class="uetp-target" scope="col" data-filter-column="5" data-filter-type="number"><button type="button" data-sort="target_price">Цена с СПП и кошельком, ₽</button></th><th class="uetp-target" scope="col" data-filter-column="6" data-filter-type="number"><button type="button" data-sort="target_drr">Цель ДРР, %</button></th><th class="uetp-target" scope="col" data-filter-column="7" data-filter-type="number"><button type="button" data-sort="target_roi">Цель ROI, %</button></th></tr>
+        </thead><tbody id="uetp-rows"><tr><td colspan="8">Загрузка…</td></tr></tbody>
+    </table></div>
+    <div class="uetp-footer" id="uetp-footer"><span id="uetp-count"></span><div class="uetp-pagination"><label class="uetp-page-size">Показывать<select id="uetp-page-size" aria-label="Товаров на странице"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select></label><button type="button" id="uetp-prev" aria-label="Предыдущая страница">←</button><span id="uetp-page"></span><button type="button" id="uetp-next" aria-label="Следующая страница">→</button></div></div>
+    <div class="uetp-overlay" id="uetp-overlay"></div>
+    <aside class="uetp-drawer" id="uetp-drawer" aria-hidden="true" aria-labelledby="uetp-drawer-title">
+        <header class="uetp-drawer-head"><div class="uetp-drawer-thumb" id="uetp-drawer-thumb" aria-hidden="true"></div><div class="uetp-drawer-copy"><h2 id="uetp-drawer-title">Калькулятор</h2><p id="uetp-drawer-meta"></p></div><button type="button" id="uetp-drawer-close" aria-label="Закрыть">×</button></header>
+        <div class="uetp-drawer-body">
+            <section class="uetp-calculator">
+                <header><div><small>Целевая цена</small><h3>Калькулятор чистой прибыли</h3></div><div class="uetp-calculator-actions"><button type="button" class="uetp-save-targets" id="uetp-target-save">Сохранить цели</button><button type="button" id="uetp-calculator-reset">Сбросить</button></div></header>
+                <p class="uetp-target-status" id="uetp-target-status" role="status" aria-live="polite" hidden></p>
+                <div class="uetp-calculator-layout"><div class="uetp-calculator-inputs" id="uetp-calculator-inputs">
+                    <label><span>Цена без СПП</span><span><input data-calc="retail" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>СПП</span><span><input data-calc="spp" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Цена с СПП</span><span><input data-calc="client" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>WB Кошелёк</span><span><input data-calc="wallet_percent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Цена с WB Кошельком</span><span><input data-calc="wallet" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label class="uetp-target-input"><span>Целевой ДРР с выкупом</span><span><input data-calc="drr" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Процент выкупа</span><span><input data-calc="buyout_percent" type="number" min="0.01" max="100" step="0.01"><b>%</b></span></label>
+                    <label class="uetp-target-input"><span>Целевой ROI</span><span><input data-calc="target_roi" type="number" min="0" max="1000000" step="0.01"><b>%</b></span></label>
+                    <label><span>Реклама на единицу</span><span><input data-calc="advertising_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Комиссия WB</span><span><input data-calc="wb_commission_percent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Комиссия WB</span><span><input data-calc="wb_commission_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Логистика</span><span><input data-calc="delivery_with_returns" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Хранение в день</span><span><input data-calc="storage_wb_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Оборачиваемость</span><span><input data-calc="turnover_days" type="number" min="0" step="1"><b>дн.</b></span></label>
+                    <label><span>Хранение</span><span><input data-calc="storage_total" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Эквайринг</span><span><input data-calc="acquiring_percent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Эквайринг</span><span><input data-calc="acquiring_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Закупочная стоимость</span><span><input data-calc="purchase_price" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Затраты на ФФ</span><span><input data-calc="fulfillment_cost" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>Комиссия компании</span><span><input data-calc="team_commission_percent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Комиссия компании</span><span><input data-calc="team_commission_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span>НДС</span><span><input data-calc="vat_percent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span>Налог НДС</span><span><input data-calc="vat_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                    <label><span id="uetp-tax-label">УСН</span><span><input data-calc="secondary_tax_percent" type="number" min="0" max="100" step="0.01"><b>%</b></span></label>
+                    <label><span id="uetp-tax-rub-label">Налог УСН</span><span><input data-calc="secondary_tax_rub" type="number" min="0" step="0.01"><b>₽</b></span></label>
+                </div><aside class="uetp-calculator-results" id="uetp-calculator-results"></aside></div>
+            </section>
+        </div>
+    </aside>
+</section>
+<script type="application/json" id="uetp-config">$target_price_config</script>
+<script src="/static/unit-economics-1c-target-price.js?v=12"></script>

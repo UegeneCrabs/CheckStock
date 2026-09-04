@@ -7,7 +7,11 @@ class ApplicationIntegrationTests(unittest.TestCase):
     def test_openapi_contains_all_public_contracts(self) -> None:
         paths = create_app().openapi()["paths"]
 
-        self.assertEqual(len(paths), 102)
+        self.assertEqual(len(paths), 106)
+        self.assertIn("/sales/unit-economics-1c/reports/target-price", paths)
+        self.assertIn("/api/unit-economics-1c/reports/target-price", paths)
+        self.assertIn("/api/unit-economics-1c/reports/target-price.xlsx", paths)
+        self.assertIn("/api/unit-economics-1c/reports/target-price/{store_slug}/targets", paths)
         self.assertIn("/login", paths)
         self.assertIn("/stock/{slug}/transfer", paths)
         self.assertIn("/stock/{slug}/transfers/in-transit", paths)

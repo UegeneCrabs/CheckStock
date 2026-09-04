@@ -87,6 +87,7 @@ def test_buyout_and_funnel_tables_are_migrated_to_automatic_weekly_metrics(
         metric_columns = connection.column_names("wb_funnel_product_metrics")
 
     assert "buyout_percent" not in product_columns
+    assert {"target_drr_percent", "target_roi_percent"}.issubset(product_columns)
     assert product is not None
     assert dict(product) == {
         "delivery_wb_rub": 120.0,

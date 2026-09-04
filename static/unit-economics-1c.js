@@ -48,6 +48,11 @@
     var sendingPrice = false;
     var editedPriceKind = 'retail';
     var pendingPriceChange = null;
+    var pendingTargetCalculator = readTargetCalculatorLink();
+    var targetCalculatorContext = null;
+    var calculatorSessionProductId = null;
+    var calculatorDraft = null;
+    var detailRequestId = 0;
     var state = {
         query: '', store: 'all', status: 'all', page: 1, pageSize: 20,
         periodMode: 'preset', periodDays: configuredPeriodDays,
@@ -74,6 +79,7 @@
         drawerTitle: id('ue1c-drawer-title'), drawerMeta: id('ue1c-drawer-meta'), priceInput: id('ue1c-price-input'),
         sppPriceInput: id('ue1c-spp-price-input'), walletPriceInput: id('ue1c-wallet-price-input'),
         calculatorReset: id('ue1c-calculator-reset'), calculatorMode: id('ue1c-calculator-mode'),
+        calculatorSource: id('ue1c-calculator-source'),
         calculatorFields: id('ue1c-calculator-inputs'),
         subjectSelect: id('ue1c-subject-select'),
         subjectOptions: id('ue1c-subject-options'),
@@ -671,6 +677,7 @@
     async function loadProducts(options) {
         options = options || {};
         var silent = options.silent === true;
+        var loaded = false;
         if (state.productsRefreshing) return false;
         state.productsRefreshing = true;
         var scrollTop = nodes.tableWrap.scrollTop;
@@ -709,6 +716,7 @@
                 nodes.tableWrap.scrollLeft = scrollLeft;
             }
             if (options.refreshDetail) await refreshSelectedDetail();
+            loaded = true;
             return true;
         } catch (error) {
             if (!silent) {
@@ -723,6 +731,7 @@
                 setProductsLoading(false);
                 renderPage();
             }
+            if (loaded) openTargetCalculator();
         }
     }
     function resetPageAndRender() { state.page = 1; renderPage(); }
@@ -788,6 +797,8 @@
             commissionRub: finite(details.commission_value,
                 retail === null || commissionPercent === null ? null : retail * commissionPercent / 100),
             drr: finite(product.advertising && product.advertising.drr, null),
+            buyoutPercent: finite(product.advertising && product.advertising.buyout_percent,
+                finite(details.buyout_percent, null)),
             advertisingRub: finite(product.advertising && product.advertising.spend_per_order, 0),
             logistics: finite(details.delivery_with_returns, finite(details.logistics, null)),
             storage: storageRate,
@@ -911,6 +922,31 @@
         }).join('');
         nodes.subjectSelect.value = currentSubject;
     }
+    function rememberCalculatorDraft() {
+        if (!state.selected) return;
+        var values = {};
+        Array.prototype.forEach.call(nodes.calculatorInputs, function (input) {
+            values[input.dataset.calculatorInput] = input.value;
+        });
+        calculatorDraft = {
+            productId: state.selected,
+            values: values,
+            subject: nodes.subjectSelect.value,
+            editedPriceKind: editedPriceKind
+        };
+    }
+    function restoreCalculatorDraft(product) {
+        if (!calculatorDraft || calculatorDraft.productId !== product.id) return false;
+        Array.prototype.forEach.call(nodes.calculatorInputs, function (input) {
+            var key = input.dataset.calculatorInput;
+            if (Object.prototype.hasOwnProperty.call(calculatorDraft.values, key)) {
+                input.value = calculatorDraft.values[key];
+            }
+        });
+        nodes.subjectSelect.value = calculatorDraft.subject;
+        editedPriceKind = calculatorDraft.editedPriceKind;
+        return true;
+    }
     function productTaxSystem(product) {
         return product.store_slug === 'gogol'
             && product.details && product.details.tax_system === 'osno' ? 'osno' : 'usn';
@@ -934,6 +970,83 @@
         if (!input) return;
         input.value = value === null || value === undefined || !Number.isFinite(Number(value))
             ? '' : String(Math.round(Number(value) * 100) / 100);
+    }
+    function calculatedAdvertisingRub(retail, drr, buyoutPercent) {
+        if (retail === null || drr === null || buyoutPercent === null) return null;
+        var buyoutRatio = Math.min(Math.max(buyoutPercent, 0), 100) / 100;
+        var amount = Math.max(retail, 0) * Math.max(drr, 0) / 100 * buyoutRatio;
+        return Math.round(amount * 100) / 100;
+    }
+    function calculatedDrrPercent(retail, advertisingRub, buyoutPercent) {
+        if (retail === null || retail <= 0 || advertisingRub === null
+            || buyoutPercent === null || buyoutPercent <= 0) return null;
+        return advertisingRub / (retail * buyoutPercent / 100) * 100;
+    }
+    function syncCalculatorLogisticsForBuyout(product, buyoutPercent) {
+        if (buyoutPercent === null) return;
+        var details = product.details || {};
+        var delivery = finite(details.delivery_wb_rub, 0);
+        var returnCost = finite(details.return_cost_rub, 0);
+        var acceptance = finite(details.paid_acceptance_cost, 0);
+        var buyoutRatio = Math.min(Math.max(buyoutPercent, 0), 100) / 100;
+        setCalculatorValue('logistics', delivery * buyoutRatio
+            + (returnCost + delivery * 2) * (1 - buyoutRatio) + acceptance);
+    }
+    function readTargetCalculatorLink() {
+        var query = new URLSearchParams(window.location.search);
+        if (query.get('calculator') !== 'target-price' || !query.get('store') || !query.get('article')) return null;
+        function number(key, allowZero, maximum) {
+            var value = finite(query.get(key), null);
+            return value !== null && (allowZero ? value >= 0 : value > 0) && value <= maximum ? value : null;
+        }
+        return {
+            store: query.get('store'), article: query.get('article'),
+            retail: number('target_retail_price', false, 1e12),
+            client: number('target_spp_price', false, 1e12),
+            wallet: number('target_price', false, 1e12),
+            drr: number('target_drr', true, 100),
+            advertisingBase: number('advertising_base', false, 1e12)
+        };
+    }
+    function openTargetCalculator() {
+        if (!pendingTargetCalculator) return;
+        var preset = pendingTargetCalculator;
+        pendingTargetCalculator = null;
+        var product = products.find(function (item) {
+            return item.store_slug === preset.store && String(item.article) === preset.article;
+        });
+        if (!product) {
+            showToast('Товар из отчёта не найден среди доступных товаров WB', 'error');
+            return;
+        }
+        locateProductInTable(product, preset);
+    }
+    function clearTargetCalculator() {
+        targetCalculatorContext = null;
+        nodes.calculatorSource.hidden = true;
+    }
+    function applyTargetCalculator(product, preset) {
+        // A local simulation only: never call the WB price-saving workflow here.
+        targetCalculatorContext = { productId: product.id, advertisingBase: preset.advertisingBase };
+        if (preset.retail !== null) {
+            setCalculatorValue('retail', preset.retail);
+            setCalculatorValue('client', preset.client);
+            setCalculatorValue('wallet', preset.wallet);
+            syncCompactCalculatorInputs(product);
+        }
+        if (preset.drr !== null) {
+            setCalculatorValue('drr', preset.drr);
+            syncDetailedCalculatorInputs(product, 'drr');
+        }
+        nodes.calculatorSource.textContent = (preset.retail === null
+            ? 'Целевая цена не рассчитана — оставлена текущая цена. '
+            : 'Цены подставлены из отчёта «Целевая цена». ')
+            + (preset.drr === null ? 'ДРР оставлен текущим. ' : 'ДРР подставлен из отчёта. ')
+            + 'Изменения не отправлены в WB.';
+        nodes.calculatorSource.hidden = false;
+        updateSaveState(product);
+        renderPriceCalculation(product);
+        rememberCalculatorDraft();
     }
     function walletPriceWithPercent(clientPrice, percent) {
         if (clientPrice === null || percent === null) return null;
@@ -1028,18 +1141,13 @@
 
         var advertisingRub = finite(values.advertisingRub, null);
         var drr = finite(values.drr, null);
-        var periodOrdersAmount = finite(product.advertising && product.advertising.orders_amount, null);
-        var periodOrders = finite(product.advertising && product.advertising.orders, null);
-        var averageOrderAmount = periodOrdersAmount === null || periodOrders === null || periodOrders <= 0
-            ? null : periodOrdersAmount / periodOrders;
-        var advertisingBase = averageOrderAmount !== null && averageOrderAmount > 0
-            ? averageOrderAmount : retail;
-        if (source === 'drr') {
-            setCalculatorValue('advertisingRub', advertisingBase === null || drr === null
-                ? null : advertisingBase * drr / 100);
+        var buyoutPercent = finite(values.buyoutPercent, null);
+        if (source === 'buyoutPercent') syncCalculatorLogisticsForBuyout(product, buyoutPercent);
+        if (['drr', 'buyoutPercent', 'retail', 'spp', 'client', 'walletPercent', 'wallet']
+            .indexOf(source) !== -1) {
+            setCalculatorValue('advertisingRub', calculatedAdvertisingRub(retail, drr, buyoutPercent));
         } else if (source === 'advertisingRub') {
-            setCalculatorValue('drr', advertisingBase === null || advertisingBase <= 0 || advertisingRub === null
-                ? null : advertisingRub / advertisingBase * 100);
+            setCalculatorValue('drr', calculatedDrrPercent(retail, advertisingRub, buyoutPercent));
         }
     }
     function syncCompactCalculatorInputs(product) {
@@ -1520,6 +1628,7 @@
         if (image) image.addEventListener('error', function () { image.hidden = true; }, { once: true });
     }
     function renderDetailProduct(product) {
+        clearTargetCalculator();
         root.classList.remove('is-detail-loading');
         nodes.detailLoading.hidden = true;
         state.selected = product.id;
@@ -1529,7 +1638,13 @@
             + copyValue('Арт.', product.article, 'Артикул') + ' · ★ ' + escapeHtml(nullText(product.rating))
             + ' · ' + escapeHtml(nullText(product.reviews_count)) + ' отзывов';
         syncTaxCalculatorLabel(product);
-        fillCalculator(product);
+        if (calculatorSessionProductId !== product.id) {
+            fillCalculator(product);
+            calculatorSessionProductId = product.id;
+            rememberCalculatorDraft();
+        } else {
+            restoreCalculatorDraft(product);
+        }
         updateSaveState(product);
         renderPriceCalculation(product);
         renderParameters(product);
@@ -1561,17 +1676,21 @@
     async function refreshSelectedDetail() {
         var product = productsById[state.selected];
         if (!product || !nodes.detail.classList.contains('is-open')) return;
+        if (targetCalculatorContext) return;
+        var requestId = detailRequestId;
         var active = document.activeElement;
         if (active && nodes.detail.contains(active)
             && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) return;
         try {
             await fetchProductDetail(product);
-            if (state.selected === product.id) renderDetailProduct(product);
+            if (state.selected === product.id && detailRequestId === requestId && !targetCalculatorContext) renderDetailProduct(product);
         } catch (error) {
             /* Keep the last valid detail while a background refresh is unavailable. */
         }
     }
-    async function openDetail(product) {
+    async function openDetail(product, preset) {
+        var requestId = ++detailRequestId;
+        clearTargetCalculator();
         state.selected = product.id;
         editedPriceKind = 'retail';
         root.classList.add('has-detail');
@@ -1590,9 +1709,12 @@
                 await fetchProductDetail(product);
             }
             await commissionsLoad;
-            if (state.selected === product.id) renderDetailProduct(product);
+            if (state.selected === product.id && detailRequestId === requestId) {
+                renderDetailProduct(product);
+                if (preset) applyTargetCalculator(product, preset);
+            }
         } catch (error) {
-            if (state.selected !== product.id) return;
+            if (state.selected !== product.id || detailRequestId !== requestId) return;
             root.classList.remove('is-detail-loading');
             nodes.detailLoading.hidden = true;
             closeDetail();
@@ -1614,7 +1736,7 @@
             button.classList.remove('tf-btn--active');
         });
     }
-    function locateProductInTable(product) {
+    function locateProductInTable(product, preset) {
         var filtered = filteredProducts();
         var productIndex = filtered.findIndex(function (item) { return item.id === product.id; });
         if (productIndex === -1) {
@@ -1628,7 +1750,7 @@
         }
         state.page = Math.floor(productIndex / state.pageSize) + 1;
         renderPage();
-        openDetail(product);
+        openDetail(product, preset);
         var targetRow = Array.prototype.find.call(nodes.rows.querySelectorAll('tr'), function (row) {
             return row.dataset.productId === product.id;
         });
@@ -1643,6 +1765,10 @@
         }, 5000);
     }
     function closeDetail() {
+        detailRequestId += 1;
+        clearTargetCalculator();
+        calculatorSessionProductId = null;
+        calculatorDraft = null;
         state.selected = null;
         root.classList.remove('has-detail', 'is-detail-loading');
         nodes.detailLoading.hidden = true;
@@ -1851,7 +1977,6 @@
         });
         renderPage();
         if (state.selected && productsById[state.selected] && productsById[state.selected]._detailLoaded) {
-            fillCalculator(productsById[state.selected]);
             renderPriceCalculation(productsById[state.selected]);
         }
     }
@@ -1928,7 +2053,6 @@
             product.details.delivery_with_returns = saved.delivery_with_returns;
             product.details.logistics = saved.delivery_with_returns;
             renderParameters(product);
-            fillCalculator(product);
             renderPriceCalculation(product);
             showToast('Параметры товара сохранены');
         } catch (error) {
@@ -2149,6 +2273,7 @@
                 else {
                     syncLinkedPriceInputs(product, editedPriceKind);
                     syncCompactCalculatorInputs(product);
+                    syncDetailedCalculatorInputs(product, source);
                 }
                 updateSaveState(product);
             } else if (nodes.calculatorMode.checked) {
@@ -2156,8 +2281,11 @@
                 if (source === 'spp') editedPriceKind = 'client';
                 else if (source === 'walletPercent') editedPriceKind = 'wallet';
                 if (source === 'spp' || source === 'walletPercent') updateSaveState(product);
-            } else if (source === 'drr') syncDetailedCalculatorInputs(product, source);
+            } else if (source === 'drr' || source === 'buyoutPercent') {
+                syncDetailedCalculatorInputs(product, source);
+            }
             renderPriceCalculation(product);
+            rememberCalculatorDraft();
         });
     });
     nodes.subjectSelect.addEventListener('change', function () {
@@ -2180,7 +2308,9 @@
         setCalculatorValue('commission', subjectCommission + extra);
         syncDetailedCalculatorInputs(product, 'commission');
         renderPriceCalculation(product);
+        rememberCalculatorDraft();
     });
+    nodes.subjectSelect.addEventListener('input', rememberCalculatorDraft);
     [nodes.priceInput, nodes.sppPriceInput, nodes.walletPriceInput].forEach(function (input) {
         input.addEventListener('keydown', function (event) {
             if (event.key !== 'Enter') return;
@@ -2205,15 +2335,19 @@
         else {
             syncLinkedPriceInputs(product, editedPriceKind);
             syncCompactCalculatorInputs(product);
+            syncDetailedCalculatorInputs(product, editedPriceKind);
         }
         updateSaveState(product);
         renderPriceCalculation(product);
+        rememberCalculatorDraft();
     });
     nodes.calculatorReset.addEventListener('click', function () {
         var product = productsById[state.selected];
         if (!product) return;
+        clearTargetCalculator();
         editedPriceKind = 'retail';
         fillCalculator(product);
+        rememberCalculatorDraft();
         updateSaveState(product);
         renderPriceCalculation(product);
         showToast('Параметры возвращены к значениям из базы');

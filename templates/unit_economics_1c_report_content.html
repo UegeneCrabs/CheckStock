@@ -1,4 +1,4 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c-report.css?v=18">
+    <link rel="stylesheet" href="/static/unit-economics-1c-report.css?v=19">
     <section class="ue1cr-page" id="unit-economics-1c-report" aria-label="Отчёт по юниточной прибыли">
         <form class="ue1cr-filters" id="ue1cr-filters" aria-label="Параметры отчёта">
             <div class="ue1cr-period">
@@ -11,17 +11,23 @@
             </div>
             <div class="ue1cr-filter"><span>Магазины</span><details class="ue1cr-multi" id="ue1cr-store">
                 <summary id="ue1cr-store-summary">Все магазины</summary>
-                <div class="ue1cr-multi-options" id="ue1cr-store-options"></div>
+                <div class="ue1cr-filter-picker">
+                    <input type="search" id="ue1cr-store-search" placeholder="Название магазина" aria-label="Поиск магазинов" autocomplete="off">
+                    <div class="ue1cr-multi-options" id="ue1cr-store-options"></div>
+                </div>
             </details></div>
             <div class="ue1cr-filter"><span>Предметы</span><details class="ue1cr-multi" id="ue1cr-subject">
                 <summary id="ue1cr-subject-summary">Все предметы</summary>
-                <div class="ue1cr-multi-options" id="ue1cr-subject-options"></div>
+                <div class="ue1cr-filter-picker">
+                    <input type="search" id="ue1cr-subject-search" placeholder="Название предмета" aria-label="Поиск предметов" autocomplete="off">
+                    <div class="ue1cr-multi-options" id="ue1cr-subject-options"></div>
+                </div>
             </details></div>
             $unit_1c_manager_filter
             <div class="ue1cr-filter ue1cr-filter--articles"><span>Артикулы</span><details class="ue1cr-multi" id="ue1cr-article">
                 <summary id="ue1cr-article-summary">Все товары</summary>
-                <div class="ue1cr-article-picker">
-                    <input type="search" id="ue1cr-article-search" placeholder="Название или артикул" autocomplete="off">
+                <div class="ue1cr-filter-picker ue1cr-article-picker">
+                    <input type="search" id="ue1cr-article-search" placeholder="Название или артикул" aria-label="Поиск товаров по названию или артикулу" autocomplete="off">
                     <div class="ue1cr-multi-options" id="ue1cr-article-options"></div>
                 </div>
             </details></div>
@@ -118,4 +124,4 @@
         </section>
     </section>
     <script type="application/json" id="ue1cr-config">$unit_1c_report_config</script>
-    <script src="/static/unit-economics-1c-report.js?v=31"></script>
+    <script src="/static/unit-economics-1c-report.js?v=32"></script>

@@ -197,7 +197,7 @@ def render_page(
         "unit_1c_ozon",
         "unit_1c_yandex",
     }
-    reports_open = active == "unit_1c_reports"
+    reports_open = active in {"unit_1c_reports", "unit_1c_target_price"}
     visible = {section: has_access(user, section) for section in SectionName}
     sales_sections = (
         SectionName.SALES,
@@ -244,6 +244,7 @@ def render_page(
         reports_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
         reports_group_active="active" if reports_open else "",
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
+        unit_1c_target_price_active="active" if active == "unit_1c_target_price" else "",
         supply_active="active" if active == "supply" else "",
         supply_hidden=hidden(visible[SectionName.SUPPLY]),
         stock_active="active" if active == "stock" else "",

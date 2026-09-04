@@ -93,6 +93,177 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertTrue(response.json()["ok"])
         return response.json()["products"]
 
+    def test_target_price_cabinet_goals_defaults_validation_and_legacy_save(self):
+        page = self.client.get("/admin/integrations")
+        self.assertIn('"target_drr_percent": 8.0', page.text)
+        self.assertIn('"target_roi_percent": 50.0', page.text)
+        path = "/api/unit-economics-1c/cabinet-settings/rimili"
+        headers = {"X-Requested-With": "fetch"}
+        saved = self.client.put(path, json={"target_drr_percent": 6.5, "target_roi_percent": 125}, headers=headers)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["settings"]["target_drr_percent"], 6.5)
+        self.assertEqual(saved.json()["settings"]["target_roi_percent"], 125)
+        self.assertIsNone(saved.json()["settings"]["default_buyout_percent"])
+        legacy = self.client.put(path, json={"buyout_period_days": 21}, headers=headers)
+        self.assertEqual(legacy.status_code, 200, legacy.text)
+        self.assertEqual(legacy.json()["settings"]["target_drr_percent"], 6.5)
+        self.assertEqual(legacy.json()["settings"]["target_roi_percent"], 125)
+        self.assertEqual(db.get_unit_economics_1c_cabinet_settings("tris").target_drr_percent, 8)
+        for field, value in (("target_drr_percent", -1), ("target_drr_percent", 100.01),
+                             ("target_roi_percent", -1), ("target_roi_percent", None)):
+            invalid = self.client.put(path, json={field: value}, headers=headers)
+            self.assertEqual(invalid.status_code, 422, invalid.text)
+        zero = self.client.put(path, json={"target_drr_percent": 0, "target_roi_percent": 0}, headers=headers)
+        self.assertEqual(zero.status_code, 200, zero.text)
+        self.assertEqual(zero.json()["settings"]["target_drr_percent"], 0)
+        self.assertEqual(zero.json()["settings"]["target_roi_percent"], 0)
+
+    def test_target_price_migration_only_adds_defaults_and_preserves_rows(self):
+        path = "/api/unit-economics-1c/cabinet-settings/rimili"
+        saved = self.client.put(path, json={"default_buyout_percent": 82, "buyout_period_days": 23},
+                                headers={"X-Requested-With": "fetch"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        with core.get_connection() as connection:
+            before = connection.execute("SELECT * FROM unit_economics_1c_cabinet_settings").fetchall()
+            stocks_before = connection.execute("SELECT COUNT(*) AS n FROM stock_items").fetchone()["n"]
+            connection.execute("ALTER TABLE unit_economics_1c_cabinet_settings DROP COLUMN target_drr_percent")
+            connection.execute("ALTER TABLE unit_economics_1c_cabinet_settings DROP COLUMN target_roi_percent")
+            connection.commit()
+        db.init_db()
+        db.init_db()
+        with core.get_connection() as connection:
+            after = connection.execute("SELECT * FROM unit_economics_1c_cabinet_settings").fetchall()
+            self.assertEqual(connection.execute("SELECT COUNT(*) AS n FROM stock_items").fetchone()["n"], stocks_before)
+        self.assertEqual(len(after), len(before))
+        for old, new in zip(before, after, strict=True):
+            self.assertEqual(dict(new), dict(old))
+
+    def test_target_price_report_data_goals_and_scope(self):
+        from app import unit_economics_1c_target_prices as pricing
+
+        page = self.client.get("/sales/unit-economics-1c/reports/target-price")
+        self.assertEqual(page.status_code, 200, page.text)
+        self.assertIn('id="uetp-rows"', page.text)
+        self.assertIn('class="nav-subitem active" href="/sales/unit-economics-1c/reports/target-price"', page.text)
+        self.assertNotIn("Текущая цена и расчёт по целям кабинета", page.text)
+        self.assertNotIn("Цены на Wildberries не изменяются", page.text)
+        self.assertNotIn('id="uetp-period"', page.text)
+        self.assertIn('<details class="uetp-help" id="uetp-help">', page.text)
+        self.assertIn('<summary aria-label="Как считаем целевую цену">?</summary>', page.text)
+        self.assertIn('class="uetp-help-content" tabindex="0"', page.text)
+        self.assertIn('id="uetp-status" role="status" aria-live="polite" hidden', page.text)
+        self.assertIn('aria-label="Поиск по всем столбцам таблицы"', page.text)
+        self.assertIn('class="data-table uetp-table" id="uetp-table"', page.text)
+        self.assertIn('id="uetp-table-wrap"', page.text)
+        self.assertNotIn('id="uetp-filter"', page.text)
+        self.assertIn('id="uetp-export"', page.text)
+        self.assertIn('id="uetp-page-size"', page.text)
+        for page_size in (20, 50, 100):
+            self.assertIn(f'<option value="{page_size}"', page.text)
+        self.assertIn('id="uetp-drawer"', page.text)
+        self.assertIn('id="uetp-calculator-inputs"', page.text)
+        self.assertNotIn('id="uetp-calculator-note"', page.text)
+        for calculator_field in (
+            "wb_commission_rub", "storage_total", "acquiring_rub",
+            "team_commission_rub", "vat_rub", "secondary_tax_rub",
+        ):
+            self.assertIn(f'data-calc="{calculator_field}"', page.text)
+        target_price_styles = (
+            Path(__file__).parents[2] / "static" / "unit-economics-1c-target-price.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn("body.uetp-calculator-open .app-shell", target_price_styles)
+        self.assertIn("background:#f7f8fb", target_price_styles)
+        self.assertIn(".uetp-product img { width:42px; height:48px;", target_price_styles)
+        self.assertIn("html:has(.uetp), body:has(.uetp) { height:100%; overflow:hidden; }", target_price_styles)
+        target_price_script = (
+            Path(__file__).parents[2] / "static" / "unit-economics-1c-target-price.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("node('page-size').addEventListener('change'", target_price_script)
+        self.assertIn("node('drawer-meta').innerHTML", target_price_script)
+        self.assertIn("copyIdentifier(row.article)", target_price_script)
+        self.assertNotIn("Чистая выручка", target_price_script)
+        self.assertNotIn("Используются цели кабинета:", target_price_script)
+        self.assertNotIn("Возвращены цели из настроек кабинета.", target_price_script)
+        for column in range(8):
+            self.assertIn(f'data-filter-column="{column}"', page.text)
+        self.assertEqual(page.text.count('data-filter-type="number"'), 6)
+        self.client.put("/api/unit-economics-1c/cabinet-settings/rimili",
+                        json={"target_drr_percent": 6, "target_roi_percent": 75},
+                        headers={"X-Requested-With": "fetch"})
+        with mock.patch.object(pricing, "closed_week", return_value=(date(2026, 8, 27), date(2026, 9, 2))):
+            data = self.client.get("/api/unit-economics-1c/reports/target-price", params={"store": "rimili", "target_roi": "1", "date_to": "2026-09-03"})
+        self.assertEqual(data.status_code, 200, data.text)
+        self.assertEqual(data.json()["period_to"], "2026-09-02")
+        self.assertTrue(data.json()["rows"])
+        for row in data.json()["rows"]:
+            self.assertEqual(row["store_slug"], "rimili")
+            self.assertEqual(row["target_drr"], 6)
+            self.assertEqual(row["target_roi"], 75)
+            self.assertIsNone(row["target_price"])
+            self.assertTrue(row["target_warnings"])
+        self.app.state.container.identity.user_for_token.return_value = {
+            **self.user, "role": "user", "full_name": "Андрей Китов", "store_slugs": ["rimili"],
+        }
+        denied = self.client.get("/api/unit-economics-1c/reports/target-price", params={"store": "tris"})
+        self.assertEqual(denied.status_code, 403)
+        references = [{"store_slug": "rimili", "article": "949558341", "manager": "Андрей Китов"},
+                      {"store_slug": "rimili", "article": "949563410", "manager": "Другой менеджер"}]
+        with mock.patch.object(db, "get_unit_economics_1c_product_reference_rows", return_value=references):
+            own = self.client.get("/api/unit-economics-1c/reports/target-price")
+        self.assertEqual(own.status_code, 200, own.text)
+        self.assertEqual([row["article"] for row in own.json()["rows"]], ["949558341"])
+
+    def test_target_price_xlsx_contains_only_client_filtered_rows(self):
+        from io import BytesIO
+
+        import openpyxl
+
+        payload = {
+            "period_from": "2026-08-27", "period_to": "2026-09-02",
+            "rows": [{"store_slug": "rimili", "store_name": "RIMILI", "article": "949558341",
+                      "name": "Только выбранный", "current_price": 700, "current_drr": 0,
+                      "current_roi": 10, "target_price": 800, "target_drr": 6, "target_roi": 75},
+                     {"store_slug": "forbidden", "name": "Не должен попасть"}],
+        }
+        response = self.client.post("/api/unit-economics-1c/reports/target-price.xlsx", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
+        sheet = workbook["Целевая цена"]
+        self.assertEqual(sheet.max_row, 2)
+        self.assertEqual(sheet["A2"].value, "Только выбранный")
+        self.assertEqual(sheet["E2"].value, 0)
+        self.assertNotIn("Не должен попасть", [cell.value for row in sheet.iter_rows() for cell in row])
+
+    def test_target_price_product_goals_save_and_reset_to_cabinet(self):
+        path = "/api/unit-economics-1c/reports/target-price/rimili/targets"
+        headers = {"X-Requested-With": "fetch"}
+        saved = self.client.put(
+            path,
+            json={"article": "949558341", "target_drr_percent": 3.5, "target_roi_percent": 20},
+            headers=headers,
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["settings"]["target_drr_percent"], 3.5)
+        self.assertEqual(saved.json()["settings"]["target_roi_percent"], 20)
+        stored = db.get_unit_economics_1c_product_settings("rimili", "949558341")
+        self.assertEqual(stored.target_drr_percent, 3.5)
+        self.assertEqual(stored.target_roi_percent, 20)
+
+        reset = self.client.delete(path, params={"article": "949558341"}, headers=headers)
+        self.assertEqual(reset.status_code, 200, reset.text)
+        self.assertIsNone(reset.json()["settings"]["target_drr_percent"])
+        self.assertIsNone(reset.json()["settings"]["target_roi_percent"])
+        stored = db.get_unit_economics_1c_product_settings("rimili", "949558341")
+        self.assertIsNone(stored.target_drr_percent)
+        self.assertIsNone(stored.target_roi_percent)
+
+        invalid = self.client.put(
+            path,
+            json={"article": "949558341", "target_drr_percent": 101, "target_roi_percent": 20},
+            headers=headers,
+        )
+        self.assertEqual(invalid.status_code, 422, invalid.text)
+
     def _unit_economics_product(self, store_slug: str, article: str) -> dict:
         response = self.client.get(
             "/sales/unit-economics-1c",
@@ -254,6 +425,7 @@ class WebRouteUnitTests(unittest.TestCase):
             "static/stock-randomizer.js": "copyIdentifier",
             "static/unit-economics-1c.js": "data-copy-kind",
             "static/unit-economics-1c-report.js": "copyIdentifier",
+            "static/unit-economics-1c-target-price.js": "copyIdentifier",
             "templates/store_content.html": "CheckStockIdentifierCopy.html",
         }
         for relative_path, expected in copy_sources.items():
@@ -847,7 +1019,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("overflow-x: hidden", styles)
         self.assertIn('data-copy-tooltip="нажмите чтобы скопировать"', script)
         self.assertIn('data-glued-product-open="', script)
-        self.assertIn("function locateProductInTable(product)", script)
+        self.assertIn("function locateProductInTable(product, preset)", script)
         self.assertIn("Math.floor(productIndex / state.pageSize) + 1", script)
         self.assertIn("targetRow.scrollIntoView", script)
         self.assertIn("targetRow.classList.add('is-located')", script)
@@ -864,6 +1036,13 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("loadProducts({ silent: true, refreshDetail: true })", script)
         self.assertIn("document.addEventListener('visibilitychange'", script)
         self.assertIn("async function refreshSelectedDetail()", script)
+        self.assertIn("var calculatorSessionProductId = null", script)
+        self.assertIn("var calculatorDraft = null", script)
+        self.assertIn("if (calculatorSessionProductId !== product.id)", script)
+        self.assertIn("function rememberCalculatorDraft()", script)
+        self.assertIn("function restoreCalculatorDraft(product)", script)
+        self.assertIn("calculatorSessionProductId = null;", script)
+        self.assertEqual(script.count("fillCalculator(product);"), 2)
         self.assertIn('id="ue1c-period-from" type="date"', template)
         self.assertIn('id="ue1c-period-to" type="date"', template)
         self.assertIn('id="ue1c-period-apply"', template)
@@ -902,6 +1081,7 @@ class WebRouteUnitTests(unittest.TestCase):
             "commission",
             "commissionRub",
             "drr",
+            "buyoutPercent",
             "advertisingRub",
             "logistics",
             "storage",
@@ -925,9 +1105,8 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("- walletPriceFactor * acquiringPercent / 100", script)
         self.assertNotIn("current * drrPercent / 100", script)
         self.assertIn("var advertising = advertisingRub", script)
-        self.assertIn("advertisingBase * drr / 100", script)
-        self.assertIn("advertisingRub / advertisingBase * 100", script)
-        self.assertNotIn("buyoutRatio", script)
+        self.assertIn("Math.max(retail, 0) * Math.max(drr, 0) / 100 * buyoutRatio", script)
+        self.assertIn("advertisingRub / (retail * buyoutPercent / 100) * 100", script)
         self.assertIn("current * teamCommissionPercent / 100", script)
         self.assertNotIn("clientPrice * teamCommissionPercent / 100", script)
         self.assertIn("- teamCommissionPercent / 100", script)
@@ -951,7 +1130,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('id="ue1c-calculator-mode" type="checkbox" role="switch"', template)
         self.assertIn('id="ue1c-calculator-inputs"', template)
         self.assertIn("Затраты на ФФ", template)
-        self.assertIn("Рекламные расходы на выкупленную единицу, руб", template)
+        self.assertIn("Рекламные расходы на единицу, руб", template)
         self.assertIn('id="ue1c-secondary-tax-label"', template)
         for output_id in (
             "ue1c-spp-percent",
@@ -1016,14 +1195,14 @@ class WebRouteUnitTests(unittest.TestCase):
             template,
         )
         self.assertIn(
-            "Реклама на единицу</strong> = рекламные расходы за 7 дней ÷ заказы воронки за 7 дней ÷ (процент выкупа ÷ 100)",
+            "Фактическая реклама на единицу</strong> = рекламные расходы за 7 дней ÷ заказы воронки за 7 дней ÷ (процент выкупа ÷ 100)",
             template,
         )
         self.assertIn(
             "ДРР с выкупом</strong> = рекламные расходы за 7 дней ÷ (оборот заказов за 7 дней × процент выкупа ÷ 100) × 100%",
             template,
         )
-        self.assertIn("Рекламные расходы на выкупленную единицу, руб", template)
+        self.assertIn("Рекламные расходы на единицу, руб", template)
         self.assertIn("НДС</strong> = цена с СПП ÷ (100 + ставка) × ставка", template)
         self.assertIn("УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100", template)
         self.assertIn('id="ue1c-subject-select"', template)
@@ -2312,6 +2491,26 @@ class WebRouteUnitTests(unittest.TestCase):
             params={"date_from": "2026-08-20", "date_to": "2026-08-19"},
         )
         self.assertEqual(invalid_export.status_code, 422)
+
+    def test_unit_profit_report_has_accessible_search_in_each_filter(self) -> None:
+        page = self.client.get("/sales/unit-economics-1c/reports/unit-profit")
+        self.assertEqual(page.status_code, 200)
+        for kind, label in (
+            ("store", "Поиск магазинов"),
+            ("subject", "Поиск предметов"),
+            ("manager", "Поиск менеджеров"),
+            ("article", "Поиск товаров по названию или артикулу"),
+        ):
+            with self.subTest(filter=kind):
+                self.assertIn(f'type="search" id="ue1cr-{kind}-search"', page.text)
+                self.assertIn(f'aria-label="{label}"', page.text)
+        self.assertEqual(page.text.count('class="ue1cr-filter-picker'), 4)
+
+        self.user["role"] = "user"
+        page = self.client.get("/sales/unit-economics-1c/reports/unit-profit")
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn('id="ue1cr-manager-search"', page.text)
+        self.assertEqual(page.text.count('class="ue1cr-filter-picker'), 3)
 
     def test_unit_profit_report_paginates_only_daily_product_details(self) -> None:
         products = [

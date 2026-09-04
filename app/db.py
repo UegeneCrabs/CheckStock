@@ -274,6 +274,9 @@ from app.repositories.unit_economics_1c import (
     save_product_settings as save_unit_economics_1c_product_settings,
 )
 from app.repositories.unit_economics_1c import (
+    save_product_targets as save_unit_economics_1c_product_targets,
+)
+from app.repositories.unit_economics_1c import (
     upsert_daily_prices as upsert_unit_economics_1c_daily_prices,
 )
 from app.repositories.unit_economics_1c import (
@@ -434,6 +437,7 @@ __all__ = (
     "save_unit_economics_1c_cabinet_settings",
     "save_unit_economics_1c_daily_margin_snapshots",
     "save_unit_economics_1c_product_settings",
+    "save_unit_economics_1c_product_targets",
     "save_ui_preference",
     "search_catalog",
     "seed_defaults",

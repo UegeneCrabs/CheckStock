@@ -169,6 +169,12 @@ def _migrate_unit_economics_1c_cabinet_settings(database: Database) -> None:
     table_name = "unit_economics_1c_cabinet_settings"
     with database.connect() as connection:
         columns = connection.column_names(table_name)
+        for goal, default in (("target_drr_percent", 8), ("target_roi_percent", 50)):
+            if columns and goal not in columns:
+                connection.execute(
+                    f"ALTER TABLE {table_name} ADD COLUMN {goal} FLOAT NOT NULL DEFAULT {default}"
+                )
+                columns.add(goal)
         if columns and "default_buyout_percent" not in columns:
             connection.execute(
                 f"ALTER TABLE {table_name} ADD COLUMN default_buyout_percent FLOAT"
@@ -224,13 +230,16 @@ def _migrate_unit_economics_1c_cabinet_settings(database: Database) -> None:
 
 
 def _migrate_unit_economics_1c_product_settings(database: Database) -> None:
-    """Remove the retired manually entered buyout percentage."""
+    """Migrate per-product calculator and target settings."""
 
     table_name = "unit_economics_1c_product_settings"
     with database.connect() as connection:
         columns = connection.column_names(table_name)
         if "buyout_percent" in columns:
             connection.execute(f"ALTER TABLE {table_name} DROP COLUMN buyout_percent")
+        for column in ("target_drr_percent", "target_roi_percent"):
+            if columns and column not in columns:
+                connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} FLOAT")
         connection.commit()
 
 

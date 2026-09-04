@@ -555,6 +555,28 @@ class RepositoryUnitTests(unittest.TestCase):
         self.assertEqual(saved.delivery_wb_rub, 120)
         self.assertEqual(saved.volume_l, 1.2)
         self.assertEqual(saved.updated_by_name, "Unit Admin")
+        targeted = db.save_unit_economics_1c_product_targets(
+            "rimili",
+            "949558341",
+            4.5,
+            25,
+            updated_at=NOW,
+            updated_by_user_id=7,
+            updated_by_name="Unit Admin",
+        )
+        self.assertEqual(targeted.target_drr_percent, 4.5)
+        self.assertEqual(targeted.target_roi_percent, 25)
+        self.assertEqual(targeted.delivery_wb_rub, 120)
+        saved_again = db.save_unit_economics_1c_product_settings(
+            "rimili",
+            UnitEconomics1CProductSettingsRequest(article="949558341", delivery_wb_rub=90),
+            updated_at=NOW,
+            updated_by_user_id=7,
+            updated_by_name="Unit Admin",
+        )
+        self.assertEqual(saved_again.delivery_wb_rub, 90)
+        self.assertEqual(saved_again.target_drr_percent, 4.5)
+        self.assertEqual(saved_again.target_roi_percent, 25)
         listed = db.list_unit_economics_1c_product_settings(("rimili", "tris"))
         self.assertEqual([(item.store_slug, item.article) for item in listed], [("rimili", "949558341")])
 

@@ -2113,8 +2113,12 @@ async def sales_unit_economics_1c_unit_profit_report(request: Request):
             '<div class="ue1cr-filter"><span>Менеджеры</span>'
             '<details class="ue1cr-multi" id="ue1cr-manager">\n'
             '                <summary id="ue1cr-manager-summary">Все менеджеры</summary>\n'
+            '                <div class="ue1cr-filter-picker">\n'
+            '                    <input type="search" id="ue1cr-manager-search" '
+            'placeholder="Имя менеджера" aria-label="Поиск менеджеров" autocomplete="off">\n'
             '                <div class="ue1cr-multi-options" '
             'id="ue1cr-manager-options"></div>\n'
+            '                </div>\n'
             "            </details></div>"
             if show_manager_filter
             else ""
@@ -2445,7 +2449,7 @@ async def _unit_economics_1c_unit_profit_report_data(
                         "cancel_amount": funnel_totals["cancel_amount"],
                         "net_orders_count": funnel_totals["net_orders_count"],
                         "net_orders_amount": funnel_totals["net_orders_amount"],
-                        "buyout_percent": historical_economics["buyout_percent"],
+                        "buyout_percent": advertising["buyout_percent"],
                         "buyout_count": period_product_metrics.get("buyout_count"),
                         "buyout_amount": period_product_metrics.get("buyout_amount"),
                         "buyout_orders_count": historical_economics["buyout_orders_count"],
@@ -2479,7 +2483,7 @@ async def _unit_economics_1c_unit_profit_report_data(
                         "advertising_spend": historical_economics["advertising_spend"],
                         "advertising_per_unit": report_advertising_per_unit,
                         "expected_buyout_amount": historical_economics["expected_buyout_amount"],
-                        "drr": historical_economics["drr"],
+                        "drr": advertising["drr"],
                         "retail_price": details["retail_price_used"],
                         "customer_price": details["customer_price_used"],
                         "customer_price_source": details["customer_price_source"],

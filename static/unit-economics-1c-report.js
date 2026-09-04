@@ -29,7 +29,6 @@
         scopeNote: document.getElementById('ue1cr-scope-note'),
         marginCoverageNote: document.getElementById('ue1cr-margin-coverage-note'),
         showImages: document.getElementById('ue1cr-show-images'),
-        articleSearch: document.getElementById('ue1cr-article-search'),
         storeOptions: document.getElementById('ue1cr-store-options'),
         subjectOptions: document.getElementById('ue1cr-subject-options'),
         managerOptions: document.getElementById('ue1cr-manager-options'),
@@ -60,7 +59,6 @@
         manager: new Set(),
         article: new Set(),
         rows: [],
-        articleOptions: [],
         showImages: preferences.showImages === true,
         showDailyDetails: preferences.showDailyDetails === true,
         dailyDetailsLoaded: false,
@@ -93,6 +91,14 @@
         manager: nodes.managerSummary,
         article: nodes.articleSummary
     };
+    var searchNodes = {
+        store: document.getElementById('ue1cr-store-search'),
+        subject: document.getElementById('ue1cr-subject-search'),
+        manager: document.getElementById('ue1cr-manager-search'),
+        article: document.getElementById('ue1cr-article-search')
+    };
+    var filterOptions = { store: [], subject: [], manager: [], article: [] };
+    var filterMenus = nodes.form.querySelectorAll('.ue1cr-multi');
     var summaryLabels = {
         store: ['Все магазины', 'магазина', 'магазинов'],
         subject: ['Все предметы', 'предмета', 'предметов'],
@@ -279,13 +285,25 @@
             : '<div class="ue1cr-no-options">Нет вариантов</div>';
         summary(kind);
     }
-    function renderArticleOptions() {
-        var query = nodes.articleSearch.value.trim().toLocaleLowerCase('ru-RU');
-        var filtered = state.articleOptions.filter(function (item) {
-            return !query || [item.article, item.name, item.store_name].join(' ')
-                .toLocaleLowerCase('ru-RU').indexOf(query) !== -1;
-        }).slice(0, 200);
-        renderOptions('article', filtered);
+    function renderFilterOptions(kind) {
+        var query = searchNodes[kind]
+            ? searchNodes[kind].value.trim().toLocaleLowerCase('ru-RU') : '';
+        var filtered = filterOptions[kind].filter(function (item) {
+            var text = kind === 'article' ? [item.article, item.name, item.store_name].join(' ')
+                : kind === 'store' ? [item.slug, item.name].join(' ') : String(item);
+            return !query || text.toLocaleLowerCase('ru-RU').indexOf(query) !== -1;
+        });
+        if (kind === 'article') filtered = filtered.slice(0, 200);
+        renderOptions(kind, filtered);
+    }
+    function setFilterOptions(kind, items) {
+        filterOptions[kind] = items || [];
+        renderFilterOptions(kind);
+    }
+    function closeFilterMenus(except) {
+        filterMenus.forEach(function (menu) {
+            if (menu !== except) menu.open = false;
+        });
     }
     function productMedia(row) {
         if (!state.showImages || !row.image_url) return '';
@@ -715,10 +733,9 @@
                 throw new Error(result.error || 'Не удалось загрузить параметры отчёта');
             }
             if (requestId !== filterRequestId) return;
-            state.articleOptions = result.filters.articles || [];
-            renderOptions('subject', result.filters.subjects || []);
-            renderOptions('manager', result.filters.managers || []);
-            renderArticleOptions();
+            setFilterOptions('subject', result.filters.subjects);
+            setFilterOptions('manager', result.filters.managers);
+            setFilterOptions('article', result.filters.articles);
         } catch (error) {
             if (requestId !== filterRequestId) return;
             nodes.error.textContent = error.message || 'Не удалось загрузить параметры отчёта';
@@ -822,12 +839,11 @@
                     totalCount: state.totalCount
                 };
             }
-            state.articleOptions = result.filters.articles || [];
             state.reportLoaded = true;
             state.lastLoadedAt = Date.now();
-            renderOptions('subject', result.filters.subjects || []);
-            renderOptions('manager', result.filters.managers || []);
-            renderArticleOptions();
+            setFilterOptions('subject', result.filters.subjects);
+            setFilterOptions('manager', result.filters.managers);
+            setFilterOptions('article', result.filters.articles);
             renderRows();
             var undercoveredDays = result.totals
                 ? result.totals.margin_undercovered_days || [] : [];
@@ -923,9 +939,9 @@
         if (kind === 'store') {
             ['subject', 'manager', 'article'].forEach(function (child) {
                 state[child].clear();
+                if (searchNodes[child]) searchNodes[child].value = '';
                 summary(child);
             });
-            nodes.articleSearch.value = '';
             loadFilterOptions();
         }
         summary(kind);
@@ -944,11 +960,28 @@
         nodes.columnPanel.hidden = !open;
         nodes.columnsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
+    filterMenus.forEach(function (menu) {
+        menu.addEventListener('toggle', function () {
+            if (menu.open) closeFilterMenus(menu);
+        });
+    });
     document.addEventListener('click', function (event) {
+        filterMenus.forEach(function (menu) {
+            if (!menu.contains(event.target)) menu.open = false;
+        });
         if (nodes.columnPanel.hidden || nodes.columnPanel.contains(event.target)
             || nodes.columnsToggle.contains(event.target)) return;
         nodes.columnPanel.hidden = true;
         nodes.columnsToggle.setAttribute('aria-expanded', 'false');
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        filterMenus.forEach(function (menu) {
+            if (!menu.open) return;
+            event.preventDefault();
+            menu.open = false;
+            if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
+        });
     });
     nodes.columnList.addEventListener('change', function (event) {
         var option = event.target.closest('[data-column-key]');
@@ -1049,14 +1082,19 @@
         savePreferences();
         load();
     });
-    nodes.articleSearch.addEventListener('input', renderArticleOptions);
-    nodes.articleSearch.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') event.preventDefault();
+    Object.keys(searchNodes).forEach(function (kind) {
+        var input = searchNodes[kind];
+        if (!input) return;
+        input.addEventListener('input', function () { renderFilterOptions(kind); });
+        input.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') event.preventDefault();
+        });
     });
     nodes.table.addEventListener('tablefilterchange', updateVisibleTotal);
     nodes.export.addEventListener('click', downloadExcel);
     nodes.form.addEventListener('submit', function (event) {
         event.preventDefault();
+        closeFilterMenus();
         state.page = 1;
         state.dailyDetailsLoaded = false;
         state.unpaginatedSnapshot = null;
@@ -1081,10 +1119,10 @@
     renderColumnSettings();
     renderDailyHeaders();
     renderPagination();
-    renderOptions('store', config.stores || []);
-    renderOptions('subject', []);
-    renderOptions('manager', []);
-    renderArticleOptions();
+    setFilterOptions('store', config.stores);
+    setFilterOptions('subject', []);
+    setFilterOptions('manager', []);
+    setFilterOptions('article', []);
     updateExportLink();
     loadFilterOptions();
 })();
