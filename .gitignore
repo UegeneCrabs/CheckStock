@@ -16,6 +16,7 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 data/*.tmp
+data/*.dump
 data/exports/
 
 identifier.sqlite
