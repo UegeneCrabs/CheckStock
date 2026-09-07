@@ -31,7 +31,7 @@ def replace_marketplace_stock_daily_history(
                    AND stock.scheme IN ({scheme_placeholders})
                  WHERE items.store_slug=? AND items.marketplace=? AND items.is_service=0
                  GROUP BY items.store_slug, items.marketplace, items.article
-                 ORDER BY items.id
+                 ORDER BY MIN(items.id)
                 """,
                 (*source_schemes, store_slug, marketplace),
             ).fetchall()

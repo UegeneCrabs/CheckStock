@@ -21,10 +21,9 @@ SOURCE_SPREADSHEET_ID = "1q0WL6OB3Edh2O1ogqx7CK3MAij3O6xjD6gE0i3q3qEY"
 SOURCE_SHEETS = {
     "wb": (
         "RIMILI WB",
-        "SOKOLOFF и TRUSTHOME WB",
-        "TOYKA WB",
+        "SOKOLOFF + TRUSTHOME WB",
         "TRIS WB",
-        "ROCKKIDDO WB",
+        "ROCKKIDDO + TOYKA WB",
         "GOGOL WB",
     ),
     "ozon": (

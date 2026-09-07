@@ -9,10 +9,9 @@ from app import ftp_export
 def test_source_configuration_includes_all_google_apps_script_sheets() -> None:
     assert ftp_export.SOURCE_SHEETS["wb"] == (
         "RIMILI WB",
-        "SOKOLOFF и TRUSTHOME WB",
-        "TOYKA WB",
+        "SOKOLOFF + TRUSTHOME WB",
         "TRIS WB",
-        "ROCKKIDDO WB",
+        "ROCKKIDDO + TOYKA WB",
         "GOGOL WB",
     )
     assert ftp_export.SOURCE_SHEETS["ozon"][-1] == "GOGOL OZON"

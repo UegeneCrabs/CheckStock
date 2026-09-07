@@ -151,7 +151,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         SyncJobDefinition(
             "ftp_wb_export",
             "FTP — себестоимость WB",
-            "Собирает себестоимость из шести WB-листов и отправляет файл data.json на FTP.",
+            "Собирает себестоимость из пяти WB-листов и отправляет файл data.json на FTP.",
             (
                 f"Ежедневно с {settings.ftp_export_start_hour:02d}:"
                 f"{settings.ftp_export_start_minute:02d} до "
