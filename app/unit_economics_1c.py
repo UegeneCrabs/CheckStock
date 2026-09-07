@@ -709,7 +709,7 @@ def sync_prices_due(store_slugs: tuple[str, ...] | None = None) -> dict[str, dic
 def sync_wallet_prices(store_slugs: tuple[str, ...] | None = None) -> dict[str, dict]:
     """Refresh public SPP and WB Wallet prices without calling the seller-price API."""
 
-    return price_sync.sync_stores(
+    reports = price_sync.sync_stores(
         tuple(
             store_slug for store_slug in (tuple(STORES) if store_slugs is None else store_slugs)
             if store_slug in STORES
@@ -717,6 +717,13 @@ def sync_wallet_prices(store_slugs: tuple[str, ...] | None = None) -> dict[str, 
         load_retail_prices=False,
         record_state=False,
     )
+    for store_slug, report in reports.items():
+        ok = bool(report.get("ok")) and bool(report.get("wallet_discount_ok"))
+        db.record_sync_health(
+            store_slug, "WB", "unit_economics_1c_wallet", ok,
+            report.get("wallet_error") or report.get("error"), datetime.now(UTC).isoformat(),
+        )
+    return reports
 
 
 def sync_due() -> dict[str, dict]:

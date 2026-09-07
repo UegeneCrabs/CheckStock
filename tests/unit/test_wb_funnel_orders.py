@@ -331,7 +331,7 @@ class WbFunnelOrdersTests(unittest.TestCase):
         self.assertEqual(
             days_to_sync,
             [
-                date.today() - timedelta(days=offset)
+                datetime.now(funnel_orders.MOSCOW).date() - timedelta(days=offset)
                 for offset in range(funnel_orders.RECENT_REFRESH_DAYS)
             ],
         )
