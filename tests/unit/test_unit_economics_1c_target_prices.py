@@ -190,6 +190,26 @@ class TargetPriceCalculationTests(unittest.TestCase):
         self.assertLess(custom["target_price"], default["target_price"])
         self.assertFalse(default["target_overridden"])
 
+    def test_code_goal_is_used_by_report_calculator_and_product_override_reset(self):
+        reference = {**self.reference, "abc_code": " b "}
+        custom_cabinet = self.cabinet.model_copy(update={"target_roi_by_code": {"B": 35}})
+        default = self.row(reference=reference, cabinet=custom_cabinet)
+        self.assertEqual(default["target_roi"], 35)
+        self.assertEqual(default["cabinet_target_roi"], 35)
+        self.assertEqual(default["calculator"]["target_roi"], 35)
+        self.assertEqual(default["calculator"]["cabinet_target_roi"], 35)
+        self.assertLessEqual(abs(default["target_actual_roi"] - 35), 0.1)
+        overridden = self.row(
+            reference=reference,
+            cabinet=custom_cabinet,
+            product_settings=self.settings.model_copy(update={"target_roi_percent": 0}),
+        )
+        self.assertEqual(overridden["target_roi"], 0)
+        self.assertEqual(overridden["cabinet_target_roi"], 35)
+        self.assertTrue(overridden["target_overridden"])
+        self.assertLess(overridden["target_price"], default["target_price"])
+        self.assertEqual(overridden["current_roi"], default["current_roi"])
+
     def test_tax_system_and_turnover_zero_follow_calculator(self):
         gogol = self.cabinet.model_copy(
             update={"store_slug": "gogol", "tax_system": "osno", "osno_percent": 20}

@@ -18,7 +18,7 @@ const calculator = {retail:3086.25,client:2469,wallet:2345,spp:20,wallet_percent
   acquiring_percent:3.8,delivery_with_returns:80,
   storage_wb_rub:2,turnover_days:21,wb_commission_percent:20,purchase_price:700,
   fulfillment_cost:50,team_commission_percent:2,vat_percent:9,usn_percent:6,osno_percent:0,tax_system:'usn'};
-const baseRow = {store_slug:'rimili',store_name:'RIMILI',article:'949558341 / 42+',name:'Лампа «Тест»',image_url:'http://localhost:4180/product.png',
+const baseRow = {store_slug:'rimili',store_name:'RIMILI',code:'A',orders_amount:12000,article:'949558341 / 42+',name:'Лампа «Тест»',image_url:'http://localhost:4180/product.png',
   current_price:1520,current_drr:0,current_roi:15,target_price:2345,target_retail_price:3086.25,
   target_spp_price:2469,target_actual_roi:50,target_drr:7.5,target_roi:50,target_overridden:false,
   cabinet_target_drr:7.5,cabinet_target_roi:50,advertising_base:1800,
@@ -52,7 +52,8 @@ const baseRow = {store_slug:'rimili',store_name:'RIMILI',article:'949558341 / 42
     if(url.pathname==='/api/unit-economics-1c/reports/target-price') {
       const current={...baseRow,target_drr:targetDrr,target_roi:targetRoi,target_overridden:targetOverridden,
         calculator:{...calculator,drr:targetDrr,target_roi:targetRoi,target_overridden:targetOverridden}};
-      return route.fulfill({json:{ok:true,period_from:'2026-08-27',period_to:'2026-09-02',rows:[current,{...current,article:'other',name:'Другой товар'}]}});
+      return route.fulfill({json:{ok:true,period_from:'2026-08-27',period_to:'2026-09-02',rows:[
+        {...current,article:'other',name:'Другой товар',code:'D',orders_amount:5000,target_price:9000},current]}});
     }
     if(url.pathname.endsWith('/reports/target-price')) return route.fulfill({contentType:'text/html',body:html});
     return route.fulfill({json:{ok:true}});
@@ -62,6 +63,22 @@ const baseRow = {store_slug:'rimili',store_name:'RIMILI',article:'949558341 / 42
     await page.locator('#uetp-rows tr').first().waitFor();
     assert.equal(await page.locator('#uetp-filter').count(),0);
     assert.equal((await page.locator('#uetp-rows').textContent()).includes('≈'),false);
+    assert.equal(await page.locator('#uetp-rows .copy-identifier').first().getAttribute('data-copy-value'),baseRow.article);
+    assert.equal(await page.locator('#uetp-rows tr').first().locator('td').count(),9);
+    assert.equal(await page.locator('#uetp-rows tr').first().locator('td').nth(2).textContent(),'A');
+    assert.equal(await page.locator('#uetp-table [data-sort=orders_amount]').count(),0);
+    assert.equal((await page.locator('#uetp-rows').textContent()).includes('12 000'),false);
+    await page.evaluate(()=>document.getElementById('uetp-table')._tfAdapter.filter({'2':new Set(['D'])}));
+    assert.equal(await page.locator('#uetp-rows tr').count(),1);
+    assert.equal(await page.locator('#uetp-rows .copy-identifier').getAttribute('data-copy-value'),'other');
+    await page.evaluate(()=>document.getElementById('uetp-table')._tfAdapter.filter({}));
+    await page.locator('[data-sort=code]').click();
+    assert.equal(await page.locator('#uetp-rows tr').first().locator('td').nth(2).textContent(),'D');
+    await page.locator('[data-sort=code]').click();
+    assert.equal(await page.locator('#uetp-rows tr').first().locator('td').nth(2).textContent(),'A');
+    await page.evaluate(()=>document.getElementById('uetp-table')._tfAdapter.sort(6,'desc'));
+    assert.equal(await page.locator('#uetp-rows .copy-identifier').first().getAttribute('data-copy-value'),'other');
+    await page.evaluate(()=>document.getElementById('uetp-table')._tfAdapter.sort(6,'asc'));
     const article=page.locator('#uetp-rows .copy-identifier').first(); await article.hover();
     await page.getByText('Нажмите, чтобы скопировать',{exact:true}).waitFor(); await article.click();
     assert.equal(await page.evaluate(()=>window.copied),baseRow.article);
@@ -80,6 +97,19 @@ const baseRow = {store_slug:'rimili',store_name:'RIMILI',article:'949558341 / 42
     assert.equal(await page.locator('[data-calc=drr]').inputValue(),'7.5');
     assert.equal(await page.locator('[data-calc=buyout_percent]').inputValue(),'80');
     assert.equal(await page.locator('[data-calc=target_roi]').inputValue(),'50');
+    assert.equal(await page.locator('[data-calc=advertising_rub]').inputValue(),'185.18');
+    const targetTile=page.locator('[data-result=target_price]');
+    assert.equal((await targetTile.textContent()).replace(/\s/g,''),'Целеваяцена2345₽');
+    const wallet=page.locator('[data-calc=wallet]');
+    for(const [price,highlight] of [['2347',false],['2347.01',true],['2342.99',true],['2343',false],['',false]]) {
+      await wallet.fill(price);
+      assert.equal(await wallet.evaluate(input=>input.classList.contains('is-off-target')),highlight);
+      if(highlight) assert.equal(await wallet.evaluate(input=>getComputedStyle(input).backgroundColor),'rgb(255, 240, 241)');
+      assert.equal((await targetTile.textContent()).replace(/\s/g,''),'Целеваяцена2345₽');
+    }
+    await page.locator('#uetp-drawer-close').click();
+    await page.locator('#uetp-rows .uetp-product-link').first().click();
+    assert.equal(await wallet.evaluate(input=>input.classList.contains('is-off-target')),false);
     assert.equal(await page.locator('[data-calc=advertising_rub]').inputValue(),'185.18');
     await page.locator('[data-calc=drr]').fill('10');
     const advertisingFormula = await page.locator('#uetp-drawer').evaluate(drawer => {
@@ -103,9 +133,11 @@ const baseRow = {store_slug:'rimili',store_name:'RIMILI',article:'949558341 / 42
     await page.locator('#uetp-drawer-close').click(); await page.locator('#uetp-search').fill('949558341');
     const download=page.waitForEvent('download'); await page.locator('#uetp-export').click(); await download;
     assert.equal(exports.length,1); assert.equal(exports[0].rows.length,1); assert.equal(exports[0].rows[0].article,baseRow.article);
+    assert.equal(exports[0].rows[0].code,'A');
+    assert.equal(Object.hasOwn(exports[0].rows[0],'orders_amount'),false);
     await page.setViewportSize({width:390,height:844}); await page.locator('#uetp-rows .uetp-product-link').click();
     await page.waitForFunction(()=>{const r=document.getElementById('uetp-drawer').getBoundingClientRect();return r.left>=0&&Math.abs(r.right-innerWidth)<1});
     assert.deepEqual(errors,[]);
-    console.log('PASS calculator drawer, no selector/approximation marker, filtered XLSX and responsive layout');
+    console.log('PASS turnover ranking, code column/filter/sort/export, fixed target tile, wallet threshold, calculator goals/formulas and responsive layout');
   } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1});

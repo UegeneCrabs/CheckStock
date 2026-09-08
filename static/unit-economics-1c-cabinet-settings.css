@@ -416,6 +416,27 @@
     gap: 11px 12px;
 }
 
+.ue1cs-roi-group {
+    min-width: 0;
+    margin: 16px 0 0;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.ue1cs-roi-group legend {
+    padding: 0 6px;
+    color: var(--text);
+    font-size: 0.69rem;
+    font-weight: 600;
+}
+
+.ue1cs-roi-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 11px 12px;
+}
+
 .ue1cs-field {
     display: grid;
     min-width: 0;

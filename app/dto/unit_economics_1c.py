@@ -1,12 +1,29 @@
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.dto.common import DtoModel
 
+TargetRoiCode = Literal["A", "B", "C", "D", "F", "NEW", "U"]
+TargetRoiPercent = Annotated[float, Field(ge=0, le=1_000_000, allow_inf_nan=False)]
+DEFAULT_TARGET_ROI_BY_CODE: dict[TargetRoiCode, float] = {
+    "A": 20, "B": 30, "C": 50, "D": 0, "F": 50, "NEW": 50, "U": 20,
+}
 
-class UnitEconomics1CCabinetValues(DtoModel):
+
+class UnitEconomics1CTargetRoiValues(DtoModel):
+    target_roi_by_code: dict[TargetRoiCode, TargetRoiPercent] = Field(
+        default_factory=lambda: dict(DEFAULT_TARGET_ROI_BY_CODE)
+    )
+
+    @field_validator("target_roi_by_code")
+    @classmethod
+    def complete_target_roi_by_code(cls, values: dict) -> dict:
+        return {**DEFAULT_TARGET_ROI_BY_CODE, **values}
+
+
+class UnitEconomics1CCabinetValues(UnitEconomics1CTargetRoiValues):
     target_drr_percent: float = Field(default=8, ge=0, le=100)
     target_roi_percent: float = Field(default=50, ge=0, le=1_000_000)
     buyout_period_days: int = Field(default=14, ge=1, le=29)
@@ -25,7 +42,7 @@ class UnitEconomics1CCabinetSettingsRequest(UnitEconomics1CCabinetValues):
     pass
 
 
-class UnitEconomics1CCabinetSettingsWebRequest(DtoModel):
+class UnitEconomics1CCabinetSettingsWebRequest(UnitEconomics1CTargetRoiValues):
     target_drr_percent: float = Field(default=8, ge=0, le=100)
     target_roi_percent: float = Field(default=50, ge=0, le=1_000_000)
     buyout_period_days: int = Field(default=14, ge=1, le=29)
@@ -78,6 +95,7 @@ class UnitEconomics1CProductTargetRequest(DtoModel):
 class UnitEconomics1CTargetPriceExportRow(DtoModel):
     store_slug: str = Field(min_length=1, max_length=100)
     store_name: str = Field(default="", max_length=500)
+    code: str = Field(default="", max_length=100)
     name: str = Field(default="", max_length=2_000)
     article: str = Field(default="", max_length=500)
     current_price: float | None = None

@@ -56,6 +56,8 @@
     var targetCalculatorContext = null;
     var calculatorSessionProductId = null;
     var calculatorDraft = null;
+    var targetPriceQuote = null;
+    var targetPriceController = null;
     var detailRequestId = 0;
     var state = {
         query: '', store: 'all', status: 'all', page: 1, pageSize: 20,
@@ -1243,7 +1245,54 @@
         nodes.secondaryTaxLabel.textContent = 'Налог ' + metrics.secondaryTaxLabel + ', руб';
         var marginClass = metrics.margin === null ? '' : metrics.margin < 0 ? 'is-negative' : 'is-positive';
         nodes.priceMetrics.innerHTML = metric('Чистая прибыль', nullable(metrics.margin, preciseMoney), marginClass)
-            + metric('ROI', nullable(metrics.roi, decimal, '%'), metrics.roi === null ? '' : metrics.roi < 0 ? 'is-negative' : 'is-positive');
+            + metric('ROI', nullable(metrics.roi, decimal, '%'), metrics.roi === null ? '' : metrics.roi < 0 ? 'is-negative' : 'is-positive')
+            + metric('Целевая цена', nullable(targetPriceForProduct(product), preciseMoney), 'ue1c-target-price-value');
+        var quote = targetPriceQuote && targetPriceQuote.productId === product.id ? targetPriceQuote : null;
+        nodes.priceMetrics.querySelector('.ue1c-target-price-value').title = quote
+            ? quote.message : 'Из отчёта «Целевая цена» за последние 7 полных дней';
+        var target = targetPriceForProduct(product);
+        var wallet = finite(values.wallet, null);
+        nodes.walletPriceInput.classList.toggle('is-target-price-different', target !== null
+            && wallet !== null && wallet >= 0 && Math.abs(Math.round(wallet * 100) - Math.round(target * 100)) > 200);
+    }
+    function targetPriceForProduct(product) {
+        return targetPriceQuote && targetPriceQuote.productId === product.id ? targetPriceQuote.price : null;
+    }
+    async function loadTargetReportPrice(product) {
+        if (placeholderMode) return;
+        if (targetPriceController) targetPriceController.abort();
+        var controller = new AbortController();
+        targetPriceController = controller;
+        var quote = { productId: product.id, price: null, message: 'Загружаем целевую цену…' };
+        targetPriceQuote = quote;
+        renderPriceCalculation(product);
+        try {
+            var query = new URLSearchParams({ store: product.store_slug, article: product.article });
+            var response = await window.fetch('/api/unit-economics-1c/reports/target-price?' + query, {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+                signal: controller.signal
+            });
+            var result = await response.json();
+            if (!response.ok || !result.ok || !Array.isArray(result.rows)) {
+                throw new Error('Не удалось загрузить целевую цену');
+            }
+            var row = result.rows.find(function (item) {
+                return item.store_slug === product.store_slug && String(item.article) === String(product.article);
+            });
+            var price = row ? finite(row.target_price, null) : null;
+            quote.price = price !== null && price >= 0 ? price : null;
+            quote.message = 'Из отчёта «Целевая цена» за последние 7 полных дней';
+            if (quote.price === null) {
+                quote.message = row && Array.isArray(row.target_warnings) && row.target_warnings.length
+                    ? row.target_warnings.join('\n') : 'Целевая цена пока не рассчитана';
+            }
+        } catch (error) {
+            if (controller.signal.aborted) return;
+            quote.message = 'Не удалось загрузить целевую цену';
+        }
+        if (targetPriceQuote === quote && state.selected === product.id && nodes.detail.classList.contains('is-open')) {
+            renderPriceCalculation(product);
+        }
     }
     function parameter(label, value) {
         return '<div class="ue1c-parameter"><span>' + escapeHtml(label) + '</span><strong title="'
@@ -1718,6 +1767,7 @@
         renderParameters(product);
         renderGluedProducts(product);
         renderChart(product);
+        loadTargetReportPrice(product);
         setDetailTab('economics');
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
             row.classList.toggle('is-selected', row.dataset.productId === product.id);
@@ -1835,6 +1885,9 @@
     }
     function closeDetail() {
         detailRequestId += 1;
+        if (targetPriceController) targetPriceController.abort();
+        targetPriceController = null;
+        targetPriceQuote = null;
         clearTargetCalculator();
         calculatorSessionProductId = null;
         calculatorDraft = null;

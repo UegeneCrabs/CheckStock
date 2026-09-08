@@ -1,3 +1,5 @@
+import json
+
 from app.dto.unit_economics_1c import (
     UnitEconomics1CCabinetSettings,
     UnitEconomics1CCabinetSettingsRequest,
@@ -572,7 +574,9 @@ def get_cabinet_settings(store_slug: str) -> UnitEconomics1CCabinetSettings:
     conn.close()
     if row is None:
         return UnitEconomics1CCabinetSettings(store_slug=store_slug)
-    return UnitEconomics1CCabinetSettings.from_row(row)
+    payload = dict(row)
+    payload["target_roi_by_code"] = json.loads(payload.get("target_roi_by_code") or "{}")
+    return UnitEconomics1CCabinetSettings.model_validate(payload)
 
 
 def list_cabinet_settings(store_slugs: tuple[str, ...]) -> tuple[UnitEconomics1CCabinetSettings, ...]:
@@ -588,9 +592,11 @@ def save_cabinet_settings(
     updated_by_name: str,
 ) -> UnitEconomics1CCabinetSettings:
     payload = values.model_dump(mode="python")
-    for field in ("default_buyout_percent", "target_drr_percent", "target_roi_percent"):
+    for field in ("default_buyout_percent", "target_drr_percent", "target_roi_percent", "target_roi_by_code"):
         if field not in values.model_fields_set:
             payload.pop(field, None)
+    if "target_roi_by_code" in payload:
+        payload["target_roi_by_code"] = json.dumps(payload["target_roi_by_code"], allow_nan=False)
     columns = tuple(payload)
     with WRITE_LOCK:
         conn = get_connection()
