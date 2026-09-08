@@ -81,6 +81,12 @@ def access_level(user: User | None, section: SectionName) -> SectionAccessLevel:
             )
         if section is SectionName.UNIT_ECONOMICS_1C:
             if "WB" not in accessible_marketplaces(user):
+                # Yandex currently exposes a read-only catalog skeleton.
+                if (
+                    "YANDEX MARKET" in accessible_marketplaces(user)
+                    and profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW)
+                ):
+                    return SectionAccessLevel.READ
                 return SectionAccessLevel.NONE
             if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_EDIT):
                 return SectionAccessLevel.WRITE
