@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,7 @@ from app import (
     unit_economics_1c_history,
     unit_economics_1c_prices,
     unit_economics_1c_report_export,
+    unit_economics_data_errors,
 )
 from app import unit_economics_1c_source_data as unit_economics_1c_source
 from app.access_control import accessible_stores, has_scope
@@ -28,6 +30,7 @@ from app.dto.unit_economics_1c import (
     UnitEconomics1CProductSettings,
     UnitEconomics1CProductSettingsRequest,
 )
+from app.repositories import unit_economics_data_errors as data_errors_repository
 from app.section_access import has_access as has_section_access
 from app.stores import STORES
 from app.sync_tracking import run_tracked
@@ -59,7 +62,8 @@ def _price_value(value: object) -> float | None:
     if value is None:
         return None
     try:
-        return round(float(value), 2)
+        parsed = float(value)
+        return round(parsed, 2) if math.isfinite(parsed) else None
     except (TypeError, ValueError):
         return None
 
@@ -263,6 +267,7 @@ def _unit_economics_1c_mock_product(
     first_sale_at: str | None = None,
     sales_age_today: date | None = None,
     default_buyout_percent: float | None = None,
+    source_states: dict[str, dict] | None = None,
 ) -> dict:
     """Build the 1C layout while keeping WB prices, orders and advertising real."""
     article = str(product.get("article") or "").strip()
@@ -282,6 +287,9 @@ def _unit_economics_1c_mock_product(
     stock_order_metrics = stock_order_metrics or {}
     reputation = reputation or {}
     glued_products = glued_products or []
+    data_errors = unit_economics_data_errors.product_errors(
+        product, price_snapshot, product_reference, product_metrics, reputation, source_states,
+    )
     spp_price = _price_value(price_snapshot.get("customer_price_with_spp"))
     wallet_price = _price_value(price_snapshot.get("customer_price_with_wallet"))
     current_price = _price_value(price_snapshot.get("retail_price"))
@@ -592,6 +600,7 @@ def _unit_economics_1c_mock_product(
 
     return {
         "id": f"{store_slug}:{article}",
+        "data_errors": data_errors,
         "store_slug": store_slug,
         "store_name": store["name"],
         "store_initials": store["initials"],
@@ -794,6 +803,7 @@ def _unit_economics_1c_product_summary(product: dict) -> dict:
         key: product.get(key)
         for key in (
             "id",
+            "data_errors",
             "store_slug",
             "store_name",
             "article",
@@ -939,6 +949,7 @@ async def sales_unit_economics_1c(request: Request):
     include_history = bool(detail_article)
 
     def load_products() -> tuple[list[dict], list[dict]]:
+        source_states = data_errors_repository.source_states(store_slugs)
         latest_rows = db.get_unit_economics_1c_latest_daily_prices(store_slugs)
         prices = {(str(row["store_slug"]), str(row["article"])): row for row in latest_rows}
         today = request_today
@@ -1178,6 +1189,7 @@ async def sales_unit_economics_1c(request: Request):
                     _unit_economics_1c_mock_product(
                         store_slug=store_slug,
                         product=product,
+                        source_states=source_states.get(store_slug, {}),
                         price_snapshot=prices.get((store_slug, article)),
                         acquiring_percent=cabinet.acquiring_percent,
                         default_buyout_percent=cabinet.default_buyout_percent,

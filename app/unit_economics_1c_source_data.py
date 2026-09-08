@@ -277,6 +277,20 @@ def parse_source_values(sheets: list[dict], catalog: list[dict]) -> dict:
 
 
 def sync_all(sheets: list[dict] | None = None) -> dict:
+    try:
+        report = _sync_all(sheets)
+    except Exception as error:
+        for store_slug in STORES:
+            db.record_sync_health(
+                store_slug, "WB", "unit_economics_1c_source", False, str(error), _now(),
+            )
+        raise
+    for store_slug in STORES:
+        db.record_sync_health(store_slug, "WB", "unit_economics_1c_source", True, None, _now())
+    return report
+
+
+def _sync_all(sheets: list[dict] | None = None) -> dict:
     loaded_sheets = sheets if sheets is not None else fetch_wb_sheet_rows()
     catalog = db.list_unit_economics_1c_active_wb_stock_items()
     report = parse_source_values(loaded_sheets, catalog)

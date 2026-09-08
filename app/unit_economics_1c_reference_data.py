@@ -257,14 +257,21 @@ def _threshold() -> str:
 
 def _safe_sync(name: str, callback, *args) -> dict:
     try:
-        return callback(*args)
+        result = callback(*args)
     except Exception as error:
         logger.exception(
             "unit_economics_reference_sync_failed source=%s error_type=%s",
             name,
             type(error).__name__,
         )
-        return {"ok": False, "error": str(error), "error_type": type(error).__name__}
+        result = {"ok": False, "error": str(error), "error_type": type(error).__name__}
+    source, _, store = name.partition(":")
+    for store_slug in (store,) if store else tuple(STORES):
+        db.record_sync_health(
+            store_slug, "WB", f"unit_economics_1c_{source}",
+            result.get("ok") is not False, result.get("error"), _now(),
+        )
+    return result
 
 
 def sync_product_categories_for_stores(store_slugs: tuple[str, ...]) -> dict[str, dict]:

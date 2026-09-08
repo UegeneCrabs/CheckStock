@@ -62,8 +62,15 @@ finally:
     await page.goto('http://localhost:4180/sales/unit-economics-1c');
     const opener = page.locator('[data-product-open]').first();
     await opener.waitFor();
+    const rowError = opener.locator('xpath=ancestor::td').locator('.ue1c-data-error');
+    await rowError.locator('summary').click();
+    assert.match(await rowError.innerText(), /Не загружена себестоимость/);
+    assert.match(await rowError.innerText(), /Не загружены затраты на ФФ/);
+    assert.match(await rowError.innerText(), /Не загружены данные рекламы WB/);
+    assert.equal(await rowError.evaluate(node => getComputedStyle(node).color), 'rgb(185, 28, 28)');
     await opener.click();
     await page.locator('#ue1c-detail.is-open:not(.is-detail-loading)').waitFor();
+    assert.match(await page.locator('#ue1c-detail .ue1c-data-error').innerText(), /Ошибка данных/);
     const price = page.locator('#ue1c-price-input');
     const drr = page.locator('[data-calculator-input=drr]');
     const purchase = page.locator('[data-calculator-input=purchase]');
@@ -84,9 +91,12 @@ finally:
       const url = new URL(response.url());
       return url.pathname === '/sales/unit-economics-1c' && Boolean(url.searchParams.get('article'));
     });
+    bundle.listing.products.forEach(product => { product.data_errors = []; });
+    bundle.detail.product.data_errors = [];
     await page.evaluate(() => window.__runUnitEconomicsRefresh());
     await listRefresh;
     await detailRefresh;
+    await page.waitForFunction(() => document.querySelectorAll('.ue1c-data-error').length === 0);
     assert.equal(await price.inputValue(), '77777');
     assert.equal(await drr.inputValue(), '12.34');
     assert.equal(await purchase.inputValue(), '3333.33');
@@ -101,7 +111,7 @@ finally:
     await page.locator('#ue1c-detail.is-open:not(.is-detail-loading)').waitFor();
     assert.equal(await price.inputValue(), databasePrice);
     assert.deepEqual(errors, []);
-    console.log('PASS calculator values survive background refresh and reset only on reset or drawer exit');
+    console.log('PASS data errors display and clear on refresh; calculator draft survives refresh');
   } finally {
     await browser.close();
   }

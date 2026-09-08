@@ -494,7 +494,7 @@
             + copyValue('Баркод', product.barcode) + '<span>' + escapeHtml(product.store_name) + '</span>'
             + '<span title="Рейтинг товара">★ ' + escapeHtml(nullText(product.rating)) + '</span>'
             + '<span title="Количество отзывов">' + escapeHtml(nullText(product.reviews_count)) + ' отзывов</span>'
-            + '</div></div></div></td>';
+            + '</div>' + dataErrorsHtml(product) + '</div></div></td>';
         cells.comments = '<td class="ue1c-col-comments"><textarea class="ue1c-comment-input" data-comment-id="'
             + escapeHtml(product.id) + '" maxlength="480" placeholder="Добавить комментарий…"'
             + ' aria-label="Комментарий к товару ' + escapeHtml(product.name) + '">'
@@ -1627,6 +1627,16 @@
         var image = nodes.drawerThumb.querySelector('img');
         if (image) image.addEventListener('error', function () { image.hidden = true; }, { once: true });
     }
+    function dataErrorsHtml(product, expanded) {
+        var errors = product.data_errors || [];
+        if (!errors.length) return '';
+        var message = errors.join('; ');
+        return '<details class="ue1c-data-error"' + (expanded ? ' open' : '')
+            + ' title="' + escapeHtml(message) + '"><summary>⚠ Ошибка данных · '
+            + errors.length + '</summary><ul>' + errors.map(function (error) {
+                return '<li>' + escapeHtml(error) + '</li>';
+            }).join('') + '</ul></details>';
+    }
     function renderDetailProduct(product) {
         clearTargetCalculator();
         root.classList.remove('is-detail-loading');
@@ -1636,7 +1646,7 @@
         nodes.drawerTitle.textContent = product.name;
         nodes.drawerMeta.innerHTML = escapeHtml(product.store_name) + ' · '
             + copyValue('Арт.', product.article, 'Артикул') + ' · ★ ' + escapeHtml(nullText(product.rating))
-            + ' · ' + escapeHtml(nullText(product.reviews_count)) + ' отзывов';
+            + ' · ' + escapeHtml(nullText(product.reviews_count)) + ' отзывов' + dataErrorsHtml(product, true);
         syncTaxCalculatorLabel(product);
         if (calculatorSessionProductId !== product.id) {
             fillCalculator(product);

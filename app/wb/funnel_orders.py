@@ -429,7 +429,9 @@ def sync_weekly_metrics_store(store_slug: str) -> dict:
         except Exception as exc:
             message = str(exc)[:700]
             logger.warning("Процент выкупа WB %s не обновлён: %s", store, message)
+            db.record_sync_health(store, "WB", "unit_economics_1c_buyout", False, message, _now_iso())
             return {"store": store, "status": "error", "records": 0, "error": message}
+        db.record_sync_health(store, "WB", "unit_economics_1c_buyout", True, None, _now_iso())
         return {"store": store, "status": "success", "records": len(products)}
 
 

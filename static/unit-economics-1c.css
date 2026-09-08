@@ -416,6 +416,9 @@ body:has(.content--unit-1c) { overflow: hidden; }
 }
 .ue1c-product-name:hover { color: var(--ue-accent); text-decoration: underline; text-underline-offset: 3px; }
 .ue1c-product-meta { margin-top: 5px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--ue-muted); font-size: 10px; }
+.ue1c-data-error { margin-top: 6px; padding: 5px 7px; border: 1px solid #fecaca; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-size: 10px; line-height: 1.4; white-space: normal; }
+.ue1c-data-error summary { cursor: pointer; font-weight: 700; }
+.ue1c-data-error ul { margin: 5px 0 0; padding-left: 15px; }
 .ue1c-newness { text-align: center; }
 .ue1c-newness small { display: block; margin-top: 5px; color: var(--ue-muted); font-size: 9px; }
 .ue1c-new-badge {
