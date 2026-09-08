@@ -1,4 +1,10 @@
 body:has(.content--unit-1c) { overflow: hidden; }
+.ue1c-placeholder-note { margin: 0; padding: 9px 12px; border: 1px solid #e6dbaf; border-radius: 10px; background: #fffbee; color: #74632e; font-size: 12px; flex-shrink: 0; }
+.ue1c-placeholder-calculator { margin-bottom: 18px; }
+.ue1c-placeholder-chart { min-height: 160px; display: grid; place-content: center; color: #77808e; text-align: center; }
+.ue1c-placeholder-chart strong { font-size: 28px; }
+.ue1c-page.is-placeholder .ue1c-calculator:not(.ue1c-placeholder-calculator) { display: none; }
+.ue1c-page.is-placeholder button:disabled, .ue1c-page.is-placeholder select:disabled, .ue1c-page.is-placeholder input:disabled { opacity: .6; cursor: not-allowed; }
 .workspace:has(.content--unit-1c) { height: 100vh; overflow: hidden; }
 .workspace:has(.ue1c-page.has-detail) .topbar {
     width: calc(100% - 620px);

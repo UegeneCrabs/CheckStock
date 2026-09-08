@@ -1,6 +1,7 @@
-    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=45">
+    <link rel="stylesheet" href="/static/unit-economics-1c.css?v=46">
 
-        <section class="ue1c-page" id="unit-economics-1c" aria-label="Юнит-экономика Wildberries">
+        <section class="ue1c-page" id="unit-economics-1c" aria-label="Юнит-экономика $marketplace_name">
+            $unit_1c_notice
             <div class="ue1c-toolbar">
                 <label class="ue1c-field ue1c-search-field">
                     <span aria-hidden="true">⌕</span>
@@ -55,12 +56,12 @@
                     </table>
                     <div class="ue1c-load-state" id="ue1c-products-loading" role="status" aria-live="polite">
                         <i aria-hidden="true"></i>
-                        <strong>Загружаем данные WB…</strong>
-                        <span>Таблица появится сразу после подготовки расчётов.</span>
+                        <strong>Загружаем данные $marketplace_label…</strong>
+                        <span>$loading_description</span>
                     </div>
                     <div class="ue1c-load-state ue1c-load-state--error" id="ue1c-products-error"
                          role="alert" hidden>
-                        <strong>Не удалось загрузить данные WB</strong>
+                        <strong>Не удалось загрузить данные $marketplace_label</strong>
                         <span id="ue1c-products-error-text"></span>
                         <button type="button" id="ue1c-products-retry">Повторить</button>
                     </div>
@@ -239,4 +240,4 @@
         </section>
 
         <script type="application/json" id="ue1c-config">$unit_1c_config</script>
-    <script src="/static/unit-economics-1c.js?v=75"></script>
+    <script src="/static/unit-economics-1c.js?v=76"></script>

@@ -6,6 +6,9 @@
     if (!root || !configNode) return;
 
     var config = JSON.parse(configNode.textContent || '{}');
+    var placeholderMode = config.placeholderMode === true;
+    var marketplaceLabel = String(config.marketplaceLabel || 'WB');
+    root.classList.toggle('is-placeholder', placeholderMode);
     var products = Array.isArray(config.products) ? config.products : [];
     var productsEndpoint = String(config.productsEndpoint || '/sales/unit-economics-1c?data=1');
     var commissionsEndpoint = String(
@@ -17,7 +20,7 @@
     var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     var AUTO_REFRESH_STALE_MS = 60 * 1000;
     var lastProductsLoadedAt = 0;
-    var canEdit = config.canEdit === true;
+    var canEdit = !placeholderMode && config.canEdit === true;
     var productsById = {};
     products.forEach(function (product) {
         product._detailLoaded = Boolean(product.details && Array.isArray(product.history));
@@ -31,10 +34,11 @@
         style: 'currency', currency: 'RUB', minimumFractionDigits: 2, maximumFractionDigits: 2
     });
     var userKey = String(config.userKey || 'anonymous');
-    var commentsKey = 'checkstock.unit-economics-1c.comments.' + userKey;
-    var columnsKey = 'checkstock.unit-economics-1c.columns.' + userKey;
-    var chartKey = 'checkstock.unit-economics-1c.chart.' + userKey;
-    var priceJobsKey = 'checkstock.unit-economics-1c.price-jobs.' + userKey;
+    var storageNamespace = String(config.storageNamespace || 'checkstock.unit-economics-1c');
+    var commentsKey = storageNamespace + '.comments.' + userKey;
+    var columnsKey = storageNamespace + '.columns.' + userKey;
+    var chartKey = storageNamespace + '.chart.' + userKey;
+    var priceJobsKey = storageNamespace + '.price-jobs.' + userKey;
     var comments = readJson(commentsKey, {});
     var pendingPriceJobs = readJson(priceJobsKey, []);
     if (!Array.isArray(pendingPriceJobs)) pendingPriceJobs = [];
@@ -48,7 +52,7 @@
     var sendingPrice = false;
     var editedPriceKind = 'retail';
     var pendingPriceChange = null;
-    var pendingTargetCalculator = readTargetCalculatorLink();
+    var pendingTargetCalculator = placeholderMode ? null : readTargetCalculatorLink();
     var targetCalculatorContext = null;
     var calculatorSessionProductId = null;
     var calculatorDraft = null;
@@ -111,7 +115,7 @@
                 width: 112
             },
             { index: 3, label: 'ROI, %', number: true, width: 85 },
-            { index: 24, label: 'СПП, %', number: true, width: 82 }
+            { index: 24, label: placeholderMode ? 'Скидка, %' : 'СПП, %', number: true, width: 82 }
         ] },
         { key: 'actual', label: 'Экономика за 7 дней', columns: [
             { index: 4, label: 'ТО, ₽', number: true, width: 105 },
@@ -379,6 +383,7 @@
         writeJson(columnsKey, columnPreferences);
         window.clearTimeout(columnSaveTimer);
         columnSaveTimer = window.setTimeout(function () {
+            if (placeholderMode) return;
             window.fetch('/api/unit-economics-1c/preferences/columns', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
@@ -447,7 +452,7 @@
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.stock.total, product.stock.fbs, product.stock.fbo,
             product.stock.fulfillment, product.stock.days,
-            product.is_new ? 'Новинка' : 'Нет',
+            product.is_new === null ? null : product.is_new ? 'Новинка' : 'Нет',
             calculateSppPercent(product)
         ];
         var value = values[Number(columnIndex)];
@@ -486,6 +491,9 @@
                 ? '—' : decimal.format(finite(current.buyout_percent, 0)) + '%')
             + (product.advertising.buyout_default_applied ? ' · выкуп по умолчанию' : '')
             + ' · реклама ' + nullable(current.advertising_spend, preciseMoney);
+        if (placeholderMode) {
+            advertisingTitle = stockTitle = currentTitle = 'Данные пока не подключены';
+        }
         var cells = {};
         cells.product = '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')
             + '<div><button class="ue1c-product-name" type="button" data-product-open="' + escapeHtml(product.id)
@@ -496,11 +504,13 @@
             + '<span title="Количество отзывов">' + escapeHtml(nullText(product.reviews_count)) + ' отзывов</span>'
             + '</div>' + dataErrorsHtml(product) + '</div></div></td>';
         cells.comments = '<td class="ue1c-col-comments"><textarea class="ue1c-comment-input" data-comment-id="'
-            + escapeHtml(product.id) + '" maxlength="480" placeholder="Добавить комментарий…"'
+            + escapeHtml(product.id) + '" maxlength="480"'
+            + (placeholderMode ? ' placeholder="—" disabled' : ' placeholder="Добавить комментарий…"')
             + ' aria-label="Комментарий к товару ' + escapeHtml(product.name) + '">'
             + escapeHtml(commentText(product.id)) + '</textarea></td>';
         cells.newness = '<td class="ue1c-newness"><span class="ue1c-new-badge'
-            + (product.is_new ? ' is-new' : '') + '">' + (product.is_new ? 'Новинка' : 'Обычный')
+            + (product.is_new ? ' is-new' : '') + '">'
+            + (product.is_new === null ? '—' : product.is_new ? 'Новинка' : 'Обычный')
             + '</span><small>' + (product.sales_days === null || product.sales_days === undefined
                 ? 'нет данных' : integer.format(product.sales_days) + ' дн.') + '</small></td>';
         var currentSpp = calculateSppPercent(product);
@@ -654,13 +664,13 @@
         nodes.productsLoading.hidden = !loading;
         nodes.search.disabled = loading;
         nodes.store.disabled = loading;
-        nodes.periodDays.disabled = loading;
-        nodes.periodFrom.disabled = loading;
-        nodes.periodTo.disabled = loading;
-        nodes.periodApply.disabled = loading;
+        nodes.periodDays.disabled = loading || placeholderMode;
+        nodes.periodFrom.disabled = loading || placeholderMode;
+        nodes.periodTo.disabled = loading || placeholderMode;
+        nodes.periodApply.disabled = loading || placeholderMode;
         nodes.pageSize.disabled = loading;
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
-            button.disabled = loading;
+            button.disabled = loading || (placeholderMode && button.dataset.stateFilter !== 'all');
         });
     }
     function productsRequestUrl(parameters) {
@@ -692,7 +702,7 @@
                 headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
             });
             var result = await response.json();
-            if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось загрузить данные WB');
+            if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось загрузить данные ' + marketplaceLabel);
             replaceProducts(result.products, silent);
             state.periodDays = Math.max(1, Number(result.period_days) || state.periodDays);
             state.periodFrom = String(result.period_from || state.periodFrom);
@@ -886,6 +896,7 @@
         if (source !== 'wallet') nodes.walletPriceInput.value = wallet === null ? '' : String(wallet);
     }
     async function ensureSubjectCommissions() {
+        if (placeholderMode) return [];
         if (subjectCommissions.length) return subjectCommissions;
         if (!commissionsPromise) {
             commissionsPromise = window.fetch(commissionsEndpoint, {
@@ -1637,6 +1648,45 @@
                 return '<li>' + escapeHtml(error) + '</li>';
             }).join('') + '</ul></details>';
     }
+    function renderPlaceholderDetail(product) {
+        var section = id('ue1c-placeholder-calculator');
+        if (!section) {
+            section = document.createElement('section');
+            section.id = 'ue1c-placeholder-calculator';
+            section.className = 'ue1c-calculator ue1c-placeholder-calculator';
+            id('ue1c-panel-economics').prepend(section);
+        }
+        var fields = [
+            ['Цена продавца', 'retail_price', '₽'], ['Цена покупателя', 'customer_price', '₽'],
+            ['Комиссия Маркета', 'commission_percent', '%'], ['Логистика', 'logistics', '₽'],
+            ['ДРР с выкупом', 'drr', '%'], ['Процент выкупа', 'buyout_percent', '%'],
+            ['Закупочная стоимость', 'purchase_cost', '₽'], ['Фулфилмент', 'fulfillment_cost', '₽'],
+            ['Эквайринг', 'acquiring', '%'], ['Хранение', 'storage', '₽'], ['Налоги', 'tax', '₽']
+        ];
+        section.innerHTML = '<header class="ue1c-calculator-head"><h3>Экономика товара</h3></header>'
+            + '<p class="ue1c-calculator-note">Расчёты Яндекс Маркета пока не подключены.</p>'
+            + '<div class="ue1c-calculator-body"><div class="ue1c-calculator-inputs">' + fields.map(function (field) {
+                return '<label class="ue1c-calculator-row"><span>' + escapeHtml(field[0])
+                    + '</span><span class="ue1c-calculator-field"><input disabled placeholder="—" value="'
+                    + escapeHtml(product.details[field[1]]) + '"><b>' + field[2] + '</b></span></label>';
+            }).join('') + '</div><aside class="ue1c-calculator-results">'
+            + metric('Чистая прибыль', nullable(product.current_economics.margin, preciseMoney))
+            + metric('ROI', nullable(product.current_economics.roi, decimal, '%'))
+            + '</aside></div><footer class="ue1c-calculator-actions">'
+            + '<button class="ue1c-break-even" type="button" disabled>Цена без убытка</button>'
+            + '<button class="ue1c-save-price" type="button" disabled>Сохранить цену</button></footer>'
+            + '<div class="ue1c-placeholder-chart"><strong>—</strong><span>Данных для графика пока нет</span></div>';
+        nodes.parameters.innerHTML = '<section class="ue1c-parameter-group"><h4>Товар</h4><div class="ue1c-parameter-grid">'
+            + identifierParameter('Артикул', product.article) + identifierParameter('Баркод', product.barcode)
+            + identifierParameter('SKU Маркета', product.mp_sku)
+            + parameter('Категория', nullText(product.details.category))
+            + parameter('Объём, л', nullText(product.details.volume_l))
+            + parameter('Вес, кг', nullText(product.details.weight_kg)) + '</div></section>'
+            + '<section class="ue1c-parameter-group"><h4>Параметры расчёта</h4><div class="ue1c-parameter-grid">'
+            + fields.map(function (field) {
+                return parameter(field[0], nullable(product.details[field[1]], decimal, ' ' + field[2]));
+            }).join('') + '</div></section>';
+    }
     function renderDetailProduct(product) {
         clearTargetCalculator();
         root.classList.remove('is-detail-loading');
@@ -1647,6 +1697,14 @@
         nodes.drawerMeta.innerHTML = escapeHtml(product.store_name) + ' · '
             + copyValue('Арт.', product.article, 'Артикул') + ' · ★ ' + escapeHtml(nullText(product.rating))
             + ' · ' + escapeHtml(nullText(product.reviews_count)) + ' отзывов' + dataErrorsHtml(product, true);
+        if (placeholderMode) {
+            renderPlaceholderDetail(product);
+            setDetailTab('economics');
+            Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
+                row.classList.toggle('is-selected', row.dataset.productId === product.id);
+            });
+            return;
+        }
         syncTaxCalculatorLabel(product);
         if (calculatorSessionProductId !== product.id) {
             fillCalculator(product);
@@ -1666,6 +1724,7 @@
         });
     }
     async function fetchProductDetail(product) {
+        if (placeholderMode) return product;
         var query = new URLSearchParams({ store: product.store_slug, article: product.article });
         var response = await window.fetch(productsRequestUrl(query), {
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
@@ -2401,6 +2460,19 @@
     window.addEventListener('focus', function () { refreshProductsIfStale(false); });
     window.setInterval(function () { refreshProductsIfStale(true); }, AUTO_REFRESH_INTERVAL_MS);
 
+    if (placeholderMode) {
+        Array.prototype.forEach.call(nodes.detail.querySelectorAll('input, select, button:not(.ue1c-close):not(.ue1c-drawer-tab)'), function (control) {
+            control.disabled = true;
+        });
+        root.querySelector('[data-detail-tab="params"]').textContent = 'Параметры';
+        id('ue1c-panel-params').querySelector('.ue1c-section-head span').textContent = 'данные пока не подключены';
+        [nodes.periodDays, nodes.periodFrom, nodes.periodTo, nodes.periodApply].forEach(function (control) {
+            control.title = 'Выбор периода будет доступен после подключения расчётов';
+        });
+        Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]:not([data-state-filter="all"])'), function (control) {
+            control.title = 'Фильтр будет доступен после подключения расчётов';
+        });
+    }
     renderStores();
     syncPeriodControls();
     Array.prototype.forEach.call(root.querySelectorAll('[data-chart-series]'), function (input) {
@@ -2417,6 +2489,6 @@
     };
     renderPage();
     loadProducts().then(function () {
-        pendingPriceJobs.slice().forEach(pollPriceJob);
+        if (!placeholderMode) pendingPriceJobs.slice().forEach(pollPriceJob);
     });
 })();

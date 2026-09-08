@@ -18,6 +18,7 @@ from app import (
     unit_economics_1c_prices,
     unit_economics_1c_report_export,
     unit_economics_data_errors,
+    unit_economics_yandex,
 )
 from app import unit_economics_1c_source_data as unit_economics_1c_source
 from app.access_control import accessible_stores, has_scope
@@ -1302,6 +1303,10 @@ async def sales_unit_economics_1c(request: Request):
     content = fill_template(
         "unit_economics_1c_content.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
+        marketplace_name="Wildberries",
+        marketplace_label="WB",
+        loading_description="Таблица появится сразу после подготовки расчётов.",
+        unit_1c_notice="",
     )
     return render_page(
         "CheckStock — Юнит-экономика 1С — Wildberries",
@@ -2913,11 +2918,53 @@ async def sales_unit_economics_1c_ozon(request: Request):
 
 @router.get("/sales/unit-economics-1c/yandex-market", response_class=HTMLResponse)
 async def sales_unit_economics_1c_yandex(request: Request):
-    return _render_unit_economics_1c_placeholder(
-        request,
-        title="CheckStock — Юнит-экономика 1С — Яндекс Маркет",
-        active="unit_1c_yandex",
-        logo="Я",
-        logo_class="ym",
-        heading="Раздел Яндекс Маркета в разработке",
+    store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
+    if request.query_params.get("data") == "1":
+        detail_article = str(request.query_params.get("article") or "").strip()
+        detail_store = str(request.query_params.get("store") or "").strip().lower()
+        if detail_article and detail_store not in store_slugs:
+            return JSONResponse({"ok": False, "error": "Нет доступа к магазину"}, status_code=403)
+
+        def load_products() -> list[dict]:
+            return [
+                unit_economics_yandex.catalog_product(slug, product)
+                for slug in ((detail_store,) if detail_article else store_slugs)
+                for product in db.get_catalog_items(slug, unit_economics_yandex.MARKETPLACE)
+                if not detail_article or product["article"] == detail_article
+            ]
+
+        products = await run_in_threadpool(load_products)
+        if detail_article:
+            if not products:
+                return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)
+            return JSONResponse({"ok": True, "product": products[0]})
+        return JSONResponse({"ok": True, "products": products})
+
+    unit_config = {
+        "userKey": str(request.state.user["id"]),
+        "storageNamespace": "checkstock.unit-economics-yandex",
+        "marketplaceLabel": "Яндекс Маркета",
+        "placeholderMode": True,
+        "canEdit": False,
+        "stores": [{"slug": slug, "name": STORES[slug]["name"]} for slug in store_slugs],
+        "products": [],
+        "productsEndpoint": "/sales/unit-economics-1c/yandex-market?data=1",
+    }
+    content = fill_template(
+        "unit_economics_1c_content.html",
+        unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
+        marketplace_name="Яндекс Маркет",
+        marketplace_label="Яндекс Маркета",
+        loading_description="Загружаем товары из каталога.",
+        unit_1c_notice=(
+            '<p class="ue1c-placeholder-note" role="status">Яндекс Маркет · Товары из каталога. '
+            'Расчёты пока не подключены — показатели появятся позже.</p>'
+        ),
+    )
+    return render_page(
+        "CheckStock — Юнит-экономика 1С — Яндекс Маркет",
+        "unit_1c_yandex",
+        content,
+        request.state.user,
+        content_class="content--unit-1c",
     )

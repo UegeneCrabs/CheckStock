@@ -753,12 +753,74 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(ozon.status_code, 200)
         self.assertEqual(yandex.status_code, 200)
         self.assertIn("Раздел Ozon в разработке", ozon.text)
-        self.assertIn("Раздел Яндекс Маркета в разработке", yandex.text)
+        self.assertIn('aria-label="Юнит-экономика Яндекс Маркет"', yandex.text)
+        self.assertIn('class="data-table ue1c-redesign-table"', yandex.text)
+        self.assertIn('"placeholderMode": true', yandex.text)
         self.assertIn('class="nav-subitem active" href="/sales/unit-economics-1c/ozon"', ozon.text)
         self.assertIn(
             'class="nav-subitem active" href="/sales/unit-economics-1c/yandex-market"',
             yandex.text,
         )
+
+    def test_yandex_unit_economics_loads_catalog_with_null_metrics(self) -> None:
+        product = {
+            "article": "YM-1", "barcode": "001234", "name": "Товар Маркета",
+            "mp_sku": "123", "mp_product_id": "456", "image_url": "https://example.test/product.jpg",
+        }
+        db.replace_catalog("rimili", "YANDEX MARKET", [product, {
+            "article": "SERVICE", "name": "Служебный товар", "is_service": True,
+        }], NOW)
+        db.upsert_mp_stock("rimili", "YM-1", "YANDEX MARKET", "fbs", 42, NOW)
+        response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
+        self.assertEqual(response.status_code, 200)
+        products = response.json()["products"]
+        self.assertEqual(len(products), 1)
+        loaded = products[0]
+        for key, value in product.items():
+            self.assertEqual(loaded[key], value)
+        self.assertEqual(loaded["id"], "yandex:rimili:YM-1")
+        self.assertEqual(loaded["marketplace"], "YANDEX MARKET")
+        for key in ("rating", "reviews_count", "is_new", "sales_days", "history"):
+            self.assertIsNone(loaded[key], key)
+        for group in ("price", "current_economics", "economics_7d", "advertising", "tag_data", "stock", "details"):
+            self.assertTrue(all(value is None for value in loaded[group].values()), group)
+        detail = self.client.get("/sales/unit-economics-1c/yandex-market", params={
+            "data": "1", "store": "rimili", "article": "YM-1",
+        })
+        self.assertEqual(detail.json()["product"], loaded)
+        missing = self.client.get("/sales/unit-economics-1c/yandex-market", params={
+            "data": "1", "store": "rimili", "article": "missing",
+        })
+        self.assertEqual(missing.status_code, 404)
+
+    def test_yandex_unit_economics_respects_marketplace_and_store_scope(self) -> None:
+        for slug in ("rimili", "tris"):
+            db.replace_catalog(slug, "YANDEX MARKET", [{"article": "YM-1", "name": slug}], NOW)
+        self.user.update({
+            "role": "user", "access_profile": "senior_marketplace_manager",
+            "access_scopes": [{"store_slug": "rimili", "marketplace": "YANDEX MARKET"}],
+        })
+        page = self.client.get("/sales/unit-economics-1c/yandex-market")
+        self.assertEqual(page.status_code, 200)
+        response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["store_slug"] for item in response.json()["products"]], ["rimili"])
+        forbidden = self.client.get("/sales/unit-economics-1c/yandex-market", params={
+            "data": "1", "store": "tris", "article": "YM-1",
+        })
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertFalse(unit_economics.has_section_access(
+            self.user, unit_economics.SectionName.UNIT_ECONOMICS_1C, unit_economics.SectionAccessLevel.WRITE,
+        ))
+        self.user["access_scopes"] = [{"store_slug": "rimili", "marketplace": "WB"}]
+        response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
+        self.assertEqual(response.json()["products"], [])
+
+    def test_yandex_unit_economics_empty_catalog_and_denied_section(self) -> None:
+        response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
+        self.assertEqual(response.json(), {"ok": True, "products": []})
+        self.user.update({"role": "user", "section_access": {"unit_economics_1c": "none"}})
+        self.assertEqual(self.client.get("/sales/unit-economics-1c/yandex-market?data=1").status_code, 403)
 
     def test_unit_economics_1c_accepts_closed_period_length(self) -> None:
         with mock.patch.object(
@@ -1174,7 +1236,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("ue1c-store-row", script)
         self.assertIn("function calculateSppPercent(product)", script)
         self.assertIn("(withoutSpp - withSpp) / withoutSpp * 100", script)
-        self.assertIn("{ index: 24, label: 'СПП, %'", script)
+        self.assertIn("label: placeholderMode ? 'Скидка, %' : 'СПП, %'", script)
         self.assertIn("nullable(currentSpp, decimal, '%')", script)
         self.assertIn(
             "parameter('СПП', nullable(calculateSppPercent(product), decimal, '%'))",
