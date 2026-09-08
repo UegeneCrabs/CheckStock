@@ -15,6 +15,7 @@
     var sourceSync = document.getElementById('ue1cs-source-sync');
     var priceSync = document.getElementById('ue1cs-price-sync');
     var toastTimer = 0;
+    var roiDefaults = { A: 20, B: 30, C: 50, D: 0, F: 50, NEW: 50, U: 20 };
     var fields = [
         { key: 'buyout_period_days', label: 'Период расчёта', step: '1', min: '1', max: '29', suffix: 'дн.', group: 'buyout', integer: true,
             warning: 'Введите целое число от 1 до 29.' },
@@ -22,8 +23,6 @@
             warning: 'Введите процент от 0,01 до 100. Он используется при нулевом выкупе WB или отсутствии данных.' },
         { key: 'target_drr_percent', label: 'Цель по ДРР', step: '0.01', min: '0', max: '100', suffix: '%', group: 'goals',
             warning: 'Введите цель по ДРР от 0 до 100%.' },
-        { key: 'target_roi_percent', label: 'Цель по ROI', step: '0.01', min: '0', max: '1000000', suffix: '%', group: 'goals',
-            warning: 'Введите цель по ROI от 0 до 1 000 000%.' },
         { key: 'acceptance_coefficient', label: 'КФ приёмки', step: '0.01', group: 'logistics' },
         { key: 'wb_extra_tariff_percent', label: 'Доп. тарифы WB', step: '0.01', suffix: '%', group: 'logistics' },
         { key: 'acquiring_percent', label: 'Процент эквайринга', step: '0.01', max: '100', suffix: '%', group: 'expenses' },
@@ -33,7 +32,11 @@
             options: [{ value: 'usn', label: 'УСН' }, { value: 'osno', label: 'ОСНО' }] },
         { key: 'usn_percent', label: 'Налог УСН', step: '0.01', max: '100', suffix: '%', group: 'expenses', taxSystems: ['usn'] },
         { key: 'osno_percent', label: 'Налог ОСНО', step: '0.01', max: '100', suffix: '%', group: 'expenses', gogolOnly: true, taxSystems: ['osno'] }
-    ];
+    ].concat(Object.keys(roiDefaults).map(function (code) {
+        return { key: 'target_roi_by_code_' + code, roiCode: code, label: 'Код ' + code,
+            step: '0.01', min: '0', max: '1000000', suffix: '%', group: 'roi',
+            warning: 'Введите цель по ROI от 0 до 1 000 000%.' };
+    }));
     var fieldGroups = [
         { key: 'buyout', title: 'Процент выкупа WB', hint: 'Завершённые дни, сегодня не включается' },
         { key: 'goals', title: 'Целевая цена', hint: 'Цели отчёта для этого кабинета · ДРР с учётом выкупа' },
@@ -59,6 +62,11 @@
         var date = Number.isNaN(moment.getTime()) ? item.updated_at : moment.toLocaleString('ru-RU');
         return 'Сохранено ' + date + (item.updated_by_name ? ' · ' + item.updated_by_name : '');
     }
+    function fieldValue(field, item) {
+        if (!field.roiCode) return item[field.key];
+        var goals = item.target_roi_by_code || {};
+        return goals[field.roiCode] === undefined ? roiDefaults[field.roiCode] : goals[field.roiCode];
+    }
     function fieldHtml(field, item) {
         var taxSystemHidden = item.store_slug === 'gogol' && field.taxSystems
             && field.taxSystems.indexOf(item.tax_system) === -1;
@@ -73,7 +81,7 @@
             : '<input type="number" min="' + (field.min || '0') + '"' + (field.max ? ' max="' + field.max + '"' : '')
                 + (field.key === 'default_buyout_percent' ? ' placeholder="Не задан"' : '')
                 + ' step="' + field.step + '" data-setting="' + field.key
-                + '" value="' + escapeHtml(item[field.key]) + '"' + (fieldDisabled ? ' disabled' : '') + '>';
+                + '" value="' + escapeHtml(fieldValue(field, item)) + '"' + (fieldDisabled ? ' disabled' : '') + '>';
         return '<label class="ue1cs-field"' + (field.taxSystems ? ' data-tax-systems="' + field.taxSystems.join(',') + '"' : '')
             + (taxSystemHidden ? ' hidden' : '') + '><span>' + escapeHtml(field.label) + '</span><span class="ue1cs-input-wrap">'
             + control
@@ -88,7 +96,12 @@
         return '<section class="ue1cs-field-group"><div class="ue1cs-field-group-head"><strong>'
             + escapeHtml(group.title) + '</strong><span>' + escapeHtml(group.hint) + '</span></div>'
             + '<div class="ue1cs-fields">' + groupFields.map(function (field) { return fieldHtml(field, item); }).join('')
-            + '</div></section>';
+            + '</div>' + (group.key === 'goals'
+                ? '<fieldset class="ue1cs-roi-group"><legend>Целевой ROI по коду товара</legend>'
+                    + '<div class="ue1cs-roi-fields">' + fields.filter(function (field) { return field.roiCode; })
+                        .map(function (field) { return fieldHtml(field, item); }).join('')
+                    + '</div></fieldset>'
+                : '') + '</section>';
     }
     function cardHtml(item) {
         return '<article class="ue1cs-card" data-store="' + escapeHtml(item.store_slug)
@@ -102,10 +115,14 @@
             + (canEdit ? '' : ' disabled') + '>Сохранить</button></div></article>';
     }
     function payloadFromCard(card) {
-        var payload = {};
+        var payload = { target_roi_by_code: {} };
         fields.filter(function (field) { return !field.readOnly; }).forEach(function (field) {
             var input = card.querySelector('[data-setting="' + field.key + '"]');
             if (!input) return;
+            if (field.roiCode) {
+                payload.target_roi_by_code[field.roiCode] = Number(input.value);
+                return;
+            }
             if (field.optional && input.value.trim() === '') {
                 payload[field.key] = null;
                 return;
@@ -159,8 +176,8 @@
     function applySavedSettings(card, settings) {
         fields.forEach(function (field) {
             var input = card.querySelector('[data-setting="' + field.key + '"]');
-            if (input && settings[field.key] !== undefined) {
-                input.value = settings[field.key];
+            if (input && (field.roiCode ? settings.target_roi_by_code !== undefined : settings[field.key] !== undefined)) {
+                input.value = fieldValue(field, settings);
                 validateField(input);
             }
         });

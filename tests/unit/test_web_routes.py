@@ -118,6 +118,47 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(zero.json()["settings"]["target_drr_percent"], 0)
         self.assertEqual(zero.json()["settings"]["target_roi_percent"], 0)
 
+    def test_target_roi_by_code_api_round_trip_and_report_resolution(self):
+        defaults = {"A": 20, "B": 30, "C": 50, "D": 0, "F": 50, "NEW": 50, "U": 20}
+        customized = {**defaults, "A": 22.5, "B": 0}
+        path = "/api/unit-economics-1c/cabinet-settings/rimili"
+        headers = {"X-Requested-With": "fetch"}
+        saved = self.client.put(path, json={"target_roi_by_code": customized}, headers=headers)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["settings"]["target_roi_by_code"], customized)
+        self.assertEqual(db.get_unit_economics_1c_cabinet_settings("tris").target_roi_by_code, defaults)
+        legacy = self.client.put(path, json={"target_drr_percent": 7}, headers=headers)
+        self.assertEqual(legacy.status_code, 200, legacy.text)
+        self.assertEqual(legacy.json()["settings"]["target_roi_by_code"], customized)
+        for value in (-1, None, "nan", "inf", 1_000_001):
+            invalid = self.client.put(path, json={"target_roi_by_code": {"A": value}}, headers=headers)
+            self.assertEqual(invalid.status_code, 422, invalid.text)
+        references = [{"store_slug": "rimili", "article": "949558341", "abc_code": " a "}]
+        with mock.patch.object(db, "get_unit_economics_1c_product_reference_rows", return_value=references):
+            result = self.client.get("/api/unit-economics-1c/reports/target-price",
+                                     params={"store": "rimili", "article": "949558341"})
+            self.assertEqual(result.status_code, 200, result.text)
+            row = result.json()["rows"][0]
+            self.assertEqual(row["target_roi"], 22.5)
+            self.assertEqual(row["cabinet_target_roi"], 22.5)
+            self.assertEqual(row["calculator"]["cabinet_target_roi"], 22.5)
+            self.assertEqual(row["code"], "A")
+            target_path = "/api/unit-economics-1c/reports/target-price/rimili/targets"
+            override = self.client.put(target_path, json={
+                "article": "949558341", "target_drr_percent": 0, "target_roi_percent": 0,
+            }, headers=headers)
+            self.assertEqual(override.status_code, 200, override.text)
+            custom = self.client.get("/api/unit-economics-1c/reports/target-price",
+                                     params={"store": "rimili", "article": "949558341"}).json()["rows"][0]
+            self.assertEqual(custom["target_roi"], 0)
+            self.assertEqual(custom["target_drr"], 0)
+            reset = self.client.delete(target_path, params={"article": "949558341"}, headers=headers)
+            self.assertEqual(reset.status_code, 200, reset.text)
+            restored = self.client.get("/api/unit-economics-1c/reports/target-price",
+                                       params={"store": "rimili", "article": "949558341"}).json()["rows"][0]
+            self.assertEqual(restored["target_roi"], 22.5)
+            self.assertEqual(restored["target_drr"], 7)
+
     def test_target_price_migration_only_adds_defaults_and_preserves_rows(self):
         path = "/api/unit-economics-1c/cabinet-settings/rimili"
         saved = self.client.put(path, json={"default_buyout_percent": 82, "buyout_period_days": 23},
@@ -184,7 +225,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertNotIn("Чистая выручка", target_price_script)
         self.assertNotIn("Используются цели кабинета:", target_price_script)
         self.assertNotIn("Возвращены цели из настроек кабинета.", target_price_script)
-        for column in range(8):
+        for column in range(9):
             self.assertIn(f'data-filter-column="{column}"', page.text)
         self.assertEqual(page.text.count('data-filter-type="number"'), 6)
         self.client.put("/api/unit-economics-1c/cabinet-settings/rimili",
@@ -231,7 +272,7 @@ class WebRouteUnitTests(unittest.TestCase):
         sheet = workbook["Целевая цена"]
         self.assertEqual(sheet.max_row, 2)
         self.assertEqual(sheet["A2"].value, "Только выбранный")
-        self.assertEqual(sheet["E2"].value, 0)
+        self.assertEqual(sheet["F2"].value, 0)
         self.assertNotIn("Не должен попасть", [cell.value for row in sheet.iter_rows() for cell in row])
 
     def test_target_price_product_goals_save_and_reset_to_cabinet(self):

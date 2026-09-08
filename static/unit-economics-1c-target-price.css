@@ -25,10 +25,11 @@ body:has(.uetp) .content:has(.uetp) { height:calc(100vh - var(--app-header-heigh
 .uetp-help-content { position:absolute; z-index:30; top:100%; right:0; box-sizing:border-box; width:min(460px, calc(100vw - 48px)); max-height:65vh; overflow:auto; padding:12px 15px; border:1px solid var(--tp-line); border-radius:10px; background:var(--tp-panel); box-shadow:0 12px 32px rgba(25,38,62,.18); font-size:12px; }
 .uetp-help-content p { font-size:12px; line-height:1.5; color:var(--text-secondary, #697184); }
 .uetp-table-wrap { min-height:0; flex:1 1 auto; overflow:auto; border:1px solid var(--tp-line); border-radius:10px; background:var(--tp-panel); max-height:max(240px, calc(100dvh - 240px)); }
-.uetp table { width:100%; border-spacing:0; border-collapse:separate; table-layout:fixed; min-width:960px; }
+.uetp table { width:100%; border-spacing:0; border-collapse:separate; table-layout:fixed; min-width:1020px; }
 .uetp .uetp-table th, .uetp .uetp-table td { width:auto; white-space:normal; border-bottom:1px solid var(--tp-line); padding:10px 12px; font-size:13px; text-align:right; overflow-wrap:anywhere; }
 .uetp-product-col { width:25%; }
 .uetp-store-col { width:11%; }
+.uetp-code-col { width:6%; }
 .uetp .uetp-table th { font-size:11px; font-weight:600; background:var(--tp-panel); }
 .uetp .uetp-table tbody tr { background:var(--tp-panel); }
 .uetp thead { position:sticky; top:0; z-index:2; }
@@ -36,7 +37,7 @@ body:has(.uetp) .content:has(.uetp) { height:calc(100vh - var(--app-header-heigh
 .uetp .uetp-table thead tr:first-child th:first-child { text-align:left; }
 .uetp thead tr:first-child th.uetp-target, .uetp th.uetp-target { background:#eeeafa; }
 .uetp th button[data-sort] { border:0; background:none; color:inherit; font:inherit; text-align:inherit; padding:0; }
-.uetp .uetp-table td:first-child, .uetp .uetp-table td:nth-child(2) { text-align:left; }
+.uetp .uetp-table td:first-child, .uetp .uetp-table td:nth-child(2), .uetp .uetp-table td:nth-child(3) { text-align:left; }
 .uetp .tf-th-inner { flex-direction:row; align-items:center; gap:5px; }
 .uetp .tf-th-label { flex:1; }
 .uetp .tf-btn { width:20px; height:24px; }
@@ -83,6 +84,7 @@ body:has(.uetp) .content:has(.uetp) { height:calc(100vh - var(--app-header-heigh
 .uetp-calculator-inputs label > span:last-child { position:relative; }.uetp-calculator-inputs input { box-sizing:border-box; width:100%; height:32px; padding:0 42px 0 8px; border:1px solid var(--tp-line); border-radius:7px; background:#fafbfe; text-align:right; font:inherit; font-weight:700; }
 .uetp-calculator-inputs .uetp-target-input { background:#faf8ff; }
 .uetp-calculator-inputs .uetp-target-input input { border-color:#b9aee9; background:#fff; }
+.uetp-calculator-inputs input.is-off-target { background:#fff0f1; border-color:#f1c5ca; color:#a12c38; }
 .uetp-calculator-inputs b { position:absolute; right:9px; top:50%; color:var(--text-secondary,#697184); transform:translateY(-50%); font-size:10px; pointer-events:none; }
 .uetp-calculator-results { padding:13px; display:flex; flex-direction:column; justify-content:center; gap:10px; border-left:1px solid var(--tp-line); background:#fafbfe; }
 .uetp-calculator-results > div { padding:14px 11px; border:1px solid var(--tp-line); border-radius:10px; background:var(--tp-panel); }.uetp-calculator-results span { color:var(--text-secondary,#697184); font-size:10px; }.uetp-calculator-results strong { display:block; margin-top:6px; font-size:17px; }.uetp-calculator-results .is-positive { color:#16835b; }.uetp-calculator-results .is-negative { color:#c53343; }
@@ -95,6 +97,7 @@ body:has(.uetp) .content:has(.uetp) { height:calc(100vh - var(--app-header-heigh
 [data-theme="dark"] .uetp-drawer .uetp-drawer-head p { color:#697184 !important; }
 [data-theme="dark"] .uetp-drawer-thumb { color:#6552b2; background:#f0edff; }
 [data-theme="dark"] .uetp-calculator > header, [data-theme="dark"] .uetp-calculator-results, [data-theme="dark"] .uetp-calculator-inputs input { background:#252d41; }
+[data-theme="dark"] .uetp-calculator-inputs input.is-off-target { background:#fff0f1; border-color:#f1c5ca; color:#a12c38; }
 @media (min-width:1051px) {
     body.uetp-calculator-open .app-shell { width:calc(100% - 700px); transition:width .26s ease; }
     body.uetp-calculator-open .app-shell > .app-header.sidebar { width:calc(100% - 700px); }

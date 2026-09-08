@@ -56,6 +56,7 @@ async def target_price_page(request: Request):
 async def target_price_data(request: Request):
     accessible = accessible_stores(request.state.user, "WB")
     selected = str(request.query_params.get("store") or "").strip().lower()
+    selected_article = str(request.query_params.get("article") or "").strip()
     if selected and selected not in accessible:
         return JSONResponse({"ok": False, "error": "Нет доступа к кабинету"}, status_code=403)
     stores = (selected,) if selected else accessible
@@ -102,6 +103,8 @@ async def target_price_data(request: Request):
         for slug in stores:
             for product in db.get_stock_items(slug, "WB"):
                 article = str(product.get("article") or "")
+                if selected_article and article != selected_article:
+                    continue
                 nm_id = article.partition(" / ")[0].strip()
                 reference = references.get((slug, article), {})
                 manager = str(reference.get("manager") or "")
@@ -163,6 +166,14 @@ async def target_price_data(request: Request):
                     {
                         "store_slug": slug,
                         "store_name": STORES[slug]["name"],
+                        "code": str(reference.get("abc_code") or "").strip().upper(),
+                        "orders_amount": round(
+                            sum(
+                                float(item.get("orders_amount") or 0)
+                                for item in daily_orders.get((slug, nm_id), {}).values()
+                            ),
+                            2,
+                        ),
                         "article": article,
                         "name": str(product.get("name") or article),
                         "manager": manager,
@@ -177,6 +188,13 @@ async def target_price_data(request: Request):
                         ),
                     }
                 )
+        rows.sort(
+            key=lambda row: (
+                -float(row["orders_amount"] or 0),
+                row["name"].casefold(),
+                row["article"],
+            )
+        )
         return {"ok": True, "period_from": start.isoformat(), "period_to": end.isoformat(), "rows": rows}
 
     return await run_in_threadpool(load)

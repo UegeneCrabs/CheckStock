@@ -14,14 +14,15 @@
             + escape(article) + '" data-copy-tooltip="Нажмите, чтобы скопировать" aria-label="Скопировать артикул '
             + escape(article) + '">' + escape(article) + '</button>';
     }
-    var columns = ['product', 'store_name', 'current_price', 'current_drr', 'current_roi', 'target_price', 'target_drr', 'target_roi'];
-    var rows = [], page = 1, pageSize = 50, sort = 'target_price', descending = true, requestId = 0;
+    var columns = ['product', 'store_name', 'code', 'current_price', 'current_drr', 'current_roi', 'target_price', 'target_drr', 'target_roi'];
+    var rows = [], page = 1, pageSize = 50, sort = 'orders_amount', descending = true, requestId = 0;
     var periodFrom = '', periodTo = '', calculatorRow = null, calculatorInitial = null;
     var table = node('table'), tableFilters = {};
     function columnValue(row, index) {
         index = Number(index);
         if (index === 0) return row.name + ' · Арт. ' + row.article;
         if (index === 1) return String(row.store_name || '');
+        if (index === 2) return String(row.code || '—');
         var value = numeric(row[columns[index]]);
         return value === null ? '—' : String(value);
     }
@@ -30,7 +31,7 @@
     }
     function matchesSearch(row, query) {
         var text = columns.map(function (key, index) {
-            return columnValue(row, index) + (index > 1 ? ' ' + format(row[key]) : '');
+            return columnValue(row, index) + (index > 2 ? ' ' + format(row[key]) : '');
         }).join(' ');
         text = normalizeSearch(text);
         return query.split(' ').every(function (part) { return text.includes(part); });
@@ -85,7 +86,7 @@
         });
         visible.sort(function (a, b) {
             var index = columns.indexOf(sort);
-            if (index < 2) return columnValue(a, index).localeCompare(columnValue(b, index), 'ru') * (descending ? -1 : 1);
+            if (index >= 0 && index < 3) return columnValue(a, index).localeCompare(columnValue(b, index), 'ru') * (descending ? -1 : 1);
             var left = numeric(a[sort]), right = numeric(b[sort]);
             if (left === null) return right === null ? 0 : 1;
             if (right === null) return -1;
@@ -113,13 +114,14 @@
                 + '<div><strong><button class="uetp-product-link" type="button" data-open-product="' + escape(row.store_slug + '|' + row.article)
                 + '" title="Открыть калькулятор">' + escape(row.name) + '</button></strong><small>Арт. '
                 + copyIdentifier(row.article) + '</small></div></div></td><td>' + escape(row.store_name) + '</td>'
+                + '<td>' + escape(columnValue(row, 2)) + '</td>'
                 + cell(row.current_price, [], below(row) ? 'is-below' : '', row.price_date ? 'Цена WB за ' + row.price_date : '')
                 + cell(row.current_drr, row.current_drr_warnings, '', drrDetail, row.current_drr_notes)
                 + cell(row.current_roi, row.current_warnings, row.current_roi < 0 ? 'is-negative' : '', roiDetail, row.current_notes)
                 + cell(row.target_price, row.target_warnings, 'uetp-target-value', targetDetail)
                 + cell(row.target_drr, [], row.target_overridden ? 'uetp-target-custom' : '', row.target_overridden ? 'Индивидуальная цель товара' : 'Цель из настроек кабинета ' + row.store_name)
                 + cell(row.target_roi, [], row.target_overridden ? 'uetp-target-custom' : '', row.target_overridden ? 'Индивидуальная цель товара' : 'Цель из настроек кабинета ' + row.store_name) + '</tr>';
-        }).join('') || '<tr class="empty-row"><td colspan="8">Нет товаров по выбранным условиям.</td></tr>';
+        }).join('') || '<tr class="empty-row"><td colspan="9">Нет товаров по выбранным условиям.</td></tr>';
         node('count').textContent = 'Товаров: ' + visible.length + ' · Цена ниже целевой: ' + visible.filter(below).length;
         node('page').textContent = page + ' / ' + pages; node('prev').disabled = page <= 1; node('next').disabled = page >= pages;
         table.querySelectorAll('th[data-filter-column]').forEach(function (th) {
@@ -259,11 +261,19 @@
     }
     function calculate() {
         if (!calculatorRow) return;
+        var targetPrice = numeric(calculatorRow.target_price), walletPrice = calcValue('wallet');
+        var walletInput = root.querySelector('[data-calc="wallet"]');
+        var offTarget = targetPrice !== null && walletPrice !== null
+            && Math.abs(Math.round(walletPrice * 100) - Math.round(targetPrice * 100)) > 200;
+        walletInput.classList.toggle('is-off-target', offTarget);
+        walletInput.title = offTarget ? 'Цена отличается от целевой больше чем на 2 ₽.' : '';
+        var targetTile = '<div data-result="target_price"><span>Целевая цена</span><strong>'
+            + format(targetPrice) + (targetPrice === null ? '' : ' ₽') + '</strong></div>';
         var retail = calcValue('retail'), client = calcValue('client'), purchase = calcValue('purchase_price');
         var required = ['acquiring_rub','delivery_with_returns','storage_total','wb_commission_rub','advertising_rub',
             'fulfillment_cost','team_commission_rub','vat_rub','secondary_tax_rub'];
         if (retail === null || client === null || purchase === null || required.some(function (key) { return calcValue(key) === null; })) {
-            node('calculator-results').innerHTML = '<p>Недостаточно данных для расчёта.</p>'; return;
+            node('calculator-results').innerHTML = '<p>Недостаточно данных для расчёта.</p>' + targetTile; return;
         }
         var vat = calcValue('vat_rub'), secondary = calcValue('secondary_tax_rub');
         var acquiring = calcValue('acquiring_rub'), commission = calcValue('wb_commission_rub');
@@ -272,7 +282,7 @@
         var margin = net - purchase - calcValue('fulfillment_cost') - team - vat - secondary;
         var roi = purchase > 0 ? margin / purchase * 100 : null;
         node('calculator-results').innerHTML = '<div><span>Чистая прибыль</span><strong class="' + (margin < 0 ? 'is-negative' : 'is-positive') + '">' + format(margin) + ' ₽</strong></div>'
-            + '<div><span>ROI</span><strong class="' + (roi !== null && roi < 0 ? 'is-negative' : 'is-positive') + '">' + format(roi) + '%</strong></div>';
+            + '<div><span>ROI</span><strong class="' + (roi !== null && roi < 0 ? 'is-negative' : 'is-positive') + '">' + format(roi) + '%</strong></div>' + targetTile;
     }
     function solveTargetPrice() {
         if (!calculatorInitial) return;
@@ -433,7 +443,7 @@
             var response = await fetch('/api/unit-economics-1c/reports/target-price.xlsx', { method:'POST',
                 headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},
                 body:JSON.stringify({period_from:periodFrom,period_to:periodTo,rows:filteredRows().map(function (row) {
-                    return {store_slug:row.store_slug,store_name:row.store_name,name:row.name,article:row.article,
+                    return {store_slug:row.store_slug,store_name:row.store_name,code:row.code,name:row.name,article:row.article,
                         current_price:row.current_price,current_drr:row.current_drr,current_roi:row.current_roi,
                         target_price:row.target_price,target_drr:row.target_drr,target_roi:row.target_roi};
                 })}) });

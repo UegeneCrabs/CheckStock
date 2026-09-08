@@ -803,6 +803,7 @@ class UnitEconomics1CCabinetSettingRecord(OrmBase):
     default_buyout_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     target_drr_percent: Mapped[float] = mapped_column(Float, nullable=False, default=8, server_default="8")
     target_roi_percent: Mapped[float] = mapped_column(Float, nullable=False, default=50, server_default="50")
+    target_roi_by_code: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default="{}")
     buyout_period_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=14, server_default="14"
     )

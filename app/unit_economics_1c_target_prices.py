@@ -171,6 +171,13 @@ def calculate_target_advertising_rub(
     return round(retail * drr_ratio * buyout_ratio, 2)
 
 
+def cabinet_target_roi(cabinet, code: object) -> float:
+    """Resolve the product's tag, preserving the legacy goal for absent or unknown codes."""
+    code = str(code or "").strip().upper()
+    goals = getattr(cabinet, "target_roi_by_code", {})
+    return goals.get(code, cabinet.target_roi_percent)
+
+
 def calculate_row(
     *,
     price: dict,
@@ -188,11 +195,12 @@ def calculate_row(
     commission = number(reference.get("subject_commission_percent"))
     product_target_drr = getattr(product_settings, "target_drr_percent", None)
     product_target_roi = getattr(product_settings, "target_roi_percent", None)
+    code_target_roi = cabinet_target_roi(cabinet, reference.get("abc_code"))
     target_drr = (
         product_target_drr if product_target_drr is not None else cabinet.target_drr_percent
     )
     target_roi = (
-        product_target_roi if product_target_roi is not None else cabinet.target_roi_percent
+        product_target_roi if product_target_roi is not None else code_target_roi
     )
     warnings = []
     current_notes = list(weekly.get("notes", []))
@@ -234,7 +242,7 @@ def calculate_row(
         "target_roi": target_roi,
         "target_overridden": product_target_drr is not None or product_target_roi is not None,
         "cabinet_target_drr": cabinet.target_drr_percent,
-        "cabinet_target_roi": cabinet.target_roi_percent,
+        "cabinet_target_roi": code_target_roi,
         "target_retail_price": None,
         "target_spp_price": None,
         "target_actual_roi": None,
@@ -279,7 +287,7 @@ def calculate_row(
         "target_roi": target_roi,
         "target_overridden": product_target_drr is not None or product_target_roi is not None,
         "cabinet_target_drr": cabinet.target_drr_percent,
-        "cabinet_target_roi": cabinet.target_roi_percent,
+        "cabinet_target_roi": code_target_roi,
         "advertising_base": retail,
         "buyout_percent": weekly["buyout_percent"],
         "delivery_wb_rub": product_settings.delivery_wb_rub,

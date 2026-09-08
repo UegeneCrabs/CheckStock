@@ -1,9 +1,8 @@
 import io
 from datetime import date
 
-
 COLUMNS = (
-    ("name", "Товар"), ("article", "Артикул"), ("store_name", "Магазин"),
+    ("name", "Товар"), ("article", "Артикул"), ("store_name", "Магазин"), ("code", "Код"),
     ("current_price", "Текущая цена с СПП и кошельком, ₽"),
     ("current_drr", "Текущий ДРР, %"), ("current_roi", "Текущий ROI, %"),
     ("target_price", "Целевая цена с СПП и кошельком, ₽"),
@@ -33,11 +32,11 @@ def build_xlsx(rows: list[dict], period_from: str = "", period_to: str = "") -> 
             values.append(value)
         sheet.append(values)
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:I{max(1, sheet.max_row)}"
-    widths = (36, 22, 18, 22, 18, 18, 22, 18, 18)
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}{max(1, sheet.max_row)}"
+    widths = (36, 22, 18, 10, 22, 18, 18, 22, 18, 18)
     for index, width in enumerate(widths, 1):
         sheet.column_dimensions[get_column_letter(index)].width = width
-    for row in sheet.iter_rows(min_row=2, min_col=4, max_col=9):
+    for row in sheet.iter_rows(min_row=2, min_col=5, max_col=len(COLUMNS)):
         for cell in row:
             cell.number_format = '#,##0.00'
     buffer = io.BytesIO()

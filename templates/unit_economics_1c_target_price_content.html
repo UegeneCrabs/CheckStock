@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/unit-economics-1c-target-price.css?v=13">
+<link rel="stylesheet" href="/static/unit-economics-1c-target-price.css?v=14">
 <section class="uetp" id="uetp" aria-label="Отчёт Целевая цена">
     <div class="uetp-heading"><h1>Целевая цена <small>WB</small></h1>
         <div class="uetp-heading-actions">
@@ -8,7 +8,8 @@
                 <div class="uetp-help-content" tabindex="0" aria-label="Формулы расчёта">
                     <strong>Как считаем</strong>
                     <p>ДРР с выкупом = сумма рекламы ÷ (сумма заказов × процент выкупа ÷ 100) × 100%. Период всегда 7 завершённых дней по Москве, без сегодня. Складываем доступные дни с данными и рекламы, и заказов; дневные проценты не усредняем. Пустые данные не считаются нулевыми.</p>
-                    <p>Цена, ДРР и ROI слева берутся по тем же правилам, что в юнит-экономике WB и отчёте «Юниточная прибыль» за такой же период. Справа используются индивидуальные цели товара, если они сохранены; иначе — цели из «Ввод данных по кабинетам» (по умолчанию ДРР 8%, ROI 50%).</p>
+                    <p>По умолчанию товары идут по убыванию ТО за последние 7 завершённых дней по Москве, как в отчёте «Юниточная прибыль». Код товара берётся из поля ТЕГ ежедневной выгрузки.</p>
+                    <p>Цена, ДРР и ROI слева берутся по тем же правилам, что в юнит-экономике WB и отчёте «Юниточная прибыль» за такой же период. Справа используются индивидуальные цели товара, если они сохранены; иначе — цели из «Ввод данных по кабинетам». По умолчанию ДРР 8%, ROI по коду: A — 20%, B — 30%, C — 50%, D — 0%, F — 50%, NEW — 50%, U — 20%. Для пустого или неизвестного кода используется общая цель ROI кабинета.</p>
                     <p>Реклама на штуку для целевой цены = цена без СПП × целевой ДРР ÷ 100 × процент выкупа ÷ 100. ЗЦ, комиссии, логистика, налоги, СПП и скидка кошелька сохраняются из калькулятора. Цена подбирается так, чтобы итоговый ROI был максимально близок к цели; допустимое отклонение из-за округления цены — 0,1 процентного пункта.</p>
                     <p>Жёлтый «—» означает, что для расчёта не хватает обязательных данных. Если за неделю нет ни рекламы, ни заказов, ДРР показывается равным 0. Подробности — при наведении или переходе к ячейке клавишей Tab. Жёлтая целевая цена предупреждает о неполных исходных данных.</p>
                 </div>
@@ -23,11 +24,11 @@
     </div>
     <div class="uetp-status" id="uetp-status" role="status" aria-live="polite" hidden></div>
     <div class="uetp-table-wrap" id="uetp-table-wrap"><table class="data-table uetp-table" id="uetp-table" aria-label="Текущие показатели и целевые цены товаров">
-        <colgroup><col class="uetp-product-col"><col class="uetp-store-col"><col span="6"></colgroup>
-        <thead><tr><th rowspan="2" scope="col" data-filter-column="0"><button type="button" data-sort="product">Товар</button></th><th rowspan="2" scope="col" data-filter-column="1"><button type="button" data-sort="store_name">Магазин</button></th><th colspan="3" scope="colgroup">Текущая цена · по калькулятору</th><th class="uetp-target" colspan="3" scope="colgroup">Целевая цена</th></tr>
-            <tr><th scope="col" data-filter-column="2" data-filter-type="number"><button type="button" data-sort="current_price">Цена с СПП и кошельком, ₽</button></th><th scope="col" data-filter-column="3" data-filter-type="number"><button type="button" data-sort="current_drr">ДРР с выкупом, %</button></th><th scope="col" data-filter-column="4" data-filter-type="number"><button type="button" data-sort="current_roi">ROI, %</button></th>
-                <th class="uetp-target" scope="col" data-filter-column="5" data-filter-type="number"><button type="button" data-sort="target_price">Цена с СПП и кошельком, ₽</button></th><th class="uetp-target" scope="col" data-filter-column="6" data-filter-type="number"><button type="button" data-sort="target_drr">Цель ДРР, %</button></th><th class="uetp-target" scope="col" data-filter-column="7" data-filter-type="number"><button type="button" data-sort="target_roi">Цель ROI, %</button></th></tr>
-        </thead><tbody id="uetp-rows"><tr><td colspan="8">Загрузка…</td></tr></tbody>
+        <colgroup><col class="uetp-product-col"><col class="uetp-store-col"><col class="uetp-code-col"><col span="6"></colgroup>
+        <thead><tr><th rowspan="2" scope="col" data-filter-column="0"><button type="button" data-sort="product">Товар</button></th><th rowspan="2" scope="col" data-filter-column="1"><button type="button" data-sort="store_name">Магазин</button></th><th rowspan="2" scope="col" data-filter-column="2"><button type="button" data-sort="code">Код</button></th><th colspan="3" scope="colgroup">Текущая цена · по калькулятору</th><th class="uetp-target" colspan="3" scope="colgroup">Целевая цена</th></tr>
+            <tr><th scope="col" data-filter-column="3" data-filter-type="number"><button type="button" data-sort="current_price">Цена с СПП и кошельком, ₽</button></th><th scope="col" data-filter-column="4" data-filter-type="number"><button type="button" data-sort="current_drr">ДРР с выкупом, %</button></th><th scope="col" data-filter-column="5" data-filter-type="number"><button type="button" data-sort="current_roi">ROI, %</button></th>
+                <th class="uetp-target" scope="col" data-filter-column="6" data-filter-type="number"><button type="button" data-sort="target_price">Цена с СПП и кошельком, ₽</button></th><th class="uetp-target" scope="col" data-filter-column="7" data-filter-type="number"><button type="button" data-sort="target_drr">Цель ДРР, %</button></th><th class="uetp-target" scope="col" data-filter-column="8" data-filter-type="number"><button type="button" data-sort="target_roi">Цель ROI, %</button></th></tr>
+        </thead><tbody id="uetp-rows"><tr><td colspan="9">Загрузка…</td></tr></tbody>
     </table></div>
     <div class="uetp-footer" id="uetp-footer"><span id="uetp-count"></span><div class="uetp-pagination"><label class="uetp-page-size">Показывать<select id="uetp-page-size" aria-label="Товаров на странице"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select></label><button type="button" id="uetp-prev" aria-label="Предыдущая страница">←</button><span id="uetp-page"></span><button type="button" id="uetp-next" aria-label="Следующая страница">→</button></div></div>
     <div class="uetp-overlay" id="uetp-overlay"></div>
@@ -69,4 +70,4 @@
     </aside>
 </section>
 <script type="application/json" id="uetp-config">$target_price_config</script>
-<script src="/static/unit-economics-1c-target-price.js?v=12"></script>
+<script src="/static/unit-economics-1c-target-price.js?v=13"></script>
