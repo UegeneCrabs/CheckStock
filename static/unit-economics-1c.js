@@ -494,7 +494,17 @@
             + (product.advertising.buyout_default_applied ? ' · выкуп по умолчанию' : '')
             + ' · реклама ' + nullable(current.advertising_spend, preciseMoney);
         if (placeholderMode) {
-            advertisingTitle = stockTitle = currentTitle = 'Данные пока не подключены';
+            currentTitle = 'Данные пока не подключены';
+            if (config.yandexMetrics === true) {
+                advertisingTitle = 'Период ' + nullText(product.advertising.period_from)
+                    + ' — ' + nullText(product.advertising.period_to) + ' · сумма заказов '
+                    + nullable(product.advertising.orders_amount, preciseMoney)
+                    + ' · буст продаж и показов (расходы по отчётам ЯМ)';
+                stockTitle = stock.orders_21d === null ? 'Данных о заказах пока нет'
+                    : stockTitle.replace('Заказы воронки', 'Заказы ЯМ');
+            } else {
+                advertisingTitle = stockTitle = currentTitle;
+            }
         }
         var cells = {};
         cells.product = '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')

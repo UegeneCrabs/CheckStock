@@ -117,6 +117,17 @@ class BackgroundSyncTests(unittest.TestCase):
 
         self.assertNotIn("decision_center_sync", jobs)
 
+    def test_yandex_metrics_job_is_hourly_and_respects_enabled_cabinets(self) -> None:
+        job = {job.name: job for job in background._jobs(mock.Mock())}["yandex_unit_economics_sync"]
+        self.assertEqual(job.next_delay(), 3600)
+        with (
+            mock.patch.object(background.sync_settings, "enabled_stores", return_value=("tris",)) as enabled,
+            mock.patch.object(background.ya_unit_sync, "sync_all") as sync,
+        ):
+            job.run_callback()
+        enabled.assert_called_once_with("yandex_unit_economics_sync", "YANDEX MARKET")
+        sync.assert_called_once_with(("tris",))
+
     def test_reference_data_job_checks_for_weekly_refresh_daily(self) -> None:
         jobs = {job.name: job for job in background._jobs(mock.Mock())}
 

@@ -803,7 +803,7 @@ class WebRouteUnitTests(unittest.TestCase):
             yandex.text,
         )
 
-    def test_yandex_unit_economics_loads_catalog_with_null_metrics(self) -> None:
+    def test_yandex_unit_economics_loads_stock_and_keeps_unavailable_metrics_null(self) -> None:
         product = {
             "article": "YM-1", "barcode": "001234", "name": "Товар Маркета",
             "mp_sku": "123", "mp_product_id": "456", "image_url": "https://example.test/product.jpg",
@@ -823,8 +823,14 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(loaded["marketplace"], "YANDEX MARKET")
         for key in ("rating", "reviews_count", "is_new", "sales_days", "history"):
             self.assertIsNone(loaded[key], key)
-        for group in ("price", "current_economics", "economics_7d", "advertising", "tag_data", "stock", "details"):
+        for group in ("price", "current_economics", "tag_data", "details"):
             self.assertTrue(all(value is None for value in loaded[group].values()), group)
+        self.assertEqual(loaded["stock"]["fbs"], 42)
+        self.assertEqual(loaded["stock"]["total"], 42)
+        self.assertIsNone(loaded["stock"]["days"])
+        self.assertIsNone(loaded["economics_7d"]["turnover"])
+        for key in ("drr", "spend", "ctr", "cpc"):
+            self.assertIsNone(loaded["advertising"][key])
         detail = self.client.get("/sales/unit-economics-1c/yandex-market", params={
             "data": "1", "store": "rimili", "article": "YM-1",
         })
@@ -859,7 +865,9 @@ class WebRouteUnitTests(unittest.TestCase):
 
     def test_yandex_unit_economics_empty_catalog_and_denied_section(self) -> None:
         response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
-        self.assertEqual(response.json(), {"ok": True, "products": []})
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["products"], [])
+        self.assertEqual(response.json()["period_days"], 7)
         self.user.update({"role": "user", "section_access": {"unit_economics_1c": "none"}})
         self.assertEqual(self.client.get("/sales/unit-economics-1c/yandex-market?data=1").status_code, 403)
 

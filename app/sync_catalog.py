@@ -70,6 +70,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "stores",
         ),
         SyncJobDefinition(
+            "yandex_unit_economics_sync",
+            "Юнит-экономика Яндекс Маркета",
+            "Обновляет заказы, рейтинг, отзывы и рекламу ЯМ в отдельном хранилище юнит-экономики.",
+            _interval(60 * 60),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
             "wb_funnel_previous_day_close_00_msk",
             "Закрытие воронки WB",
             "Повторно загружает вчерашний день после его завершения.",

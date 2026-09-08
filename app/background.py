@@ -35,6 +35,7 @@ from app.wb import sync as wb_sync
 from app.wb import token_watch
 from app.yandex import catalog as ya_catalog
 from app.yandex import sync as ya_sync
+from app.yandex import unit_economics_sync as ya_unit_sync
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +367,16 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             run_callback=_sync_wb_advertising_configured,
         ),
         *_funnel_jobs(),
+        BackgroundJob(
+            "yandex_unit_economics_sync",
+            ya_unit_sync.sync_all,
+            _fixed_delay(ya_unit_sync.SYNC_INTERVAL_SECONDS),
+            startup_delay_seconds=90,
+            is_enabled=lambda: _job_enabled("yandex_unit_economics_sync"),
+            run_callback=lambda: ya_unit_sync.sync_all(
+                sync_settings.enabled_stores("yandex_unit_economics_sync", "YANDEX MARKET")
+            ),
+        ),
         BackgroundJob(
             "unit_economics_1c_daily_margin_snapshot_00_msk",
             unit_margin_history.save_daily_margin_snapshots,

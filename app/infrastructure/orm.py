@@ -1175,6 +1175,19 @@ class RnpDailyMetricRecord(OrmBase):
     snapshot_synced_at: Mapped[str | None] = mapped_column(String)
 
 
+class UnitEconomicsYandexSnapshotRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_snapshots"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, primary_key=True)
+    period_from: Mapped[str | None] = mapped_column(String)
+    period_to: Mapped[str | None] = mapped_column(String)
+    data_json: Mapped[str | None] = mapped_column(Text)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_attempt_at: Mapped[str] = mapped_column(String, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
 class RnpMetricSyncStateRecord(OrmBase):
     __tablename__ = "rnp_metric_sync_state"
 
