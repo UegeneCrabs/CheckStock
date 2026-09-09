@@ -66,14 +66,98 @@ class ProductDataErrorsTests(unittest.TestCase):
             with self.subTest(label=label):
                 self.assertTrue(any(label in error for error in errors))
 
-    def test_failed_refresh_is_visible_even_when_cached_values_exist(self):
-        for scope, label in SOURCE_LABELS.items():
+    def test_failed_refresh_does_not_leak_to_products_with_cached_values(self):
+        product = {"fbs_stock": 0, "fbo_stock": 0, "ff_available": 0}
+        prices = {
+            "retail_price": 200,
+            "customer_price_with_spp": 180,
+            "customer_price_with_wallet": 170,
+        }
+        reference = {
+            "purchase_price": 100,
+            "fulfillment_cost": 10,
+            "team_commission_percent": 5,
+            "subject_commission_percent": 20,
+            "category": "Товар",
+            "abc_code": "A",
+        }
+        metrics = {"funnel_updated_at": "2026-09-08", "buyout_updated_at": "2026-09-08"}
+        failed_states = {scope: {"ok": False} for scope in SOURCE_LABELS}
+
+        errors = product_errors(product, prices, reference, metrics, {}, failed_states)
+
+        self.assertFalse(any("ошибка обновления" in error for error in errors))
+
+    def test_failed_refresh_is_shown_only_for_the_missing_product_source(self):
+        product = {"fbs_stock": 0, "fbo_stock": 0, "ff_available": 0}
+        prices = {
+            "retail_price": None,
+            "customer_price_with_spp": 180,
+            "customer_price_with_wallet": 170,
+        }
+        reference = {
+            "purchase_price": 100,
+            "fulfillment_cost": 10,
+            "team_commission_percent": 5,
+            "subject_commission_percent": 20,
+            "category": "Товар",
+            "abc_code": "A",
+        }
+        metrics = {"funnel_updated_at": "2026-09-08", "buyout_updated_at": "2026-09-08"}
+        failed_states = {
+            "unit_economics_1c_prices": {"ok": False},
+            "unit_economics_1c_wallet": {"ok": False},
+        }
+
+        errors = product_errors(product, prices, reference, metrics, {}, failed_states)
+
+        self.assertIn("Цены WB: ошибка обновления, данные могут быть устаревшими", errors)
+        self.assertNotIn("Цены СПП и WB Кошелька: ошибка обновления, данные могут быть устаревшими", errors)
+
+    def test_reference_refresh_error_is_scoped_to_product_with_missing_reference(self):
+        failed = {"unit_economics_1c_source": {"ok": False}}
+        loaded = {
+            "purchase_price": 100,
+            "fulfillment_cost": 10,
+            "team_commission_percent": 5,
+        }
+        incomplete = {**loaded, "purchase_price": None}
+        message = "Данные 1С: ошибка обновления, данные могут быть устаревшими"
+
+        self.assertNotIn(message, product_errors({}, {}, loaded, {}, {}, failed))
+        self.assertIn(message, product_errors({}, {}, incomplete, {}, {}, failed))
+
+    def test_each_product_scoped_failure_requires_its_own_missing_field(self):
+        cases = (
+            ("fbs", {"fbs_stock": None}, {}, {}, {}, "Остатки FBS"),
+            ("fbo", {"fbo_stock": None}, {}, {}, {}, "Остатки FBO"),
+            ("ff", {"ff_available": None}, {}, {}, {}, "Остатки ФФ"),
+            ("unit_economics_1c_wallet", {}, {"customer_price_with_wallet": None}, {}, {},
+             "Цены СПП и WB Кошелька"),
+            ("unit_economics_1c_commissions", {}, {}, {"subject_commission_percent": None}, {},
+             "Комиссии WB"),
+            ("unit_economics_1c_categories", {}, {}, {"category": ""}, {}, "Категории WB"),
+            ("unit_economics_1c_classifications", {}, {}, {"abc_code": ""}, {},
+             "ABC-классификация"),
+            ("unit_economics_1c_funnel", {}, {}, {}, {"funnel_updated_at": None},
+             "Заказы и воронка WB"),
+            ("unit_economics_1c_buyout", {}, {}, {}, {"buyout_updated_at": None},
+             "Процент выкупа WB"),
+        )
+        for scope, product, prices, reference, metrics, label in cases:
             with self.subTest(scope=scope):
-                failed = product_errors({}, {}, {}, {}, {}, {scope: {"ok": False}})
-                recovered = product_errors({}, {}, {}, {}, {}, {scope: {"ok": True}})
                 message = f"{label}: ошибка обновления, данные могут быть устаревшими"
-                self.assertIn(message, failed)
-                self.assertNotIn(message, recovered)
+                errors = product_errors(
+                    product, prices, reference, metrics, {}, {scope: {"ok": False}},
+                )
+                self.assertIn(message, errors)
+
+    def test_store_only_failure_is_not_assigned_to_every_product(self):
+        for scope in ("catalog", "unit_economics_1c_advertising"):
+            with self.subTest(scope=scope):
+                message = f"{SOURCE_LABELS[scope]}: ошибка обновления, данные могут быть устаревшими"
+                errors = product_errors({}, {}, {}, {}, {}, {scope: {"ok": False}})
+                self.assertNotIn(message, errors)
 
     def test_non_finite_source_values_are_missing(self):
         for value in (float("nan"), float("inf"), "-inf"):

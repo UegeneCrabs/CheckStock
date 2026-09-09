@@ -16,12 +16,62 @@ SOURCE_LABELS = {
     "unit_economics_1c_categories": "Категории WB",
 }
 
+SOURCE_REQUIRED_FIELDS = {
+    "fbs": (("product", "fbs_stock"),),
+    "fbo": (("product", "fbo_stock"),),
+    "ff": (("product", "ff_available"),),
+    "unit_economics_1c_prices": (("prices", "retail_price"),),
+    "unit_economics_1c_wallet": (
+        ("prices", "customer_price_with_spp"),
+        ("prices", "customer_price_with_wallet"),
+    ),
+    "unit_economics_1c_source": (
+        ("reference", "purchase_price"),
+        ("reference", "fulfillment_cost"),
+        ("reference", "team_commission_percent"),
+    ),
+    "unit_economics_1c_commissions": (("reference", "subject_commission_percent"),),
+    "unit_economics_1c_categories": (("reference_text", "category"),),
+    "unit_economics_1c_classifications": (("reference_text", "abc_code"),),
+    "unit_economics_1c_funnel": (("metrics_text", "funnel_updated_at"),),
+    "unit_economics_1c_buyout": (("metrics_text", "buyout_updated_at"),),
+}
+
 
 def _missing_number(value: object) -> bool:
     try:
         return value is None or not math.isfinite(float(value))
     except (TypeError, ValueError):
         return True
+
+
+def _failed_source_affects_product(
+    scope: str,
+    product: dict,
+    prices: dict,
+    reference: dict,
+    metrics: dict,
+) -> bool:
+    """Return true only when a failed store refresh left this product incomplete."""
+
+    values_by_source = {
+        "product": product,
+        "prices": prices,
+        "reference": reference,
+        "reference_text": reference,
+        "metrics_text": metrics,
+    }
+    requirements = SOURCE_REQUIRED_FIELDS.get(scope)
+    if not requirements:
+        return False
+    for source, field in requirements:
+        value = values_by_source[source].get(field)
+        if source.endswith("_text"):
+            if not str(value or "").strip():
+                return True
+        elif _missing_number(value):
+            return True
+    return False
 
 
 def product_errors(
@@ -73,6 +123,12 @@ def product_errors(
         if advertising is None:
             errors.append("Не загружены данные рекламы WB")
         for scope, state in source_states.items():
-            if scope in SOURCE_LABELS and not state.get("ok"):
+            if (
+                scope in SOURCE_LABELS
+                and not state.get("ok")
+                and _failed_source_affects_product(
+                    scope, product, prices, reference, metrics,
+                )
+            ):
                 errors.append(f"{SOURCE_LABELS[scope]}: ошибка обновления, данные могут быть устаревшими")
     return list(dict.fromkeys(errors))
