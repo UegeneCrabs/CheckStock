@@ -25,6 +25,14 @@ async def authentication_middleware(request: Request, call_next):
 
     path = request.url.path
 
+    if path.startswith("/api/agent/v1/"):
+        request.state.user = None
+        if request.method != "GET":
+            return JSONResponse({"detail": "Read-only API"}, status_code=405, headers={"Allow": "GET"})
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     if path in PUBLIC_PATHS or path.startswith("/static/"):
         request.state.user = None
         return await call_next(request)

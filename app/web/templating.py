@@ -246,6 +246,8 @@ def render_page(
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
         unit_1c_target_price_active="active" if active == "unit_1c_target_price" else "",
         supply_active="active" if active == "supply" else "",
+        ai_agents_active="active" if active == "ai_agents" else "",
+        ai_agents_hidden=hidden(any(visible.values())),
         supply_hidden=hidden(visible[SectionName.SUPPLY]),
         stock_active="active" if active == "stock" else "",
         stock_hidden=hidden(visible[SectionName.STOCK]),

@@ -1,6 +1,9 @@
 from app.web.routers import (
     activity,
     admin,
+    agent_analytics,
+    agent_full,
+    agent_management,
     auth,
     google_export,
     integrations,
@@ -11,7 +14,11 @@ from app.web.routers import (
     system,
 )
 
+agent_analytics.router.include_router(agent_full.router)
+
 ROUTERS = (
+    agent_analytics.router,
+    agent_management.router,
     system.router,
     auth.router,
     profile.router,

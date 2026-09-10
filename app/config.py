@@ -79,6 +79,7 @@ class Settings(BaseModel):
     templates_dir: Path
     static_dir: Path
     admin_seed_path: Path
+    agent_tokens_path: Path = BASE_DIR / "secrets" / "chatgpt_tokens.json"
     wb_tokens_path: Path
     ozon_tokens_path: Path
     yandex_tokens_path: Path
@@ -177,6 +178,7 @@ class Settings(BaseModel):
             database_busy_timeout_ms=_env_int("CHECKSTOCK_DB_BUSY_TIMEOUT_MS", 30_000, minimum=1),
             templates_dir=Path(os.getenv("CHECKSTOCK_TEMPLATES_DIR", base_dir / "templates")),
             static_dir=Path(os.getenv("CHECKSTOCK_STATIC_DIR", base_dir / "static")),
+            agent_tokens_path=Path(os.getenv("CHECKSTOCK_AGENT_TOKENS_PATH", base_dir / "secrets" / "chatgpt_tokens.json")),
             admin_seed_path=Path(
                 os.getenv("CHECKSTOCK_ADMIN_SEED_PATH", base_dir / "secrets" / "admin_seed.json")
             ),

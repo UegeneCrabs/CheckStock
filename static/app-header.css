@@ -4,6 +4,10 @@
     --app-header-line: rgba(183, 199, 227, 0.16);
 }
 
+.app-header .side-nav > .nav-item.agent-nav {
+    flex: 0 0 auto;
+}
+
 .app-shell {
     display: block;
 }
