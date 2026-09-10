@@ -493,7 +493,6 @@ async def execute(name, request, user, query):
                                   "buyout_updated_at funnel_updated_at funnel_period_from funnel_period_to "
                                   "advertising_spend impressions clicks ctr cpc drr margin margin_complete margin_missing_days roi")
             for row in rows:
-                # Keep the site's displayed partial calculation separately from complete results.
                 row["report_margin"] = row["margin"]
                 row["report_roi"] = row["roi"]
                 if row["margin_complete"] is not True:

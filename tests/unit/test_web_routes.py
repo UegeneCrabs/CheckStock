@@ -3060,7 +3060,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('tot-fbs">17</strong>', page.text)
 
         fbs = self.client.get("/stock/rimili/fbs", params={"mp": "YANDEX MARKET"})
-        self.assertEqual(fbs.json(), {"fbs": {"YA-1": 17}})
+        self.assertEqual(fbs.json(), {"fbs": {"YA-1": 17}, "rfbs": {}})
 
         detail = self.client.get(
             "/stock/rimili/article-detail",

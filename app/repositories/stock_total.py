@@ -33,6 +33,17 @@ def get_source_rows(
             """,
             store_slugs,
         ).fetchall()
+        catalog = [dict(row) for row in catalog]
+        aliases = {}
+        for row in connection.execute(
+            "SELECT cb.stock_item_id,cb.barcode FROM catalog_barcodes cb "
+            "JOIN stock_items si ON si.id=cb.stock_item_id "
+            f"WHERE si.store_slug IN ({placeholders})",
+            store_slugs,
+        ):
+            aliases.setdefault(row["stock_item_id"], []).append(row["barcode"])
+        for row in catalog:
+            row["barcodes"] = aliases.get(row["id"], [])
         marketplace_stock = connection.execute(
             f"""
             SELECT source.store_slug, source.marketplace, source.article,

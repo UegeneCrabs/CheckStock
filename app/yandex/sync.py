@@ -2,6 +2,8 @@ import logging
 from datetime import UTC, datetime
 
 from app import db
+from app.fulfillment_names import fulfillment_lookup, normalize
+from app.repositories.stock_snapshot import replace_snapshot
 from app.stores import STORES
 from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
@@ -13,7 +15,7 @@ _DB_LOCK = db.WRITE_LOCK
 
 
 def _normalize_ff_name(name: str) -> str:
-    return "".join(char for char in (name or "").casefold() if char.isalnum())
+    return normalize(name)
 
 
 YANDEX_FBS_FF_ALIASES = {
@@ -24,12 +26,7 @@ YANDEX_FBS_FF_ALIASES = {
 
 
 def known_ff_by_campaign() -> dict[str, str]:
-    known = {_normalize_ff_name(name): name for name in db.get_fulfillments()}
-    for campaign_name, fulfillment_name in YANDEX_FBS_FF_ALIASES.items():
-        canonical = known.get(_normalize_ff_name(fulfillment_name))
-        if canonical:
-            known[_normalize_ff_name(campaign_name)] = canonical
-    return known
+    return fulfillment_lookup(db.get_fulfillments())
 
 
 def _store_label(store_slug: str) -> str:
@@ -124,13 +121,30 @@ def sync_store(store_slug: str) -> int:
     totals: dict[str, dict[str, int]] = {}
     warehouse_totals: dict[str, dict[tuple[str, str], int]] = {}
     covered: set[str] = set()
+    failed_schemes: set[str] = set()
+    errors: list[str] = []
+    disabled: list[tuple[str, str, str]] = []
+    successful_warehouses: set[tuple[str, str]] = set()
 
     for campaign in campaigns:
         key = campaign["scheme_key"]
         totals.setdefault(key, {})
         warehouse_totals.setdefault(key, {})
 
-        rows = ya_api.get_stocks(api_key, campaign["id"])
+        campaign_warehouse = fulfillment_by_campaign.get(
+            _normalize_ff_name(campaign["name"]), campaign["name"]
+        )
+        try:
+            rows = ya_api.get_stocks(api_key, campaign["id"])
+        except ya_api.YandexApiError as error:
+            message = f"Кампания {campaign['id']} ({campaign['name']}): {error.friendly}"
+            if error.status == 403 and "API_DISABLED:" in error.detail:
+                disabled.append((key, campaign_warehouse, message))
+            else:
+                failed_schemes.add(key)
+                errors.append(message)
+            continue
+        successful_warehouses.add((key, campaign_warehouse))
 
         for row in rows:
             article = row["article"]
@@ -156,29 +170,28 @@ def sync_store(store_slug: str) -> int:
             warehouse_key = (article, warehouse)
             warehouse_totals[key][warehouse_key] = warehouse_totals[key].get(warehouse_key, 0) + quantity
 
-    with _DB_LOCK:
-        for key, by_warehouse in warehouse_totals.items():
-            entries = [
-                (article, warehouse, None, quantity, now)
-                for (article, warehouse), quantity in by_warehouse.items()
-            ]
-            db.replace_mp_warehouse_stock(store_slug, MARKETPLACE, key, entries)
-
-        for key, scheme_totals in totals.items():
-            for item in catalog:
-                db.upsert_mp_stock(
-                    store_slug,
-                    item["article"],
-                    MARKETPLACE,
-                    key,
-                    scheme_totals.get(item["article"], 0),
-                    now,
-                )
-
-        db.delete_mp_stock_scheme_variants(
-            store_slug,
-            MARKETPLACE,
-            ya_tokens.FBS_SCHEME_KEY,
+    for key, warehouse, message in disabled:
+        logger.warning("%s", message)
+        if key == ya_tokens.FBY_SCHEME_KEY or (key, warehouse) not in successful_warehouses:
+            failed_schemes.add(key)
+            errors.append(message)
+    complete = {key: values for key, values in totals.items() if key not in failed_schemes}
+    warehouse_snapshot = {
+        key: [(article, warehouse, None, quantity) for (article, warehouse), quantity in quantities.items()]
+        for key, quantities in warehouse_totals.items()
+        if key in complete
+    }
+    replace_snapshot(
+        store_slug,
+        MARKETPLACE,
+        complete,
+        warehouse_snapshot,
+        now,
+        remove_variants=(ya_tokens.FBS_SCHEME_KEY,) if ya_tokens.FBS_SCHEME_KEY in complete else (),
+    )
+    if errors:
+        raise ya_api.YandexApiError(
+            None, "Обновлено частично; сохранены прежние остатки проблемных схем. " + "; ".join(errors)
         )
 
     logger.info(

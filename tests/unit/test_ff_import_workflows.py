@@ -113,7 +113,7 @@ def test_xlsx_and_transfer_parsers() -> None:
 
     parsed = transfer._parse_transfer_rows(rows)
     assert parsed.model_dump(mode="json") == [
-        {"code": "bc", "quantity": 2},
+        {"code": "A", "quantity": 2},
         {"code": "B", "quantity": 3},
     ]
     for invalid in ([], [["wrong"]], [["BARCODE", "QTY"], ["bc", "0"]]):

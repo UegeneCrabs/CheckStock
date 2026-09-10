@@ -4,6 +4,7 @@ import io
 from collections import defaultdict
 from datetime import datetime
 
+from app.catalog_identity import barcodes
 from app.domain import MOSCOW_TIMEZONE
 from app.repositories import stock_total as repository
 from app.stores import STORES
@@ -26,8 +27,7 @@ QUANTITY_KEYS = tuple(
     for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES
 )
 MARKETPLACE_TOTAL_KEYS = tuple(
-    f"total_{marketplace_key}"
-    for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES
+    f"total_{marketplace_key}" for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES
 )
 TOTAL_KEYS = ("grand_total", *MARKETPLACE_TOTAL_KEYS)
 VALUE_KEYS = (*TOTAL_KEYS, *QUANTITY_KEYS)
@@ -66,16 +66,10 @@ def build_rows(
     store_slugs: tuple[str, ...],
     allowed_pairs: tuple[tuple[str, str], ...] | None = None,
 ) -> list[dict]:
-    catalog, marketplace_stock, fulfillment_stock, transit_stock = repository.get_source_rows(
-        store_slugs
-    )
+    catalog, marketplace_stock, fulfillment_stock, transit_stock = repository.get_source_rows(store_slugs)
     if allowed_pairs is not None:
         allowed = set(allowed_pairs)
-        catalog = [
-            item
-            for item in catalog
-            if (str(item["store_slug"]), str(item["marketplace"])) in allowed
-        ]
+        catalog = [item for item in catalog if (str(item["store_slug"]), str(item["marketplace"])) in allowed]
         marketplace_stock = [
             item
             for item in marketplace_stock
@@ -87,15 +81,29 @@ def build_rows(
             if (str(item["store_slug"]), str(item["marketplace"])) in allowed
         ]
         transit_stock = [
-            item
-            for item in transit_stock
-            if (str(item["store_slug"]), str(item["marketplace"])) in allowed
+            item for item in transit_stock if (str(item["store_slug"]), str(item["marketplace"])) in allowed
         ]
     marketplace_keys = {marketplace: key for marketplace, key, _label in MARKETPLACES}
+    barcode_roots: dict[tuple[str, str], tuple[str, str]] = {}
+
+    def root(key):
+        barcode_roots.setdefault(key, key)
+        if barcode_roots[key] != key:
+            barcode_roots[key] = root(barcode_roots[key])
+        return barcode_roots[key]
+
+    for item in catalog:
+        keys = sorted((str(item["store_slug"]), _normalized(code)) for code in barcodes(item))
+        for key in keys[1:]:
+            barcode_roots[root(key)] = root(keys[0])
+
+    def barcode_key_for(item):
+        barcode = _normalized(item.get("barcode"))
+        return root((str(item["store_slug"]), barcode))[1] if barcode else ""
 
     barcode_identity_by_article: dict[tuple[str, str], set[tuple[str, ...]]] = defaultdict(set)
     for item in catalog:
-        barcode = _normalized(item.get("barcode"))
+        barcode = barcode_key_for(item)
         article = _normalized(item.get("article"))
         if barcode and article:
             barcode_identity_by_article[(str(item["store_slug"]), article)].add(("barcode", barcode))
@@ -109,7 +117,7 @@ def build_rows(
         article = str(item.get("article") or "").strip()
         article_key = _normalized(article)
         barcode = str(item.get("barcode") or "").strip()
-        barcode_key = _normalized(barcode)
+        barcode_key = barcode_key_for(item)
         if barcode_key:
             identity = ("barcode", barcode_key)
         else:
@@ -194,8 +202,7 @@ def build_rows(
     for row in rows:
         for _marketplace, marketplace_key, _marketplace_label in MARKETPLACES:
             row[f"total_{marketplace_key}"] = sum(
-                int(row[f"{group}_{marketplace_key}"] or 0)
-                for group, _group_label in STOCK_GROUPS
+                int(row[f"{group}_{marketplace_key}"] or 0) for group, _group_label in STOCK_GROUPS
             )
         row["grand_total"] = sum(int(row[key] or 0) for key in MARKETPLACE_TOTAL_KEYS)
         row.pop("identity", None)

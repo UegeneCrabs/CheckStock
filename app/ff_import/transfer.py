@@ -37,8 +37,8 @@ def _parse_transfer_rows(rows: list[list[str]]) -> SignedStockEntries:
     if header_index is None or quantity_column is None:
         raise FFImportError("не найдена шапка с кодом товара и количеством")
 
-    order = [code_columns[key] for key in ("barcode", "баркод") if key in code_columns]
-    order.extend(code_columns[key] for key in ("article", "артикул") if key in code_columns)
+    order = [code_columns[key] for key in ("article", "артикул") if key in code_columns]
+    order.extend(code_columns[key] for key in ("barcode", "баркод") if key in code_columns)
     entries: list[SignedStockEntry] = []
     for row in rows[header_index + 1 :]:
         if not row or all(not str(cell or "").strip() for cell in row):

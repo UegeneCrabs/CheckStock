@@ -241,6 +241,8 @@ class CatalogItem(DtoModel):
     mp_sku: str | None = None
     mp_product_id: str | None = None
     image_url: str | None = None
+    barcodes: tuple[str, ...] = ()
+    article_aliases: tuple[str, ...] = ()
 
 
 class CatalogItems(RootModel[tuple[CatalogItem, ...]]):

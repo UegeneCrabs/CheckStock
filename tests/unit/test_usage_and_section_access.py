@@ -153,7 +153,7 @@ def test_usage_sessions_online_idle_resume_and_logout(tmp_path: Path) -> None:
     dispose_databases()
 
 
-def test_middleware_enforces_hidden_read_and_write_access() -> None:
+def test_middleware_enforces_hidden_read_and_write_access(database_path) -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
     identities = client.app.state.container.identity
     user = _user(
@@ -185,7 +185,7 @@ def test_middleware_enforces_hidden_read_and_write_access() -> None:
     client.close()
 
 
-def test_middleware_enforces_unit_economics_1c_access() -> None:
+def test_middleware_enforces_unit_economics_1c_access(database_path) -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
     identities = client.app.state.container.identity
     user = _user(

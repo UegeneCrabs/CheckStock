@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from app import db
+from app.catalog_identity import barcodes as item_barcodes
+from app.repositories.stock_snapshot import replace_snapshot
 from app.stores import STORES
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
@@ -82,13 +84,17 @@ def sync_store_fbs(store_slug: str) -> int:
         raise wb_api.WBApiError(None, detail="в личном кабинете WB не настроен ни один склад FBS")
 
     known_by_norm = _known_ff_by_warehouse(store_slug)
-    barcodes = [item["barcode"] for item in catalog]
+    barcodes = sorted({barcode for item in catalog for barcode in item_barcodes(item)})
+    chrt_ids = wb_api.barcode_chrt_ids(wb_api.get_cards_list(token))
+    if not chrt_ids:
+        raise wb_api.WBApiError(None, detail="Не получены ID размеров WB; прежние остатки сохранены")
 
     stock_by_warehouse: dict[int, dict[str, int]] = {}
     warehouse_errors: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=max(1, len(warehouses))) as executor:
         future_to_wh = {
-            executor.submit(wb_api.get_fbs_stock, token, wh["id"], barcodes): wh for wh in warehouses
+            executor.submit(wb_api.get_fbs_stock, token, wh["id"], barcodes, chrt_ids_by_barcode=chrt_ids): wh
+            for wh in warehouses
         }
         for future in as_completed(future_to_wh):
             wh = future_to_wh[future]
@@ -104,10 +110,10 @@ def sync_store_fbs(store_slug: str) -> int:
                     warehouse_errors[wh["id"]],
                 )
 
-    if warehouse_errors and len(warehouse_errors) == len(warehouses):
+    if warehouse_errors:
         first_err = next(iter(warehouse_errors.values()))
         raise wb_api.WBApiError(
-            None, detail=f"не удалось получить остатки FBS ни по одному складу продавца: {first_err}"
+            None, detail=f"Остатки FBS сохранены: не ответили склады {sorted(warehouse_errors)}: {first_err}"
         )
 
     now = _now()
@@ -130,7 +136,7 @@ def sync_store_fbs(store_slug: str) -> int:
 
         stock_by_barcode = stock_by_warehouse.get(wh["id"], {})
         for item in catalog:
-            qty = stock_by_barcode.get(item["barcode"], 0)
+            qty = max((stock_by_barcode.get(code, 0) for code in item_barcodes(item)), default=0)
             totals[item["article"]] += qty
             key = (item["article"], label)
             ff_quantities[key] = ff_quantities.get(key, 0) + qty
@@ -139,17 +145,18 @@ def sync_store_fbs(store_slug: str) -> int:
 
     with _DB_LOCK:
         db.replace_ff_warehouse_map(store_slug, ff_map_entries)
-        db.replace_mp_warehouse_stock(
-            store_slug,
-            "WB",
-            "fbs",
-            [
-                (article, fulfillment, None, quantity, updated_at)
-                for article, fulfillment, quantity, updated_at in ff_stock_entries
-            ],
-        )
-        for item in catalog:
-            db.upsert_mp_stock(store_slug, item["article"], "WB", "fbs", totals[item["article"]], now)
+    replace_snapshot(
+        store_slug,
+        "WB",
+        {"fbs": totals},
+        {
+            "fbs": [
+                (article, fulfillment, None, quantity)
+                for article, fulfillment, quantity, _ in ff_stock_entries
+            ]
+        },
+        now,
+    )
 
     return len(catalog)
 
@@ -172,7 +179,7 @@ def sync_store_fbo(store_slug: str) -> int:
     updated = 0
 
     for item in catalog:
-        entries = barcode_to_warehouses.get(item["barcode"], [])
+        entries = [entry for code in item_barcodes(item) for entry in barcode_to_warehouses.get(code, [])]
 
         sellable_entries = [(wh, qty) for wh, qty in entries if wh not in EXCLUDED_FBO_WAREHOUSES]
 
@@ -184,18 +191,21 @@ def sync_store_fbo(store_slug: str) -> int:
 
         updated += 1
 
-    with _DB_LOCK:
-        for article, total in totals:
-            db.upsert_mp_stock(store_slug, article, "WB", "fbo", total, now)
-        db.replace_mp_warehouse_stock(
-            store_slug,
-            "WB",
-            "fbo",
-            [
-                (article, warehouse, None, quantity, updated_at)
-                for article, warehouse, quantity, updated_at in warehouse_entries
-            ],
-        )
+    warehouse_totals = {}
+    for article, warehouse, quantity, _ in warehouse_entries:
+        warehouse_totals[(article, warehouse)] = warehouse_totals.get((article, warehouse), 0) + quantity
+    replace_snapshot(
+        store_slug,
+        "WB",
+        {"fbo": dict(totals)},
+        {
+            "fbo": [
+                (article, warehouse, None, quantity)
+                for (article, warehouse), quantity in warehouse_totals.items()
+            ]
+        },
+        now,
+    )
     return updated
 
 

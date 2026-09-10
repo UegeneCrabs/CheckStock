@@ -122,7 +122,7 @@
 
 
             if (visible && query) {
-                visible = row.textContent.toLowerCase().indexOf(query) !== -1;
+                visible = (row.textContent + ' ' + (row.dataset.searchAliases || '')).toLowerCase().indexOf(query) !== -1;
             }
 
             row.style.display = visible ? '' : 'none';

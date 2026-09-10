@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -15,6 +16,7 @@ from app.web import access, templating
 from app.web.routers import auth as auth_routes
 
 
+@pytest.mark.usefixtures("database_path")
 class WebAuthAccessSystemTests(unittest.TestCase):
     def setUp(self) -> None:
         logging.disable(logging.CRITICAL)

@@ -392,7 +392,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             },
         )
         self.assertEqual(fbs_transfer.status_code, 200, fbs_transfer.text)
-        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF One", "WB"), 2)
+        self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF One", "WB"), 0)
         self.assertEqual(db.get_store_operations("rimili")[0]["kind"], "fbs_transfer")
 
         self.assertEqual(

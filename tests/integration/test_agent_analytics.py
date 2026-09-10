@@ -677,7 +677,7 @@ def test_product_attributes_preserve_source_and_scope(agent_client, monkeypatch,
         assert body["rows"][0]["reviews_count"] == 14390
 
 
-def test_stock_summary_matches_columns_and_keeps_unknowns(agent_client, monkeypatch):
+def test_stock_summary_matches_columns_and_keeps_unknowns(agent_client, monkeypatch, database_path):
     from app import agent_reports
     from app.web import stock_rendering
 

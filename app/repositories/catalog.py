@@ -1,5 +1,7 @@
+from app.catalog_identity import barcodes
 from app.infrastructure.database import DatabaseConnection
 from app.repositories import yandex_assortment
+from app.repositories.catalog_reconciliation import reconcile_renames
 from app.repositories.core import get_connection
 
 
@@ -19,8 +21,31 @@ def get_catalog_items(
         sql += " AND is_service = 0"
     sql += " ORDER BY id"
     rows = conn.execute(sql, (store_slug, marketplace)).fetchall()
+    result = [dict(row) for row in rows]
+    attach_barcodes(conn, store_slug, marketplace, result)
     conn.close()
-    return [dict(row) for row in rows]
+    return result
+
+
+def attach_barcodes(conn, store_slug: str, marketplace: str, items: list[dict]) -> None:
+    aliases: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT si.article, cb.barcode FROM catalog_barcodes cb "
+        "JOIN stock_items si ON si.id=cb.stock_item_id "
+        "WHERE si.store_slug=? AND si.marketplace=? ORDER BY cb.barcode",
+        (store_slug, marketplace),
+    ):
+        aliases.setdefault(row["article"], []).append(row["barcode"])
+    for item in items:
+        item["barcodes"] = sorted(set(aliases.get(item["article"], [])) | barcodes(item))
+    article_aliases: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT article,target_article FROM catalog_article_aliases WHERE store_slug=? AND marketplace=?",
+        (store_slug, marketplace),
+    ):
+        article_aliases.setdefault(row["target_article"], []).append(row["article"])
+    for item in items:
+        item["article_aliases"] = article_aliases.get(item["article"], [])
 
 
 def get_stock_items(store_slug: str, marketplace: str, schemes: tuple[str, ...] | None = None) -> list[dict]:
@@ -67,8 +92,10 @@ def get_stock_items(store_slug: str, marketplace: str, schemes: tuple[str, ...] 
 
     conn = get_connection()
     rows = conn.execute(sql, params).fetchall()
+    result = [dict(row) for row in rows]
+    attach_barcodes(conn, store_slug, marketplace, result)
     conn.close()
-    return [dict(row) for row in rows]
+    return result
 
 
 def articles_with_own_stock(
@@ -83,8 +110,18 @@ def articles_with_own_stock(
         UNION
         SELECT article FROM trash_stock
          WHERE store_slug = ? AND marketplace = ? AND quantity <> 0
+        UNION
+        SELECT item.to_article AS article FROM ff_transit_items item
+          JOIN ff_transit_batches batch ON batch.id=item.batch_id
+         WHERE batch.store_slug=? AND batch.to_marketplace=?
+           AND item.sent_quantity > item.received_quantity + item.cancelled_quantity
+        UNION
+        SELECT item.from_article AS article FROM ff_transit_items item
+          JOIN ff_transit_batches batch ON batch.id=item.batch_id
+         WHERE batch.store_slug=? AND batch.from_marketplace=?
+           AND item.sent_quantity > item.received_quantity + item.cancelled_quantity
         """,
-        (store_slug, marketplace, store_slug, marketplace),
+        (store_slug, marketplace) * 4,
     ).fetchall()
     if conn is None:
         own.close()
@@ -98,10 +135,13 @@ def replace_catalog(
     updated_at: str,
     force_remove_articles: set[str] | None = None,
 ) -> dict:
+    with get_connection() as conn:
+        return _replace_catalog(conn, store_slug, marketplace, items, updated_at, force_remove_articles)
+
+
+def _replace_catalog(conn, store_slug, marketplace, items, updated_at, force_remove_articles):
 
     yandex_active = yandex_assortment.load_active_products() if marketplace == "YANDEX MARKET" else None
-    conn = get_connection()
-
     protected = articles_with_own_stock(store_slug, marketplace, conn)
 
     existing = {
@@ -113,9 +153,7 @@ def replace_catalog(
             (store_slug, marketplace),
         )
     }
-    forced = {
-        str(article).strip() for article in (force_remove_articles or set()) if str(article).strip()
-    }
+    forced = {str(article).strip() for article in (force_remove_articles or set()) if str(article).strip()}
 
     seen: set[str] = set()
     added = updated = 0
@@ -137,6 +175,7 @@ def replace_catalog(
         )
 
         old = existing.get(article)
+        aliases = barcodes(item) | ({old["barcode"]} if old and old["barcode"] else set())
         if old is None:
             conn.execute(
                 """
@@ -147,8 +186,11 @@ def replace_catalog(
                 """,
                 (store_slug, marketplace, article, *row, updated_at),
             )
+            _save_barcodes(conn, store_slug, marketplace, article, aliases)
             added += 1
             continue
+
+        _save_barcodes(conn, store_slug, marketplace, article, aliases)
 
         current = (
             old["barcode"],
@@ -174,6 +216,8 @@ def replace_catalog(
         updated += 1
 
     missing = set(existing) - seen
+    reconciled = reconcile_renames(conn, store_slug, marketplace, existing, items, updated_at)
+    protected -= reconciled
     forced_missing = missing & forced
     kept = sorted((missing & protected) - forced_missing)
     gone = sorted((missing - protected) | forced_missing)
@@ -187,11 +231,21 @@ def replace_catalog(
     if yandex_active is not None:
         yandex_assortment.refresh(conn, yandex_active, updated_at, store_slug)
     conn.commit()
-    conn.close()
     return {
         "added": added,
         "updated": updated,
         "removed": len(gone),
         "kept": len(kept),
         "forced_removed": len(forced_missing),
+        "reconciled": len(reconciled),
     }
+
+
+def _save_barcodes(conn, store_slug, marketplace, article, aliases):
+    for barcode in aliases:
+        conn.execute(
+            "INSERT INTO catalog_barcodes (stock_item_id, barcode) "
+            "SELECT id, ? FROM stock_items WHERE store_slug=? AND marketplace=? AND article=? "
+            "ON CONFLICT(stock_item_id, barcode) DO NOTHING",
+            (barcode, store_slug, marketplace, article),
+        )
