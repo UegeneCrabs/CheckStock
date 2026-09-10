@@ -15,6 +15,41 @@ from app.web.routers import agent_analytics as api
 pytestmark = pytest.mark.integration
 
 
+def test_profit_uses_website_report_and_keeps_orders_with_partial_margin(agent_client, monkeypatch):
+    from app.web.routers import agent_full
+
+    client, *_ = agent_client
+    rows = [dict(article=str(i), name="Product", manager=None, orders_count=i,
+                 orders_amount=i * 100, cancel_count=1, cancel_amount=10,
+                 net_orders_count=i - 1, net_orders_amount=i * 100 - 10,
+                 advertising_spend=5, drr=17.3, ctr=4.2, margin=42, roi=12, margin_complete=False,
+                 margin_missing_days=["2026-09-09"]) for i in range(1, 62)]
+    loader = AsyncMock(return_value={"rows": rows, "period_from": "2026-09-09",
+                                     "period_to": "2026-09-09"})
+    monkeypatch.setattr(agent_full, "_unit_economics_1c_unit_profit_report_data", loader)
+    monkeypatch.setattr(agent_full.reports, "economic_filter", lambda rows, *args: rows)
+    response = client.get(f"{api.PREFIX}/profit", params={"store": "rimili",
+                          "date_from": "2026-09-09", "date_to": "2026-09-09",
+                          "sort_by": "orders_amount", "limit": 1})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["total_rows"] == 61
+    assert data["rows"][0]["article"] == "61"
+    assert data["rows"][0]["orders_amount"] == 6100
+    assert data["rows"][0]["net_orders_amount"] == 6090
+    assert data["rows"][0]["margin"] is None
+    assert data["rows"][0]["report_margin"] == 42
+    assert data["rows"][0]["report_roi"] == 12
+    assert data["rows"][0]["drr"] == 17.3
+    assert data["rows"][0]["ctr"] == 4.2
+    assert data["context"]["field_labels"]["drr"] == "ДРР с выкупом, %"
+    assert data["totals"]["orders_amount"] == sum(i * 100 for i in range(1, 62))
+    assert data["context"]["report"] == "unit-profit"
+    request = loader.call_args.args[0]
+    assert request.query_params["store"] == "rimili"
+    assert request.query_params["date_from"] == "2026-09-09"
+
+
 def test_article_store_lookup(agent_client, monkeypatch, user_factory):
     from app import agent_reports
     from app.web.routers import agent_full
