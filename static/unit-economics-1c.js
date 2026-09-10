@@ -1726,8 +1726,18 @@
             ['Закупочная стоимость', 'purchase_cost', '₽'], ['Фулфилмент', 'fulfillment_cost', '₽'],
             ['Эквайринг', 'acquiring', '%'], ['Хранение', 'storage', '₽'], ['Налоги', 'tax', '₽']
         ];
+        var priceCheck = product.price_check || {};
+        var priceNote = 'Цена покупателя без Яндекс Пэй. Обновление ежедневно: каждый час с 08:00 до 19:00 и в 01:00 (Екатеринбург).';
+        if (priceCheck.price_checked_at) {
+            priceNote += ' Получена: ' + new Date(priceCheck.price_checked_at).toLocaleString('ru-RU') + '.';
+        }
+        if (priceCheck.is_stale) {
+            priceNote += ' Цена требует обновления; последняя известная: '
+                + nullable(priceCheck.last_known_buyer_price, preciseMoney, ' ₽') + '.';
+        }
+        if (priceCheck.message) priceNote += ' ' + priceCheck.message;
         section.innerHTML = '<header class="ue1c-calculator-head"><h3>Экономика товара</h3></header>'
-            + '<p class="ue1c-calculator-note">Расчёты Яндекс Маркета пока не подключены.</p>'
+            + '<p class="ue1c-calculator-note">' + escapeHtml(priceNote) + '</p>'
             + '<div class="ue1c-calculator-body"><div class="ue1c-calculator-inputs">' + fields.map(function (field) {
                 return '<label class="ue1c-calculator-row"><span>' + escapeHtml(field[0])
                     + '</span><span class="ue1c-calculator-field"><input disabled placeholder="—" value="'

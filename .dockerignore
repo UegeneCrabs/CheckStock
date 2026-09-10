@@ -1,6 +1,10 @@
 .git
 .idea
 .venv
+.tmp
+.pytest_cache
+.ruff_cache
+.merge-*
 .env
 .env.*
 !.env.example

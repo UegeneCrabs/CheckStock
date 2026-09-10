@@ -12,7 +12,7 @@ import json
 from app import db
 from app.domain import MOSCOW_TIMEZONE
 from app.repositories import unit_economics_yandex as repository
-from app.repositories import yandex_assortment, yandex_product_statuses
+from app.repositories import yandex_assortment, yandex_product_statuses, yandex_storefront
 from datetime import datetime, timedelta
 from unittest.mock import patch
 from tests.unit.test_web_routes import WebRouteUnitTests, NOW
@@ -45,6 +45,9 @@ try:
     yandex_product_statuses.save_check('rimili', {'YM-0', 'YM-1'}, [{
         'article': 'YM-0', 'day': (today - timedelta(days=28)).isoformat(), 'orders_count': 1,
     }], today, NOW)
+    price_target = {'store_slug': 'rimili', 'article': 'YM-0'}
+    yandex_storefront.record(price_target, {'status': 'ok', 'buyer_price': 2883})
+    yandex_storefront.seller_price(price_target, 3500)
     print(json.dumps({
         'html': case.client.get('${endpoint}').text,
         'listing': case.client.get('${endpoint}?data=1').json()
@@ -83,9 +86,16 @@ finally:
     assert.equal(await page.locator('[data-product-id]').count(), 20);
     assert.match(await page.locator('#ue1c-pagination-summary').innerText(), /из 26/);
     const productRow = page.locator('[data-product-id="yandex:rimili:YM-0"]');
+    await productRow.locator('[data-product-open]').click();
+    await page.locator('#ue1c-placeholder-calculator').waitFor();
+    const priceInputs = page.locator('#ue1c-placeholder-calculator input');
+    assert.equal(await priceInputs.nth(0).inputValue(), '3500');
+    assert.equal(await priceInputs.nth(1).inputValue(), '2883');
+    assert.match(await page.locator('#ue1c-placeholder-calculator').innerText(), /без Яндекс Пэй/);
+    await page.locator('#ue1c-detail-close').click();
     const cells = (await productRow.locator('td').allTextContents()).map(text => text.replace(/\s/g, ''));
     assert.match(cells[0], /★4.8.*125отзывов/);
-    assert.deepEqual(cells.slice(3, 6), ['—', '—', '—']);
+    assert.deepEqual(cells.slice(3, 6), ['—', '—', '17,63%']);
     assert.deepEqual(cells.slice(6, 13), ['8000₽', '—', '—', '10%', '750₽', '2,5%', '15,00₽']);
     const turnoverTitle = await productRow.locator('td').nth(6).locator('[title]').getAttribute('title');
     assert.match(turnoverTitle, /^ТО после отмен: данные за .*\(7 из 7 дней\)$/);

@@ -1234,6 +1234,39 @@ class UnitEconomicsYandexSnapshotRecord(OrmBase):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class YandexStorefrontPriceRecord(OrmBase):
+    __tablename__ = "yandex_storefront_prices"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    target_json: Mapped[str | None] = mapped_column(Text)
+    seller_price: Mapped[float | None] = mapped_column(Float)
+    seller_checked_at: Mapped[str | None] = mapped_column(String)
+    buyer_price: Mapped[float | None] = mapped_column(Float)
+    price_checked_at: Mapped[str | None] = mapped_column(String)
+    currency: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    checked_at: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text)
+
+
+class YandexStorefrontRunRecord(OrmBase):
+    __tablename__ = "yandex_storefront_runs"
+
+    run_id: Mapped[str] = mapped_column(String, primary_key=True)
+    started_at: Mapped[str] = mapped_column(String, nullable=False)
+    finished_at: Mapped[str | None] = mapped_column(String)
+    report_json: Mapped[str | None] = mapped_column(Text)
+
+
+class YandexStorefrontLeaseRecord(OrmBase):
+    __tablename__ = "yandex_storefront_lease"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    owner: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class RnpMetricSyncStateRecord(OrmBase):
     __tablename__ = "rnp_metric_sync_state"
 

@@ -10,6 +10,7 @@ from app.repositories import (
     yandex_assortment,
     yandex_product_statuses,
     yandex_source_values,
+    yandex_storefront,
 )
 from app.stores import STORES
 
@@ -26,10 +27,16 @@ def catalog_product(
     advertising: dict | None = None,
     is_new: bool | None = None,
     source_values: dict | None = None,
+    prices: dict | None = None,
 ) -> dict:
     store = STORES[store_slug]
     article = str(product["article"])
     source_values = source_values or {}
+    prices = prices or {}
+    seller_price = prices.get("seller_price") if yandex_storefront.fresh(prices.get("seller_checked_at")) else None
+    buyer_price = prices.get("buyer_price") if (
+        prices.get("status") == "ok" and yandex_storefront.fresh(prices.get("price_checked_at"))
+    ) else None
     return {
         "id": f"yandex:{store_slug}:{article}",
         "marketplace": MARKETPLACE,
@@ -45,7 +52,15 @@ def catalog_product(
         "reviews_count": (reputation or {}).get("reviews_count"),
         "is_new": is_new,
         "sales_days": None,
-        "price": dict.fromkeys(("current", "with_spp", "with_wallet")),
+        "price": {"current": seller_price, "with_spp": buyer_price, "with_wallet": None},
+        "price_check": {
+            "status": prices.get("status", "pending"),
+            "checked_at": prices.get("checked_at"),
+            "price_checked_at": prices.get("price_checked_at"),
+            "last_known_buyer_price": prices.get("buyer_price"),
+            "is_stale": prices.get("buyer_price") is not None and buyer_price is None,
+            "message": prices.get("message"),
+        },
         "current_economics": dict.fromkeys(
             ("margin", "roi", "orders", "buyout_percent", "advertising_spend", "period_to")
         ),
@@ -99,6 +114,8 @@ def catalog_product(
             ),
             "purchase_cost": source_values.get("purchase_price"),
             "fulfillment_cost": source_values.get("fulfillment_cost"),
+            "retail_price": seller_price,
+            "customer_price": buyer_price,
         },
         "history": None,
     }
@@ -146,6 +163,7 @@ def load_products(
         snapshots = repository.get_snapshots(slug)
         product_statuses = yandex_product_statuses.get_statuses(slug)
         source_values = yandex_source_values.get_values(slug)
+        prices = yandex_storefront.get_prices(slug)
         orders_snapshot = snapshots.get("orders") or {}
         if _covers(orders_snapshot, stock_start, today):
             orders = orders_snapshot["data"]
@@ -263,6 +281,7 @@ def load_products(
                     reputation=reputation.get(sku) or reputation.get(str(product.get("mp_sku") or "")),
                     is_new=product_statuses[sku]["status"] == "new" if sku in product_statuses else None,
                     source_values=source_values.get(sku),
+                    prices=prices.get(sku),
                 )
             )
     return products
