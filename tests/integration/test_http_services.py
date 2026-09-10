@@ -567,6 +567,12 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/sales/ephemerides",
             "/sales/orders.xlsx",
             "/api/sales",
+            "/api/agent/v1/stores",
+            "/api/agent/v1/article-stores",
+            "/ai-agents",
+            "/api/ai-agents/keys",
+            "/api/ai-agents/keys/{key_id}",
+            "/api/agent/v1/loss-products",
             "/api/sales/wb-funnel-orders",
             "/sales/decision-center",
             "/api/decision-center",
@@ -662,6 +668,8 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/api/admin/integrations/sync-jobs/{job_name}/run",
             "/api/admin/integrations/sync-jobs/{job_name}/settings",
         }
+        from app.web.routers.agent_full import SPECS
+        owned.update(f"/api/agent/v1/{name}" for name in set(SPECS) | {"capabilities", "data-status"})
         self.assertEqual(schema_paths, owned)
 
     def test_profile_shows_current_user_access(self) -> None:

@@ -1,0 +1,24 @@
+<link rel="stylesheet" href="/static/agent-management.css?v=2">
+<section class="agent-page">
+  <div class="agent-heading"><div><h1>ИИ-агенты</h1></div><span class="agent-badge">Только чтение данных</span></div>
+  <div class="agent-notice" id="agent-local-notice" hidden>Вы работаете локально. Ключи и API можно проверить здесь, но ChatGPT не сможет обратиться к этому компьютеру напрямую. Для подключения нужен доступный из интернета HTTPS-адрес.</div>
+  <div id="agent-message" role="status" aria-live="polite"></div>
+  <div class="agent-grid">
+    <section class="agent-card"><h2>Создать подключение</h2><p>Каждому личному GPT — отдельный ключ. Его права совпадают с вашими правами на сайте.</p>
+      <form id="agent-create"><label for="agent-name">Название агента</label><input id="agent-name" name="name" required maxlength="80" placeholder="Например, мой аналитик WB" autocomplete="off">
+      <label for="agent-days">Срок действия ключа</label><select id="agent-days" name="days"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option><option value="180">180 дней</option></select>
+      <button class="agent-primary" type="submit">Создать API-ключ</button></form>
+      <div class="agent-secret" id="agent-secret" hidden><h3>Ключ готов</h3><p>Скопируйте его сейчас: повторно показать ключ нельзя. Вставьте его в настройках Action, не в переписке с GPT.</p><label for="agent-token">Ваш API-ключ</label><textarea id="agent-token" readonly spellcheck="false" rows="3"></textarea><button type="button" id="agent-copy-key">Скопировать ключ</button><button type="button" id="agent-hide-key">Скрыть</button></div>
+    </section>
+    <section class="agent-card"><h2>Подключить к ChatGPT</h2><ol><li>Откройте редактор своего GPT и добавьте <strong>Action</strong>.</li><li>Вставьте описание API.<br><button type="button" id="agent-copy-schema">Скопировать схему API</button> <a href="/api/agent/v1/openapi.json" target="_blank" rel="noopener">Открыть схему</a></li><li>В Authentication выберите <strong>API Key → Bearer</strong> и вставьте свой ключ.</li><li>Сохраните GPT с доступом <strong>только для себя</strong>.</li></ol><p class="agent-caption">Если поделиться этим GPT, другие пользователи смогут обращаться к данным с вашим ключом. Для общего GPT компании нужен отдельный вход каждого сотрудника.</p></section>
+  </div>
+  <section class="agent-card"><div class="agent-section-heading"><div><h2>Мои API-ключи</h2><p>Отзыв сразу отключает подключение. Для продолжения работы создайте новый ключ.</p></div><button type="button" id="agent-refresh">Обновить</button></div><div class="agent-table-wrap"><table><thead><tr><th>Агент</th><th>Ключ</th><th>Действует до</th><th>Статус</th><th></th></tr></thead><tbody id="agent-keys"></tbody></table></div><p id="agent-empty" hidden>Подключений пока нет. Создайте первый ключ выше.</p></section>
+  <section class="agent-card agent-video" aria-labelledby="agent-video-title">
+    <h2 id="agent-video-title">Видеоинструкция</h2>
+    <div class="agent-video-placeholder">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="3" y="8" width="42" height="32" rx="8" stroke="currentColor" stroke-width="2"/><path d="m20 17 12 7-12 7V17Z" fill="currentColor"/></svg>
+      <p>Видео о подключении ИИ-агента скоро появится здесь.</p>
+    </div>
+  </section>
+</section>
+<script src="/static/agent-management.js?v=1" defer></script>
