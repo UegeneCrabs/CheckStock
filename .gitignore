@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .coverage
 .idea/
+.tmp/
 
 secrets/*
 
@@ -18,6 +19,7 @@ data/*.db-shm
 data/*.tmp
 data/*.dump
 data/exports/
+data/yandex-storefront/
 
 identifier.sqlite
 

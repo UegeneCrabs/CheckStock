@@ -1,10 +1,11 @@
 import ast
+from datetime import UTC, datetime
 
 from sqlalchemy import inspect, select
 
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord
-from app.repositories import core
+from app.repositories import core, yandex_assortment
 from app.repositories.seed_data import FULFILLMENTS, STOCK_ITEMS
 from app.repositories.stock_sheet_export import MARKETPLACES
 from app.stores import STORES
@@ -19,6 +20,7 @@ def init_db() -> None:
     _migrate_stock_operation_transit_batch(database)
     _migrate_manual_supply_note(database)
     _backfill_sync_job_runs(database)
+    _migrate_yandex_sync_settings(database)
     _remove_legacy_catalog_product_exclusions(database)
     _remove_legacy_unit_economics(database)
     _migrate_unit_economics_1c_cabinet_settings(database)
@@ -32,6 +34,7 @@ def init_db() -> None:
         _finish_stock_sheet_export_target_migration(database)
     _backfill_stock_sheet_export_marketplace_urls(database)
     if database.dialect_name != "sqlite":
+        _sync_yandex_assortment(database)
         return
     with core.get_connection() as connection:
         connection.execute("PRAGMA journal_mode = WAL")
@@ -47,6 +50,31 @@ def init_db() -> None:
         _migrate_activity_log_operation(connection)
         _migrate_manual_supply_store_slug(connection)
         connection.execute("PRAGMA optimize")
+        connection.commit()
+
+    _sync_yandex_assortment(database)
+
+
+def _sync_yandex_assortment(database: Database) -> None:
+    active = yandex_assortment.load_active_products()
+    with core.WRITE_LOCK, database.connect() as connection:
+        yandex_assortment.refresh(connection, active, datetime.now(UTC).isoformat())
+        connection.commit()
+
+
+def _migrate_yandex_sync_settings(database: Database) -> None:
+    """Preserve the combined job's switches without overriding independent settings."""
+    with database.connect() as connection:
+        for name in ("yandex_orders_sync", "yandex_reputation_sync", "yandex_advertising_sync"):
+            connection.execute(
+                """
+                INSERT INTO sync_job_settings (name, store_slug, marketplace, enabled, updated_at)
+                SELECT ?, store_slug, marketplace, enabled, updated_at
+                  FROM sync_job_settings WHERE name = 'yandex_unit_economics_sync'
+                ON CONFLICT(name, store_slug, marketplace) DO NOTHING
+                """,
+                (name,),
+            )
         connection.commit()
 
 

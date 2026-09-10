@@ -257,11 +257,12 @@
                 headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' }
             });
             var result = await response.json();
+            if (Array.isArray(result.items)) applySourceSettings(result.items);
             if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось загрузить себестоимость');
-            applySourceSettings(result.items);
             var report = result.report || {};
-            showToast('Себес обновлён: ' + Number(report.saved || 0) + ' товаров · '
-                + Number(report.sheet_count || 0) + ' WB-листов');
+            var sources = report.marketplaces || {};
+            showToast('Себес обновлён: WB — ' + Number((sources.WB || report).saved || 0)
+                + ', ЯМ — ' + Number((sources['YANDEX MARKET'] || {}).saved || 0) + ' товаров');
         } catch (error) {
             showToast(error.message || 'Не удалось загрузить себестоимость', true);
         } finally {

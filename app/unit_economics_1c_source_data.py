@@ -104,13 +104,18 @@ def _sheet_store_slugs(title: str) -> set[str]:
     return matched or set(STORES)
 
 
-def _quoted_sheet_range(title: str, row_count: int) -> str:
+def _quoted_sheet_range(title: str, row_count: int, *, all_columns: bool = False) -> str:
     escaped = title.replace("'", "''")
-    return f"'{escaped}'!A1:X{max(20, row_count)}"
+    return f"'{escaped}'!{'1:' if all_columns else 'A1:X'}{max(20, row_count)}"
 
 
 def fetch_wb_sheet_rows() -> list[dict]:
     """Read every current tab whose visible title ends with WB."""
+    return fetch_sheet_rows()
+
+
+def fetch_sheet_rows(sheet_title: str | None = None) -> list[dict]:
+    """Read WB tabs by default, or one explicitly named source tab."""
 
     if not google_service_account.has_credentials():
         raise SourceDataError(
@@ -140,14 +145,21 @@ def fetch_wb_sheet_rows() -> list[dict]:
         sheets = [
             sheet["properties"]
             for sheet in metadata.get("sheets", [])
-            if _text(sheet.get("properties", {}).get("title")).upper().endswith("WB")
+            if (
+                _text(sheet.get("properties", {}).get("title")).casefold() == sheet_title.casefold()
+                if sheet_title is not None
+                else _text(sheet.get("properties", {}).get("title")).upper().endswith("WB")
+            )
         ]
         if not sheets:
+            if sheet_title is not None:
+                raise SourceDataError(f"в Google-таблице нет листа {sheet_title}")
             raise SourceDataError("в Google-таблице нет листов, название которых оканчивается на WB")
         ranges = [
             _quoted_sheet_range(
                 str(sheet["title"]),
                 int(sheet.get("gridProperties", {}).get("rowCount") or 1_000),
+                all_columns=sheet_title is not None,
             )
             for sheet in sheets
         ]
@@ -177,7 +189,7 @@ def fetch_wb_sheet_rows() -> list[dict]:
 
     value_ranges = values.get("valueRanges", [])
     if len(value_ranges) != len(sheets):
-        raise SourceDataError("Google Sheets API вернул не все запрошенные WB-листы")
+        raise SourceDataError("Google Sheets API вернул не все запрошенные листы")
     return [
         {
             "sheet_id": int(sheet["sheetId"]),
@@ -282,7 +294,12 @@ def sync_all(sheets: list[dict] | None = None) -> dict:
     except Exception as error:
         for store_slug in STORES:
             db.record_sync_health(
-                store_slug, "WB", "unit_economics_1c_source", False, str(error), _now(),
+                store_slug,
+                "WB",
+                "unit_economics_1c_source",
+                False,
+                str(error),
+                _now(),
             )
         raise
     for store_slug in STORES:
@@ -312,3 +329,34 @@ def _sync_all(sheets: list[dict] | None = None) -> dict:
         len(report["commission_conflicts"]),
     )
     return {"ok": True, "saved": saved, "synced_at": synced_at, **report}
+
+
+def sync_all_marketplaces() -> dict:
+    """Shared nightly/manual trigger; failure of one source must not skip the other."""
+    from app import unit_economics_yandex_source_data
+
+    reports = {}
+    for marketplace, loader in (
+        ("WB", sync_all),
+        ("YANDEX MARKET", unit_economics_yandex_source_data.sync_all),
+    ):
+        try:
+            reports[marketplace] = loader()
+        except Exception as error:
+            reports[marketplace] = {"ok": False, "saved": 0, "error": str(error)}
+    result = {
+        "ok": all(report["ok"] for report in reports.values()),
+        "marketplaces": reports,
+        **{
+            key: sum(report.get(key, 0) for report in reports.values())
+            for key in ("saved", "sheet_count", "source_rows", "matched", "unmatched")
+        },
+    }
+    if not result["ok"]:
+        result["error"] = "; ".join(
+            f"{marketplace}: загружено {report['saved']} товаров"
+            if report["ok"]
+            else f"{marketplace}: {report['error']}"
+            for marketplace, report in reports.items()
+        )
+    return result

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import settings
+from app.yandex.product_novelty import SYNC_INTERVAL_SECONDS as YANDEX_NOVELTY_INTERVAL_SECONDS
+from app.yandex.unit_economics_sync import SYNC_INTERVAL_SECONDS as YANDEX_SYNC_INTERVAL_SECONDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +72,51 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "stores",
         ),
         SyncJobDefinition(
+            "yandex_orders_sync",
+            "Заказы Яндекс Маркета",
+            "Обновляет заказы ЯМ за сегодня и 6 предыдущих дней, сохраняя историю для расчётов.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["orders"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_reputation_sync",
+            "Отзывы и рейтинг Яндекс Маркета",
+            "Обновляет рейтинг товаров и количество отзывов ЯМ.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["reputation"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_advertising_sync",
+            "Реклама Яндекс Маркета",
+            "Обновляет затраты, показы и клики ЯМ за 7 завершённых дней.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["advertising"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_product_novelty_sync",
+            "Новизна товаров Яндекс Маркета",
+            "Проверяет заказы за неделю перед последними 21 днями. Обычные товары повторно не проверяет.",
+            _interval(YANDEX_NOVELTY_INTERVAL_SECONDS),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_storefront_prices_sync",
+            "Цены витрины Яндекс Маркета",
+            "Отдельный браузерный сборщик: цены покупателя без Пэй для актуального ассортимента в БД.",
+            "Ежедневно 08:00–19:00 каждый час и 01:00 · Екатеринбург",
+            True,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
             "wb_funnel_previous_day_close_00_msk",
             "Закрытие воронки WB",
             "Повторно загружает вчерашний день после его завершения.",
@@ -113,7 +160,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         SyncJobDefinition(
             "unit_economics_1c_source_sync",
             "Данные 1С",
-            "Загружает закупку, фулфилмент и прочие исходные данные из таблиц 1С.",
+            "Загружает закупку, фулфилмент и прочие данные 1С из WB-листов и общего листа YM.",
             f"Ежедневно в {settings.unit_economics_1c_source_sync_hour:02d}:00 МСК",
             base,
         ),

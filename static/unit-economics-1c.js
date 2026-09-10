@@ -429,7 +429,7 @@
         return [product.name, product.article, product.barcode, product.store_name, commentText(product.id),
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.rating, product.reviews_count, product.advertising.drr, product.advertising.spend,
-            product.is_new ? 'новинка' : '', product.sales_days,
+            product.is_new ? 'новинка' : config.yandexMetrics && product.is_new === false ? 'обычный' : '', product.sales_days,
             product.advertising.ctr, product.advertising.cpc,
             product.current_economics && product.current_economics.margin,
             product.current_economics && product.current_economics.roi,
@@ -454,7 +454,7 @@
             tag.goal_week, tag.goal_day, tag.status, tag.ends, tag.code, tag.fact, tag.plan,
             product.stock.total, product.stock.fbs, product.stock.fbo,
             product.stock.fulfillment, product.stock.days,
-            product.is_new === null ? null : product.is_new ? 'Новинка' : 'Нет',
+            product.is_new === null ? null : product.is_new ? 'Новинка' : config.yandexMetrics ? 'Обычный' : 'Нет',
             calculateSppPercent(product)
         ];
         var value = values[Number(columnIndex)];
@@ -494,7 +494,17 @@
             + (product.advertising.buyout_default_applied ? ' · выкуп по умолчанию' : '')
             + ' · реклама ' + nullable(current.advertising_spend, preciseMoney);
         if (placeholderMode) {
-            advertisingTitle = stockTitle = currentTitle = 'Данные пока не подключены';
+            currentTitle = 'Данные пока не подключены';
+            if (config.yandexMetrics === true) {
+                advertisingTitle = 'Период ' + nullText(product.advertising.period_from)
+                    + ' — ' + nullText(product.advertising.period_to) + ' · сумма заказов '
+                    + nullable(product.advertising.orders_amount, preciseMoney)
+                    + ' · буст продаж и показов (расходы по отчётам ЯМ)';
+                stockTitle = stock.orders_21d === null ? 'Данных о заказах пока нет'
+                    : stockTitle.replace('Заказы воронки', 'Заказы ЯМ');
+            } else {
+                advertisingTitle = stockTitle = currentTitle;
+            }
         }
         var cells = {};
         cells.product = '<td><div class="ue1c-product">' + mediaHtml(product, 'ue1c-product-thumb')
@@ -513,8 +523,10 @@
         cells.newness = '<td class="ue1c-newness"><span class="ue1c-new-badge'
             + (product.is_new ? ' is-new' : '') + '">'
             + (product.is_new === null ? '—' : product.is_new ? 'Новинка' : 'Обычный')
-            + '</span><small>' + (product.sales_days === null || product.sales_days === undefined
-                ? 'нет данных' : integer.format(product.sales_days) + ' дн.') + '</small></td>';
+            + '</span>' + (config.yandexMetrics === true
+                ? (product.is_new === null ? '<small>Не проверен</small>' : '')
+                : '<small>' + (product.sales_days === null || product.sales_days === undefined
+                    ? 'нет данных' : integer.format(product.sales_days) + ' дн.') + '</small>') + '</td>';
         var currentSpp = calculateSppPercent(product);
         cells.current = '<td class="ue1c-num ue1c-group-start"><strong title="'
             + escapeHtml(currentTitle) + '">'
@@ -672,7 +684,9 @@
         nodes.periodApply.disabled = loading || placeholderMode;
         nodes.pageSize.disabled = loading;
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
-            button.disabled = loading || (placeholderMode && button.dataset.stateFilter !== 'all');
+            var supported = button.dataset.stateFilter === 'all'
+                || (config.yandexMetrics === true && button.dataset.stateFilter === 'new');
+            button.disabled = loading || (placeholderMode && !supported);
         });
     }
     function productsRequestUrl(parameters) {
@@ -1712,8 +1726,18 @@
             ['Закупочная стоимость', 'purchase_cost', '₽'], ['Фулфилмент', 'fulfillment_cost', '₽'],
             ['Эквайринг', 'acquiring', '%'], ['Хранение', 'storage', '₽'], ['Налоги', 'tax', '₽']
         ];
+        var priceCheck = product.price_check || {};
+        var priceNote = 'Цена покупателя без Яндекс Пэй. Обновление ежедневно: каждый час с 08:00 до 19:00 и в 01:00 (Екатеринбург).';
+        if (priceCheck.price_checked_at) {
+            priceNote += ' Получена: ' + new Date(priceCheck.price_checked_at).toLocaleString('ru-RU') + '.';
+        }
+        if (priceCheck.is_stale) {
+            priceNote += ' Цена требует обновления; последняя известная: '
+                + nullable(priceCheck.last_known_buyer_price, preciseMoney, ' ₽') + '.';
+        }
+        if (priceCheck.message) priceNote += ' ' + priceCheck.message;
         section.innerHTML = '<header class="ue1c-calculator-head"><h3>Экономика товара</h3></header>'
-            + '<p class="ue1c-calculator-note">Расчёты Яндекс Маркета пока не подключены.</p>'
+            + '<p class="ue1c-calculator-note">' + escapeHtml(priceNote) + '</p>'
             + '<div class="ue1c-calculator-body"><div class="ue1c-calculator-inputs">' + fields.map(function (field) {
                 return '<label class="ue1c-calculator-row"><span>' + escapeHtml(field[0])
                     + '</span><span class="ue1c-calculator-field"><input disabled placeholder="—" value="'
@@ -2523,6 +2547,7 @@
             control.title = 'Выбор периода будет доступен после подключения расчётов';
         });
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]:not([data-state-filter="all"])'), function (control) {
+            if (config.yandexMetrics === true && control.dataset.stateFilter === 'new') return;
             control.title = 'Фильтр будет доступен после подключения расчётов';
         });
     }
