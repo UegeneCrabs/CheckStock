@@ -549,6 +549,51 @@ def test_web_key_management_ownership_and_csrf(agent_client, monkeypatch, days):
     assert client.delete("/api/ai-agents/keys/" + created["id"]).status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("trusted_hosts", "peer", "origin", "expected_status"),
+    [
+        ("127.0.0.1", "172.18.0.1", "https://rocketbm.ru", 403),
+        ("127.0.0.1,172.18.0.1", "172.18.0.1", "https://rocketbm.ru", 201),
+        ("127.0.0.1,172.18.0.1", "172.18.0.99", "https://rocketbm.ru", 403),
+        ("127.0.0.1,172.18.0.1", "172.18.0.1", "https://evil.example", 403),
+    ],
+)
+def test_key_management_behind_https_proxy(
+    agent_client, monkeypatch, trusted_hosts, peer, origin, expected_status
+):
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    from app.web.routers import agent_management
+
+    client, identity, path, _, _ = agent_client
+    monkeypatch.setattr(
+        agent_management, "settings", agent_management.settings.model_copy(update={"agent_tokens_path": path})
+    )
+    identity.user_for_token.return_value = identity.get_user.return_value
+    proxy_client = TestClient(
+        ProxyHeadersMiddleware(client.app, trusted_hosts=trusted_hosts),
+        base_url="http://rocketbm.ru",
+        client=(peer, 12345),
+    )
+    proxy_client.cookies.set("paketa_session", "a" * 40)
+    proxy_client.headers.update(
+        {"Origin": origin, "X-Forwarded-Proto": "https", "X-Agent-Management": "1"}
+    )
+    records_before = path.read_bytes()
+    result = proxy_client.post("/api/ai-agents/keys", json={"name": "HTTPS test", "days": 1})
+    assert result.status_code == expected_status, result.text
+    if expected_status == 403:
+        assert path.read_bytes() == records_before
+        return
+    created = result.json()
+    assert resolve_credential(created["token"], path).user_id == 7
+    key_url = "/api/ai-agents/keys/" + created["id"]
+    assert proxy_client.delete(key_url, headers={"Origin": "https://evil.example"}).status_code == 403
+    assert resolve_credential(created["token"], path) is not None
+    assert proxy_client.delete(key_url).status_code == 204
+    assert resolve_credential(created["token"], path) is None
+
+
 def test_management_page_and_button(agent_client, monkeypatch, database_path):
     from app.web.routers import agent_management
 

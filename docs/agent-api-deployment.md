@@ -8,6 +8,13 @@
 ## Настройки сервера
 
 - `CHECKSTOCK_AGENT_PUBLIC_URL`: публичный HTTPS origin сайта компании, без завершающего `/`.
+- `FORWARDED_ALLOW_IPS`: адреса доверенных прокси для Uvicorn. Если Nginx работает
+  на хосте, а приложение в Docker, укажите loopback и фактический gateway сети
+  контейнера (на rocketbm.ru: `127.0.0.1,172.18.0.1`). Nginx должен передавать
+  `X-Forwarded-Proto $scheme`. Без доверия к gateway HTTPS-запросы воспринимаются
+  как HTTP, и создание/отзыв ключей отклоняется проверкой Origin с кодом 403.
+  Не используйте `*`; при пересоздании Docker-сети проверьте адрес gateway.
+- `CHECKSTOCK_SESSION_COOKIE_SECURE=1`: включить для HTTPS.
 - `CHECKSTOCK_AGENT_TOKENS_PATH`: путь к файлу ключей в отдельном постоянном записываемом каталоге.
   Например `/app/agent-credentials/chatgpt_tokens.json`. По умолчанию используется
   `secrets/chatgpt_tokens.json`; стандартный mount secrets:ro не позволяет выпускать ключи через UI.
@@ -23,6 +30,8 @@ services:
   app:
     environment:
       CHECKSTOCK_AGENT_PUBLIC_URL: ${CHECKSTOCK_AGENT_PUBLIC_URL:?set company HTTPS origin}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:?set trusted proxy addresses}
+      CHECKSTOCK_SESSION_COOKIE_SECURE: "1"
       CHECKSTOCK_AGENT_TOKENS_PATH: /app/agent-credentials/chatgpt_tokens.json
     volumes:
       - agent-credentials:/app/agent-credentials
@@ -46,4 +55,4 @@ volumes:
 Итог включает транзит. Пропуски и предупреждения нельзя интерпретировать как достоверные нули.
 
 При откате вернуть предыдущую версию приложения. Файл ключей сохранить отдельно;
-он не включён в Git. На сервере компании изменения пока не применялись.
+он не включён в Git.
