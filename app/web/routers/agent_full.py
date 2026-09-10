@@ -116,7 +116,7 @@ SPECS = {
     "supplies": (S.STOCK, True, "date_from date_to", "Read WB planned supplies with a five-minute cache and scoped manual plans. No writes."),
     "prices": (S.UNIT_ECONOMICS_1C, True, "date_from date_to article manager", "Read latest prices, or recorded price snapshots for explicit dates. Never changes prices."),
     "costs": (S.UNIT_ECONOMICS_1C, True, "article manager search", "Read current purchase costs, expenses, manager and ABC data. No historical backdating."),
-    "profit": (S.UNIT_ECONOMICS_1C, True, "date_from date_to article manager", "Website estimated unit-profit report, including unknown and incomplete calculations."),
+    "profit": (S.UNIT_ECONOMICS_1C, True, "date_from date_to article manager", "Юниточная прибыль: website report source for ТО (orders_amount), orders, cancellations and margin. Orders are not confirmed sales. Missing margin does not imply missing orders."),
     "target-prices": (S.UNIT_ECONOMICS_1C, True, "article manager", "Read website target-price recommendations for its closed week. No price updates."),
     "rnp": (S.RNP, False, "month search", "Read monthly RNP product metrics. Missing metric history is explicitly unavailable."),
     "decisions": (S.DECISION_CENTER, True, "", "Read existing decision-engine suggestions. Heuristic estimates, not proven causal effects."),
@@ -487,11 +487,31 @@ async def execute(name, request, user, query):
         rows = reports.filtered(rows, query)
         rows = await run_in_threadpool(reports.economic_filter, rows, user, query.store, query.manager)
         if name == "profit":
-            rows = reports.select(rows, "article name manager orders_count orders_amount advertising_spend margin margin_complete margin_missing_days roi")
+            rows = reports.select(rows, "store_slug store_name article name subject manager "
+                                  "orders_count orders_amount cancel_count cancel_amount net_orders_count net_orders_amount "
+                                  "buyout_count buyout_amount buyout_percent buyout_period_from buyout_period_to "
+                                  "buyout_updated_at funnel_updated_at funnel_period_from funnel_period_to "
+                                  "advertising_spend impressions clicks ctr cpc drr margin margin_complete margin_missing_days roi")
             for row in rows:
+                # Keep the site's displayed partial calculation separately from complete results.
+                row["report_margin"] = row["margin"]
+                row["report_roi"] = row["roi"]
                 if row["margin_complete"] is not True:
                     row["margin"] = row["roi"] = None
-            metrics = ("orders_count", "orders_amount", "advertising_spend", "margin")
+            metrics = ("orders_count", "orders_amount", "cancel_count", "cancel_amount",
+                       "net_orders_count", "net_orders_amount", "advertising_spend", "margin")
+            context = {"report": "unit-profit", "report_name": "Юниточная прибыль",
+                       "period_from": data.get("period_from"), "period_to": data.get("period_to"),
+                       "basis": "website_unit_profit_report",
+                       "field_labels": {"orders_amount": "ТО заказов, ₽",
+                                        "net_orders_amount": "ТО после отмен, ₽",
+                                        "drr": "ДРР с выкупом, %",
+                                        "report_margin": "Маржа отчёта, ₽ (может быть неполной)",
+                                        "report_roi": "ROI отчёта, % (может быть неполным)"}}
+            warnings.append("Источник — тот же расчёт, что в отчёте «Юниточная прибыль». "
+                            "ТО заказов не является подтверждённой выручкой. report_margin/report_roi "
+                            "сохраняют значения сайта; при margin_complete=false они неполные. "
+                            "Пропуски маржи не означают отсутствие заказов за эти даты.")
         else:
             context = {k: data.get(k) for k in ("period_from", "period_to")}
         warnings.append("Расчётные показатели по методике сайта. Не подтверждённый финансовый результат; полнота источников обязательна.")
@@ -522,6 +542,8 @@ async def execute(name, request, user, query):
     sort_fields = tuple(reports.TAG_LABELS) if name == "product-tags" else ("margin_per_unit_rub", "roi_percent", "spp_percent") if name == "current-economics" else ()
     if name == "product-newness":
         sort_fields = ("sales_days", "is_new")
+    elif name == "profit":
+        sort_fields = ("drr", "ctr", "cpc", "roi")
     elif name == "product-reputation":
         sort_fields = ("rating", "reviews_count")
     payload = reports.page(rows, query, metrics, sort_fields=sort_fields)

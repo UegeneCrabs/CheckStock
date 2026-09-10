@@ -1,7 +1,6 @@
-<link rel="stylesheet" href="/static/agent-management.css?v=2">
+<link rel="stylesheet" href="/static/agent-management.css?v=3">
 <section class="agent-page">
   <div class="agent-heading"><div><h1>ИИ-агенты</h1></div><span class="agent-badge">Только чтение данных</span></div>
-  <div class="agent-notice" id="agent-local-notice" hidden>Вы работаете локально. Ключи и API можно проверить здесь, но ChatGPT не сможет обратиться к этому компьютеру напрямую. Для подключения нужен доступный из интернета HTTPS-адрес.</div>
   <div id="agent-message" role="status" aria-live="polite"></div>
   <div class="agent-grid">
     <section class="agent-card"><h2>Создать подключение</h2><p>Каждому личному GPT — отдельный ключ. Его права совпадают с вашими правами на сайте.</p>
@@ -10,7 +9,7 @@
       <button class="agent-primary" type="submit">Создать API-ключ</button></form>
       <div class="agent-secret" id="agent-secret" hidden><h3>Ключ готов</h3><p>Скопируйте его сейчас: повторно показать ключ нельзя. Вставьте его в настройках Action, не в переписке с GPT.</p><label for="agent-token">Ваш API-ключ</label><textarea id="agent-token" readonly spellcheck="false" rows="3"></textarea><button type="button" id="agent-copy-key">Скопировать ключ</button><button type="button" id="agent-hide-key">Скрыть</button></div>
     </section>
-    <section class="agent-card"><h2>Подключить к ChatGPT</h2><ol><li>Откройте редактор своего GPT и добавьте <strong>Action</strong>.</li><li>Вставьте описание API.<br><button type="button" id="agent-copy-schema">Скопировать схему API</button> <a href="/api/agent/v1/openapi.json" target="_blank" rel="noopener">Открыть схему</a></li><li>В Authentication выберите <strong>API Key → Bearer</strong> и вставьте свой ключ.</li><li>Сохраните GPT с доступом <strong>только для себя</strong>.</li></ol><p class="agent-caption">Если поделиться этим GPT, другие пользователи смогут обращаться к данным с вашим ключом. Для общего GPT компании нужен отдельный вход каждого сотрудника.</p></section>
+    <section class="agent-card"><h2>Подключить к ChatGPT</h2><ol><li>Откройте редактор своего GPT. <button type="button" class="agent-help-button" id="agent-open-editor-help" aria-label="Как открыть редактор GPT" aria-haspopup="dialog">?</button></li><li>Вставьте готовую инструкцию в поле «Инструкции» вашего GPT.<br><button type="button" id="agent-copy-instructions">Скопировать инструкцию</button> <a href="/static/agent-instructions.txt" target="_blank" rel="noopener">Открыть инструкцию</a></li><li>Нажмите <strong>«Создать новое действие»</strong>.</li><li>В Authentication выберите <strong>API Key → Bearer</strong> и вставьте свой ключ.</li><li>Вставьте схему.<br><button type="button" id="agent-copy-schema">Скопировать схему API</button> <a href="/api/agent/v1/openapi.json" target="_blank" rel="noopener">Открыть схему</a></li><li>Сохраните GPT с доступом <strong>только для себя</strong>.</li></ol><p class="agent-caption">Если поделиться этим GPT, другие пользователи смогут обращаться к данным с вашим ключом. Для общего GPT компании нужен отдельный вход каждого сотрудника.</p></section>
   </div>
   <section class="agent-card"><div class="agent-section-heading"><div><h2>Мои API-ключи</h2><p>Отзыв сразу отключает подключение. Для продолжения работы создайте новый ключ.</p></div><button type="button" id="agent-refresh">Обновить</button></div><div class="agent-table-wrap"><table><thead><tr><th>Агент</th><th>Ключ</th><th>Действует до</th><th>Статус</th><th></th></tr></thead><tbody id="agent-keys"></tbody></table></div><p id="agent-empty" hidden>Подключений пока нет. Создайте первый ключ выше.</p></section>
   <section class="agent-card agent-video" aria-labelledby="agent-video-title">
@@ -21,4 +20,9 @@
     </div>
   </section>
 </section>
-<script src="/static/agent-management.js?v=1" defer></script>
+<dialog id="agent-editor-help" class="agent-help-dialog" aria-labelledby="agent-editor-help-title">
+  <div class="agent-section-heading"><h2 id="agent-editor-help-title">Как открыть редактор GPT</h2><button type="button" id="agent-close-editor-help" aria-label="Закрыть подсказку">Закрыть</button></div>
+  <p>В ChatGPT откройте «Больше» → «GPT» и нажмите «Создать».</p>
+  <img src="/static/agent-create-gpt.png" alt="В меню ChatGPT выделены Больше, GPT и кнопка Создать в правом верхнем углу.">
+</dialog>
+<script src="/static/agent-management.js?v=4" defer></script>
