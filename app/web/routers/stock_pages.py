@@ -433,11 +433,12 @@ async def stock_store_total_data(request: Request, slug: str):
     if store_slug not in accessible_store_slugs(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
 
-    allowed_pairs = tuple(pair for pair in scope_pairs(request.state.user) if pair[0] == store_slug)
+    allowed_pairs = scope_pairs(request.state.user)
     rows = await run_in_threadpool(
         stock_total_service.build_rows,
-        (store_slug,),
+        accessible_store_slugs(request.state.user),
         allowed_pairs,
+        store_slug,
     )
     return JSONResponse(
         {

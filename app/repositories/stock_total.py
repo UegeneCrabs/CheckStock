@@ -16,7 +16,8 @@ def get_source_rows(
         catalog = connection.execute(
             f"""
             SELECT source.id, source.store_slug, source.marketplace, source.article,
-                   source.barcode, source.name, prices.purchase_price
+                   source.barcode, source.name, prices.purchase_price,
+                   prices.synced_at AS purchase_price_synced_at
               FROM stock_items source
               LEFT JOIN unit_economics_1c_source_values prices
                 ON prices.stock_item_id=source.id
