@@ -2807,13 +2807,14 @@ async def unit_economics_1c_source_data_sync(request: Request):
         report = run_tracked(
             "unit_economics_1c_source_sync",
             "manual",
-            unit_economics_1c_source.sync_all,
+            unit_economics_1c_source.sync_all_marketplaces,
         )
         db.log_action(
             int(user["id"]),
             str(user["full_name"]),
             "unit_economics_1c_source_sync",
-            f"Внепланово обновлены данные 1С из Google Sheets: {report['saved']} товаров",
+            f"Загрузка данных 1С WB и ЯМ из Google Sheets: {report['saved']} товаров; "
+            + ("успешно" if report["ok"] else f"с ошибками: {report.get('error', '')}"),
             datetime.now(UTC).isoformat(),
         )
         return {
@@ -2829,6 +2830,8 @@ async def unit_economics_1c_source_data_sync(request: Request):
             {"ok": False, "error": f"Не удалось загрузить данные из Google Sheets: {error}"},
             status_code=502,
         )
+    if not result["report"]["ok"]:
+        return JSONResponse({"ok": False, "error": result["report"]["error"], **result}, status_code=502)
     return {"ok": True, **result}
 
 

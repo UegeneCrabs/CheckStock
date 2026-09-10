@@ -9,6 +9,7 @@ from app.repositories import unit_economics_yandex as repository
 from app.repositories import (
     yandex_assortment,
     yandex_product_statuses,
+    yandex_source_values,
 )
 from app.stores import STORES
 
@@ -24,9 +25,11 @@ def catalog_product(
     economics: dict | None = None,
     advertising: dict | None = None,
     is_new: bool | None = None,
+    source_values: dict | None = None,
 ) -> dict:
     store = STORES[store_slug]
     article = str(product["article"])
+    source_values = source_values or {}
     return {
         "id": f"yandex:{store_slug}:{article}",
         "marketplace": MARKETPLACE,
@@ -49,7 +52,18 @@ def catalog_product(
         "economics_7d": economics or dict.fromkeys(("turnover", "margin", "roi")),
         "advertising": advertising
         or dict.fromkeys(("drr", "spend", "ctr", "cpc", "orders_amount", "period_from", "period_to")),
-        "tag_data": dict.fromkeys(("goal_week", "goal_day", "status", "ends", "code", "fact", "plan")),
+        "tag_data": {
+            key: source_values.get(field)
+            for key, field in (
+                ("goal_week", "goal_week"),
+                ("goal_day", "goal_day"),
+                ("status", "stock_status"),
+                ("ends", "stock_end_week"),
+                ("code", "abc_code"),
+                ("fact", "fact_sales"),
+                ("plan", "plan_sales"),
+            )
+        },
         "stock": stock
         or dict.fromkeys(
             (
@@ -83,6 +97,8 @@ def catalog_product(
                     "category",
                 )
             ),
+            "purchase_cost": source_values.get("purchase_price"),
+            "fulfillment_cost": source_values.get("fulfillment_cost"),
         },
         "history": None,
     }
@@ -129,6 +145,7 @@ def load_products(
         stocks = {row["article"]: row for row in db.get_stock_items(slug, MARKETPLACE, ("fbs", "fbo"))}
         snapshots = repository.get_snapshots(slug)
         product_statuses = yandex_product_statuses.get_statuses(slug)
+        source_values = yandex_source_values.get_values(slug)
         orders_snapshot = snapshots.get("orders") or {}
         if _covers(orders_snapshot, stock_start, today):
             orders = orders_snapshot["data"]
@@ -245,6 +262,7 @@ def load_products(
                     advertising=ad,
                     reputation=reputation.get(sku) or reputation.get(str(product.get("mp_sku") or "")),
                     is_new=product_statuses[sku]["status"] == "new" if sku in product_statuses else None,
+                    source_values=source_values.get(sku),
                 )
             )
     return products

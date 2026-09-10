@@ -215,7 +215,7 @@ class BackgroundSyncTests(unittest.TestCase):
         jobs = {job.name: job for job in background._jobs(mock.Mock())}
 
         job = jobs["unit_economics_1c_source_sync"]
-        self.assertIs(job.callback, background.unit_source_sync.sync_all)
+        self.assertIs(job.callback, background.unit_source_sync.sync_all_marketplaces)
         with mock.patch.object(background, "_seconds_until_next_moscow_run", return_value=123) as delay:
             self.assertEqual(job.next_delay(), 123)
         delay.assert_called_once_with(background.settings.unit_economics_1c_source_sync_hour)

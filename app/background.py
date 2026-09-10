@@ -420,7 +420,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         ),
         BackgroundJob(
             "unit_economics_1c_source_sync",
-            unit_source_sync.sync_all,
+            unit_source_sync.sync_all_marketplaces,
             _moscow_daily_delay(settings.unit_economics_1c_source_sync_hour),
             ready_event=catalog_ready,
             is_enabled=lambda: _job_enabled("unit_economics_1c_source_sync"),

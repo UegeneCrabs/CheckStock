@@ -151,7 +151,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         SyncJobDefinition(
             "unit_economics_1c_source_sync",
             "Данные 1С",
-            "Загружает закупку, фулфилмент и прочие исходные данные из таблиц 1С.",
+            "Загружает закупку, фулфилмент и прочие данные 1С из WB-листов и общего листа YM.",
             f"Ежедневно в {settings.unit_economics_1c_source_sync_hour:02d}:00 МСК",
             base,
         ),

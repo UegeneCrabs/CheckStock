@@ -723,7 +723,7 @@ class WebRouteUnitTests(unittest.TestCase):
         }
         with mock.patch.object(
             unit_economics.unit_economics_1c_source,
-            "sync_all",
+            "sync_all_marketplaces",
             return_value=report,
         ) as sync:
             response = self.client.post(
@@ -737,9 +737,18 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertTrue(response.json()["items"])
         sync.assert_called_once_with()
 
+        partial = {**report, "ok": False, "error": "WB: загружено 945 товаров; YM: нет доступа",
+                   "marketplaces": {"WB": report, "YANDEX MARKET": {"ok": False, "saved": 0, "error": "нет доступа"}}}
+        with mock.patch.object(unit_economics.unit_economics_1c_source, "sync_all_marketplaces", return_value=partial):
+            response = self.client.post("/api/unit-economics-1c/source-data/sync", headers={"X-Requested-With": "fetch"})
+        self.assertEqual(response.status_code, 502)
+        self.assertFalse(response.json()["ok"])
+        self.assertEqual(response.json()["report"]["marketplaces"]["WB"]["saved"], 945)
+        self.assertTrue(response.json()["items"])
+
         with mock.patch.object(
             unit_economics.unit_economics_1c_source,
-            "sync_all",
+            "sync_all_marketplaces",
             side_effect=unit_economics.unit_economics_1c_source.SourceDataError("нет доступа"),
         ):
             failed = self.client.post(

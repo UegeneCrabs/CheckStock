@@ -1175,6 +1175,30 @@ class RnpDailyMetricRecord(OrmBase):
     snapshot_synced_at: Mapped[str | None] = mapped_column(String)
 
 
+class UnitEconomicsYandexSourceValueRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_source_values"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    purchase_price: Mapped[float | None] = mapped_column(Float)
+    fulfillment_cost: Mapped[float | None] = mapped_column(Float)
+    team_commission_percent: Mapped[float | None] = mapped_column(Float)
+    manager: Mapped[str | None] = mapped_column(String)
+    tag_raw: Mapped[str | None] = mapped_column(Text)
+    goal_week: Mapped[float | None] = mapped_column(Float)
+    goal_day: Mapped[float | None] = mapped_column(Float)
+    stock_status: Mapped[str | None] = mapped_column(String)
+    stock_end_week: Mapped[str | None] = mapped_column(String)
+    supplier_external_raw: Mapped[str | None] = mapped_column(Text)
+    abc_code: Mapped[str | None] = mapped_column(String)
+    fact_sales: Mapped[float | None] = mapped_column(Float)
+    plan_sales: Mapped[float | None] = mapped_column(Float)
+    source_sheet_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_sheet_title: Mapped[str] = mapped_column(String, nullable=False)
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class UnitEconomicsYandexAssortmentRecord(OrmBase):
     __tablename__ = "unit_economics_yandex_assortment"
 
