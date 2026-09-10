@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import settings
+from app.yandex.product_novelty import SYNC_INTERVAL_SECONDS as YANDEX_NOVELTY_INTERVAL_SECONDS
+from app.yandex.unit_economics_sync import SYNC_INTERVAL_SECONDS as YANDEX_SYNC_INTERVAL_SECONDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +70,42 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             _interval(settings.wb_funnel_orders_sync_interval_seconds),
             funnel,
             "stores",
+        ),
+        SyncJobDefinition(
+            "yandex_orders_sync",
+            "Заказы Яндекс Маркета",
+            "Обновляет заказы ЯМ за сегодня и 6 предыдущих дней, сохраняя историю для расчётов.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["orders"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_reputation_sync",
+            "Отзывы и рейтинг Яндекс Маркета",
+            "Обновляет рейтинг товаров и количество отзывов ЯМ.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["reputation"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_advertising_sync",
+            "Реклама Яндекс Маркета",
+            "Обновляет затраты, показы и клики ЯМ за 7 завершённых дней.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["advertising"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_product_novelty_sync",
+            "Новизна товаров Яндекс Маркета",
+            "Проверяет заказы за неделю перед последними 21 днями. Обычные товары повторно не проверяет.",
+            _interval(YANDEX_NOVELTY_INTERVAL_SECONDS),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
         ),
         SyncJobDefinition(
             "wb_funnel_previous_day_close_00_msk",

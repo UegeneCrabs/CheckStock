@@ -2919,6 +2919,8 @@ async def sales_unit_economics_1c_ozon(request: Request):
 @router.get("/sales/unit-economics-1c/yandex-market", response_class=HTMLResponse)
 async def sales_unit_economics_1c_yandex(request: Request):
     store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
+    today = datetime.now(MOSCOW_TIMEZONE).date()
+    period_from, period_to = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
     if request.query_params.get("data") == "1":
         detail_article = str(request.query_params.get("article") or "").strip()
         detail_store = str(request.query_params.get("store") or "").strip().lower()
@@ -2926,25 +2928,28 @@ async def sales_unit_economics_1c_yandex(request: Request):
             return JSONResponse({"ok": False, "error": "Нет доступа к магазину"}, status_code=403)
 
         def load_products() -> list[dict]:
-            return [
-                unit_economics_yandex.catalog_product(slug, product)
-                for slug in ((detail_store,) if detail_article else store_slugs)
-                for product in db.get_catalog_items(slug, unit_economics_yandex.MARKETPLACE)
-                if not detail_article or product["article"] == detail_article
-            ]
+            return unit_economics_yandex.load_products(
+                (detail_store,) if detail_article else store_slugs, article=detail_article, today=today,
+            )
 
         products = await run_in_threadpool(load_products)
         if detail_article:
             if not products:
                 return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)
             return JSONResponse({"ok": True, "product": products[0]})
-        return JSONResponse({"ok": True, "products": products})
+        return JSONResponse({
+            "ok": True, "products": products, "period_days": 7,
+            "period_from": period_from, "period_to": period_to, "last_complete_day": period_to,
+        })
 
     unit_config = {
         "userKey": str(request.state.user["id"]),
         "storageNamespace": "checkstock.unit-economics-yandex",
         "marketplaceLabel": "Яндекс Маркета",
         "placeholderMode": True,
+        "yandexMetrics": True,
+        "periodFrom": period_from,
+        "periodTo": period_to,
         "canEdit": False,
         "stores": [{"slug": slug, "name": STORES[slug]["name"]} for slug in store_slugs],
         "products": [],
@@ -2957,8 +2962,10 @@ async def sales_unit_economics_1c_yandex(request: Request):
         marketplace_label="Яндекс Маркета",
         loading_description="Загружаем товары из каталога.",
         unit_1c_notice=(
-            '<p class="ue1c-placeholder-note" role="status">Яндекс Маркет · Товары из каталога. '
-            'Расчёты пока не подключены — показатели появятся позже.</p>'
+            '<p class="ue1c-placeholder-note" role="status">Яндекс Маркет · Остатки из БД, '
+            'рейтинг и отзывы из API. '
+            'ТО и реклама — за 7 завершённых дней; '
+            'запас — по заказам за 21 день. Маржа и ROI пока не подключены.</p>'
         ),
     )
     return render_page(

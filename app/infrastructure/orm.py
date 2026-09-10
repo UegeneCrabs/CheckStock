@@ -1175,6 +1175,41 @@ class RnpDailyMetricRecord(OrmBase):
     snapshot_synced_at: Mapped[str | None] = mapped_column(String)
 
 
+class UnitEconomicsYandexAssortmentRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_assortment"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    is_legacy: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomicsYandexProductStatusRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_product_statuses"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    checked_on: Mapped[str] = mapped_column(String, nullable=False)
+    period_from: Mapped[str] = mapped_column(String, nullable=False)
+    period_to: Mapped[str] = mapped_column(String, nullable=False)
+    order_date: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomicsYandexSnapshotRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_snapshots"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, primary_key=True)
+    period_from: Mapped[str | None] = mapped_column(String)
+    period_to: Mapped[str | None] = mapped_column(String)
+    data_json: Mapped[str | None] = mapped_column(Text)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_attempt_at: Mapped[str] = mapped_column(String, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
 class RnpMetricSyncStateRecord(OrmBase):
     __tablename__ = "rnp_metric_sync_state"
 

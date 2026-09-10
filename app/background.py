@@ -34,7 +34,9 @@ from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import sync as wb_sync
 from app.wb import token_watch
 from app.yandex import catalog as ya_catalog
+from app.yandex import product_novelty as ya_product_novelty
 from app.yandex import sync as ya_sync
+from app.yandex import unit_economics_sync as ya_unit_sync
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +333,27 @@ def _ftp_export_jobs() -> tuple[BackgroundJob, ...]:
     return tuple(jobs)
 
 
+def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
+    return tuple(
+        BackgroundJob(
+            name,
+            lambda current_source=source: ya_unit_sync.sync_all(current_source),
+            _fixed_delay(ya_unit_sync.SYNC_INTERVAL_SECONDS[source]),
+            startup_delay_seconds=startup_delay,
+            interval_from_start=True,
+            is_enabled=lambda current_name=name: _job_enabled(current_name),
+            run_callback=lambda current_name=name, current_source=source: ya_unit_sync.sync_all(
+                current_source, sync_settings.enabled_stores(current_name, "YANDEX MARKET")
+            ),
+        )
+        for name, source, startup_delay in (
+            ("yandex_orders_sync", "orders", 90),
+            ("yandex_reputation_sync", "reputation", 120),
+            ("yandex_advertising_sync", "advertising", 150),
+        )
+    )
+
+
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -366,6 +389,18 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             run_callback=_sync_wb_advertising_configured,
         ),
         *_funnel_jobs(),
+        *_yandex_unit_economics_jobs(),
+        BackgroundJob(
+            "yandex_product_novelty_sync",
+            ya_product_novelty.sync_all,
+            _fixed_delay(ya_product_novelty.SYNC_INTERVAL_SECONDS),
+            startup_delay_seconds=180,
+            interval_from_start=True,
+            is_enabled=lambda: _job_enabled("yandex_product_novelty_sync"),
+            run_callback=lambda: ya_product_novelty.sync_all(
+                sync_settings.enabled_stores("yandex_product_novelty_sync", "YANDEX MARKET")
+            ),
+        ),
         BackgroundJob(
             "unit_economics_1c_daily_margin_snapshot_00_msk",
             unit_margin_history.save_daily_margin_snapshots,

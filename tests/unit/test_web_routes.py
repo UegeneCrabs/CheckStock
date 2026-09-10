@@ -17,7 +17,7 @@ from app.dto.rnp import RnpAction, RnpStrategy
 from app.dto.system import ReadinessStatus
 from app.dto.unit_economics_1c import UnitEconomics1CProductSettings
 from app.main import create_app
-from app.repositories import core
+from app.repositories import core, yandex_product_statuses
 from app.stores import STORES
 from app.wb import funnel_orders as wb_funnel_orders
 from app.web import middleware
@@ -803,12 +803,13 @@ class WebRouteUnitTests(unittest.TestCase):
             yandex.text,
         )
 
-    def test_yandex_unit_economics_loads_catalog_with_null_metrics(self) -> None:
+    @mock.patch("app.repositories.yandex_assortment.load_active_products", lambda: {("rimili", "YM-1")})
+    def test_yandex_unit_economics_loads_stock_and_keeps_unavailable_metrics_null(self) -> None:
         product = {
             "article": "YM-1", "barcode": "001234", "name": "Товар Маркета",
             "mp_sku": "123", "mp_product_id": "456", "image_url": "https://example.test/product.jpg",
         }
-        db.replace_catalog("rimili", "YANDEX MARKET", [product, {
+        db.replace_catalog("rimili", "YANDEX MARKET", [product, {"article": "OLD", "name": "Старый товар"}, {
             "article": "SERVICE", "name": "Служебный товар", "is_service": True,
         }], NOW)
         db.upsert_mp_stock("rimili", "YM-1", "YANDEX MARKET", "fbs", 42, NOW)
@@ -823,8 +824,14 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(loaded["marketplace"], "YANDEX MARKET")
         for key in ("rating", "reviews_count", "is_new", "sales_days", "history"):
             self.assertIsNone(loaded[key], key)
-        for group in ("price", "current_economics", "economics_7d", "advertising", "tag_data", "stock", "details"):
+        for group in ("price", "current_economics", "tag_data", "details"):
             self.assertTrue(all(value is None for value in loaded[group].values()), group)
+        self.assertEqual(loaded["stock"]["fbs"], 42)
+        self.assertEqual(loaded["stock"]["total"], 42)
+        self.assertIsNone(loaded["stock"]["days"])
+        self.assertIsNone(loaded["economics_7d"]["turnover"])
+        for key in ("drr", "spend", "ctr", "cpc"):
+            self.assertIsNone(loaded["advertising"][key])
         detail = self.client.get("/sales/unit-economics-1c/yandex-market", params={
             "data": "1", "store": "rimili", "article": "YM-1",
         })
@@ -833,7 +840,27 @@ class WebRouteUnitTests(unittest.TestCase):
             "data": "1", "store": "rimili", "article": "missing",
         })
         self.assertEqual(missing.status_code, 404)
+        legacy = self.client.get("/sales/unit-economics-1c/yandex-market", params={
+            "data": "1", "store": "rimili", "article": "OLD",
+        })
+        self.assertEqual(legacy.status_code, 404)
+        self.assertIn("OLD", {row["article"] for row in db.get_catalog_items("rimili", "YANDEX MARKET")})
+        yandex_product_statuses.save_check("rimili", {"YM-1"}, [], date(2026, 8, 31), NOW)
+        novelty = self.client.get("/sales/unit-economics-1c/yandex-market?data=1").json()["products"][0]
+        self.assertIs(novelty["is_new"], True)
+        yandex_product_statuses.save_check("rimili", {"YM-1"}, [
+            {"article": "YM-1", "day": "2026-08-10", "orders_count": 1},
+        ], date(2026, 9, 1), NOW)
+        ordinary = self.client.get("/sales/unit-economics-1c/yandex-market", params={
+            "data": "1", "store": "rimili", "article": "YM-1",
+        }).json()["product"]
+        self.assertIs(ordinary["is_new"], False)
+        self.assertEqual(ordinary["stock"], loaded["stock"])
 
+    @mock.patch(
+        "app.repositories.yandex_assortment.load_active_products",
+        lambda: {("rimili", "YM-1"), ("tris", "YM-1")},
+    )
     def test_yandex_unit_economics_respects_marketplace_and_store_scope(self) -> None:
         for slug in ("rimili", "tris"):
             db.replace_catalog(slug, "YANDEX MARKET", [{"article": "YM-1", "name": slug}], NOW)
@@ -859,7 +886,9 @@ class WebRouteUnitTests(unittest.TestCase):
 
     def test_yandex_unit_economics_empty_catalog_and_denied_section(self) -> None:
         response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
-        self.assertEqual(response.json(), {"ok": True, "products": []})
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["products"], [])
+        self.assertEqual(response.json()["period_days"], 7)
         self.user.update({"role": "user", "section_access": {"unit_economics_1c": "none"}})
         self.assertEqual(self.client.get("/sales/unit-economics-1c/yandex-market?data=1").status_code, 403)
 
