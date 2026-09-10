@@ -30,10 +30,10 @@ def add_item(store, market, article, barcode, quantity=0, price=None, synced_at=
             connection.commit()
 
 
-def test_global_total_uses_latest_price_even_from_zero_stock_and_store_filter(database_path):
-    add_item("rockkiddo", "OZON", "OZ", "001234", 106, 90, "2026-09-10T12:00:00+03:00")
-    add_item("toyka", "WB", "WB", "001234", 412, 100)
-    add_item("tris", "WB", "PRICE", "001234", 0, 125, "2026-09-11T10:00:00+00:00")
+def test_global_total_uses_maximum_price_even_from_zero_stock_and_store_filter(database_path):
+    add_item("rockkiddo", "OZON", "303077583", "204193858779", 106, 90, "2026-09-10T12:00:00+03:00")
+    add_item("toyka", "WB", "303077583", "2041938585779", 412, 100)
+    add_item("tris", "WB", "303077583", "2041938585779", 0, 125, "2026-09-09T10:00:00+00:00")
     rows = stock_total.build_rows(("rockkiddo", "toyka", "tris"))
     assert len(rows) == 1
     row = rows[0]
@@ -60,33 +60,31 @@ def test_scope_excludes_hidden_stocks_prices_and_alias_bridges(database_path):
     assert all("TRIS" not in row["store_marketplaces"] for row in rows)
 
 
-def test_aliases_merge_across_stores_without_losing_identifiers(database_path):
+def test_different_articles_stay_separate_despite_shared_barcode(database_path):
     add_item("rimili", "WB", "WB", "04615526270026", 7, barcodes=["04615526270026", "2050292584830"])
     add_item("trusthome", "OZON", "OZ", "2050292584830", 9, 50)
     rows = stock_total.build_rows(("rimili", "trusthome"))
-    assert len(rows) == 1
-    assert rows[0]["grand_total"] == 16
-    assert rows[0]["purchase_price"] == 50
-    assert set(rows[0]["articles"]) == {"WB", "OZ"}
-    assert set(rows[0]["barcodes"]) == {"04615526270026", "2050292584830"}
+    assert len(rows) == 2
+    assert sum(row["grand_total"] for row in rows) == 16
+    assert next(row for row in rows if row["article"] == "WB")["purchase_price"] is None
     from app.web.routers.stock_total import _render_rows
 
-    assert 'data-search-aliases="OZ WB 04615526270026 2050292584830"' in _render_rows(rows)
+    assert 'data-search-aliases="WB 04615526270026 2050292584830"' in _render_rows(rows)
 
 
-def test_missing_barcodes_remain_separate_and_all_zero_rows_disappear(database_path):
+def test_articles_without_barcodes_are_merged_and_all_zero_rows_disappear(database_path):
     add_item("rockkiddo", "OZON", "SAME", "", 3)
     add_item("toyka", "WB", "SAME", "", 4)
     add_item("tris", "WB", "ZERO", "009", 0, 100)
     rows = stock_total.build_rows(("rockkiddo", "toyka", "tris"))
-    assert len(rows) == 2
-    assert sorted(row["grand_total"] for row in rows) == [3, 4]
+    assert len(rows) == 1
+    assert rows[0]["grand_total"] == 7
     assert all(row["barcode"] == "" for row in rows)
 
 
 def test_opposite_quantities_are_not_mistaken_for_no_stock(monkeypatch):
     catalog = [
-        {"store_slug": store, "marketplace": "WB", "article": store, "barcode": "001"}
+        {"store_slug": store, "marketplace": "WB", "article": "SAME", "barcode": "001"}
         for store in ("rimili", "tris")
     ]
     stocks = [{**item, "quantity": value} for item, value in zip(catalog, [5, -5], strict=True)]
@@ -134,8 +132,8 @@ class BodyRows(HTMLParser):
 def test_http_html_export_and_embedded_total_agree(
     application, client, user_factory, monkeypatch, selected, expected, labels
 ):
-    add_item("rockkiddo", "OZON", "UMBRELLA-OZ", "2051363797456", 106)
-    add_item("toyka", "WB", "UMBRELLA-WB", "2051363797456", 412, 400)
+    add_item("rockkiddo", "OZON", "1046650397", "2051363797456", 106)
+    add_item("toyka", "WB", "1046650397", "2051363797456", 412, 400)
     add_item("tris", "WB", "ZERO", "009", 0)
     monkeypatch.setattr(application.state.container.identity, "user_for_token", lambda _: user_factory())
     client.cookies.set(middleware.auth.SESSION_COOKIE, "total-global-test")

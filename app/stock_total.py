@@ -67,7 +67,7 @@ def build_rows(
     allowed_pairs: tuple[tuple[str, str], ...] | None = None,
     selected_store: str = "",
 ) -> list[dict]:
-    """One row per barcode across authorized stores; prices use the entire scope."""
+    """One row per seller article across authorized stores, with its shared purchase price."""
     sources = repository.get_source_rows(store_slugs)
     allowed = set(allowed_pairs) if allowed_pairs is not None else None
     catalog, marketplace_stock, fulfillment_stock, transit_stock = (
@@ -80,70 +80,18 @@ def build_rows(
         for source in sources
     )
     marketplace_keys = {marketplace: key for marketplace, key, _label in MARKETPLACES}
-    barcode_roots: dict[str, str] = {}
-
-    def root(key: str) -> str:
-        barcode_roots.setdefault(key, key)
-        current = key
-        while barcode_roots[current] != current:
-            current = barcode_roots[current]
-        while barcode_roots[key] != key:
-            parent = barcode_roots[key]
-            barcode_roots[key] = current
-            key = parent
-        return current
 
     def item_codes(item: dict) -> list[str]:
         return sorted({_normalized(code) for code in barcodes(item)} - {"", "—", "-"})
 
-    for item in catalog:
-        codes = item_codes(item)
-        for code in codes[1:]:
-            left, right = root(codes[0]), root(code)
-            barcode_roots[max(left, right)] = min(left, right)
+    def identity_for(store_slug: str, marketplace: str, article: str) -> tuple[str, ...]:
+        article_key = _normalized(article)
+        return ("article", article_key) if article_key else ("missing_article", store_slug, marketplace)
 
-    def barcode_key_for(item: dict) -> str:
-        codes = item_codes(item)
-        return root(codes[0]) if codes else ""
-
-    barcode_identity_by_article: dict[tuple[str, str], set[tuple[str, ...]]] = defaultdict(set)
-    for item in catalog:
-        code = barcode_key_for(item)
-        article = _normalized(item.get("article"))
-        if code and article:
-            barcode_identity_by_article[(str(item["store_slug"]), article)].add(("barcode", code))
-
-    identity_by_offer: dict[tuple[str, str, str], tuple[str, ...]] = {}
     catalog_by_identity: dict[tuple[str, ...], list[dict]] = defaultdict(list)
     for item in catalog:
-        store_slug = str(item["store_slug"])
-        marketplace = str(item["marketplace"])
-        article = str(item.get("article") or "").strip()
-        code = barcode_key_for(item)
-        if code:
-            identity = ("barcode", code)
-        else:
-            candidates = barcode_identity_by_article.get((store_slug, _normalized(article)), set())
-            identity = (
-                next(iter(candidates))
-                if len(candidates) == 1
-                else ("offer", store_slug, marketplace, _normalized(article))
-            )
-        identity_by_offer[(store_slug, marketplace, article)] = identity
+        identity = identity_for(str(item["store_slug"]), str(item["marketplace"]), str(item["article"]))
         catalog_by_identity[identity].append(item)
-
-    identities_by_article: dict[tuple[str, str], set[tuple[str, ...]]] = defaultdict(set)
-    for (store_slug, _marketplace, article), identity in identity_by_offer.items():
-        identities_by_article[(store_slug, _normalized(article))].add(identity)
-
-    def identity_for(store_slug: str, marketplace: str, article: str) -> tuple[str, ...]:
-        exact = identity_by_offer.get((store_slug, marketplace, article))
-        if exact is not None:
-            return exact
-        candidates = identities_by_article.get((store_slug, _normalized(article)), set())
-        if len(candidates) == 1:
-            return next(iter(candidates))
-        return ("orphan", store_slug, marketplace, _normalized(article))
 
     quantities: dict[tuple[str, ...], dict[tuple[str, str], dict[str, int]]] = defaultdict(dict)
     fallback_articles: dict[tuple[str, ...], str] = {}
@@ -174,16 +122,6 @@ def build_rows(
     market_order = {marketplace: index for index, (marketplace, _, _) in enumerate(MARKETPLACES)}
     market_labels = {"WB": "WB", "OZON": "OZON", "YANDEX MARKET": "ЯМ"}
 
-    def price_rank(item: dict) -> tuple[float, int]:
-        try:
-            date = datetime.fromisoformat(str(item.get("purchase_price_synced_at") or ""))
-            if date.tzinfo is None:
-                date = date.replace(tzinfo=MOSCOW_TIMEZONE)
-            timestamp = date.timestamp()
-        except ValueError:
-            timestamp = float("-inf")
-        return timestamp, int(item.get("id") or 0)
-
     for identity, contributions in quantities.items():
         active_pairs = [pair for pair, values in contributions.items() if any(values.values())]
         if not active_pairs:
@@ -206,7 +144,7 @@ def build_rows(
         row["name"] = str(representative.get("name") or row["article"])
         priced = [item for item in matches if item.get("purchase_price") is not None]
         if priced:
-            row["purchase_price"] = float(max(priced, key=price_rank)["purchase_price"])
+            row["purchase_price"] = max(float(item["purchase_price"]) for item in priced)
         row["store_slugs"] = active_stores
         row["store_name"] = ", ".join(
             STORES.get(slug, {}).get("name", slug.upper()) for slug in active_stores

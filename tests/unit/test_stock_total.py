@@ -20,19 +20,19 @@ def _catalog_item(article: str, barcode: str, name: str) -> dict:
     return {"article": article, "barcode": barcode, "name": name}
 
 
-def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) -> None:
+def test_total_stock_merges_marketplaces_and_stores_by_article(database_path) -> None:
     del database_path
     db.replace_catalog(
         "rimili",
         "WB",
-        [_catalog_item("WB-ARTICLE", "2200000000001", "Общий товар")],
+        [_catalog_item("COMMON-ARTICLE", "2200000000001", "Общий товар")],
         NOW,
     )
     db.replace_catalog(
         "rimili",
         "OZON",
         [
-            _catalog_item("OZON-ARTICLE", "2200000000001", "Общий товар Ozon"),
+            _catalog_item("COMMON-ARTICLE", "2200000000001", "Общий товар Ozon"),
             _catalog_item("OZON-ZERO", "", "Товар без штрихкода"),
         ],
         NOW,
@@ -40,13 +40,13 @@ def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) ->
     db.replace_catalog(
         "rimili",
         "YANDEX MARKET",
-        [_catalog_item("YANDEX-ARTICLE", "2200000000001", "Общий товар Яндекс")],
+        [_catalog_item("COMMON-ARTICLE", "2200000000001", "Общий товар Яндекс")],
         NOW,
     )
     db.replace_catalog(
         "tris",
         "WB",
-        [_catalog_item("TRIS-ARTICLE", "2200000000001", "Такой же штрихкод, другой магазин")],
+        [_catalog_item("COMMON-ARTICLE", "2200000000001", "Такой же штрихкод, другой магазин")],
         NOW,
     )
     connection = db.get_connection()
@@ -66,14 +66,14 @@ def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) ->
         """
         INSERT INTO catalog_product_exclusions
             (store_slug, marketplace, nm_id, status, updated_at)
-        VALUES ('rimili', 'WB', 'WB-ARTICLE', 'Старье', ?)
+        VALUES ('rimili', 'WB', 'COMMON-ARTICLE', 'Старье', ?)
         """,
         (NOW,),
     )
     wb_stock_item_id = connection.execute(
         """
         SELECT id FROM stock_items
-         WHERE store_slug='rimili' AND marketplace='WB' AND article='WB-ARTICLE'
+         WHERE store_slug='rimili' AND marketplace='WB' AND article='COMMON-ARTICLE'
         """
     ).fetchone()[0]
     connection.execute(
@@ -88,12 +88,12 @@ def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) ->
     connection.commit()
     connection.close()
 
-    db.upsert_ff_stock("rimili", "WB-ARTICLE", FULFILLMENT, 2, NOW, "WB")
-    db.upsert_ff_stock("rimili", "OZON-ARTICLE", FULFILLMENT, 4, NOW, "OZON")
-    db.upsert_mp_stock("rimili", "WB-ARTICLE", "WB", "fbs", 7, NOW)
-    db.upsert_mp_stock("rimili", "OZON-ARTICLE", "OZON", "rfbs", 3, NOW)
-    db.upsert_mp_stock("rimili", "YANDEX-ARTICLE", "YANDEX MARKET", "fbo", 5, NOW)
-    db.upsert_mp_stock("tris", "TRIS-ARTICLE", "WB", "fbo", 11, NOW)
+    db.upsert_ff_stock("rimili", "COMMON-ARTICLE", FULFILLMENT, 2, NOW, "WB")
+    db.upsert_ff_stock("rimili", "COMMON-ARTICLE", FULFILLMENT, 4, NOW, "OZON")
+    db.upsert_mp_stock("rimili", "COMMON-ARTICLE", "WB", "fbs", 7, NOW)
+    db.upsert_mp_stock("rimili", "COMMON-ARTICLE", "OZON", "rfbs", 3, NOW)
+    db.upsert_mp_stock("rimili", "COMMON-ARTICLE", "YANDEX MARKET", "fbo", 5, NOW)
+    db.upsert_mp_stock("tris", "COMMON-ARTICLE", "WB", "fbo", 11, NOW)
     connection = db.get_connection()
     cursor = connection.execute(
         """
@@ -111,7 +111,7 @@ def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) ->
         INSERT INTO ff_transit_items
             (batch_id, from_article, to_article, barcode, name,
              sent_quantity, received_quantity, cancelled_quantity)
-        VALUES (?, 'WB-ARTICLE', 'OZON-ARTICLE', '2200000000001',
+        VALUES (?, 'COMMON-ARTICLE', 'COMMON-ARTICLE', '2200000000001',
                 'Общий товар', 3, 0, 0)
         """,
         (cursor.lastrowid,),
@@ -125,7 +125,7 @@ def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) ->
     assert shared["store_slugs"] == ["rimili", "tris"]
     assert shared["store_marketplaces"] == "RIMILI WB, RIMILI OZON, RIMILI ЯМ, TRIS WB"
 
-    assert shared["article"] == "WB-ARTICLE"
+    assert shared["article"] == "COMMON-ARTICLE"
     assert shared["ff_wb"] == 2
     assert shared["ff_ozon"] == 4
     assert shared["transit_ozon"] == 3
@@ -151,7 +151,7 @@ def test_total_stock_merges_marketplaces_and_stores_by_barcode(database_path) ->
         )
         connection.commit()
     refreshed = stock_total.build_rows(("rimili",))
-    updated = next(row for row in refreshed if row["article"] == "WB-ARTICLE")
+    updated = next(row for row in refreshed if row["article"] == "COMMON-ARTICLE")
     assert updated["purchase_price"] == 125.5
     from app.web.routers.stock_total import _render_rows, _render_totals
 

@@ -1082,7 +1082,7 @@ html[data-theme="dark"] .stock-total-group {
     margin-left: auto;
 }
 
-/* The global view has one barcode row with all contributing store/marketplace pairs. */
+/* The global view has one article row with all contributing store/marketplace pairs. */
 .data-table--stock-total-global col.stock-total-col--article { width: 7%; }
 .data-table--stock-total-global col.stock-total-col--barcode { width: 8%; }
 .data-table--stock-total-global col.stock-total-col--name { width: 12%; }
