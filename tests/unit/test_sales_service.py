@@ -2,10 +2,11 @@ import io
 import logging
 import unittest
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest import mock
 
 from app import sales
+from app.domain import MOSCOW_TIMEZONE
 
 
 class SalesServiceTests(unittest.TestCase):
@@ -157,9 +158,7 @@ class SalesServiceTests(unittest.TestCase):
             mock.patch.object(sales.db, "record_sales_sync") as record,
             mock.patch.object(sales.db, "record_sync_health"),
         ):
-            result = sales.sync_store_period(
-                "tris", "WB", date(2026, 8, 1), date(2026, 9, 1)
-            )
+            result = sales.sync_store_period("tris", "WB", date(2026, 8, 1), date(2026, 9, 1))
 
         self.assertTrue(result["ok"])
         saved_lines = upsert.call_args.args[0]
@@ -199,7 +198,7 @@ class SalesServiceTests(unittest.TestCase):
         self.assertEqual(sync.call_args_list[1].args[2], sales.INITIAL_LOOKBACK_DAYS["OZON"])
 
     def test_period_validation_and_series_helpers(self) -> None:
-        today = date.today()
+        today = datetime.now(MOSCOW_TIMEZONE).date()
         start = today - timedelta(days=2)
         self.assertEqual(sales.parse_period(start.isoformat(), today.isoformat(), "wb"), (start, today))
         invalid = [
@@ -220,7 +219,7 @@ class SalesServiceTests(unittest.TestCase):
         self.assertIsNone(sales._delta(1, 0))
 
     def test_dashboard(self) -> None:
-        today = date.today()
+        today = datetime.now(MOSCOW_TIMEZONE).date()
         start = today - timedelta(days=1)
         current = [
             {
@@ -263,7 +262,7 @@ class SalesServiceTests(unittest.TestCase):
                 sales.dashboard(start.isoformat(), today.isoformat(), "WB", "wrong")
 
     def test_export_xlsx_and_xml_helpers(self) -> None:
-        today = date.today()
+        today = datetime.now(MOSCOW_TIMEZONE).date()
         row = {
             key: (100 if key in {"order_amount", "sale_amount"} else "value")
             for key, _ in sales.EXPORT_HEADERS

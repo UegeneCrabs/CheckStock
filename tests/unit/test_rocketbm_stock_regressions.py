@@ -99,7 +99,7 @@ def test_fbs_allocation_debits_free_stock_once_and_sales_do_not_release_it(conta
         container.stock.register_fbs_transfer(command.model_copy(update={"to_trash": True}))
 
 
-def test_total_unites_marking_barcode_with_legacy_alias(database_path):
+def test_total_keeps_distinct_articles_with_shared_legacy_barcode_separate(database_path):
     db.replace_catalog(
         "rimili", "WB", [{"article": "A", "barcode": "04615526270026", "barcodes": ["2050292584830"]}], NOW
     )
@@ -107,8 +107,9 @@ def test_total_unites_marking_barcode_with_legacy_alias(database_path):
     db.upsert_ff_stock("rimili", "A", "FF", 2, NOW, "WB")
     db.upsert_mp_stock("rimili", "B", "OZON", "fbo", 3, NOW)
     rows = stock_total.build_rows(("rimili",))
-    assert len(rows) == 1
-    assert rows[0]["grand_total"] == 5
+    assert len(rows) == 2
+    assert {row["article"]: row["grand_total"] for row in rows} == {"A": 2, "B": 3}
+    assert "2050292584830" in next(row for row in rows if row["article"] == "A")["barcodes"]
 
 
 def test_snapshot_rolls_back_totals_and_details_together(database_path):

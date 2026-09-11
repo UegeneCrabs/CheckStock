@@ -10,10 +10,12 @@ import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
 from app import db
+from app.domain import MOSCOW_TIMEZONE
 from app.repositories import core
 
 
@@ -249,9 +251,7 @@ class HttpServerEndToEndTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(transferred["results"][0]["quantity"], 4)
-        with opener.open(
-            self.url("/stock/rimili/transfers/in-transit?mp=WB"), timeout=5
-        ) as response:
+        with opener.open(self.url("/stock/rimili/transfers/in-transit?mp=WB"), timeout=5) as response:
             transit = json.loads(response.read().decode("utf-8"))["batches"][0]
         status, received = self.post_json(
             opener,
@@ -293,7 +293,7 @@ class HttpServerEndToEndTests(unittest.TestCase):
 
     def test_full_rnp_strategy_and_action_chain(self) -> None:
         opener = self.authenticated_opener()
-        today = time.strftime("%Y-%m-%d")
+        today = datetime.now(MOSCOW_TIMEZONE).date().isoformat()
         status, strategy = self.post_json(
             opener,
             "/api/rnp/strategy",

@@ -3,7 +3,7 @@ import json
 import logging
 import tempfile
 import unittest
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
@@ -11,6 +11,7 @@ import openpyxl
 from fastapi.testclient import TestClient
 
 from app import auth, db, decision_center, rnp_analytics
+from app.domain import MOSCOW_TIMEZONE
 from app.dto.decision import DecisionAction, DecisionStatus
 from app.main import create_app
 from app.repositories import core
@@ -145,7 +146,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/stock-2/details/wrong").status_code, 404)
 
     def test_sales_decision_and_rnp_good_and_bad_outcomes(self) -> None:
-        today = date.today().isoformat()
+        today = datetime.now(MOSCOW_TIMEZONE).date().isoformat()
         with mock.patch.object(
             sales_overview.sales_service,
             "dashboard",
@@ -288,9 +289,9 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(transferred.status_code, 200, transferred.text)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF One", "WB"), 2)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "FF Two", "WB"), 0)
-        transit = self.client.get(
-            "/stock/rimili/transfers/in-transit", params={"mp": "WB"}
-        ).json()["batches"][0]
+        transit = self.client.get("/stock/rimili/transfers/in-transit", params={"mp": "WB"}).json()[
+            "batches"
+        ][0]
         received = self.client.post(
             f"/stock/rimili/transfers/{transferred.json()['transfer_id']}/receive",
             json={
@@ -464,9 +465,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(preview.json()["preview"]["added_quantity"], 4)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(db.get_ff_stock_one("rimili", "A-1", "Imported FF", "WB"), 4)
-        _preview, duplicate = upload_confirmed(
-            output.getvalue(), "Повторная сверка поставки"
-        )
+        _preview, duplicate = upload_confirmed(output.getvalue(), "Повторная сверка поставки")
         self.assertEqual(duplicate.status_code, 200, duplicate.text)
         self.assertEqual(duplicate.json()["report"]["added_quantity"], 0)
         self.assertEqual(len(duplicate.json()["report"]["unchanged"]), 1)
@@ -669,6 +668,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/api/admin/integrations/sync-jobs/{job_name}/settings",
         }
         from app.web.routers.agent_full import SPECS
+
         owned.update(f"/api/agent/v1/{name}" for name in set(SPECS) | {"capabilities", "data-status"})
         self.assertEqual(schema_paths, owned)
 
