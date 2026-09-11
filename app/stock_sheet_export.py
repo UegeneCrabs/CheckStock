@@ -561,8 +561,9 @@ def _check_timestamp_cells(service, spreadsheet_id: str, sheets: dict[str, dict]
 
 
 def _write_export_timestamp(service, spreadsheet_id: str, sheets: dict[str, dict]) -> str:
-    # Capture completion of this sheet's data write, not the scheduler's start time
-    # or the last marketplace sync. Store a fixed Sheets date, never a NOW formula.
+
+
+    """Capture completion of this sheet's data write, not the scheduler's start time or the last marketplace sync. Store a fixed Sheets date, never a NOW formula."""
     exported_at = datetime.now(MOSCOW_TIMEZONE).replace(microsecond=0)
     serial = (exported_at.replace(tzinfo=None) - datetime(1899, 12, 30)).total_seconds() / 86400
     requests = []

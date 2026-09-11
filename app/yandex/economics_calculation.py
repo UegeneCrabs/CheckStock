@@ -48,6 +48,7 @@ def resolve(*layers):
 
 
 def calculate(values, *, advertising_spend=None, orders_count=None, without_advertising=False):
+    """Preserve the YM sheet's AT and AY formulas; do not normalize these by q. DRR is defined against expected bought seller turnover."""
     required = [
         "seller_price",
         "purchase_price",
@@ -95,7 +96,7 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
             "messages": ["При нулевом выкупе прибыль на выкупленную единицу не определена."],
             "costs": {},
         }
-    # Preserve the YM sheet's AT and AY formulas; do not normalize these by q.
+
     costs = {
         "commission": price * d("commission_percent") / 100,
         "payment_acceptance": d("payment_acceptance"),
@@ -118,7 +119,7 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
     if without_advertising:
         advertising = Decimal(0)
     elif values.get("advertising_mode", "actual") == "plan":
-        # DRR is defined against expected bought seller turnover.
+
         advertising = price * d("plan_drr") / 100
     elif advertising_spend is None or orders_count is None:
         return {

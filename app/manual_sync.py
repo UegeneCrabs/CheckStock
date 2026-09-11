@@ -47,8 +47,9 @@ def _marketplaces_now(name: str, loaders: tuple) -> dict:
 
 
 def _storefront_now() -> dict:
-    # Reuse the collector's parsing, API preparation, lease and persistence.
-    # A separate browser profile allows a one-off run while the scheduled browser is idle.
+
+
+    """Reuse the collector's parsing, API preparation, lease and persistence. A separate browser profile allows a one-off run while the scheduled browser is idle."""
     from playwright.sync_api import sync_playwright
 
     from scripts import parse_yandex_storefront_prices as collector
@@ -82,6 +83,7 @@ def _storefront_now() -> dict:
 
 
 def callback_for(name: str) -> Callable[[], object]:
+    """These loaders return per-store errors; keep them visible in the common run log."""
     jobs = {job.name: job for job in (*background._jobs(asyncio.Event()), *background._unit_economics_1c_price_jobs())}
     overrides = {
         "catalog_sync": lambda: _marketplaces_now("catalog_sync", (
@@ -96,7 +98,7 @@ def callback_for(name: str) -> Callable[[], object]:
         "unit_economics_1c_reference_sync": lambda: background.unit_reference_sync.sync_all(force=True),
         "wb_token_check": lambda: background.token_watch.refresh_token_info(sync_settings.enabled_stores("wb_token_check")),
         "yandex_storefront_prices_sync": _storefront_now,
-        # These loaders return per-store errors; keep them visible in the common run log.
+
         "wb_advertising_sync": lambda: background.advertising_sync.sync_stores(sync_settings.enabled_stores("wb_advertising_sync")),
     }
     if name in overrides:

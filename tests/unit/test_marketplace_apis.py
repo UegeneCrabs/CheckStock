@@ -29,14 +29,16 @@ class WildberriesApiTests(unittest.TestCase):
         with mock.patch.object(
             wb_api,
             "_request",
-            return_value={"stocks": [{"sku": "1", "amount": 3}, {"sku": "2"}]},
+            return_value={"stocks": [{"chrtId": 101, "amount": 3}, {"chrtId": 102}]},
         ) as request:
-            result = wb_api.get_fbs_stock("token", 10, ["1", "1", "", "2"])
+            result = wb_api.get_fbs_stock(
+                "token", 10, ["1", "1", "", "2"], chrt_ids_by_barcode={"1": 101, "2": 102}
+            )
         self.assertEqual(result, {"1": 3, "2": 0})
-        self.assertEqual(request.call_args.kwargs["json_body"], {"skus": ["1", "2"]})
+        self.assertEqual(request.call_args.kwargs["json_body"], {"chrtIds": [101, 102]})
         with mock.patch.object(wb_api, "_request", return_value={"stocks": [None]}):
             with self.assertRaises(wb_api.WBApiError):
-                wb_api.get_fbs_stock("token", 10, ["1"])
+                wb_api.get_fbs_stock("token", 10, ["1"], chrt_ids_by_barcode={"1": 101})
 
         cards = [
             {"nmID": 10, "sizes": [{"chrtID": 101, "skus": ["1", "extra"]}]},

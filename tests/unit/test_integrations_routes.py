@@ -66,7 +66,10 @@ def test_superadmin_page_never_renders_saved_secrets(container, user_factory, mo
     assert response.status_code == 200
     assert "API-ключи маркетплейсов" in response.text
     assert 'class="topbar"' not in response.text
-    assert 'class="integration-page-head"' not in response.text
+    assert "Интеграции и выгрузки" in response.text
+    assert 'data-integration-view="google"' in response.text
+    assert 'data-export-form' in response.text
+    assert 'href="/admin/google-export"' not in response.text
     assert "Управление подключениями всех магазинов" not in response.text
     assert "Воронка продаж WB" in response.text
     assert "Закрытие воронки WB" in response.text

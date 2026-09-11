@@ -2,6 +2,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from app.application.ports import StockRepository, StockUnitOfWorkFactory
+from app.catalog_identity import CatalogIndex, CatalogMatchError
 from app.dto.stock import (
     AddedFulfillmentItem,
     AddedFulfillmentItems,
@@ -218,7 +219,10 @@ class StockMovementService:
             )
 
     def register_fbs_transfer(self, command: ShipmentCommand) -> StockMovementItems:
-        """Validate an FBS allocation without removing the physical FF stock."""
+        """Allocate free FF units to FBS; the warehouse's physical location is unchanged."""
+
+        if command.to_trash:
+            raise StockValidationError("Перемещение на FBS не может быть списанием в мусорку")
 
         with self._unit_of_work_factory() as unit_of_work:
             entries = self._resolve_entries(
@@ -238,6 +242,15 @@ class StockMovementService:
                     marketplace=command.marketplace,
                 ),
             )
+            unit_of_work.repository.apply_shipment(
+                ApplyShipmentCommand(
+                    shipment=command,
+                    write_off=entries,
+                    surplus=ResolvedStockEntries(()),
+                    created_at=self._clock(),
+                )
+            )
+            unit_of_work.commit()
             return StockMovementItems(
                 tuple(
                     StockMovementItem(
@@ -251,12 +264,8 @@ class StockMovementService:
             )
 
     @staticmethod
-    def _catalog_by_code(items: tuple[CatalogItem, ...]) -> dict[str, CatalogItem]:
-        result: dict[str, CatalogItem] = {}
-        for item in items:
-            result[item.article] = item
-            result[item.barcode] = item
-        return result
+    def _catalog_by_code(items: tuple[CatalogItem, ...]):
+        return _CatalogLookup(items)
 
     @staticmethod
     def _validate_transfer_route(command: TransferStockCommand) -> None:
@@ -307,13 +316,17 @@ class StockMovementService:
     ) -> TargetResolution:
         target = repository.catalog(CatalogQuery(store_slug=query.store_slug, marketplace=query.marketplace))
         target_by_article = {item.article: item for item in target.root}
-        target_by_barcode = {item.barcode: item for item in target.root if item.barcode}
+        target_by_barcode = CatalogIndex([item.model_dump() for item in target.root])
         movable: list[TargetStockEntry] = []
         skipped: list[StockMovementItem] = []
         for entry in query.entries.root:
             target_item = target_by_article.get(entry.article)
             if target_item is None and entry.barcode:
-                target_item = target_by_barcode.get(entry.barcode)
+                try:
+                    match = target_by_barcode.resolve(barcode=entry.barcode)
+                except CatalogMatchError as error:
+                    raise StockValidationError(str(error)) from error
+                target_item = target_by_article[match["article"]] if match else None
             if target_item is None:
                 skipped.append(
                     StockMovementItem(
@@ -345,7 +358,7 @@ class StockMovementService:
         query: StockAvailabilityQuery,
     ) -> None:
         shortages: list[str] = []
-        for entry in query.entries.root:
+        for entry in sorted(query.entries.root, key=lambda item: item.article):
             available = repository.quantity(
                 StockQuantityQuery(
                     store_slug=query.store_slug,
@@ -372,3 +385,16 @@ class StockMovementService:
             write_off=ResolvedStockEntries(tuple(write_off)),
             surplus=ResolvedStockEntries(tuple(surplus)),
         )
+
+
+class _CatalogLookup:
+    def __init__(self, items: tuple[CatalogItem, ...]):
+        self.items = {item.article: item for item in items}
+        self.index = CatalogIndex([item.model_dump() for item in items])
+
+    def get(self, code: str) -> CatalogItem | None:
+        try:
+            item = self.index.resolve_code(code)
+        except CatalogMatchError as error:
+            raise StockValidationError(str(error)) from error
+        return self.items[item["article"]] if item else None

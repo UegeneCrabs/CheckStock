@@ -329,6 +329,37 @@ def get_fbo_stock_by_warehouse(client_id: str, api_key: str) -> list[dict]:
             return rows
 
 
+def get_fbs_stock_by_warehouse(client_id: str, api_key: str, skus: list[str]) -> list[dict]:
+    rows: list[dict] = []
+    unique_skus = sorted(set(skus))
+    for start in range(0, len(unique_skus), 100):
+        cursor = ""
+        seen: set[str] = set()
+        while True:
+            data = _request(
+                "/v2/product/info/stocks-by-warehouse/fbs",
+                client_id,
+                api_key,
+                {"sku": unique_skus[start : start + 100], "limit": 1000, "cursor": cursor},
+            )
+            page = data.get("products")
+            if not isinstance(page, list):
+                raise OzonApiError(None, "неожиданный ответ на остатки FBS (нет products)")
+            rows.extend(page)
+            if data.get("has_next") is False:
+                break
+            next_cursor = str(data.get("cursor") or "")
+            if not next_cursor:
+                if data.get("has_next"):
+                    raise OzonApiError(None, "Ozon FBS: следующая страница без cursor")
+                break
+            if next_cursor in seen or not page:
+                raise OzonApiError(None, "Ozon FBS: повтор cursor или пустая промежуточная страница")
+            seen.add(next_cursor)
+            cursor = next_cursor
+    return rows
+
+
 def get_stock_analytics(client_id: str, api_key: str, skus: list[int]) -> list[dict]:
 
     if not skus:

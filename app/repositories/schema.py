@@ -3,9 +3,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy import inspect, select
 
+from app.infrastructure import yandex_economics_orm as yandex_economics_orm
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord
-from app.infrastructure import yandex_economics_orm  # noqa: F401
 from app.repositories import core, yandex_assortment
 from app.repositories.seed_data import FULFILLMENTS, STOCK_ITEMS
 from app.repositories.stock_sheet_export import MARKETPLACES
@@ -68,7 +68,9 @@ def _migrate_yandex_daily_orders(database: Database) -> None:
     from app.repositories.unit_economics_yandex import migrate_order_snapshot
 
     with core.WRITE_LOCK, database.connect() as connection:
-        for row in connection.execute("SELECT * FROM unit_economics_yandex_snapshots WHERE source='orders'").fetchall():
+        for row in connection.execute(
+            "SELECT * FROM unit_economics_yandex_snapshots WHERE source='orders'"
+        ).fetchall():
             migrate_order_snapshot(connection, dict(row))
         connection.commit()
 
@@ -130,9 +132,7 @@ def _migrate_manual_supply_note(database: Database) -> None:
     with database.connect() as connection:
         columns = connection.column_names("manual_supplies")
         if columns and "note" not in columns:
-            connection.execute(
-                "ALTER TABLE manual_supplies ADD COLUMN note TEXT NOT NULL DEFAULT ''"
-            )
+            connection.execute("ALTER TABLE manual_supplies ADD COLUMN note TEXT NOT NULL DEFAULT ''")
         connection.commit()
 
 
@@ -221,9 +221,7 @@ def _migrate_unit_economics_1c_cabinet_settings(database: Database) -> None:
             )
             columns.add("target_roi_by_code")
         if columns and "default_buyout_percent" not in columns:
-            connection.execute(
-                f"ALTER TABLE {table_name} ADD COLUMN default_buyout_percent FLOAT"
-            )
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN default_buyout_percent FLOAT")
             columns.add("default_buyout_percent")
         if columns and "buyout_period_days" not in columns:
             connection.execute(
@@ -378,9 +376,7 @@ def _migrate_wb_funnel_daily_orders(database: Database) -> None:
             ("source_version", "INTEGER NOT NULL DEFAULT 1"),
         ):
             if metric_columns and column not in metric_columns:
-                connection.execute(
-                    f"ALTER TABLE {metrics_table} ADD COLUMN {column} {definition}"
-                )
+                connection.execute(f"ALTER TABLE {metrics_table} ADD COLUMN {column} {definition}")
         connection.commit()
 
 

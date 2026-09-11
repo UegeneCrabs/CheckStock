@@ -57,6 +57,24 @@ class StockItemRecord(OrmBase):
     mp_updated_at: Mapped[str | None] = mapped_column(String)
 
 
+class CatalogBarcodeRecord(OrmBase):
+    __tablename__ = "catalog_barcodes"
+    stock_item_id: Mapped[int] = mapped_column(
+        ForeignKey("stock_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    barcode: Mapped[str] = mapped_column(String, primary_key=True)
+
+
+class CatalogArticleAliasRecord(OrmBase):
+    __tablename__ = "catalog_article_aliases"
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    target_article: Mapped[str] = mapped_column(String, nullable=False)
+    identity: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class FulfillmentStockRecord(OrmBase):
     __tablename__ = "ff_stock"
     __table_args__ = (UniqueConstraint("store_slug", "article", "fulfillment", "marketplace"),)
@@ -334,7 +352,9 @@ class TemporaryAccessGrantRecord(OrmBase):
     target_marketplace: Mapped[str | None] = mapped_column(String)
     valid_from: Mapped[str] = mapped_column(String, nullable=False)
     valid_until: Mapped[str] = mapped_column(String, nullable=False)
-    granted_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    granted_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
     revoked_at: Mapped[str | None] = mapped_column(String)
     revoked_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
@@ -788,9 +808,7 @@ class UnitEconomics1CCabinetSettingRecord(OrmBase):
     target_drr_percent: Mapped[float] = mapped_column(Float, nullable=False, default=8, server_default="8")
     target_roi_percent: Mapped[float] = mapped_column(Float, nullable=False, default=50, server_default="50")
     target_roi_by_code: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default="{}")
-    buyout_period_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=14, server_default="14"
-    )
+    buyout_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14, server_default="14")
     acceptance_coefficient: Mapped[float] = mapped_column(
         Float, nullable=False, default=0, server_default="0"
     )
@@ -966,9 +984,7 @@ class UnitEconomics1CDailyAdvertisingRecord(OrmBase):
 
 class UnitEconomics1CDailyMarginSnapshotRecord(OrmBase):
     __tablename__ = "unit_economics_1c_daily_margin_snapshots"
-    __table_args__ = (
-        Index("idx_ue1c_margin_snapshot_period", "store_slug", "day", "article"),
-    )
+    __table_args__ = (Index("idx_ue1c_margin_snapshot_period", "store_slug", "day", "article"),)
 
     store_slug: Mapped[str] = mapped_column(String, primary_key=True)
     article: Mapped[str] = mapped_column(String, primary_key=True)

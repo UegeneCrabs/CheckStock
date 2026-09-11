@@ -155,9 +155,7 @@ class SalesServiceTests(unittest.TestCase):
             mock.patch.object(sales.db, "record_sales_sync") as record,
             mock.patch.object(sales.db, "record_sync_health"),
         ):
-            result = sales.sync_store_period(
-                "tris", "WB", date(2026, 8, 1), date(2026, 9, 1)
-            )
+            result = sales.sync_store_period("tris", "WB", date(2026, 8, 1), date(2026, 9, 1))
 
         self.assertTrue(result["ok"])
         saved_lines = upsert.call_args.args[0]
@@ -195,9 +193,6 @@ class SalesServiceTests(unittest.TestCase):
         self.assertIn("wb", report["WB"])
         self.assertEqual(sync.call_args_list[0].args[2], 3)
         self.assertEqual(sync.call_args_list[1].args[2], sales.INITIAL_LOOKBACK_DAYS["OZON"])
-
-
-
 
 
 if __name__ == "__main__":

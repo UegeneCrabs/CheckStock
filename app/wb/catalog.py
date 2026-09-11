@@ -71,6 +71,7 @@ def build_items(cards: list[dict]) -> tuple[list[dict], dict]:
                 {
                     "article": f"{nm_id}{suffix}",
                     "barcode": size["barcode"],
+                    "barcodes": [size["barcode"], *size.get("extra_barcodes", [])],
                     "name": name,
                     "mp_sku": None,
                     "mp_product_id": None,

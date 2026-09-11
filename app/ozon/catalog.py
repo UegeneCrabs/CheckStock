@@ -74,6 +74,7 @@ def sync_store(store_slug: str) -> dict:
             {
                 "article": article,
                 "barcode": barcode,
+                "barcodes": product["barcodes"],
                 "name": product["name"],
                 "mp_sku": product["sku"],
                 "mp_product_id": product["product_id"],

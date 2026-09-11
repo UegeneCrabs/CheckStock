@@ -224,6 +224,9 @@ from app.repositories.unit_economics_1c import (
     list_product_settings as list_unit_economics_1c_product_settings,
 )
 from app.repositories.unit_economics_1c import (
+    list_purchase_price_stock_items as list_purchase_price_stock_items,
+)
+from app.repositories.unit_economics_1c import (
     list_wb_commissions as list_unit_economics_1c_wb_commissions,
 )
 from app.repositories.unit_economics_1c import (
@@ -385,6 +388,7 @@ __all__ = (
     "list_unit_economics_1c_price_sync_states",
     "list_unit_economics_1c_product_settings",
     "list_unit_economics_1c_active_wb_stock_items",
+    "list_purchase_price_stock_items",
     "log_action",
     "log_action_for_operation",
     "normalize_store_slugs",

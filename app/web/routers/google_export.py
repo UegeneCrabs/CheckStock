@@ -131,16 +131,17 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         '<label class="export-enabled"><input type="checkbox" name="enabled" value="1"'
         f"{checked}><span>Автовыгрузка включена</span></label></div>"
         '<div class="export-schedule-grid">'
-        '<label><span>Периодичность</span><select class="select-control" name="schedule_kind" '
+        '<label><span>Периодичность</span><select class="integration-select" name="schedule_kind" '
         'data-schedule-kind><option value="daily"'
         f'{daily_selected}>Каждый день</option><option value="weekly"{weekly_selected}>Раз в неделю</option></select></label>'
-        '<label data-weekday-field><span>День недели</span><select class="select-control" name="weekday">'
+        '<label data-weekday-field><span>День недели</span><select class="integration-select" name="weekday">'
         f"{_render_weekdays(settings.weekday)}</select></label>"
         '<label><span>Время (Москва)</span><input class="input-control" type="time" name="run_time" '
         f'value="{_input(settings.run_time)}" required></label></div>'
         + combined_store_hint
-        + "".join(marketplace_sections)
-        + f'<p class="export-status {status_class}" data-export-status>{html.escape(status_text)}</p>'
+        + '<div class="integration-export-marketplaces">' + "".join(marketplace_sections) + '</div>'
+        + f'<p class="export-status {status_class}" data-export-status role="status" aria-live="polite">{html.escape(status_text)}</p>'
+        '<p class="integration-hint">Ручная выгрузка использует сохранённые настройки. После изменений сначала нажмите «Сохранить настройки».</p>'
         '<div class="export-actions"><button class="btn-primary" type="submit">Сохранить настройки</button>'
         '<button class="btn-secondary" type="button" data-export-now>Выгрузить сейчас</button></div>'
         "</form>"
@@ -216,7 +217,7 @@ async def render_google_export() -> str:
         "google_export_content.html",
         store_tabs="".join(
             '<button type="button" class="export-store-tab'
-            f'{" is-active" if index == 0 else ""}" data-export-store-tab="{item.store_slug}">'
+            f'{" is-active" if index == 0 else ""}" data-export-store-tab="{item.store_slug}" aria-pressed="{str(index == 0).lower()}">'
             f"{html.escape(STORES[item.store_slug].name)}</button>"
             for index, item in enumerate(settings)
         ),

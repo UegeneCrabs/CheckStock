@@ -79,6 +79,18 @@ def list_active_wb_stock_items(store_slug: str | None = None) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_purchase_price_stock_items() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id,store_slug,marketplace,article,barcode,name FROM stock_items "
+            "WHERE is_service=0 ORDER BY store_slug,marketplace,id"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
 def replace_product_classifications(rows: list[dict], synced_at: str) -> int:
     with WRITE_LOCK:
         conn = get_connection()
@@ -707,9 +719,16 @@ def save_product_settings(
     return get_product_settings(store_slug, values.article)
 
 
-def save_product_targets(store_slug: str, article: str, target_drr_percent: float | None,
-                         target_roi_percent: float | None, *, updated_at: str,
-                         updated_by_user_id: int, updated_by_name: str) -> UnitEconomics1CProductSettings:
+def save_product_targets(
+    store_slug: str,
+    article: str,
+    target_drr_percent: float | None,
+    target_roi_percent: float | None,
+    *,
+    updated_at: str,
+    updated_by_user_id: int,
+    updated_by_name: str,
+) -> UnitEconomics1CProductSettings:
     with WRITE_LOCK:
         conn = get_connection()
         try:
@@ -726,8 +745,15 @@ def save_product_targets(store_slug: str, article: str, target_drr_percent: floa
                     updated_by_user_id=excluded.updated_by_user_id,
                     updated_by_name=excluded.updated_by_name
                 """,
-                (store_slug, article, target_drr_percent, target_roi_percent, updated_at,
-                 updated_by_user_id, updated_by_name),
+                (
+                    store_slug,
+                    article,
+                    target_drr_percent,
+                    target_roi_percent,
+                    updated_at,
+                    updated_by_user_id,
+                    updated_by_name,
+                ),
             )
             conn.commit()
         except Exception:
@@ -824,10 +850,7 @@ def save_daily_margin_snapshots(rows: list[dict], *, overwrite: bool = False) ->
     placeholders = ", ".join("?" for _ in DAILY_MARGIN_SNAPSHOT_COLUMNS)
     conflict = (
         "DO UPDATE SET "
-        + ", ".join(
-            f"{column}=excluded.{column}"
-            for column in DAILY_MARGIN_SNAPSHOT_COLUMNS[3:]
-        )
+        + ", ".join(f"{column}=excluded.{column}" for column in DAILY_MARGIN_SNAPSHOT_COLUMNS[3:])
         if overwrite
         else "DO NOTHING"
     )

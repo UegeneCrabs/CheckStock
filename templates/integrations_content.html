@@ -1,12 +1,12 @@
 <link rel="stylesheet" href="/static/integrations.css?v=7">
 
-<header class="integration-page-head">
+<div class="integration-page-head">
     <div><p class="integration-eyebrow">Управление данными</p>
         <h1>Интеграции и выгрузки</h1>
         <p>Подключения маркетплейсов, обновление данных и Google Таблицы — в одном месте.</p>
     </div>
     <span class="integration-admin-label">Администрирование</span>
-</header>
+</div>
 
 <nav class="integration-view-tabs" aria-label="Разделы интеграций">
     <a href="?tab=sync" data-integration-view="sync" aria-current="page">Фоновые выгрузки <span class="integration-tab-count">$job_count</span></a>
@@ -26,7 +26,7 @@
         <label class="integration-search"><span class="visually-hidden">Найти выгрузку</span>
             <input class="input-control" type="search" data-sync-search placeholder="Найти выгрузку: заказы, реклама, Яндекс…"></label>
         <label class="integration-status-filter"><span>Статус</span>
-            <select class="select-control" data-sync-filter>
+            <select class="integration-select" data-sync-filter>
                 <option value="all">Все статусы</option><option value="running">Выполняются</option>
                 <option value="error">С ошибкой</option><option value="success">Успешные</option>
                 <option value="empty">Ещё не запускались</option>

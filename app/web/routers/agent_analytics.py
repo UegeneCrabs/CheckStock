@@ -218,7 +218,6 @@ async def action_schema():
         if fields is not None:
             item["get"]["parameters"] = [p for p in item["get"].get("parameters", []) if p["name"] in fields]
         for parameter in item["get"].get("parameters", []):
-            # URL query parameters are omitted when unset, never JSON null.
             query_schema = parameter.get("schema", {})
             variants = query_schema.get("anyOf", [])
             non_null = [variant for variant in variants if variant.get("type") != "null"]

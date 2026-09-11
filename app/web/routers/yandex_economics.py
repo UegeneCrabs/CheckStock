@@ -109,6 +109,7 @@ async def save_economics(request: Request, store: str, article: str, payload: Se
 
 @router.post("/calculate/{store}/{article:path}")
 async def simulate(request: Request, store: str, article: str, payload: CalculationRequest):
+    """Saved manual values and explicit scenario edits retain priority."""
     authorize(request, store, article)
     scenario = payload.values.model_dump(exclude_unset=True)
     state = await run_in_threadpool(
@@ -123,7 +124,7 @@ async def simulate(request: Request, store: str, article: str, payload: Calculat
             )
         except Exception as error:
             raise HTTPException(400, safe_error(error)) from error
-        # Saved manual values and explicit scenario edits retain priority.
+
         overrides = {
             key: value
             for key, value in state["overrides"].items()

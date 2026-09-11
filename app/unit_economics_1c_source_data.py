@@ -307,13 +307,70 @@ def sync_all(sheets: list[dict] | None = None) -> dict:
     return report
 
 
+def parse_purchase_prices(sheets: list[dict], catalog: list[dict]) -> dict:
+    """Match purchase cost by source article in every marketplace of the named stores."""
+    by_article: dict[str, list[dict]] = defaultdict(list)
+    for item in catalog:
+        article = _identifier(str(item.get("article") or "").partition(" / ")[0])
+        if article:
+            by_article[article].append(item)
+    matched: dict[int, dict] = {}
+    source_prices = 0
+    unmatched = []
+    for sheet in sheets:
+        title = _text(sheet.get("title"))
+        rows = list(sheet.get("rows") or [])
+        header_index, columns = _find_header(rows)
+        allowed_stores = _sheet_store_slugs(title)
+        for source_row, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
+            article_column = columns[SOURCE_COLUMNS["article"]]
+            price_column = columns[SOURCE_COLUMNS["purchase_price"]]
+            article = _identifier(row[article_column]) if article_column < len(row) else ""
+            price = _number(row[price_column]) if price_column < len(row) else None
+            if not article or price is None:
+                continue
+            source_prices += 1
+            candidates = [
+                item for item in by_article.get(article, []) if item["store_slug"] in allowed_stores
+            ]
+            if not candidates:
+                unmatched.append({"article": article, "sheet": title, "row": source_row})
+            for item in candidates:
+                item_id = int(item["id"])
+                previous = matched.get(item_id)
+                if previous is not None and previous["purchase_price"] != price:
+                    raise SourceDataError(
+                        f"Разные ЗЦ для артикула {article}: "
+                        f"{previous['source_sheet_title']}:{previous['source_row']} и {title}:{source_row}"
+                    )
+                matched.setdefault(
+                    item_id,
+                    {
+                        "stock_item_id": item_id,
+                        "purchase_price": price,
+                        "source_sheet_id": int(sheet["sheet_id"]),
+                        "source_sheet_title": title,
+                        "source_row": source_row,
+                    },
+                )
+    return {"rows": list(matched.values()), "source_prices": source_prices, "unmatched": unmatched}
+
+
 def _sync_all(sheets: list[dict] | None = None) -> dict:
     loaded_sheets = sheets if sheets is not None else fetch_wb_sheet_rows()
-    catalog = db.list_unit_economics_1c_active_wb_stock_items()
-    report = parse_source_values(loaded_sheets, catalog)
+    catalog = db.list_purchase_price_stock_items()
+    report = parse_source_values(loaded_sheets, [item for item in catalog if item["marketplace"] == "WB"])
+    prices = parse_purchase_prices(loaded_sheets, catalog)
+    rows_by_id = {row["stock_item_id"]: row for row in report.pop("rows")}
+    for price in prices["rows"]:
+        row = rows_by_id.get(price["stock_item_id"])
+        if row is None:
+            rows_by_id[price["stock_item_id"]] = price
+        else:
+            row["purchase_price"] = price["purchase_price"]
     synced_at = _now()
     saved = db.replace_unit_economics_1c_source_values(
-        report.pop("rows"),
+        list(rows_by_id.values()),
         report.pop("team_commissions"),
         synced_at,
     )
@@ -328,7 +385,15 @@ def _sync_all(sheets: list[dict] | None = None) -> dict:
         report["duplicates"],
         len(report["commission_conflicts"]),
     )
-    return {"ok": True, "saved": saved, "synced_at": synced_at, **report}
+    return {
+        "ok": True,
+        "saved": saved,
+        "synced_at": synced_at,
+        **report,
+        "purchase_prices_saved": len(prices["rows"]),
+        "source_price_rows": prices["source_prices"],
+        "unmatched_price_rows": prices["unmatched"],
+    }
 
 
 def sync_all_marketplaces() -> dict:

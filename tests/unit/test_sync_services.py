@@ -107,7 +107,7 @@ class WildberriesSyncTests(unittest.TestCase):
         ]
         warehouses = [{"id": 1, "name": " FF One "}, {"id": 2, "name": "Other"}]
 
-        def fbs_stock(_token, warehouse_id, _barcodes):
+        def fbs_stock(_token, warehouse_id, _barcodes, **kwargs):
             if warehouse_id == 1:
                 return {"bc1": 2, "bc2": 1}
             return {"bc1": 3}
@@ -116,27 +116,32 @@ class WildberriesSyncTests(unittest.TestCase):
             mock.patch.object(wb_sync.wb_tokens, "get_token", return_value="token"),
             mock.patch.object(wb_sync.db, "get_catalog_items", return_value=catalog),
             mock.patch.object(wb_sync.wb_api, "get_own_warehouses", return_value=warehouses),
+            mock.patch.object(
+                wb_sync.wb_api,
+                "get_cards_list",
+                return_value=[
+                    {"sizes": [{"chrtID": 101, "skus": ["bc1"]}, {"chrtID": 102, "skus": ["bc2"]}]}
+                ],
+            ),
             mock.patch.object(wb_sync.db, "get_fulfillments", return_value=["ff one"]),
             mock.patch.object(wb_sync.wb_api, "get_fbs_stock", side_effect=fbs_stock),
             mock.patch.object(wb_sync.db, "replace_ff_warehouse_map") as replace_map,
-            mock.patch.object(wb_sync.db, "replace_mp_warehouse_stock") as replace_stock,
-            mock.patch.object(wb_sync.db, "upsert_mp_stock") as upsert,
+            mock.patch.object(wb_sync, "replace_snapshot") as replace_stock,
         ):
             self.assertEqual(wb_sync.sync_store_fbs("store"), 2)
         replace_map.assert_called_once()
         replace_stock.assert_called_once()
-        self.assertEqual(upsert.call_count, 2)
+        self.assertEqual(replace_stock.call_args.args[2], {"fbs": {"10": 5, "11": 1}})
 
         fbo = {("bc1", "Allowed"): 4, ("bc1", next(iter(wb_sync.EXCLUDED_FBO_WAREHOUSES))): 9}
         with (
             mock.patch.object(wb_sync.wb_tokens, "get_token", return_value="token"),
             mock.patch.object(wb_sync.db, "get_catalog_items", return_value=catalog),
             mock.patch.object(wb_sync.wb_api, "get_fbo_stock_by_warehouse", return_value=fbo),
-            mock.patch.object(wb_sync.db, "replace_mp_warehouse_stock") as replace_fbo,
-            mock.patch.object(wb_sync.db, "upsert_mp_stock") as upsert_fbo,
+            mock.patch.object(wb_sync, "replace_snapshot") as replace_fbo,
         ):
             self.assertEqual(wb_sync.sync_store_fbo("store"), 2)
-        self.assertEqual(upsert_fbo.call_args_list[0].args[4], 4)
+        self.assertEqual(replace_fbo.call_args.args[2]["fbo"]["10"], 4)
         replace_fbo.assert_called_once()
 
     def test_gogol_warehouse_aliases_use_canonical_fulfillment_names(self) -> None:
@@ -305,18 +310,20 @@ class OzonSyncTests(unittest.TestCase):
             mock.patch.object(ozon_sync.db, "get_catalog_items", return_value=catalog),
             mock.patch.object(ozon_sync.ozon_api, "get_product_stocks", return_value=items),
             mock.patch.object(ozon_sync.ozon_api, "get_fbo_stock_by_warehouse", return_value=rows),
+            mock.patch.object(ozon_sync.ozon_api, "get_own_warehouses", return_value=[]),
+            mock.patch.object(ozon_sync.ozon_api, "get_fbs_stock_by_warehouse", return_value=[]),
+            mock.patch.object(ozon_sync.db, "get_fulfillments", return_value=[]),
             mock.patch.object(ozon_sync.db, "get_warehouse_clusters", return_value={"WH": "C"}),
-            mock.patch.object(ozon_sync.db, "replace_mp_warehouse_stock") as replace,
-            mock.patch.object(ozon_sync.db, "upsert_mp_stock") as upsert,
+            mock.patch.object(ozon_sync, "replace_snapshot") as replace,
             mock.patch.object(ozon_sync.ozon_api, "clear_store_context") as clear,
         ):
             self.assertEqual(ozon_sync.sync_store("store"), 1)
         replace.assert_called_once()
         self.assertEqual(
-            replace.call_args.args[3],
-            [("A", "WH", "C", 2, mock.ANY)],
+            replace.call_args.args[3]["fbo"],
+            [("A", "WH", "C", 2)],
         )
-        self.assertEqual(upsert.call_count, 6)
+        self.assertEqual(replace.call_args.args[2], {"fbo": {"A": 3}, "fbs": {}, "rfbs": {}})
         clear.assert_called_once()
 
         with (
@@ -520,25 +527,19 @@ class YandexSyncTests(unittest.TestCase):
                 },
             ),
             mock.patch.object(yandex_sync.ya_api, "get_stocks", side_effect=stocks),
-            mock.patch.object(yandex_sync.db, "replace_mp_warehouse_stock") as replace,
-            mock.patch.object(yandex_sync.db, "upsert_mp_stock") as upsert,
-            mock.patch.object(yandex_sync.db, "delete_mp_stock_scheme_variants") as cleanup,
+            mock.patch.object(yandex_sync, "replace_snapshot") as replace,
         ):
             self.assertEqual(yandex_sync.sync_store("store"), 2)
-        self.assertEqual(replace.call_count, 2)
+        self.assertEqual(replace.call_count, 1)
         self.assertEqual(
-            replace.call_args_list[1].args[3],
+            replace.call_args.args[3]["fbs"],
             [
-                ("B", "AFFLATUS Купавна", None, 1, mock.ANY),
-                ("B", "ФулСервис Подольск", None, 2, mock.ANY),
+                ("B", "AFFLATUS Купавна", None, 1),
+                ("B", "ФулСервис Подольск", None, 2),
             ],
         )
-        self.assertEqual(upsert.call_count, 4)
-        self.assertIn(
-            mock.call("store", "B", "YANDEX MARKET", "fbs", 3, mock.ANY),
-            upsert.call_args_list,
-        )
-        cleanup.assert_called_once_with("store", "YANDEX MARKET", "fbs")
+        self.assertEqual(replace.call_args.args[2], {"fbo": {"A": 2}, "fbs": {"B": 3}})
+        self.assertEqual(replace.call_args.kwargs["remove_variants"], ("fbs",))
 
         with (
             mock.patch.object(yandex_sync.ya_tokens, "get_api_key", return_value="key"),

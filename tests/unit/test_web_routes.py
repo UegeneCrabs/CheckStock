@@ -557,7 +557,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(redirect.headers["location"], "/admin/integrations#cabinet-settings")
         page = self.client.get("/admin/integrations")
         self.assertLess(page.text.index("API-ключи маркетплейсов"), page.text.index('id="cabinet-settings"'))
-        self.assertLess(page.text.index('id="cabinet-settings"'), page.text.index("<h2>Все выгрузки</h2>"))
+        self.assertIn('data-integration-view-panel="cabinets" hidden', page.text)
         self.assertEqual(page.status_code, 200)
         self.assertIn("Ввод данных по кабинетам", page.text)
         self.assertIn("Комиссия команды обновляется ночью", page.text)
@@ -874,7 +874,7 @@ class WebRouteUnitTests(unittest.TestCase):
         ))
         self.user["access_scopes"] = [{"store_slug": "rimili", "marketplace": "WB"}]
         response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
-        self.assertEqual(response.json()["products"], [])
+        self.assertEqual(response.status_code, 403)
 
     def test_yandex_periods_match_wb_validation_and_load_requested_dates(self) -> None:
         endpoint = "/sales/unit-economics-1c/yandex-market"
@@ -2917,7 +2917,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn("renderChartDailySales", script)
         self.assertNotIn('class="ue1c-chart-bar-value', script)
         self.assertIn("<table><tbody>", script)
-        self.assertIn('<th scope="row">Заказы воронки</th>', script)
+        self.assertIn("config.yandexEconomics ? 'Заказы' : 'Заказы воронки'", script)
         self.assertNotIn('Заказы / выкуп</th>', script)
         self.assertNotIn("line(previousHistory", script)
         self.assertIn(".ue1c-chart-tooltip td", styles)
@@ -3094,7 +3094,7 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('tot-fbs">17</strong>', page.text)
 
         fbs = self.client.get("/stock/rimili/fbs", params={"mp": "YANDEX MARKET"})
-        self.assertEqual(fbs.json(), {"fbs": {"YA-1": 17}})
+        self.assertEqual(fbs.json(), {"fbs": {"YA-1": 17}, "rfbs": {}})
 
         detail = self.client.get(
             "/stock/rimili/article-detail",

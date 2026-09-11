@@ -90,7 +90,9 @@ def download_report(url: str, sheet: str, identifier: str) -> list[dict]:
 
 
 def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
-    """Serialize report generation per business while allowing orders to sync independently."""
+    """Serialize report generation per business while allowing orders to sync independently.
+
+    Count from completion, including retries and network delay, so the next generation cannot land inside the server's quota window."""
     business_id = int(payload["businessId"])
     with _REPORT_LOCKS_GUARD:
         report_lock = _REPORT_LOCKS.setdefault(business_id, Lock())
@@ -102,8 +104,8 @@ def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier
         try:
             return _load_report(api_key, report, payload, sheet, identifier)
         finally:
-            # Count from completion, including retries and network delay, so the
-            # next generation cannot land inside the server's quota window.
+
+
             _REPORT_LAST_REQUEST[key] = time.monotonic()
 
 
@@ -234,7 +236,9 @@ def sync_store(store_slug: str, source: str, today: date | None = None, *, previ
 
 
 def _sync_store(store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False) -> dict:
-    """Refresh exactly one source without requesting or changing the other snapshots."""
+    """Refresh exactly one source without requesting or changing the other snapshots.
+
+    Seed the oldest completed day once, so a first installation can display a full week."""
     if store_slug not in STORES:
         raise ValueError("Неизвестный кабинет")
     if source not in SOURCES:
@@ -261,7 +265,7 @@ def _sync_store(store_slug: str, source: str, today: date | None = None, *, prev
             rows = load_buyout(api_key, business_id, start, end)
         else:
             start, end = today - timedelta(days=6), today
-            # Seed the oldest completed day once, so a first installation can display a full week.
+
             oldest = (today - timedelta(days=7)).isoformat()
             if not repository.get_history(store_slug, source, oldest, oldest)[1]:
                 start -= timedelta(days=1)

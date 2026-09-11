@@ -21,6 +21,7 @@ def context(store):
 
 
 def effective(store, article, scheme, *, scenario=None, state_cache=None):
+    """Quotes may only be used for exactly the price/dimensions/payment schedule requested."""
     cache = state_cache if state_cache is not None else context(store)
     saved_sources = cache["sources"]
     seed = saved_sources.get((article, "initial:" + scheme), {})
@@ -71,7 +72,7 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
     values, _ = resolve(*layers, ("Сценарий", scenario or {}))
     tariff = saved_sources.get((article, "tariff:" + scheme), {})
     tariff_data = tariff.get("values", {})
-    # Quotes may only be used for exactly the price/dimensions/payment schedule requested.
+
     tariff_valid = tariff_data.get("signature") == tariff_signature(
         values, scheme
     ) and yandex_storefront.fresh(tariff.get("updated_at"))
@@ -117,9 +118,11 @@ def checked_today(timestamp, today):
 
 
 def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=None):
-    """Today's observations plus standing cost settings; never planned/stale prices or DRR."""
+    """Today's observations plus standing cost settings; never planned/stale prices or DRR.
+
+    A price scenario is never a current marketplace observation. A stored tariff must have been quoted today for these observed prices."""
     cache = state_cache if state_cache is not None else context(store)
-    # A price scenario is never a current marketplace observation.
+
     scenario = {
         key: value
         for key, value in (scenario or {}).items()
@@ -136,7 +139,7 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
         origins[field] = "API / витрина: сегодня" if valid else "Нет цены за сегодня"
     values["advertising_mode"] = "actual"
     origins["advertising_mode"] = "Реклама и заказы за сегодня"
-    # A stored tariff must have been quoted today for these observed prices.
+
     tariff = cache["sources"].get((article, "tariff:" + scheme), {})
     quote = tariff.get("values", {})
     tariff_valid = checked_today(tariff.get("updated_at"), today) and quote.get(
@@ -299,7 +302,9 @@ def capture_today(stores, *, today=None, only_article=None):
 
 
 def close_days(stores, *, today=None):
-    """Finalize only days with saved historical inputs and complete daily metrics."""
+    """Finalize only days with saved historical inputs and complete daily metrics.
+
+    New daily records preserve model counts. Legacy mixed-model days are not guessed. SKU advertising is shared between models, allocated by ordered quantity."""
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     completed = 0
     for store in stores:
@@ -328,7 +333,7 @@ def close_days(stores, *, today=None):
                 continue
             values = state["values"]
             scheme_rows = [row for row in orders if row["article"] == article]
-            # New daily records preserve model counts. Legacy mixed-model days are not guessed.
+
             if any("schemes" not in row for row in scheme_rows):
                 continue
             count = sum(
@@ -336,7 +341,7 @@ def close_days(stores, *, today=None):
             )
             total = sum(int(row.get("orders_count") or 0) for row in scheme_rows)
             spend = sum(float(row.get("spend") or 0) for row in ads if row["article"] == article)
-            # SKU advertising is shared between models, allocated by ordered quantity.
+
             if total:
                 spend = spend * count / total
             elif scheme != "FBY":

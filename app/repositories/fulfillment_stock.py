@@ -458,7 +458,7 @@ def search_catalog(
             continue
 
         article = item["article"].casefold()
-        barcode = item["barcode"].casefold()
+        barcode = " ".join(item.get("barcodes") or [item["barcode"]]).casefold()
         name = item["name"].casefold()
 
         if article.startswith(query):

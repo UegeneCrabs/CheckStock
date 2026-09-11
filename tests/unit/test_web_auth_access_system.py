@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
-
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 

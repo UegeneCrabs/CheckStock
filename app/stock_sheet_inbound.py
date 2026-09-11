@@ -20,17 +20,18 @@ def _key(value: object) -> str:
 
 
 def _remaining_for_export(marketplace: str, supply: InboundSupply, item: InboundItem) -> int | None:
+    """Receipt is finished: shortage is not stock in transit. A dispute on another item must not hide this item's confirmed placement balance. Accepted by WB is not necessarily ready for sale in the FBO stock."""
     if supply.unavailable or supply.stage == "unknown":
         return None
     if marketplace == "WB":
         if supply.status == "5":
-            # Receipt is finished: shortage is not stock in transit. A dispute on
-            # another item must not hide this item's confirmed placement balance.
+
+
             if item.accepted_quantity is None or item.ready_quantity is None:
                 return None
             return max(item.accepted_quantity - item.ready_quantity, 0)
         if supply.stage == "acceptance":
-            # Accepted by WB is not necessarily ready for sale in the FBO stock.
+
             if item.ready_quantity is None:
                 return None
             return max(item.quantity - item.ready_quantity, 0)

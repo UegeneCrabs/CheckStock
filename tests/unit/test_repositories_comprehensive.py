@@ -236,7 +236,9 @@ class RepositoryUnitTests(unittest.TestCase):
             "2026-08-12T12:00:00+00:00",
             force_remove_articles={"B-2"},
         )
-        self.assertEqual(report, {"added": 0, "updated": 1, "removed": 2, "kept": 0, "forced_removed": 1})
+        self.assertEqual(
+            report, {"added": 0, "updated": 1, "removed": 2, "kept": 0, "forced_removed": 1, "reconciled": 0}
+        )
         db.upsert_mp_stock("rimili", "A-1", "WB", "fbs", 0, NOW)
         self.assertEqual(db.get_mp_stock_totals("rimili", "WB", "fbs"), {})
         db.upsert_ff_stock("rimili", "A-1", "ФФ", 0, NOW, "WB")
@@ -553,8 +555,7 @@ class RepositoryUnitTests(unittest.TestCase):
         self.add_catalog()
         with core.get_connection() as connection:
             stock_item = connection.execute(
-                "SELECT id FROM stock_items WHERE store_slug='rimili' "
-                "AND marketplace='WB' AND article='A-1'"
+                "SELECT id FROM stock_items WHERE store_slug='rimili' AND marketplace='WB' AND article='A-1'"
             ).fetchone()
             connection.execute(
                 """
@@ -590,8 +591,7 @@ class RepositoryUnitTests(unittest.TestCase):
         self.assertEqual(operation_item["purchase_price_recorded"], 1)
         with core.get_connection() as connection:
             connection.execute(
-                "UPDATE unit_economics_1c_source_values SET purchase_price=999 "
-                "WHERE stock_item_id=?",
+                "UPDATE unit_economics_1c_source_values SET purchase_price=999 WHERE stock_item_id=?",
                 (stock_item["id"],),
             )
             connection.commit()

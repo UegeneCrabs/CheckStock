@@ -1,12 +1,71 @@
 (function () {
     'use strict';
 
+    var viewLinks = Array.from(document.querySelectorAll('[data-integration-view]'));
+    var viewPanels = Array.from(document.querySelectorAll('[data-integration-view-panel]'));
+    function showViewFromUrl() {
+        var url = new URL(window.location.href);
+        var selected = url.searchParams.get('tab') || 'sync';
+        var anchor;
+        try { anchor = document.getElementById(decodeURIComponent(url.hash.slice(1))); } catch (_) { /* Ignore malformed fragments. */ }
+        var anchorPanel = anchor && anchor.closest('[data-integration-view-panel]');
+        if (anchorPanel) selected = anchorPanel.dataset.integrationViewPanel;
+        else if (!url.searchParams.has('tab') && url.searchParams.has('ym_article')) selected = 'cabinets';
+        if (!viewPanels.some(function (panel) { return panel.dataset.integrationViewPanel === selected; })) selected = 'sync';
+        viewPanels.forEach(function (panel) { panel.hidden = panel.dataset.integrationViewPanel !== selected; });
+        viewLinks.forEach(function (link) {
+            if (link.dataset.integrationView === selected) link.setAttribute('aria-current', 'page');
+            else link.removeAttribute('aria-current');
+        });
+        if (anchor) window.requestAnimationFrame(function () { anchor.scrollIntoView({block: 'start'}); });
+    }
+    viewLinks.forEach(function (link) {
+        link.addEventListener('click', function (event) {
+            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            var url = new URL(window.location.href);
+            url.searchParams.set('tab', link.dataset.integrationView);
+            url.hash = '';
+            window.history.pushState(null, '', url);
+            showViewFromUrl();
+        });
+    });
+    window.addEventListener('popstate', showViewFromUrl);
+    window.addEventListener('hashchange', showViewFromUrl);
+    showViewFromUrl();
+
+    var search = document.querySelector('[data-sync-search]');
+    var statusFilter = document.querySelector('[data-sync-filter]');
+    var jobRows = Array.from(document.querySelectorAll('[data-sync-job]'));
+    function filterJobs() {
+        var query = search.value.trim().toLocaleLowerCase('ru');
+        var count = 0;
+        jobRows.forEach(function (row) {
+            var matches = row.children[0].textContent.toLocaleLowerCase('ru').includes(query)
+                && (statusFilter.value === 'all' || row.querySelector('.sync-status').classList.contains('is-' + statusFilter.value));
+            row.hidden = !matches;
+            if (matches) count += 1;
+            var button = row.querySelector('[data-sync-targets-toggle]');
+            var detail = document.querySelector('[data-sync-targets-row="' + row.dataset.syncJob + '"]');
+            if (detail) detail.hidden = !matches || button.getAttribute('aria-expanded') !== 'true';
+        });
+        document.querySelector('[data-sync-count]').textContent = 'Показано: ' + count + ' из ' + jobRows.length;
+        document.querySelector('[data-sync-empty]').hidden = count !== 0;
+        document.querySelector('.integration-sync-table-wrap').hidden = count === 0;
+    }
+    search.addEventListener('input', filterJobs);
+    statusFilter.addEventListener('change', filterJobs);
+    document.querySelector('[data-sync-reset]').addEventListener('click', function () {
+        search.value = ''; statusFilter.value = 'all'; filterJobs(); search.focus();
+    });
+    filterJobs();
+
     var tabs = document.querySelectorAll('[data-integration-store-tab]');
     var panels = document.querySelectorAll('[data-integration-store]');
     tabs.forEach(function (tab) {
         tab.addEventListener('click', function () {
             var selected = tab.getAttribute('data-integration-store-tab');
-            tabs.forEach(function (item) { item.classList.toggle('is-active', item === tab); });
+            tabs.forEach(function (item) { item.classList.toggle('is-active', item === tab); item.setAttribute('aria-pressed', String(item === tab)); });
             panels.forEach(function (panel) {
                 panel.hidden = panel.getAttribute('data-integration-store') !== selected;
             });
@@ -214,7 +273,10 @@
         return request('/api/admin/integrations/sync-jobs', {
             headers: {'Accept': 'application/json', 'X-Requested-With': 'fetch'}
         }).then(function (data) {
-            if (generation === stateGeneration) (data.states || []).forEach(applyRunState);
+            if (generation === stateGeneration) {
+                (data.states || []).forEach(applyRunState);
+                filterJobs();
+            }
         }).catch(function () {
             document.querySelectorAll('[data-sync-run]:disabled').forEach(function (button) {
                 runMessage(button.dataset.syncRun, 'Не удалось получить статус. Повторяем проверку…', true);

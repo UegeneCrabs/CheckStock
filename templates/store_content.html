@@ -597,14 +597,24 @@ $mp_source_options
                     var seq = ++requestSeq;
                     if (status) status.textContent = 'Загрузка...';
 
+                    function loadStock(endpoint, field) {
+                        return fetch(query(endpoint, { ff: ff, mp: mp })).then(function (response) {
+                            if (!response.ok) throw new Error('HTTP ' + response.status);
+                            return response.json();
+                        }).then(function (data) {
+                            if (!data[field] || typeof data[field] !== 'object') throw new Error('Некорректный ответ сервера');
+                            return data;
+                        });
+                    }
                     return Promise.all([
-                        fetch(query('fbs', { ff: ff, mp: mp })).then(function (r) { return r.json(); }),
-                        fetch(query('ff-available', { ff: ff, mp: mp })).then(function (r) { return r.json(); }),
-                        fetch(query('transit', { ff: ff, mp: mp })).then(function (r) { return r.json(); })
+                        loadStock('fbs', 'fbs'),
+                        loadStock('ff-available', 'ff_available'),
+                        loadStock('transit', 'transit')
                     ])
                         .then(function (results) {
                             if (seq !== requestSeq) return;
                             applyValues('.col-fbs', results[0].fbs || {});
+                            applyValues('.col-rfbs', results[0].rfbs || {});
                             applyValues('.col-ff-available', results[1].ff_available || {});
                             applyValues('.col-transit', results[2].transit || {});
                             recalcTotals();

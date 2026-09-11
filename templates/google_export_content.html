@@ -27,6 +27,7 @@ $store_cards
                         var selected = tab.getAttribute('data-export-store-tab');
                         tabs.forEach(function (item) {
                             item.classList.toggle('is-active', item === tab);
+                            item.setAttribute('aria-pressed', String(item === tab));
                         });
                         forms.forEach(function (form) {
                             form.hidden = form.getAttribute('data-store') !== selected;

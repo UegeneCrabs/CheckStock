@@ -9,7 +9,7 @@ class ApplicationIntegrationTests(unittest.TestCase):
 
         from app.web.routers.agent_full import SPECS
 
-        self.assertEqual(len(paths), 107 + len(SPECS))
+        self.assertEqual(len(paths), 104 + len(SPECS))
         self.assertIn("/api/agent/v1/stores", paths)
         self.assertIn("/api/agent/v1/loss-products", paths)
         self.assertIn("/sales/unit-economics-1c/reports/target-price", paths)

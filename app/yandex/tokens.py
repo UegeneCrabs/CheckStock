@@ -6,6 +6,7 @@ SECRETS_PATH = settings.yandex_tokens_path
 
 
 def _load() -> dict:
+    """Accept the historical spelling while using the canonical application slug."""
     if not SECRETS_PATH.exists():
         return {}
     try:
@@ -15,7 +16,7 @@ def _load() -> dict:
         return {}
     if not isinstance(data, dict):
         return {}
-    # Accept the historical spelling while using the canonical application slug.
+
     if "sokoloff" not in data and isinstance(data.get("sokolof"), dict):
         data["sokoloff"] = data.pop("sokolof")
     return data

@@ -114,6 +114,7 @@ class WBCatalogTests(unittest.TestCase):
             connection.close()
 
             with mock.patch.object(core, "DB_PATH", database):
+                db.init_db()
                 report = db.replace_catalog(
                     "rimili",
                     "WB",

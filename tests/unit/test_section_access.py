@@ -110,10 +110,6 @@ def test_identity_repository_persists_role_and_section_access(tmp_path: Path) ->
     dispose_databases()
 
 
-
-
-
-
 def test_middleware_enforces_unit_economics_1c_access(database_path) -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
     identities = client.app.state.container.identity

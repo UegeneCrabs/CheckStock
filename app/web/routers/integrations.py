@@ -275,7 +275,7 @@ async def integrations_page(request: Request):
     }
     store_tabs = "".join(
         '<button type="button" class="integration-store-tab'
-        f'{" is-active" if index == 0 else ""}" data-integration-store-tab="{slug}">'
+        f'{" is-active" if index == 0 else ""}" data-integration-store-tab="{slug}" aria-pressed="{str(index == 0).lower()}">'
         f"{html.escape(store.name)}</button>"
         for index, (slug, store) in enumerate(STORES.items())
     )

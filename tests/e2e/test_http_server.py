@@ -249,9 +249,7 @@ class HttpServerEndToEndTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(transferred["results"][0]["quantity"], 4)
-        with opener.open(
-            self.url("/stock/rimili/transfers/in-transit?mp=WB"), timeout=5
-        ) as response:
+        with opener.open(self.url("/stock/rimili/transfers/in-transit?mp=WB"), timeout=5) as response:
             transit = json.loads(response.read().decode("utf-8"))["batches"][0]
         status, received = self.post_json(
             opener,
@@ -290,7 +288,6 @@ class HttpServerEndToEndTests(unittest.TestCase):
         with opener.open(self.url("/stock/rimili/operations/xlsx"), timeout=5) as response:
             workbook = response.read()
         self.assertTrue(workbook.startswith(b"PK"))
-
 
     def test_full_admin_user_chain(self) -> None:
         opener = self.authenticated_opener()

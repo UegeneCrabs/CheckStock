@@ -33,6 +33,9 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
         TestClient(application, raise_server_exceptions=False) as client,
     ):
         client.cookies.set(auth.SESSION_COOKIE, "session")
+        redirect = client.get("/admin/google-export", follow_redirects=False)
+        assert redirect.status_code == 303
+        assert redirect.headers["location"] == "/admin/integrations?tab=google"
         page = client.get("/admin/google-export")
         response = client.post("/admin/google-export/rimili", data=_form_data())
 

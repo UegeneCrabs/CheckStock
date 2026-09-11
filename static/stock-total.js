@@ -68,34 +68,13 @@
         var select = document.getElementById('stock-total-store');
         if (!table || !select) return;
 
-        function syncLinks(selected, updateAddress) {
-            var query = selected ? '?store=' + encodeURIComponent(selected) : '';
-            var download = document.querySelector('.stock-total-download');
-            if (download) download.setAttribute('href', '/stock/total.xlsx' + query);
-            if (updateAddress && window.history && window.history.replaceState) {
-                window.history.replaceState(null, '', '/stock/total' + query);
-            }
-        }
-
-        function applyStore(updateAddress) {
-            var selected = select.value;
-            table.querySelectorAll('tbody tr:not(.empty-row)').forEach(function (row) {
-                row.dataset.externalHidden = selected && row.dataset.store !== selected ? 'true' : 'false';
-            });
-            sortByGrandTotal(table);
-            if (window.CheckStockTableFilter) {
-                window.CheckStockTableFilter.refresh(table);
-            } else {
-                table.querySelectorAll('tbody tr:not(.empty-row)').forEach(function (row) {
-                    row.style.display = row.dataset.externalHidden === 'true' ? 'none' : '';
-                });
-                updateTotals(table);
-            }
-            syncLinks(selected, updateAddress === true);
-        }
-
         table.addEventListener('tablefilterchange', function () { updateTotals(table); });
-        select.addEventListener('change', function () { applyStore(true); });
-        applyStore(false);
+        select.addEventListener('change', function () {
+            var query = select.value ? '?store=' + encodeURIComponent(select.value) : '';
+            // Rebuild merged quantities for the selected store, including the export.
+            window.location.assign('/stock/total' + query);
+        });
+        sortByGrandTotal(table);
+        updateTotals(table);
     });
 })();

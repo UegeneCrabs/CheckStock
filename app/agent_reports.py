@@ -138,7 +138,6 @@ def stocks(query):
                 {key: detail[key] for key in ("warehouse", "quantity", "updated_at")}
             )
         for row in rows:
-            # A separate snapshot is context, never extra stock to sum into totals.
             row["warehouse_breakdown"] = by_product.get((row["article"], row["scheme"]), [])
     fulfillment = read(
         "SELECT article, fulfillment AS warehouse, quantity, updated_at FROM ff_stock "

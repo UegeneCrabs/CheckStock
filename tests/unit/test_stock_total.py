@@ -20,19 +20,19 @@ def _catalog_item(article: str, barcode: str, name: str) -> dict:
     return {"article": article, "barcode": barcode, "name": name}
 
 
-def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(database_path) -> None:
+def test_total_stock_merges_marketplaces_and_stores_by_article(database_path) -> None:
     del database_path
     db.replace_catalog(
         "rimili",
         "WB",
-        [_catalog_item("WB-ARTICLE", "2200000000001", "Общий товар")],
+        [_catalog_item("COMMON-ARTICLE", "2200000000001", "Общий товар")],
         NOW,
     )
     db.replace_catalog(
         "rimili",
         "OZON",
         [
-            _catalog_item("OZON-ARTICLE", "2200000000001", "Общий товар Ozon"),
+            _catalog_item("COMMON-ARTICLE", "2200000000001", "Общий товар Ozon"),
             _catalog_item("OZON-ZERO", "", "Товар без штрихкода"),
         ],
         NOW,
@@ -40,13 +40,13 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
     db.replace_catalog(
         "rimili",
         "YANDEX MARKET",
-        [_catalog_item("YANDEX-ARTICLE", "2200000000001", "Общий товар Яндекс")],
+        [_catalog_item("COMMON-ARTICLE", "2200000000001", "Общий товар Яндекс")],
         NOW,
     )
     db.replace_catalog(
         "tris",
         "WB",
-        [_catalog_item("TRIS-ARTICLE", "2200000000001", "Такой же штрихкод, другой магазин")],
+        [_catalog_item("COMMON-ARTICLE", "2200000000001", "Такой же штрихкод, другой магазин")],
         NOW,
     )
     connection = db.get_connection()
@@ -66,14 +66,14 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
         """
         INSERT INTO catalog_product_exclusions
             (store_slug, marketplace, nm_id, status, updated_at)
-        VALUES ('rimili', 'WB', 'WB-ARTICLE', 'Старье', ?)
+        VALUES ('rimili', 'WB', 'COMMON-ARTICLE', 'Старье', ?)
         """,
         (NOW,),
     )
     wb_stock_item_id = connection.execute(
         """
         SELECT id FROM stock_items
-         WHERE store_slug='rimili' AND marketplace='WB' AND article='WB-ARTICLE'
+         WHERE store_slug='rimili' AND marketplace='WB' AND article='COMMON-ARTICLE'
         """
     ).fetchone()[0]
     connection.execute(
@@ -88,12 +88,12 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
     connection.commit()
     connection.close()
 
-    db.upsert_ff_stock("rimili", "WB-ARTICLE", FULFILLMENT, 2, NOW, "WB")
-    db.upsert_ff_stock("rimili", "OZON-ARTICLE", FULFILLMENT, 4, NOW, "OZON")
-    db.upsert_mp_stock("rimili", "WB-ARTICLE", "WB", "fbs", 7, NOW)
-    db.upsert_mp_stock("rimili", "OZON-ARTICLE", "OZON", "rfbs", 3, NOW)
-    db.upsert_mp_stock("rimili", "YANDEX-ARTICLE", "YANDEX MARKET", "fbo", 5, NOW)
-    db.upsert_mp_stock("tris", "TRIS-ARTICLE", "WB", "fbo", 11, NOW)
+    db.upsert_ff_stock("rimili", "COMMON-ARTICLE", FULFILLMENT, 2, NOW, "WB")
+    db.upsert_ff_stock("rimili", "COMMON-ARTICLE", FULFILLMENT, 4, NOW, "OZON")
+    db.upsert_mp_stock("rimili", "COMMON-ARTICLE", "WB", "fbs", 7, NOW)
+    db.upsert_mp_stock("rimili", "COMMON-ARTICLE", "OZON", "rfbs", 3, NOW)
+    db.upsert_mp_stock("rimili", "COMMON-ARTICLE", "YANDEX MARKET", "fbo", 5, NOW)
+    db.upsert_mp_stock("tris", "COMMON-ARTICLE", "WB", "fbo", 11, NOW)
     connection = db.get_connection()
     cursor = connection.execute(
         """
@@ -111,7 +111,7 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
         INSERT INTO ff_transit_items
             (batch_id, from_article, to_article, barcode, name,
              sent_quantity, received_quantity, cancelled_quantity)
-        VALUES (?, 'WB-ARTICLE', 'OZON-ARTICLE', '2200000000001',
+        VALUES (?, 'COMMON-ARTICLE', 'COMMON-ARTICLE', '2200000000001',
                 'Общий товар', 3, 0, 0)
         """,
         (cursor.lastrowid,),
@@ -120,23 +120,28 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
     connection.close()
 
     rows = stock_total.build_rows(("rimili", "tris"))
-    shared = next(row for row in rows if row["store_slug"] == "rimili" and row["barcode"] == "2200000000001")
-    tris = next(row for row in rows if row["store_slug"] == "tris" and row["barcode"] == "2200000000001")
+    assert len(rows) == 1  # Zero-only catalog entries disappear; all stores share one row.
+    shared = rows[0]
+    assert shared["store_slugs"] == ["rimili", "tris"]
+    assert shared["store_marketplaces"] == "RIMILI WB, RIMILI OZON, RIMILI ЯМ, TRIS WB"
 
-    assert shared["article"] == "WB-ARTICLE"
+    assert shared["article"] == "COMMON-ARTICLE"
     assert shared["ff_wb"] == 2
     assert shared["ff_ozon"] == 4
     assert shared["transit_ozon"] == 3
     assert shared["fbs_wb"] == 7
     assert shared["rfbs_ozon"] == 3
     assert shared["fbo_yandex"] == 5
-    assert shared["total_wb"] == 9
+    assert shared["total_wb"] == 20
     assert shared["total_ozon"] == 10
     assert shared["total_yandex"] == 5
-    assert shared["grand_total"] == 24
+    assert shared["grand_total"] == 35
     assert shared["purchase_price"] == 100
-    assert tris["grand_total"] == 11
-    assert not any(row["article"] == "OZON-ZERO" for row in rows)
+    filtered = stock_total.build_rows(("rimili", "tris"), selected_store="tris")
+    assert len(filtered) == 1
+    assert filtered[0]["grand_total"] == 11
+    assert filtered[0]["purchase_price"] == 100  # Inherit the price from another authorized store.
+    assert filtered[0]["store_marketplaces"] == "TRIS WB"
     assert all(row["grand_total"] >= rows[index + 1]["grand_total"] for index, row in enumerate(rows[:-1]))
     # Both total views load today's source value, not yesterday's margin snapshot.
     with db.get_connection() as connection:
@@ -146,15 +151,15 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
         )
         connection.commit()
     refreshed = stock_total.build_rows(("rimili",))
-    updated = next(row for row in refreshed if row["article"] == "WB-ARTICLE")
+    updated = next(row for row in refreshed if row["article"] == "COMMON-ARTICLE")
     assert updated["purchase_price"] == 125.5
     from app.web.routers.stock_total import _render_rows, _render_totals
 
     rendered = _render_rows([updated])
     assert '<td data-filter-value="125.5">125,50 ₽</td>' in rendered
-    assert rendered.count("<td") == 23
-    assert '<th data-cost-total-column="4">3 012,00 ₽</th>' in _render_totals([updated])
-    assert _render_totals([updated]).count("<th") == 46
+    assert rendered.count("<td") == 24
+    assert '<th data-cost-total-column="5">3 012,00 ₽</th>' in _render_totals([updated])
+    assert _render_totals([updated]).count("<th") == 48
 
 
 def test_total_stock_xlsx_has_store_column_grouped_headers_and_zeroes(database_path) -> None:
@@ -163,6 +168,7 @@ def test_total_stock_xlsx_has_store_column_grouped_headers_and_zeroes(database_p
         {
             "store_slug": "rimili",
             "store_name": "RIMILI",
+            "store_marketplaces": "RIMILI WB",
             "article": "ARTICLE-1",
             "barcode": "0012345678901",
             "name": "Тестовый товар",
@@ -180,10 +186,11 @@ def test_total_stock_xlsx_has_store_column_grouped_headers_and_zeroes(database_p
     sheet = workbook["Остатки Тотал"]
 
     assert filename.startswith("ostatki_total_")
-    assert sheet["A1"].value == "МАГАЗИН"
-    assert sheet["E1"].value == "ТЕКУЩАЯ ЗЦ, ₽"
-    assert sheet["E5"].value == 100
-    assert sheet["E5"].number_format == '#,##0.00 "₽"'
+    assert sheet["A1"].value == "АРТИКУЛ"
+    assert sheet["D1"].value == "ТЕКУЩАЯ ЗЦ, ₽"
+    assert sheet["E1"].value == "МАГАЗИНЫ / ПЛОЩАДКИ"
+    assert sheet["D5"].value == 100
+    assert sheet["D5"].number_format == '#,##0.00 "₽"'
     assert sheet["E3"].value is None
     assert sheet["E4"].value is None
     assert sheet["F1"].value == "ТОТАЛ"
@@ -208,9 +215,9 @@ def test_total_stock_xlsx_has_store_column_grouped_headers_and_zeroes(database_p
     assert sheet["A3"].value == "ИТОГО"
     assert sheet["A4"].value == "ИТОГО В ЗЦ"
     assert sheet["F4"].value == 900
-    assert sheet["A5"].value == "RIMILI"
-    assert sheet["B5"].value == "ARTICLE-1"
-    assert sheet["C5"].value == "0012345678901"
+    assert sheet["A5"].value == "ARTICLE-1"
+    assert sheet["B5"].value == "0012345678901"
+    assert sheet["E5"].value == "RIMILI WB"
     assert sheet["F5"].value == 9
     assert sheet["G5"].value == 9
     assert sheet["J5"].value == 0
@@ -239,7 +246,8 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     assert page.status_code == 200
     assert "ТЕКУЩАЯ ЗЦ, ₽" in page.text
     assert "ТЕКУЩАЯ ЗЦ, ₽" in store_page.text
-    assert 'data-filter-column="22"' in page.text
+    assert 'data-filter-column="23"' in page.text
+    assert 'data-filter-column="4">МАГАЗИНЫ / ПЛОЩАДКИ' in page.text
     assert "Остатки Тотал" in page.text
     assert 'id="stock-total-table"' in page.text
     assert 'class="topbar"' not in page.text
@@ -249,18 +257,18 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     assert controls.index("FBO") < controls.index("Скачать XLSX")
     assert store_page.status_code == 200
     assert 'class="mp-tab mp-tab--total"' in store_page.text
-    assert 'data-store-total>ТОТАЛ</button>' in store_page.text
+    assert "data-store-total>ТОТАЛ</button>" in store_page.text
     assert 'href="/stock/total?store=rimili">ТОТАЛ</a>' not in store_page.text
     assert 'id="store-stock-total-table"' in store_page.text
     assert store_page.text.count('id="store-stock-total-table"') == 1
-    assert 'data-stock-store-total-view hidden' in store_page.text
+    assert "data-stock-store-total-view hidden" in store_page.text
     assert "Тотал по трём площадкам" not in store_page.text
     for store_slug in STORES:
         cabinet_page = client.get(f"/stock/{store_slug}", params={"mp": "WB"})
         assert cabinet_page.status_code == 200
         assert cabinet_page.text.count('id="store-stock-total-table"') == 1
         assert "Тотал по трём площадкам" not in cabinet_page.text
-        assert 'data-stock-store-total-view hidden' in cabinet_page.text
+        assert "data-stock-store-total-view hidden" in cabinet_page.text
     assert 'href="/stock/total.xlsx?store=rimili"' in store_page.text
     store_total_data = client.get("/stock/rimili/total-data")
     assert store_total_data.status_code == 200
@@ -272,9 +280,9 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     assert 'href="/stock/total.xlsx?store=rimili"' in filtered_page.text
     assert client.get("/stock/total", params={"store": "unknown"}).status_code == 404
 
-    table_filter_script = (
-        Path(__file__).resolve().parents[2] / "static" / "table-filter.js"
-    ).read_text(encoding="utf-8")
+    table_filter_script = (Path(__file__).resolve().parents[2] / "static" / "table-filter.js").read_text(
+        encoding="utf-8"
+    )
     assert "if (th.querySelector('.tf-th-inner')) return;" in table_filter_script
     assert download.status_code == 200
     assert download.headers["content-type"].startswith(
@@ -284,21 +292,21 @@ def test_total_routes_resolve_before_the_dynamic_store_route(
     filtered_workbook = openpyxl.load_workbook(io.BytesIO(filtered_download.content), data_only=True)
     filtered_sheet = filtered_workbook["Остатки Тотал"]
     exported_stores = {
-        filtered_sheet.cell(row=row_number, column=1).value
+        filtered_sheet.cell(row=row_number, column=5).value
         for row_number in range(5, filtered_sheet.max_row + 1)
-        if filtered_sheet.cell(row=row_number, column=1).value
+        if filtered_sheet.cell(row=row_number, column=5).value
     }
-    assert exported_stores <= {"RIMILI"}
+    assert all(all(pair.startswith("RIMILI ") for pair in value.split(", ")) for value in exported_stores)
 
-    stock_total_script = (
-        Path(__file__).resolve().parents[2] / "static" / "stock-total.js"
-    ).read_text(encoding="utf-8")
+    stock_total_script = (Path(__file__).resolve().parents[2] / "static" / "stock-total.js").read_text(
+        encoding="utf-8"
+    )
     assert "querySelectorAll('[data-total-column]')" in stock_total_script
     assert "querySelectorAll('[data-cost-total-column]')" in stock_total_script
 
-    store_total_script = (
-        Path(__file__).resolve().parents[2] / "static" / "store-total.js"
-    ).read_text(encoding="utf-8")
+    store_total_script = (Path(__file__).resolve().parents[2] / "static" / "store-total.js").read_text(
+        encoding="utf-8"
+    )
     assert "'/total-data'" in store_total_script
     assert "data-store-cost-key" in store_total_script
     assert "button.addEventListener('click', loadTotal)" in store_total_script

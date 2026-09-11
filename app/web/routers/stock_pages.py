@@ -95,9 +95,7 @@ def _randomizer_result(item: dict) -> str:
         )
     barcode = str(item.get("barcode") or "")
     barcode_html = (
-        f"<small>{copy_identifier(barcode, 'Баркод', f'Баркод {barcode}')}</small>"
-        if barcode
-        else ""
+        f"<small>{copy_identifier(barcode, 'Баркод', f'Баркод {barcode}')}</small>" if barcode else ""
     )
     return (
         '<div class="randomizer-result is-ready" data-randomizer-result>'
@@ -386,8 +384,9 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
         total_download_button=(
             f'<a class="btn-secondary stock-total-download" '
             f'href="/stock/total.xlsx?store={html.escape(slug.lower(), quote=True)}" download>'
-            'Скачать XLSX</a>'
-            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT) and has_access(request.state.user, SectionName.STOCK_TOTAL)
+            "Скачать XLSX</a>"
+            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT)
+            and has_access(request.state.user, SectionName.STOCK_TOTAL)
             else ""
         ),
         mp_source_options=render_mp_move_options(allowed_marketplaces),
@@ -395,7 +394,8 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
         marketplace=html.escape(marketplace),
         mp_ready="1" if marketplace_ready(marketplace, slug.lower()) else "0",
         can_edit_stock="1"
-        if has_access(request.state.user, SectionName.STOCK_BALANCES, SectionAccessLevel.WRITE) and has_action_permission(
+        if has_access(request.state.user, SectionName.STOCK_BALANCES, SectionAccessLevel.WRITE)
+        and has_action_permission(
             request.state.user,
             ActionPermission.STOCK_RECEIVE,
             store_slug=slug.lower(),
@@ -436,13 +436,12 @@ async def stock_store_total_data(request: Request, slug: str):
     if store_slug not in accessible_store_slugs(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
 
-    allowed_pairs = tuple(
-        pair for pair in scope_pairs(request.state.user) if pair[0] == store_slug
-    )
+    allowed_pairs = scope_pairs(request.state.user)
     rows = await run_in_threadpool(
         stock_total_service.build_rows,
-        (store_slug,),
+        accessible_store_slugs(request.state.user),
         allowed_pairs,
+        store_slug,
     )
     return JSONResponse(
         {
@@ -471,8 +470,16 @@ async def stock_store_fbs_by_ff(request: Request, slug: str, ff: str = "", mp: s
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     stock = await run_in_threadpool(_get_fbs_stock, slug.lower(), marketplace, ff)
-
-    return JSONResponse({"fbs": stock})
+    rfbs = {}
+    if marketplace == "OZON":
+        rfbs = await run_in_threadpool(
+            db.get_mp_stock_by_warehouse if ff else db.get_mp_stock_totals,
+            slug.lower(),
+            marketplace,
+            "rfbs",
+            *([ff] if ff else []),
+        )
+    return JSONResponse({"fbs": stock, "rfbs": rfbs})
 
 
 @router.get("/stock/{slug}/ff-available")
