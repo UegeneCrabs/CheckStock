@@ -901,44 +901,6 @@ body:has(.content--unit-1c) { overflow: hidden; }
 .ue1c-glued-products > div:first-child .ue1c-glued-article:hover::after,
 .ue1c-glued-products > div:first-child .ue1c-glued-article:focus-visible::after { transform: translate(-50%,0); }
 
-html[data-theme="dark"] .ue1c-page {
-    --ue-bg: #0f1726;
-    --ue-surface: #111b2d;
-    --ue-surface-2: #142036;
-    --ue-line: #26344a;
-    --ue-line-strong: #334159;
-    --ue-text: #e7edf7;
-    --ue-muted: #9daabd;
-    --ue-quiet: #77869c;
-    --ue-accent-soft: #1d315c;
-}
-html[data-theme="dark"] .ue1c-redesign-table th { color: #a8b4c5; background: #172238; }
-html[data-theme="dark"] .ue1c-group-row th { background: #1b273d; }
-html[data-theme="dark"] .ue1c-redesign-table th:has(.tf-btn--active) {
-    color: #c9d5ff;
-    background: #21365f;
-    box-shadow: inset 0 -3px #7190ff;
-}
-html[data-theme="dark"] .ue1c-redesign-table th:not(:first-child),
-html[data-theme="dark"] .ue1c-redesign-table td:not(:first-child) { border-left-color: #28364c; }
-html[data-theme="dark"] .ue1c-redesign-table td { border-bottom-color: #26344a; }
-html[data-theme="dark"] .ue1c-redesign-table tbody tr:hover td { background: #142239; }
-html[data-theme="dark"] .ue1c-redesign-table tbody tr:hover td:first-child { background: #142239; }
-html[data-theme="dark"] .ue1c-redesign-table tbody tr.is-selected td:first-child { background: var(--ue-accent-soft); }
-html[data-theme="dark"] .ue1c-redesign-table tbody tr.is-located td { background: #4a3b16; }
-html[data-theme="dark"] .ue1c-redesign-table tbody td.ue1c-roi-negative,
-html[data-theme="dark"] .ue1c-redesign-table tbody tr:hover td.ue1c-roi-negative,
-html[data-theme="dark"] .ue1c-redesign-table tbody tr.is-selected td.ue1c-roi-negative {
-    background: color-mix(in srgb, var(--ue-danger) 18%, var(--ue-surface));
-}
-html[data-theme="dark"] .ue1c-comment-input { background: #142036; }
-html[data-theme="dark"] .ue1c-tag-status, html[data-theme="dark"] .ue1c-code-pill { background: #202d43; }
-html[data-theme="dark"] .ue1c-tag-status.is-over { color: #efca91; background: #3b2d19; }
-html[data-theme="dark"] .ue1c-tag-status.is-normal { color: #a9e2cb; background: #18372e; }
-html[data-theme="dark"] .ue1c-tag-status.is-low { color: #f0b0aa; background: #3b2428; }
-html[data-theme="dark"] .ue1c-chart-tooltip,
-html[data-theme="dark"] .ue1c-chart-series-tooltip { background: rgba(17,27,45,.98); }
-
 @media (max-width: 1300px) {
     .ue1c-segments { display: none; }
     .ue1c-toolbar {

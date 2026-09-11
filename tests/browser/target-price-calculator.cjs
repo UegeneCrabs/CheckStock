@@ -32,7 +32,6 @@ const baseRow = {store_slug:'rimili',store_name:'RIMILI',code:'A',orders_amount:
   let targetDrr=7.5, targetRoi=50, targetOverridden=false;
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
-    localStorage.setItem('checkstock-theme','dark');
     Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>window.copied=value}});
   });
   await context.route('**/*', async route => {

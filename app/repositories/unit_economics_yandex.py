@@ -1,4 +1,4 @@
-"""Isolated Yandex snapshots; existing sales and WB calculations are read-only here."""
+"""Daily Yandex history and current source snapshots, independent of WB ledgers."""
 
 import json
 from datetime import date, timedelta
@@ -37,6 +37,9 @@ def save_snapshot(
                 "SELECT * FROM unit_economics_yandex_snapshots WHERE store_slug=? AND source='orders'",
                 (store_slug,),
             ).fetchone()
+            if previous:
+                migrate_order_snapshot(conn, dict(previous))
+            _replace_daily(conn, store_slug, source, data, period_from, period_to, now)
             data, period_from, period_to = _merge_orders_window(
                 dict(previous) if previous else {}, data, period_from, period_to
             )
@@ -67,7 +70,7 @@ def save_snapshot(
 def _merge_orders_window(
     previous: dict, rows: list[dict], start: str, end: str
 ) -> tuple[list[dict], str, str]:
-    """Retain 21 days; replace empty days too, and never count gaps as loaded history."""
+    """Bound the compatibility cache; full history lives in the daily tables."""
     old_rows = json.loads(previous.get("data_json") or "null")
     period_from, period_to = start, end
     if old_rows is not None:
@@ -85,6 +88,98 @@ def _merge_orders_window(
     }
     merged.update({(row["article"], row["day"]): row for row in rows if start <= row["day"] <= end})
     return list(merged.values()), max(period_from, cutoff), period_to
+
+
+def days_between(start: str, end: str) -> list[str]:
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    if last < first:
+        raise ValueError("Конец периода раньше начала")
+    return [(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
+
+
+def _replace_daily(conn, store: str, source: str, rows: list[dict], start: str, end: str, now: str):
+    if source not in {"orders", "advertising"}:
+        raise ValueError("Неизвестный источник дневной истории")
+    days = days_between(start, end)
+    encoded = []
+    keys = set()
+    for row in rows:
+        key = (row["day"], row["article"])
+        if not start <= key[0] <= end or key in keys or not key[1]:
+            raise ValueError("Некорректный день или повтор товара в дневном отчёте")
+        keys.add(key)
+        encoded.append((store, source, *key, json.dumps(row, ensure_ascii=False, allow_nan=False), now))
+    conn.execute(
+        "DELETE FROM unit_economics_yandex_daily_metrics WHERE store_slug=? AND source=? AND day>=? AND day<=?",
+        (store, source, start, end),
+    )
+    conn.executemany(
+        "INSERT INTO unit_economics_yandex_daily_metrics (store_slug,source,day,article,data_json,updated_at) "
+        "VALUES (?,?,?,?,?,?)", encoded,
+    )
+    conn.executemany(
+        "INSERT INTO unit_economics_yandex_loaded_days (store_slug,source,day,updated_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(store_slug,source,day) DO UPDATE SET updated_at=excluded.updated_at",
+        [(store, source, day, now) for day in days],
+    )
+
+
+def save_daily(store: str, source: str, rows: list[dict], start: str, end: str, now: str) -> None:
+    """Replace only a fully downloaded window, including successful empty days."""
+    with WRITE_LOCK, get_connection() as conn:
+        _replace_daily(conn, store, source, rows, start, end, now)
+        conn.commit()
+
+
+def migrate_order_snapshot(conn, snapshot: dict) -> None:
+    """Backfill known days once. Never turn a missing day into a zero or overwrite newer history."""
+    if snapshot.get("data_json") is None:
+        return
+    store = snapshot["store_slug"]
+    loaded = {row["day"] for row in conn.execute(
+        "SELECT day FROM unit_economics_yandex_loaded_days WHERE store_slug=? AND source='orders'", (store,),
+    )}
+    rows = json.loads(snapshot["data_json"])
+    for day in days_between(snapshot["period_from"], snapshot["period_to"]):
+        if day not in loaded:
+            _replace_daily(conn, store, "orders", [r for r in rows if r["day"] == day], day, day,
+                           snapshot["last_success_at"])
+
+
+def get_history(store: str, source: str, start: str, end: str) -> tuple[list[dict], set[str]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT data_json FROM unit_economics_yandex_daily_metrics "
+            "WHERE store_slug=? AND source=? AND day>=? AND day<=? ORDER BY day,article",
+            (store, source, start, end),
+        ).fetchall()
+        loaded = conn.execute(
+            "SELECT day FROM unit_economics_yandex_loaded_days WHERE store_slug=? AND source=? AND day>=? AND day<=?",
+            (store, source, start, end),
+        ).fetchall()
+    return [json.loads(row["data_json"]) for row in rows], {row["day"] for row in loaded}
+
+
+def get_buyout_settings(store: str) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT buyout_period_days,default_buyout_percent FROM unit_economics_1c_cabinet_settings "
+            "WHERE store_slug=? AND marketplace=?", (store, MARKETPLACE),
+        ).fetchone()
+    return dict(row) if row else {"buyout_period_days": 14, "default_buyout_percent": None}
+
+
+def save_buyout_settings(store: str, period: int, default: float | None, now: str, user_id: int, user_name: str):
+    with WRITE_LOCK, get_connection() as conn:
+        conn.execute(
+            "INSERT INTO unit_economics_1c_cabinet_settings "
+            "(store_slug,marketplace,buyout_period_days,default_buyout_percent,updated_at,updated_by_user_id,updated_by_name) "
+            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(store_slug,marketplace) DO UPDATE SET "
+            "buyout_period_days=excluded.buyout_period_days,default_buyout_percent=excluded.default_buyout_percent,"
+            "updated_at=excluded.updated_at,updated_by_user_id=excluded.updated_by_user_id,updated_by_name=excluded.updated_by_name",
+            (store, MARKETPLACE, period, default, now, user_id, user_name),
+        )
+        conn.commit()
 
 
 def record_error(store_slug: str, source: str, error: str, now: str) -> None:

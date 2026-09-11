@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
@@ -6,14 +7,20 @@ from unittest import mock
 import pytest
 from fastapi.testclient import TestClient
 
-from app import auth, db, sync_settings
+from app import auth, background, db, ftp_export, ftp_export_schedule, sync_locks, sync_settings
 from app.dto.identity import Role
 from app.main import create_app
 from app.ozon import tokens as ozon_tokens
 from app.sync_tracking import run_tracked, set_next_run
 from app.wb import tokens as wb_tokens
-from app.web.routers import integrations
 from app.yandex import tokens as yandex_tokens
+
+
+def _wait_for_run(name):
+    deadline = time.monotonic() + 5
+    while sync_locks.is_running(name):
+        assert time.monotonic() < deadline, "Manual test worker did not finish"
+        time.sleep(0.01)
 
 
 def _configure_secret_paths(monkeypatch, tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -331,10 +338,10 @@ def test_superadmin_can_run_ftp_export_from_integrations(
             "items": 42,
         }
     )
-    monkeypatch.setattr(integrations.ftp_export, "run_platform", run)
-    monkeypatch.setattr(integrations.ftp_export, "is_running", lambda platform: False)
+    monkeypatch.setattr(ftp_export, "run_platform", run)
+    monkeypatch.setattr(ftp_export, "is_running", lambda platform: False)
     monkeypatch.setattr(
-        integrations.ftp_export_schedule,
+        ftp_export_schedule,
         "next_delay_seconds",
         lambda job_name: 3600,
     )
@@ -347,8 +354,8 @@ def test_superadmin_can_run_ftp_export_from_integrations(
         client.cookies.set(auth.SESSION_COOKIE, "session")
         response = client.post("/api/admin/integrations/sync-jobs/ftp_wb_export/run")
 
-    assert response.status_code == 200, response.text
-    assert response.json()["result"]["items"] == 42
+    assert response.status_code == 202, response.text
+    _wait_for_run("ftp_wb_export")
     run.assert_called_once_with("wb")
     state = {item["name"]: item for item in db.list_sync_job_states()}["ftp_wb_export"]
     assert state["last_trigger"] == "manual"
@@ -373,7 +380,7 @@ def test_superadmin_can_refresh_wb_buyout_from_integrations(
 
     run = mock.Mock(side_effect=refresh)
     monkeypatch.setattr(
-        integrations.wb_funnel_orders,
+        background.wb_funnel_orders,
         "sync_weekly_metrics_all",
         run,
     )
@@ -388,8 +395,8 @@ def test_superadmin_can_refresh_wb_buyout_from_integrations(
             "/api/admin/integrations/sync-jobs/wb_funnel_weekly_metrics_sync/run"
         )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["message"] == "Процент выкупа обновлён: 6 из 6 магазинов"
+    assert response.status_code == 202, response.text
+    _wait_for_run("wb_funnel_weekly_metrics_sync")
     selected_stores = run.call_args.args[0]
     assert "toyka" not in selected_stores
     assert selected_stores == tuple(store for store in sync_settings.STORES if store != "toyka")
@@ -401,7 +408,29 @@ def test_superadmin_can_refresh_wb_buyout_from_integrations(
     assert state["last_finished_at"]
 
 
-def test_manual_run_rejects_non_ftp_job(container, user_factory) -> None:
+def test_superadmin_can_refresh_yandex_buyout_with_store_switches_and_tracking(
+    container, user_factory, database_path, monkeypatch
+) -> None:
+    sync_settings.save_setting("yandex_buyout_sync", enabled=False, store_slug="tris", marketplace="YANDEX MARKET")
+    run = mock.Mock(side_effect=lambda source, stores: {slug: {"ok": True} for slug in stores})
+    monkeypatch.setattr(background.ya_unit_sync, "sync_all", run)
+    application = create_app(container)
+    user = user_factory()
+    with (mock.patch.object(application.state.container.identity, "user_for_token", return_value=user),
+          TestClient(application, raise_server_exceptions=False) as client):
+        client.cookies.set(auth.SESSION_COOKIE, "session")
+        response = client.post("/api/admin/integrations/sync-jobs/yandex_buyout_sync/run")
+    assert response.status_code == 202, response.text
+    _wait_for_run("yandex_buyout_sync")
+    assert run.call_args.args[0] == "buyout"
+    assert "tris" not in run.call_args.args[1]
+    assert len(run.call_args.args[1]) == len(sync_settings.STORES) - 1
+    state = {item["name"]: item for item in db.list_sync_job_states()}["yandex_buyout_sync"]
+    assert state["last_trigger"] == "manual"
+    assert state["status"] == "success"
+
+
+def test_manual_run_rejects_unknown_job(container, user_factory) -> None:
     application = create_app(container)
     user = user_factory()
     with (
@@ -409,7 +438,7 @@ def test_manual_run_rejects_non_ftp_job(container, user_factory) -> None:
         TestClient(application, raise_server_exceptions=False) as client,
     ):
         client.cookies.set(auth.SESSION_COOKIE, "session")
-        response = client.post("/api/admin/integrations/sync-jobs/catalog_sync/run")
+        response = client.post("/api/admin/integrations/sync-jobs/missing/run")
 
     assert response.status_code == 404
-    assert response.json()["error"] == "Ручной запуск этой выгрузки недоступен"
+    assert response.json()["error"] == "Выгрузка не найдена"

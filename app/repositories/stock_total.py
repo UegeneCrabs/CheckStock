@@ -16,10 +16,15 @@ def get_source_rows(
         catalog = connection.execute(
             f"""
             SELECT source.id, source.store_slug, source.marketplace, source.article,
-                   source.barcode, source.name, prices.purchase_price
+                   source.barcode, source.name,
+                   COALESCE(prices.purchase_price, yandex_prices.purchase_price) AS purchase_price
               FROM stock_items source
               LEFT JOIN unit_economics_1c_source_values prices
                 ON prices.stock_item_id=source.id
+              LEFT JOIN unit_economics_yandex_source_values yandex_prices
+                ON source.marketplace='YANDEX MARKET'
+               AND yandex_prices.store_slug=source.store_slug
+               AND yandex_prices.article=source.article
              WHERE source.store_slug IN ({placeholders})
                AND source.is_service = 0
              ORDER BY source.store_slug,

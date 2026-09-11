@@ -4,9 +4,10 @@ import logging
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from threading import Thread
 from time import monotonic
 
-from app import db
+from app import db, sync_locks
 
 logger = logging.getLogger(__name__)
 MAX_SYNC_ERROR_LENGTH = 12_000
@@ -55,7 +56,7 @@ def _result_failure_details(result: object, prefix: str = "") -> list[str]:
             child_prefix = prefix or f"Элемент {index}"
             if isinstance(value, (dict, list, tuple)) or getattr(value, "failed", None):
                 details.extend(_result_failure_details(value, child_prefix))
-            elif prefix and value:
+            elif prefix.rsplit(" / ", 1)[-1] in {"errors", "failed"} and value:
                 details.append(f"{prefix}: {value}")
         return details
     return []
@@ -75,14 +76,52 @@ def _exception_error(error: Exception) -> str:
 
 def run_tracked(name: str, trigger: str, callback: Callable[[], object]) -> object:
     """Execute one synchronization and retain its status and operational error details."""
+    with sync_locks.hold(name):
+        run_id, started_clock = _start_run(name, trigger)
+        return _finish_run(name, run_id, started_clock, callback)
 
-    started_at = _now()
-    started_clock = monotonic()
-    run_id = uuid.uuid4().hex
+
+def _start_run(name: str, trigger: str, *, required: bool = False) -> tuple[str, float]:
+    run_id, started_clock = uuid.uuid4().hex, monotonic()
     try:
-        db.record_sync_job_started(name, trigger, started_at.isoformat(), run_id)
+        db.record_sync_job_started(name, trigger, _now().isoformat(), run_id)
     except Exception:
+        if required:
+            raise
         logger.exception("sync_job_start_tracking_failed job=%s", name)
+    return run_id, started_clock
+
+
+def queue_tracked(name: str, callback: Callable[[], object]) -> str:
+    """Reserve and record the run before returning; HTTP need not wait for an API report."""
+    handle = sync_locks.acquire(name)
+    try:
+        run_id, started_clock = _start_run(name, "manual", required=True)
+    except Exception:
+        handle.close()
+        raise
+
+    def work():
+        try:
+            _finish_run(name, run_id, started_clock, callback)
+        except Exception:
+            logger.exception("manual_sync_failed job=%s", name)
+        finally:
+            handle.close()
+
+    try:
+        Thread(target=work, name=f"manual-sync:{name}", daemon=True).start()
+    except Exception as error:
+        try:
+            db.record_sync_job_finished(name, run_id, status="error", finished_at=_now().isoformat(),
+                duration_ms=0, error=_exception_error(error))
+        finally:
+            handle.close()
+        raise
+    return run_id
+
+
+def _finish_run(name: str, run_id: str, started_clock: float, callback: Callable[[], object]) -> object:
     try:
         result = callback()
     except Exception as error:

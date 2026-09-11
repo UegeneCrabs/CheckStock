@@ -200,7 +200,7 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
     )
     return render_page(
         f"CheckStock — Перемещение стока — {store['name']}",
-        "stock",
+        "stock_operations",
         content,
         request.state.user,
         content_class="content--operations",

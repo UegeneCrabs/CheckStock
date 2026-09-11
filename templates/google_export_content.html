@@ -2,10 +2,15 @@
             <h2 class="panel-title">Доступ к таблице</h2>
             <p>Откройте сервисному аккаунту права <strong>Редактор</strong> на каждую целевую таблицу:</p>
             <code>$service_account_email</code>
+            <details class="integration-export-details"><summary>Правила выгрузки и состав данных</summary>
             <p class="panel-desc">Периодичность задаётся отдельно для каждого магазина. Листы стоков и FBS-заказов необязательны: пустое название отключает соответствующую выгрузку. Кнопками внутри маркетплейса можно запустить только стоки или только заказы. Если несколько кабинетов настроены на одну таблицу и лист, их товары и значения объединяются. Для такой группы достаточно включить автовыгрузку у одного кабинета.</p>
+            <p class="panel-desc">В стоки добавлены два показателя: H — непринятые и неотменённые товары между ФФ, I — незавершённое количество в транзите, на приёмке и размещении на складах МП. ТОТАЛ = ФФ + FBS + FBO + в пути между ФФ + в пути на склады МП (E:I). Черновики, завершённые поставки и недостача после завершённой приёмки не входят в I; для WB учитывается принятый, но ещё не готовый к продаже товар. Пустая ячейка I означает неподтверждённые данные — ТОТАЛ этой строки тоже остаётся пустым; 0 означает подтверждённое отсутствие товаров в пути. При объединении кабинетов отсутствие свежих данных хотя бы одного из них оставляет I и ТОТАЛ пустыми для всей группы. Сначала обновите <a href="/stock/inbound">поставки FBO</a>, затем повторите выгрузку.</p>
+            <p class="panel-desc">Отправку на МП нужно отражать отгрузкой с ФФ, чтобы отправленный товар не оставался одновременно в остатке ФФ и в пути. Сама выгрузка остатки в базе не меняет.</p>
+            <p class="panel-desc">На каждом выгруженном листе стоков и FBS-заказов в A1:B1 записывается дата и время выгрузки по Москве. Шапка остаётся в строке 2. Это время записи в Google Таблицу, а не обновления остатков в API. Если A1:B1 заняты другими данными, формулами или объединены, сначала освободите две отдельные ячейки — выгрузка не перезаписывает их.</p>
+            </details>
         </section>
 
-        <div class="export-store-tabs" role="tablist" aria-label="Магазины">
+        <div class="export-store-tabs" aria-label="Магазины">
 $store_tabs
         </div>
 
@@ -61,6 +66,14 @@ $store_cards
                         status.classList.toggle('export-status--ok', !isError);
                     }
 
+                    function showExportResult(result, message) {
+                        var reports = (result.data.report || {}).marketplaces || [];
+                        var warnings = reports.reduce(function (all, report) {
+                            return all.concat(report.warnings || []);
+                        }, []);
+                        show(warnings.length ? message + '. Внимание: ' + warnings.join(' ') : message, warnings.length > 0);
+                    }
+
                     form.addEventListener('submit', function (event) {
                         event.preventDefault();
                         var submit = form.querySelector('[type="submit"]');
@@ -81,7 +94,7 @@ $store_cards
                         request('/admin/google-export/' + store + '/run', new FormData())
                             .then(function (result) {
                                 if (!result.ok) throw new Error(result.data.error || 'Выгрузка не выполнена');
-                                show('Выгрузка завершена успешно', false);
+                                showExportResult(result, 'Выгрузка завершена');
                             })
                             .catch(function (error) { show(error.message, true); })
                             .finally(function () { runButton.disabled = false; });
@@ -97,7 +110,7 @@ $store_cards
                             request('/admin/google-export/' + store + '/run', body)
                                 .then(function (result) {
                                     if (!result.ok) throw new Error(result.data.error || 'Выгрузка не выполнена');
-                                    show('Выбранная выгрузка завершена успешно', false);
+                                    showExportResult(result, 'Выбранная выгрузка завершена');
                                 })
                                 .catch(function (error) { show(error.message, true); })
                                 .finally(function () { button.disabled = false; });

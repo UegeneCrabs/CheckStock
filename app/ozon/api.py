@@ -39,11 +39,13 @@ RETRY_BACKOFF_SECONDS = settings.ozon_retry_backoff_seconds
 
 PATH_MAX_ATTEMPTS = {
     "/v1/analytics/stocks": 2,
+    "/v1/supply-order/act/product/get": 2,
 }
 
 
 THROTTLED_PATHS = {
     "/v1/analytics/stocks": 1.5,
+    "supply-orders": 0.55,
 }
 
 
@@ -61,6 +63,7 @@ _calm_streak: dict[str, int] = {}
 
 def _throttle(path: str) -> None:
 
+    path = "supply-orders" if "/supply-order/" in path else path
     if path not in THROTTLED_PATHS:
         return
 
@@ -76,6 +79,7 @@ def _throttle(path: str) -> None:
 
 def _note_rate_limit(path: str) -> float:
 
+    path = "supply-orders" if "/supply-order/" in path else path
     if path not in THROTTLED_PATHS:
         return 0.0
 
@@ -97,6 +101,7 @@ def _note_rate_limit(path: str) -> float:
 
 def _note_success(path: str) -> None:
 
+    path = "supply-orders" if "/supply-order/" in path else path
     if path not in THROTTLED_PATHS:
         return
 

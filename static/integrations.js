@@ -121,7 +121,7 @@
                 });
                 if (target) input.checked = Boolean(target.configured_enabled);
             }
-            input.disabled = !config.environment_enabled;
+            input.disabled = !config.environment_enabled && !store && !marketplace;
         });
         var targetButton = document.querySelector('[data-sync-targets-toggle="' + config.name + '"]');
         if (targetButton) {
@@ -168,23 +168,88 @@
         });
     });
 
+    var pendingSubmissions = {};
+    var launchErrors = {};
+    var stateGeneration = 0;
+    var polling = false;
+    function runMessage(job, text, isError) {
+        var row = document.querySelector('[data-sync-job="' + job + '"]');
+        var message = row && row.querySelector('[data-sync-run-message]');
+        if (message) {
+            message.textContent = text;
+            message.classList.toggle('is-error', Boolean(isError));
+        }
+    }
+    function applyRunState(state) {
+        var row = document.querySelector('[data-sync-job="' + state.name + '"]');
+        if (!row || pendingSubmissions[state.name]) return;
+        var labels = {running: ['Выполняется', 'is-running'], success: ['Успешно', 'is-success'],
+            error: ['Ошибка', 'is-error']};
+        var label = labels[state.status] || ['Ещё не запускалась', 'is-empty'];
+        var badge = row.querySelector('.sync-status');
+        badge.textContent = label[0]; badge.className = 'sync-status ' + label[1];
+        row.children[2].textContent = runDate(state.last_finished_at || state.last_started_at);
+        row.children[3].textContent = state.last_trigger === 'manual' ? 'Вручную'
+            : state.last_trigger === 'scheduled' ? 'По расписанию' : '—';
+        var next = row.querySelector('[data-sync-next-run]');
+        next.textContent = 'Следующая: ' + (state.next_run_at ? runDate(state.next_run_at) : 'Рассчитывается');
+        var button = row.querySelector('[data-sync-run]');
+        if (button) {
+            button.disabled = Boolean(state.running);
+            button.textContent = state.running ? 'Выполняется…' : 'Выгрузить вручную';
+        }
+        if (state.running) delete launchErrors[state.name];
+        if (launchErrors[state.name]) {
+            runMessage(state.name, launchErrors[state.name], true);
+            return;
+        }
+        runMessage(state.name, state.running ? 'Выполняется в фоне. Страницу можно закрыть.'
+            : state.status === 'error' ? state.error || 'Не удалось завершить выгрузку. Подробности в истории.'
+            : '', state.status === 'error');
+    }
+    function refreshRunStates() {
+        if (polling) return Promise.resolve();
+        polling = true;
+        var generation = stateGeneration;
+        return request('/api/admin/integrations/sync-jobs', {
+            headers: {'Accept': 'application/json', 'X-Requested-With': 'fetch'}
+        }).then(function (data) {
+            if (generation === stateGeneration) (data.states || []).forEach(applyRunState);
+        }).catch(function () {
+            document.querySelectorAll('[data-sync-run]:disabled').forEach(function (button) {
+                runMessage(button.dataset.syncRun, 'Не удалось получить статус. Повторяем проверку…', true);
+            });
+        }).finally(function () { polling = false; });
+    }
     document.querySelectorAll('[data-sync-run]').forEach(function (button) {
         button.addEventListener('click', function () {
             var job = button.getAttribute('data-sync-run');
+            stateGeneration += 1;
+            pendingSubmissions[job] = true;
+            delete launchErrors[job];
             button.disabled = true;
-            syncMessage(job, 'Выгрузка выполняется…', false);
+            button.textContent = 'Запускаем…';
+            runMessage(job, 'Запускаем выгрузку…', false);
             request('/api/admin/integrations/sync-jobs/' + encodeURIComponent(job) + '/run', {
-                method: 'POST',
-                headers: {'Accept': 'application/json', 'X-Requested-With': 'fetch'}
+                method: 'POST', headers: {'Accept': 'application/json', 'X-Requested-With': 'fetch'}
             }).then(function (data) {
-                syncMessage(job, data.message || 'Выгрузка завершена', false);
-                window.setTimeout(function () { window.location.reload(); }, 900);
+                button.textContent = 'Выполняется…';
+                runMessage(job, data.message || 'Выгрузка выполняется в фоне', false);
             }).catch(function (error) {
-                syncMessage(job, error.message, true);
+                launchErrors[job] = error.message;
+                runMessage(job, error.message, true);
                 button.disabled = false;
+                button.textContent = 'Выгрузить вручную';
+            }).finally(function () {
+                delete pendingSubmissions[job];
+                refreshRunStates();
             });
         });
     });
+    function pollRunStates() {
+        refreshRunStates().finally(function () { window.setTimeout(pollRunStates, 5000); });
+    }
+    pollRunStates();
 
     var historyDialog = document.getElementById('integration-history-dialog');
     if (!historyDialog) return;

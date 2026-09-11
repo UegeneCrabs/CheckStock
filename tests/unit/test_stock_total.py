@@ -122,7 +122,6 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
     rows = stock_total.build_rows(("rimili", "tris"))
     shared = next(row for row in rows if row["store_slug"] == "rimili" and row["barcode"] == "2200000000001")
     tris = next(row for row in rows if row["store_slug"] == "tris" and row["barcode"] == "2200000000001")
-    zero = next(row for row in rows if row["article"] == "OZON-ZERO")
 
     assert shared["article"] == "WB-ARTICLE"
     assert shared["ff_wb"] == 2
@@ -137,7 +136,7 @@ def test_total_stock_merges_marketplaces_by_barcode_and_keeps_stores_separate(da
     assert shared["grand_total"] == 24
     assert shared["purchase_price"] == 100
     assert tris["grand_total"] == 11
-    assert zero["grand_total"] == 0
+    assert not any(row["article"] == "OZON-ZERO" for row in rows)
     assert all(row["grand_total"] >= rows[index + 1]["grand_total"] for index, row in enumerate(rows[:-1]))
     # Both total views load today's source value, not yesterday's margin snapshot.
     with db.get_connection() as connection:

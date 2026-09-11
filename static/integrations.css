@@ -250,6 +250,10 @@
     min-width: 240px;
 }
 
+.integration-sync-table td:nth-child(4) {
+    white-space: nowrap;
+}
+
 .integration-sync-table td:last-child {
     width: 1%;
     white-space: nowrap;

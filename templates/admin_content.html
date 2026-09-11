@@ -1,561 +1,69 @@
-        <div class="admin-page-head admin-page-head--compact">
-            <button class="btn-primary admin-create-trigger" type="button" id="u-open-create"$form_disabled>
-                <span aria-hidden="true">+</span> Создать сотрудника
-            </button>
-        </div>
-
-        <div class="employee-create-overlay" id="u-create-overlay" hidden>
-            <section class="panel employee-create-dialog" role="dialog" aria-modal="true" aria-labelledby="u-create-title">
-                <div class="employee-create-head">
-                    <h3 class="panel-title" id="u-create-title">Создание сотрудника</h3>
-                    <button type="button" class="employee-create-close" data-u-create-close aria-label="Закрыть">×</button>
-                </div>
-$create_hint
-                <p class="panel-desc">Пароль хранится только в виде хеша — восстановить его нельзя, можно только задать новый</p>
-
-                <input class="select-control" type="text" id="u-fio" placeholder="ФИО">
-                <input class="select-control" type="email" id="u-email" placeholder="Электронная почта">
-                <input class="select-control" type="text" id="u-login" placeholder="Логин" autocomplete="off">
-                <p class="employee-create-field-hint">Логин: латинские буквы, цифры и символы . _ @ + -</p>
-                <div class="pass-row">
-                    <input class="select-control" type="text" id="u-pass" placeholder="Пароль" autocomplete="new-password">
-                    <button class="pass-btn" type="button" id="u-gen" title="Сгенерировать пароль">Сгенерировать</button>
-                </div>
-                <p class="pass-hint" id="u-pass-hint">Пароль показан открыто — скопируйте и передайте сотруднику, потом его будет не восстановить</p>
-
-                <select class="select-control" id="u-role">
-$role_options
-                </select>
-
-                <select class="select-control" id="u-access-profile">
-$profile_options
-                </select>
-
-                <div class="u-store-field" id="u-marketplaces">
-                    <span class="u-store-field-title">Маркетплейсы</span>
-$marketplace_options
-                </div>
-
-                <div class="u-store-field" id="u-stores">
-                    <span class="u-store-field-title">Доступ к кабинетам</span>
-$store_options
-                </div>
-
-                <div class="employee-create-actions">
-                    <button class="btn-secondary" type="button" data-u-create-close>Отмена</button>
-                    <button class="btn-primary" type="button" id="u-create"$form_disabled>Создать сотрудника</button>
-                </div>
-                <p class="ff-select-status" id="u-status"></p>
-            </section>
-        </div>
-
-        <section class="panel admin-users-panel">
-            <h3 class="panel-title">Сотрудники</h3>
-            <div class="table-wrap">
-                <table class="data-table data-table--users">
-                    <thead>
-                        <tr>
-                            <th>ФИО</th>
-                            <th>Электронная почта</th>
-                            <th>Логин</th>
-                            <th>Роль</th>
-                            <th>Статус</th>
-                            <th>Изменения стока</th>
-                            <th>Кабинеты и площадки</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-$user_rows
-                    </tbody>
-                </table>
+<link rel="stylesheet" href="/static/admin.css?v=3">
+<div class="ad-app" id="admin-app">
+    <header class="ad-page-heading">
+        <div><div class="ad-eyebrow">УПРАВЛЕНИЕ КОМАНДОЙ</div><h1>Админ-панель</h1><p>Сотрудники, права доступа и история изменений.</p></div>
+        <button class="ad-button ad-button--primary ad-create-button" type="button" id="u-open-create"$form_disabled><span aria-hidden="true">+</span> Создать сотрудника</button>
+    </header>
+    $create_hint
+    <div class="ad-stats" aria-label="Сводка по сотрудникам">
+        <button class="ad-stat" type="button" data-stat-filter="all"><span>Всего сотрудников</span><strong>$users_total</strong><small>В вашей команде <span aria-hidden="true">↗</span></small></button>
+        <button class="ad-stat" type="button" data-stat-filter="active"><span><i class="ad-dot ad-dot--green"></i> Активные</span><strong>$users_active</strong><small>Могут входить в систему <span aria-hidden="true">↗</span></small></button>
+        <button class="ad-stat" type="button" data-stat-filter="blocked"><span><i class="ad-dot ad-dot--muted"></i> Заблокированные</span><strong>$users_blocked</strong><small>Доступ приостановлен <span aria-hidden="true">↗</span></small></button>
+        <button class="ad-stat ad-stat--requests" type="button" data-stat-filter="requests"$access_requests_hidden><span><i class="ad-dot ad-dot--amber"></i> Ожидают решения</span><strong>$requests_pending</strong><small>Запросы временного доступа <span aria-hidden="true">↗</span></small></button>
+    </div>
+    <div class="ad-workspace">
+        <nav class="ad-tabs" role="tablist" aria-label="Разделы админ-панели">
+            <button class="ad-tab" type="button" id="ad-tab-users" role="tab" aria-selected="true" aria-controls="ad-pane-users" data-tab="users">Сотрудники <span>$users_total</span></button>
+            <button class="ad-tab" type="button" id="ad-tab-requests" role="tab" aria-selected="false" aria-controls="ad-pane-requests" data-tab="requests" tabindex="-1"$access_requests_hidden>Запросы доступа <span>$requests_pending</span></button>
+            <button class="ad-tab" type="button" id="ad-tab-log" role="tab" aria-selected="false" aria-controls="ad-pane-log" data-tab="log" tabindex="-1">Журнал действий</button>
+        </nav>
+        <section class="ad-tab-pane" id="ad-pane-users" role="tabpanel" aria-labelledby="ad-tab-users" data-pane="users">
+            <div class="ad-toolbar">
+                <label class="ad-search"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input id="ad-user-search" class="ad-input" type="search" placeholder="Имя, почта или логин" aria-label="Поиск сотрудников" autocomplete="off"></label>
+                <select id="ad-filter-role" class="ad-input ad-filter" aria-label="Фильтр по роли"><option value="">Все роли</option>$filter_roles</select>
+                <select id="ad-filter-status" class="ad-input ad-filter" aria-label="Фильтр по статусу"><option value="">Все статусы</option><option value="active">Активные</option><option value="blocked">Заблокированные</option></select>
+                <select id="ad-filter-store" class="ad-input ad-filter" aria-label="Фильтр по кабинету"><option value="">Все кабинеты</option>$filter_stores</select>
+                <button class="ad-text-button" type="button" id="ad-reset-filters" hidden>Сбросить</button>
             </div>
+            <div class="ad-list-meta"><span id="ad-user-count" role="status" aria-live="polite"></span><label>Порядок <select id="ad-sort" class="ad-sort" aria-label="Порядок сотрудников"><option value="name">По имени А–Я</option><option value="newest">Сначала новые</option><option value="role">По роли</option></select></label></div>
+            <div class="ad-table-wrap"><table class="ad-table ad-users-table" data-no-filter><thead><tr><th scope="col">Сотрудник</th><th scope="col">Роль и должность</th><th scope="col">Кабинеты и площадки</th><th scope="col">Статус</th><th scope="col"><span class="ad-sr-only">Действия</span></th></tr></thead><tbody id="ad-user-rows">$user_rows</tbody></table></div>
+            <div class="ad-empty" id="ad-users-empty" hidden><span class="ad-empty-icon" aria-hidden="true">⌕</span><h3>Сотрудники не найдены</h3><p>Попробуйте другое имя или измените фильтры.</p><button class="ad-button" type="button" data-clear-search>Сбросить поиск и фильтры</button></div>
+            <div class="ad-pagination"><span id="ad-page-label"></span><div><button class="ad-button" type="button" id="ad-prev" aria-label="Предыдущая страница сотрудников">← Назад</button><button class="ad-button" type="button" id="ad-next" aria-label="Следующая страница сотрудников">Далее →</button></div></div>
         </section>
-
-        <section class="panel panel--wide"$access_requests_hidden>
-            <h3 class="panel-title">Запросы временного доступа</h3>
-            <p class="panel-desc">Разрешение на действие выдаётся максимум на 7 дней и может быть отозвано раньше.</p>
-            <div class="table-wrap">
-                <table class="data-table">
-                    <thead><tr><th>Когда</th><th>Сотрудник</th><th>Магазин</th><th>Площадка</th><th>Действие</th><th>Статус</th><th>Решение</th></tr></thead>
-                    <tbody>$access_request_rows</tbody>
-                </table>
-            </div>
+        <section class="ad-tab-pane" id="ad-pane-requests" role="tabpanel" aria-labelledby="ad-tab-requests" data-pane="requests" hidden>
+            <div class="ad-section-heading"><div><h2>Запросы временного доступа</h2><p>Разрешения действуют до 7 дней. Вы можете отозвать их раньше.</p></div><label class="ad-search"><input class="ad-input" type="search" data-table-search="requests" placeholder="Найти запрос" aria-label="Поиск запросов доступа"></label></div>
+            <div class="ad-table-wrap"><table class="ad-table ad-detail-table" id="ad-requests-table" data-no-filter><thead><tr><th>Когда</th><th>Сотрудник</th><th>Кабинет</th><th>Площадка</th><th>Действие</th><th>Статус</th><th>Решение</th></tr></thead><tbody>$access_request_rows</tbody></table></div><p class="ad-table-result" data-table-result="requests" role="status"></p>
         </section>
-
-        <section class="panel panel--wide">
-            <h3 class="panel-title">Журнал действий</h3>
-            <p class="panel-desc">Последние 200 зафиксированных действий сотрудников</p>
-            <div class="table-wrap table-wrap--scroll-10">
-                <table class="data-table data-table--log">
-                    <thead>
-                        <tr>
-                            <th>Дата и время</th>
-                            <th>Сотрудник</th>
-                            <th>Действие</th>
-                            <th>Подробности</th>
-                            <th>Вложение</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-$log_rows
-                    </tbody>
-                </table>
-            </div>
+        <section class="ad-tab-pane" id="ad-pane-log" role="tabpanel" aria-labelledby="ad-tab-log" data-pane="log" hidden>
+            <div class="ad-section-heading"><div><h2>Журнал действий</h2><p>Последние 200 записей: кто, когда и что изменил.</p></div></div>
+            <div class="ad-toolbar"><label class="ad-search"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input class="ad-input" type="search" data-table-search="log" placeholder="Сотрудник, действие или подробности" aria-label="Поиск по журналу"></label><span class="ad-table-result" data-table-result="log" role="status"></span></div>
+            <div class="ad-table-wrap ad-log-wrap"><table class="ad-table ad-detail-table" id="ad-log-table" data-no-filter><thead><tr><th>Дата и время</th><th>Сотрудник</th><th>Действие</th><th>Подробности</th><th>Файл</th></tr></thead><tbody>$log_rows</tbody></table></div>
         </section>
-
-        <script>
-            (function () {
-                var btn = document.getElementById('u-create');
-                var openBtn = document.getElementById('u-open-create');
-                var createOverlay = document.getElementById('u-create-overlay');
-                var status = document.getElementById('u-status');
-                if (!btn) return;
-
-                function setCreateOpen(open) {
-                    if (!createOverlay) return;
-                    createOverlay.hidden = !open;
-                    document.body.classList.toggle('employee-create-open', open);
-                    if (open) document.getElementById('u-fio').focus();
-                }
-
-                if (openBtn) openBtn.addEventListener('click', function () { setCreateOpen(true); });
-                document.querySelectorAll('[data-u-create-close]').forEach(function (button) {
-                    button.addEventListener('click', function () { setCreateOpen(false); });
-                });
-                if (createOverlay) {
-                    createOverlay.addEventListener('click', function (event) {
-                        if (event.target === createOverlay) setCreateOpen(false);
-                    });
-                }
-                document.addEventListener('keydown', function (event) {
-                    if (event.key === 'Escape' && createOverlay && !createOverlay.hidden) setCreateOpen(false);
-                });
-
-                var fields = {
-                    full_name: document.getElementById('u-fio'),
-                    google_email: document.getElementById('u-email'),
-                    login: document.getElementById('u-login'),
-                    password: document.getElementById('u-pass'),
-                    role: document.getElementById('u-role')
-                };
-                var storeBox = document.getElementById('u-stores');
-                var marketplaceBox = document.getElementById('u-marketplaces');
-                var accessProfile = document.getElementById('u-access-profile');
-                var SECTION_ACCESS = [
-                    { key: 'sales', label: 'Продажи' },
-                    { key: 'decision_center', label: 'Центр решений WB' },
-                    { key: 'ephemerides', label: 'Эфемериды' },
-                    { key: 'unit_economics_1c', label: 'Юнит-экономика 1С' },
-                    { key: 'supply', label: 'Снабжение' },
-                    { key: 'stock', label: 'Сток · Остатки' },
-                    { key: 'stock_overview', label: 'Сток · Аналитика остатков' }
-                ];
-                var ACCESS_LABELS = {
-                    none: 'Нет доступа',
-                    read: 'Только чтение',
-                    write: 'Чтение и запись'
-                };
-
-                function selectedStores(root) {
-                    if (!root) return [];
-                    return Array.prototype.slice.call(root.querySelectorAll('input[name="stores"]:checked'))
-                        .map(function (input) { return input.value; });
-                }
-
-                function clearCreateErrors() {
-                    createOverlay.querySelectorAll('.is-invalid').forEach(function (element) {
-                        element.classList.remove('is-invalid');
-                        element.removeAttribute('aria-invalid');
-                    });
-                    status.classList.remove('ff-select-status--bad');
-                }
-
-                function showCreateError(field, message) {
-                    var targets = {
-                        full_name: fields.full_name,
-                        google_email: fields.google_email,
-                        login: fields.login,
-                        password: fields.password,
-                        role: fields.role,
-                        access_profile: accessProfile,
-                        marketplaces: marketplaceBox,
-                        stores: storeBox,
-                        store_slugs: storeBox
-                    };
-                    var target = targets[field];
-                    if (target) {
-                        target.classList.add('is-invalid');
-                        target.setAttribute('aria-invalid', 'true');
-                        if (typeof target.focus === 'function') target.focus();
-                    }
-                    status.classList.add('ff-select-status--bad');
-                    status.textContent = message;
-                }
-
-
-                var genBtn = document.getElementById('u-gen');
-                var passHint = document.getElementById('u-pass-hint');
-
-
-
-
-
-
-                var ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$$%*-_';
-                var LENGTH = 16;
-
-                function generatePassword() {
-
-                    var bytes = new Uint32Array(LENGTH);
-                    window.crypto.getRandomValues(bytes);
-                    var out = '';
-                    for (var i = 0; i < LENGTH; i++) {
-                        out += ALPHABET[bytes[i] % ALPHABET.length];
-                    }
-                    return out;
-                }
-
-                function copyToClipboard(text) {
-                    if (!navigator.clipboard) return Promise.reject();
-                    return navigator.clipboard.writeText(text);
-                }
-
-                genBtn.addEventListener('click', function () {
-                    var pass = generatePassword();
-                    fields.password.value = pass;
-
-                    copyToClipboard(pass).then(function () {
-                        passHint.textContent = 'Пароль сгенерирован и скопирован в буфер обмена';
-                    }).catch(function () {
-                        passHint.textContent = 'Пароль сгенерирован — скопируйте его вручную';
-                    });
-                });
-
-
-                function post(url, body) {
-                    return fetch(url, {
-                        method: 'POST',
-                        body: body,
-                        headers: { 'X-Requested-With': 'fetch' }
-                    }).then(function (r) {
-                        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
-                    });
-                }
-
-                document.querySelectorAll('.u-actions').forEach(function (box) {
-                    var id = box.getAttribute('data-user-id');
-                    var name = box.getAttribute('data-user-name');
-
-                    function run(promise, onSuccess) {
-                        box.querySelectorAll('.u-act').forEach(function (b) { b.disabled = true; });
-                        return promise
-                            .then(function (res) {
-                                if (!res.ok || !res.data.ok) {
-                                    return Modal.alert({
-                                        title: 'Не получилось',
-                                        text: res.data.error || 'не удалось выполнить действие',
-                                        danger: true
-                                    });
-                                }
-                                if (onSuccess) return onSuccess();
-                                window.location.reload();
-                            })
-                            .catch(function (e) {
-                                return Modal.alert({ title: 'Ошибка', text: String(e), danger: true });
-                            })
-                            .finally(function () {
-                                box.querySelectorAll('.u-act').forEach(function (b) { b.disabled = false; });
-                            });
-                    }
-
-                    box.querySelector('.u-act--delete').addEventListener('click', function () {
-                        Modal.confirm({
-                            title: 'Удалить сотрудника?',
-                            text: name + '\n' +
-                                  'Он сразу потеряет доступ к системе. Записи в журнале действий сохранятся.',
-                            confirmLabel: 'Удалить',
-                            danger: true
-                        }).then(function (ok) {
-                            if (ok) run(post('/admin/users/' + id + '/delete', new FormData()));
-                        });
-                    });
-
-                    box.querySelector('.u-act--toggle').addEventListener('click', function () {
-                        var active = box.getAttribute('data-active') === '1';
-                        Modal.confirm({
-                            title: (active ? 'Заблокировать' : 'Разблокировать') + ' сотрудника?',
-                            text: name + '\n' + (active
-                                ? 'Он выйдет из системы и не сможет войти, пока не разблокируете.'
-                                : 'Он снова сможет войти со своим паролем.'),
-                            confirmLabel: active ? 'Заблокировать' : 'Разблокировать',
-                            danger: active
-                        }).then(function (ok) {
-                            if (ok) run(post('/admin/users/' + id + '/toggle-active', new FormData()));
-                        });
-                    });
-
-                    var stockBtn = box.querySelector('.u-act--stock');
-                    if (stockBtn) {
-                        stockBtn.addEventListener('click', function () {
-                            var canEdit = box.getAttribute('data-can-edit') === '1';
-                            Modal.confirm({
-                                title: canEdit
-                                    ? 'Запретить изменения остатков?'
-                                    : 'Разрешить изменения остатков?',
-                                text: name + '\n' + (canEdit
-                                    ? 'Кнопки загрузки, перемещения и отгрузки станут неактивными.'
-                                    : 'Сотрудник сможет загружать поставки, перемещать и отгружать товар.'),
-                                confirmLabel: canEdit ? 'Запретить' : 'Разрешить',
-                                danger: canEdit
-                            }).then(function (ok) {
-                                if (ok) run(post('/admin/users/' + id + '/toggle-stock-edit', new FormData()));
-                            });
-                        });
-                    }
-
-                    var roleBtn = box.querySelector('.u-act--role');
-                    if (roleBtn) {
-                        roleBtn.addEventListener('click', function () {
-                            var role = box.querySelector('.u-role-select').value;
-                            var fd = new FormData();
-                            fd.append('role', role);
-                            run(post('/admin/users/' + id + '/role', fd));
-                        });
-                    }
-
-                    var sectionsBtn = box.querySelector('.u-act--sections');
-                    if (sectionsBtn) {
-                        sectionsBtn.addEventListener('click', function () {
-                            var current = JSON.parse(sectionsBtn.getAttribute('data-section-access') || '{}');
-                            var body = '<div class="section-access-editor">' + SECTION_ACCESS.map(function (item) {
-                                var options = ['none', 'read', 'write'].map(function (level) {
-                                    return '<option value="' + level + '"' +
-                                        (current[item.key] === level ? ' selected' : '') + '>' +
-                                        ACCESS_LABELS[level] + '</option>';
-                                }).join('');
-                                return '<label><span>' + item.label + '</span>' +
-                                    '<select class="select-control" data-section-permission="' + item.key + '">' +
-                                    options + '</select></label>';
-                            }).join('') + '</div>';
-                            Modal.confirm({
-                                title: 'Права доступа по разделам: ' + name,
-                                bodyHtml: body,
-                                confirmLabel: 'Сохранить права'
-                            }).then(function (ok) {
-                                if (!ok) return;
-                                var fd = new FormData();
-                                document.querySelectorAll('[data-section-permission]').forEach(function (select) {
-                                    fd.append(select.getAttribute('data-section-permission'), select.value);
-                                });
-                                run(post('/admin/users/' + id + '/sections', fd));
-                            });
-                        });
-                    }
-
-                    var policyBtn = box.querySelector('.u-act--access-policy');
-                    if (policyBtn) {
-                        policyBtn.addEventListener('click', function () {
-                            var selectedProfile = policyBtn.getAttribute('data-access-profile') || '';
-                            var selectedStores = JSON.parse(policyBtn.getAttribute('data-access-stores') || '[]');
-                            var selectedMarketplaces = JSON.parse(policyBtn.getAttribute('data-access-marketplaces') || '[]');
-                            var body = '<div class="section-access-editor" data-policy-editor>' +
-                                '<label><span>Должность</span><select class="select-control" data-policy-profile>$profile_options</select></label>' +
-                                '<label><span>Кабинеты</span><div data-policy-stores>$store_options</div></label>' +
-                                '<label><span>Маркетплейсы</span><div data-policy-marketplaces>$marketplace_options</div></label>' +
-                                '<p class="panel-desc">Для менеджера, старшего менеджера и управляющего площадкой выберите одну площадку.</p></div>';
-                            Modal.confirm({
-                                title: 'Должность и площадки: ' + name,
-                                bodyHtml: body,
-                                confirmLabel: 'Сохранить доступ'
-                            }).then(function (ok) {
-                                if (!ok) return;
-                                var editor = document.querySelector('[data-policy-editor]');
-                                var fd = new FormData();
-                                fd.append('access_profile', editor.querySelector('[data-policy-profile]').value);
-                                editor.querySelectorAll('[data-policy-stores] input[name="stores"]:checked').forEach(function (input) {
-                                    fd.append('stores', input.value);
-                                });
-                                editor.querySelectorAll('[data-policy-marketplaces] input[name="marketplaces"]:checked').forEach(function (input) {
-                                    fd.append('marketplaces', input.value);
-                                });
-                                run(post('/admin/users/' + id + '/access-policy', fd));
-                            });
-                            window.setTimeout(function () {
-                                var editor = document.querySelector('[data-policy-editor]');
-                                if (!editor) return;
-                                editor.querySelector('[data-policy-profile]').value = selectedProfile;
-                                editor.querySelectorAll('input[name="stores"]').forEach(function (input) {
-                                    input.checked = selectedStores.indexOf(input.value) >= 0;
-                                });
-                                editor.querySelectorAll('input[name="marketplaces"]').forEach(function (input) {
-                                    input.checked = selectedMarketplaces.indexOf(input.value) >= 0;
-                                });
-                            }, 0);
-                        });
-                    }
-
-                    var storesBtn = box.querySelector('.u-act--stores');
-                    if (storesBtn) {
-                        storesBtn.addEventListener('click', function () {
-                            var row = box.closest('tr');
-                            var stores = selectedStores(row);
-                            if (!stores.length) {
-                                return Modal.alert({
-                                    title: 'Кабинеты не выбраны',
-                                    text: 'Выберите хотя бы один кабинет для сотрудника.',
-                                    danger: true
-                                });
-                            }
-                            var fd = new FormData();
-                            stores.forEach(function (slug) { fd.append('stores', slug); });
-                            run(post('/admin/users/' + id + '/stores', fd));
-                        });
-                    }
-
-                    box.querySelector('.u-act--reset').addEventListener('click', function () {
-                        var pass = generatePassword();
-                        Modal.confirm({
-                            title: 'Сбросить пароль?',
-                            text: name + '\n' +
-                                  'Сотрудник выйдет из системы на всех устройствах и сможет войти только с новым паролем.',
-                            copyText: pass,
-                            confirmLabel: 'Сбросить пароль',
-                            danger: true
-                        }).then(function (ok) {
-                            if (!ok) return;
-
-                            var fd = new FormData();
-                            fd.append('password', pass);
-
-                            run(post('/admin/users/' + id + '/reset-password', fd), function () {
-                                return Modal.alert({
-                                    title: 'Пароль изменён',
-                                    text: 'Передайте новый пароль сотруднику — восстановить его позже будет нельзя.',
-                                    copyText: pass
-                                }).then(function () { window.location.reload(); });
-                            });
-                        });
-                    });
-                });
-
-                btn.addEventListener('click', function () {
-                    clearCreateErrors();
-                    var data = new FormData();
-                    var firstMissing = '';
-                    Object.keys(fields).forEach(function (k) {
-                        var v = fields[k].value.trim();
-                        if (!v && !firstMissing) firstMissing = k;
-                        data.append(k, v);
-                    });
-                    var stores = selectedStores(storeBox);
-                    stores.forEach(function (slug) { data.append('stores', slug); });
-                    data.append('access_profile', accessProfile ? accessProfile.value : '');
-                    var marketplaces = marketplaceBox ? Array.prototype.slice.call(
-                        marketplaceBox.querySelectorAll('input[name="marketplaces"]:checked')
-                    ).map(function (input) { return input.value; }) : [];
-                    marketplaces.forEach(function (marketplace) { data.append('marketplaces', marketplace); });
-
-                    if (firstMissing) {
-                        var missingLabels = {
-                            full_name: 'ФИО',
-                            google_email: 'электронная почта',
-                            login: 'логин',
-                            password: 'пароль',
-                            role: 'роль'
-                        };
-                        showCreateError(firstMissing, 'Заполните поле «' + missingLabels[firstMissing] + '»');
-                        return;
-                    }
-                    if (!fields.google_email.checkValidity()) {
-                        showCreateError('google_email', 'Укажите корректный адрес электронной почты');
-                        return;
-                    }
-                    if (!/^[A-Za-z0-9_.@+\-]+$$/.test(fields.login.value.trim())) {
-                        showCreateError('login', 'Логин: используйте только латинские буквы, цифры и символы . _ @ + -');
-                        return;
-                    }
-                    if (fields.password.value.length < 8) {
-                        showCreateError('password', 'Пароль: нужно не меньше 8 символов');
-                        return;
-                    }
-                    if (!stores.length) {
-                        showCreateError('stores', 'Выберите хотя бы один кабинет');
-                        return;
-                    }
-                    if (accessProfile && accessProfile.value && !marketplaces.length) {
-                        showCreateError('marketplaces', 'Выберите хотя бы один маркетплейс');
-                        return;
-                    }
-                    if (accessProfile && [
-                        'marketplace_manager',
-                        'senior_marketplace_manager',
-                        'marketplace_lead'
-                    ].indexOf(accessProfile.value) >= 0 && marketplaces.length !== 1) {
-                        showCreateError('marketplaces', 'Для этой должности выберите ровно один маркетплейс');
-                        return;
-                    }
-
-                    btn.disabled = true;
-                    status.textContent = 'Создаю...';
-
-                    fetch('/admin/users', { method: 'POST', body: data, headers: { 'X-Requested-With': 'fetch' } })
-                        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-                        .then(function (res) {
-                            if (!res.ok || !res.data.ok) {
-                                showCreateError(
-                                    res.data.field || '',
-                                    res.data.error || 'Не удалось создать сотрудника'
-                                );
-                                return;
-                            }
-                            status.textContent = 'Сотрудник создан';
-                            window.location.reload();
-                        })
-                        .catch(function (e) { status.textContent = 'Ошибка: ' + e; })
-                        .finally(function () { btn.disabled = false; });
-                });
-
-                createOverlay.querySelectorAll('input, select').forEach(function (element) {
-                    element.addEventListener('input', function () {
-                        element.classList.remove('is-invalid');
-                        element.removeAttribute('aria-invalid');
-                    });
-                    element.addEventListener('change', function () {
-                        element.classList.remove('is-invalid');
-                        element.removeAttribute('aria-invalid');
-                        if (element.closest('.u-store-field')) {
-                            element.closest('.u-store-field').classList.remove('is-invalid');
-                        }
-                    });
-                });
-
-                document.querySelectorAll('.access-request-actions').forEach(function (actions) {
-                    var requestId = actions.getAttribute('data-request-id');
-                    function decide(approved) {
-                        var fd = new FormData();
-                        fd.append('approved', approved ? '1' : '0');
-                        return post('/admin/access-requests/' + requestId + '/decision', fd)
-                            .then(function (res) {
-                                if (!res.ok || !res.data.ok) throw new Error(res.data.error || 'Не удалось обработать запрос');
-                                window.location.reload();
-                            }).catch(function (error) {
-                                Modal.alert({ title: 'Ошибка', text: String(error), danger: true });
-                            });
-                    }
-                    actions.querySelector('.access-request-approve').addEventListener('click', function () { decide(true); });
-                    actions.querySelector('.access-request-reject').addEventListener('click', function () { decide(false); });
-                });
-                document.querySelectorAll('.access-grant-revoke').forEach(function (button) {
-                    button.addEventListener('click', function () {
-                        post('/admin/access-grants/' + button.getAttribute('data-grant-id') + '/revoke', new FormData())
-                            .then(function (res) {
-                                if (!res.ok || !res.data.ok) throw new Error(res.data.error || 'Не удалось отозвать разрешение');
-                                window.location.reload();
-                            }).catch(function (error) {
-                                Modal.alert({ title: 'Ошибка', text: String(error), danger: true });
-                            });
-                    });
-                });
-            })();
-        </script>
+    </div>
+    <dialog class="ad-dialog ad-drawer" id="ad-user-dialog" aria-labelledby="ad-user-title">
+        <header class="ad-dialog-heading"><div><span class="ad-eyebrow">КАРТОЧКА СОТРУДНИКА</span><h2 id="ad-user-title"></h2></div><button class="ad-close" type="button" data-close-dialog aria-label="Закрыть карточку">×</button></header><div id="ad-editor-content"></div>
+        <footer class="ad-drawer-footer"><span>Изменения сохраняются отдельно в каждом блоке.</span><button class="ad-button" type="button" data-close-dialog>Закрыть</button></footer>
+    </dialog>
+    <dialog class="ad-dialog ad-create" id="u-create-overlay" aria-labelledby="u-create-title">
+        <header class="ad-dialog-heading"><div><span class="ad-eyebrow">НОВЫЙ УЧАСТНИК КОМАНДЫ</span><h2 id="u-create-title">Создание сотрудника</h2></div><button class="ad-close" type="button" data-close-dialog aria-label="Закрыть создание сотрудника">×</button></header>
+        <form id="ad-create-form" novalidate><div class="ad-create-body">
+            <div class="ad-form-section"><h3><span>1</span> Данные для входа</h3><div class="ad-form-grid">
+                <label class="ad-field ad-field--wide"><span>ФИО</span><input class="ad-input" type="text" id="u-fio" name="full_name" placeholder="Иван Петров" maxlength="200" required autocomplete="off"></label>
+                <label class="ad-field"><span>Электронная почта</span><input class="ad-input" type="email" id="u-email" name="google_email" placeholder="name@company.ru" maxlength="320" required autocomplete="off"></label>
+                <label class="ad-field"><span>Логин</span><input class="ad-input" type="text" id="u-login" name="login" placeholder="ivan.petrov" maxlength="100" required autocomplete="off"><small>Логин: латинские буквы, цифры и символы . _ @ + −</small></label>
+                <div class="ad-field ad-field--wide"><label for="u-pass">Пароль</label><div class="ad-password-row"><input class="ad-input" type="text" id="u-pass" name="password" placeholder="Не менее 8 символов" minlength="8" maxlength="1024" required autocomplete="new-password"><button class="ad-button" type="button" id="u-gen">Сгенерировать</button><button class="ad-button" type="button" id="u-copy" aria-label="Скопировать пароль">Копировать</button></div><small id="u-pass-hint" aria-live="polite">Скопируйте пароль и передайте сотруднику после создания учётной записи.</small></div>
+            </div></div>
+            <div class="ad-form-section"><h3><span>2</span> Роль и доступ</h3><div class="ad-form-grid">
+                <label class="ad-field"><span>Роль в системе</span><select class="ad-input" id="u-role" name="role">$role_options</select></label>
+                <label class="ad-field"><span>Как назначать права</span><select class="ad-input" id="u-access-profile" name="access_profile">$profile_options</select></label><input type="hidden" name="scope_version" value="2"><p class="ad-hint ad-field--wide">Роль отвечает за управление системой, должность — за рабочие действия. Суперадминистратору доступны все данные независимо от выбранных ограничений.</p><p class="ad-profile-description ad-field--wide" data-profile-description></p>
+                <div class="ad-field ad-field--wide" id="u-marketplaces" data-marketplaces><span>Площадки — маркетплейсы внутри кабинета</span>$marketplace_options<p class="ad-hint" data-policy-hint></p></div>
+                <div class="ad-field ad-field--wide" id="u-stores"><div class="ad-field-heading"><span>Кабинеты — магазины компании</span><button class="ad-text-button" type="button" data-select-stores>Выбрать все</button></div>$store_options</div><p class="ad-scope-preview ad-field--wide" data-working-scope aria-live="polite"></p>
+            </div></div>
+        </div><footer class="ad-create-footer"><p class="ad-form-status" id="u-status" role="status" aria-live="polite"></p><div><button class="ad-button" type="button" data-close-dialog>Отмена</button><button class="ad-button ad-button--primary" type="submit" id="u-create"$form_disabled>Создать сотрудника</button></div></footer></form>
+    </dialog>
+    <dialog class="ad-dialog ad-confirm" id="ad-confirm-dialog" aria-labelledby="ad-confirm-title">
+        <div class="ad-confirm-body"><span class="ad-confirm-icon" aria-hidden="true">!</span><h2 id="ad-confirm-title"></h2><p id="ad-confirm-text"></p><div id="ad-confirm-password" hidden><label class="ad-field"><span>Новый пароль</span><input class="ad-input" type="text" readonly aria-label="Новый пароль"></label><button class="ad-button" type="button" id="ad-confirm-copy">Скопировать пароль</button></div><p class="ad-form-status" id="ad-confirm-status" role="status"></p></div><footer class="ad-confirm-footer"><button class="ad-button" type="button" id="ad-confirm-cancel">Отмена</button><button class="ad-button ad-button--primary" type="button" id="ad-confirm-ok">Подтвердить</button></footer>
+    </dialog>
+    <div class="ad-toast" id="ad-toast" role="status" aria-live="polite" hidden></div>
+</div>
+<script src="/static/admin.js?v=2" defer></script>

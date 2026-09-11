@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/stock-total.css?v=12">
+<link rel="stylesheet" href="/static/stock-total.css?v=13">
 
         <a class="back-link" href="/stock">&larr; Все магазины</a>
 
@@ -22,6 +22,7 @@ $total_button
                         <h3 class="panel-title">Все товары — $store_name</h3>
                     </div>
                     <div class="panel-header-actions">
+                        <a class="btn-secondary" href="/stock/inbound?store=$slug">Поставки FBO</a>
                         <a class="btn-secondary" href="/stock/$slug/operations">Перемещение стока</a>
                         <a class="btn-secondary" id="wh-link" href="/stock/$slug/warehouses?mp=$marketplace">Склады FBS</a>
                         <a class="btn-secondary" id="stock-xlsx-link" href="/stock/$slug/stock.xlsx?mp=$marketplace">Excel</a>

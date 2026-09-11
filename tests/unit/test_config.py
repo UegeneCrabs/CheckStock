@@ -56,7 +56,6 @@ class SettingsTests(unittest.TestCase):
             "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR": "1",
             "CHECKSTOCK_WB_STOREFRONT_DEST": "-7777777",
             "CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE": "40",
-            "CHECKSTOCK_STOCK_DETAIL_PAGE_SIZE": "42",
             "CHECKSTOCK_OZON_REQUEST_ATTEMPTS": "7",
             "CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS": "25",
             "CHECKSTOCK_FTP_EXPORT_START_HOUR": "4",
@@ -84,7 +83,6 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(configured.unit_economics_1c_source_sync_hour, 1)
         self.assertEqual(configured.wb_storefront_dest, "-7777777")
         self.assertEqual(configured.wb_storefront_batch_size, 40)
-        self.assertEqual(configured.stock_detail_page_size, 42)
         self.assertEqual(configured.ozon_request_attempts, 7)
         self.assertEqual(configured.rnp_report_poll_attempts, 25)
         self.assertEqual(configured.ftp_export_start_hour, 4)

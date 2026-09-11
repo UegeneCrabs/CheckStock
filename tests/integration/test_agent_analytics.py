@@ -207,9 +207,6 @@ def test_action_schema_only_advertises_supported_filters(agent_client):
     assert set(calculator_params) == {"store", "marketplace", "article"}
     assert calculator_params["article"]["required"] is True
     assert calculator_params["article"]["schema"]["type"] == "string"
-    rnp_params = {p["name"]: p for p in paths[f"{api.PREFIX}/rnp"]["get"]["parameters"]}
-    assert rnp_params["limit"]["schema"]["maximum"] == 20
-    assert client.get(f"{api.PREFIX}/rnp", params={"store": "rimili", "month": "2026-09", "limit": 21}).status_code == 422
     for report in PERIOD_REPORTS:
         parameters = {p["name"]: p for p in paths[f"{api.PREFIX}/{report}"]["get"]["parameters"]}
         for field in ("date_from", "date_to"):
@@ -233,14 +230,14 @@ def test_capabilities_includes_loss_report_only_with_economic_scope(agent_client
     assert set(loss["filters"]) == {"store", "article", "date_from", "date_to", "limit"}
     identity.get_user.return_value = user_factory(role=Role.USER, stores=("rimili",)).model_copy(
         update={"section_access": {**{s: SectionAccessLevel.NONE for s in SectionName},
-                                   SectionName.STOCK: SectionAccessLevel.READ}}
+                                   SectionName.STOCK_BALANCES: SectionAccessLevel.READ, SectionName.AI_AGENTS: SectionAccessLevel.READ}}
     )
     reports = client.get(f"{api.PREFIX}/capabilities").json()["reports"]
     assert all(report["report"] != "loss-products" for report in reports)
 
 
-@pytest.mark.parametrize("report", ["product-newness", "product-reputation", "product-tags", "current-economics", "products", "sales", "funnel", "advertising", "stocks", "stock-value",
-    "stock-operations", "prices", "costs", "profit", "target-prices", "rnp", "decisions", "data-status"])
+@pytest.mark.parametrize("report", ["product-newness", "product-reputation", "product-tags", "current-economics", "products", "advertising", "stocks", "stock-value",
+    "stock-operations", "prices", "costs", "profit", "target-prices", "data-status"])
 def test_full_reports_real_empty_database(agent_client, database_path, user_factory, report):
     from app.web.routers.agent_full import PERIOD_REPORTS
     client, identity, *_ = agent_client
@@ -248,8 +245,6 @@ def test_full_reports_real_empty_database(agent_client, database_path, user_fact
     query = {"store": "rimili"}
     if report in PERIOD_REPORTS:
         query.update(date_from="2026-09-01", date_to="2026-09-07")
-    if report == "rnp":
-        query["month"] = "2026-09"
     response = client.get(f"{api.PREFIX}/{report}", params=query)
     assert response.status_code == 200, response.text
     assert "password" not in response.text and "raw_json" not in response.text
@@ -259,7 +254,7 @@ def test_stock_only_user_cannot_read_costs(agent_client, database_path, user_fac
     client, identity, *_ = agent_client
     user = user_factory(role=Role.ADMIN, stores=("rimili",))
     identity.get_user.return_value = user.model_copy(update={"section_access": {
-        section: SectionAccessLevel.READ if section == SectionName.STOCK else SectionAccessLevel.NONE
+        section: SectionAccessLevel.READ if section in {SectionName.STOCK_BALANCES, SectionName.AI_AGENTS} else SectionAccessLevel.NONE
         for section in SectionName}})
     assert client.get(f"{api.PREFIX}/stocks", params={"store": "rimili"}).status_code == 200
     for path in ("costs", "prices", "advertising", "profit", "stock-value", "current-economics", "product-tags", "product-newness", "product-reputation"):
@@ -337,7 +332,7 @@ def test_supplies_are_read_only_cached_and_scope_checked(agent_client, database_
     assert loader.call_count == 1
 
 
-@pytest.mark.parametrize("report, changes", [("stocks", {"refresh": True}), ("sales", {"date_from": "2099-01-01", "date_to": "2099-01-02"}), ("prices", {"marketplace": "OZON"}), ("products", {"limit": 101}), ("products", {"date_from": "2026-09-01"})])
+@pytest.mark.parametrize("report, changes", [("stocks", {"refresh": True}), ("profit", {"date_from": "2099-01-01", "date_to": "2099-01-02"}), ("prices", {"marketplace": "OZON"}), ("products", {"limit": 101}), ("products", {"date_from": "2026-09-01"})])
 def test_full_report_rejects_unsupported_filters(agent_client, report, changes):
     client, *_ = agent_client
     assert client.get(f"{api.PREFIX}/{report}", params={"store": "rimili", **changes}).status_code == 422
@@ -677,7 +672,7 @@ def test_product_attributes_preserve_source_and_scope(agent_client, monkeypatch,
         assert body["rows"][0]["reviews_count"] == 14390
 
 
-def test_stock_summary_matches_columns_and_keeps_unknowns(agent_client, monkeypatch):
+def test_stock_summary_matches_columns_and_keeps_unknowns(agent_client, monkeypatch, database_path):
     from app import agent_reports
     from app.web import stock_rendering
 

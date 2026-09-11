@@ -162,18 +162,20 @@ class BackgroundTests(unittest.IsolatedAsyncioTestCase):
         refresh.assert_called_once()
         self.assertEqual(background._fixed_delay(5)(), 5)
         self.assertGreater(background._daily_delay(3)(), 0)
-        self.assertEqual(len(background._jobs(asyncio.Event())), 19)
+        from app.sync_catalog import job_definitions
+
+        separate_jobs = {"unit_economics_1c_sync", "unit_economics_1c_wallet_sync", "yandex_storefront_prices_sync"}
+        self.assertEqual({job.name for job in background._jobs(asyncio.Event())},
+                         {job.name for job in job_definitions()} - separate_jobs)
 
         with (
             mock.patch.object(background.db, "init_db") as init_db,
-            mock.patch.object(background.decision_service, "init_schema") as decision_schema,
-            mock.patch.object(background.rnp_analytics, "init_schema") as rnp_schema,
             mock.patch.object(background.db, "seed_defaults") as seed,
             mock.patch.object(background.stock_sheet_export, "ensure_defaults") as export_defaults,
             mock.patch.object(background.auth, "seed_superadmin") as seed_admin,
         ):
             background._initialize_application()
-        for called in (init_db, decision_schema, rnp_schema, seed, export_defaults, seed_admin):
+        for called in (init_db, seed, export_defaults, seed_admin):
             called.assert_called_once()
 
         app = FastAPI()

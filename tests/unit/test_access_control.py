@@ -51,13 +51,13 @@ def test_marketplace_manager_is_limited_to_exact_store_marketplace_scope(databas
     assert not has_scope(manager, "rimili", "WB")
     assert has_action_permission(
         manager,
-        ActionPermission.SALES_VIEW,
+        ActionPermission.STOCK_BALANCE_VIEW,
         store_slug="rimili",
         marketplace="OZON",
     )
     assert not has_action_permission(
         manager,
-        ActionPermission.SALES_VIEW,
+        ActionPermission.STOCK_BALANCE_VIEW,
         store_slug="rimili",
         marketplace="WB",
     )

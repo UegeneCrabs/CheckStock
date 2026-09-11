@@ -86,6 +86,11 @@ class UnitEconomics1CProductSettings(UnitEconomics1CProductValues):
     updated_by_name: str | None = None
 
 
+class YandexBuyoutSettingsRequest(DtoModel):
+    buyout_period_days: int = Field(ge=1, le=29)
+    default_buyout_percent: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
+
+
 class UnitEconomics1CProductTargetRequest(DtoModel):
     article: str = Field(min_length=1, max_length=500)
     target_drr_percent: float = Field(ge=0, le=100)

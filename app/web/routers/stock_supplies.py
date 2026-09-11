@@ -4,10 +4,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from app import auth, db, supply_planning
+from app import db, supply_planning
 from app.access_control import accessible_stores
 from app.domain import MOSCOW_TIMEZONE
+from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.supply_planning import ManualSupplyInput, ManualSupplyReadyInput
+from app.section_access import has_access
 from app.stores import STORES
 from app.web.access import accessible_store_slugs
 
@@ -37,7 +39,7 @@ def _with_urgency(rows: list[dict]) -> list[dict]:
 
 
 def _guard_edit(request: Request) -> JSONResponse | None:
-    if auth.can_edit_stock(request.state.user):
+    if has_access(request.state.user, SectionName.STOCK_SUPPLIES, SectionAccessLevel.WRITE):
         return None
     return JSONResponse(
         {"ok": False, "error": "Нет права изменять план поставок"},

@@ -11,8 +11,7 @@ from pydantic import BaseModel, Field, SecretStr
 from app import (
     auth,
     db,
-    ftp_export,
-    ftp_export_schedule,
+    manual_sync,
     marketplace_credentials,
     sync_settings,
 )
@@ -20,10 +19,11 @@ from app.domain import MOSCOW_TIMEZONE
 from app.formatting import format_dt
 from app.stores import STORES
 from app.sync_catalog import job_definitions
-from app.sync_tracking import run_tracked, set_next_run
-from app.wb import funnel_orders as wb_funnel_orders
+from app.sync_locks import SyncJobBusyError
+from app.sync_tracking import queue_tracked
 from app.wb import token_watch
 from app.web.cabinet_settings import render_cabinet_settings
+from app.web.routers.google_export import render_google_export
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -44,9 +44,6 @@ class SyncSettingUpdate(BaseModel):
     enabled: bool
     store_slug: str = Field(default="", max_length=100)
     marketplace: str = Field(default="", max_length=100)
-
-
-WB_BUYOUT_JOB_NAME = "wb_funnel_weekly_metrics_sync"
 
 
 def _require_superadmin(request: Request) -> None:
@@ -132,7 +129,7 @@ def _switch(
     store_slug: str = "",
     marketplace: str = "",
 ) -> str:
-    disabled = not definition.enabled
+    disabled = not definition.enabled and not (store_slug or marketplace)
     attributes = (
         f'data-job="{html.escape(definition.name)}" '
         f'data-store="{html.escape(store_slug)}" '
@@ -201,8 +198,8 @@ def _target_settings(definition, config: dict) -> str:
     return (
         f'<tr class="integration-sync-target-row" data-sync-targets-row="{html.escape(definition.name)}" hidden>'
         '<td colspan="6"><div class="integration-sync-target-shell">'
-        '<div><strong>Где запускать автоматически</strong>'
-        '<small>Настройки применяются со следующего запуска по расписанию.</small></div>'
+        '<div><strong>Магазины для выгрузки</strong>'
+        '<small>Выбор применяется к ручным и автоматическим запускам.</small></div>'
         f'<div class="integration-sync-target-grid">{controls}</div>'
         '<p class="integration-sync-setting-message" data-sync-setting-message aria-live="polite"></p>'
         '</div></td></tr>'
@@ -235,22 +232,22 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
             '<button class="btn-primary integration-run-button" type="button" '
             f'data-sync-run="{html.escape(definition.name)}" '
             f'data-sync-title="{html.escape(definition.title)}"'
-            f'{"" if definition.enabled else " disabled"}>Запустить сейчас</button>'
+            f'{" disabled" if state.get("running") else ""}>Выгрузить вручную</button>'
         )
     row = (
         f'<tr data-sync-job="{html.escape(definition.name)}">'
-        f'<td><strong>{html.escape(definition.title)}</strong><small>{html.escape(definition.description)}</small></td>'
-        f'<td><span class="sync-status {status_class}">{status_text}</span></td>'
-        f"<td>{html.escape(format_dt(last_run))}</td>"
-        f"<td>{html.escape(trigger_text)}</td>"
-        '<td><div class="integration-auto-setting">'
+        f'<td data-label="Выгрузка"><strong>{html.escape(definition.title)}</strong><small>{html.escape(definition.description)}</small></td>'
+        f'<td data-label="Статус"><span class="sync-status {status_class}">{status_text}</span></td>'
+        f'<td data-label="Последний запуск">{html.escape(format_dt(last_run))}</td>'
+        f'<td data-label="Способ">{html.escape(trigger_text)}</td>'
+        '<td data-label="Автовыгрузка"><div class="integration-auto-setting">'
         + _switch(
             definition,
             checked=bool(config["configured_enabled"]),
             label=str(config["summary"]),
         )
         + f'<small>{html.escape(definition.schedule)}</small>'
-        + f'<small>Следующая: {html.escape(next_run)}</small>'
+        + f'<small data-sync-next-run>Следующая: {html.escape(next_run)}</small>'
         + '<small class="integration-sync-inline-message" data-sync-setting-inline-message></small>'
         + '</div></td>'
         '<td><div class="integration-sync-actions">'
@@ -258,7 +255,8 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
         + manual_button
         + '<button class="btn-secondary integration-history-button" type="button" '
         f'data-sync-history="{html.escape(definition.name)}" '
-        f'data-sync-title="{html.escape(definition.title)}">История</button></div></td>'
+        f'data-sync-title="{html.escape(definition.title)}">История</button></div>'
+        '<p class="integration-sync-setting-message" data-sync-run-message aria-live="polite"></p></td>'
         "</tr>"
     )
     return row + _target_settings(definition, config)
@@ -268,7 +266,7 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
 async def integrations_page(request: Request):
     _require_superadmin(request)
     states = {
-        state["name"]: state for state in await run_in_threadpool(db.list_sync_job_states)
+        state["name"]: state for state in await run_in_threadpool(_sync_states)
     }
     definitions = job_definitions()
     configurations = {
@@ -283,6 +281,8 @@ async def integrations_page(request: Request):
     )
     content = fill_template(
         "integrations_content.html",
+        google_export=await render_google_export(),
+        job_count=str(len(definitions)),
         store_tabs=store_tabs,
         cabinet_settings=await run_in_threadpool(render_cabinet_settings, request.state.user),
         store_panels="".join(
@@ -298,7 +298,7 @@ async def integrations_page(request: Request):
         ),
     )
     return render_page(
-        "CheckStock — API и выгрузки",
+        "CheckStock — Интеграции и выгрузки",
         "admin_integrations",
         content,
         request.state.user,
@@ -343,95 +343,48 @@ async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     }
 
 
+def _sync_states() -> list[dict]:
+    stored = {state["name"]: state for state in db.list_sync_job_states()}
+    states = []
+    for definition in job_definitions():
+        state = {"name": definition.name, **stored.get(definition.name, {})}
+        state["running"] = manual_sync.is_running(definition.name)
+        if state["running"]:
+            state["status"] = "running"
+        elif state.get("status") == "running":
+            state.update(status="error", error="Выполнение прервано. Можно запустить выгрузку повторно.")
+        states.append(state)
+    return states
+
+
+@router.get("/api/admin/integrations/sync-jobs")
+async def sync_job_states(request: Request):
+    _require_superadmin(request)
+    return {"ok": True, "states": await run_in_threadpool(_sync_states)}
+
+
 @router.post("/api/admin/integrations/sync-jobs/{job_name}/run")
 async def run_sync_job(request: Request, job_name: str):
     _require_superadmin(request)
-    definition = next(
-        (item for item in job_definitions() if item.name == job_name and item.manual_run),
-        None,
-    )
+    definition = next((item for item in job_definitions() if item.name == job_name and item.manual_run), None)
     if definition is None:
-        return JSONResponse(
-            {"ok": False, "error": "Ручной запуск этой выгрузки недоступен"},
-            status_code=404,
-        )
-    if not definition.enabled:
-        return JSONResponse(
-            {"ok": False, "error": "Выгрузка системно отключена"},
-            status_code=409,
-        )
-    platform = ftp_export.platform_for_job(job_name)
-    if platform is not None:
-        if ftp_export.is_running(platform):
-            return JSONResponse(
-                {"ok": False, "error": f"Выгрузка FTP {platform.upper()} уже выполняется"},
-                status_code=409,
-            )
-        try:
-            result = await run_in_threadpool(
-                run_tracked,
-                job_name,
-                "manual",
-                lambda: ftp_export.run_platform(platform),
-            )
-        except ftp_export.FTPExportBusyError as error:
-            return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
-        except Exception as error:
-            return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
-        await run_in_threadpool(
-            set_next_run,
-            job_name,
-            ftp_export_schedule.next_delay_seconds(job_name),
-        )
-        message = f"{definition.title}: выгрузка завершена"
-    elif job_name == WB_BUYOUT_JOB_NAME:
-        config = await run_in_threadpool(sync_settings.configuration, job_name)
-        store_slugs = tuple(
-            str(target["store_slug"])
-            for target in config["targets"]
-            if target["enabled"]
-        )
-        if not store_slugs:
-            return JSONResponse(
-                {"ok": False, "error": "Для обновления не выбран ни один магазин"},
-                status_code=409,
-            )
-        try:
-            result = await run_in_threadpool(
-                run_tracked,
-                job_name,
-                "manual",
-                lambda: wb_funnel_orders.sync_weekly_metrics_all(store_slugs),
-            )
-        except Exception as error:
-            return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
-        succeeded = sum(
-            1 for item in result.values() if item.get("status") == "success"
-        )
-        skipped = sum(
-            1 for item in result.values() if item.get("status") == "skipped"
-        )
-        failed = len(result) - succeeded - skipped
-        message = f"Процент выкупа обновлён: {succeeded} из {len(result)} магазинов"
-        if skipped:
-            message += f"; пропущено: {skipped}"
-        if failed:
-            message += f"; ошибок: {failed}"
-    else:
-        return JSONResponse(
-            {"ok": False, "error": "Ручной запуск этой выгрузки недоступен"},
-            status_code=404,
-        )
+        return JSONResponse({"ok": False, "error": "Выгрузка не найдена"}, status_code=404)
+    config = await run_in_threadpool(sync_settings.configuration, job_name)
+    if config["targets"] and not config["enabled_target_count"]:
+        return JSONResponse({"ok": False, "error": "Для обновления не выбран ни один магазин"}, status_code=409)
+    try:
+        if await run_in_threadpool(manual_sync.is_running, job_name):
+            raise SyncJobBusyError()
+        callback = manual_sync.callback_for(job_name)
+        run_id = await run_in_threadpool(queue_tracked, job_name, callback)
+    except SyncJobBusyError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
+    except Exception as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
     actor = request.state.user
-    await run_in_threadpool(
-        db.log_action,
-        actor.id,
-        actor.full_name,
-        "Запущена выгрузка вручную",
-        definition.title,
-        datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
-    )
-    return {"ok": True, "message": message, "result": result}
+    await run_in_threadpool(db.log_action, actor.id, actor.full_name, "Запущена выгрузка вручную",
+                            definition.title, datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"))
+    return JSONResponse({"ok": True, "run_id": run_id, "message": "Выгрузка запущена в фоне"}, status_code=202)
 
 
 @router.put("/api/admin/integrations/sync-jobs/{job_name}/settings")

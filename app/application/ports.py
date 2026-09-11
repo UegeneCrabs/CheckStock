@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Protocol
 
-from app.dto.decision import DecisionAction, SetDecisionStatusCommand
 from app.dto.identity import (
     AccessDecision,
     ActivityCommand,
@@ -32,14 +31,6 @@ from app.dto.identity import (
     UserStoreAccessChange,
     WbTokenInfoCollection,
     WbTokenInfoCommand,
-)
-from app.dto.rnp import (
-    AddRnpActionCommand,
-    RnpAction,
-    RnpArticleExists,
-    RnpArticleQuery,
-    RnpStrategy,
-    SaveRnpStrategyCommand,
 )
 from app.dto.stock import (
     ApplyShipmentCommand,
@@ -129,56 +120,6 @@ class PasswordService(Protocol):
     def hash(self, request: PasswordHashRequest) -> PasswordHash: ...
 
     def verify(self, request: PasswordVerification) -> AccessDecision: ...
-
-
-class RnpRepository(Protocol):
-    def article_exists(self, query: RnpArticleQuery) -> RnpArticleExists: ...
-
-    def save_strategy(self, command: SaveRnpStrategyCommand) -> RnpStrategy: ...
-
-    def add_action(self, command: AddRnpActionCommand) -> RnpAction: ...
-
-
-class RnpUnitOfWork(Protocol):
-    repository: RnpRepository
-
-    def __enter__(self) -> RnpUnitOfWork: ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None: ...
-
-    def commit(self) -> None: ...
-
-
-class RnpUnitOfWorkFactory(Protocol):
-    def __call__(self) -> RnpUnitOfWork: ...
-
-
-class DecisionRepository(Protocol):
-    def set_status(self, command: SetDecisionStatusCommand) -> DecisionAction: ...
-
-
-class DecisionUnitOfWork(Protocol):
-    repository: DecisionRepository
-
-    def __enter__(self) -> DecisionUnitOfWork: ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None: ...
-
-    def commit(self) -> None: ...
-
-
-class DecisionUnitOfWorkFactory(Protocol):
-    def __call__(self) -> DecisionUnitOfWork: ...
 
 
 class StockRepository(Protocol):

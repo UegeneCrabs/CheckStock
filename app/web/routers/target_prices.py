@@ -36,7 +36,7 @@ async def target_price_page(request: Request):
                 "stores": [{"slug": slug, "name": STORES[slug]["name"]} for slug in stores],
                 "canEdit": has_section_access(
                     request.state.user,
-                    SectionName.UNIT_ECONOMICS_1C,
+                    SectionName.REPORT_TARGET_PRICE,
                     SectionAccessLevel.WRITE,
                 ),
             },
@@ -207,7 +207,7 @@ async def _target_product_error(request: Request, store_slug: str, article: str)
         return JSONResponse({"ok": False, "error": "Нет доступа к этому кабинету"}, status_code=403)
     if not has_section_access(
         request.state.user,
-        SectionName.UNIT_ECONOMICS_1C,
+        SectionName.REPORT_TARGET_PRICE,
         SectionAccessLevel.WRITE,
     ):
         return JSONResponse({"ok": False, "error": "Нет права изменять цели"}, status_code=403)

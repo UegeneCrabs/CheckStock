@@ -274,31 +274,6 @@
     text-align: center;
 }
 
-[data-theme="dark"] .cost-report-hero,
-[data-theme="dark"] .cost-filters,
-[data-theme="dark"] .cost-report-note,
-[data-theme="dark"] .cost-table-wrap,
-[data-theme="dark"] .cost-empty,
-[data-theme="dark"] .cost-report-shell > .tf-toolbar,
-[data-theme="dark"] .cost-filters input,
-[data-theme="dark"] .cost-filters select {
-    background: #111827;
-    border-color: #273244;
-}
-
-[data-theme="dark"] .cost-table-wrap thead th {
-    background: #172033;
-}
-
-[data-theme="dark"] .cost-table-wrap th,
-[data-theme="dark"] .cost-table-wrap td {
-    border-color: #273244;
-}
-
-[data-theme="dark"] .cost-report-note strong {
-    color: #f8fafc;
-}
-
 @media (max-width: 800px) {
     .cost-report-hero {
         align-items: flex-start;

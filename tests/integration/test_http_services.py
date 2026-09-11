@@ -3,21 +3,17 @@ import json
 import logging
 import tempfile
 import unittest
-from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest import mock
 
 import openpyxl
 from fastapi.testclient import TestClient
 
-from app import auth, db, decision_center, rnp_analytics
-from app.dto.decision import DecisionAction, DecisionStatus
+from app import auth, db
 from app.main import create_app
 from app.repositories import core
 from app.stores import STORES
-from app.web.routers import admin, sales_overview
-from app.web.routers import decision_center as decision_routes
-from app.web.routers import rnp as rnp_routes
+from app.web.routers import admin
 
 
 class HttpServiceIntegrationTests(unittest.TestCase):
@@ -29,9 +25,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.path_patch.start()
         db.init_db()
         db.seed_defaults()
-        decision_center.init_schema()
-        rnp_analytics._SCHEMA_READY = False
-        rnp_analytics.init_schema()
         self.admin_id = db.create_user(
             "Integration Admin",
             "integration@test",
@@ -69,7 +62,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.client.close()
         self.path_patch.stop()
         self.temp.cleanup()
-        rnp_analytics._SCHEMA_READY = False
         logging.disable(logging.NOTSET)
 
     def test_system_and_auth_good_and_bad_outcomes(self) -> None:
@@ -79,7 +71,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             self.assertEqual(anonymous.get("/readyz").json(), {"status": "ok", "database": "ok"})
             self.assertEqual(anonymous.get("/sales", follow_redirects=False).status_code, 303)
             self.assertEqual(
-                anonymous.get("/api/sales", headers={"accept": "application/json"}).status_code, 401
+                anonymous.get("/api/unit-economics-1c/reports/unit-profit", headers={"accept": "application/json"}).status_code, 401
             )
             self.assertEqual(
                 anonymous.post(
@@ -89,7 +81,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             )
         finally:
             anonymous.close()
-        self.assertEqual(self.client.get("/sales").status_code, 200)
+        self.assertEqual(self.client.get("/stock").status_code, 200)
         self.assertEqual(self.client.get("/logout", follow_redirects=False).status_code, 303)
 
     def test_read_pages_and_downloads_good_and_bad_outcomes(self) -> None:
@@ -104,21 +96,14 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         )
         pages = (
             "/",
-            "/sales",
-            "/sales/decision-center",
-            "/sales/ephemerides",
-            "/sales/rnp",
             "/sales/unit-economics-1c",
             "/sales/unit-economics-1c/cabinet-settings",
             "/sales/unit-economics-1c/ozon",
             "/sales/unit-economics-1c/yandex-market",
-            "/supply",
             "/stock",
             "/stock/total",
             "/stock/randomizer",
             "/stock/planning/wb",
-            "/stock-2",
-            "/stock-2/details/zero",
             "/stock/rimili",
             "/stock/rimili/fbs",
             "/stock/rimili/warehouses",
@@ -144,102 +129,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/admin/operations/999999/xlsx").status_code, 404)
         self.assertEqual(self.client.get("/stock-2/details/wrong").status_code, 404)
 
-    def test_sales_decision_and_rnp_good_and_bad_outcomes(self) -> None:
-        today = date.today().isoformat()
-        with mock.patch.object(
-            sales_overview.sales_service,
-            "dashboard",
-            return_value={"marketplace": "WB", "series": [], "totals": {}},
-        ):
-            response = self.client.get(
-                "/api/sales",
-                params={"date_from": today, "date_to": today, "marketplace": "WB", "store": "rimili"},
-            )
-        self.assertEqual(response.status_code, 200)
-        with mock.patch.object(
-            sales_overview.sales_service, "dashboard", side_effect=ValueError("bad period")
-        ):
-            self.assertEqual(self.client.get("/api/sales", params={"store": "rimili"}).status_code, 400)
-
-        with mock.patch.object(
-            decision_routes.decision_service,
-            "dashboard",
-            return_value={"meta": {}, "summary": {}, "opportunities": []},
-        ):
-            self.assertEqual(
-                self.client.get("/api/decision-center", params={"store": "rimili"}).status_code, 200
-            )
-        with mock.patch.object(
-            decision_routes.decision_service, "dashboard", side_effect=RuntimeError("boom")
-        ):
-            self.assertEqual(self.client.get("/api/decision-center").status_code, 500)
-        with mock.patch.object(
-            decision_routes.decision_service, "sync_many", return_value={"rimili": {"ok": True}}
-        ):
-            self.assertEqual(
-                self.client.post("/api/decision-center/sync", json={"store": "rimili"}).status_code,
-                200,
-            )
-        with mock.patch.object(
-            self.client.app.state.container.decision_commands,
-            "set_status",
-            return_value=DecisionAction(
-                fingerprint="rimili:1:stockout",
-                status=DecisionStatus.COMPLETED,
-                updated_at=datetime(2026, 8, 12, tzinfo=UTC),
-            ),
-        ):
-            self.assertEqual(
-                self.client.post(
-                    "/api/decision-center/status",
-                    json={"fingerprint": "rimili:1:stockout", "status": "completed"},
-                ).status_code,
-                200,
-            )
-        self.assertEqual(
-            self.client.post(
-                "/api/decision-center/status",
-                json={"fingerprint": "unknown:1:x", "status": "completed"},
-            ).status_code,
-            403,
-        )
-
-        with mock.patch.object(
-            rnp_routes.rnp_service,
-            "dashboard",
-            return_value={"products": [], "totals": {}, "pagination": {}},
-        ):
-            self.assertEqual(
-                self.client.get(
-                    "/api/rnp", params={"month": today[:7], "marketplace": "WB", "store": "rimili"}
-                ).status_code,
-                200,
-            )
-        with mock.patch.object(rnp_routes.rnp_service, "dashboard", side_effect=ValueError("bad month")):
-            self.assertEqual(self.client.get("/api/rnp", params={"store": "rimili"}).status_code, 400)
-        strategy = {
-            "store": "rimili",
-            "marketplace": "WB",
-            "article": "A-1",
-            "strategy": "growth",
-            "date_from": today,
-            "date_to": today,
-        }
-        self.assertEqual(self.client.post("/api/rnp/strategy", json=strategy).status_code, 200)
-        self.assertEqual(
-            self.client.post(
-                "/api/rnp/action",
-                json={
-                    "store": "rimili",
-                    "marketplace": "WB",
-                    "article": "A-1",
-                    "note": "Checked",
-                    "action_date": today,
-                },
-            ).status_code,
-            200,
-        )
-        self.assertEqual(self.client.post("/api/rnp/strategy", content=b"[]").status_code, 422)
 
     def test_stock_query_and_mutation_good_and_bad_outcomes(self) -> None:
         search = self.client.get("/stock/rimili/catalog-search", params={"q": "A-1"})
@@ -555,6 +444,16 @@ class HttpServiceIntegrationTests(unittest.TestCase):
     def test_all_openapi_services_have_integration_ownership(self) -> None:
         schema_paths = set(create_app().openapi()["paths"])
         owned = {
+            "/stock/inbound",
+            "/stock/inbound/sync",
+            "/stock/inbound/data",
+            "/api/admin/integrations/sync-jobs",
+            "/api/unit-economics-1c/yandex-market/buyout-settings/{store_slug}",
+            "/api/unit-economics-1c/yandex-market/economics/{store}/{article}",
+            "/api/unit-economics-1c/yandex-market/refresh-tariff/{store}/{article}",
+            "/api/unit-economics-1c/yandex-market/calculate/{store}/{article}",
+            "/api/unit-economics-1c/yandex-market/settings/{store}",
+            "/api/unit-economics-1c/yandex-market/economics-history/{store}/{article}",
             "/healthz",
             "/readyz",
             "/",
@@ -562,27 +461,12 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/logout",
             "/profile",
             "/access-denied",
-            "/api/activity/heartbeat",
-            "/sales",
-            "/sales/ephemerides",
-            "/sales/orders.xlsx",
-            "/api/sales",
             "/api/agent/v1/stores",
             "/api/agent/v1/article-stores",
             "/ai-agents",
             "/api/ai-agents/keys",
             "/api/ai-agents/keys/{key_id}",
             "/api/agent/v1/loss-products",
-            "/api/sales/wb-funnel-orders",
-            "/sales/decision-center",
-            "/api/decision-center",
-            "/api/decision-center/sync",
-            "/api/decision-center/status",
-            "/sales/rnp",
-            "/api/rnp",
-            "/api/rnp/sync",
-            "/api/rnp/strategy",
-            "/api/rnp/action",
             "/sales/unit-economics-1c",
             "/sales/unit-economics-1c/cabinet-settings",
             "/api/unit-economics-1c/cabinet-settings",
@@ -605,7 +489,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/api/unit-economics-1c/preferences/columns",
             "/sales/unit-economics-1c/ozon",
             "/sales/unit-economics-1c/yandex-market",
-            "/supply",
             "/stock",
             "/stock/total",
             "/stock/total.xlsx",
@@ -619,8 +502,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/stock/planning/manual",
             "/stock/planning/manual/{supply_id}",
             "/stock/planning/manual/{supply_id}/ready",
-            "/stock-2",
-            "/stock-2/details/{kind}",
             "/stock/{slug}",
             "/stock/{slug}/total-data",
             "/stock/{slug}/fbs",
@@ -644,8 +525,6 @@ class HttpServiceIntegrationTests(unittest.TestCase):
             "/stock/{slug}/shipment",
             "/stock/{slug}/trash/checked",
             "/admin",
-            "/admin/activity",
-            "/admin/activity/data",
             "/admin/users",
             "/admin/users/{user_id}/delete",
             "/admin/users/{user_id}/reset-password",
@@ -678,7 +557,7 @@ class HttpServiceIntegrationTests(unittest.TestCase):
         self.assertIn("Integration Admin", response.text)
         self.assertIn("integration@test", response.text)
         self.assertIn("integration-admin", response.text)
-        self.assertIn("Сток · Аналитика остатков", response.text)
+        self.assertNotIn("Сток · Аналитика остатков", response.text)
         self.assertIn('href="/profile"', response.text)
 
 

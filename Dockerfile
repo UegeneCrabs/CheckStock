@@ -2,21 +2,25 @@ FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
 WORKDIR /app
 
 RUN groupadd --system checkstock && useradd --system --gid checkstock --home-dir /app checkstock
 
-COPY requirements.txt ./
-RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+COPY requirements.txt requirements-parser.txt ./
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r requirements-parser.txt \
+    && python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
 COPY scripts ./scripts
 COPY static ./static
 COPY templates ./templates
 
-RUN mkdir -p /app/data /app/secrets && chown -R checkstock:checkstock /app
+RUN mkdir -p /app/data/yandex-storefront/manual /app/secrets && chown -R checkstock:checkstock /app
 
 USER checkstock
 

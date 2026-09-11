@@ -94,44 +94,6 @@ def date_clause(query, column="day"):
     )
 
 
-def sales(query):
-    clause, dates = date_clause(query, "ordered_at")
-    grouping = "SUBSTR(ordered_at,1,10)" if query.group_by == "day" else "article"
-    params = [query.store, query.marketplace, *dates]
-    filters = ""
-    if query.article:
-        filters += " AND article=?"
-        params.append(query.article)
-    if query.scheme:
-        filters += " AND scheme=?"
-        params.append(query.scheme)
-    rows = read(
-        f"SELECT {grouping} AS {query.group_by}, SUM(quantity) AS orders_count, "
-        "SUM(order_amount) AS orders_amount, SUM(cancelled_quantity) AS cancelled_count, "
-        "SUM(cancelled_amount) AS cancelled_amount, SUM(sold_quantity) AS sold_count, "
-        "SUM(sale_amount) AS sales_amount, SUM(return_quantity) AS returned_count, "
-        "SUM(return_amount) AS returned_amount, MAX(synced_at) AS updated_at "
-        f"FROM sales_order_lines WHERE store_slug=? AND marketplace=? AND {clause} {filters} "
-        f"GROUP BY {grouping}", params,
-    )
-    state = read("SELECT ok FROM sales_sync_state WHERE store_slug=? AND marketplace=?",
-                 (query.store, query.marketplace))
-    if not state or not state[0]["ok"]:
-        for row in rows:
-            for key in ("sold_count", "sales_amount", "returned_count", "returned_amount"):
-                row[key] = None
-    return rows
-
-
-def funnel(query):
-    clause, dates = date_clause(query)
-    return read(
-        "SELECT article, day, vendor_code, product_name, orders_count, orders_amount, "
-        "cancel_count, cancel_amount, buyout_count, buyout_amount, buyout_percent, updated_at "
-        f"FROM wb_funnel_daily_orders WHERE store_slug=? AND {clause}", (query.store, *dates)
-    )
-
-
 def advertising(query):
     clause, dates = date_clause(query)
     return read(
@@ -293,13 +255,10 @@ def page(rows, query, metrics=(), *, sort_fields=()):
 
 def status(store, marketplace, section):
     sources = {
-        "sales": [("sales_order_lines", "synced_at", "ordered_at", True)],
         "stock": [("mp_stock", "updated_at", None, True), ("ff_stock", "updated_at", None, True)],
         "unit_economics_1c": [("unit_economics_1c_wb_daily_prices", "updated_at", "day", True),
                               ("unit_economics_1c_wb_daily_advertising", "synced_at", "day", True),
                               ("unit_economics_1c_daily_margin_snapshots", "captured_at", "day", False)],
-        "rnp": [("rnp_daily_metrics", "funnel_synced_at", "day", True)],
-        "decision_center": [("wb_decision_metrics", "funnel_synced_at", None, False)],
     }
     result = []
     for table, stamp, day, has_marketplace in sources.get(section, []):

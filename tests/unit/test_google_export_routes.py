@@ -42,6 +42,13 @@ def test_superadmin_can_open_and_save_google_export_settings(container, user_fac
     assert 'class="export-page-head"' not in page.text
     assert "Яндекс Маркет" in page.text
     assert "TOYKA добавляется автоматически" in page.text
+    assert "A2:I" in page.text
+    assert "В пути между ФФ" in page.text
+    assert "В пути на склады МП" in page.text
+    assert "Пустая ячейка I означает неподтверждённые данные" in page.text
+    assert "ТОТАЛ = ФФ + FBS + FBO + в пути между ФФ + в пути на склады МП (E:I)" in page.text
+    assert "ТОТАЛ этой строки тоже остаётся пустым" in page.text
+    assert "в A1:B1 записывается дата и время выгрузки по Москве" in page.text
     assert response.status_code == 200
     saved = stock_sheet_export.get_settings("rimili")
     assert saved.schedule_kind == "daily"

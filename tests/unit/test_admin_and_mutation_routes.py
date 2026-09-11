@@ -7,7 +7,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from app import db, decision_center, rnp_analytics
+from app import db
 from app.dto.identity import (
     ActivityEntry,
     ActivityLog,
@@ -39,9 +39,6 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         self.path_patch = mock.patch.object(core, "DB_PATH", Path(self.temp.name) / "routes.sqlite3")
         self.path_patch.start()
         db.init_db()
-        decision_center.init_schema()
-        rnp_analytics._SCHEMA_READY = False
-        rnp_analytics.init_schema()
         db.seed_defaults()
         self.user = User(
             id=1,
@@ -68,7 +65,6 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         self.auth_patch.stop()
         self.path_patch.stop()
         self.temp.cleanup()
-        rnp_analytics._SCHEMA_READY = False
         logging.disable(logging.NOTSET)
 
     def create_target(self, login: str = "target", role: str = "user", active: bool = True) -> int:
@@ -423,7 +419,7 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         self.assertIn("u-note", admin.render_store_badges(()))
         self.assertIn("u-store-badge", admin.render_store_badges(("rimili",)))
         self.assertIn("checkbox", admin.render_store_checkboxes(self.user, ("rimili",), disabled=True))
-        self.assertIn("empty-row", admin.render_user_rows(self.user, UserCollection(())))
+        self.assertEqual("", admin.render_user_rows(self.user, UserCollection(())))
         rows = admin.render_user_rows(self.user, UserCollection((self.user, target)))
         self.assertIn("u-actions", rows)
         self.assertIn("это вы", rows)
@@ -504,10 +500,10 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         section_data = {
             section.value: (
                 SectionAccessLevel.READ.value
-                if section is SectionName.SUPPLY
+                if section is SectionName.STOCK
                 else SectionAccessLevel.WRITE.value
             )
-            for section in SectionName
+            for section in (SectionName.STOCK, SectionName.UNIT_ECONOMICS_1C)
         }
         self.assertEqual(
             self.client.post(f"/admin/users/{target_id}/sections", data=section_data).status_code,
@@ -515,19 +511,17 @@ class AdminAndMutationRouteTests(unittest.TestCase):
         )
         saved = self.app.state.container.identity.get_user(UserId(target_id))
         self.assertEqual(saved.role, Role.ADMIN)
-        self.assertEqual(saved.section_access[SectionName.SUPPLY], SectionAccessLevel.READ)
+        self.assertEqual(saved.section_access[SectionName.STOCK], SectionAccessLevel.READ)
         self.assertEqual(self.client.post(f"/admin/users/{target_id}/delete").status_code, 200)
         self.assertIsNone(db.get_user(target_id))
 
     def test_admin_page_download_and_sync(self) -> None:
+        self.create_target("admin-page-actor", role="superadmin")
+        self.create_target("admin-page-target")
         admin_page = self.client.get("/admin")
         self.assertEqual(admin_page.status_code, 200)
-        self.assertIn("unit_economics_1c", admin_page.text)
+        self.assertIn("unit_economics_wb", admin_page.text)
         self.assertIn("Юнит-экономика 1С", admin_page.text)
-        self.assertEqual(self.client.get("/admin/activity").status_code, 200)
-        activity_data = self.client.get("/admin/activity/data").json()
-        self.assertTrue(activity_data["ok"])
-        self.assertIn("Онлайн сейчас", activity_data["html"])
         with mock.patch.object(admin.ff_export, "build_operation_xlsx", return_value=(b"xlsx", "file.xlsx")):
             response = self.client.get("/admin/operations/999/xlsx")
         self.assertEqual(response.status_code, 200)

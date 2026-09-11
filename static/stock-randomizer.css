@@ -428,31 +428,6 @@
     color: var(--ink);
 }
 
-html[data-theme="dark"] .randomizer-hero {
-    border-color: #263a61;
-    background:
-        radial-gradient(circle at 82% 18%, rgba(78, 116, 255, 0.2), transparent 32%),
-        linear-gradient(135deg, #121d31 0%, #14213b 58%, #172746 100%);
-}
-
-html[data-theme="dark"] .randomizer-hero p {
-    color: #a5b1c5;
-}
-
-html[data-theme="dark"] .randomizer-period {
-    border-color: #344d7c;
-    background: rgba(17, 27, 45, 0.76);
-}
-
-html[data-theme="dark"] .randomizer-result.is-ready > p {
-    color: #a8b3c5;
-}
-
-html[data-theme="dark"] .randomizer-channel {
-    color: #c8b6ff;
-    background: #2b2150;
-}
-
 @keyframes randomizer-spin {
     to { transform: rotate(360deg); }
 }

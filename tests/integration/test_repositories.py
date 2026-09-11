@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from app import db
-from app.repositories import core, stock_dashboard
+from app.repositories import core
 
 
 class RepositoryIntegrationTests(unittest.TestCase):
@@ -33,14 +33,11 @@ class RepositoryIntegrationTests(unittest.TestCase):
         db.upsert_ff_stock("rimili", "A-1", "ФулСервис Подольск", 7, timestamp, "WB")
 
         rows = db.get_stock_items("rimili", "WB", ("fbs", "fbo"))
-        dashboard_rows = stock_dashboard.get_inventory_rows(timestamp, timestamp)
 
         self.assertEqual(report["added"], 1)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["article"], "A-1")
         self.assertEqual(rows[0]["ff_available"], 7)
-        dashboard_item = next(row for row in dashboard_rows if row["article"] == "A-1")
-        self.assertEqual(dashboard_item["fulfillment_stock"], 7)
 
     def test_user_store_access_and_session_persist(self) -> None:
         user_id = db.create_user(

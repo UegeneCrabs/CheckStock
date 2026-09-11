@@ -16,7 +16,7 @@ class SyncJobDefinition:
     enabled: bool
     scope: str = "global"
     marketplaces: tuple[str, ...] = ()
-    manual_run: bool = False
+    manual_run: bool = True
 
 
 def _interval(seconds: int) -> str:
@@ -56,6 +56,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             ("WB", "OZON", "YANDEX MARKET"),
         ),
         SyncJobDefinition(
+            "inbound_supplies_sync",
+            "Поставки на склады маркетплейсов",
+            "Загружает поставки FBW, FBO и FBY, их товары, статусы и результаты приёмки по каждому магазину.",
+            _interval(settings.inbound_sync_interval_seconds),
+            base,
+            "store_marketplaces",
+            ("WB", "OZON", "YANDEX MARKET"),
+        ),
+        SyncJobDefinition(
             "wb_advertising_sync",
             "Реклама WB",
             "Обновляет кампании, расходы, показы и клики Wildberries.",
@@ -81,6 +90,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             ("YANDEX MARKET",),
         ),
         SyncJobDefinition(
+            "yandex_economics_sync",
+            "Тарифы и экономика Яндекс Маркета",
+            "Обновляет тарифы API, сохраняет параметры дня и рассчитывает историю прибыли YM.",
+            "Каждый час",
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
             "yandex_reputation_sync",
             "Отзывы и рейтинг Яндекс Маркета",
             "Обновляет рейтинг товаров и количество отзывов ЯМ.",
@@ -92,11 +110,26 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         SyncJobDefinition(
             "yandex_advertising_sync",
             "Реклама Яндекс Маркета",
-            "Обновляет затраты, показы и клики ЯМ за 7 завершённых дней.",
+            "Обновляет затраты, показы и клики ЯМ по дням: сегодня и 6 предыдущих дней. История сохраняется.",
             _interval(YANDEX_SYNC_INTERVAL_SECONDS["advertising"]),
             base,
             "store_marketplaces",
             ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_buyout_sync",
+            "Процент выкупа Яндекс Маркета",
+            "Доставки, отмены и возвраты из заказанных за период в настройках кабинета. Сегодня не включается.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["buyout"]),
+            base, "store_marketplaces", ("YANDEX MARKET",),
+            manual_run=True,
+        ),
+        SyncJobDefinition(
+            "yandex_orders_previous_day_close_00_msk",
+            "Закрытие заказов Яндекс Маркета",
+            "Повторно загружает вчерашний день после его завершения.",
+            "Ежедневно в 00:00 МСК",
+            base, "store_marketplaces", ("YANDEX MARKET",),
         ),
         SyncJobDefinition(
             "yandex_product_novelty_sync",

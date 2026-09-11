@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from fastapi.concurrency import run_in_threadpool
 
+from app.sync_locks import SyncJobBusyError
 from app.sync_tracking import run_tracked, set_next_run
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,9 @@ async def run_background_job(job: BackgroundJob) -> None:
                     "scheduled",
                     job.run_callback or job.callback,
                 )
+            except SyncJobBusyError:
+                elapsed_seconds = asyncio.get_running_loop().time() - started_at
+                logger.info("background_job_already_running job=%s", job.name)
             except Exception:
                 elapsed_seconds = asyncio.get_running_loop().time() - started_at
                 logger.exception(

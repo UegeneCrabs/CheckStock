@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -15,6 +17,7 @@ from app.web import access, templating
 from app.web.routers import auth as auth_routes
 
 
+@pytest.mark.usefixtures("database_path")
 class WebAuthAccessSystemTests(unittest.TestCase):
     def setUp(self) -> None:
         logging.disable(logging.CRITICAL)
@@ -48,7 +51,6 @@ class WebAuthAccessSystemTests(unittest.TestCase):
         with (
             mock.patch.object(self.identities, "authenticate", return_value=self.user),
             mock.patch.object(self.identities, "start_session", return_value=SessionToken(value="session")),
-            mock.patch.object(self.client.app.state.container.usage, "start_session"),
         ):
             response = self.client.post(
                 "/login", data={"login": "good", "password": "password"}, follow_redirects=False
@@ -57,7 +59,6 @@ class WebAuthAccessSystemTests(unittest.TestCase):
         self.assertIn(auth_routes.auth.SESSION_COOKIE, response.cookies)
         with (
             mock.patch.object(self.identities, "end_session") as end,
-            mock.patch.object(self.client.app.state.container.usage, "end_session"),
         ):
             self.client.cookies.set(auth_routes.auth.SESSION_COOKIE, "session")
             response = self.client.get("/logout", follow_redirects=False)
@@ -66,7 +67,6 @@ class WebAuthAccessSystemTests(unittest.TestCase):
         self.client.cookies.clear()
         with (
             mock.patch.object(self.identities, "end_session") as end,
-            mock.patch.object(self.client.app.state.container.usage, "end_session"),
         ):
             self.client.get("/logout", follow_redirects=False)
         end.assert_not_called()
@@ -104,9 +104,9 @@ class WebAuthAccessSystemTests(unittest.TestCase):
     def test_authentication_middleware_redirect_json_and_store_denial(self) -> None:
         self.client.cookies.set(auth_routes.auth.SESSION_COOKIE, "test-session")
         with mock.patch.object(self.identities, "user_for_token", return_value=None):
-            self.assertEqual(self.client.get("/sales", follow_redirects=False).status_code, 303)
+            self.assertEqual(self.client.get("/stock", follow_redirects=False).status_code, 303)
             self.assertEqual(
-                self.client.get("/sales", headers={"accept": "application/json"}).status_code, 401
+                self.client.get("/stock", headers={"accept": "application/json"}).status_code, 401
             )
             self.assertEqual(self.client.post("/admin/sync-stock").status_code, 401)
         limited = {

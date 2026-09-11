@@ -130,20 +130,9 @@
     transform: none;
 }
 
-.app-header .nav-item--ai {
-    min-height: 40px;
-    border-color: rgba(153, 137, 255, 0.2);
-    background: rgba(99, 79, 214, 0.1);
-}
-
 .app-header .nav-icon {
     width: 17px;
     height: 17px;
-}
-
-.app-header .ai-badge {
-    padding: 2px 4px;
-    font-size: 0.48rem;
 }
 
 .app-header .nav-group,
@@ -251,9 +240,7 @@ html.sidebar-collapsed .app-header .nav-group.is-open .nav-submenu {
     display: none;
 }
 
-.app-header .nav-utility .nav-item,
-.app-header .theme-toggle,
-.app-header .notifications-trigger {
+.app-header .nav-utility .nav-item{
     width: 38px;
     min-width: 38px;
     height: 38px;
@@ -269,29 +256,8 @@ html.sidebar-collapsed .app-header .nav-group.is-open .nav-submenu {
     box-shadow: none;
 }
 
-.app-header .nav-utility .nav-item > span,
-.app-header .theme-toggle-label,
-.app-header .theme-switch,
-.app-header .notifications-trigger > span {
+.app-header .nav-utility .nav-item > span{
     display: none;
-}
-
-.app-header .notifications-wrap {
-    position: relative;
-    width: 38px;
-    height: 38px;
-    margin: 0;
-}
-
-.app-header .notifications-panel,
-html.sidebar-collapsed .app-header .notifications-panel {
-    position: fixed;
-    top: calc(var(--app-header-height) + 8px);
-    right: 12px;
-    bottom: auto;
-    left: auto;
-    width: min(360px, calc(100vw - 24px));
-    transform-origin: right top;
 }
 
 .app-header .profile {
@@ -390,10 +356,6 @@ html.sidebar-collapsed .app-header .nav-item > span {
     .app-header .side-nav .nav-icon {
         display: none;
     }
-
-    .app-header .nav-item--ai .ai-badge {
-        display: none;
-    }
 }
 
 @media (max-width: 1000px) {
@@ -466,8 +428,7 @@ html.sidebar-collapsed .app-header .nav-item > span {
     }
 
     .app-header .side-nav .nav-item > span,
-    html.sidebar-collapsed .app-header .side-nav .nav-item > span,
-    .app-header .nav-item--ai .ai-badge {
+    html.sidebar-collapsed .app-header .side-nav .nav-item > span{
         display: none;
     }
 
@@ -502,8 +463,6 @@ html.sidebar-collapsed .app-header .nav-item > span {
     }
 
     .app-header .sidebar-bottom .nav-utility:not(:empty),
-    .app-header .theme-toggle,
-    .app-header .sidebar-bottom .notifications-wrap,
     .app-header .sidebar-bottom .profile {
         position: static;
         inset: auto;
@@ -511,16 +470,13 @@ html.sidebar-collapsed .app-header .nav-item > span {
         margin: 0;
     }
 
-    .app-header .nav-utility .nav-item,
-    .app-header .theme-toggle,
-    .app-header .notifications-trigger {
+    .app-header .nav-utility .nav-item{
         width: 34px;
         min-width: 34px;
         height: 34px;
         min-height: 34px;
     }
 
-    .app-header .notifications-wrap,
     .app-header .profile {
         width: 34px;
         min-width: 34px;

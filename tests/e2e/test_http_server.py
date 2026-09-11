@@ -183,7 +183,7 @@ class HttpServerEndToEndTests(unittest.TestCase):
 
     def test_protected_api_returns_json_unauthorized(self) -> None:
         request = urllib.request.Request(
-            self.url("/api/sales"),
+            self.url("/api/unit-economics-1c/reports/unit-profit"),
             headers={"Accept": "application/json", "X-Request-ID": "e2e-unauthorized"},
         )
         with self.assertRaises(urllib.error.HTTPError) as error:
@@ -208,7 +208,7 @@ class HttpServerEndToEndTests(unittest.TestCase):
     def test_authenticated_user_can_open_core_pages(self) -> None:
         opener = self.authenticated_opener()
 
-        for path in ("/", "/stock", "/stock-2", "/sales", "/admin"):
+        for path in ("/", "/stock", "/sales/unit-economics-1c", "/admin"):
             with self.subTest(path=path):
                 with opener.open(self.url(path), timeout=5) as response:
                     body = response.read()
@@ -291,44 +291,6 @@ class HttpServerEndToEndTests(unittest.TestCase):
             workbook = response.read()
         self.assertTrue(workbook.startswith(b"PK"))
 
-    def test_full_rnp_strategy_and_action_chain(self) -> None:
-        opener = self.authenticated_opener()
-        today = time.strftime("%Y-%m-%d")
-        status, strategy = self.post_json(
-            opener,
-            "/api/rnp/strategy",
-            {
-                "store": "rimili",
-                "marketplace": "WB",
-                "article": "A-1",
-                "strategy": "E2E growth",
-                "date_from": today,
-                "date_to": today,
-            },
-        )
-        self.assertEqual(status, 200)
-        self.assertTrue(strategy["ok"])
-        status, action = self.post_json(
-            opener,
-            "/api/rnp/action",
-            {
-                "store": "rimili",
-                "marketplace": "WB",
-                "article": "A-1",
-                "note": "E2E action",
-                "action_date": today,
-            },
-        )
-        self.assertEqual(status, 200)
-        self.assertTrue(action["ok"])
-        month = today[:7]
-        with opener.open(
-            self.url(f"/api/rnp?month={month}&marketplace=WB&store=rimili"), timeout=5
-        ) as response:
-            dashboard = json.loads(response.read().decode("utf-8"))
-        product = next(item for item in dashboard["products"] if item["article"] == "A-1")
-        self.assertEqual(product["strategy"]["strategy"], "E2E growth")
-        self.assertEqual(product["actions"][today][0]["note"], "E2E action")
 
     def test_full_admin_user_chain(self) -> None:
         opener = self.authenticated_opener()

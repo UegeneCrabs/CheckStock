@@ -828,11 +828,6 @@ body:has(.content--stock-total) {
     border-radius: 5px;
 }
 
-html[data-theme="dark"] .stock-total-group {
-    --stock-total-group-ink: #f1f5fb;
-    background: color-mix(in srgb, var(--card) 78%, var(--stock-total-group-color)) !important;
-}
-
 /* Compact header for the total view inside a store. */
 .stock-store-total-head {
     position: relative;

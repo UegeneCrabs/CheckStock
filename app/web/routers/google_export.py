@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app import auth, db, stock_sheet_export
 from app.domain import MOSCOW_TIMEZONE
@@ -18,7 +18,7 @@ from app.repositories.stock_sheet_export import (
 )
 from app.stores import STORES
 from app.sync_tracking import run_tracked
-from app.web.templating import fill_template, render_page
+from app.web.templating import fill_template
 
 router = APIRouter()
 
@@ -86,7 +86,7 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
     marketplace_sections = []
     combined_store_hint = (
         '<p class="panel-desc"><strong>TOYKA добавляется автоматически:</strong> '
-        'стоки и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. '
+        'стоки, товары в пути и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. '
         'Ручной запуск и расписание настраиваются у ROCKKIDDO.</p>'
         if settings.store_slug == "rockkiddo"
         else ""
@@ -106,7 +106,9 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             f'<input class="input-control" name="{prefix}_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" '
             'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
-            '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:G будет полностью заменён: шапка в строке 2, товары — с строки 3.</p>'
+            '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:I будет полностью заменён: шапка в строке 2, товары — с строки 3. '
+            'A:G сохраняют прежний порядок; H — «В пути между ФФ», I — «В пути на склады МП». '
+            'Если H2:I заняты другими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>'
             '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
             f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace, "fbs_orders"))}" maxlength="200" '
@@ -203,9 +205,14 @@ def _settings_from_form(
 @router.get("/admin/google-export", response_class=HTMLResponse)
 async def google_export_page(request: Request):
     _require_superadmin(request)
+    return RedirectResponse('/admin/integrations?tab=google', status_code=303)
+
+
+async def render_google_export() -> str:
+    """Embed the existing export editor in the integrations page."""
     await run_in_threadpool(stock_sheet_export.ensure_defaults)
     settings = await run_in_threadpool(stock_sheet_export.list_settings)
-    content = fill_template(
+    return fill_template(
         "google_export_content.html",
         store_tabs="".join(
             '<button type="button" class="export-store-tab'
@@ -217,13 +224,6 @@ async def google_export_page(request: Request):
             _render_store_card(item, active=index == 0) for index, item in enumerate(settings)
         ),
         service_account_email=html.escape(google_service_account_email()),
-    )
-    return render_page(
-        "CheckStock — Выгрузка в Google Таблицы",
-        "admin_google_export",
-        content,
-        request.state.user,
-        "content--google-export",
     )
 
 

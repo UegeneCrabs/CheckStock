@@ -88,16 +88,6 @@ body:has(.uetp) .content:has(.uetp) { height:calc(100vh - var(--app-header-heigh
 .uetp-calculator-inputs b { position:absolute; right:9px; top:50%; color:var(--text-secondary,#697184); transform:translateY(-50%); font-size:10px; pointer-events:none; }
 .uetp-calculator-results { padding:13px; display:flex; flex-direction:column; justify-content:center; gap:10px; border-left:1px solid var(--tp-line); background:#fafbfe; }
 .uetp-calculator-results > div { padding:14px 11px; border:1px solid var(--tp-line); border-radius:10px; background:var(--tp-panel); }.uetp-calculator-results span { color:var(--text-secondary,#697184); font-size:10px; }.uetp-calculator-results strong { display:block; margin-top:6px; font-size:17px; }.uetp-calculator-results .is-positive { color:#16835b; }.uetp-calculator-results .is-negative { color:#c53343; }
-[data-theme="dark"] .uetp { --tp-panel:#1c2334; --tp-line:#333c51; color:#e1e5ef; }
-[data-theme="dark"] .uetp thead tr:first-child th { background:#252d41; }
-[data-theme="dark"] .uetp thead tr:first-child th.uetp-target, [data-theme="dark"] .uetp th.uetp-target { background:#34304b; }
-[data-theme="dark"] .uetp td.is-warning { background:#4a4223; color:#f3d777; }
-[data-theme="dark"] .uetp-target-value { color:#b3a4ff; }
-[data-theme="dark"] .uetp-drawer .uetp-drawer-head h2 { color:#172033 !important; }
-[data-theme="dark"] .uetp-drawer .uetp-drawer-head p { color:#697184 !important; }
-[data-theme="dark"] .uetp-drawer-thumb { color:#6552b2; background:#f0edff; }
-[data-theme="dark"] .uetp-calculator > header, [data-theme="dark"] .uetp-calculator-results, [data-theme="dark"] .uetp-calculator-inputs input { background:#252d41; }
-[data-theme="dark"] .uetp-calculator-inputs input.is-off-target { background:#fff0f1; border-color:#f1c5ca; color:#a12c38; }
 @media (min-width:1051px) {
     body.uetp-calculator-open .app-shell { width:calc(100% - 700px); transition:width .26s ease; }
     body.uetp-calculator-open .app-shell > .app-header.sidebar { width:calc(100% - 700px); }

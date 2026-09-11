@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest import mock
 
 import pytest
@@ -20,6 +20,17 @@ class _FakeValues:
     def __init__(self):
         self.updates = []
         self.cleared_ranges = []
+        self.existing_transit_cells = []
+        self.existing_timestamp_cells = {}
+
+    def get(self, *, spreadsheetId, range, valueRenderOption, dateTimeRenderOption=None):
+        assert spreadsheetId == "sheet-id"
+        assert valueRenderOption == "FORMULA"
+        if range.endswith("!A1:B1"):
+            assert dateTimeRenderOption == "SERIAL_NUMBER"
+            return _Execute({"values": self.existing_timestamp_cells.get(range, [])})
+        assert range.endswith("!H2:I")
+        return _Execute({"values": self.existing_transit_cells})
 
     def batchClear(self, *, spreadsheetId, body):
         assert spreadsheetId == "sheet-id"
@@ -28,6 +39,7 @@ class _FakeValues:
 
     def batchUpdate(self, *, spreadsheetId, body):
         assert spreadsheetId == "sheet-id"
+        assert body["valueInputOption"] == "RAW"
         self.updates.extend(body["data"])
         return _Execute({"totalUpdatedCells": len(body["data"])})
 
@@ -36,12 +48,25 @@ class _FakeSpreadsheets:
     def __init__(self, sheet_names=("WB",)):
         self.value_api = _FakeValues()
         self.sheet_names = sheet_names
+        self.merges = {}
+        self.timestamp_updates = []
 
     def get(self, **kwargs):
         assert kwargs["spreadsheetId"] == "sheet-id"
         return _Execute(
-            {"sheets": [{"properties": {"title": title}} for title in self.sheet_names]}
+            {
+                "sheets": [
+                    {"properties": {"sheetId": index, "title": title}, "merges": self.merges.get(title, [])}
+                    for index, title in enumerate(self.sheet_names)
+                ]
+            }
         )
+
+    def batchUpdate(self, *, spreadsheetId, body):
+        assert spreadsheetId == "sheet-id"
+        assert self.value_api.updates, "Timestamp must follow a successful data write"
+        self.timestamp_updates.extend(body["requests"])
+        return _Execute({})
 
     def values(self):
         return self.value_api
@@ -210,41 +235,70 @@ def test_yandex_order_totals_read_the_requested_period_and_statuses_from_db() ->
     )
 
 
-def test_writer_replaces_a2_g_with_header_and_complete_catalog_snapshot() -> None:
+@pytest.mark.parametrize("marketplace", ["WB", "OZON", "YANDEX MARKET"])
+def test_writer_replaces_a2_i_sums_all_stock_columns_and_leaves_unknown_total_blank(marketplace) -> None:
     settings = stock_sheet_export.default_settings("rimili")
-    service = _FakeService()
+    service = _FakeService((marketplace,))
     catalog = [
         {"article": "A-1", "barcode": "46001", "name": "Первый товар"},
         {"article": "A-2", "barcode": "46002", "name": "Второй товар"},
+        {"article": "A-3", "barcode": "46003", "name": "Нулевой остаток"},
     ]
     values = {
         "ff_stock": {"A-1": 3, "A-2": 4},
         "fbs_stock": {"A-1": 5, "A-2": 6},
         "fbo_stock": {"A-1": 7, "A-2": 8},
+        "ff_transit": {"A-1": 11, "A-2": 12},
+        "mp_inbound": {"A-1": 13, "A-2": None, "A-3": 0},
     }
 
     report = stock_sheet_export._write_marketplace(
         service,
         "sheet-id",
         settings,
-        "WB",
+        marketplace,
         catalog,
         values,
     )
 
-    assert report["updated_cells"] == 21
-    assert report["rows"] == 2
-    assert service.sheets.value_api.cleared_ranges == ["'WB'!A2:G"]
+    assert report["updated_cells"] == 38
+    assert report["rows"] == 3
+    assert service.sheets.value_api.cleared_ranges == [f"'{marketplace}'!A2:I"]
     assert service.sheets.value_api.updates == [
         {
-            "range": "'WB'!A2:G4",
+            "range": f"'{marketplace}'!A2:I5",
             "values": [
                 list(stock_sheet_export.EXPORT_HEADERS),
-                ["A-1", 46001, "Первый товар", 15, 3, 5, 7],
-                ["A-2", 46002, "Второй товар", 18, 4, 6, 8],
+                ["A-1", 46001, "Первый товар", 39, 3, 5, 7, 11, 13],
+                ["A-2", 46002, "Второй товар", "", 4, 6, 8, 12, ""],
+                ["A-3", 46003, "Нулевой остаток", 0, 0, 0, 0, 0, 0],
             ],
         }
     ]
+    _assert_timestamp(service, report, sheet_id=0)
+
+
+@pytest.mark.parametrize("existing", [[["Моя формула"]], [[], ['=IF(A3="","",1)']], [[], [0]], [["В ПУТИ МЕЖДУ ФФ"]]])
+def test_writer_never_clears_sheet_when_new_columns_contain_foreign_data(existing):
+    service = _FakeService()
+    service.sheets.value_api.existing_transit_cells = existing
+    with pytest.raises(stock_sheet_export.StockSheetExportError, match="данные или формулы"):
+        stock_sheet_export._write_marketplace(
+            service, "sheet-id", stock_sheet_export.default_settings("rimili"), "WB", [], {}
+        )
+    assert service.sheets.value_api.cleared_ranges == []
+    assert service.sheets.value_api.updates == []
+
+
+def test_writer_can_replace_previous_transit_export_and_clear_old_tail():
+    service = _FakeService()
+    service.sheets.value_api.existing_transit_cells = [list(stock_sheet_export.EXPORT_HEADERS[7:]), [999, 999]]
+    stock_sheet_export._write_marketplace(
+        service, "sheet-id", stock_sheet_export.default_settings("rimili"), "WB", [], {}
+    )
+    assert service.sheets.value_api.cleared_ranges == ["'WB'!A2:I"]
+    assert service.sheets.value_api.updates[0]["values"] == [list(stock_sheet_export.EXPORT_HEADERS)]
+    assert service.sheets.timestamp_updates
 
 
 def test_fbs_order_writer_replaces_a2_b_and_excludes_zero_articles() -> None:
@@ -268,6 +322,7 @@ def test_fbs_order_writer_replaces_a2_b_and_excludes_zero_articles() -> None:
     )
 
     assert report["rows"] == 1
+    assert report["updated_cells"] == 6
     assert service.sheets.value_api.cleared_ranges == ["'WB FBS заказы'!A2:B"]
     assert service.sheets.value_api.updates == [
         {
@@ -278,6 +333,125 @@ def test_fbs_order_writer_replaces_a2_b_and_excludes_zero_articles() -> None:
             ],
         }
     ]
+    _assert_timestamp(service, report, sheet_id=1)
+
+
+def _assert_timestamp(service, report, *, sheet_id):
+    value_update, format_update = service.sheets.timestamp_updates
+    assert value_update["updateCells"]["range"] == {
+        "sheetId": sheet_id,
+        "startRowIndex": 0,
+        "endRowIndex": 1,
+        "startColumnIndex": 0,
+        "endColumnIndex": 2,
+    }
+    assert value_update["updateCells"]["fields"] == "userEnteredValue"
+    label, value = value_update["updateCells"]["rows"][0]["values"]
+    assert label == {"userEnteredValue": {"stringValue": "Выгрузка (МСК)"}}
+    serial = value["userEnteredValue"]["numberValue"]
+    actual_date = datetime(1899, 12, 30) + timedelta(days=serial)
+    expected_date = datetime.fromisoformat(report["exported_at"])
+    assert expected_date.utcoffset() == timedelta(hours=3)
+    assert abs((actual_date - expected_date.replace(tzinfo=None)).total_seconds()) < 0.00001
+    assert format_update == {
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": 0,
+                "endRowIndex": 1,
+                "startColumnIndex": 1,
+                "endColumnIndex": 2,
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {
+                        "type": "DATE_TIME",
+                        "pattern": "dd.mm.yyyy hh:mm:ss",
+                    }
+                }
+            },
+            "fields": "userEnteredFormat.numberFormat",
+        }
+    }
+
+
+@pytest.mark.parametrize("export_kind", ["stocks", "fbs_orders"])
+@pytest.mark.parametrize(
+    "existing",
+    [
+        [["Мой заголовок"]],
+        [["", '=IF(A3="","",1)']],
+        [["", 0]],
+        [[stock_sheet_export.EXPORT_TIMESTAMP_LABEL, "=NOW()"]],
+    ],
+)
+def test_export_never_overwrites_foreign_timestamp_cells(export_kind, existing):
+    service = _FakeService()
+    service.sheets.value_api.existing_timestamp_cells["'WB'!A1:B1"] = existing
+    with pytest.raises(stock_sheet_export.StockSheetExportError, match="A1:B1 уже содержат"):
+        _write_test_export(service, export_kind)
+    assert service.sheets.value_api.cleared_ranges == []
+    assert service.sheets.value_api.updates == []
+    assert service.sheets.timestamp_updates == []
+
+
+def _write_test_export(service, export_kind):
+    settings = stock_sheet_export.default_settings("rimili")
+    if export_kind == "stocks":
+        return stock_sheet_export._write_marketplace(service, "sheet-id", settings, "WB", [], {})
+    settings = replace(
+        settings,
+        targets=tuple(
+            replace(target, sheet_name="WB") if target.metric == "fbs_orders" else target
+            for target in settings.targets
+        ),
+    )
+    return stock_sheet_export._write_fbs_orders(service, "sheet-id", settings, "WB", {})
+
+
+@pytest.mark.parametrize("export_kind", ["stocks", "fbs_orders"])
+def test_export_refreshes_own_timestamp_in_moscow_time_even_for_empty_result(export_kind, monkeypatch):
+    class ExportClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 11, 22, 30, 45, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(stock_sheet_export, "datetime", ExportClock)
+    service = _FakeService()
+    service.sheets.value_api.existing_timestamp_cells["'WB'!A1:B1"] = [
+        [stock_sheet_export.EXPORT_TIMESTAMP_LABEL, 45000.5]
+    ]
+    report = _write_test_export(service, export_kind)
+    assert report["exported_at"] == "2026-09-12T01:30:45+03:00"
+    _assert_timestamp(service, report, sheet_id=0)
+
+
+@pytest.mark.parametrize("export_kind", ["stocks", "fbs_orders"])
+def test_failed_data_write_does_not_advance_timestamp(export_kind):
+    service = _FakeService()
+    response = mock.Mock()
+    response.execute.side_effect = RuntimeError("Google unavailable")
+    with mock.patch.object(service.sheets.value_api, "batchUpdate", return_value=response):
+        with pytest.raises(RuntimeError, match="Google unavailable"):
+            _write_test_export(service, export_kind)
+    assert service.sheets.timestamp_updates == []
+
+
+@pytest.mark.parametrize("start_column", [0, 1])
+def test_export_refuses_merged_timestamp_cells_before_clearing(start_column):
+    service = _FakeService()
+    service.sheets.merges["WB"] = [
+        {
+            "startRowIndex": 0,
+            "endRowIndex": 1,
+            "startColumnIndex": start_column,
+            "endColumnIndex": 9,
+        }
+    ]
+    with pytest.raises(stock_sheet_export.StockSheetExportError, match="объединённые ячейки"):
+        _write_test_export(service, "stocks")
+    assert service.sheets.value_api.cleared_ranges == []
+    assert service.sheets.timestamp_updates == []
 
 
 def test_sheet_identifiers_are_numeric_without_apostrophes() -> None:
@@ -394,7 +568,7 @@ def test_run_due_raises_when_a_store_export_fails(monkeypatch) -> None:
         stock_sheet_export.run_due(now)
 
 
-def test_export_store_uses_separate_spreadsheet_for_each_marketplace() -> None:
+def test_export_store_uses_separate_spreadsheet_for_each_marketplace(database_path) -> None:
     settings = stock_sheet_export.default_settings("rimili")
     settings = replace(
         settings,
@@ -506,7 +680,7 @@ def test_export_store_rejects_requested_export_without_a_sheet() -> None:
         stock_sheet_export.export_store("rimili", marketplace="WB", export_kind="stocks")
 
 
-def test_shared_destination_combines_stores_and_sums_duplicate_articles() -> None:
+def test_shared_destination_combines_stores_and_sums_duplicate_articles(database_path) -> None:
     rockkiddo = stock_sheet_export.default_settings("rockkiddo")
     toyka = stock_sheet_export.default_settings("toyka")
     shared_spreadsheets = tuple(
@@ -570,6 +744,8 @@ def test_shared_destination_combines_stores_and_sums_duplicate_articles() -> Non
         "ff_stock": {"COMMON": 11, "ROCK": 4, "TOY": 40},
         "fbs_stock": {"COMMON": 22, "ROCK": 5, "TOY": 50},
         "fbo_stock": {"COMMON": 33, "ROCK": 6, "TOY": 60},
+        "ff_transit": {"COMMON": 0, "ROCK": 0, "TOY": 0},
+        "mp_inbound": {"COMMON": None, "ROCK": None, "TOY": None},
     }
 
 

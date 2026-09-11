@@ -19,7 +19,7 @@ def owner(request: Request):
     user = request.state.user
     if user is None or not user.is_active:
         raise HTTPException(401, "Требуется вход в систему")
-    if not any(has_access(user, section) for section in SectionName):
+    if not has_access(user, SectionName.AI_AGENTS):
         raise HTTPException(403, "Нет доступа к разделам аналитики")
     if request.method != "GET":
         origin = request.headers.get("origin")

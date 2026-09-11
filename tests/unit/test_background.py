@@ -121,14 +121,15 @@ class BackgroundSyncTests(unittest.TestCase):
         jobs = {job.name: job for job in background._jobs(mock.Mock())}
         self.assertNotIn("yandex_unit_economics_sync", jobs)
         for name, source, startup_delay, interval in (
-            ("yandex_orders_sync", "orders", 90, 900),
+            ("yandex_orders_sync", "orders", 5, 900),
             ("yandex_reputation_sync", "reputation", 120, 86400),
-            ("yandex_advertising_sync", "advertising", 150, 900),
+            ("yandex_advertising_sync", "advertising", 10, 900),
+            ("yandex_buyout_sync", "buyout", 0, 14400),
         ):
             job = jobs[name]
             self.assertEqual(job.next_delay(), interval)
             self.assertEqual(job.startup_delay_seconds, startup_delay)
-            self.assertTrue(job.interval_from_start)
+            self.assertEqual(job.interval_from_start, source != "advertising")
             with (
                 mock.patch.object(background, "_job_enabled", return_value=True) as is_enabled,
                 mock.patch.object(background.sync_settings, "enabled_stores", return_value=("tris",)) as enabled,
@@ -142,6 +143,21 @@ class BackgroundSyncTests(unittest.TestCase):
                 sync.reset_mock()
                 job.callback()
                 sync.assert_called_once_with(source)
+
+    def test_yandex_midnight_close_uses_moscow_schedule_and_selected_stores(self) -> None:
+        name = "yandex_orders_previous_day_close_00_msk"
+        with mock.patch.object(background, "_seconds_until_next_moscow_run", return_value=1234):
+            job = {job.name: job for job in background._jobs(mock.Mock())}[name]
+            self.assertEqual(job.next_delay(), 1234)
+            self.assertEqual(job.startup_delay_seconds, 1234)
+        with mock.patch.object(background, "_seconds_until_next_moscow_run", return_value=1234) as delay:
+            job.next_delay()
+            delay.assert_called_once_with(0)
+        with (mock.patch.object(background.sync_settings, "enabled_stores", return_value=("tris",)) as enabled,
+              mock.patch.object(background.ya_unit_sync, "sync_previous_day_all") as sync):
+            job.run_callback()
+            enabled.assert_called_once_with(name, "YANDEX MARKET")
+            sync.assert_called_once_with(("tris",))
 
     def test_yandex_novelty_is_an_independent_daily_job(self) -> None:
         name = "yandex_product_novelty_sync"

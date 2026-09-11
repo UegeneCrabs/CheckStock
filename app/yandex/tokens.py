@@ -13,7 +13,12 @@ def _load() -> dict:
             data = json.load(f)
     except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    # Accept the historical spelling while using the canonical application slug.
+    if "sokoloff" not in data and isinstance(data.get("sokolof"), dict):
+        data["sokoloff"] = data.pop("sokolof")
+    return data
 
 
 def is_listed(store_slug: str) -> bool:

@@ -32,6 +32,7 @@ class PermissionName(StrEnum):
 
 
 class SectionName(StrEnum):
+    """Persisted keys; navigable sections are defined by section_access.SECTION_PATHS."""
     SALES = "sales"
     DECISION_CENTER = "decision_center"
     EPHEMERIDES = "ephemerides"
@@ -40,6 +41,22 @@ class SectionName(StrEnum):
     SUPPLY = "supply"
     STOCK = "stock"
     STOCK_OVERVIEW = "stock_overview"
+    STOCK_TOTAL = "stock_total"
+    STOCK_BALANCES = "stock_balances"
+    UNIT_ECONOMICS_WB = "unit_economics_wb"
+    STOCK_SUPPLIES = "stock_supplies"
+    STOCK_INBOUND = "stock_inbound"
+    STOCK_RANDOMIZER = "stock_randomizer"
+    STOCK_COST_REPORT = "stock_cost_report"
+    STOCK_OPERATIONS = "stock_operations"
+    UNIT_ECONOMICS_OZON = "unit_economics_ozon"
+    UNIT_ECONOMICS_YANDEX = "unit_economics_yandex"
+    REPORT_UNIT_PROFIT = "report_unit_profit"
+    REPORT_TARGET_PRICE = "report_target_price"
+    AI_AGENTS = "ai_agents"
+    ADMIN_USERS = "admin_users"
+    ADMIN_GOOGLE_EXPORT = "admin_google_export"
+    ADMIN_INTEGRATIONS = "admin_integrations"
 
 
 class SectionAccessLevel(StrEnum):
@@ -139,12 +156,6 @@ class SessionData(DtoModel):
 
 class SessionToken(DtoModel):
     value: str = Field(min_length=1, max_length=256, repr=False)
-
-
-class ActivityHeartbeat(DtoModel):
-    path: str = Field(min_length=1, max_length=500)
-    active: bool = True
-    page_view: bool = False
 
 
 class UserId(RootModel[PositiveInt]):

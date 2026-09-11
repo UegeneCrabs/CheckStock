@@ -48,7 +48,7 @@ async def employee(
         raise HTTPException(
             401, "Invalid or expired employee API key", headers={"WWW-Authenticate": "Bearer"}
         )
-    if not any(has_access(user, section) for section in SectionName):
+    if not has_access(user, SectionName.AI_AGENTS):
         raise HTTPException(403, "No access to analytics sections")
     request.state.user = user
     logger.info("agent_access user_id=%s key_id=%s path=%s", user.id, record.key_id, request.url.path)
@@ -185,7 +185,7 @@ async def losses(request: Request, user: Employee, query: Annotated[LossQuery, Q
     """
     from app.web.routers.agent_full import guard
 
-    guard(user, SectionName.UNIT_ECONOMICS_1C,
+    guard(user, SectionName.UNIT_ECONOMICS_WB,
           SimpleNamespace(store=query.store, marketplace="WB"))
     if query.date_from > query.date_to or (query.date_to - query.date_from).days >= 90:
         raise HTTPException(422, "Choose an ordered period of 1 to 90 days")
@@ -232,11 +232,6 @@ async def action_schema():
             if name in PERIOD_REPORTS and parameter["name"] in {"date_from", "date_to"}:
                 parameter["required"] = True
                 parameter["description"] = "Required inclusive date in YYYY-MM-DD format. Supply both dates; at most 90 days."
-            if name == "rnp" and parameter["name"] == "month":
-                parameter["required"] = True
-            if name == "rnp" and parameter["name"] == "limit":
-                parameter["schema"]["maximum"] = 20
-                parameter["description"] = "RNP page size, from 1 to 20. Use next_offset for further pages."
             if name == "product-details" and parameter["name"] == "article":
                 parameter["required"] = True
             if parameter["name"] == "store" and (name in SPECS or name == "data-status"):

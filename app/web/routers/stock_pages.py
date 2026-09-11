@@ -20,7 +20,7 @@ from app.domain import MOSCOW_TIMEZONE
 from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
 from app.dto.stock import StockRandomizerGenerateRequest
 from app.formatting import format_dt
-from app.section_access import access_level
+from app.section_access import access_level, has_access
 from app.stores import STORES
 from app.web.access import accessible_marketplaces, accessible_store_slugs
 from app.web.common import _fmt_num
@@ -226,7 +226,7 @@ async def stock(request: Request):
             '<button class="btn-primary btn-sync" type="button" id="sync-products-btn" '
             'aria-describedby="sync-products-status">Обновить остатки</button>'
             if auth.has_role(request.state.user, "admin")
-            and access_level(request.state.user, SectionName.STOCK) is SectionAccessLevel.WRITE
+            and access_level(request.state.user, SectionName.STOCK_BALANCES) is SectionAccessLevel.WRITE
             else ""
         ),
     )
@@ -256,6 +256,7 @@ async def stock_supplies(request: Request):
         wb_date_to=date_bounds["default_to"].isoformat(),
         can_edit_supply="1"
         if profile_has_permission(request.state.user, ActionPermission.STOCK_RECEIVE)
+        and access_level(request.state.user, SectionName.STOCK_SUPPLIES) is SectionAccessLevel.WRITE
         else "0",
     )
     return render_page(
@@ -386,7 +387,7 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
             f'<a class="btn-secondary stock-total-download" '
             f'href="/stock/total.xlsx?store={html.escape(slug.lower(), quote=True)}" download>'
             'Скачать XLSX</a>'
-            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT)
+            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT) and has_access(request.state.user, SectionName.STOCK_TOTAL)
             else ""
         ),
         mp_source_options=render_mp_move_options(allowed_marketplaces),
@@ -394,7 +395,7 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
         marketplace=html.escape(marketplace),
         mp_ready="1" if marketplace_ready(marketplace, slug.lower()) else "0",
         can_edit_stock="1"
-        if has_action_permission(
+        if has_access(request.state.user, SectionName.STOCK_BALANCES, SectionAccessLevel.WRITE) and has_action_permission(
             request.state.user,
             ActionPermission.STOCK_RECEIVE,
             store_slug=slug.lower(),

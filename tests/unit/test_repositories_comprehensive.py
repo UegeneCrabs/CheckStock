@@ -3,12 +3,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app import db, decision_center, rnp_analytics
+from app import db
 from app.dto.unit_economics_1c import (
     UnitEconomics1CCabinetSettingsRequest,
     UnitEconomics1CProductSettingsRequest,
 )
-from app.repositories import core, stock_dashboard
+from app.repositories import core
 
 NOW = "2026-08-12T10:00:00+00:00"
 
@@ -56,8 +56,6 @@ class RepositoryUnitTests(unittest.TestCase):
         )
         self.database_patch.start()
         db.init_db()
-        decision_center.init_schema()
-        rnp_analytics.init_schema()
 
     def tearDown(self) -> None:
         self.database_patch.stop()
@@ -435,26 +433,6 @@ class RepositoryUnitTests(unittest.TestCase):
             (user_id, "unit_economics", "read"),
         )
         conn.execute(
-            "INSERT INTO user_section_usage "
-            "(user_id, section, usage_date, page_views, active_seconds, last_viewed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, "unit_economics", "2026-08-12", 1, 30, NOW),
-        )
-        conn.execute(
-            "INSERT INTO user_usage_sessions "
-            "(session_key, user_id, started_at, last_seen_at, active_seconds, last_section, last_path) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "legacy-unit-session",
-                user_id,
-                NOW,
-                NOW,
-                30,
-                "unit_economics",
-                "/sales/unit-economics/wb-fbs",
-            ),
-        )
-        conn.execute(
             "INSERT INTO sync_health (store_slug, marketplace, scope, ok, checked_at) VALUES (?, ?, ?, ?, ?)",
             ("rimili", "WB", "unit_prices", 1, NOW),
         )
@@ -474,13 +452,6 @@ class RepositoryUnitTests(unittest.TestCase):
             str(row["name"])
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
-        usage_count = conn.execute(
-            "SELECT COUNT(*) FROM user_section_usage WHERE section='unit_economics'"
-        ).fetchone()[0]
-        session = conn.execute(
-            "SELECT last_section, last_path FROM user_usage_sessions WHERE session_key=?",
-            ("legacy-unit-session",),
-        ).fetchone()
         sync_count = conn.execute("SELECT COUNT(*) FROM sync_health WHERE scope='unit_prices'").fetchone()[0]
         conn.close()
         self.assertEqual(
@@ -488,8 +459,6 @@ class RepositoryUnitTests(unittest.TestCase):
             [("unit_economics_1c", "read")],
         )
         self.assertTrue({"fulfillment_unit_rates", "wb_unit_metrics", "unit_costs"}.isdisjoint(tables))
-        self.assertEqual(usage_count, 0)
-        self.assertEqual((session["last_section"], session["last_path"]), (None, None))
         self.assertEqual(sync_count, 0)
 
     def test_unit_economics_1c_cabinet_settings_defaults_and_save(self) -> None:
@@ -652,10 +621,6 @@ class RepositoryUnitTests(unittest.TestCase):
 
         db.upsert_mp_stock("rimili", "A-1", "WB", "fbs", 4, NOW)
         db.upsert_ff_stock("rimili", "A-1", "ФФ", 3, NOW, "WB")
-        rows = stock_dashboard.get_inventory_rows("2026-08-01", "2026-07-01")
-        row = next(item for item in rows if item["article"] == "A-1")
-        self.assertEqual(row["marketplace_stock"], 4)
-        self.assertEqual(row["fulfillment_stock"], 3)
 
     def test_open_ozon_fbs_orders_exclude_terminal_statuses(self) -> None:
         statuses = ("awaiting_packaging", "delivered", "cancelled", "not_accepted")
@@ -698,42 +663,6 @@ class RepositoryUnitTests(unittest.TestCase):
             {},
         )
 
-    def test_rnp_repository_queries_and_mutations(self) -> None:
-        self.add_catalog()
-        db.upsert_sales_order_lines(
-            [
-                sales_line(
-                    returned_at="2026-08-12T08:00:00+00:00",
-                    return_quantity=1,
-                    return_amount=500,
-                )
-            ],
-            NOW,
-        )
-        db.upsert_mp_stock("rimili", "A-1", "WB", "fbs", 8, NOW)
-        page = db.get_rnp_catalog_page("rimili", "WB", "2026-08-01", "2026-09-01")
-        self.assertEqual(page["total"], 2)
-        filtered = db.get_rnp_catalog_page("rimili", "WB", "2026-08-01", "2026-09-01", "Первый", 1, 0)
-        self.assertEqual(filtered["items"][0]["article"], "A-1")
-        product_daily = db.get_rnp_product_daily("rimili", "WB", "2026-08-01", "2026-09-01", ["A-1"])
-        self.assertTrue(all(row.get("gross_profit") is None for row in product_daily))
-        self.assertEqual(db.get_rnp_product_daily("rimili", "WB", "x", "y", []), [])
-        self.assertTrue(db.get_rnp_daily_totals("rimili", "WB", "2026-08-01", "2026-09-01"))
-        self.assertEqual(db.get_rnp_stock_total("rimili", "WB"), 8)
-
-        self.assertEqual(db.get_rnp_strategies("rimili", "WB", []), {})
-        strategy = db.save_rnp_strategy(
-            "rimili", "WB", "A-1", "growth", "2026-08-01", "2026-08-31", "User", NOW
-        )
-        self.assertEqual(strategy["strategy"], "growth")
-        self.assertEqual(db.get_rnp_strategies("rimili", "WB", ["A-1"])["A-1"]["strategy"], "growth")
-        self.assertEqual(db.get_rnp_action_logs("rimili", "WB", "x", "y", []), [])
-        action = db.add_rnp_action_log("rimili", "WB", "A-1", "2026-08-12", "note", 1, "User", NOW)
-        self.assertEqual(action["note"], "note")
-        logs = db.get_rnp_action_logs("rimili", "WB", "2026-08-01", "2026-09-01", ["A-1"])
-        self.assertEqual(logs[0]["article"], "A-1")
-        self.assertTrue(db.rnp_article_exists("rimili", "WB", "A-1"))
-        self.assertFalse(db.rnp_article_exists("rimili", "WB", "missing"))
 
 
 if __name__ == "__main__":

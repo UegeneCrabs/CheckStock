@@ -1,0 +1,22 @@
+#yandex-economics-settings { margin-top: 28px; scroll-margin-top: 100px; }
+.ym-settings-help { margin: 8px 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.ym-settings-selector { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.ym-settings-selector label { flex: 1 1 150px; }
+.ym-settings-selector select,.ym-settings-selector input,.ym-settings-input select,.ym-settings-input input { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 12px; }
+.ym-settings-group { border: 0; padding: 0; margin: 20px 0 0; min-width: 0; }
+.ym-settings-group legend,.ym-settings-group summary { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+.ym-settings-group summary { cursor: pointer; }
+.ym-settings-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; }
+.ym-settings-field { min-width: 0; }
+.ym-settings-field>span { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.ym-settings-input { display: flex; gap: 6px; align-items: center; }
+.ym-settings-input b { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.ym-settings-input button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 20px; }
+.ym-settings-input button:disabled { opacity: .4; cursor: default; }
+.ym-settings-field small { display: block; margin-top: 5px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
+.ym-settings-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.ym-settings-actions a { font-size: 12px; align-self: center; }
+.ym-settings-status { margin: 0; font-size: 12px; min-height: 20px; }
+.ym-settings-status.is-error { color: #c3344b; }
+@media(max-width:1000px) { .ym-settings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) { .ym-settings-grid { grid-template-columns: 1fr; } }

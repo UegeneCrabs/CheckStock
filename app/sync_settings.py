@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from app import db
@@ -11,6 +13,18 @@ MARKETPLACE_LABELS = {
     "OZON": "Ozon",
     "YANDEX MARKET": "Яндекс Маркет",
 }
+
+_MANUAL_JOB: ContextVar[str | None] = ContextVar("manual_sync_job", default=None)
+
+
+@contextmanager
+def manual_run(name: str):
+    """A button ignores the automatic switch, but keeps store/marketplace selection."""
+    token = _MANUAL_JOB.set(name)
+    try:
+        yield
+    finally:
+        _MANUAL_JOB.reset(token)
 
 
 def definitions_by_name() -> dict[str, SyncJobDefinition]:
@@ -98,7 +112,7 @@ def configuration(name: str) -> dict:
 
 def enabled_stores(name: str, marketplace: str = "") -> tuple[str, ...]:
     config = configuration(name)
-    if not config["effective_enabled"]:
+    if not config["effective_enabled"] and _MANUAL_JOB.get() != name:
         return ()
     if config["scope"] == "global":
         return tuple(STORES)

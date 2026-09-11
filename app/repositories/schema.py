@@ -5,6 +5,7 @@ from sqlalchemy import inspect, select
 
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord
+from app.infrastructure import yandex_economics_orm  # noqa: F401
 from app.repositories import core, yandex_assortment
 from app.repositories.seed_data import FULFILLMENTS, STOCK_ITEMS
 from app.repositories.stock_sheet_export import MARKETPLACES
@@ -21,6 +22,7 @@ def init_db() -> None:
     _migrate_manual_supply_note(database)
     _backfill_sync_job_runs(database)
     _migrate_yandex_sync_settings(database)
+    _migrate_yandex_daily_orders(database)
     _remove_legacy_catalog_product_exclusions(database)
     _remove_legacy_unit_economics(database)
     _migrate_unit_economics_1c_cabinet_settings(database)
@@ -62,6 +64,15 @@ def _sync_yandex_assortment(database: Database) -> None:
         connection.commit()
 
 
+def _migrate_yandex_daily_orders(database: Database) -> None:
+    from app.repositories.unit_economics_yandex import migrate_order_snapshot
+
+    with core.WRITE_LOCK, database.connect() as connection:
+        for row in connection.execute("SELECT * FROM unit_economics_yandex_snapshots WHERE source='orders'").fetchall():
+            migrate_order_snapshot(connection, dict(row))
+        connection.commit()
+
+
 def _migrate_yandex_sync_settings(database: Database) -> None:
     """Preserve the combined job's switches without overriding independent settings."""
     with database.connect() as connection:
@@ -71,6 +82,16 @@ def _migrate_yandex_sync_settings(database: Database) -> None:
                 INSERT INTO sync_job_settings (name, store_slug, marketplace, enabled, updated_at)
                 SELECT ?, store_slug, marketplace, enabled, updated_at
                   FROM sync_job_settings WHERE name = 'yandex_unit_economics_sync'
+                ON CONFLICT(name, store_slug, marketplace) DO NOTHING
+                """,
+                (name,),
+            )
+        for name in ("yandex_buyout_sync", "yandex_orders_previous_day_close_00_msk"):
+            connection.execute(
+                """
+                INSERT INTO sync_job_settings (name, store_slug, marketplace, enabled, updated_at)
+                SELECT ?, store_slug, marketplace, enabled, updated_at
+                  FROM sync_job_settings WHERE name = 'yandex_orders_sync'
                 ON CONFLICT(name, store_slug, marketplace) DO NOTHING
                 """,
                 (name,),
@@ -174,15 +195,6 @@ def _remove_legacy_unit_economics(database: Database) -> None:
             """
         )
         connection.execute("DELETE FROM user_section_access WHERE section = 'unit_economics'")
-        connection.execute("DELETE FROM user_section_usage WHERE section = 'unit_economics'")
-        connection.execute(
-            "UPDATE user_usage_sessions SET last_section = NULL WHERE last_section = 'unit_economics'"
-        )
-        connection.execute(
-            "UPDATE user_usage_sessions SET last_path = NULL "
-            "WHERE last_path = '/sales/unit-economics' "
-            "OR last_path LIKE '/sales/unit-economics/%%'"
-        )
         connection.execute(
             "DELETE FROM sync_health WHERE scope IN ('unit_cost', 'unit_prices', 'unit_reference')"
         )

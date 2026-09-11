@@ -1,4 +1,5 @@
-from app.dto.identity import Role, User, coerce_user
+from app.dto.identity import Role, SectionAccessLevel, SectionName, User, coerce_user
+from app.section_access import has_access
 
 ROLE_LABELS: dict[Role, str] = {
     Role.SUPERADMIN: "Суперадминистратор",
@@ -15,7 +16,7 @@ def has_role(user: User | None, minimum: Role) -> bool:
 
 def can_edit_stock(user: User | None) -> bool:
     user = coerce_user(user)
-    return bool(user and user.can_edit_stock)
+    return has_access(user, SectionName.STOCK_BALANCES, SectionAccessLevel.WRITE)
 
 
 def can_manage_users(user: User | None) -> bool:

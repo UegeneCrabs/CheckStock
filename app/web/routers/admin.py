@@ -1,8 +1,7 @@
 import html
-import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
@@ -22,7 +21,6 @@ from app.dto.identity import (
     LoginQuery,
     MarketplaceAccessScope,
     PasswordHashRequest,
-    PermissionName,
     Role,
     SectionAccessLevel,
     SectionName,
@@ -37,12 +35,13 @@ from app.formatting import format_dt
 from app.identity_policy import ROLE_LABELS
 from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
-from app.section_access import SECTION_LABELS, access_level
+from app.section_access import SECTION_LABELS, SUPERADMIN_SECTIONS, access_level, access_limit, has_access
 from app.stores import STORES
 from app.sync_tracking import run_tracked
 from app.wb import catalog as wb_catalog
 from app.wb import sync as wb_sync
 from app.web.access import accessible_store_slugs, has_store_access
+from app.web.admin_access_rendering import PROFILE_DESCRIPTIONS, render_section_fields
 from app.web.dependencies import ContainerDependency, IdentityServiceDependency
 from app.web.downloads import _download_headers
 from app.web.templating import fill_template, render_page
@@ -117,7 +116,7 @@ async def admin_delete_user(
     identities: IdentityServiceDependency,
 ):
     actor = request.state.user
-    if not auth.can_manage_users(actor):
+    if not auth.can_manage_users(actor) or not has_access(actor, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
     target = await run_in_threadpool(identities.get_user, UserId(user_id))
@@ -201,10 +200,9 @@ async def admin_toggle_stock_edit(
     allowed = not auth.can_edit_stock(target)
 
     command = AuditedUserMutation(
-        kind=UserMutationKind.PERMISSION,
+        kind=UserMutationKind.SECTIONS,
         user_id=user_id,
-        permission=PermissionName.EDIT_STOCK,
-        allowed=allowed,
+        section_access={**target.section_access, SectionName.STOCK_BALANCES: SectionAccessLevel.WRITE if allowed else SectionAccessLevel.READ},
         activity=_activity(
             actor,
             "Разрешены изменения остатков" if allowed else "Запрещены изменения остатков",
@@ -277,6 +275,10 @@ async def admin_update_user_stores(
     if not store_slugs:
         return JSONResponse({"ok": False, "error": "выберите хотя бы один кабинет"}, status_code=400)
 
+    if actor.role is not Role.SUPERADMIN:
+        markets = {market for _, market in scope_pairs(target)}
+        if not {(store, market) for store in store_slugs for market in markets}.issubset(scope_pairs(actor)):
+            return JSONResponse({"ok": False, "error": "Нет доступа к выбранным кабинетам и площадкам"}, status_code=403)
     labels = ", ".join(STORES[slug].name for slug in store_slugs)
     command = AuditedUserMutation(
         kind=UserMutationKind.STORES,
@@ -377,7 +379,7 @@ async def admin_update_user_access_policy(
         ),
     )
     await run_in_threadpool(identities.mutate_user, command)
-    if profile is None and tuple(target.store_slugs) != tuple(store_slugs):
+    if not scopes and profile is None and tuple(target.store_slugs) != tuple(store_slugs):
         await run_in_threadpool(
             identities.mutate_user,
             AuditedUserMutation(
@@ -454,13 +456,29 @@ async def admin_update_user_sections(
             status_code=400,
         )
     form = await request.form()
-    permissions: dict[SectionName, SectionAccessLevel] = {}
+    permissions = dict(target.section_access)
+    submitted = [section for section in SECTION_LABELS if section.value in form]
+    if not submitted:
+        return JSONResponse({"ok": False, "error": "не переданы права вкладок"}, status_code=400)
     try:
-        for section in SectionName:
-            permissions[section] = SectionAccessLevel(str(form.get(section.value) or ""))
+        for section in submitted:
+            raw = str(form.get(section.value) or "")
+            if not raw:
+                permissions.pop(section, None)
+                continue
+            value = SectionAccessLevel(raw)
+            limit = access_limit(target, section)
+            if section not in {SectionName.STOCK, SectionName.UNIT_ECONOMICS_1C} and (
+                section in SUPERADMIN_SECTIONS or value is SectionAccessLevel.WRITE and limit is not SectionAccessLevel.WRITE
+                or value is SectionAccessLevel.READ and limit is SectionAccessLevel.NONE
+            ):
+                if target.section_access.get(section) is value:
+                    continue
+                return JSONResponse({"ok": False, "error": f"{SECTION_LABELS[section]}: это право недоступно для выбранной роли, должности или площадки", "field": section.value}, status_code=400)
+            permissions[section] = value
     except ValueError:
         return JSONResponse({"ok": False, "error": "проверьте права разделов"}, status_code=400)
-    details = ", ".join(f"{SECTION_LABELS[section]}: {level.value}" for section, level in permissions.items())
+    details = ", ".join(f"{SECTION_LABELS[section]}: {permissions[section].value if section in permissions else 'по умолчанию'}" for section in submitted)
     command = AuditedUserMutation(
         kind=UserMutationKind.SECTIONS,
         user_id=user_id,
@@ -486,7 +504,7 @@ def creatable_roles(actor: User) -> tuple[Role, ...]:
 
 def can_manage_user(actor: User, target: User) -> bool:
 
-    if not auth.can_manage_users(actor):
+    if not auth.can_manage_users(actor) or not has_access(actor, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE):
         return False
     if target.id == actor.id:
         return False
@@ -495,7 +513,7 @@ def can_manage_user(actor: User, target: User) -> bool:
     if auth.has_role(actor, "admin"):
         actor_stores = set(accessible_store_slugs(actor))
         target_stores = set(target.store_slugs or tuple(STORES))
-        return target.role is Role.USER and target_stores.issubset(actor_stores)
+        return target.role is Role.USER and target_stores.issubset(actor_stores) and set(scope_pairs(target)).issubset(scope_pairs(actor))
     return False
 
 
@@ -508,9 +526,9 @@ def render_role_options(actor: User) -> str:
 
 def render_profile_options(selected: AccessProfile | None = None) -> str:
     legacy_selected = " selected" if selected is None else ""
-    options = [f'<option value=""{legacy_selected}>Без должностного профиля (старые права)</option>']
+    options = [f'<option value=""{legacy_selected} data-description="{html.escape(PROFILE_DESCRIPTIONS[None], quote=True)}">Вручную — права каждой вкладки</option>']
     options.extend(
-        f'<option value="{profile.value}"{" selected" if profile is selected else ""}>'
+        f'<option value="{profile.value}"{" selected" if profile is selected else ""} data-description="{html.escape(PROFILE_DESCRIPTIONS[profile], quote=True)}">'
         f"{html.escape(label)}</option>"
         for profile, label in PROFILE_LABELS.items()
     )
@@ -543,8 +561,8 @@ def _access_policy_from_form(
         for marketplace in MARKETPLACES
         if marketplace in {str(value).strip().upper() for value in form.getlist("marketplaces")}
     )
-    if profile is None:
-        return None, store_slugs, (), None
+    if profile is None and not marketplaces and "scope_version" not in form:
+        marketplaces = tuple(MARKETPLACES)
     if not store_slugs:
         return None, (), (), "выберите хотя бы один кабинет"
     if not marketplaces:
@@ -560,6 +578,8 @@ def _access_policy_from_form(
         for store_slug in store_slugs
         for marketplace in marketplaces
     )
+    if actor.role is not Role.SUPERADMIN and not {(scope.store_slug, scope.marketplace) for scope in scopes}.issubset(scope_pairs(actor)):
+        return None, (), (), "выберите только доступные вам кабинеты и площадки"
     return profile, store_slugs, scopes, None
 
 
@@ -613,7 +633,7 @@ def render_store_checkboxes(
     name: str = "stores",
     disabled: bool = False,
 ) -> str:
-    selected = set(selected_slugs or assignable_store_slugs(actor))
+    selected = set(assignable_store_slugs(actor) if selected_slugs is None else selected_slugs)
     disabled_attr = " disabled" if disabled else ""
     items = []
     for slug in assignable_store_slugs(actor):
@@ -628,102 +648,91 @@ def render_store_checkboxes(
     return '<div class="u-store-grid">' + "".join(items) + "</div>"
 
 
+def render_user_editor(actor: User, user: User) -> str:
+    manageable = can_manage_user(actor, user)
+    superadmin = auth.has_role(actor, "superadmin")
+    sections_editable = manageable and superadmin and user.role is not Role.SUPERADMIN
+    sections = render_section_fields(user, sections_editable)
+    policy = manageable and superadmin and user.role is not Role.SUPERADMIN
+    stores = manageable and not policy and user.access_profile is None
+    selected_marketplaces = tuple(dict.fromkeys(scope.marketplace for scope in user.access_scopes)) or (tuple(MARKETPLACES) if user.access_profile is None else ())
+    stock_edit = auth.can_edit_stock(user)
+    summary = (
+        render_scope_badges(user.access_scopes)
+        if user.access_scopes else render_store_badges(user.store_slugs)
+    )
+    return fill_template(
+        "admin_user_editor.html",
+        user_id=str(user.id),
+        full_name=html.escape(user.full_name),
+        email=html.escape(user.google_email),
+        login=html.escape(user.login),
+        created_at=html.escape(format_dt(user.created_at.isoformat())),
+        role_label=html.escape(ROLE_LABELS[user.role]),
+        profile_label=html.escape(profile_label(user.access_profile, selected_marketplaces)),
+        access_summary=summary,
+        stock_label="Разрешены" if stock_edit else "Запрещены",
+        readonly_hidden=" hidden" if manageable else "",
+        readonly_message="Это ваша учётная запись. Свои права здесь изменить нельзя." if user.id == actor.id
+        else "У вас нет прав на изменение этой учётной записи.",
+        policy_hidden="" if policy else " hidden",
+        policy_disabled="" if policy else " disabled",
+        stores_hidden="" if stores else " hidden",
+        stores_disabled="" if stores else " disabled",
+        profile_options=render_profile_options(user.access_profile),
+        marketplace_options=render_marketplace_checkboxes(selected_marketplaces),
+        store_options=render_store_checkboxes(actor, user.store_slugs),
+        profile_description=html.escape(PROFILE_DESCRIPTIONS[user.access_profile]),
+        sections_hidden="",
+        sections_disabled="" if sections_editable else " disabled",
+        sections_save_hidden="" if sections_editable else " hidden",
+        section_fields=sections,
+        role_hidden="" if manageable and superadmin else " hidden",
+        role_disabled="" if manageable and superadmin else " disabled",
+        role_options=render_user_role_options(user),
+        actions_hidden="" if manageable else " hidden",
+        actions_disabled="" if manageable else " disabled",
+        stock_hidden="" if manageable and not superadmin else " hidden",
+        stock_action="Запретить изменения стока" if stock_edit else "Разрешить изменения стока",
+        toggle_label="Заблокировать" if user.is_active else "Разблокировать",
+        toggle_description="Сотрудник потеряет доступ до разблокировки." if user.is_active
+        else "Вернуть сотруднику возможность входить в систему.",
+    )
+
+
 def render_user_rows(actor: User, users: UserCollection) -> str:
-    if not users.root:
-        return '<tr class="empty-row"><td colspan="8">Пока нет сотрудников</td></tr>'
     rows = []
     for user in users.root:
-        active = user.is_active
-        status = (
-            '<span class="u-status u-status--on">активен</span>'
-            if active
-            else '<span class="u-status u-status--off">заблокирован</span>'
-        )
-
-        can_edit = auth.can_edit_stock(user)
-        edit_status = (
-            '<span class="u-status u-status--on">по должности</span>'
-            if user.access_profile is not None
-            else (
-                '<span class="u-status u-status--on">разрешены</span>'
-                if can_edit
-                else '<span class="u-status u-status--off">запрещены</span>'
-            )
-        )
-        if can_manage_user(actor, user):
-            store_cell = (
-                render_scope_badges(user.access_scopes)
-                if user.access_profile is not None
-                else render_store_checkboxes(actor, user.store_slugs)
-            )
-            superadmin_controls = ""
-            stock_control = (
-                f'<button type="button" class="u-act u-act--stock">'
-                f"{'Запретить изменения' if can_edit else 'Разрешить изменения'}</button>"
-            )
-            if auth.has_role(actor, "superadmin"):
-                permissions = {section.value: access_level(user, section).value for section in SectionName}
-                superadmin_controls = (
-                    '<div class="u-role-editor">'
-                    f'<select class="select-control u-role-select">{render_user_role_options(user)}</select>'
-                    '<button type="button" class="u-act u-act--role">Сохранить роль</button>'
-                    "</div>"
-                )
-                if user.role is not Role.SUPERADMIN:
-                    if user.access_profile is None:
-                        superadmin_controls += (
-                            f'<button type="button" class="u-act u-act--sections" data-section-access="'
-                            f'{html.escape(json.dumps(permissions, ensure_ascii=False), quote=True)}">'
-                            "Права доступа</button>"
-                        )
-                    selected_marketplaces = tuple(
-                        dict.fromkeys(scope.marketplace for scope in user.access_scopes)
-                    )
-                    superadmin_controls += (
-                        '<button type="button" class="u-act u-act--access-policy" '
-                        f'data-access-profile="{user.access_profile.value if user.access_profile else ""}" '
-                        f'data-access-stores="{html.escape(json.dumps(list(user.store_slugs)), quote=True)}" '
-                        f'data-access-marketplaces="{html.escape(json.dumps(list(selected_marketplaces)), quote=True)}">'
-                        "Должность и площадки</button>"
-                    )
-                stock_control = ""
-            store_control = (
-                ""
-                if user.access_profile is not None
-                else '<button type="button" class="u-act u-act--stores">Сохранить доступ</button>'
-            )
-            actions = (
-                f'<div class="u-actions" data-user-id="{user.id}" '
-                f'data-user-name="{html.escape(user.full_name, quote=True)}" '
-                f'data-active="{"1" if active else "0"}" '
-                f'data-can-edit="{"1" if can_edit else "0"}">'
-                f"{store_control}"
-                '<button type="button" class="u-act u-act--reset">Сбросить пароль</button>'
-                f'<button type="button" class="u-act u-act--toggle">{"Заблокировать" if active else "Разблокировать"}</button>'
-                f"{stock_control}"
-                f"{superadmin_controls}"
-                '<button type="button" class="u-act u-act--delete">Удалить</button>'
-                "</div>"
-            )
-        elif user.id == actor.id:
-            store_cell = render_store_badges(user.store_slugs)
-            actions = '<span class="u-note">это вы</span>'
-        else:
-            store_cell = render_store_badges(user.store_slugs)
-            actions = '<span class="u-note">—</span>'
-
+        stores = tuple(slug for slug in (user.store_slugs or tuple(STORES)) if slug in STORES)
+        store_names = ", ".join(STORES[slug].name for slug in stores)
+        marketplaces = tuple(dict.fromkeys(scope.marketplace for scope in user.access_scopes))
+        profile = profile_label(user.access_profile, marketplaces)
+        initials = "".join(part[0] for part in user.full_name.split()[:2]).upper()
+        active = "active" if user.is_active else "blocked"
+        status = "Активен" if user.is_active else "Заблокирован"
+        all_stores = len(stores) == len(STORES)
+        store_label = f"Все кабинеты · {len(stores)}" if all_stores else store_names or "Нет кабинетов"
+        market_label = " · ".join(marketplaces) if user.access_scopes else "Все маркетплейсы"
+        self_badge = '<span class="ad-self">это вы</span>' if user.id == actor.id else ""
+        name = html.escape(user.full_name, quote=True)
+        search = html.escape(" ".join((user.full_name, user.google_email, user.login, profile, store_names)), quote=True)
         rows.append(
-            "<tr>"
-            f"<td>{html.escape(user.full_name)}</td>"
-            f"<td>{html.escape(user.google_email)}</td>"
-            f"<td>{html.escape(user.login)}</td>"
-            f"<td>{html.escape(ROLE_LABELS[user.role])}<small class=\"usage-login\">"
-            f"{html.escape(profile_label(user.access_profile, tuple(scope.marketplace for scope in user.access_scopes)))}</small></td>"
-            f"<td>{status}</td>"
-            f"<td>{edit_status}</td>"
-            f"<td>{store_cell}</td>"
-            f"<td>{actions}</td>"
-            "</tr>"
+            f'<tr data-user-row data-user-id="{user.id}" data-name="{name}" '
+            f'data-search="{search}" data-role="{user.role.value}" data-status="{active}" '
+            f'data-stores="{html.escape(" ".join(stores), quote=True)}">'
+            f'<td><div class="ad-person"><span class="ad-avatar ad-avatar--{user.id % 4}" aria-hidden="true">'
+            f'{html.escape(initials)}</span><div class="ad-person-copy">'
+            f'<button type="button" class="ad-name" data-open-user="{user.id}">{name}</button>{self_badge}'
+            f'<small>{html.escape(user.google_email)} · {html.escape(user.login)}</small></div></div></td>'
+            f'<td><span class="ad-role ad-role--{user.role.value}">{html.escape(ROLE_LABELS[user.role])}</span>'
+            f'<small class="ad-secondary">{html.escape(profile)}</small></td>'
+            f'<td><span class="ad-store-summary" title="{html.escape(store_names, quote=True)}">{html.escape(store_label)}</span>'
+            f'<small class="ad-secondary">{html.escape(market_label)}</small></td>'
+            f'<td><span class="ad-status ad-status--{active}">{status}</span></td>'
+            f'<td><button type="button" class="ad-manage" data-open-user="{user.id}" '
+            f'aria-label="Открыть карточку: {name}">'
+            f'{"Управлять" if can_manage_user(actor, user) else "Посмотреть"}<span aria-hidden="true"> →</span></button>'
+            f'<template id="ad-user-{user.id}">{render_user_editor(actor, user)}</template></td></tr>'
         )
     return "".join(rows)
 
@@ -769,7 +778,7 @@ def render_access_request_rows(requests: list[dict]) -> str:
             f"<td>{html.escape(destination)}</td>"
             f"<td>{html.escape(permission_labels.get(str(item.get('permission')), str(item.get('permission') or '')))}</td>"
             f"<td><span class=\"u-status u-status--{'on' if status == 'approved' else 'off'}\">{html.escape(status_label)}</span>"
-            f"<small class=\"usage-login\">{html.escape(str(item.get('reason') or ''))}</small></td>"
+            f"<small class=\"access-request-reason\">{html.escape(str(item.get('reason') or ''))}</small></td>"
             f"<td>{controls}</td></tr>"
         )
     return "".join(rows)
@@ -812,164 +821,13 @@ def render_log_rows(user: User, activity: ActivityLog) -> str:
     return "".join(rows)
 
 
-def _format_duration(seconds: int) -> str:
-    total = max(0, int(seconds or 0))
-    hours, remainder = divmod(total, 3600)
-    minutes = remainder // 60
-    if hours:
-        return f"{hours} ч {minutes} мин"
-    if minutes:
-        return f"{minutes} мин"
-    return f"{total} сек"
-
-
-def _usage_location(section_key: str | None, path: str | None) -> str:
-    if section_key in SectionName._value2member_map_:
-        return str(SECTION_LABELS.get(SectionName(section_key), section_key))
-    if path == "/admin/activity":
-        return "Статистика использования"
-    if path and path.startswith("/admin"):
-        return "Админ-панель"
-    if path == "/access-denied":
-        return "Нет доступа"
-    return "—"
-
-
-def render_usage_dashboard(data: dict[str, object]) -> str:
-    people = data["people"]
-    sections = data["sections"]
-    sessions = data["sessions"]
-    people_rows = []
-    for person in people:
-        section_label = _usage_location(person["last_section"], person["last_path"])
-        status = (
-            '<span class="u-status u-status--on">онлайн</span>'
-            if person["online"]
-            else '<span class="u-status u-status--off">не онлайн</span>'
-        )
-        people_rows.append(
-            "<tr>"
-            f'<td>{html.escape(str(person["full_name"]))}<small class="usage-login">'
-            f"{html.escape(str(person['login']))}</small></td>"
-            f"<td>{status}</td>"
-            f"<td>{html.escape(section_label)}</td>"
-            f"<td>{html.escape(format_dt(person['last_seen']))}</td>"
-            f"<td>{html.escape(_format_duration(person['active_today']))}</td>"
-            f"<td>{html.escape(_format_duration(person['active_period']))}</td>"
-            f"<td>{person['page_views']}</td>"
-            "</tr>"
-        )
-    if not people_rows:
-        people_rows.append('<tr class="empty-row"><td colspan="7">Пока нет пользователей</td></tr>')
-
-    max_section_seconds = max((int(item["active_seconds"]) for item in sections), default=0)
-    section_rows = []
-    for item in sections:
-        key = item["section"]
-        label = SECTION_LABELS.get(SectionName(key), key) if key in SectionName._value2member_map_ else key
-        width = (
-            max(3, round(int(item["active_seconds"]) * 100 / max_section_seconds))
-            if max_section_seconds
-            else 0
-        )
-        section_rows.append(
-            '<div class="usage-section-row">'
-            '<div class="usage-section-copy">'
-            f"<strong>{html.escape(str(label))}</strong>"
-            f"<span>{item['page_views']} открытий · {item['unique_users']} пользователей · "
-            f"{html.escape(_format_duration(item['active_seconds']))}</span>"
-            "</div>"
-            f'<div class="usage-section-bar"><span style="width:{width}%"></span></div>'
-            "</div>"
-        )
-    if not section_rows:
-        section_rows.append('<p class="panel-desc">Статистика появится после первых посещений.</p>')
-
-    session_rows = []
-    for item in sessions:
-        state = "онлайн" if item["online"] else ("вышел" if item["ended_at"] else "неактивен")
-        location = _usage_location(item["last_section"], item["last_path"])
-        session_rows.append(
-            "<tr>"
-            f'<td>{html.escape(str(item["full_name"]))}<small class="usage-login">'
-            f"{html.escape(str(item['login']))}</small></td>"
-            f"<td>{html.escape(format_dt(item['started_at']))}</td>"
-            f"<td>{html.escape(format_dt(item['last_seen_at']))}</td>"
-            f"<td>{html.escape(_format_duration(item['active_seconds']))}</td>"
-            f"<td>{html.escape(location)}</td>"
-            f"<td>{html.escape(state)}</td>"
-            "</tr>"
-        )
-    if not session_rows:
-        session_rows.append('<tr class="empty-row"><td colspan="6">Входов пока не зафиксировано</td></tr>')
-
-    return (
-        '<div class="usage-cards">'
-        f"<article><span>Онлайн сейчас</span><strong>{data['online_count']}</strong><small>активность за последние 10 минут</small></article>"
-        f"<article><span>Активны сегодня</span><strong>{data['active_today_count']}</strong><small>уникальные пользователи</small></article>"
-        f"<article><span>Время сегодня</span><strong>{html.escape(_format_duration(data['active_today_seconds']))}</strong><small>суммарно по пользователям</small></article>"
-        f"<article><span>Открытий разделов</span><strong>{data['period_page_views']}</strong><small>за выбранный период</small></article>"
-        "</div>"
-        '<div class="admin-layout usage-layout">'
-        '<section class="panel"><h3 class="panel-title">Использование разделов</h3>'
-        f'<p class="panel-desc">Популярность за последние {data["days"]} дней</p>'
-        f'<div class="usage-sections">{"".join(section_rows)}</div></section>'
-        '<section class="panel"><h3 class="panel-title">Пользователи</h3>'
-        '<p class="panel-desc">Статус обновляется автоматически каждые 30 секунд</p>'
-        '<div class="table-wrap"><table class="data-table"><thead><tr>'
-        "<th>Сотрудник</th><th>Статус</th><th>Сейчас</th><th>Последняя активность</th>"
-        "<th>Сегодня</th><th>За период</th><th>Открытий</th>"
-        f"</tr></thead><tbody>{''.join(people_rows)}</tbody></table></div></section></div>"
-        '<section class="panel panel--wide"><h3 class="panel-title">История входов</h3>'
-        '<p class="panel-desc">Последние 100 сессий. Время считается только пока пользователь активен.</p>'
-        '<div class="table-wrap table-wrap--scroll-10"><table class="data-table"><thead><tr>'
-        "<th>Сотрудник</th><th>Вошёл</th><th>Последняя активность</th><th>Был онлайн</th><th>Последний раздел</th><th>Статус</th>"
-        f"</tr></thead><tbody>{''.join(session_rows)}</tbody></table></div></section>"
-    )
-
-
-@router.get("/admin/activity", response_class=HTMLResponse)
-async def admin_activity_page(
-    request: Request,
-    container: ContainerDependency,
-    days: int = Query(30, ge=1, le=365),
-):
-    if not auth.has_role(request.state.user, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    dashboard = await run_in_threadpool(container.usage.dashboard, days)
-    content = fill_template(
-        "admin_activity_content.html",
-        days=str(days),
-        dashboard=render_usage_dashboard(dashboard),
-    )
-    return render_page(
-        "CheckStock — Статистика использования",
-        "admin_activity",
-        content,
-        request.state.user,
-        "content--usage",
-    )
-
-
-@router.get("/admin/activity/data")
-async def admin_activity_data(
-    request: Request,
-    container: ContainerDependency,
-    days: int = Query(30, ge=1, le=365),
-):
-    if not auth.has_role(request.state.user, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    dashboard = await run_in_threadpool(container.usage.dashboard, days)
-    return JSONResponse({"ok": True, "html": render_usage_dashboard(dashboard)})
-
-
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, identities: IdentityServiceDependency):
     user = request.state.user
     if not auth.has_role(user, "admin"):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
-    read_only = not auth.can_manage_users(user)
+    read_only = not auth.can_manage_users(user) or not has_access(user, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE)
     users = await run_in_threadpool(identities.list_users)
     activity = await run_in_threadpool(identities.get_activity, ActivityLogQuery())
     log_rows = await run_in_threadpool(render_log_rows, user, activity)
@@ -982,9 +840,18 @@ async def admin_page(request: Request, identities: IdentityServiceDependency):
         "admin_content.html",
         role_options=render_role_options(user),
         profile_options=render_profile_options(),
-        marketplace_options=render_marketplace_checkboxes(),
+        marketplace_options=render_marketplace_checkboxes(tuple(MARKETPLACES)),
         store_options=render_store_checkboxes(user, disabled=read_only),
         user_rows=render_user_rows(user, users),
+        users_total=str(len(users.root)),
+        users_active=str(sum(item.is_active for item in users.root)),
+        users_blocked=str(sum(not item.is_active for item in users.root)),
+        requests_pending=str(sum(item.get("status", "pending") == "pending" for item in access_requests)),
+        filter_roles="".join(f'<option value="{role.value}">{label}</option>' for role, label in ROLE_LABELS.items()),
+        filter_stores="".join(
+            f'<option value="{html.escape(slug)}">{html.escape(store.name)}</option>'
+            for slug, store in STORES.items()
+        ),
         access_request_rows=render_access_request_rows(access_requests),
         access_requests_hidden="" if auth.has_role(user, "superadmin") else " hidden",
         log_rows=log_rows,
@@ -996,7 +863,7 @@ async def admin_page(request: Request, identities: IdentityServiceDependency):
         ),
         form_disabled=" disabled" if read_only else "",
     )
-    return render_page("CheckStock — Админ-панель", "admin", content, user)
+    return render_page("CheckStock — Админ-панель", "admin", content, user, "content--admin")
 
 
 @router.get("/admin/operations/{operation_id}/xlsx")
@@ -1042,7 +909,7 @@ async def admin_create_user(
     container: ContainerDependency,
 ):
     actor = request.state.user
-    if not auth.can_manage_users(actor):
+    if not auth.can_manage_users(actor) or not has_access(actor, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
     form = await request.form()
@@ -1125,7 +992,7 @@ async def sync_stock(request: Request):
     actor = request.state.user
     if (
         not auth.has_role(actor, "admin")
-        or access_level(actor, SectionName.STOCK) is not SectionAccessLevel.WRITE
+        or access_level(actor, SectionName.STOCK_BALANCES) is not SectionAccessLevel.WRITE
     ):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 

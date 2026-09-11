@@ -17,6 +17,21 @@ class OrmBase(DeclarativeBase):
     pass
 
 
+class InboundSupplySnapshotRecord(OrmBase):
+    __tablename__ = "inbound_supply_snapshots"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="never", server_default="never")
+    last_attempt: Mapped[str | None] = mapped_column(String)
+    last_success: Mapped[str | None] = mapped_column(String)
+    last_finished: Mapped[str | None] = mapped_column(String)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    run_token: Mapped[str | None] = mapped_column(String)
+    lease_until: Mapped[str | None] = mapped_column(String)
+
+
 class FulfillmentRecord(OrmBase):
     __tablename__ = "fulfillments"
 
@@ -343,37 +358,6 @@ class SessionRecord(OrmBase):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     expires_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
-class UsageSessionRecord(OrmBase):
-    __tablename__ = "user_usage_sessions"
-    __table_args__ = (
-        Index("idx_user_usage_sessions_user_started", "user_id", "started_at"),
-        Index("idx_user_usage_sessions_last_seen", "last_seen_at"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    started_at: Mapped[str] = mapped_column(String, nullable=False)
-    last_seen_at: Mapped[str] = mapped_column(String, nullable=False)
-    idle_at: Mapped[str | None] = mapped_column(String)
-    ended_at: Mapped[str | None] = mapped_column(String)
-    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    last_section: Mapped[str | None] = mapped_column(String)
-    last_path: Mapped[str | None] = mapped_column(String)
-
-
-class UserSectionUsageRecord(OrmBase):
-    __tablename__ = "user_section_usage"
-    __table_args__ = (Index("idx_user_section_usage_date", "usage_date"),)
-
-    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    section: Mapped[str] = mapped_column(String, primary_key=True)
-    usage_date: Mapped[str] = mapped_column(String, primary_key=True)
-    page_views: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    last_viewed_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class ActivityLogRecord(OrmBase):
@@ -1232,6 +1216,26 @@ class UnitEconomicsYandexSnapshotRecord(OrmBase):
     last_success_at: Mapped[str | None] = mapped_column(String)
     last_attempt_at: Mapped[str] = mapped_column(String, nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class UnitEconomicsYandexDailyMetricRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_daily_metrics"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UnitEconomicsYandexLoadedDayRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_loaded_days"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class YandexStorefrontPriceRecord(OrmBase):

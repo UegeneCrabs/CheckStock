@@ -1,8 +1,6 @@
-import io
 import logging
 import unittest
-import zipfile
-from datetime import date, timedelta
+from datetime import date
 from unittest import mock
 
 from app import sales
@@ -198,91 +196,8 @@ class SalesServiceTests(unittest.TestCase):
         self.assertEqual(sync.call_args_list[0].args[2], 3)
         self.assertEqual(sync.call_args_list[1].args[2], sales.INITIAL_LOOKBACK_DAYS["OZON"])
 
-    def test_period_validation_and_series_helpers(self) -> None:
-        today = date.today()
-        start = today - timedelta(days=2)
-        self.assertEqual(sales.parse_period(start.isoformat(), today.isoformat(), "wb"), (start, today))
-        invalid = [
-            (start.isoformat(), today.isoformat(), "wrong"),
-            ("bad", today.isoformat(), "WB"),
-            (today.isoformat(), start.isoformat(), "WB"),
-            ((today - timedelta(days=500)).isoformat(), today.isoformat(), "WB"),
-            (today.isoformat(), (today + timedelta(days=1)).isoformat(), "WB"),
-        ]
-        for date_from, date_to, marketplace in invalid:
-            with self.assertRaises(ValueError):
-                sales.parse_period(date_from, date_to, marketplace)
-        rows = [{"day": start.isoformat(), "orders_amount": 100, "orders_count": 2}]
-        series = sales._daily_map(start, today, rows)
-        self.assertEqual(len(series), 3)
-        self.assertEqual(sales._sum_series(series, "orders"), 100)
-        self.assertEqual(sales._delta(120, 100), 20)
-        self.assertIsNone(sales._delta(1, 0))
 
-    def test_dashboard(self) -> None:
-        today = date.today()
-        start = today - timedelta(days=1)
-        current = [
-            {
-                "day": start.isoformat(),
-                "orders_amount": 1000,
-                "fbo_amount": 600,
-                "fbo_count": 6,
-                "fbs_amount": 400,
-                "fbs_count": 4,
-                "cancellations_amount": 100,
-                "sales_amount": 800,
-                "orders_count": 10,
-                "cancellations_count": 2,
-                "sales_count": 8,
-            }
-        ]
-        previous = [
-            {"day": (start - timedelta(days=2)).isoformat(), "orders_amount": 500, "sales_amount": 400}
-        ]
-        with (
-            mock.patch.object(sales, "STORES", {"store": {}}),
-            mock.patch.object(sales.db, "get_sales_daily", side_effect=[current, previous]),
-            mock.patch.object(
-                sales.db,
-                "get_sales_sync_states",
-                return_value=[{"store_slug": "store", "ok": 0, "last_success_at": "now"}],
-            ),
-            mock.patch.object(
-                sales.db, "get_sales_available_range", return_value={"date_from": "x", "date_to": "y"}
-            ),
-            mock.patch.object(sales, "_configured_stores", return_value=["store"]),
-        ):
-            result = sales.dashboard(start.isoformat(), today.isoformat(), "WB", "store")
-        self.assertEqual(result["totals"]["orders_amount"], 1000)
-        self.assertEqual(result["series"][0]["fbo_count"], 6)
-        self.assertEqual(result["totals"]["cancel_rate"], 16.7)
-        self.assertEqual(result["sync"]["errors"], 1)
-        with mock.patch.object(sales, "STORES", {"store": {}}):
-            with self.assertRaises(ValueError):
-                sales.dashboard(start.isoformat(), today.isoformat(), "WB", "wrong")
 
-    def test_export_xlsx_and_xml_helpers(self) -> None:
-        today = date.today()
-        row = {
-            key: (100 if key in {"order_amount", "sale_amount"} else "value")
-            for key, _ in sales.EXPORT_HEADERS
-        }
-        with (
-            mock.patch.object(sales, "STORES", {"store": {}}),
-            mock.patch.object(sales.db, "get_sales_export_rows", return_value=[row]),
-        ):
-            content = sales.export_xlsx(today.isoformat(), today.isoformat(), "WB", "store")
-        self.assertTrue(content.startswith(b"PK"))
-        with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            sheet = archive.read("xl/worksheets/sheet1.xml").decode()
-        self.assertIn("autoFilter", sheet)
-        self.assertEqual(sales._column_name(27), "AA")
-        self.assertIn("<v>10</v>", sales._xlsx_cell("A1", 10))
-        self.assertIn("&lt;", sales._xlsx_cell("A1", "<x>"))
-        with mock.patch.object(sales, "STORES", {"store": {}}):
-            with self.assertRaises(ValueError):
-                sales.export_xlsx(today.isoformat(), today.isoformat(), "WB", "wrong")
 
 
 if __name__ == "__main__":

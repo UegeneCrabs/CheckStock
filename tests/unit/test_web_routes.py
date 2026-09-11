@@ -10,10 +10,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from app import db, decision_center, rnp_analytics
-from app.dto.decision import DecisionAction, DecisionStatus
-from app.dto.marketplace import Marketplace
-from app.dto.rnp import RnpAction, RnpStrategy
+from app import db
 from app.dto.system import ReadinessStatus
 from app.dto.unit_economics_1c import UnitEconomics1CProductSettings
 from app.main import create_app
@@ -22,9 +19,7 @@ from app.stores import STORES
 from app.wb import funnel_orders as wb_funnel_orders
 from app.web import middleware
 from app.web.identifiers import copy_identifier
-from app.web.routers import decision_center as decision_routes
-from app.web.routers import rnp as rnp_routes
-from app.web.routers import sales_overview, unit_economics
+from app.web.routers import unit_economics
 
 NOW = "2026-08-12T10:00:00+00:00"
 
@@ -39,8 +34,6 @@ class WebRouteUnitTests(unittest.TestCase):
         )
         self.database_patch.start()
         db.init_db()
-        decision_center.init_schema()
-        rnp_analytics.init_schema()
         db.seed_defaults()
         self.user = {
             "id": 1,
@@ -323,29 +316,21 @@ class WebRouteUnitTests(unittest.TestCase):
 
     def test_html_pages_and_downloads_render(self) -> None:
         paths = (
-            "/sales",
-            "/sales/decision-center",
-            "/sales/ephemerides",
-            "/sales/rnp",
             "/sales/unit-economics-1c/cabinet-settings",
             "/sales/unit-economics-1c",
             "/sales/unit-economics-1c/reports/unit-profit",
             "/sales/unit-economics-1c/ozon",
             "/sales/unit-economics-1c/yandex-market",
-            "/supply",
             "/stock",
             "/stock/total",
             "/stock/supplies",
             "/stock/randomizer",
-            "/stock-2",
-            "/stock-2/details/frozen",
             "/stock/rimili",
             "/stock/rimili/fbs",
             "/stock/rimili/warehouses",
             "/stock/rimili/operations",
             "/stock/cost-report",
             "/admin",
-            "/admin/activity",
             "/admin/google-export",
             "/admin/integrations",
         )
@@ -361,15 +346,10 @@ class WebRouteUnitTests(unittest.TestCase):
                     self.assertNotIn("Система работает", response.text)
 
         for path in (
-            "/sales",
-            "/sales/ephemerides",
-            "/sales/rnp",
             "/stock",
             "/stock/total",
             "/stock/supplies",
             "/stock/randomizer",
-            "/stock-2",
-            "/stock-2/details/frozen",
             "/stock/rimili",
             "/stock/cost-report",
             "/sales/unit-economics-1c/cabinet-settings",
@@ -386,7 +366,7 @@ class WebRouteUnitTests(unittest.TestCase):
         stock_total_page = self.client.get("/stock/total")
         self.assertNotIn("ЕДИНЫЙ СРЕЗ ПО ВСЕМ КАБИНЕТАМ", stock_total_page.text)
         self.assertNotIn("Позиции разных площадок объединены по штрихкоду", stock_total_page.text)
-        sales_page = self.client.get("/sales")
+        sales_page = self.client.get("/stock")
         self.assertNotIn("Продажи по магазинам и схемам", sales_page.text)
 
         unit_page = self.client.get("/sales/unit-economics-1c")
@@ -395,7 +375,7 @@ class WebRouteUnitTests(unittest.TestCase):
 
         root = self.client.get("/", follow_redirects=False)
         self.assertEqual(root.status_code, 303)
-        self.assertEqual(root.headers["location"], "/sales")
+        self.assertEqual(root.headers["location"], "/stock")
 
         stock_page = self.client.get("/stock")
         self.assertIn('id="sync-products-btn"', stock_page.text)
@@ -424,11 +404,11 @@ class WebRouteUnitTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200, response.text[:500])
                 self.assertTrue(response.content)
 
-    def test_only_unit_economics_1c_is_visible_in_sales_navigation(self) -> None:
-        response = self.client.get("/sales")
+    def test_stock_economics_and_reports_navigation(self) -> None:
+        response = self.client.get("/stock")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.text.count('class="nav-item nav-group-trigger'), 4)
+        self.assertEqual(response.text.count('class="nav-item nav-group-trigger'), 3)
         self.assertIn('aria-controls="nav-reports-submenu" data-nav-toggle', response.text)
         self.assertIn('id="nav-reports-submenu" data-nav-submenu', response.text)
         self.assertNotIn(
@@ -461,8 +441,6 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertIn('data-copy-value="2050292584830"', stock_page.text)
 
         copy_sources = {
-            "static/decision-center.js": "copyIdentifier",
-            "static/rnp-dashboard.js": "copyIdentifier",
             "static/stock-randomizer.js": "copyIdentifier",
             "static/unit-economics-1c.js": "data-copy-kind",
             "static/unit-economics-1c-report.js": "copyIdentifier",
@@ -833,8 +811,13 @@ class WebRouteUnitTests(unittest.TestCase):
         self.assertEqual(loaded["marketplace"], "YANDEX MARKET")
         for key in ("rating", "reviews_count", "is_new", "sales_days", "history"):
             self.assertIsNone(loaded[key], key)
-        for group in ("price", "current_economics", "tag_data", "details"):
-            self.assertTrue(all(value is None for value in loaded[group].values()), group)
+        self.assertIsNone(loaded["current_economics"]["margin"])
+        self.assertIsNone(loaded["current_economics"]["roi"])
+        self.assertTrue(loaded["ym_economics"]["result"]["missing"])
+        for group in ("price", "tag_data", "details"):
+            self.assertTrue(all(value is None for key, value in loaded[group].items()
+                                if group != "details" or key != "buyout_percent"), group)
+        self.assertEqual(loaded["details"]["buyout_percent"], 0)
         self.assertEqual(loaded["stock"]["fbs"], 42)
         self.assertEqual(loaded["stock"]["total"], 42)
         self.assertIsNone(loaded["stock"]["days"])
@@ -892,6 +875,57 @@ class WebRouteUnitTests(unittest.TestCase):
         self.user["access_scopes"] = [{"store_slug": "rimili", "marketplace": "WB"}]
         response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
         self.assertEqual(response.json()["products"], [])
+
+    def test_yandex_periods_match_wb_validation_and_load_requested_dates(self) -> None:
+        endpoint = "/sales/unit-economics-1c/yandex-market"
+        with mock.patch.object(unit_economics.unit_economics_yandex, "load_products", return_value=[]) as load:
+            for days in (7, 14, 30):
+                response = self.client.get(endpoint, params={"data": 1, "period_days": days})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["period_days"], days)
+                period = load.call_args.kwargs
+                self.assertEqual((period["date_to"] - period["date_from"]).days + 1, days)
+            response = self.client.get(endpoint, params={"data": 1, "date_from": "2024-01-01", "date_to": "2024-12-31"})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["period_days"], 366)
+            self.assertEqual(load.call_args.kwargs["date_from"], date(2024, 1, 1))
+            load.reset_mock()
+            for params in ({"date_from": "2024-01-01"}, {"date_from": "bad", "date_to": "2024-12-31"},
+                           {"date_from": "2024-01-01", "date_to": "2025-01-01"},
+                           {"date_from": "2024-01-02", "date_to": "2024-01-01"},
+                           {"date_from": "2099-01-01", "date_to": "2099-01-02"}):
+                self.assertEqual(self.client.get(endpoint, params={"data": 1, **params}).status_code, 400)
+            load.assert_not_called()
+
+    def test_yandex_buyout_settings_validate_permissions_and_preserve_other_parameters(self) -> None:
+        from app.repositories import unit_economics_yandex as repository
+
+        path = "/api/unit-economics-1c/yandex-market/buyout-settings/rimili"
+        headers = {"origin": "http://testserver"}
+        repository.save_buyout_settings("rimili", 14, None, NOW, 1, "Admin")
+        with core.get_connection() as conn:
+            conn.execute("UPDATE unit_economics_1c_cabinet_settings SET vat_percent=12 "
+                         "WHERE store_slug='rimili' AND marketplace='YANDEX MARKET'")
+            conn.commit()
+        for invalid in ({"buyout_period_days": 30}, {"buyout_period_days": 0}, {"default_buyout_percent": 0},
+                        {"default_buyout_percent": 101}):
+            payload = {"buyout_period_days": 14, "default_buyout_percent": None, **invalid}
+            self.assertEqual(self.client.put(path, json=payload, headers=headers).status_code, 422)
+        valid = {"buyout_period_days": 21, "default_buyout_percent": 85.5}
+        response = self.client.put(path, json=valid, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(repository.get_buyout_settings("rimili"), valid)
+        with core.get_connection() as conn:
+            self.assertEqual(conn.execute("SELECT vat_percent FROM unit_economics_1c_cabinet_settings "
+                "WHERE store_slug='rimili' AND marketplace='YANDEX MARKET'").fetchone()["vat_percent"], 12)
+            self.assertFalse(conn.execute("SELECT 1 FROM unit_economics_1c_cabinet_settings "
+                "WHERE store_slug='rimili' AND marketplace='WB'").fetchone())
+        self.user.update({"role": "user", "access_profile": "senior_marketplace_manager",
+                          "access_scopes": [{"store_slug": "rimili", "marketplace": "YANDEX MARKET"}]})
+        self.assertEqual(self.client.put(path, json=valid, headers=headers).status_code, 403)
+        self.user["section_access"] = {"unit_economics_1c": "write"}
+        self.user["access_scopes"] = [{"store_slug": "rimili", "marketplace": "WB"}]
+        self.assertEqual(self.client.put(path, json=valid, headers=headers).status_code, 403)
 
     def test_yandex_unit_economics_empty_catalog_and_denied_section(self) -> None:
         response = self.client.get("/sales/unit-economics-1c/yandex-market?data=1")
@@ -3087,185 +3121,7 @@ class WebRouteUnitTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, status)
 
-    def test_sales_decision_and_rnp_api_contracts(self) -> None:
-        dashboard = {
-            "ok": True,
-            "marketplace": "WB",
-            "period": {},
-            "summary": {},
-            "opportunities": [],
-            "products": [],
-            "sync": [],
-        }
-        with mock.patch.object(decision_routes.decision_service, "dashboard", return_value=dashboard):
-            response = self.client.get("/api/decision-center")
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["ok"])
 
-        with mock.patch.object(
-            decision_routes.decision_service, "dashboard", side_effect=RuntimeError("broken")
-        ):
-            response = self.client.get("/api/decision-center")
-        self.assertEqual(response.status_code, 500)
-
-        with mock.patch.object(
-            decision_routes.decision_service, "sync_many", return_value={"rimili": {"ok": True}}
-        ):
-            response = self.client.post("/api/decision-center/sync", json={"store": "rimili"})
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("rimili", response.json()["stores"])
-
-        with mock.patch.object(
-            self.app.state.container.decision_commands,
-            "set_status",
-            return_value=DecisionAction(
-                fingerprint="rimili:test",
-                status=DecisionStatus.COMPLETED,
-                updated_at=datetime(2026, 8, 12, tzinfo=UTC),
-            ),
-        ):
-            response = self.client.post(
-                "/api/decision-center/status",
-                json={"fingerprint": "rimili:test", "status": "completed"},
-            )
-        self.assertEqual(response.status_code, 200)
-        with mock.patch.object(
-            self.app.state.container.decision_commands,
-            "set_status",
-            side_effect=ValueError("bad status"),
-        ):
-            response = self.client.post(
-                "/api/decision-center/status",
-                json={"fingerprint": "rimili:test", "status": "completed"},
-            )
-        self.assertEqual(response.status_code, 400)
-
-        rnp_payload = {
-            "ok": True,
-            "marketplace": "WB",
-            "store": "rimili",
-            "items": [],
-            "summary": {},
-        }
-        with mock.patch.object(rnp_routes.rnp_service, "dashboard", return_value=rnp_payload):
-            response = self.client.get("/api/rnp?store=rimili&month=2026-08")
-        self.assertEqual(response.status_code, 200)
-        with mock.patch.object(rnp_routes.rnp_service, "dashboard", side_effect=ValueError("bad")):
-            response = self.client.get("/api/rnp?store=rimili&month=bad")
-        self.assertEqual(response.status_code, 400)
-        with mock.patch.object(rnp_routes.rnp_service, "dashboard", side_effect=RuntimeError("db")):
-            response = self.client.get("/api/rnp?store=rimili&month=2026-08")
-        self.assertEqual(response.status_code, 500)
-
-        with (
-            mock.patch.object(rnp_routes.rnp_service, "sales_lookback_days", return_value=8),
-            mock.patch.object(rnp_routes.sales_service, "sync_store", return_value={"ok": True}),
-            mock.patch.object(rnp_routes.rnp_service, "sync_metrics", return_value={"ok": True}),
-        ):
-            response = self.client.post(
-                "/api/rnp/sync",
-                json={"store": "rimili", "month": "2026-08", "marketplace": "WB"},
-            )
-        self.assertEqual(response.status_code, 200)
-
-        with mock.patch.object(
-            self.app.state.container.rnp_commands,
-            "save_strategy",
-            return_value=RnpStrategy(
-                store_slug="rimili",
-                marketplace=Marketplace.WB,
-                article="949558341",
-                strategy="growth",
-                date_from="2026-08-01",
-                date_to="2026-08-31",
-                updated_by="Unit Admin",
-                updated_at=datetime(2026, 8, 12, tzinfo=UTC),
-            ),
-        ):
-            response = self.client.post(
-                "/api/rnp/strategy",
-                json={
-                    "store": "rimili",
-                    "marketplace": "WB",
-                    "article": "949558341",
-                    "strategy": "growth",
-                    "date_from": "2026-08-01",
-                    "date_to": "2026-08-31",
-                },
-            )
-        self.assertEqual(response.status_code, 200)
-        with mock.patch.object(
-            self.app.state.container.rnp_commands,
-            "add_action",
-            return_value=RnpAction(
-                id=1,
-                article="949558341",
-                action_date="2026-08-12",
-                note="Done",
-                user_name="Unit Admin",
-                created_at=datetime(2026, 8, 12, tzinfo=UTC),
-            ),
-        ):
-            response = self.client.post(
-                "/api/rnp/action",
-                json={
-                    "store": "rimili",
-                    "marketplace": "WB",
-                    "article": "949558341",
-                    "action_date": "2026-08-12",
-                    "note": "Done",
-                },
-            )
-        self.assertEqual(response.status_code, 200)
-
-    def test_sales_api_contracts(self) -> None:
-        with mock.patch.object(
-            sales_overview.sales_service,
-            "dashboard",
-            return_value={"ok": True, "daily": [], "summary": {}},
-        ):
-            response = self.client.get(
-                "/api/sales?store=rimili&marketplace=WB&date_from=2026-08-01&date_to=2026-08-12"
-            )
-        self.assertEqual(response.status_code, 200)
-        with mock.patch.object(
-            wb_funnel_orders,
-            "dashboard",
-            return_value={"ok": True, "marketplace": "WB", "series": []},
-        ):
-            response = self.client.get(
-                "/api/sales/wb-funnel-orders?store=rimili&date_from=2026-08-01&date_to=2026-08-12"
-            )
-        self.assertEqual(response.status_code, 200)
-        with mock.patch.object(
-            wb_funnel_orders,
-            "dashboard",
-            return_value={"ok": True, "marketplace": "WB", "series": []},
-        ):
-            self.assertEqual(self.client.get("/api/sales/wb-funnel-orders").status_code, 200)
-        with mock.patch.object(wb_funnel_orders, "dashboard", side_effect=ValueError("bad period")):
-            self.assertEqual(self.client.get("/api/sales/wb-funnel-orders?store=rimili").status_code, 400)
-        with mock.patch.object(
-            sales_overview.sales_service, "dashboard", side_effect=ValueError("bad period")
-        ):
-            response = self.client.get("/api/sales?store=rimili")
-        self.assertEqual(response.status_code, 400)
-        with mock.patch.object(sales_overview.sales_service, "dashboard", side_effect=RuntimeError("db")):
-            response = self.client.get("/api/sales?store=rimili")
-        self.assertEqual(response.status_code, 500)
-
-        workbook = b"PK\x03\x04unit"
-        with mock.patch.object(sales_overview.sales_service, "export_xlsx", return_value=workbook):
-            response = self.client.get(
-                "/sales/orders.xlsx?store=rimili&marketplace=WB&date_from=2026-08-01&date_to=2026-08-12"
-            )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, workbook)
-        with mock.patch.object(
-            sales_overview.sales_service, "export_xlsx", side_effect=ValueError("bad period")
-        ):
-            response = self.client.get("/sales/orders.xlsx?store=rimili")
-        self.assertEqual(response.status_code, 400)
 
     def test_authorization_and_system_failures(self) -> None:
         self.authentication_patch.stop()
@@ -3273,8 +3129,8 @@ class WebRouteUnitTests(unittest.TestCase):
         anonymous.start()
         try:
             html_response = self.client.get("/stock", follow_redirects=False)
-            json_response = self.client.get("/api/sales", headers={"accept": "application/json"})
-            mutation_response = self.client.post("/api/rnp/sync", json={})
+            json_response = self.client.get("/api/unit-economics-1c/reports/unit-profit", headers={"accept": "application/json"})
+            mutation_response = self.client.post("/api/unit-economics-1c/source-data/sync", json={})
         finally:
             anonymous.stop()
             self.authentication_patch.start()
@@ -3300,37 +3156,25 @@ class WebRouteUnitTests(unittest.TestCase):
             self.assertEqual(stock_page.status_code, 200)
             self.assertNotIn('id="sync-products-btn"', stock_page.text)
             self.assertEqual(self.client.post("/admin/sync-stock").status_code, 403)
-            self.assertEqual(self.client.get("/api/decision-center?store=rimili").status_code, 403)
-            self.assertEqual(
-                self.client.post("/api/decision-center/sync", json={"store": "rimili"}).status_code,
-                403,
-            )
-            self.assertEqual(
-                self.client.post(
-                    "/api/decision-center/status",
-                    json={"fingerprint": "rimili:test", "status": "completed"},
-                ).status_code,
-                403,
-            )
-            self.assertEqual(self.client.get("/api/sales?store=rimili").status_code, 403)
-            self.assertEqual(self.client.get("/api/sales/wb-funnel-orders?store=rimili").status_code, 403)
-            self.assertEqual(self.client.get("/api/rnp?store=rimili").status_code, 403)
+            self.assertEqual(self.client.get("/api/sales?store=rimili").status_code, 404)
+            self.assertEqual(self.client.get("/api/sales/wb-funnel-orders?store=rimili").status_code, 404)
+            self.assertEqual(self.client.get("/api/rnp?store=rimili").status_code, 404)
             self.assertEqual(
                 self.client.post(
                     "/api/rnp/sync",
                     json={"store": "rimili", "marketplace": "WB", "month": "2026-08"},
                 ).status_code,
-                403,
+                404,
             )
         bad_body = "[not-json"
         headers = {"content-type": "application/json"}
         self.assertEqual(
             self.client.post("/api/rnp/strategy", content=bad_body, headers=headers).status_code,
-            422,
+            404,
         )
         self.assertEqual(
             self.client.post("/api/rnp/action", content=json.dumps([]), headers=headers).status_code,
-            422,
+            404,
         )
 
 

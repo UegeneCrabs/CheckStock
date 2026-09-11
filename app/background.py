@@ -12,13 +12,12 @@ from app import (
     db,
     ftp_export,
     ftp_export_schedule,
-    rnp_analytics,
+    inbound_supplies,
     stock_history,
     stock_sheet_export,
     sync_settings,
     unit_economics_1c,
 )
-from app import decision_center as decision_service
 from app import unit_economics_1c_advertising as advertising_sync
 from app import unit_economics_1c_history as unit_margin_history
 from app import unit_economics_1c_reference_data as unit_reference_sync
@@ -34,6 +33,7 @@ from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import sync as wb_sync
 from app.wb import token_watch
 from app.yandex import catalog as ya_catalog
+from app.yandex import economics_sync as ya_economics_sync
 from app.yandex import product_novelty as ya_product_novelty
 from app.yandex import sync as ya_sync
 from app.yandex import unit_economics_sync as ya_unit_sync
@@ -340,16 +340,17 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
             lambda current_source=source: ya_unit_sync.sync_all(current_source),
             _fixed_delay(ya_unit_sync.SYNC_INTERVAL_SECONDS[source]),
             startup_delay_seconds=startup_delay,
-            interval_from_start=True,
+            interval_from_start=source != "advertising",
             is_enabled=lambda current_name=name: _job_enabled(current_name),
             run_callback=lambda current_name=name, current_source=source: ya_unit_sync.sync_all(
                 current_source, sync_settings.enabled_stores(current_name, "YANDEX MARKET")
             ),
         )
         for name, source, startup_delay in (
-            ("yandex_orders_sync", "orders", 90),
+            ("yandex_orders_sync", "orders", 5),
             ("yandex_reputation_sync", "reputation", 120),
-            ("yandex_advertising_sync", "advertising", 150),
+            ("yandex_advertising_sync", "advertising", settings.wb_advertising_sync_startup_delay_seconds),
+            ("yandex_buyout_sync", "buyout", 0),
         )
     )
 
@@ -374,6 +375,13 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         ),
         *_wb_stock_history_jobs(catalog_ready),
         BackgroundJob(
+            inbound_supplies.JOB_NAME,
+            inbound_supplies.sync_all,
+            _fixed_delay(settings.inbound_sync_interval_seconds),
+            startup_delay_seconds=90,
+            is_enabled=lambda: _job_enabled(inbound_supplies.JOB_NAME),
+        ),
+        BackgroundJob(
             "wb_token_check",
             _refresh_token_info,
             _fixed_delay(settings.token_check_interval_seconds),
@@ -390,6 +398,26 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         ),
         *_funnel_jobs(),
         *_yandex_unit_economics_jobs(),
+        BackgroundJob(
+            ya_economics_sync.JOB,
+            ya_economics_sync.sync_all,
+            _fixed_delay(60 * 60),
+            startup_delay_seconds=240,
+            is_enabled=lambda: _job_enabled(ya_economics_sync.JOB),
+            run_callback=lambda: ya_economics_sync.sync_all(
+                sync_settings.enabled_stores(ya_economics_sync.JOB, "YANDEX MARKET")
+            ),
+        ),
+        BackgroundJob(
+            "yandex_orders_previous_day_close_00_msk",
+            ya_unit_sync.sync_previous_day_all,
+            _moscow_daily_delay(0),
+            startup_delay_seconds=_seconds_until_next_moscow_run(0),
+            is_enabled=lambda: _job_enabled("yandex_orders_previous_day_close_00_msk"),
+            run_callback=lambda: ya_unit_sync.sync_previous_day_all(
+                sync_settings.enabled_stores("yandex_orders_previous_day_close_00_msk", "YANDEX MARKET")
+            ),
+        ),
         BackgroundJob(
             "yandex_product_novelty_sync",
             ya_product_novelty.sync_all,
@@ -439,8 +467,6 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
 
 def _initialize_application() -> None:
     db.init_db()
-    decision_service.init_schema()
-    rnp_analytics.init_schema()
     db.seed_defaults()
     stock_sheet_export.ensure_defaults()
     auth.seed_superadmin()

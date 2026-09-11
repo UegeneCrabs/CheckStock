@@ -150,11 +150,17 @@ def _orders_cover(snapshot: dict, sync_states: list[dict], start: date, end: dat
 
 
 def load_products(
-    store_slugs: tuple[str, ...], *, article: str = "", today: date | None = None
+    store_slugs: tuple[str, ...], *, article: str = "", today: date | None = None,
+    date_from: date | None = None, date_to: date | None = None,
 ) -> list[dict]:
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
-    start, end = today - timedelta(days=7), today - timedelta(days=1)
+    end = date_to or today - timedelta(days=1)
+    start = date_from or end - timedelta(days=6)
+    if start > end or end >= today or (end - start).days >= 366:
+        raise ValueError("Некорректный период юнит-экономики")
+    period_days = (end - start).days + 1
     stock_start = today - timedelta(days=unit_economics_1c.STOCK_COVERAGE_PERIOD_DAYS - 1)
+    history_start = min(start, stock_start)
     products = []
     for slug in store_slugs:
         active = yandex_assortment.active_articles(slug)
@@ -165,50 +171,48 @@ def load_products(
         source_values = yandex_source_values.get_values(slug)
         prices = yandex_storefront.get_prices(slug)
         orders_snapshot = snapshots.get("orders") or {}
-        if _covers(orders_snapshot, stock_start, today):
-            orders = orders_snapshot["data"]
-            orders_known = True
-            closed_known = True
-        else:
-            orders = repository.get_daily_orders(
-                slug, stock_start.isoformat(), (today + timedelta(days=1)).isoformat()
-            )
-            sync_states = db.get_sales_sync_states(MARKETPLACE, slug)
-            orders_known = _orders_cover(orders_snapshot, sync_states, stock_start, today)
-            closed_known = _orders_cover(orders_snapshot, sync_states, start, end)
-            if orders_snapshot.get("data") is not None:
-                cached = {
-                    (row["article"], row["day"]): row
-                    for row in orders
-                    if not orders_snapshot["period_from"] <= row["day"] <= orders_snapshot["period_to"]
-                }
-                cached.update({(row["article"], row["day"]): row for row in orders_snapshot["data"]})
-                orders = list(cached.values())
+        daily_orders, loaded_orders = repository.get_history(slug, "orders", history_start.isoformat(), today.isoformat())
+        legacy_orders = repository.get_daily_orders(slug, history_start.isoformat(), (today + timedelta(days=1)).isoformat())
+        sync_states = db.get_sales_sync_states(MARKETPLACE, slug)
+        cached = {(row["article"], row["day"]): row for row in legacy_orders
+                  if row["day"] not in loaded_orders and not (
+                      orders_snapshot.get("data") is not None
+                      and orders_snapshot["period_from"] <= row["day"] <= orders_snapshot["period_to"])}
+        cached.update({(row["article"], row["day"]): row for row in orders_snapshot.get("data") or []
+                       if row["day"] not in loaded_orders})
+        cached.update({(row["article"], row["day"]): row for row in daily_orders})
+        orders = list(cached.values())
+        loaded_orders |= {day for day in repository.days_between(history_start.isoformat(), today.isoformat())
+                          if _orders_cover(orders_snapshot, sync_states, date.fromisoformat(day), date.fromisoformat(day))}
+        orders_known = set(repository.days_between(stock_start.isoformat(), today.isoformat())) <= loaded_orders
+        turnover_coverage = _coverage(loaded_orders, start, end)
+        closed_known = turnover_coverage["complete"]
         by_article = defaultdict(list)
         for row in orders:
-            if stock_start.isoformat() <= row["day"] <= today.isoformat():
+            if history_start.isoformat() <= row["day"] <= today.isoformat():
                 by_article[row["article"]].append(row)
         reputation = {str(row["sku"]): row for row in (snapshots.get("reputation") or {}).get("data") or []}
         ads_snapshot = snapshots.get("advertising") or {}
-        ads_known = _covers(ads_snapshot, start, end) and (
+        daily_ads, loaded_ads = repository.get_history(slug, "advertising", start.isoformat(), end.isoformat())
+        ads_coverage = _coverage(loaded_ads, start, end)
+        legacy_ads = not ads_coverage["complete"] and _covers(ads_snapshot, start, end) and (
             ads_snapshot["period_from"] == start.isoformat() and ads_snapshot["period_to"] == end.isoformat()
-        )
-        ads = {row["article"]: row for row in ads_snapshot.get("data") or []} if ads_known else {}
-        period = {"period_from": start.isoformat(), "period_to": end.isoformat(), "period_days": 7}
-
-        turnover_coverage = (
-            {
-                "dates": [(start + timedelta(days=offset)).isoformat() for offset in range(7)],
-                "days": 7,
-                "expected_days": 7,
-                "complete": True,
-                "period_from": start.isoformat(),
-                "period_to": end.isoformat(),
-                "missing_dates": [],
-            }
-            if closed_known
-            else None
-        )
+        ) and not any("day" in row for row in ads_snapshot.get("data") or [])
+        if legacy_ads:
+            daily_ads = ads_snapshot["data"]
+            ads_coverage = _coverage(set(repository.days_between(start.isoformat(), end.isoformat())), start, end)
+        ads = defaultdict(lambda: {"spend": 0.0, "impressions": 0, "clicks": 0})
+        for row in daily_ads:
+            for key in ("spend", "impressions", "clicks"):
+                ads[row["article"]][key] += row.get(key) or 0
+        buyout_settings = repository.get_buyout_settings(slug)
+        buyout_snapshot = snapshots.get("buyout") or {}
+        buyout_days = int(buyout_settings["buyout_period_days"])
+        buyout_available = buyout_snapshot.get("data") is not None and (
+            date.fromisoformat(buyout_snapshot["period_to"]) - date.fromisoformat(buyout_snapshot["period_from"])
+        ).days + 1 == buyout_days
+        buyouts = {row["article"]: row for row in buyout_snapshot.get("data") or []} if buyout_available else {}
+        period = {"period_from": start.isoformat(), "period_to": end.isoformat(), "period_days": period_days}
         for product in catalog:
             sku = str(product["article"])
             if article and sku != article:
@@ -219,7 +223,7 @@ def load_products(
             ff = max(int(source_stock.get("ff_available") or 0), 0)
             total = fbs + fbo + ff
             rows = by_article[sku]
-            stock_orders = sum(int(row.get("orders_count") or 0) for row in rows)
+            stock_orders = sum(int(row.get("orders_count") or 0) for row in rows if row["day"] >= stock_start.isoformat())
             stock = {
                 "total": total,
                 "fbs": fbs,
@@ -238,12 +242,11 @@ def load_products(
             closed_rows = [row for row in rows if start.isoformat() <= row["day"] <= end.isoformat()]
             order_amount = round(sum(float(row.get("orders_amount") or 0) for row in closed_rows), 2)
             cancel_amount = round(sum(float(row.get("cancel_amount") or 0) for row in closed_rows), 2)
-            sold = sum(int(row.get("sold_count") or 0) for row in closed_rows)
-            cancelled = sum(int(row.get("cancel_count") or 0) for row in closed_rows)
-            buyout_percent = round(sold / (sold + cancelled) * 100, 2) if sold + cancelled else 0.0
+            raw_buyout = (buyouts.get(sku) or {}).get("buyout_percent", 0.0) if buyout_available else None
+            buyout_percent = unit_economics_1c.resolve_buyout_percent(raw_buyout, buyout_settings["default_buyout_percent"])
             economics = {
-                "turnover": round(order_amount - cancel_amount, 2) if closed_known else None,
-                "turnover_coverage": turnover_coverage,
+                "turnover": round(order_amount - cancel_amount, 2) if turnover_coverage["days"] else None,
+                "turnover_coverage": turnover_coverage if turnover_coverage["days"] else None,
                 "margin": None,
                 "roi": None,
                 **period,
@@ -252,22 +255,27 @@ def load_products(
                 **dict.fromkeys(("drr", "spend", "ctr", "cpc")),
                 **period,
                 "orders_amount": order_amount if closed_known else None,
-                "buyout_percent": buyout_percent if closed_known else None,
+                "buyout_percent": buyout_percent,
+                "raw_buyout_percent": raw_buyout,
+                "buyout_default_applied": not raw_buyout and buyout_percent > 0,
+                "buyout_period_from": buyout_snapshot.get("period_from") if buyout_available else None,
+                "buyout_period_to": buyout_snapshot.get("period_to") if buyout_available else None,
+                "coverage": ads_coverage,
             }
-            if ads_known:
+            if ads_coverage["days"]:
                 values = ads.get(sku) or {}
                 spend = float(values.get("spend") or 0)
                 impressions = int(values.get("impressions") or 0)
                 clicks = int(values.get("clicks") or 0)
                 ad.update(
                     {
-                        "spend": spend,
+                        "spend": round(spend, 2),
                         "impressions": impressions,
                         "clicks": clicks,
                         "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
                         "cpc": round(spend / clicks, 2) if clicks else 0.0,
                         "drr": unit_economics_1c.calculate_drr_percent(spend, order_amount, buyout_percent)
-                        if closed_known
+                        if closed_known and ads_coverage["complete"]
                         else None,
                     }
                 )
@@ -284,4 +292,16 @@ def load_products(
                     prices=prices.get(sku),
                 )
             )
-    return products
+            products[-1]["details"]["buyout_percent"] = buyout_percent
+            products[-1]["details"]["drr"] = ad["drr"]
+    from app.yandex.economics import attach
+
+    return attach(products, start, end, today)
+
+
+def _coverage(loaded: set[str], start: date, end: date) -> dict:
+    expected = repository.days_between(start.isoformat(), end.isoformat())
+    dates = [day for day in expected if day in loaded]
+    return {"dates": dates, "days": len(dates), "expected_days": len(expected),
+            "complete": len(dates) == len(expected), "period_from": start.isoformat(), "period_to": end.isoformat(),
+            "missing_dates": [day for day in expected if day not in loaded]}

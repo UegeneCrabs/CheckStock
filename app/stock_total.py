@@ -199,6 +199,10 @@ def build_rows(
             )
         row["grand_total"] = sum(int(row[key] or 0) for key in MARKETPLACE_TOTAL_KEYS)
         row.pop("identity", None)
+    rows = [
+        row for row in rows
+        if row["purchase_price"] is not None or any(row[key] != 0 for key in QUANTITY_KEYS)
+    ]
     rows.sort(
         key=lambda row: (
             -int(row["grand_total"]),

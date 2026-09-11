@@ -17,7 +17,7 @@ def accessible_store_slugs(user: User | None) -> tuple[str, ...]:
         return ()
     if auth.has_role(user, "superadmin"):
         return tuple(STORES)
-    if user.access_profile is not None:
+    if user.access_profile is not None or user.access_scopes:
         return policy_accessible_stores(user)
     allowed = set(user.store_slugs or tuple(STORES))
     return tuple(slug for slug in STORES if slug in allowed)

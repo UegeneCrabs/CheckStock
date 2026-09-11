@@ -9,7 +9,7 @@ class ApplicationIntegrationTests(unittest.TestCase):
 
         from app.web.routers.agent_full import SPECS
 
-        self.assertEqual(len(paths), 114 + len(SPECS))
+        self.assertEqual(len(paths), 107 + len(SPECS))
         self.assertIn("/api/agent/v1/stores", paths)
         self.assertIn("/api/agent/v1/loss-products", paths)
         self.assertIn("/sales/unit-economics-1c/reports/target-price", paths)
@@ -25,8 +25,8 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertIn("/stock/supplies", paths)
         self.assertIn("/stock/randomizer", paths)
         self.assertIn("/stock/randomizer/generate", paths)
-        self.assertIn("/api/sales", paths)
-        self.assertIn("/api/sales/wb-funnel-orders", paths)
+        self.assertNotIn("/api/sales", paths)
+        self.assertNotIn("/api/sales/wb-funnel-orders", paths)
         self.assertIn("/sales/unit-economics-1c", paths)
         self.assertIn("/sales/unit-economics-1c/ozon", paths)
         self.assertIn("/sales/unit-economics-1c/yandex-market", paths)

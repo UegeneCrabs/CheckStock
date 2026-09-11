@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import agent_reports as reports
-from app import db, decision_center, rnp, supply_planning
+from app import db, supply_planning
 from app.access_control import ActionPermission, has_action_permission, scope_pairs
 from app.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.dto.identity import SectionName
@@ -36,7 +36,6 @@ class ReportQuery(BaseModel):
     marketplace: Literal["WB", "OZON", "YANDEX MARKET"] = "WB"
     date_from: date | None = None
     date_to: date | None = None
-    month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
     article: str | None = Field(default=None, min_length=1, max_length=100)
     search: str | None = Field(default=None, min_length=1, max_length=100)
     warehouse: str | None = Field(default=None, min_length=1, max_length=150)
@@ -100,37 +99,35 @@ class ArticleLookupResponse(BaseModel):
 
 S = SectionName
 SPECS = {
-    "product-newness": (S.UNIT_ECONOMICS_1C, True, "article search manager is_new", "Read table newness flag and observed sales_days. Filter is_new; sort sales_days. Unknown age is not proof of an old product."),
-    "product-reputation": (S.UNIT_ECONOMICS_1C, True, "article search manager", "Read table product rating and reviews_count. Sort by rating or reviews_count. Missing values remain null."),
-    "product-tags": (S.UNIT_ECONOMICS_1C, True, "article search manager tag_column tag_value tag_operator", "Read TAG: goal_week, goal_day, status, ends, code, fact, plan. Filter tag_column/tag_value; eq for all, gte/lte numeric only. Sort by any column. ends is week text, not a confirmed date."),
-    "current-economics": (S.UNIT_ECONOMICS_1C, True, "article search manager", "Read table Current economics: margin per unit, ROI and SPP. Not sidebar calculator or period profit. Sort by margin_per_unit_rub, roi_percent, spp_percent."),
-    "profit-calculator": (S.UNIT_ECONOMICS_1C, True, "article", "Read ALL saved-state net-profit calculator inputs, current unit profit, ROI and target price. Requires exact article. Not period profit or unsaved browser edits."),
-    "products": (S.STOCK, False, "search article", "Search catalog by name, barcode or article. No costs."),
-    "product-details": (S.STOCK, False, "article", "Read one catalog item and its warehouse stock."),
-    "sales": (S.SALES, False, "date_from date_to article scheme group_by", "Order-cohort sales, cancellations and returns. Dates select order dates, not payout dates."),
-    "funnel": (S.SALES, True, "date_from date_to article group_by", "WB daily orders, cancellations and observed buyouts. Missing buyouts remain unknown."),
-    "advertising": (S.UNIT_ECONOMICS_1C, True, "date_from date_to article manager group_by", "WB advertising spend, impressions, clicks, CTR and CPC. No invented attribution."),
-    "stocks": (S.STOCK, False, "article search warehouse scheme view fulfillment", "Stock: view=summary for table total, FF, transit, FBS/FBO/rFBS; fulfillment optional. Default details supports warehouse and scheme, including fbs_* variants."),
-    "stock-value": (S.UNIT_ECONOMICS_1C, True, "article warehouse scheme manager", "Value observed current stock using known purchase costs. Disclose missing costs."),
-    "stock-operations": (S.STOCK, False, "date_from date_to article kind", "Read warehouse operation items in scope, without employee identities or costs."),
-    "supplies": (S.STOCK, True, "date_from date_to", "Read WB planned supplies with a five-minute cache and scoped manual plans. No writes."),
-    "prices": (S.UNIT_ECONOMICS_1C, True, "date_from date_to article manager", "Read latest prices, or recorded price snapshots for explicit dates. Never changes prices."),
-    "costs": (S.UNIT_ECONOMICS_1C, True, "article manager search", "Read current purchase costs, expenses, manager and ABC data. No historical backdating."),
-    "profit": (S.UNIT_ECONOMICS_1C, True, "date_from date_to article manager", "Юниточная прибыль: website report source for ТО (orders_amount), orders, cancellations and margin. Orders are not confirmed sales. Missing margin does not imply missing orders."),
-    "target-prices": (S.UNIT_ECONOMICS_1C, True, "article manager", "Read website target-price recommendations for its closed week. No price updates."),
-    "rnp": (S.RNP, False, "month search", "Read monthly RNP product metrics. Missing metric history is explicitly unavailable."),
-    "decisions": (S.DECISION_CENTER, True, "", "Read existing decision-engine suggestions. Heuristic estimates, not proven causal effects."),
+    "product-newness": (S.UNIT_ECONOMICS_WB, True, "article search manager is_new", "Read table newness flag and observed sales_days. Filter is_new; sort sales_days. Unknown age is not proof of an old product."),
+    "product-reputation": (S.UNIT_ECONOMICS_WB, True, "article search manager", "Read table product rating and reviews_count. Sort by rating or reviews_count. Missing values remain null."),
+    "product-tags": (S.UNIT_ECONOMICS_WB, True, "article search manager tag_column tag_value tag_operator", "Read TAG: goal_week, goal_day, status, ends, code, fact, plan. Filter tag_column/tag_value; eq for all, gte/lte numeric only. Sort by any column. ends is week text, not a confirmed date."),
+    "current-economics": (S.UNIT_ECONOMICS_WB, True, "article search manager", "Read table Current economics: margin per unit, ROI and SPP. Not sidebar calculator or period profit. Sort by margin_per_unit_rub, roi_percent, spp_percent."),
+    "profit-calculator": (S.UNIT_ECONOMICS_WB, True, "article", "Read ALL saved-state net-profit calculator inputs, current unit profit, ROI and target price. Requires exact article. Not period profit or unsaved browser edits."),
+    "products": (S.STOCK_BALANCES, False, "search article", "Search catalog by name, barcode or article. No costs."),
+    "product-details": (S.STOCK_BALANCES, False, "article", "Read one catalog item and its warehouse stock."),
+    "advertising": (S.UNIT_ECONOMICS_WB, True, "date_from date_to article manager group_by", "WB advertising spend, impressions, clicks, CTR and CPC. No invented attribution."),
+    "stocks": (S.STOCK_BALANCES, False, "article search warehouse scheme view fulfillment", "Stock: view=summary for table total, FF, transit, FBS/FBO/rFBS; fulfillment optional. Default details supports warehouse and scheme, including fbs_* variants."),
+    "stock-value": (S.UNIT_ECONOMICS_WB, True, "article warehouse scheme manager", "Value observed current stock using known purchase costs. Disclose missing costs."),
+    "stock-operations": (S.STOCK_OPERATIONS, False, "date_from date_to article kind", "Read warehouse operation items in scope, without employee identities or costs."),
+    "supplies": (S.STOCK_SUPPLIES, True, "date_from date_to", "Read WB planned supplies with a five-minute cache and scoped manual plans. No writes."),
+    "prices": (S.UNIT_ECONOMICS_WB, True, "date_from date_to article manager", "Read latest prices, or recorded price snapshots for explicit dates. Never changes prices."),
+    "costs": (S.UNIT_ECONOMICS_WB, True, "article manager search", "Read current purchase costs, expenses, manager and ABC data. No historical backdating."),
+    "profit": (S.REPORT_UNIT_PROFIT, True, "date_from date_to article manager", "Юниточная прибыль: website report source for ТО (orders_amount), orders, cancellations and margin. Orders are not confirmed sales. Missing margin does not imply missing orders."),
+    "target-prices": (S.REPORT_TARGET_PRICE, True, "article manager", "Read website target-price recommendations for its closed week. No price updates."),
 }
-PERIOD_REPORTS = {"sales", "funnel", "advertising", "stock-operations", "supplies", "profit"}
-ECONOMIC = {name for name, spec in SPECS.items() if spec[0] == S.UNIT_ECONOMICS_1C}
+PERIOD_REPORTS = {"advertising", "stock-operations", "supplies", "profit"}
+ECONOMIC = {name for name, spec in SPECS.items() if spec[0] in {S.UNIT_ECONOMICS_WB, S.REPORT_UNIT_PROFIT, S.REPORT_TARGET_PRICE}}
 COMMON = {"store", "marketplace", "limit", "offset", "sort_by", "order"}
 
 
 def permitted(user, section, store, marketplace, operation=None):
     if not has_access(user, section) or (store, marketplace) not in scope_pairs(user):
         return False
-    actions = {S.SALES: ActionPermission.SALES_VIEW, S.STOCK: ActionPermission.STOCK_BALANCE_VIEW,
-               S.UNIT_ECONOMICS_1C: ActionPermission.UNIT_ECONOMICS_VIEW}
+    actions = {S.STOCK_BALANCES: ActionPermission.STOCK_BALANCE_VIEW,
+               S.UNIT_ECONOMICS_WB: ActionPermission.UNIT_ECONOMICS_VIEW,
+               S.REPORT_UNIT_PROFIT: ActionPermission.UNIT_ECONOMICS_VIEW,
+               S.REPORT_TARGET_PRICE: ActionPermission.UNIT_ECONOMICS_VIEW}
     action = operation or actions.get(section)
     return action is None or has_action_permission(user, action, store_slug=store, marketplace=marketplace)
 
@@ -143,21 +140,16 @@ def guard(user, section, query, operation=None):
 def allowed_fields(name):
     if name == "profit-calculator":
         return {"store", "marketplace", "article"}
-    common = COMMON - {"sort_by", "order"} if name == "rnp" else COMMON
-    return common | set(SPECS[name][2].split())
+    return COMMON | set(SPECS[name][2].split())
 
 
 def report_permitted(user, name, store, mp):
     section, wb_only, _, _ = SPECS[name]
     if (wb_only and mp != "WB") or not permitted(user, section, store, mp):
         return False
-    if name == "stock-value" and not permitted(user, S.STOCK, store, mp):
+    if name == "stock-value" and not permitted(user, S.STOCK_BALANCES, store, mp):
         return False
-    if name == "stock-operations" and not permitted(user, S.STOCK, store, mp, ActionPermission.STOCK_OPERATIONS_VIEW):
-        return False
-    if name in {"rnp", "decisions"} and not permitted(user, S.UNIT_ECONOMICS_1C, store, mp):
-        return False
-    if name in {"rnp", "decisions"} and user.role.value == "user":
+    if name == "stock-operations" and not permitted(user, S.STOCK_OPERATIONS, store, mp, ActionPermission.STOCK_OPERATIONS_VIEW):
         return False
     return True
 
@@ -183,12 +175,6 @@ def validate(name, query, supplied):
             raise HTTPException(422, "Будущие даты недоступны")
     if name in {"product-details", "profit-calculator"} and not query.article:
         raise HTTPException(422, "Укажите article")
-    if name == "rnp" and not query.month:
-        raise HTTPException(422, "Укажите month в формате YYYY-MM")
-    if name == "rnp":
-        date.fromisoformat(query.month + "-01")
-        if query.limit > 20:
-            raise HTTPException(422, "Для РНП limit не более 20")
     return section
 
 
@@ -199,8 +185,8 @@ async def article_stores(user: Employee, query: Annotated[ArticleLookupQuery, Qu
     for store, mp in sorted(set(scope_pairs(user))):
         if query.marketplace is not None and query.marketplace != mp:
             continue
-        catalog_access = any(permitted(user, section, store, mp) for section in (S.STOCK, S.SALES))
-        economic_access = mp == "WB" and permitted(user, S.UNIT_ECONOMICS_1C, store, mp)
+        catalog_access = any(permitted(user, section, store, mp) for section in (S.STOCK_BALANCES, S.SALES))
+        economic_access = mp == "WB" and permitted(user, S.UNIT_ECONOMICS_WB, store, mp)
         if not catalog_access and not economic_access:
             continue
         if not catalog_access:
@@ -227,7 +213,7 @@ async def capabilities(user: Employee):
     loss_scopes = [
         {"store": store, "marketplace": "WB"}
         for store in accessible_stores(user, "WB")
-        if permitted(user, S.UNIT_ECONOMICS_1C, store, "WB")
+        if permitted(user, S.UNIT_ECONOMICS_WB, store, "WB")
     ]
     return {
         "read_only": True,
@@ -243,8 +229,7 @@ async def capabilities(user: Employee):
             "description": "Rank WB products by estimated period loss. Incomplete calculations are excluded; empty rows do not prove no losses.",
             "filters": sorted(LossQuery.model_fields), "scopes": loss_scopes,
         }] if loss_scopes else []),
-        "unavailable": ["Снабжение как отдельный раздел", "Эфемериды",
-                        "Расчёты юнит-экономики Ozon и Яндекс Маркета"],
+        "unavailable": ["Расчёты юнит-экономики Ozon и Яндекс Маркета"],
         "notes": ["Права не означают наличие загруженных данных. Проверяйте data-status.",
                   "Объединяйте магазины только из разрешённых scopes, запросив каждый отдельно."],
     }
@@ -259,17 +244,17 @@ async def data_status(request: Request, user: Employee, query: Annotated[ReportQ
         raise HTTPException(422, "Поддерживаются только store и marketplace")
     if (query.store, query.marketplace) not in scope_pairs(user):
         raise HTTPException(403, "Нет доступа к магазину или площадке")
-    sections = [s for s in (S.STOCK, S.SALES, S.UNIT_ECONOMICS_1C, S.RNP, S.DECISION_CENTER)
+    sections = [s for s in (S.STOCK_BALANCES, S.UNIT_ECONOMICS_WB)
                 if permitted(user, s, query.store, query.marketplace)]
     if not sections:
         raise HTTPException(403, "Нет доступа к данным")
     rows = []
     for section in sections:
-        if section in (S.UNIT_ECONOMICS_1C, S.DECISION_CENTER) and query.marketplace != "WB":
+        if section is S.UNIT_ECONOMICS_WB and query.marketplace != "WB":
             continue
-        if section in {S.UNIT_ECONOMICS_1C, S.RNP, S.DECISION_CENTER} and user.role.value == "user":
+        if section is S.UNIT_ECONOMICS_WB and user.role.value == "user":
             continue
-        rows.extend(await run_in_threadpool(reports.status, query.store, query.marketplace, section.value))
+        rows.extend(await run_in_threadpool(reports.status, query.store, query.marketplace, ("stock" if section is S.STOCK_BALANCES else "unit_economics_1c")))
     return {"sources": rows, "warnings": ["Число строк и крайние даты не гарантируют полноту периода.",
              "Для пользователя с ограничением по менеджеру общие счётчики экономики скрыты."]}
 
@@ -306,13 +291,9 @@ async def execute(name, request, user, query):
         query = query.model_copy(update={"store": match.store, "marketplace": match.marketplace})
     guard(user, section, query)
     if name in {"stock-value", "product-details"}:
-        guard(user, S.STOCK, query)
+        guard(user, S.STOCK_BALANCES, query)
     if name == "stock-operations":
-        guard(user, S.STOCK, query, ActionPermission.STOCK_OPERATIONS_VIEW)
-    if name in {"rnp", "decisions"}:
-        guard(user, S.UNIT_ECONOMICS_1C, query)
-        if user.role.value == "user":
-            raise HTTPException(403, "Сводные экспериментальные отчёты недоступны с ограничением по менеджеру")
+        guard(user, S.STOCK_BALANCES, query, ActionPermission.STOCK_OPERATIONS_VIEW)
     warnings = ["Отсутствующие значения не являются нулями. Время ответа не является временем загрузки источников."]
     context = {}
     metrics = ()
@@ -406,25 +387,16 @@ async def execute(name, request, user, query):
             stock = await run_in_threadpool(reports.stocks, query)
             context["stock"] = reports.filtered(stock, query)
             warnings.append("warehouse_breakdown — отдельный снимок остатков по складам со своими датами обновления; его не нужно прибавлять к quantity.")
-    elif name == "sales":
-        rows = await run_in_threadpool(reports.sales, query)
-        metrics = ("orders_count", "orders_amount", "cancelled_count", "cancelled_amount",
-                   "sold_count", "sales_amount", "returned_count", "returned_amount")
-        warnings.append("Даты относятся к заказам. Продажи/возвраты показаны для этих заказов, а не как выплаты за период.")
-    elif name in {"funnel", "advertising"}:
-        loader = reports.funnel if name == "funnel" else reports.advertising
-        rows = await run_in_threadpool(loader, query)
+    elif name == "advertising":
+        rows = await run_in_threadpool(reports.advertising, query)
         rows = reports.filtered(rows, query)
-        if name == "advertising":
-            rows = await run_in_threadpool(reports.economic_filter, rows, user, query.store, query.manager)
-        metrics = (("orders_count", "orders_amount", "cancel_count", "cancel_amount", "buyout_count", "buyout_amount")
-                   if name == "funnel" else ("spend", "impressions", "clicks"))
+        rows = await run_in_threadpool(reports.economic_filter, rows, user, query.store, query.manager)
+        metrics = ("spend", "impressions", "clicks")
         rows = reports.grouped(rows, query.group_by, metrics)
-        if name == "advertising":
-            for row in rows:
-                row["ctr_percent"] = row["clicks"] / row["impressions"] * 100 if row["impressions"] else None
-                row["cpc_rub"] = row["spend"] / row["clicks"] if row["clicks"] else None
-            warnings.append("Рекламная атрибуция заказов этим источником не предоставляется.")
+        for row in rows:
+            row["ctr_percent"] = row["clicks"] / row["impressions"] * 100 if row["impressions"] else None
+            row["cpc_rub"] = row["spend"] / row["clicks"] if row["clicks"] else None
+        warnings.append("Рекламная атрибуция заказов этим источником не предоставляется.")
     elif name in {"stocks", "stock-value"}:
         rows = reports.filtered(await run_in_threadpool(reports.stocks, query), query)
         metrics = ("quantity",)
@@ -515,30 +487,6 @@ async def execute(name, request, user, query):
         else:
             context = {k: data.get(k) for k in ("period_from", "period_to")}
         warnings.append("Расчётные показатели по методике сайта. Не подтверждённый финансовый результат; полнота источников обязательна.")
-    elif name == "rnp":
-        observed = await run_in_threadpool(reports.read,
-            "SELECT COUNT(*) AS records FROM rnp_daily_metrics WHERE store_slug=? AND marketplace=? AND SUBSTR(day,1,7)=?",
-            (query.store, query.marketplace, query.month))
-        if not observed[0]["records"]:
-            return reports.envelope(query, {"rows": [], "total_rows": 0, "next_offset": None,
-                "totals": {}, "context": {"month": query.month, "available": False}},
-                ["История метрик РНП за месяц не загружена. Для заказов используйте sales, для остатков stocks."])
-        data = await run_in_threadpool(rnp.dashboard, query.month, query.marketplace, query.store,
-                                       query.search or "", query.limit, query.offset)
-        safe = reports.select(data["products"], "article barcode name current_stock stock_updated_at current_price price_source fact forecast")
-        return reports.envelope(query, {"rows": safe, "total_rows": data["pagination"]["total"],
-            "next_offset": query.offset + query.limit if data["pagination"]["has_more"] else None,
-            "totals": {}, "context": {"month": data["month"], "metrics": data["metrics"]}},
-            ["РНП использует расчётные и резервные значения сайта. При пустой истории расширенные показатели не подтверждены."])
-    elif name == "decisions":
-        sources = await run_in_threadpool(reports.status, query.store, query.marketplace, section.value)
-        if not any(s["records"] for s in sources):
-            return reports.envelope(query, {"rows": [], "total_rows": 0, "next_offset": None,
-                "totals": {}, "context": {"available": False}},
-                ["Метрики Центра решений не загружены. Достоверные рекомендации пока недоступны."], sources)
-        data = await run_in_threadpool(decision_center.dashboard, (query.store,))
-        rows = data.get("opportunities", data.get("decisions", []))
-        warnings.append("Эвристические предложения сайта: содержат оценки и резервные значения. Не доказанные причины и не фактическая прибыль.")
     sort_fields = tuple(reports.TAG_LABELS) if name == "product-tags" else ("margin_per_unit_rub", "roi_percent", "spp_percent") if name == "current-economics" else ()
     if name == "product-newness":
         sort_fields = ("sales_days", "is_new")
@@ -555,8 +503,8 @@ async def execute(name, request, user, query):
     if not rows:
         warnings.append("Нет строк по выбранным условиям. Это не доказывает отсутствие событий или убытков.")
     sources = []
-    if name in {"sales", "stocks", "stock-operations"}:
-        sources = await run_in_threadpool(reports.status, query.store, query.marketplace, section.value)
+    if name in {"stocks", "stock-operations"}:
+        sources = await run_in_threadpool(reports.status, query.store, query.marketplace, "stock")
     return reports.envelope(query, payload, warnings, sources)
 
 

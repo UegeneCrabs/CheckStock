@@ -495,11 +495,22 @@
             + ' · реклама ' + nullable(current.advertising_spend, preciseMoney);
         if (placeholderMode) {
             currentTitle = 'Данные пока не подключены';
+            if (config.yandexEconomics && product.ym_economics) {
+                var ym = product.ym_economics;
+                currentTitle = 'Формула YM · ' + ym.scheme + '. Цены, реклама и заказы за сегодня (МСК).'
+                    + (ym.result.messages.length ? ' ' + ym.result.messages.join(' ') : ' Параметры в карточке товара.');
+            }
             if (config.yandexMetrics === true) {
                 advertisingTitle = 'Период ' + nullText(product.advertising.period_from)
                     + ' — ' + nullText(product.advertising.period_to) + ' · сумма заказов '
                     + nullable(product.advertising.orders_amount, preciseMoney)
-                    + ' · буст продаж и показов (расходы по отчётам ЯМ)';
+                    + ' · буст продаж и показов (расходы по отчётам ЯМ)'
+                    + ' · выкуп ' + nullable(product.advertising.buyout_percent, decimal, '%')
+                    + (product.advertising.buyout_default_applied ? ' (по умолчанию)' : '')
+                    + ' за ' + nullText(product.advertising.buyout_period_from)
+                    + ' — ' + nullText(product.advertising.buyout_period_to)
+                    + ' · дней рекламы: ' + finite((product.advertising.coverage || {}).days, 0)
+                    + '/' + finite((product.advertising.coverage || {}).expected_days, 0);
                 stockTitle = stock.orders_21d === null ? 'Данных о заказах пока нет'
                     : stockTitle.replace('Заказы воронки', 'Заказы ЯМ');
             } else {
@@ -678,14 +689,15 @@
         nodes.productsLoading.hidden = !loading;
         nodes.search.disabled = loading;
         nodes.store.disabled = loading;
-        nodes.periodDays.disabled = loading || placeholderMode;
-        nodes.periodFrom.disabled = loading || placeholderMode;
-        nodes.periodTo.disabled = loading || placeholderMode;
-        nodes.periodApply.disabled = loading || placeholderMode;
+        nodes.periodDays.disabled = loading || (placeholderMode && !config.periodSelection);
+        nodes.periodFrom.disabled = loading || (placeholderMode && !config.periodSelection);
+        nodes.periodTo.disabled = loading || (placeholderMode && !config.periodSelection);
+        nodes.periodApply.disabled = loading || (placeholderMode && !config.periodSelection);
         nodes.pageSize.disabled = loading;
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
             var supported = button.dataset.stateFilter === 'all'
-                || (config.yandexMetrics === true && button.dataset.stateFilter === 'new');
+                || (config.yandexMetrics === true && button.dataset.stateFilter === 'new')
+                || (config.yandexEconomics === true && button.dataset.stateFilter === 'negative');
             button.disabled = loading || (placeholderMode && !supported);
         });
     }
@@ -1404,17 +1416,20 @@
             return;
         }
         nodes.chartDailySales.style.setProperty('--ue1c-chart-days', history.length);
-        nodes.chartDailySales.innerHTML = '<span class="ue1c-chart-daily-sales-label">Продажи<small>шт.</small></span>'
+        nodes.chartDailySales.innerHTML = '<span class="ue1c-chart-daily-sales-label">'
+            + (config.yandexEconomics ? 'Заказы' : 'Продажи') + '<small>шт.</small></span>'
             + history.map(function (item) {
-                var orders = Math.max(0, Math.round(finite(item.orders_count, 0)));
+                var orders = config.yandexEconomics && item.orders_count == null ? null
+                    : Math.max(0, Math.round(finite(item.orders_count, 0)));
                 return '<span class="ue1c-chart-daily-sales-value" title="' + escapeHtml(item.label)
-                    + ': ' + escapeHtml(integer.format(orders)) + ' шт.">'
-                    + escapeHtml(integer.format(orders)) + '</span>';
+                    + ': ' + escapeHtml(nullable(orders, integer)) + ' шт.">'
+                    + escapeHtml(nullable(orders, integer)) + '</span>';
             }).join('');
         nodes.chartDailySales.setAttribute(
             'aria-label',
-            'Продажи по дням в штуках: ' + history.map(function (item) {
-                return item.label + ' — ' + Math.max(0, Math.round(finite(item.orders_count, 0)));
+            (config.yandexEconomics ? 'Заказы' : 'Продажи') + ' по дням в штуках: ' + history.map(function (item) {
+                return item.label + ' — ' + (config.yandexEconomics && item.orders_count == null
+                    ? 'нет данных' : Math.max(0, Math.round(finite(item.orders_count, 0))));
             }).join(', ')
         );
         nodes.chartDailySales.hidden = false;
@@ -1429,9 +1444,14 @@
         var history = allHistory.slice(-14);
         renderChartDailySales(history);
         var previousHistory = allHistory.length >= 21 ? allHistory.slice(-21, -7) : [];
-        var compare = chartPreferences.compare && previousHistory.length === history.length;
+        var canCompare = previousHistory.length === history.length && (!config.yandexEconomics
+            || history.concat(previousHistory).every(function (row) { return row.orders_count != null; }));
+        var compare = chartPreferences.compare && canCompare;
         var compareInput = nodes.chartWrap.querySelector('[data-chart-compare]');
-        if (compareInput) compareInput.disabled = previousHistory.length !== history.length;
+        if (compareInput) {
+            compareInput.disabled = !canCompare;
+            if (config.yandexEconomics) compareInput.checked = compare;
+        }
         var enabled = function (key) { return chartPreferences.series.indexOf(key) !== -1; };
         var left = 42;
         var right = 398;
@@ -1660,7 +1680,8 @@
             cursor.classList.add('is-visible');
         }
         nodes.chartTooltip.innerHTML = '<strong>' + escapeHtml(item.label) + '</strong><table><tbody>'
-            + '<tr><th scope="row">Заказы воронки</th><td>' + nullable(item.orders_count, decimal, ' шт.') + '</td></tr>'
+            + '<tr><th scope="row">' + (config.yandexEconomics ? 'Заказы' : 'Заказы воронки')
+            + '</th><td>' + nullable(item.orders_count, decimal, ' шт.') + '</td></tr>'
             + '<tr><th scope="row">Реклама</th><td>' + nullable(item.advertising_rub, preciseMoney) + '</td></tr>'
             + '<tr><th scope="row">ДРР с выкупом</th><td>' + nullable(item.drr_percent, decimal, '%') + '</td></tr>'
             + '<tr><th scope="row">Чистая прибыль</th><td>' + nullable(item.margin_rub, preciseMoney) + '</td></tr>'
@@ -1711,6 +1732,56 @@
                 return '<li>' + escapeHtml(error) + '</li>';
             }).join('') + '</ul></details>';
     }
+    function renderYandexHistory(product, rows, today, message) {
+        var byDay = {};
+        rows.forEach(function (row) { byDay[row.day] = row; });
+        var end = new Date(today + 'T00:00:00Z');
+        product.history = [];
+        for (var offset = 21; offset > 0; offset--) {
+            var day = new Date(end);
+            day.setUTCDate(day.getUTCDate() - offset);
+            var key = day.toISOString().slice(0, 10), row = byDay[key] || {}, inputs = row.inputs || {};
+            var turnover = finite(row.expected_buyouts, null) !== null && finite(inputs.seller_price, null) !== null
+                ? row.expected_buyouts * inputs.seller_price : null;
+            product.history.push({
+                day: key, label: key.slice(8, 10) + '.' + key.slice(5, 7),
+                orders_count: finite(row.orders_count, null), stock_units: finite(row.stock_units, null),
+                margin_rub: finite(row.profit, null), advertising_rub: finite(row.advertising_spend, null),
+                drr_percent: turnover > 0 && row.advertising_spend != null ? row.advertising_spend / turnover * 100 : null
+            });
+        }
+        var visible = product.history.slice(-14);
+        var seriesKeys = {orders: 'orders_count', stock: 'stock_units', margin: 'margin_rub', ads: 'advertising_rub', drr: 'drr_percent'};
+        Object.keys(seriesKeys).forEach(function (series) {
+            var control = nodes.chartWrap.querySelector('[data-chart-series="' + series + '"]');
+            var available = visible.some(function (row) { return row[seriesKeys[series]] !== null; });
+            control.disabled = !available;
+            control.checked = available && chartPreferences.series.indexOf(series) !== -1;
+            control.closest('label').title = available ? '' : 'Нет данных за эти дни';
+        });
+        var orderLabel = nodes.chartWrap.querySelector('.is-orders');
+        orderLabel.lastChild.textContent = 'Заказы ×10';
+        var compareLabel = nodes.chartWrap.querySelector('.is-compare');
+        compareLabel.lastChild.textContent = 'Заказы неделей ранее';
+        nodes.chartDailySales.setAttribute('aria-label', 'Заказы по дням в штуках');
+        var empty = id('ue1c-ym-chart-empty');
+        if (!empty) {
+            empty = document.createElement('p');
+            empty.id = 'ue1c-ym-chart-empty';
+            empty.className = 'ue1c-placeholder-chart';
+            empty.setAttribute('role', 'status');
+            nodes.chart.before(empty);
+        }
+        var hasData = visible.some(function (row) {
+            return Object.keys(seriesKeys).some(function (series) { return row[seriesKeys[series]] !== null; });
+        });
+        empty.hidden = hasData;
+        empty.textContent = message || 'Данных для графика пока нет. История появится после накопления ежедневных снимков.';
+        nodes.chart.style.display = hasData ? '' : 'none';
+        hideChartTooltip();
+        renderChart(product);
+        if (!hasData) nodes.chartDailySales.hidden = true;
+    }
     function renderPlaceholderDetail(product) {
         var section = id('ue1c-placeholder-calculator');
         if (!section) {
@@ -1718,6 +1789,29 @@
             section.id = 'ue1c-placeholder-calculator';
             section.className = 'ue1c-calculator ue1c-placeholder-calculator';
             id('ue1c-panel-economics').prepend(section);
+        }
+        if (config.yandexEconomics && window.YandexEconomics) {
+            root.classList.add('is-yandex-economics');
+            nodes.chartWrap.closest('.ue1c-drawer-section').classList.add('ue1c-ym-chart');
+            Array.prototype.forEach.call(root.querySelectorAll('[data-detail-tab]'), function (button) {
+                button.hidden = false;
+            });
+            id('ue1c-panel-params').querySelector('.ue1c-section-head span').textContent = 'Яндекс Маркет';
+            var historyPanel = id('ue1c-ym-history');
+            if (!historyPanel) {
+                historyPanel = document.createElement('div');
+                historyPanel.id = 'ue1c-ym-history';
+                nodes.chartWrap.after(historyPanel);
+            }
+            window.YandexEconomics.render(section, product, {
+                canEdit: config.canEditYandex === true,
+                canManageSettings: config.canManageYandexSettings === true,
+                parameters: nodes.parameters,
+                historyContainer: historyPanel,
+                onHistory: function (rows, today, message) { renderYandexHistory(product, rows, today, message); }
+            });
+            renderGluedProducts(product);
+            return;
         }
         var fields = [
             ['Цена продавца', 'retail_price', '₽'], ['Цена покупателя', 'customer_price', '₽'],

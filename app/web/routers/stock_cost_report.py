@@ -6,7 +6,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from app import auth, db, stock_cost_report, stock_cost_report_export
+from app import db, stock_cost_report, stock_cost_report_export
 from app.access_control import (
     ActionPermission,
     has_action_permission,
@@ -14,12 +14,13 @@ from app.access_control import (
     scope_pairs,
 )
 from app.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.dto.identity import SectionAccessLevel, SectionName
+from app.section_access import has_access
 from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num, _now_iso
 from app.web.downloads import _download_headers
 from app.web.identifiers import copy_identifier
-from app.web.routers.stock_mutations import _guard_stock_edit
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -305,7 +306,7 @@ async def stock_cost_report_page(
         detail = _operation_table(
             stock_cost_report.operations_for_view(report, view),
             query,
-            auth.can_edit_stock(request.state.user),
+            has_access(request.state.user, SectionName.STOCK_COST_REPORT, SectionAccessLevel.WRITE),
         )
     export_url = "/stock/cost-report.xlsx?" + urlencode(query)
     content = fill_template(
@@ -384,9 +385,8 @@ async def classify_shipment_as_fbs_transfer(
     marketplace: str = Form(""),
     view: str = Form("shipments"),
 ):
-    denied = _guard_stock_edit(request.state.user)
-    if denied:
-        raise HTTPException(status_code=403, detail=denied)
+    if not has_access(request.state.user, SectionName.STOCK_COST_REPORT, SectionAccessLevel.WRITE):
+        raise HTTPException(status_code=403, detail="Нет права изменять движение и ЗЦ")
     operation = await run_in_threadpool(db.get_operation, operation_id)
     allowed_stores = accessible_store_slugs(request.state.user)
     if operation is None or operation.get("store_slug") not in allowed_stores:

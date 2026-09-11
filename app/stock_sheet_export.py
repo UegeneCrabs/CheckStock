@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 
-from app import db
+from app import db, stock_sheet_inbound
 from app.domain import MOSCOW_TIMEZONE
 from app.ff_import import google_service_account
 from app.repositories import stock_sheet_export as repository
@@ -45,6 +45,8 @@ METRIC_LABELS = {
     "ff_stock": "Доступно ФФ для распределения",
     "fbs_stock": "Текущий сток в продаже FBS",
     "fbo_stock": "Текущий сток в продаже FBO",
+    "ff_transit": "В пути между ФФ",
+    "mp_inbound": "В пути на склады МП",
     "fbs_orders": "Заказы по ФБС",
 }
 EXPORT_HEADERS = (
@@ -55,7 +57,10 @@ EXPORT_HEADERS = (
     "ДОСТУПНО ФФ ДЛЯ РАСПРЕДЕЛЕНИЯ",
     "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBS",
     "ТЕКУЩИЙ СТОК В ПРОДАЖЕ FBO",
+    "В ПУТИ МЕЖДУ ФФ",
+    "В ПУТИ НА СКЛАДЫ МП",
 )
+STOCK_EXPORT_METRICS = (*repository.STOCK_METRICS, "ff_transit", "mp_inbound")
 EXPORT_METRIC_HEADERS = {
     "ff_stock": EXPORT_HEADERS[4],
     "fbs_stock": EXPORT_HEADERS[5],
@@ -63,6 +68,8 @@ EXPORT_METRIC_HEADERS = {
     "fbs_orders": "ЗАКАЗЫ FBS ЗА 30 ДНЕЙ",
 }
 ORDER_EXPORT_HEADERS = (EXPORT_HEADERS[0], EXPORT_METRIC_HEADERS["fbs_orders"])
+EXPORT_TIMESTAMP_LABEL = "Выгрузка (МСК)"
+EXPORT_TIMESTAMP_FORMAT = "dd.mm.yyyy hh:mm:ss"
 
 ExportTarget = repository.ExportTarget
 MarketplaceSpreadsheet = repository.MarketplaceSpreadsheet
@@ -489,6 +496,8 @@ def _metric_values(
         values["fbs_stock"] = with_zeroes(db.get_mp_stock_totals(store_slug, marketplace, "fbs"))
     if "fbo_stock" in metrics:
         values["fbo_stock"] = with_zeroes(db.get_mp_stock_totals(store_slug, marketplace, "fbo"))
+    if "ff_transit" in metrics:
+        values["ff_transit"] = with_zeroes(db.get_ff_transit_totals(store_slug, marketplace))
     if "fbs_orders" in metrics:
         if marketplace == "WB":
             order_totals = _wb_fbs_order_totals(store_slug, now)
@@ -502,17 +511,109 @@ def _metric_values(
     return values
 
 
-def _sheet_names(service, spreadsheet_id: str) -> set[str]:
+def _sheet_metadata(service, spreadsheet_id: str) -> dict[str, dict]:
     metadata = (
         service.spreadsheets()
         .get(
             spreadsheetId=spreadsheet_id,
-            fields="sheets.properties(title)",
+            fields="sheets(properties(sheetId,title),merges)",
             includeGridData=False,
         )
         .execute()
     )
-    return {str(sheet.get("properties", {}).get("title") or "") for sheet in metadata.get("sheets") or ()}
+    return {
+        str(sheet.get("properties", {}).get("title") or ""): sheet for sheet in metadata.get("sheets") or ()
+    }
+
+
+def _check_timestamp_cells(service, spreadsheet_id: str, sheets: dict[str, dict]) -> None:
+    for name, sheet in sheets.items():
+        if any(
+            merged.get("startRowIndex", 0) == 0 and merged.get("startColumnIndex", 0) < 2
+            for merged in sheet.get("merges", ())
+        ):
+            raise StockSheetExportError(
+                f"Лист «{name}»: A1:B1 входят в объединённые ячейки. "
+                "Освободите две отдельные ячейки для даты выгрузки. Данные листа не изменены."
+            )
+        response = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range=f"{_quote_sheet(name)}!A1:B1",
+                valueRenderOption="FORMULA",
+                dateTimeRenderOption="SERIAL_NUMBER",
+            )
+            .execute()
+        )
+        rows = response.get("values") or []
+        label, value = ((rows[0] if rows else []) + [None, None])[:2]
+        blank = label in (None, "") and value in (None, "")
+        own_timestamp = label == EXPORT_TIMESTAMP_LABEL and (
+            value in (None, "") or (type(value) in (int, float) and value > 0)
+        )
+        if not blank and not own_timestamp:
+            raise StockSheetExportError(
+                f"Лист «{name}»: A1:B1 уже содержат данные или формулы. "
+                "Освободите эти ячейки для даты выгрузки. Данные листа не изменены."
+            )
+
+
+def _write_export_timestamp(service, spreadsheet_id: str, sheets: dict[str, dict]) -> str:
+    # Capture completion of this sheet's data write, not the scheduler's start time
+    # or the last marketplace sync. Store a fixed Sheets date, never a NOW formula.
+    exported_at = datetime.now(MOSCOW_TIMEZONE).replace(microsecond=0)
+    serial = (exported_at.replace(tzinfo=None) - datetime(1899, 12, 30)).total_seconds() / 86400
+    requests = []
+    for sheet in sheets.values():
+        sheet_id = sheet["properties"]["sheetId"]
+        requests.extend(
+            [
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 2,
+                        },
+                        "rows": [
+                            {
+                                "values": [
+                                    {"userEnteredValue": {"stringValue": EXPORT_TIMESTAMP_LABEL}},
+                                    {"userEnteredValue": {"numberValue": serial}},
+                                ]
+                            }
+                        ],
+                        "fields": "userEnteredValue",
+                    }
+                },
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 2,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "numberFormat": {
+                                    "type": "DATE_TIME",
+                                    "pattern": EXPORT_TIMESTAMP_FORMAT,
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.numberFormat",
+                    }
+                },
+            ]
+        )
+    service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": requests}).execute()
+    return exported_at.isoformat(timespec="seconds")
 
 
 def _target_sheet_name(
@@ -561,18 +662,30 @@ def _combined_stock_snapshot(
     marketplace: str,
     *,
     now: datetime | None = None,
-) -> tuple[list[dict], dict[str, dict[str, int]]]:
+) -> tuple[list[dict], dict[str, dict[str, int | None]], list[str]]:
     catalog_by_key: dict[str, dict] = {}
-    values_by_metric: dict[str, dict[str, int]] = {metric: {} for metric in repository.STOCK_METRICS}
+    values_by_metric: dict[str, dict[str, int | None]] = {metric: {} for metric in STOCK_EXPORT_METRICS}
+    warnings: list[str] = []
+    inbound_available = True
     for store_slug in store_slugs:
         catalog = db.get_catalog_items(store_slug, marketplace)
         store_values = _metric_values(
             store_slug,
             marketplace,
             catalog,
-            repository.STOCK_METRICS,
+            (*repository.STOCK_METRICS, "ff_transit"),
             now=now,
         )
+        inbound = stock_sheet_inbound.load(store_slug, marketplace, catalog, now=now)
+        catalog = inbound.catalog
+        store_values["mp_inbound"] = inbound.quantities
+        inbound_available = inbound_available and inbound.available
+        warnings.extend(f"{STORES[store_slug].name} · {marketplace}: {warning}" for warning in inbound.warnings)
+        known_articles = {_article_key(item.get("article")) for item in catalog}
+        for article, quantity in store_values.get("ff_transit", {}).items():
+            if quantity and _article_key(article) not in known_articles:
+                catalog.append({"article": article, "name": article, "barcode": ""})
+                known_articles.add(_article_key(article))
         for item in catalog:
             article = str(item.get("article") or "").strip()
             if not article:
@@ -588,11 +701,16 @@ def _combined_stock_snapshot(
                     if not combined_item.get(field) and item.get(field):
                         combined_item[field] = item[field]
             combined_article = str(combined_item["article"])
-            for metric in repository.STOCK_METRICS:
-                quantity = int(store_values.get(metric, {}).get(article, 0) or 0)
+            for metric in STOCK_EXPORT_METRICS:
+                quantity = store_values.get(metric, {}).get(article, 0)
                 metric_values = values_by_metric[metric]
-                metric_values[combined_article] = metric_values.get(combined_article, 0) + quantity
-    return list(catalog_by_key.values()), values_by_metric
+                previous = metric_values.get(combined_article, 0)
+                metric_values[combined_article] = (
+                    int(previous) + int(quantity) if previous is not None and quantity is not None else None
+                )
+    if not inbound_available:
+        values_by_metric["mp_inbound"] = dict.fromkeys(values_by_metric["mp_inbound"], None)
+    return list(catalog_by_key.values()), values_by_metric, warnings
 
 
 def _combined_fbs_order_totals(
@@ -620,13 +738,31 @@ def _combined_fbs_order_totals(
     return combined
 
 
+def _check_transit_columns(service, spreadsheet_id: str, sheet_names: list[str]) -> None:
+    for sheet_name in sheet_names:
+        response = (
+            service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=f"{_quote_sheet(sheet_name)}!H2:I",
+                valueRenderOption="FORMULA",
+            ).execute()
+        )
+        rows = response.get("values", [])
+        occupied = any(value not in (None, "") for row in rows for value in row)
+        if occupied and (not rows or rows[0] != list(EXPORT_HEADERS[7:])):
+            raise StockSheetExportError(
+                f"Лист «{sheet_name}»: H2:I уже содержат данные или формулы. "
+                "Перенесите их за столбец I или выберите отдельный лист стоков. Данные листа не изменены."
+            )
+
+
 def _write_marketplace(
     service,
     spreadsheet_id: str,
     settings: StockSheetExportSettings,
     marketplace: str,
     catalog: list[dict],
-    values_by_metric: dict[str, dict[str, int]],
+    values_by_metric: dict[str, dict[str, int | None]],
 ) -> dict:
     targets = [
         target
@@ -635,11 +771,14 @@ def _write_marketplace(
     ]
     if not targets:
         return {"marketplace": marketplace, "metrics": {}, "updated_cells": 0}
-    existing_sheets = _sheet_names(service, spreadsheet_id)
+    existing_sheets = _sheet_metadata(service, spreadsheet_id)
     sheet_names = list(dict.fromkeys(target.sheet_name for target in targets))
-    missing = sorted(set(sheet_names) - existing_sheets)
+    missing = sorted(set(sheet_names) - existing_sheets.keys())
     if missing:
         raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
+    _check_transit_columns(service, spreadsheet_id, sheet_names)
+    destination_sheets = {name: existing_sheets[name] for name in sheet_names}
+    _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
 
     data_rows: list[list[object]] = []
     for item in catalog:
@@ -649,20 +788,24 @@ def _write_marketplace(
         ff_stock = int(values_by_metric.get("ff_stock", {}).get(article, 0) or 0)
         fbs_stock = int(values_by_metric.get("fbs_stock", {}).get(article, 0) or 0)
         fbo_stock = int(values_by_metric.get("fbo_stock", {}).get(article, 0) or 0)
+        ff_transit = int(values_by_metric.get("ff_transit", {}).get(article, 0) or 0)
+        mp_inbound = values_by_metric.get("mp_inbound", {}).get(article)
         data_rows.append(
             [
                 _sheet_identifier(article),
                 _sheet_identifier(item.get("barcode")),
                 str(item.get("name") or "").strip(),
-                ff_stock + fbs_stock + fbo_stock,
+                ff_stock + fbs_stock + fbo_stock + ff_transit + mp_inbound if mp_inbound is not None else "",
                 ff_stock,
                 fbs_stock,
                 fbo_stock,
+                ff_transit,
+                mp_inbound if mp_inbound is not None else "",
             ]
         )
 
     values = [list(EXPORT_HEADERS), *data_rows]
-    clear_ranges = [f"{_quote_sheet(sheet_name)}!A2:G" for sheet_name in sheet_names]
+    clear_ranges = [f"{_quote_sheet(sheet_name)}!A2:I" for sheet_name in sheet_names]
     (
         service.spreadsheets()
         .values()
@@ -674,7 +817,7 @@ def _write_marketplace(
     )
     updates = [
         {
-            "range": f"{_quote_sheet(sheet_name)}!A2:G{len(values) + 1}",
+            "range": f"{_quote_sheet(sheet_name)}!A2:I{len(values) + 1}",
             "values": values,
         }
         for sheet_name in sheet_names
@@ -690,12 +833,14 @@ def _write_marketplace(
             .execute()
         )
     row_count = len(data_rows)
+    exported_at = _write_export_timestamp(service, spreadsheet_id, destination_sheets)
     return {
         "marketplace": marketplace,
         "sheets": sheet_names,
         "rows": row_count,
-        "metrics": {metric: {"rows": row_count} for metric in repository.STOCK_METRICS},
-        "updated_cells": len(values) * len(EXPORT_HEADERS) * len(sheet_names),
+        "metrics": {metric: {"rows": row_count} for metric in STOCK_EXPORT_METRICS},
+        "updated_cells": (len(values) * len(EXPORT_HEADERS) + 2) * len(sheet_names),
+        "exported_at": exported_at,
     }
 
 
@@ -714,8 +859,11 @@ def _write_fbs_orders(
     sheet_name = target.sheet_name.strip()
     if not sheet_name:
         return {"marketplace": marketplace, "skipped": True, "rows": 0, "updated_cells": 0}
-    if sheet_name not in _sheet_names(service, spreadsheet_id):
+    existing_sheets = _sheet_metadata(service, spreadsheet_id)
+    if sheet_name not in existing_sheets:
         raise StockSheetExportError(f"В таблице нет листа: {sheet_name}")
+    destination_sheets = {sheet_name: existing_sheets[sheet_name]}
+    _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
 
     data_rows = [
         [_sheet_identifier(article), int(totals[article])]
@@ -750,12 +898,14 @@ def _write_fbs_orders(
         )
         .execute()
     )
+    exported_at = _write_export_timestamp(service, spreadsheet_id, destination_sheets)
     return {
         "marketplace": marketplace,
         "sheet": sheet_name,
         "period_days": FBS_ORDER_LOOKBACK_DAYS,
         "rows": len(data_rows),
-        "updated_cells": len(values) * len(ORDER_EXPORT_HEADERS),
+        "updated_cells": len(values) * len(ORDER_EXPORT_HEADERS) + 2,
+        "exported_at": exported_at,
     }
 
 
@@ -816,7 +966,7 @@ def export_store(
                 current_marketplace,
                 known_settings,
             )
-            catalog, values_by_metric = _combined_stock_snapshot(
+            catalog, values_by_metric, warnings = _combined_stock_snapshot(
                 combined_store_slugs,
                 current_marketplace,
                 now=now,
@@ -830,6 +980,7 @@ def export_store(
                 values_by_metric,
             )
             marketplace_report["store_slugs"] = combined_store_slugs
+            marketplace_report["warnings"] = warnings
         else:
             marketplace_report = {
                 "marketplace": current_marketplace,

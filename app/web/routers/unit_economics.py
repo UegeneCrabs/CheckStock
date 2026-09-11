@@ -11,6 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import (
+    auth,
     db,
     health,
     unit_economics_1c,
@@ -30,8 +31,10 @@ from app.dto.unit_economics_1c import (
     UnitEconomics1CPriceChangeRequest,
     UnitEconomics1CProductSettings,
     UnitEconomics1CProductSettingsRequest,
+    YandexBuyoutSettingsRequest,
 )
 from app.repositories import unit_economics_data_errors as data_errors_repository
+from app.repositories import unit_economics_yandex as yandex_repository
 from app.section_access import has_access as has_section_access
 from app.stores import STORES
 from app.sync_tracking import run_tracked
@@ -892,12 +895,7 @@ def _unit_economics_1c_price_warnings(store_slugs: tuple[str, ...]) -> list[dict
     return warnings
 
 
-@router.get("/sales/unit-economics-1c", response_class=HTMLResponse)
-async def sales_unit_economics_1c(request: Request):
-    accessible_store_slugs = accessible_stores(request.state.user, "WB")
-    data_request = request.query_params.get("data") == "1"
-    request_today = datetime.now(MOSCOW_TIMEZONE).date()
-    last_complete_day = request_today - timedelta(days=1)
+def _unit_economics_period(request: Request, last_complete_day: date):
     try:
         requested_period_days = int(request.query_params.get("period_days") or 7)
     except (TypeError, ValueError):
@@ -936,6 +934,16 @@ async def sales_unit_economics_1c(request: Request):
                     closed_period_from = custom_from
                     closed_period_to = custom_to
                     period_days = custom_days
+    return period_days, closed_period_from, closed_period_to, custom_period, period_error
+
+
+@router.get("/sales/unit-economics-1c", response_class=HTMLResponse)
+async def sales_unit_economics_1c(request: Request):
+    accessible_store_slugs = accessible_stores(request.state.user, "WB")
+    data_request = request.query_params.get("data") == "1"
+    request_today = datetime.now(MOSCOW_TIMEZONE).date()
+    last_complete_day = request_today - timedelta(days=1)
+    period_days, closed_period_from, closed_period_to, custom_period, period_error = _unit_economics_period(request, last_complete_day)
     if period_error and data_request:
         return JSONResponse({"ok": False, "error": period_error}, status_code=400)
     if period_error:
@@ -1296,7 +1304,7 @@ async def sales_unit_economics_1c(request: Request):
         "commissionsEndpoint": "/sales/unit-economics-1c?data=1&commissions=1",
         "canEdit": has_section_access(
             request.state.user,
-            SectionName.UNIT_ECONOMICS_1C,
+            SectionName.UNIT_ECONOMICS_WB,
             SectionAccessLevel.WRITE,
         ),
     }
@@ -1349,7 +1357,7 @@ async def unit_economics_1c_prices_submit(
 ):
     if not has_section_access(
         request.state.user,
-        SectionName.UNIT_ECONOMICS_1C,
+        SectionName.UNIT_ECONOMICS_WB,
         SectionAccessLevel.WRITE,
     ):
         return JSONResponse({"ok": False, "error": "Нет права изменять цены"}, status_code=403)
@@ -1530,7 +1538,7 @@ async def unit_economics_1c_prices_preview(
 ):
     if not has_section_access(
         request.state.user,
-        SectionName.UNIT_ECONOMICS_1C,
+        SectionName.UNIT_ECONOMICS_WB,
         SectionAccessLevel.WRITE,
     ):
         return JSONResponse({"ok": False, "error": "Нет права изменять цены"}, status_code=403)
@@ -2707,7 +2715,7 @@ async def unit_economics_1c_product_settings_save(
         return JSONResponse({"ok": False, "error": "Нет доступа к этому кабинету"}, status_code=403)
     if not has_section_access(
         request.state.user,
-        SectionName.UNIT_ECONOMICS_1C,
+        SectionName.UNIT_ECONOMICS_WB,
         SectionAccessLevel.WRITE,
     ):
         return JSONResponse({"ok": False, "error": "Нет права изменять параметры"}, status_code=403)
@@ -2793,7 +2801,7 @@ async def unit_economics_1c_source_data_sync(request: Request):
         )
     if not has_section_access(
         request.state.user,
-        SectionName.UNIT_ECONOMICS_1C,
+        SectionName.UNIT_ECONOMICS_WB,
         SectionAccessLevel.WRITE,
     ):
         return JSONResponse(
@@ -2919,11 +2927,31 @@ async def sales_unit_economics_1c_ozon(request: Request):
     )
 
 
+@router.put("/api/unit-economics-1c/yandex-market/buyout-settings/{store_slug}")
+async def yandex_buyout_settings_save(request: Request, store_slug: str, payload: YandexBuyoutSettingsRequest):
+    store_slug = store_slug.lower()
+    if store_slug not in STORES:
+        return JSONResponse({"ok": False, "error": "Кабинет не найден"}, status_code=404)
+    if not has_scope(request.state.user, store_slug, "YANDEX MARKET") or not has_section_access(
+        request.state.user, SectionName.UNIT_ECONOMICS_YANDEX, SectionAccessLevel.WRITE,
+    ):
+        return JSONResponse({"ok": False, "error": "Нет права изменять параметры кабинета"}, status_code=403)
+    now = datetime.now(UTC).isoformat()
+    await run_in_threadpool(yandex_repository.save_buyout_settings, store_slug, payload.buyout_period_days,
+                            payload.default_buyout_percent, now, int(request.state.user["id"]),
+                            str(request.state.user["full_name"]))
+    return {"ok": True, "settings": payload.model_dump()}
+
+
 @router.get("/sales/unit-economics-1c/yandex-market", response_class=HTMLResponse)
 async def sales_unit_economics_1c_yandex(request: Request):
     store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
     today = datetime.now(MOSCOW_TIMEZONE).date()
-    period_from, period_to = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
+    last_complete_day = today - timedelta(days=1)
+    period_days, period_start, period_end, _, period_error = _unit_economics_period(request, last_complete_day)
+    if period_error and request.query_params.get("data") == "1":
+        return JSONResponse({"ok": False, "error": period_error}, status_code=400)
+    period_from, period_to = period_start.isoformat(), period_end.isoformat()
     if request.query_params.get("data") == "1":
         detail_article = str(request.query_params.get("article") or "").strip()
         detail_store = str(request.query_params.get("store") or "").strip().lower()
@@ -2932,7 +2960,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
 
         def load_products() -> list[dict]:
             return unit_economics_yandex.load_products(
-                (detail_store,) if detail_article else store_slugs, article=detail_article, today=today,
+                (detail_store,) if detail_article else store_slugs, article=detail_article, today=today, date_from=period_start, date_to=period_end,
             )
 
         products = await run_in_threadpool(load_products)
@@ -2941,8 +2969,8 @@ async def sales_unit_economics_1c_yandex(request: Request):
                 return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)
             return JSONResponse({"ok": True, "product": products[0]})
         return JSONResponse({
-            "ok": True, "products": products, "period_days": 7,
-            "period_from": period_from, "period_to": period_to, "last_complete_day": period_to,
+            "ok": True, "products": products, "period_days": period_days,
+            "period_from": period_from, "period_to": period_to, "last_complete_day": last_complete_day.isoformat(),
         })
 
     unit_config = {
@@ -2951,6 +2979,13 @@ async def sales_unit_economics_1c_yandex(request: Request):
         "marketplaceLabel": "Яндекс Маркета",
         "placeholderMode": True,
         "yandexMetrics": True,
+        "yandexEconomics": True,
+        "canManageYandexSettings": auth.has_role(request.state.user, "superadmin"),
+        "canEditYandex": has_section_access(request.state.user, SectionName.UNIT_ECONOMICS_YANDEX, SectionAccessLevel.WRITE),
+        "periodSelection": True,
+        "periodDays": period_days,
+        "lastCompleteDay": last_complete_day.isoformat(),
+        "maxPeriodDays": UNIT_ECONOMICS_MAX_PERIOD_DAYS,
         "periodFrom": period_from,
         "periodTo": period_to,
         "canEdit": False,
@@ -2967,10 +3002,11 @@ async def sales_unit_economics_1c_yandex(request: Request):
         unit_1c_notice=(
             '<p class="ue1c-placeholder-note" role="status">Яндекс Маркет · Остатки из БД, '
             'рейтинг и отзывы из API. Цена покупателя без Пэй — с витрины: каждый час 08:00–19:00 и в 01:00 (Екатеринбург). '
-            'ТО и реклама — за 7 завершённых дней; '
-            'запас — по заказам за 21 день. Маржа и ROI пока не подключены.</p>'
+            'ТО и реклама — за выбранный период завершённых дней; '
+            'запас — по заказам за 21 день. Экономика FBY — расчётная; калькулятор — в карточке товара. Постоянные параметры — в «API-ключи и фоновые выгрузки».</p>'
         ),
     )
+    content += '<link rel="stylesheet" href="/static/yandex-economics.css?v=3"><script src="/static/yandex-economics-fields.js?v=1"></script><script src="/static/yandex-economics.js?v=3"></script>'
     return render_page(
         "CheckStock — Юнит-экономика 1С — Яндекс Маркет",
         "unit_1c_yandex",

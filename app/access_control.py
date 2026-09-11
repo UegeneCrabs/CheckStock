@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from app.config import settings
 from app.domain import MARKETPLACES
 from app.dto.identity import AccessProfile, Role, User, coerce_user
 from app.stores import STORES
@@ -39,8 +38,6 @@ PROFILE_LABELS: dict[AccessProfile, str] = {
 
 
 _BASE_MARKETPLACE_MANAGER = {
-    ActionPermission.SALES_VIEW,
-    ActionPermission.SALES_EXPORT,
     ActionPermission.STOCK_BALANCE_VIEW,
     ActionPermission.STOCK_TOTAL_VIEW,
     ActionPermission.STOCK_TOTAL_EXPORT,
@@ -93,24 +90,10 @@ PROFILE_PERMISSIONS: dict[AccessProfile, frozenset[ActionPermission]] = {
     ),
 }
 
-EXPERIMENTAL_SECTIONS = frozenset(
-    {"decision_center", "ephemerides", "rnp", "supply", "stock_overview"}
-)
-
-
-def is_experimental_owner(user: User | None) -> bool:
-    normalized = coerce_user(user)
-    if normalized is None:
-        return False
-    configured = {value.casefold() for value in settings.experimental_owner_logins}
-    if configured:
-        return normalized.login.casefold() in configured
-    return normalized.role is Role.SUPERADMIN and normalized.id == 1
-
 
 def profile_label(profile: AccessProfile | None, marketplaces: tuple[str, ...] = ()) -> str:
     if profile is None:
-        return "Без должностного профиля"
+        return "Индивидуальные права"
     label = PROFILE_LABELS[profile]
     unique = tuple(dict.fromkeys(marketplaces))
     if profile in {
@@ -128,7 +111,7 @@ def scope_pairs(user: User | None) -> tuple[tuple[str, str], ...]:
         return ()
     if normalized.role is Role.SUPERADMIN:
         return tuple((store_slug, marketplace) for store_slug in STORES for marketplace in MARKETPLACES)
-    if normalized.access_profile is not None:
+    if normalized.access_profile is not None or normalized.access_scopes:
         allowed = {
             (scope.store_slug.lower(), scope.marketplace.upper())
             for scope in normalized.access_scopes

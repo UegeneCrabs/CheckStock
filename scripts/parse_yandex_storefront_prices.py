@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 from app import db, sync_settings
 from app.repositories import yandex_assortment
 from app.repositories import yandex_storefront as repository
+from app.sync_locks import SyncJobBusyError
 from app.sync_tracking import run_tracked, set_next_run
 from app.yandex.captcha_service import CaptchaError, Client
 from app.yandex.storefront_prices import parse_prices, prepare
@@ -377,7 +378,10 @@ def main(argv=None):
                     while True:
                         if args.loop:
                             wait_for_next_run(page)
-                        report = run_tracked(JOB, "scheduled" if args.loop else "manual", lambda: run_once(browser, args))
+                        try:
+                            report = run_tracked(JOB, "scheduled" if args.loop else "manual", lambda: run_once(browser, args))
+                        except SyncJobBusyError:
+                            report = {"ok": True, "status": "already_running"}
                         if not args.loop:
                             break
                 finally:

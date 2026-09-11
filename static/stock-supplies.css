@@ -388,16 +388,6 @@
     color: #a63f45;
 }
 
-html[data-theme="dark"] .supply-planner-warning,
-html[data-theme="dark"] .supply-table tbody tr.is-urgent td {
-    color: #ffb6b6;
-    background: rgba(217, 87, 77, 0.16);
-}
-
-html[data-theme="dark"] .supply-table tbody tr.is-urgent:hover td {
-    background: rgba(217, 87, 77, 0.22);
-}
-
 @media (max-width: 1180px) {
     .supply-toolbar {
         grid-template-columns: repeat(2, minmax(0, 1fr));
