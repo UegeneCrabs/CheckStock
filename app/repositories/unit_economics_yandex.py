@@ -1,10 +1,12 @@
 """Isolated Yandex snapshots; existing sales and WB calculations are read-only here."""
 
 import json
+from datetime import date, timedelta
 
 from app.repositories.core import WRITE_LOCK, get_connection
 
 MARKETPLACE = "YANDEX MARKET"
+ORDER_HISTORY_DAYS = 21
 
 
 def get_snapshots(store_slug: str) -> dict[str, dict]:
@@ -30,6 +32,14 @@ def save_snapshot(
     now: str,
 ) -> None:
     with WRITE_LOCK, get_connection() as conn:
+        if source == "orders":
+            previous = conn.execute(
+                "SELECT * FROM unit_economics_yandex_snapshots WHERE store_slug=? AND source='orders'",
+                (store_slug,),
+            ).fetchone()
+            data, period_from, period_to = _merge_orders_window(
+                dict(previous) if previous else {}, data, period_from, period_to
+            )
         conn.execute(
             """
             INSERT INTO unit_economics_yandex_snapshots
@@ -52,6 +62,29 @@ def save_snapshot(
             ),
         )
         conn.commit()
+
+
+def _merge_orders_window(
+    previous: dict, rows: list[dict], start: str, end: str
+) -> tuple[list[dict], str, str]:
+    """Retain 21 days; replace empty days too, and never count gaps as loaded history."""
+    old_rows = json.loads(previous.get("data_json") or "null")
+    period_from, period_to = start, end
+    if old_rows is not None:
+        old_start, old_end = previous["period_from"], previous["period_to"]
+        if (
+            old_start <= (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+            and old_end >= (date.fromisoformat(start) - timedelta(days=1)).isoformat()
+        ):
+            period_from, period_to = min(start, old_start), max(end, old_end)
+    cutoff = (date.fromisoformat(period_to) - timedelta(days=ORDER_HISTORY_DAYS - 1)).isoformat()
+    merged = {
+        (row["article"], row["day"]): row
+        for row in old_rows or []
+        if not start <= row["day"] <= end and cutoff <= row["day"] <= period_to
+    }
+    merged.update({(row["article"], row["day"]): row for row in rows if start <= row["day"] <= end})
+    return list(merged.values()), max(period_from, cutoff), period_to
 
 
 def record_error(store_slug: str, source: str, error: str, now: str) -> None:

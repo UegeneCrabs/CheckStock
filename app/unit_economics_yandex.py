@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from app import db, unit_economics_1c
 from app.domain import MOSCOW_TIMEZONE
 from app.repositories import unit_economics_yandex as repository
+from app.repositories import yandex_assortment
 from app.stores import STORES
 
 MARKETPLACE = "YANDEX MARKET"
@@ -89,6 +90,24 @@ def _covers(snapshot: dict, start: date, end: date) -> bool:
     )
 
 
+def _orders_cover(snapshot: dict, sync_states: list[dict], start: date, end: date) -> bool:
+    """Check complete history using the cached window and successful local order loads."""
+    periods = []
+    if snapshot.get("data") is not None:
+        periods.append((date.fromisoformat(snapshot["period_from"]), date.fromisoformat(snapshot["period_to"])))
+    for state in sync_states:
+        days = int(state.get("lookback_days") or 0)
+        if state.get("last_success_at") and days > 0:
+            last_day = date.fromisoformat(str(state["last_success_at"])[:10])
+            periods.append((last_day - timedelta(days=days - 1), last_day))
+    covered_to = start - timedelta(days=1)
+    for period_from, period_to in sorted(periods):
+        if period_from > covered_to + timedelta(days=1):
+            break
+        covered_to = max(covered_to, period_to)
+    return covered_to >= end
+
+
 def load_products(
     store_slugs: tuple[str, ...], *, article: str = "", today: date | None = None
 ) -> list[dict]:
@@ -97,33 +116,29 @@ def load_products(
     stock_start = today - timedelta(days=unit_economics_1c.STOCK_COVERAGE_PERIOD_DAYS - 1)
     products = []
     for slug in store_slugs:
-        catalog = db.get_catalog_items(slug, MARKETPLACE)
+        active = yandex_assortment.active_articles(slug)
+        catalog = [row for row in db.get_catalog_items(slug, MARKETPLACE) if row["article"] in active]
         stocks = {row["article"]: row for row in db.get_stock_items(slug, MARKETPLACE, ("fbs", "fbo"))}
         snapshots = repository.get_snapshots(slug)
         orders_snapshot = snapshots.get("orders") or {}
         if _covers(orders_snapshot, stock_start, today):
             orders = orders_snapshot["data"]
             orders_known = True
+            closed_known = True
         else:
             orders = repository.get_daily_orders(
                 slug, stock_start.isoformat(), (today + timedelta(days=1)).isoformat()
             )
             sync_states = db.get_sales_sync_states(MARKETPLACE, slug)
-            orders_known = any(
-                row.get("last_success_at")
-                and int(row.get("lookback_days") or 0) >= 21
-                and str(row["last_success_at"])[:10] >= today.isoformat()
-                for row in sync_states
-            )
-            if _covers(orders_snapshot, start, end):
-                cached = {(row["article"], row["day"]): row for row in orders_snapshot["data"]}
-                cached.update(
-                    {
-                        (row["article"], row["day"]): row
-                        for row in orders
-                        if row["day"] > orders_snapshot["period_to"]
-                    }
-                )
+            orders_known = _orders_cover(orders_snapshot, sync_states, stock_start, today)
+            closed_known = _orders_cover(orders_snapshot, sync_states, start, end)
+            if orders_snapshot.get("data") is not None:
+                cached = {
+                    (row["article"], row["day"]): row
+                    for row in orders
+                    if not orders_snapshot["period_from"] <= row["day"] <= orders_snapshot["period_to"]
+                }
+                cached.update({(row["article"], row["day"]): row for row in orders_snapshot["data"]})
                 orders = list(cached.values())
         by_article = defaultdict(list)
         for row in orders:
@@ -147,24 +162,22 @@ def load_products(
             total = fbs + fbo + ff
             rows = by_article[sku]
             stock_orders = sum(int(row.get("orders_count") or 0) for row in rows)
-            stock_known = orders_known or bool(rows)
             stock = {
                 "total": total,
                 "fbs": fbs,
                 "fbo": fbo,
                 "fulfillment": ff,
                 "days": unit_economics_1c.calculate_stock_coverage_days(total, stock_orders)
-                if stock_known
+                if orders_known
                 else None,
-                "orders_21d": stock_orders if stock_known else None,
-                "average_daily_orders": round(stock_orders / 21, 2) if stock_known else None,
+                "orders_21d": stock_orders if orders_known else None,
+                "average_daily_orders": round(stock_orders / 21, 2) if orders_known else None,
                 "period_days": 21,
                 "period_from": stock_start.isoformat(),
                 "period_to": today.isoformat(),
                 "state": None,
             }
             closed_rows = [row for row in rows if start.isoformat() <= row["day"] <= end.isoformat()]
-            closed_known = orders_known or _covers(orders_snapshot, start, end) or bool(closed_rows)
             order_amount = round(sum(float(row.get("orders_amount") or 0) for row in closed_rows), 2)
             cancel_amount = round(sum(float(row.get("cancel_amount") or 0) for row in closed_rows), 2)
             sold = sum(int(row.get("sold_count") or 0) for row in closed_rows)

@@ -803,12 +803,13 @@ class WebRouteUnitTests(unittest.TestCase):
             yandex.text,
         )
 
+    @mock.patch("app.repositories.yandex_assortment.load_active_products", lambda: {("rimili", "YM-1")})
     def test_yandex_unit_economics_loads_stock_and_keeps_unavailable_metrics_null(self) -> None:
         product = {
             "article": "YM-1", "barcode": "001234", "name": "Товар Маркета",
             "mp_sku": "123", "mp_product_id": "456", "image_url": "https://example.test/product.jpg",
         }
-        db.replace_catalog("rimili", "YANDEX MARKET", [product, {
+        db.replace_catalog("rimili", "YANDEX MARKET", [product, {"article": "OLD", "name": "Старый товар"}, {
             "article": "SERVICE", "name": "Служебный товар", "is_service": True,
         }], NOW)
         db.upsert_mp_stock("rimili", "YM-1", "YANDEX MARKET", "fbs", 42, NOW)
@@ -839,7 +840,16 @@ class WebRouteUnitTests(unittest.TestCase):
             "data": "1", "store": "rimili", "article": "missing",
         })
         self.assertEqual(missing.status_code, 404)
+        legacy = self.client.get("/sales/unit-economics-1c/yandex-market", params={
+            "data": "1", "store": "rimili", "article": "OLD",
+        })
+        self.assertEqual(legacy.status_code, 404)
+        self.assertIn("OLD", {row["article"] for row in db.get_catalog_items("rimili", "YANDEX MARKET")})
 
+    @mock.patch(
+        "app.repositories.yandex_assortment.load_active_products",
+        lambda: {("rimili", "YM-1"), ("tris", "YM-1")},
+    )
     def test_yandex_unit_economics_respects_marketplace_and_store_scope(self) -> None:
         for slug in ("rimili", "tris"):
             db.replace_catalog(slug, "YANDEX MARKET", [{"article": "YM-1", "name": slug}], NOW)

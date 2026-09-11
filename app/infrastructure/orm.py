@@ -1175,6 +1175,15 @@ class RnpDailyMetricRecord(OrmBase):
     snapshot_synced_at: Mapped[str | None] = mapped_column(String)
 
 
+class UnitEconomicsYandexAssortmentRecord(OrmBase):
+    __tablename__ = "unit_economics_yandex_assortment"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    is_legacy: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class UnitEconomicsYandexSnapshotRecord(OrmBase):
     __tablename__ = "unit_economics_yandex_snapshots"
 

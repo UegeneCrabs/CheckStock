@@ -117,16 +117,31 @@ class BackgroundSyncTests(unittest.TestCase):
 
         self.assertNotIn("decision_center_sync", jobs)
 
-    def test_yandex_metrics_job_is_hourly_and_respects_enabled_cabinets(self) -> None:
-        job = {job.name: job for job in background._jobs(mock.Mock())}["yandex_unit_economics_sync"]
-        self.assertEqual(job.next_delay(), 3600)
-        with (
-            mock.patch.object(background.sync_settings, "enabled_stores", return_value=("tris",)) as enabled,
-            mock.patch.object(background.ya_unit_sync, "sync_all") as sync,
+    def test_yandex_metrics_jobs_have_independent_schedules(self) -> None:
+        jobs = {job.name: job for job in background._jobs(mock.Mock())}
+        self.assertNotIn("yandex_unit_economics_sync", jobs)
+        for name, source, startup_delay, interval in (
+            ("yandex_orders_sync", "orders", 90, 900),
+            ("yandex_reputation_sync", "reputation", 120, 86400),
+            ("yandex_advertising_sync", "advertising", 150, 900),
         ):
-            job.run_callback()
-        enabled.assert_called_once_with("yandex_unit_economics_sync", "YANDEX MARKET")
-        sync.assert_called_once_with(("tris",))
+            job = jobs[name]
+            self.assertEqual(job.next_delay(), interval)
+            self.assertEqual(job.startup_delay_seconds, startup_delay)
+            self.assertTrue(job.interval_from_start)
+            with (
+                mock.patch.object(background, "_job_enabled", return_value=True) as is_enabled,
+                mock.patch.object(background.sync_settings, "enabled_stores", return_value=("tris",)) as enabled,
+                mock.patch.object(background.ya_unit_sync, "sync_all") as sync,
+            ):
+                self.assertTrue(job.is_enabled())
+                job.run_callback()
+                is_enabled.assert_called_once_with(name)
+                enabled.assert_called_once_with(name, "YANDEX MARKET")
+                sync.assert_called_once_with(source, ("tris",))
+                sync.reset_mock()
+                job.callback()
+                sync.assert_called_once_with(source)
 
     def test_reference_data_job_checks_for_weekly_refresh_daily(self) -> None:
         jobs = {job.name: job for job in background._jobs(mock.Mock())}

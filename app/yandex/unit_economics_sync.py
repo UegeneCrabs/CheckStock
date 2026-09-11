@@ -10,6 +10,7 @@ import zipfile
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
+from threading import Lock
 
 from app import sales
 from app.config import settings
@@ -19,7 +20,11 @@ from app.stores import STORES
 from app.yandex import api, tokens
 
 logger = logging.getLogger(__name__)
-SYNC_INTERVAL_SECONDS = 60 * 60
+SYNC_INTERVAL_SECONDS = {"orders": 15 * 60, "reputation": 24 * 60 * 60, "advertising": 15 * 60}
+RECENT_ORDER_DAYS = 7
+SOURCES = ("orders", "reputation", "advertising")
+_REPORT_LOCKS: dict[int, Lock] = {}
+_REPORT_LOCKS_GUARD = Lock()
 
 
 def _number(value: object) -> float:
@@ -81,6 +86,15 @@ def download_report(url: str, sheet: str, identifier: str) -> list[dict]:
 
 
 def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
+    """Serialize report generation per business while allowing orders to sync independently."""
+    business_id = int(payload["businessId"])
+    with _REPORT_LOCKS_GUARD:
+        report_lock = _REPORT_LOCKS.setdefault(business_id, Lock())
+    with report_lock:
+        return _load_report(api_key, report, payload, sheet, identifier)
+
+
+def _load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
     generated = api.request(
         f"/v2/reports/{report}/generate", api_key, payload=payload, params={"format": "JSON"}
     )
@@ -164,51 +178,42 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
     return [{"article": article, "day": day, **values} for (article, day), values in grouped.items()]
 
 
-def sync_store(store_slug: str, today: date | None = None) -> dict:
+def sync_store(store_slug: str, source: str, today: date | None = None) -> dict:
+    """Refresh exactly one source without requesting or changing the other snapshots."""
     if store_slug not in STORES:
         raise ValueError("Неизвестный кабинет")
+    if source not in SOURCES:
+        raise ValueError("Неизвестный источник юнит-экономики ЯМ")
     if not tokens.has_credentials(store_slug):
         return {"ok": False, "status": "not_configured"}
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
-    start, end = today - timedelta(days=7), today - timedelta(days=1)
-    stock_start = today - timedelta(days=20)
     now = datetime.now(UTC).isoformat()
-    sources = ("orders", "reputation", "advertising")
     try:
         api_key = tokens.get_api_key(store_slug)
         business_id = resolve_business_id(store_slug, api_key)
+        if source == "orders":
+            start, end = today - timedelta(days=RECENT_ORDER_DAYS - 1), today
+            rows = load_orders(store_slug, api_key, business_id, start, end)
+        elif source == "reputation":
+            start = end = today
+            rows = load_reputation(api_key, business_id)
+        else:
+            start, end = today - timedelta(days=7), today - timedelta(days=1)
+            rows = load_advertising(api_key, business_id, start, end)
+        repository.save_snapshot(store_slug, source, rows, start.isoformat(), end.isoformat(), now)
+        return {"ok": True, "source": source, "rows": len(rows)}
     except Exception as error:
-        for source in sources:
-            repository.record_error(store_slug, source, str(error)[:700], now)
-        return {"ok": False, "error": str(error)[:700]}
-    results = {}
-    for source, period_from, period_to, loader in (
-        (
-            "orders",
-            stock_start,
-            today,
-            lambda: load_orders(store_slug, api_key, business_id, stock_start, today),
-        ),
-        ("reputation", today, today, lambda: load_reputation(api_key, business_id)),
-        ("advertising", start, end, lambda: load_advertising(api_key, business_id, start, end)),
-    ):
-        try:
-            rows = loader()
-            repository.save_snapshot(
-                store_slug, source, rows, period_from.isoformat(), period_to.isoformat(), now
-            )
-            results[source] = {"ok": True, "rows": len(rows)}
-        except Exception as error:
-            message = str(error)[:700]
-            repository.record_error(store_slug, source, message, now)
-            logger.warning("Юнит-экономика ЯМ %s/%s: %s", store_slug, source, message)
-            results[source] = {"ok": False, "error": message}
-    return {"ok": all(result["ok"] for result in results.values()), "sources": results}
+        message = str(error)[:700]
+        repository.record_error(store_slug, source, message, now)
+        logger.warning("Юнит-экономика ЯМ %s/%s: %s", store_slug, source, message)
+        return {"ok": False, "source": source, "error": message}
 
 
-def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
+def sync_all(source: str, store_slugs: tuple[str, ...] | None = None) -> dict:
+    if source not in SOURCES:
+        raise ValueError("Неизвестный источник юнит-экономики ЯМ")
     return {
-        slug: sync_store(slug)
+        slug: sync_store(slug, source)
         for slug in (tuple(STORES) if store_slugs is None else store_slugs)
         if tokens.has_credentials(slug)
     }

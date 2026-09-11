@@ -1,4 +1,5 @@
 from app.infrastructure.database import DatabaseConnection
+from app.repositories import yandex_assortment
 from app.repositories.core import get_connection
 
 
@@ -98,6 +99,7 @@ def replace_catalog(
     force_remove_articles: set[str] | None = None,
 ) -> dict:
 
+    yandex_active = yandex_assortment.load_active_products() if marketplace == "YANDEX MARKET" else None
     conn = get_connection()
 
     protected = articles_with_own_stock(store_slug, marketplace, conn)
@@ -182,6 +184,8 @@ def replace_catalog(
             (store_slug, marketplace, article),
         )
 
+    if yandex_active is not None:
+        yandex_assortment.refresh(conn, yandex_active, updated_at, store_slug)
     conn.commit()
     conn.close()
     return {

@@ -7,8 +7,8 @@ from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
-from app import db, sales, unit_economics_yandex
-from app.repositories import core
+from app import db, sales, sync_settings, unit_economics_yandex
+from app.repositories import core, yandex_assortment
 from app.repositories import unit_economics_yandex as repository
 from app.yandex import unit_economics_sync as sync
 
@@ -36,6 +36,12 @@ class YandexMetricsTests(unittest.TestCase):
         patch = mock.patch.object(core, "DB_PATH", Path(self.temp.name) / "yandex.db")
         patch.start()
         self.addCleanup(patch.stop)
+        assortment_patch = mock.patch.object(
+            yandex_assortment, "load_active_products",
+            return_value={("rimili", "YM-1"), ("rimili", "YM-zero"), ("tris", "YM-1")},
+        )
+        assortment_patch.start()
+        self.addCleanup(assortment_patch.stop)
         db.init_db()
         db.replace_catalog(
             "rimili", MARKETPLACE, [{"article": "YM-1", "mp_sku": "123"}, {"article": "YM-zero"}], NOW
@@ -118,6 +124,7 @@ class YandexMetricsTests(unittest.TestCase):
         ]
         lines = sales._normalize_yandex("rimili", raw)
         db.upsert_sales_order_lines(lines, NOW)
+        db.record_sales_sync("rimili", MARKETPLACE, True, None, len(lines), 21, NOW)
         before = repository.get_daily_orders("rimili", "2026-08-20", "2026-09-10")
         self.assertEqual(self.products()["YM-1"]["economics_7d"]["turnover"], 2000)
         self.save("orders", [daily()], "2026-08-20", "2026-09-09")
@@ -125,7 +132,75 @@ class YandexMetricsTests(unittest.TestCase):
         self.assertEqual(self.products()["YM-1"]["economics_7d"]["turnover"], 8000)
         self.assertEqual(repository.get_daily_orders("rimili", "2026-08-20", "2026-09-10"), before)
 
+    def test_seven_day_refresh_replaces_days_and_keeps_history_for_calculations(self):
+        db.upsert_mp_stock("rimili", "YM-1", MARKETPLACE, "fbs", 100, NOW)
+        old_day = daily(day="2026-08-20", count=6, amount=6000, cancelled=0)
+        closed_day = daily(day="2026-09-02", count=4, amount=4000, cancelled=0)
+        self.save("orders", [old_day, closed_day, daily(), daily(article="YM-zero")], "2026-08-20", "2026-09-09")
+        fresh = daily(count=11, amount=11000, cancelled=1)
+        for _ in range(2):
+            self.save("orders", [fresh], "2026-09-03", "2026-09-09")
+            snapshot = repository.get_snapshots("rimili")["orders"]
+            self.assertEqual(snapshot["data"], [old_day, closed_day, fresh])
+            self.assertEqual((snapshot["period_from"], snapshot["period_to"]), ("2026-08-20", "2026-09-09"))
+            products = self.products()
+            self.assertEqual(products["YM-1"]["stock"]["orders_21d"], 21)
+            self.assertEqual(products["YM-1"]["stock"]["days"], 100)
+            self.assertEqual(products["YM-1"]["economics_7d"]["turnover"], 14000)
+            self.assertEqual(products["YM-zero"]["economics_7d"]["turnover"], 0)
+        # A successful empty response clears all refreshed days, without restoring stale orders.
+        self.save("orders", [], "2026-09-03", "2026-09-09")
+        self.assertEqual(repository.get_snapshots("rimili")["orders"]["data"], [old_day, closed_day])
+        self.assertEqual(self.products()["YM-1"]["economics_7d"]["turnover"], 4000)
+
+    def test_next_day_refresh_retains_closed_week_and_trims_only_expired_history(self):
+        expired = daily(day="2026-08-20")
+        oldest = daily(day="2026-08-21")
+        closed = daily(day="2026-09-03")
+        self.save("orders", [expired, oldest, closed, daily()], "2026-08-20", "2026-09-09")
+        self.save("orders", [], "2026-09-04", "2026-09-10")
+        snapshot = repository.get_snapshots("rimili")["orders"]
+        self.assertEqual(snapshot["data"], [oldest, closed])
+        self.assertEqual((snapshot["period_from"], snapshot["period_to"]), ("2026-08-21", "2026-09-10"))
+        product = unit_economics_yandex.load_products(("rimili",), article="YM-1", today=date(2026, 9, 10))[0]
+        self.assertEqual(product["stock"]["orders_21d"], 20)
+        self.assertEqual(product["economics_7d"]["turnover"], 8000)
+
+    def test_refresh_does_not_mark_gaps_between_windows_as_loaded(self):
+        self.save("orders", [], "2026-08-20", "2026-08-26")
+        self.save("orders", [], "2026-09-03", "2026-09-09")
+        snapshot = repository.get_snapshots("rimili")["orders"]
+        self.assertEqual((snapshot["period_from"], snapshot["period_to"]), ("2026-09-03", "2026-09-09"))
+        self.assertIsNone(self.products()["YM-1"]["economics_7d"]["turnover"])
+        self.assertIsNone(self.products()["YM-1"]["stock"]["days"])
+
+    def test_short_snapshot_combines_with_older_local_orders_without_reusing_refreshed_days(self):
+        raw = [
+            {
+                "id": number,
+                "creationDate": day + "T10:00:00+03:00",
+                "status": "DELIVERED",
+                "items": [{"offerId": "YM-1", "count": count, "prices": {"payment": count * 1000}}],
+            }
+            for number, day, count in (
+                (1, "2026-08-20", 6),
+                (2, "2026-09-02", 4),
+                (3, "2026-09-08", 20),
+                (4, "2026-09-09", 30),
+            )
+        ]
+        db.upsert_sales_order_lines(sales._normalize_yandex("rimili", raw), NOW)
+        db.record_sales_sync("rimili", MARKETPLACE, True, None, len(raw), 21, "2026-09-08T08:00:00+00:00")
+        before = repository.get_daily_orders("rimili", "2026-08-20", "2026-09-10")
+        self.save("orders", [daily()], "2026-09-03", "2026-09-09")
+        product = self.products()["YM-1"]
+        self.assertEqual(product["stock"]["orders_21d"], 20)
+        self.assertEqual(product["economics_7d"]["turnover"], 12000)
+        self.assertEqual(product["advertising"]["orders_amount"], 14000)
+        self.assertEqual(repository.get_daily_orders("rimili", "2026-08-20", "2026-09-10"), before)
+
     def test_sync_failures_preserve_successful_snapshot_and_isolate_sources(self):
+        self.save("orders", [], "2026-08-20", "2026-09-08")
         self.save("advertising", [{"article": "YM-1", "spend": 750, "impressions": 2000, "clicks": 50}])
         with (
             mock.patch.object(sync.tokens, "has_credentials", return_value=True),
@@ -137,13 +212,103 @@ class YandexMetricsTests(unittest.TestCase):
             ),
             mock.patch.object(sync, "load_advertising", side_effect=RuntimeError("unavailable")),
         ):
-            result = sync.sync_store("rimili", TODAY)
+            result = sync.sync_store("rimili", "advertising", TODAY)
+            orders_result = sync.sync_store("rimili", "orders", TODAY)
         self.assertFalse(result["ok"])
-        self.assertTrue(result["sources"]["orders"]["ok"])
+        self.assertTrue(orders_result["ok"])
         snapshots = repository.get_snapshots("rimili")
+        self.assertNotIn("reputation", snapshots)
         self.assertEqual(snapshots["advertising"]["data"][0]["spend"], 750)
         self.assertEqual(snapshots["advertising"]["error"], "unavailable")
         self.assertEqual(self.products()["YM-1"]["advertising"]["drr"], 10)
+
+    def test_new_cabinet_waits_for_complete_history_for_each_metric(self):
+        self.save("orders", [daily()], "2026-09-03", "2026-09-09")
+        self.save("advertising", [{"article": "YM-1", "spend": 750, "impressions": 2000, "clicks": 50}])
+        product = self.products()["YM-1"]
+        self.assertIsNone(product["stock"]["days"])
+        self.assertIsNone(product["stock"]["orders_21d"])
+        self.assertIsNone(product["economics_7d"]["turnover"])
+        self.assertIsNone(product["advertising"]["drr"])
+        self.assertEqual(product["advertising"]["spend"], 750)
+        self.save("orders", [daily()], "2026-09-04", "2026-09-10")
+        product = unit_economics_yandex.load_products(("rimili",), article="YM-1", today=date(2026, 9, 10))[0]
+        self.assertIsNone(product["stock"]["days"])
+        self.assertEqual(product["economics_7d"]["turnover"], 8000)
+
+    def test_each_source_updates_only_its_own_snapshot(self):
+        rows_by_source = {
+            "orders": [daily()],
+            "reputation": [{"sku": "123", "rating": 4.5, "reviews_count": 12}],
+            "advertising": [{"article": "YM-1", "spend": 750, "impressions": 2000, "clicks": 50}],
+        }
+        for source in sync.SOURCES:
+            with (
+                self.subTest(source=source),
+                mock.patch.object(sync.tokens, "has_credentials", return_value=True),
+                mock.patch.object(sync.tokens, "get_api_key", return_value="test-key"),
+                mock.patch.object(sync, "resolve_business_id", return_value=123),
+                mock.patch.object(sync, "load_orders", return_value=rows_by_source["orders"]) as orders,
+                mock.patch.object(
+                    sync, "load_reputation", return_value=rows_by_source["reputation"]
+                ) as reputation,
+                mock.patch.object(
+                    sync, "load_advertising", return_value=rows_by_source["advertising"]
+                ) as advertising,
+            ):
+                before = repository.get_snapshots("rimili")
+                result = sync.sync_store("rimili", source, TODAY)
+                after = repository.get_snapshots("rimili")
+                self.assertEqual(result, {"ok": True, "source": source, "rows": 1})
+                self.assertEqual(after[source]["data"], rows_by_source[source])
+                for name, loader in zip(sync.SOURCES, (orders, reputation, advertising), strict=True):
+                    self.assertEqual(loader.call_count, int(name == source))
+                    if name != source:
+                        self.assertEqual(after.get(name), before.get(name))
+                if source == "orders":
+                    orders.assert_called_once_with("rimili", "test-key", 123, date(2026, 9, 3), TODAY)
+                elif source == "reputation":
+                    reputation.assert_called_once_with("test-key", 123)
+                else:
+                    advertising.assert_called_once_with("test-key", 123, date(2026, 9, 2), date(2026, 9, 8))
+
+    def test_credentials_failure_only_marks_the_requested_source(self):
+        self.save("orders", [daily()], "2026-08-20", "2026-09-09")
+        self.save("advertising", [])
+        before = repository.get_snapshots("rimili")
+        with (
+            mock.patch.object(sync.tokens, "has_credentials", return_value=True),
+            mock.patch.object(sync.tokens, "get_api_key", side_effect=ValueError("invalid key")),
+        ):
+            result = sync.sync_store("rimili", "reputation", TODAY)
+        self.assertFalse(result["ok"])
+        after = repository.get_snapshots("rimili")
+        self.assertEqual(after["orders"], before["orders"])
+        self.assertEqual(after["advertising"], before["advertising"])
+        self.assertEqual(after["reputation"]["error"], "invalid key")
+
+    def test_split_settings_preserve_legacy_switches_and_stay_independent(self):
+        legacy = "yandex_unit_economics_sync"
+        names = ("yandex_orders_sync", "yandex_reputation_sync", "yandex_advertising_sync")
+        db.set_sync_job_setting(legacy, "", "", False, NOW)
+        db.set_sync_job_setting(legacy, "", MARKETPLACE, True, NOW)
+        db.set_sync_job_setting(legacy, "tris", MARKETPLACE, False, NOW)
+        db.set_sync_job_setting(names[1], "", "", True, NOW)
+        db.init_db()
+        for name in names:
+            rows = {
+                (row["store_slug"], row["marketplace"]): row["enabled"]
+                for row in db.list_sync_job_settings(name)
+            }
+            self.assertEqual(bool(rows[("", "")]), name == names[1])
+            self.assertTrue(rows[("", MARKETPLACE)])
+            self.assertFalse(rows[("tris", MARKETPLACE)])
+        sync_settings.save_setting(names[0], enabled=True)
+        sync_settings.save_setting(names[0], enabled=True, store_slug="tris", marketplace=MARKETPLACE)
+        db.init_db()
+        self.assertIn("tris", sync_settings.enabled_stores(names[0], MARKETPLACE))
+        self.assertNotIn("tris", sync_settings.enabled_stores(names[1], MARKETPLACE))
+        self.assertEqual(sync_settings.enabled_stores(names[2], MARKETPLACE), ())
 
 
 class YandexReportTests(unittest.TestCase):
@@ -152,8 +317,8 @@ class YandexReportTests(unittest.TestCase):
             mock.patch.object(sync.tokens, "has_credentials", side_effect=lambda slug: slug == "tris"),
             mock.patch.object(sync, "sync_store", return_value={"ok": True}) as sync_store,
         ):
-            self.assertEqual(sync.sync_all(("rimili", "tris")), {"tris": {"ok": True}})
-        sync_store.assert_called_once_with("tris")
+            self.assertEqual(sync.sync_all("orders", ("rimili", "tris")), {"tris": {"ok": True}})
+        sync_store.assert_called_once_with("tris", "orders")
 
     def test_advertising_uses_promoted_traffic_and_both_cost_sources(self):
         boost = [
@@ -229,7 +394,7 @@ class YandexReportTests(unittest.TestCase):
         download.assert_called_once_with("https://example.test/report", "paid_opinion_models", "sku")
         with mock.patch.object(sync.api, "request", side_effect=[{"reportId": "r1"}, {"status": "FAILED"}]):
             with self.assertRaises(RuntimeError):
-                sync.load_report("key", "goods-feedback", {}, "paid_opinion_models", "sku")
+                sync.load_report("key", "goods-feedback", {"businessId": 7}, "paid_opinion_models", "sku")
 
     def test_ambiguous_business_does_not_mix_cabinets(self):
         with (

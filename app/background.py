@@ -332,6 +332,27 @@ def _ftp_export_jobs() -> tuple[BackgroundJob, ...]:
     return tuple(jobs)
 
 
+def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
+    return tuple(
+        BackgroundJob(
+            name,
+            lambda current_source=source: ya_unit_sync.sync_all(current_source),
+            _fixed_delay(ya_unit_sync.SYNC_INTERVAL_SECONDS[source]),
+            startup_delay_seconds=startup_delay,
+            interval_from_start=True,
+            is_enabled=lambda current_name=name: _job_enabled(current_name),
+            run_callback=lambda current_name=name, current_source=source: ya_unit_sync.sync_all(
+                current_source, sync_settings.enabled_stores(current_name, "YANDEX MARKET")
+            ),
+        )
+        for name, source, startup_delay in (
+            ("yandex_orders_sync", "orders", 90),
+            ("yandex_reputation_sync", "reputation", 120),
+            ("yandex_advertising_sync", "advertising", 150),
+        )
+    )
+
+
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -367,16 +388,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             run_callback=_sync_wb_advertising_configured,
         ),
         *_funnel_jobs(),
-        BackgroundJob(
-            "yandex_unit_economics_sync",
-            ya_unit_sync.sync_all,
-            _fixed_delay(ya_unit_sync.SYNC_INTERVAL_SECONDS),
-            startup_delay_seconds=90,
-            is_enabled=lambda: _job_enabled("yandex_unit_economics_sync"),
-            run_callback=lambda: ya_unit_sync.sync_all(
-                sync_settings.enabled_stores("yandex_unit_economics_sync", "YANDEX MARKET")
-            ),
-        ),
+        *_yandex_unit_economics_jobs(),
         BackgroundJob(
             "unit_economics_1c_daily_margin_snapshot_00_msk",
             unit_margin_history.save_daily_margin_snapshots,

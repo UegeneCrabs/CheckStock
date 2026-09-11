@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import settings
+from app.yandex.unit_economics_sync import SYNC_INTERVAL_SECONDS as YANDEX_SYNC_INTERVAL_SECONDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,10 +71,28 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "stores",
         ),
         SyncJobDefinition(
-            "yandex_unit_economics_sync",
-            "Юнит-экономика Яндекс Маркета",
-            "Обновляет заказы, рейтинг, отзывы и рекламу ЯМ в отдельном хранилище юнит-экономики.",
-            _interval(60 * 60),
+            "yandex_orders_sync",
+            "Заказы Яндекс Маркета",
+            "Обновляет заказы ЯМ за сегодня и 6 предыдущих дней, сохраняя историю для расчётов.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["orders"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_reputation_sync",
+            "Отзывы и рейтинг Яндекс Маркета",
+            "Обновляет рейтинг товаров и количество отзывов ЯМ.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["reputation"]),
+            base,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            "yandex_advertising_sync",
+            "Реклама Яндекс Маркета",
+            "Обновляет затраты, показы и клики ЯМ за 7 завершённых дней.",
+            _interval(YANDEX_SYNC_INTERVAL_SECONDS["advertising"]),
             base,
             "store_marketplaces",
             ("YANDEX MARKET",),
