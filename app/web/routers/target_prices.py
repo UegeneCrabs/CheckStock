@@ -30,7 +30,7 @@ router = APIRouter()
 async def target_price_page(request: Request):
     stores = accessible_stores(request.state.user, "WB")
     content = fill_template(
-        "economics/wb/unit_economics_1c_target_price_content.html",
+        "economics/wb/target-price.html",
         target_price_config=json.dumps(
             {
                 "stores": [{"slug": slug, "name": STORES[slug]["name"]} for slug in stores],

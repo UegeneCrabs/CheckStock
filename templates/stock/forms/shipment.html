@@ -1,0 +1,93 @@
+<section
+    class="panel panel--collapsible stock-operation-card stock-operation-card--ship"
+    data-collapse-id="ff-ship"
+    data-collapsed
+>
+    <h3 class="panel-title">Отгрузки стока</h3>
+    <p class="stock-operation-summary">Отгрузить наружу, переместить на FBS или зафиксировать расхождение.</p>
+
+    <div class="panel-body">
+        <p class="panel-desc"
+            >Обычная отгрузка списывает физический остаток. Перемещение на FBS только фиксирует доступный для
+            продаж товар — физически он остаётся на фулфилменте.</p
+        >
+
+        <div class="route route--single">
+            <div class="route-side">
+                <span class="route-label">Откуда уходит</span>
+                <select class="select-control" id="sh-ff">
+                    <option value="">Фулфилмент</option>
+                    $ff_options
+                </select>
+                <select class="select-control" id="sh-mp">
+                    $mp_source_options
+                </select>
+            </div>
+        </div>
+
+        <input
+            type="text"
+            class="select-control"
+            id="sh-note"
+            placeholder="Примечание обязательно: номер, получатель или причина"
+            maxlength="200"
+            required
+            aria-required="true"
+        />
+
+        <label class="check-line">
+            <input type="checkbox" id="sh-fbs" />
+            <span>
+                <b>Перемещение на FBS</b> — зафиксировать товар в продаже FBS, не списывая его с физического
+                остатка фулфилмента.
+            </span>
+        </label>
+
+        <label class="check-line">
+            <input type="checkbox" id="sh-trash" />
+            <span>
+                <b>В мусорку</b> — товар у нас числится, а фулфилмент говорит, что его нет. Количество не
+                исчезнет: оно ляжет в мусорку вместе со складом, на котором потерялось.
+            </span>
+        </label>
+
+        <div class="io-block" id="sh-io">
+            <div class="io-block-head">
+                <span class="io-block-title">Товары и количества</span>
+                <div class="io-tabs" role="tablist">
+                    <button type="button" class="io-tab is-active" data-method="manual">Вручную</button>
+                    <button type="button" class="io-tab" data-method="sheet">Ссылкой</button>
+                    <button type="button" class="io-tab" data-method="file">Файлом</button>
+                </div>
+            </div>
+
+            <div class="io-method" data-method="manual">
+                <div id="sh-rows"></div>
+                <button class="btn-link" type="button" id="sh-add-row">+ ещё позицию</button>
+            </div>
+
+            <div class="io-method is-hidden" data-method="sheet">
+                <input
+                    type="text"
+                    class="select-control"
+                    id="sh-url"
+                    placeholder="https://docs.google.com/spreadsheets/..."
+                />
+            </div>
+
+            <div class="io-method is-hidden" data-method="file">
+                <p class="io-method-desc"
+                    >Колонки: <b>BARCODE</b> или <b>ARTICLE</b> и <b>КОЛИЧЕСТВО</b>. Откуда уходит товар
+                    берётся из полей выше.</p
+                >
+                <label class="file-drop">
+                    <input type="file" accept=".xlsx" hidden id="sh-file" />
+                    <span class="file-drop-text">Выбрать файл .xlsx</span>
+                </label>
+            </div>
+        </div>
+
+        <button class="btn-primary" type="button" id="sh-btn">Отгрузить</button>
+        <p class="ff-select-status" id="sh-status"></p>
+    </div>
+</section>

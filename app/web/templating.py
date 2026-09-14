@@ -1,4 +1,5 @@
 import html
+import re
 from string import Template
 
 from app import db
@@ -20,10 +21,24 @@ from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.wb import token_watch
 from app.web.access import accessible_store_slugs
+from app.web.client_templates import render_client_templates
 
 
 def read_template(name: str) -> str:
-    return (settings.templates_dir / name).read_text(encoding="utf-8")
+    def read(current: str, parents: tuple[str, ...]) -> str:
+        if current in parents:
+            raise ValueError(f"Recursive template include: {current}")
+        path = (settings.templates_dir / current).resolve()
+        if not path.is_relative_to(settings.templates_dir.resolve()):
+            raise ValueError(f"Template is outside the template directory: {current}")
+        source = path.read_text(encoding="utf-8")
+        return re.sub(
+            r"<!-- include: ([\w/.-]+\.html) -->",
+            lambda match: read(match[1], (*parents, current)),
+            source,
+        )
+
+    return read(name, ())
 
 
 def fill_template(name: str, **values: str) -> str:
@@ -48,7 +63,7 @@ def render_access_denied_page(
         heading = heading or "Нет доступных разделов"
         description = description or ("Обратитесь к суперадминистратору, чтобы он открыл нужные разделы.")
     content = fill_template(
-        "auth/access_denied_content.html",
+        "auth/access-denied.html",
         heading=html.escape(heading),
         description=html.escape(description),
     )
@@ -152,6 +167,9 @@ def render_page(
     content_class: str = "",
     alerts: list[dict[str, str]] | None = None,
 ) -> str:
+    stylesheet = re.compile(r'<link\b(?=[^>]*\brel=["\']stylesheet["\'])[^>]*>', re.IGNORECASE)
+    page_styles = "\n".join(dict.fromkeys(stylesheet.findall(content)))
+    content = stylesheet.sub("", content)
     admin_link = ""
     if auth.has_role(user, "admin") and has_access(user, SectionName.ADMIN_USERS):
         admin_cls = "active" if active == "admin" else ""
@@ -262,4 +280,6 @@ def render_page(
             else active
         ),
         access_level=current_access.value,
+        client_templates=render_client_templates(read_template("layout/page.html") + content),
+        page_styles=page_styles,
     )

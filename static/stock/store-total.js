@@ -15,15 +15,28 @@
     var storeSlug = window.location.pathname.split('/').filter(Boolean)[1] || '';
     var numberFormat = new Intl.NumberFormat('ru-RU');
     var moneyFormat = new Intl.NumberFormat('ru-RU', {
-        style: 'currency', currency: 'RUB', minimumFractionDigits: 0, maximumFractionDigits: 2
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
     });
     var totalKeys = ['grand_total', 'total_wb', 'total_ozon', 'total_yandex'];
     var quantityKeys = [
-        'ff_wb', 'ff_ozon', 'ff_yandex',
-        'transit_wb', 'transit_ozon', 'transit_yandex',
-        'fbs_wb', 'fbs_ozon', 'fbs_yandex',
-        'rfbs_wb', 'rfbs_ozon', 'rfbs_yandex',
-        'fbo_wb', 'fbo_ozon', 'fbo_yandex'
+        'ff_wb',
+        'ff_ozon',
+        'ff_yandex',
+        'transit_wb',
+        'transit_ozon',
+        'transit_yandex',
+        'fbs_wb',
+        'fbs_ozon',
+        'fbs_yandex',
+        'rfbs_wb',
+        'rfbs_ozon',
+        'rfbs_yandex',
+        'fbo_wb',
+        'fbo_ozon',
+        'fbo_yandex',
     ];
     var valueKeys = totalKeys.concat(quantityKeys);
     var loaded = false;
@@ -72,16 +85,17 @@
             row.setAttribute(
                 'data-purchase-price',
                 item.purchase_price === null || item.purchase_price === undefined
-                    ? '' : String(number(item.purchase_price))
+                    ? ''
+                    : String(number(item.purchase_price)),
             );
             row.appendChild(cell(String(item.article || '')));
             row.appendChild(cell(String(item.barcode || '')));
             var name = cell(String(item.name || item.article || 'Без названия'));
             name.title = name.textContent;
             row.appendChild(name);
-            var priceValue = row.getAttribute("data-purchase-price");
-            var price = cell(priceValue === "" ? "—" : moneyFormat.format(Number(priceValue)));
-            price.setAttribute("data-filter-value", priceValue);
+            var priceValue = row.getAttribute('data-purchase-price');
+            var price = cell(priceValue === '' ? '—' : moneyFormat.format(Number(priceValue)));
+            price.setAttribute('data-filter-value', priceValue);
             row.appendChild(price);
             valueKeys.forEach(function (key) {
                 row.appendChild(quantityCell(item[key]));
@@ -116,16 +130,23 @@
         });
         var costPositions = table.querySelector('[data-store-cost-positions]');
         if (costPositions) {
-            costPositions.textContent = 'ЗЦ: ' + numberFormat.format(pricedRows.length)
-                + ' из ' + numberFormat.format(rows.length) + ' поз.';
+            costPositions.textContent =
+                'ЗЦ: ' +
+                numberFormat.format(pricedRows.length) +
+                ' из ' +
+                numberFormat.format(rows.length) +
+                ' поз.';
         }
         valueKeys.forEach(function (key, index) {
             var target = table.querySelector('[data-store-cost-key="' + key + '"]');
             if (!target) return;
             var total = pricedRows.reduce(function (sum, row) {
                 var valueCell = row.children[index + 4];
-                return sum + number(valueCell && valueCell.getAttribute('data-filter-value'))
-                    * number(row.dataset.purchasePrice);
+                return (
+                    sum +
+                    number(valueCell && valueCell.getAttribute('data-filter-value')) *
+                        number(row.dataset.purchasePrice)
+                );
             }, 0);
             target.textContent = moneyFormat.format(total);
         });
@@ -139,7 +160,9 @@
     }
 
     function showTotal() {
-        normalViews.forEach(function (node) { node.hidden = true; });
+        normalViews.forEach(function (node) {
+            node.hidden = true;
+        });
         marketplaceTabs.forEach(function (tab) {
             tab.classList.remove('active');
             tab.setAttribute('aria-selected', 'false');
@@ -160,12 +183,17 @@
         setStatus('Загружаем тотал по трём площадкам...', false);
         fetch('/stock/' + encodeURIComponent(storeSlug) + '/total-data')
             .then(function (response) {
-                return response.json().catch(function () { return {}; }).then(function (data) {
-                    if (!response.ok || data.ok === false) {
-                        throw new Error(data.detail || data.error || 'Не удалось загрузить тотал');
-                    }
-                    return data;
-                });
+                return response
+                    .json()
+                    .catch(function () {
+                        return {};
+                    })
+                    .then(function (data) {
+                        if (!response.ok || data.ok === false) {
+                            throw new Error(data.detail || data.error || 'Не удалось загрузить тотал');
+                        }
+                        return data;
+                    });
             })
             .then(function (data) {
                 renderRows(data.rows || []);
@@ -173,7 +201,7 @@
                 setStatus('Показан общий остаток WB + OZON + Яндекс Маркета', false);
             })
             .catch(function (error) {
-                body.innerHTML = '<tr class="empty-row"><td colspan="23">Не удалось загрузить остатки</td></tr>';
+                body.innerHTML = window.CheckStockUI.render('stock/store-total/load-total');
                 setStatus('Ошибка: ' + error.message, true);
             })
             .finally(function () {
@@ -186,4 +214,4 @@
     button.addEventListener('click', loadTotal);
 
     if (new URLSearchParams(window.location.search).get('mp') === 'TOTAL') loadTotal();
-}());
+})();

@@ -333,7 +333,7 @@ async def integrations_page(request: Request):
         for index, (slug, store) in enumerate(STORES.items())
     )
     content = fill_template(
-        "integrations/integrations_content.html",
+        "integrations/index.html",
         google_export=await render_google_export(),
         job_count=str(len(definitions)),
         store_tabs=store_tabs,

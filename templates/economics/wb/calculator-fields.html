@@ -1,0 +1,229 @@
+<div class="ue1c-calculator-inputs" id="ue1c-calculator-inputs">
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-0-compact-0"
+        ><span
+            ><span class="ue1c-compact-label">Цена без СПП</span
+            ><span class="ue1c-expanded-label">Цена без СПП, руб</span></span
+        ><span class="ue1c-calculator-field"
+            ><input id="ue1c-price-input" data-calculator-input="retail" type="number" min="1" step="1" /><b
+                >₽</b
+            ></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-1"
+        ><span>СПП, %</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-spp-percent"
+                data-calculator-input="spp"
+                type="number"
+                min="0"
+                max="99.99"
+                step="0.01"
+            /><b>%</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-2-compact-1"
+        ><span
+            ><span class="ue1c-compact-label">Цена с СПП</span
+            ><span class="ue1c-expanded-label">Цена с СПП, руб</span></span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-spp-price-input"
+                data-calculator-input="client"
+                type="number"
+                min="1"
+                step="1"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-3"
+        ><span>WB Кошелёк, %</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-wallet-percent"
+                data-calculator-input="walletPercent"
+                type="number"
+                min="0"
+                max="99.99"
+                step="0.01"
+            /><b>%</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-4-compact-2"
+        ><span
+            ><span class="ue1c-compact-label">Цена с WB Кошельком</span
+            ><span class="ue1c-expanded-label">Цена с WB Кошельком, руб</span></span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-wallet-price-input"
+                data-calculator-input="wallet"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="недоступна"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-5"
+        ><span>Предмет</span
+        ><span class="ue1c-calculator-field ue1c-calculator-field--select"
+            ><input
+                id="ue1c-subject-select"
+                type="search"
+                list="ue1c-subject-options"
+                aria-label="Предмет товара"
+                placeholder="Начните вводить…"
+                autocomplete="off" /><datalist id="ue1c-subject-options"></datalist></span
+    ></label>
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-5"
+        ><span>Комиссия WB, %</span
+        ><span class="ue1c-calculator-field"
+            ><input data-calculator-input="commission" type="number" min="0" max="100" step="0.01" /><b
+                >%</b
+            ></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-6"
+        ><span>Комиссия WB, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-commission-rub"
+                data-calculator-input="commissionRub"
+                type="number"
+                min="0"
+                step="0.01"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-7"
+        ><span>Логистика, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input data-calculator-input="logistics" type="number" min="0" step="0.01" /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-8-compact-3"
+        ><span
+            ><span class="ue1c-compact-label">ДРР с выкупом</span
+            ><span class="ue1c-expanded-label">ДРР с выкупом, % (7 дней)</span></span
+        ><span class="ue1c-calculator-field"
+            ><input data-calculator-input="drr" type="number" min="0" max="100" step="0.01" /><b>%</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-9-compact-4"
+        ><span>Процент выкупа</span
+        ><span class="ue1c-calculator-field"
+            ><input data-calculator-input="buyoutPercent" type="number" min="0.01" max="100" step="0.01" /><b
+                >%</b
+            ></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-10"
+        ><span>Рекламные расходы на единицу, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-advertising-rub"
+                data-calculator-input="advertisingRub"
+                type="number"
+                min="0"
+                step="0.01"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-11"
+        ><span>Эквайринг, %</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-acquiring-percent"
+                data-calculator-input="acquiringPercent"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+            /><b>%</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-12"
+        ><span>Эквайринг, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-acquiring-rub"
+                data-calculator-input="acquiringRub"
+                type="number"
+                min="0"
+                step="0.01"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-13"
+        ><span>Хранение, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-storage-rub"
+                data-calculator-input="storageTotal"
+                type="number"
+                min="0"
+                step="0.01"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-14-compact-6"
+        ><span title="Закупочная цена для расчёта юнит-экономики">Закупочная стоимость</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-purchase-rub"
+                data-calculator-input="purchase"
+                type="number"
+                min="0"
+                step="0.01"
+            /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row" data-calculator-order="expanded-15-compact-5"
+        ><span
+            ><span class="ue1c-compact-label">Затраты на ФФ</span
+            ><span class="ue1c-expanded-label">Затраты на ФФ, руб</span></span
+        ><span class="ue1c-calculator-field"
+            ><input data-calculator-input="fulfillment" type="number" min="0" step="0.01" /><b>₽</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-16"
+        ><span>Комиссия компании, %</span
+        ><span class="ue1c-calculator-field"
+            ><input data-calculator-input="team" type="number" min="0" max="100" step="0.01" /><b>%</b></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-17"
+        ><span>Комиссия компании, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input id="ue1c-team-rub" data-calculator-input="teamRub" type="number" min="0" step="0.01" /><b
+                >₽</b
+            ></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-18"
+        ><span>Налог НДС, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input id="ue1c-vat-rub" data-calculator-input="vatRub" type="number" min="0" step="0.01" /><b
+                >₽</b
+            ></span
+        ></label
+    >
+    <label class="ue1c-calculator-row ue1c-calculator-row--expanded" data-calculator-order="expanded-19"
+        ><span id="ue1c-secondary-tax-label">Налог УСН, руб</span
+        ><span class="ue1c-calculator-field"
+            ><input
+                id="ue1c-secondary-tax-rub"
+                data-calculator-input="secondaryTaxRub"
+                type="number"
+                min="0"
+                step="0.01"
+            /><b>₽</b></span
+        ></label
+    >
+    <div class="ue1c-calculator-hidden" hidden>
+        <input data-calculator-input="storage" type="number" />
+        <input data-calculator-input="vat" type="number" />
+        <input data-calculator-input="usn" type="number" />
+        <input data-calculator-input="osno" type="number" />
+    </div>
+</div>

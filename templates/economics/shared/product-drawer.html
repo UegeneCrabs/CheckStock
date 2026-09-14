@@ -1,0 +1,41 @@
+<aside class="ue1c-drawer" id="ue1c-detail" aria-hidden="true" aria-labelledby="ue1c-drawer-title">
+    <header class="ue1c-drawer-head">
+        <div class="ue1c-drawer-thumb" id="ue1c-drawer-thumb"></div>
+        <div>
+            <h2 id="ue1c-drawer-title">Карточка товара</h2>
+            <div class="ue1c-drawer-meta" id="ue1c-drawer-meta"></div>
+        </div>
+        <button class="ue1c-close" id="ue1c-detail-close" type="button" aria-label="Закрыть">×</button>
+    </header>
+
+    <div class="ue1c-drawer-tabs" role="tablist">
+        <button
+            class="ue1c-drawer-tab is-active"
+            data-detail-tab="economics"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            >Экономика</button
+        >
+        <button
+            class="ue1c-drawer-tab"
+            data-detail-tab="params"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            >Параметры 1С</button
+        >
+    </div>
+
+    <div class="ue1c-drawer-body">
+        <div class="ue1c-detail-loading" id="ue1c-detail-loading" role="status" hidden>
+            <i aria-hidden="true"></i><span>Загружаем расчёты и график…</span>
+        </div>
+        <!-- include: economics/wb/calculator.html -->
+
+        <section class="ue1c-tab-panel" id="ue1c-panel-params" role="tabpanel" hidden>
+            <div class="ue1c-section-head"> <h3>Параметры расчёта</h3><span>данные 1С</span> </div>
+            <div class="ue1c-parameter-groups" id="ue1c-parameter-groups"></div>
+        </section>
+    </div>
+</aside>

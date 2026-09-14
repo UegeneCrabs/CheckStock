@@ -1,13 +1,9 @@
-
 (function () {
     'use strict';
 
     var STORAGE_PREFIX = 'paketa.collapse.';
 
-    var CHEVRON =
-        '<svg class="panel-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
-        'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ' +
-        'aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+    var CHEVRON = window.CheckStockUI.render('common/collapse/chevron');
 
     function readState(id) {
         if (!id) return null;
@@ -22,9 +18,7 @@
         if (!id) return;
         try {
             window.localStorage.setItem(STORAGE_PREFIX + id, collapsed ? '1' : '0');
-        } catch (e) {
-
-        }
+        } catch (e) {}
     }
 
     function initPanel(panel) {
@@ -33,7 +27,6 @@
         if (!title || !body) return;
 
         var id = panel.getAttribute('data-collapse-id');
-
 
         var toggle = document.createElement('button');
         toggle.type = 'button';
@@ -49,9 +42,7 @@
         }
 
         var saved = readState(id);
-        var startCollapsed = saved !== null
-            ? saved === '1'
-            : panel.hasAttribute('data-collapsed');
+        var startCollapsed = saved !== null ? saved === '1' : panel.hasAttribute('data-collapsed');
 
         apply(startCollapsed, false);
 

@@ -1,0 +1,387 @@
+<link rel="stylesheet" href="/static/admin/index.css?v=20260912" />
+<div class="ad-app" id="admin-app">
+    <header class="ad-page-heading">
+        <div
+            ><div class="ad-eyebrow">УПРАВЛЕНИЕ КОМАНДОЙ</div><h1>Админ-панель</h1
+            ><p>Сотрудники, права доступа и история изменений.</p></div
+        >
+        <button
+            class="ad-button ad-button--primary ad-create-button"
+            type="button"
+            id="u-open-create"
+            $form_disabled
+            ><span aria-hidden="true">+</span> Создать сотрудника</button
+        >
+    </header>
+    $create_hint
+    <div class="ad-stats" aria-label="Сводка по сотрудникам">
+        <button class="ad-stat" type="button" data-stat-filter="all"
+            ><span>Всего сотрудников</span><strong>$users_total</strong
+            ><small>В вашей команде <span aria-hidden="true">↗</span></small></button
+        >
+        <button class="ad-stat" type="button" data-stat-filter="active"
+            ><span><i class="ad-dot ad-dot--green"></i> Активные</span><strong>$users_active</strong
+            ><small>Могут входить в систему <span aria-hidden="true">↗</span></small></button
+        >
+        <button class="ad-stat" type="button" data-stat-filter="blocked"
+            ><span><i class="ad-dot ad-dot--muted"></i> Заблокированные</span><strong>$users_blocked</strong
+            ><small>Доступ приостановлен <span aria-hidden="true">↗</span></small></button
+        >
+        <button
+            class="ad-stat ad-stat--requests"
+            type="button"
+            data-stat-filter="requests"
+            $access_requests_hidden
+            ><span><i class="ad-dot ad-dot--amber"></i> Ожидают решения</span
+            ><strong>$requests_pending</strong
+            ><small>Запросы временного доступа <span aria-hidden="true">↗</span></small></button
+        >
+    </div>
+    <div class="ad-workspace">
+        <nav class="ad-tabs" role="tablist" aria-label="Разделы админ-панели">
+            <button
+                class="ad-tab"
+                type="button"
+                id="ad-tab-users"
+                role="tab"
+                aria-selected="true"
+                aria-controls="ad-pane-users"
+                data-tab="users"
+                >Сотрудники <span>$users_total</span></button
+            >
+            <button
+                class="ad-tab"
+                type="button"
+                id="ad-tab-requests"
+                role="tab"
+                aria-selected="false"
+                aria-controls="ad-pane-requests"
+                data-tab="requests"
+                tabindex="-1"
+                $access_requests_hidden
+                >Запросы доступа <span>$requests_pending</span></button
+            >
+            <button
+                class="ad-tab"
+                type="button"
+                id="ad-tab-log"
+                role="tab"
+                aria-selected="false"
+                aria-controls="ad-pane-log"
+                data-tab="log"
+                tabindex="-1"
+                >Журнал действий</button
+            >
+        </nav>
+        <section
+            class="ad-tab-pane"
+            id="ad-pane-users"
+            role="tabpanel"
+            aria-labelledby="ad-tab-users"
+            data-pane="users"
+        >
+            <div class="ad-toolbar">
+                <label class="ad-search"
+                    ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="10.8" cy="10.8" r="6.8" />
+                        <path d="m16 16 4.5 4.5" /></svg
+                    ><input
+                        id="ad-user-search"
+                        class="ad-input"
+                        type="search"
+                        placeholder="Имя, почта или логин"
+                        aria-label="Поиск сотрудников"
+                        autocomplete="off"
+                /></label>
+                <select id="ad-filter-role" class="ad-input ad-filter" aria-label="Фильтр по роли"
+                    ><option value="">Все роли</option
+                    >$filter_roles</select
+                >
+                <select id="ad-filter-status" class="ad-input ad-filter" aria-label="Фильтр по статусу"
+                    ><option value="">Все статусы</option
+                    ><option value="active">Активные</option
+                    ><option value="blocked">Заблокированные</option></select
+                >
+                <select id="ad-filter-store" class="ad-input ad-filter" aria-label="Фильтр по кабинету"
+                    ><option value="">Все кабинеты</option
+                    >$filter_stores</select
+                >
+                <button class="ad-text-button" type="button" id="ad-reset-filters" hidden>Сбросить</button>
+            </div>
+            <div class="ad-list-meta"
+                ><span id="ad-user-count" role="status" aria-live="polite"></span
+                ><label
+                    >Порядок
+                    <select id="ad-sort" class="ad-sort" aria-label="Порядок сотрудников"
+                        ><option value="name">По имени А–Я</option
+                        ><option value="newest">Сначала новые</option
+                        ><option value="role">По роли</option></select
+                    ></label
+                ></div
+            >
+            <div class="ad-table-wrap"
+                ><table class="ad-table ad-users-table" data-no-filter
+                    ><thead
+                        ><tr
+                            ><th scope="col">Сотрудник</th><th scope="col">Роль и должность</th
+                            ><th scope="col">Кабинеты и площадки</th><th scope="col">Статус</th
+                            ><th scope="col"><span class="ad-sr-only">Действия</span></th></tr
+                        ></thead
+                    ><tbody id="ad-user-rows">$user_rows</tbody></table
+                ></div
+            >
+            <div class="ad-empty" id="ad-users-empty" hidden
+                ><span class="ad-empty-icon" aria-hidden="true">⌕</span><h3>Сотрудники не найдены</h3
+                ><p>Попробуйте другое имя или измените фильтры.</p
+                ><button class="ad-button" type="button" data-clear-search
+                    >Сбросить поиск и фильтры</button
+                ></div
+            >
+            <div class="ad-pagination"
+                ><span id="ad-page-label"></span
+                ><div
+                    ><button
+                        class="ad-button"
+                        type="button"
+                        id="ad-prev"
+                        aria-label="Предыдущая страница сотрудников"
+                        >← Назад</button
+                    ><button
+                        class="ad-button"
+                        type="button"
+                        id="ad-next"
+                        aria-label="Следующая страница сотрудников"
+                        >Далее →</button
+                    ></div
+                ></div
+            >
+        </section>
+        <section
+            class="ad-tab-pane"
+            id="ad-pane-requests"
+            role="tabpanel"
+            aria-labelledby="ad-tab-requests"
+            data-pane="requests"
+            hidden
+        >
+            <div class="ad-section-heading"
+                ><div
+                    ><h2>Запросы временного доступа</h2
+                    ><p>Разрешения действуют до 7 дней. Вы можете отозвать их раньше.</p></div
+                ><label class="ad-search"
+                    ><input
+                        class="ad-input"
+                        type="search"
+                        data-table-search="requests"
+                        placeholder="Найти запрос"
+                        aria-label="Поиск запросов доступа" /></label
+            ></div>
+            <div class="ad-table-wrap"
+                ><table class="ad-table ad-detail-table" id="ad-requests-table" data-no-filter
+                    ><thead
+                        ><tr
+                            ><th>Когда</th><th>Сотрудник</th><th>Кабинет</th><th>Площадка</th><th>Действие</th
+                            ><th>Статус</th><th>Решение</th></tr
+                        ></thead
+                    ><tbody>$access_request_rows</tbody></table
+                ></div
+            ><p class="ad-table-result" data-table-result="requests" role="status"></p>
+        </section>
+        <section
+            class="ad-tab-pane"
+            id="ad-pane-log"
+            role="tabpanel"
+            aria-labelledby="ad-tab-log"
+            data-pane="log"
+            hidden
+        >
+            <div class="ad-section-heading"
+                ><div
+                    ><h2>Журнал действий</h2><p>Последние 200 записей: кто, когда и что изменил.</p></div
+                ></div
+            >
+            <div class="ad-toolbar"
+                ><label class="ad-search"
+                    ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="10.8" cy="10.8" r="6.8" />
+                        <path d="m16 16 4.5 4.5" /></svg
+                    ><input
+                        class="ad-input"
+                        type="search"
+                        data-table-search="log"
+                        placeholder="Сотрудник, действие или подробности"
+                        aria-label="Поиск по журналу" /></label
+                ><span class="ad-table-result" data-table-result="log" role="status"></span
+            ></div>
+            <div class="ad-table-wrap ad-log-wrap"
+                ><table class="ad-table ad-detail-table" id="ad-log-table" data-no-filter
+                    ><thead
+                        ><tr
+                            ><th>Дата и время</th><th>Сотрудник</th><th>Действие</th><th>Подробности</th
+                            ><th>Файл</th></tr
+                        ></thead
+                    ><tbody>$log_rows</tbody></table
+                ></div
+            >
+        </section>
+    </div>
+    <dialog class="ad-dialog ad-drawer" id="ad-user-dialog" aria-labelledby="ad-user-title">
+        <header class="ad-dialog-heading"
+            ><div><span class="ad-eyebrow">КАРТОЧКА СОТРУДНИКА</span><h2 id="ad-user-title"></h2></div
+            ><button class="ad-close" type="button" data-close-dialog aria-label="Закрыть карточку"
+                >×</button
+            ></header
+        ><div id="ad-editor-content"></div>
+        <footer class="ad-drawer-footer"
+            ><span>Изменения сохраняются отдельно в каждом блоке.</span
+            ><button class="ad-button" type="button" data-close-dialog>Закрыть</button></footer
+        >
+    </dialog>
+    <dialog class="ad-dialog ad-create" id="u-create-overlay" aria-labelledby="u-create-title">
+        <header class="ad-dialog-heading"
+            ><div
+                ><span class="ad-eyebrow">НОВЫЙ УЧАСТНИК КОМАНДЫ</span
+                ><h2 id="u-create-title">Создание сотрудника</h2></div
+            ><button class="ad-close" type="button" data-close-dialog aria-label="Закрыть создание сотрудника"
+                >×</button
+            ></header
+        >
+        <form id="ad-create-form" novalidate
+            ><div class="ad-create-body">
+                <div class="ad-form-section"
+                    ><h3><span>1</span> Данные для входа</h3
+                    ><div class="ad-form-grid">
+                        <label class="ad-field ad-field--wide"
+                            ><span>ФИО</span
+                            ><input
+                                class="ad-input"
+                                type="text"
+                                id="u-fio"
+                                name="full_name"
+                                placeholder="Иван Петров"
+                                maxlength="200"
+                                required
+                                autocomplete="off"
+                        /></label>
+                        <label class="ad-field"
+                            ><span>Электронная почта</span
+                            ><input
+                                class="ad-input"
+                                type="email"
+                                id="u-email"
+                                name="google_email"
+                                placeholder="name@company.ru"
+                                maxlength="320"
+                                required
+                                autocomplete="off"
+                        /></label>
+                        <label class="ad-field"
+                            ><span>Логин</span
+                            ><input
+                                class="ad-input"
+                                type="text"
+                                id="u-login"
+                                name="login"
+                                placeholder="ivan.petrov"
+                                maxlength="100"
+                                required
+                                autocomplete="off"
+                            /><small>Логин: латинские буквы, цифры и символы . _ @ + −</small></label
+                        >
+                        <div class="ad-field ad-field--wide"
+                            ><label for="u-pass">Пароль</label
+                            ><div class="ad-password-row"
+                                ><input
+                                    class="ad-input"
+                                    type="text"
+                                    id="u-pass"
+                                    name="password"
+                                    placeholder="Не менее 8 символов"
+                                    minlength="8"
+                                    maxlength="1024"
+                                    required
+                                    autocomplete="new-password"
+                                /><button class="ad-button" type="button" id="u-gen">Сгенерировать</button
+                                ><button
+                                    class="ad-button"
+                                    type="button"
+                                    id="u-copy"
+                                    aria-label="Скопировать пароль"
+                                    >Копировать</button
+                                ></div
+                            ><small id="u-pass-hint" aria-live="polite"
+                                >Скопируйте пароль и передайте сотруднику после создания учётной
+                                записи.</small
+                            ></div
+                        >
+                    </div></div
+                >
+                <div class="ad-form-section"
+                    ><h3><span>2</span> Роль и доступ</h3
+                    ><div class="ad-form-grid">
+                        <label class="ad-field"
+                            ><span>Роль в системе</span
+                            ><select class="ad-input" id="u-role" name="role"
+                                >$role_options</select
+                            ></label
+                        >
+                        <label class="ad-field"
+                            ><span>Как назначать права</span
+                            ><select class="ad-input" id="u-access-profile" name="access_profile"
+                                >$profile_options</select
+                            ></label
+                        ><input type="hidden" name="scope_version" value="2" /><p
+                            class="ad-hint ad-field--wide"
+                            >Роль отвечает за управление системой, должность — за рабочие действия.
+                            Суперадминистратору доступны все данные независимо от выбранных ограничений.</p
+                        ><p class="ad-profile-description ad-field--wide" data-profile-description></p>
+                        <div class="ad-field ad-field--wide" id="u-marketplaces" data-marketplaces
+                            ><span>Площадки — маркетплейсы внутри кабинета</span>$marketplace_options<p
+                                class="ad-hint"
+                                data-policy-hint
+                            ></p
+                        ></div>
+                        <div class="ad-field ad-field--wide" id="u-stores"
+                            ><div class="ad-field-heading"
+                                ><span>Кабинеты — магазины компании</span
+                                ><button class="ad-text-button" type="button" data-select-stores
+                                    >Выбрать все</button
+                                ></div
+                            >$store_options</div
+                        ><p
+                            class="ad-scope-preview ad-field--wide"
+                            data-working-scope
+                            aria-live="polite"
+                        ></p> </div
+                ></div> </div
+            ><footer class="ad-create-footer"
+                ><p class="ad-form-status" id="u-status" role="status" aria-live="polite"></p
+                ><div
+                    ><button class="ad-button" type="button" data-close-dialog>Отмена</button
+                    ><button class="ad-button ad-button--primary" type="submit" id="u-create" $form_disabled
+                        >Создать сотрудника</button
+                    ></div
+                ></footer
+            ></form
+        >
+    </dialog>
+    <dialog class="ad-dialog ad-confirm" id="ad-confirm-dialog" aria-labelledby="ad-confirm-title">
+        <div class="ad-confirm-body"
+            ><span class="ad-confirm-icon" aria-hidden="true">!</span><h2 id="ad-confirm-title"></h2
+            ><p id="ad-confirm-text"></p
+            ><div id="ad-confirm-password" hidden
+                ><label class="ad-field"
+                    ><span>Новый пароль</span
+                    ><input class="ad-input" type="text" readonly aria-label="Новый пароль" /></label
+                ><button class="ad-button" type="button" id="ad-confirm-copy">Скопировать пароль</button></div
+            ><p class="ad-form-status" id="ad-confirm-status" role="status"></p></div
+        ><footer class="ad-confirm-footer"
+            ><button class="ad-button" type="button" id="ad-confirm-cancel">Отмена</button
+            ><button class="ad-button ad-button--primary" type="button" id="ad-confirm-ok"
+                >Подтвердить</button
+            ></footer
+        >
+    </dialog>
+    <div class="ad-toast" id="ad-toast" role="status" aria-live="polite" hidden></div>
+</div>
+<script src="/static/admin/index.js?v=20260912" defer></script>

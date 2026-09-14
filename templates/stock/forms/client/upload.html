@@ -1,0 +1,36 @@
+<!-- template: unmatched-note -->
+<p class="import-report-note">Не найдено в каталоге: <strong>{{unmatched_quantity}} шт.</strong> — они не будут внесены.</p>
+<!-- endtemplate -->
+
+<!-- template: body -->
+<div class="import-report-summary"><span><strong>{{source_quantity}}</strong>шт. {{content}}</span><span><strong>{{added_quantity}}</strong>шт. будет внесено</span></div><p><strong>Колонка:</strong> ФФ для распределения {{marketplace}}</p>{{{unmatchedNote}}}<p>Убедитесь, что количество в источнике и количество к внесению верны. Если цифры не совпадают с ожидаемыми, нажмите «ОТМЕНА».</p>
+<!-- endtemplate -->
+
+<!-- template: visible -->
+<li><strong>{{{article}}}</strong><span>{{item}}</span></li>
+<!-- endtemplate -->
+
+<!-- template: tail -->
+<p class="import-report-more">И ещё {{{content}}} поз.</p>
+<!-- endtemplate -->
+
+<!-- template: detail -->
+<section class="import-report-group import-report-group--{{{tone}}}"><h4>{{title}}<span>{{{length}}}</span></h4><ul>{{{visible}}}</ul>{{{tail}}}</section>
+<!-- endtemplate -->
+
+<!-- template: body-html-2 -->
+<div class="import-report-summary"><span><strong>{{{added_quantity}}}</strong>шт. добавлено</span><span><strong>{{{applied}}}</strong>поз. изменено</span><span><strong>{{{length}}}</strong>без изменений</span></div>{{{content}}}{{{content_2}}}{{{content_3}}}{{{content_4}}}{{{content_5}}}{{{content_6}}}{{{content_7}}}
+<!-- endtemplate -->
+
+<!-- template: body-html -->
+<p class="import-report-note">Не найдено в каталоге: <strong>{{{unmatched}}}</strong></p>
+<!-- endtemplate -->
+
+
+<!-- template: add-row -->
+<div class="manual-code-wrap"><input class="select-control manual-code" type="text" placeholder="Артикул или баркод" autocomplete="off"><div class="suggest-box"></div></div><input class="select-control manual-qty" type="number" placeholder="Кол-во" min="1"><button type="button" class="manual-remove" title="Убрать строку">&times;</button>
+<!-- endtemplate -->
+
+<!-- template: body-html-3 -->
+<p><strong>{{{totalQuantity}}} ед.</strong> будет внесено в колонку «ФФ для распределения {{{marketplace}}}».</p><p>Проверьте итоговое количество. Если оно неверно, нажмите «ОТМЕНА» — сток не изменится.</p>
+<!-- endtemplate -->

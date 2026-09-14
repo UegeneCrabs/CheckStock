@@ -1,10 +1,7 @@
 (function () {
     'use strict';
 
-    var FILTER_ICON =
-        '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" ' +
-        'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">' +
-        '<path d="M2 3h12l-4.6 5.4v4L7.6 14v-5.6z"/></svg>';
+    var FILTER_ICON = window.CheckStockUI.render('common/table-filter/filter_icon');
 
     var popover = null;
     var current = null;
@@ -14,7 +11,9 @@
         popover = document.createElement('div');
         popover.className = 'tf-popover';
         document.body.appendChild(popover);
-        popover.addEventListener('click', function (e) { e.stopPropagation(); });
+        popover.addEventListener('click', function (e) {
+            e.stopPropagation();
+        });
         return popover;
     }
 
@@ -27,8 +26,6 @@
             return !tr.classList.contains('empty-row');
         });
     }
-
-
 
     var COLOR_COL = 'color';
     var COLOR_RED = 'Красные (нет в продаже)';
@@ -55,15 +52,17 @@
     }
 
     function isNumericSeries(values) {
-        var real = values.filter(function (v) { return v !== '' && v !== '—'; });
+        var real = values.filter(function (v) {
+            return v !== '' && v !== '—';
+        });
         if (!real.length) return false;
-        return real.every(function (v) { return numericValue(v) !== null; });
+        return real.every(function (v) {
+            return numericValue(v) !== null;
+        });
     }
 
     function numericValue(value) {
-        var normalized = value
-            .replace(/[\s\u00a0\u202f]/g, '')
-            .replace(',', '.');
+        var normalized = value.replace(/[\s\u00a0\u202f]/g, '').replace(',', '.');
         if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null;
         return Number(normalized);
     }
@@ -82,9 +81,12 @@
     function uniqueValues(table, colIndex) {
         var seen = {};
         var out = [];
-        var values = table._tfAdapter && typeof table._tfAdapter.values === 'function'
-            ? table._tfAdapter.values(colIndex)
-            : dataRows(table).map(function (row) { return cellValue(row, colIndex); });
+        var values =
+            table._tfAdapter && typeof table._tfAdapter.values === 'function'
+                ? table._tfAdapter.values(colIndex)
+                : dataRows(table).map(function (row) {
+                      return cellValue(row, colIndex);
+                  });
         values.forEach(function (value) {
             var v = String(value === null || value === undefined ? '' : value);
             if (!Object.prototype.hasOwnProperty.call(seen, v)) {
@@ -94,7 +96,9 @@
         });
 
         var numeric = isNumericColumn(table, colIndex, out);
-        out.sort(function (a, b) { return compareValues(a, b, numeric); });
+        out.sort(function (a, b) {
+            return compareValues(a, b, numeric);
+        });
         return out;
     }
 
@@ -120,9 +124,11 @@
                 }
             }
 
-
             if (visible && query) {
-                visible = (row.textContent + ' ' + (row.dataset.searchAliases || '')).toLowerCase().indexOf(query) !== -1;
+                visible =
+                    (row.textContent + ' ' + (row.dataset.searchAliases || ''))
+                        .toLowerCase()
+                        .indexOf(query) !== -1;
             }
 
             row.style.display = visible ? '' : 'none';
@@ -143,7 +149,9 @@
         }
         var tbody = table.querySelector('tbody');
         var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-        var values = rows.map(function (r) { return cellValue(r, colIndex); });
+        var values = rows.map(function (r) {
+            return cellValue(r, colIndex);
+        });
         var numeric = isNumericColumn(table, colIndex, values);
 
         rows.sort(function (a, b) {
@@ -151,7 +159,9 @@
             return dir === 'desc' ? -cmp : cmp;
         });
 
-        rows.forEach(function (row) { tbody.appendChild(row); });
+        rows.forEach(function (row) {
+            tbody.appendChild(row);
+        });
         table.dispatchEvent(new CustomEvent('tablefilterchange'));
     }
 
@@ -169,50 +179,32 @@
         var ascLabel = numeric ? 'По возрастанию' : 'Сортировать А &rarr; Я';
         var descLabel = numeric ? 'По убыванию' : 'Сортировать Я &rarr; А';
 
-        var itemsHtml = values.map(function (v) {
-            var checked = !existing || existing.has(v);
-            var label = v === '' ? '(пусто)' : v;
-            return (
-                '<label class="tf-value-item">' +
-                '<input type="checkbox" value="' + escapeAttr(v) + '"' + (checked ? ' checked' : '') + '>' +
-                '<span>' + escapeHtml(label) + '</span>' +
-                '</label>'
-            );
-        }).join('');
+        var itemsHtml = values
+            .map(function (v) {
+                var checked = !existing || existing.has(v);
+                var label = v === '' ? '(пусто)' : v;
+                return window.CheckStockUI.render('common/table-filter/items-html', {
+                    v: v,
+                    content: checked ? ' checked' : '',
+                    label: label,
+                });
+            })
+            .join('');
 
-        popover.innerHTML =
-            '<div class="tf-sort">' +
-            '<button type="button" class="tf-sort-btn" data-dir="asc">' + ascLabel + '</button>' +
-            '<button type="button" class="tf-sort-btn" data-dir="desc">' + descLabel + '</button>' +
-            '</div>' +
-            '<div class="tf-divider"></div>' +
-            '<div class="tf-quick-row">' +
-            '<button type="button" class="tf-link" data-action="select-all">Выбрать все (' + values.length + ')</button>' +
-            '<button type="button" class="tf-link" data-action="reset">Сбросить</button>' +
-            '<span class="tf-shown">Показано: <span class="tf-shown-count"></span></span>' +
-            '</div>' +
-            '<div class="tf-search-wrap">' +
-            '<input type="text" class="tf-search-input" placeholder="Поиск">' +
-            '</div>' +
-            '<div class="tf-values">' + (itemsHtml || '<div class="tf-values-empty">Нет значений</div>') + '</div>' +
-            '<div class="tf-actions">' +
-            '<button type="button" class="tf-btn-cancel" data-action="cancel">Отмена</button>' +
-            '<button type="button" class="tf-btn-ok" data-action="ok">OK</button>' +
-            '</div>';
+        popover.innerHTML = window.CheckStockUI.render('common/table-filter/render-popover-content-2', {
+            ascLabel: ascLabel,
+            descLabel: descLabel,
+            length: values.length,
+            content: itemsHtml || window.CheckStockUI.render('common/table-filter/render-popover-content'),
+        });
 
         wirePopover(table, colIndex);
         updateShownCount();
     }
 
-    function escapeHtml(s) {
-        return s.replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
-    }
+    var escapeHtml = window.CheckStockUI.escapeHtml;
 
-    function escapeAttr(s) {
-        return escapeHtml(s);
-    }
+    var escapeAttr = window.CheckStockUI.escapeHtml;
 
     function updateShownCount() {
         var checked = popover.querySelectorAll('.tf-value-item input[type=checkbox]:checked').length;
@@ -242,20 +234,32 @@
         });
 
         popover.querySelector('[data-action="select-all"]').addEventListener('click', function () {
-            popover.querySelectorAll('.tf-value-item input[type=checkbox]').forEach(function (cb) { cb.checked = true; });
+            popover.querySelectorAll('.tf-value-item input[type=checkbox]').forEach(function (cb) {
+                cb.checked = true;
+            });
             updateShownCount();
         });
 
         popover.querySelector('[data-action="reset"]').addEventListener('click', function () {
-            popover.querySelectorAll('.tf-value-item input[type=checkbox]').forEach(function (cb) { cb.checked = false; });
+            popover.querySelectorAll('.tf-value-item input[type=checkbox]').forEach(function (cb) {
+                cb.checked = false;
+            });
             updateShownCount();
         });
 
         popover.querySelector('[data-action="cancel"]').addEventListener('click', closePopover);
 
         popover.querySelector('[data-action="ok"]').addEventListener('click', function () {
-            var boxes = Array.prototype.slice.call(popover.querySelectorAll('.tf-value-item input[type=checkbox]'));
-            var selected = boxes.filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.value; });
+            var boxes = Array.prototype.slice.call(
+                popover.querySelectorAll('.tf-value-item input[type=checkbox]'),
+            );
+            var selected = boxes
+                .filter(function (cb) {
+                    return cb.checked;
+                })
+                .map(function (cb) {
+                    return cb.value;
+                });
 
             table._tfFilters = table._tfFilters || {};
             if (selected.length === boxes.length) {
@@ -332,11 +336,11 @@
         th.appendChild(inner);
     }
 
-
     function buildToolbar(table) {
         var wrap = table.closest('.table-wrap');
         if (!wrap || !wrap.parentNode) return;
-        if (wrap.previousElementSibling && wrap.previousElementSibling.classList.contains('tf-toolbar')) return;
+        if (wrap.previousElementSibling && wrap.previousElementSibling.classList.contains('tf-toolbar'))
+            return;
 
         var bar = document.createElement('div');
         bar.className = 'tf-toolbar';
@@ -350,17 +354,15 @@
         var found = document.createElement('span');
         found.className = 'tf-found';
 
-
-
         search.addEventListener('input', function () {
             table._tfSearch = search.value.trim().toLowerCase();
             applyAllFilters(table);
 
             var rows = dataRows(table);
-            var visible = rows.filter(function (r) { return r.style.display !== 'none'; }).length;
-            found.textContent = table._tfSearch
-                ? 'найдено: ' + visible + ' из ' + rows.length
-                : '';
+            var visible = rows.filter(function (r) {
+                return r.style.display !== 'none';
+            }).length;
+            found.textContent = table._tfSearch ? 'найдено: ' + visible + ' из ' + rows.length : '';
         });
 
         bar.appendChild(search);
@@ -370,7 +372,9 @@
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'tf-btn tf-btn--color';
-            btn.innerHTML = FILTER_ICON + '<span>Цвет</span>';
+            btn.innerHTML = window.CheckStockUI.render('common/table-filter/build-toolbar', {
+                FILTER_ICON: FILTER_ICON,
+            });
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
                 openFilter(table, COLOR_COL, btn);
@@ -418,11 +422,13 @@
         if (e.key === 'Escape') closePopover();
     });
 
-    window.addEventListener('scroll', function (e) {
-
-
-        if (current && popover && !popover.contains(e.target)) closePopover();
-    }, true);
+    window.addEventListener(
+        'scroll',
+        function (e) {
+            if (current && popover && !popover.contains(e.target)) closePopover();
+        },
+        true,
+    );
 
     window.CheckStockTableFilter = {
         refresh: function (table) {
@@ -434,6 +440,6 @@
             });
             buildToolbar(table);
             applyAllFilters(table);
-        }
+        },
     };
 })();

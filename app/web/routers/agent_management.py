@@ -50,9 +50,7 @@ async def storage_call(function):
 @router.get("/ai-agents", response_class=HTMLResponse)
 async def agent_page(request: Request, user: Owner):
     return HTMLResponse(
-        render_page(
-            "CheckStock — ИИ-агенты", "ai_agents", fill_template("agents/agent_management.html"), user
-        ),
+        render_page("CheckStock — ИИ-агенты", "ai_agents", fill_template("agents/index.html"), user),
         headers={"Cache-Control": "no-store"},
     )
 

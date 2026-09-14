@@ -1,0 +1,43 @@
+<!-- template: date-cell -->
+<span class="supply-urgent-label">{{label}}</span>
+<!-- endtemplate -->
+
+<!-- template: date-cell-2 -->
+<span class="supply-date-cell"><strong>{{value}}</strong>{{{content}}}</span>
+<!-- endtemplate -->
+
+<!-- template: render-wb -->
+<tr class="supply-empty"><td colspan="6">Запланированных поставок WB нет</td></tr>
+<!-- endtemplate -->
+
+<!-- template: render-wb-2 -->
+<tr class="{{{content}}}"><td>{{{supply_date}}}</td><td><strong>{{store_name}}</strong></td><td>{{row}}</td><td>{{content_2}}</td><td>{{supplyId}}</td><td><span class="supply-status-badge">Запланировано</span></td></tr>
+<!-- endtemplate -->
+
+<!-- template: load-wb -->
+<tr class="supply-empty"><td colspan="6">Получаем поставки из WB…</td></tr>
+<!-- endtemplate -->
+
+<!-- template: load-wb-2 -->
+<tr class="supply-empty"><td colspan="6">Ошибка загрузки поставок WB</td></tr>
+<!-- endtemplate -->
+
+<!-- template: render-manual -->
+<tr class="supply-empty"><td colspan="8">Активных перемещений нет</td></tr>
+<!-- endtemplate -->
+
+<!-- template: actions -->
+<div class="supply-row-actions"><button class="supply-row-action" type="button" data-manual-edit="{{{id}}}">Изменить</button><button class="supply-row-action supply-row-action--delete" type="button" data-manual-delete="{{{id_2}}}">Удалить</button></div>
+<!-- endtemplate -->
+
+<!-- template: render-manual-2 -->
+<tr class="{{{content}}}"><td>{{{delivery_at}}}</td><td><strong>{{content_2}}</strong></td><td>{{origin}}</td><td>{{destination}}</td><td>{{supply_type}}</td><td>{{note}}</td><td><input class="supply-ready-toggle" type="checkbox" data-manual-ready="{{{id}}}"{{{content_3}}}{{{disabled}}} aria-label="Поставка готова"></td><td>{{{actions}}}</td></tr>
+<!-- endtemplate -->
+
+<!-- template: load-manual -->
+<tr class="supply-empty"><td colspan="8">Загрузка ручного плана…</td></tr>
+<!-- endtemplate -->
+
+<!-- template: load-manual-2 -->
+<tr class="supply-empty"><td colspan="8">{{message}}</td></tr>
+<!-- endtemplate -->

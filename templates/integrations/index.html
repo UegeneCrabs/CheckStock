@@ -1,0 +1,144 @@
+<link rel="stylesheet" href="/static/integrations/index.css?v=20260912" />
+
+<div class="integration-page-head">
+    <div
+        ><p class="integration-eyebrow">Управление данными</p>
+        <h1>Интеграции и выгрузки</h1>
+        <p>Подключения маркетплейсов, обновление данных и Google Таблицы — в одном месте.</p>
+    </div>
+    <span class="integration-admin-label">Администрирование</span>
+</div>
+
+<nav class="integration-view-tabs" aria-label="Разделы интеграций">
+    <a href="?tab=sync" data-integration-view="sync" aria-current="page"
+        >Фоновые выгрузки <span class="integration-tab-count">$job_count</span></a
+    >
+    <a href="?tab=keys" data-integration-view="keys">API-ключи</a>
+    <a href="?tab=google" data-integration-view="google">Google Таблицы</a>
+    <a href="?tab=cabinets" data-integration-view="cabinets">Параметры кабинетов</a>
+</nav>
+
+<section class="panel integration-section" id="integration-sync" data-integration-view-panel="sync">
+    <div class="integration-section-head">
+        <div
+            ><h2>Фоновые выгрузки</h2>
+            <p>Расписание, ручной запуск и история обновлений. Время указано по Москве.</p>
+        </div>
+        <span class="integration-live-note"><span></span>Статусы обновляются автоматически</span>
+    </div>
+    <div class="integration-toolbar">
+        <label class="integration-search"
+            ><span class="visually-hidden">Найти выгрузку</span>
+            <input
+                class="input-control"
+                type="search"
+                data-sync-search
+                placeholder="Найти выгрузку: заказы, реклама, Яндекс…"
+        /></label>
+        <label class="integration-status-filter"
+            ><span>Статус</span>
+            <select class="integration-select" data-sync-filter>
+                <option value="all">Все статусы</option
+                ><option value="running">Выполняются</option>
+                <option value="error">С ошибкой</option
+                ><option value="success">Успешные</option>
+                <option value="empty">Ещё не запускались</option>
+            </select></label
+        >
+        <span class="integration-result-count" data-sync-count aria-live="polite"></span>
+    </div>
+    <p class="integration-hint"
+        >Ручной запуск использует выбранные магазины и доступен даже при выключенной автовыгрузке.</p
+    >
+    $sync_groups
+    <div class="integration-empty" data-sync-empty hidden
+        ><strong>Выгрузки не найдены</strong><p>Измените запрос или выберите другой статус.</p
+        ><button type="button" class="btn-secondary" data-sync-reset>Сбросить фильтры</button></div
+    >
+</section>
+
+<section class="panel integration-section" id="integration-keys" data-integration-view-panel="keys" hidden>
+    <div class="integration-section-head"
+        ><div
+            ><h2>API-ключи маркетплейсов</h2>
+            <p
+                >Выберите магазин и подключите маркетплейс. Сохранённые ключи не отображаются; новое значение
+                заменяет старое.</p
+            >
+        </div></div
+    >
+    <div class="integration-store-tabs" aria-label="Магазины">$store_tabs</div>
+    $store_panels
+</section>
+
+<section class="integration-google" id="integration-google" data-integration-view-panel="google" hidden>
+    <div class="integration-section-head"
+        ><div
+            ><h2>Выгрузка в Google Таблицы</h2
+            ><p>Выберите магазин, настройте листы и время отправки данных.</p></div
+        ></div
+    >
+    $google_export
+</section>
+
+<section
+    class="panel integration-section"
+    id="cabinet-settings"
+    data-integration-view-panel="cabinets"
+    hidden
+>
+    <div class="integration-section-head"
+        ><div
+            ><h2>Параметры кабинетов</h2
+            ><p>Ввод данных по кабинетам для расчётов юнит-экономики WB и Яндекс Маркета.</p></div
+        ></div
+    >
+    $cabinet_settings
+</section>
+
+<dialog
+    class="integration-history-dialog"
+    id="integration-history-dialog"
+    aria-labelledby="integration-history-title"
+    aria-describedby="integration-history-description"
+>
+    <div class="integration-history-shell">
+        <div class="integration-history-head">
+            <span class="integration-history-icon" aria-hidden="true"
+                ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" /></svg
+            ></span>
+            <div>
+                <p class="integration-eyebrow">История выгрузки</p>
+                <h2 id="integration-history-title">История</h2>
+                <p id="integration-history-description">Последние 50 запусков за 30 дней · время МСК</p>
+            </div>
+            <button type="button" class="integration-history-close" data-history-close aria-label="Закрыть"
+                >×</button
+            >
+        </div>
+        <div class="integration-history-summary" data-history-summary hidden>
+            <span>Показано <strong data-history-count>0</strong></span>
+            <span class="is-success">Успешно <strong data-history-success>0</strong></span>
+            <span class="is-error">С ошибкой <strong data-history-error>0</strong></span>
+            <span class="is-interrupted" data-history-interrupted-summary hidden
+                >Прервано <strong data-history-interrupted>0</strong></span
+            >
+        </div>
+        <p class="integration-history-message" data-history-message role="status" aria-live="polite"></p>
+        <div class="integration-history-table-wrap" data-history-table hidden>
+            <table class="integration-history-table">
+                <thead
+                    ><tr
+                        ><th scope="col">Начало</th><th scope="col">Результат</th><th scope="col">Запуск</th
+                        ><th scope="col">Длительность</th></tr
+                    ></thead
+                >
+                <tbody data-history-rows></tbody>
+            </table>
+        </div>
+    </div>
+</dialog>
+
+<script src="/static/integrations/index.js?v=20260912"></script>

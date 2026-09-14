@@ -1,0 +1,101 @@
+<!-- template: copy-identifier -->
+<button class="copy-identifier" type="button" data-copy-kind="{{kind}}" data-copy-value="{{item}}" data-copy-tooltip="Нажмите, чтобы скопировать" aria-label="Скопировать {{content}} {{item_2}}">{{label}}</button>
+<!-- endtemplate -->
+
+<!-- template: option-html -->
+<span><strong>{{name}}</strong><small>Арт. {{article}} · {{store_name}}</small></span>
+<!-- endtemplate -->
+
+<!-- template: option-html-2 -->
+<span>{{label}}</span>
+<!-- endtemplate -->
+
+<!-- template: option-html-3 -->
+<label><input type="checkbox" data-filter-option="{{{kind}}}" value="{{rawValue}}"{{{content}}}>{{{label}}}</label>
+<!-- endtemplate -->
+
+<!-- template: render-options -->
+<div class="ue1cr-no-options">Нет вариантов</div>
+<!-- endtemplate -->
+
+
+
+<!-- template: daily-cells-html -->
+<td class="{{{classes}}}"{{{title}}}>{{{content}}}</td>
+<!-- endtemplate -->
+
+<!-- template: report-column-label -->
+<abbr title="{{help}}">{{{content}}}</abbr>
+<!-- endtemplate -->
+
+<!-- template: header-total-html -->
+<strong class="ue1cr-head-total ue1cr-head-total--label" data-report-total-count>Итого: 0 поз.</strong>
+<!-- endtemplate -->
+
+<!-- template: header-total-html-2 -->
+<strong class="ue1cr-head-total ue1cr-head-total--empty" aria-hidden="true">&nbsp;</strong>
+<!-- endtemplate -->
+
+<!-- template: header-total-html-3 -->
+<strong class="ue1cr-head-total" data-report-total="{{{key}}}">—</strong>
+<!-- endtemplate -->
+
+<!-- template: report-column-header -->
+<th class="{{{content}}}" scope="col" data-report-group="{{groupKey}}" data-filter-column="{{{columnIndex}}}"{{{content_2}}}><span class="ue1cr-head-heading"><span class="ue1cr-head-label">{{{column}}}</span>{{{column_2}}}</span></th>
+<!-- endtemplate -->
+
+<!-- template: render-base-headers -->
+<th 
+<!-- endtemplate -->
+
+<!-- template: render-base-headers-2 -->
+<th rowspan="2" 
+<!-- endtemplate -->
+
+<!-- template: render-base-headers-3 -->
+<th colspan="{{{length}}}" scope="colgroup" data-report-group="{{key}}">{{label}}</th>
+<!-- endtemplate -->
+
+<!-- template: render-base-headers-4 -->
+<tr class="ue1cr-groups">{{{groupHtml}}}</tr><tr>{{{metricHtml}}}</tr>
+<!-- endtemplate -->
+
+<!-- template: identity-html -->
+<div class="ue1cr-category-cell"><strong>{{name}}</strong><span>{{{product_count}}} товаров</span></div>
+<!-- endtemplate -->
+
+<!-- template: identity-html-2 -->
+<div class="ue1cr-product-cell">{{{row}}}<div><strong>{{name}}</strong><span>{{{content}}}</span></div></div>
+<!-- endtemplate -->
+
+<!-- template: report-cell-html -->
+<td>{{{row}}}</td>
+<!-- endtemplate -->
+
+<!-- template: report-cell-html-2 -->
+<td class="{{{classes}}}"{{{filterValue}}}{{{title}}}>{{{content}}}</td>
+<!-- endtemplate -->
+
+<!-- template: report-cells-html -->
+<td
+<!-- endtemplate -->
+
+<!-- template: report-cells-html-2 -->
+<td data-report-group="{{key}}"
+<!-- endtemplate -->
+
+<!-- template: row-html -->
+<tr data-row-index="{{{index}}}" data-row-kind="{{content}}">{{{row}}}{{{row_2}}}</tr>
+<!-- endtemplate -->
+
+<!-- template: metric-options -->
+<label><input type="checkbox" data-column-metric="{{key}}"{{{content}}}><span>{{label}}</span></label>
+<!-- endtemplate -->
+
+<!-- template: metric-options-2 -->
+<div class="ue1cr-column-metrics">{{{content}}}</div>
+<!-- endtemplate -->
+
+<!-- template: render-column-settings -->
+<div class="ue1cr-column-option" data-column-key="{{key}}" draggable="{{{content}}}" aria-grabbed="false"><div class="ue1cr-column-option-head"><span class="ue1cr-column-grip" title="Перетащить">⋮⋮</span><label><input type="checkbox" data-column-group-toggle{{{content_2}}}{{{content_3}}}><span>{{label}}</span></label><div><button type="button" data-column-move="up"{{{content_4}}} aria-label="Выше">↑</button><button type="button" data-column-move="down"{{{content_5}}} aria-label="Ниже">↓</button></div></div>{{{metricOptions}}}</div>
+<!-- endtemplate -->

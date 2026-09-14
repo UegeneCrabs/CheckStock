@@ -1,0 +1,27 @@
+<!-- template: field-2 -->
+<select data-ym-setting="{{{key}}}" aria-label="{{content}}"><option value="">Из источника</option>{{{content_2}}}</select>
+<!-- endtemplate -->
+
+<!-- template: field-3 -->
+<input data-ym-setting="{{{key}}}" aria-label="{{content}}" type="{{{content_2}}}" min="{{{content_3}}}" step="{{{content_4}}}"{{{content_5}}} placeholder="Не задано" value="{{val}}">
+<!-- endtemplate -->
+
+<!-- template: field-4 -->
+<label class="ym-settings-field"><span>{{content}}</span><div class="ym-settings-input">{{{control}}}<b>{{content_2}}</b><button type="button" data-ym-setting-reset="{{{key}}}" aria-label="Из источника: {{content_3}}" title="Убрать ручное значение">↺</button></div><small data-ym-setting-origin="{{{key_2}}}">{{content_4}}</small></label>
+<!-- endtemplate -->
+
+<!-- template: draw -->
+<p class="ym-settings-help">Заполняйте только для ручной замены отсутствующих или неверных данных. Сохранённые значения имеют приоритет перед API. Кнопка ↺ возвращает автоматическое обновление.</p>
+<!-- endtemplate -->
+
+<!-- template: draw-2 -->
+<{{{tag}}} class="ym-settings-group"><{{{heading}}}>{{{content}}}</{{{heading_2}}}>{{{content_2}}}<div class="ym-settings-grid">{{{content_3}}}</div></{{{tag_2}}}>
+<!-- endtemplate -->
+
+<!-- template: load -->
+<option value="{{key}}"></option>
+<!-- endtemplate -->
+
+<!-- template: fragment -->
+<option value="{{store_slug}}">{{store_name}}</option>
+<!-- endtemplate -->

@@ -312,7 +312,7 @@ async def stock_cost_report_page(
         )
     export_url = "/stock/cost-report.xlsx?" + urlencode(query)
     content = fill_template(
-        "stock/stock_cost_report_content.html",
+        "stock/cost-report.html",
         date_from=start.isoformat(),
         date_to=end.isoformat(),
         store_options=store_options,

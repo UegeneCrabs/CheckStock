@@ -1,0 +1,72 @@
+<section
+    class="panel panel--collapsible stock-operation-card stock-operation-card--upload"
+    data-collapse-id="ff-upload"
+    data-collapsed
+>
+    <h3 class="panel-title">Загрузка остатков на фулфилмент</h3>
+    <p class="stock-operation-summary">Пополнить ФФ вручную, из Excel или Google Таблицы.</p>
+
+    <div class="panel-body">
+        <p class="panel-desc"
+            >Остатки, которые приходят на фулфилмент. Количество прибавляется к тому, что уже лежит на
+            складе.</p
+        >
+
+        <select class="select-control" id="ff-upload-select">
+            <option value="">Фулфилмент назначения</option>
+            $ff_options
+        </select>
+
+        <input
+            type="text"
+            class="select-control"
+            id="ff-upload-note"
+            placeholder="Примечание обязательно: номер поставки, отправитель"
+            maxlength="200"
+            required
+            aria-required="true"
+        />
+
+        <div class="io-block" id="ff-io">
+            <div class="io-block-head">
+                <span class="io-block-title">Товары и количества</span>
+                <div class="io-tabs" role="tablist">
+                    <button type="button" class="io-tab is-active" data-method="manual">Вручную</button>
+                    <button type="button" class="io-tab" data-method="sheet">Ссылкой</button>
+                    <button type="button" class="io-tab" data-method="file">Файлом</button>
+                </div>
+            </div>
+
+            <div class="io-method" data-method="manual">
+                <p class="io-method-desc"
+                    >Если в поставке товар ушёл с минусом — допишите его здесь, не создавая второй файл.</p
+                >
+                <div id="ff-manual-rows"></div>
+                <button class="btn-link" type="button" id="ff-manual-add-row">+ ещё позицию</button>
+            </div>
+
+            <div class="io-method is-hidden" data-method="sheet">
+                <input
+                    type="text"
+                    class="select-control"
+                    id="ff-upload-url"
+                    placeholder="https://docs.google.com/spreadsheets/..."
+                />
+            </div>
+
+            <div class="io-method is-hidden" data-method="file">
+                <p class="io-method-desc"
+                    >Колонки: <b>BARCODE</b> и <b>ARTICLE</b>, плюс колонка с количеством — <b>WB</b>,
+                    <b>OZON</b>, <b>YANDEX</b> или <b>КОЛИЧЕСТВО</b>.</p
+                >
+                <label class="file-drop">
+                    <input type="file" accept=".xlsx" hidden id="ff-upload-file" />
+                    <span class="file-drop-text">Выбрать файл .xlsx</span>
+                </label>
+            </div>
+        </div>
+
+        <button class="btn-primary" type="button" id="ff-upload-btn">Загрузить</button>
+        <p class="ff-select-status" id="ff-upload-status"></p>
+    </div>
+</section>

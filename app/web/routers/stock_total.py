@@ -127,7 +127,7 @@ async def stock_total(request: Request, store: str = ""):
         selected_store,
     )
     content = fill_template(
-        "stock/stock_total_content.html",
+        "stock/total.html",
         store_options=_store_options(store_slugs, selected_store),
         download_href=(
             f"/stock/total.xlsx?store={html.escape(selected_store, quote=True)}"

@@ -27,7 +27,9 @@
 
     function syncNavigationBreakpoint(event) {
         if (!event.matches) return;
-        groups.forEach(function (group) { setOpen(group, false); });
+        groups.forEach(function (group) {
+            setOpen(group, false);
+        });
     }
 
     if (mobileNavigation.addEventListener) {
@@ -43,7 +45,9 @@
     });
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') {
-            groups.forEach(function (group) { setOpen(group, false); });
+            groups.forEach(function (group) {
+                setOpen(group, false);
+            });
         }
     });
 })();

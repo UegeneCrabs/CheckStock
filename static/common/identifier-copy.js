@@ -17,11 +17,7 @@
     document.body.appendChild(tooltip);
     document.body.appendChild(toast);
 
-    function escapeHtml(value) {
-        return String(value === null || value === undefined ? '' : value)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
+    var escapeHtml = window.CheckStockUI.escapeHtml;
 
     function identifierKind(node) {
         var explicit = node.getAttribute('data-copy-kind');
@@ -35,10 +31,14 @@
 
     function positionTooltip(node) {
         var rect = node.getBoundingClientRect();
-        tooltip.style.left = Math.max(8, Math.min(
-            window.innerWidth - tooltip.offsetWidth - 8,
-            rect.left + rect.width / 2 - tooltip.offsetWidth / 2
-        )) + 'px';
+        tooltip.style.left =
+            Math.max(
+                8,
+                Math.min(
+                    window.innerWidth - tooltip.offsetWidth - 8,
+                    rect.left + rect.width / 2 - tooltip.offsetWidth / 2,
+                ),
+            ) + 'px';
         var top = rect.top - tooltip.offsetHeight - 8;
         if (top < 8) top = rect.bottom + 8;
         tooltip.style.top = top + 'px';
@@ -68,57 +68,44 @@
         }, 1500);
     }
 
-    function fallbackCopy(value) {
-        var helper = document.createElement('textarea');
-        helper.value = value;
-        helper.setAttribute('readonly', '');
-        helper.style.position = 'fixed';
-        helper.style.opacity = '0';
-        document.body.appendChild(helper);
-        helper.select();
-        var copied = document.execCommand('copy');
-        helper.remove();
-        if (!copied) throw new Error('copy failed');
-    }
-
-    function copyText(value) {
-        if (navigator.clipboard && window.isSecureContext) {
-            return navigator.clipboard.writeText(value).catch(function () { fallbackCopy(value); });
-        }
-        return Promise.resolve().then(function () { fallbackCopy(value); });
-    }
+    var copyText = window.CheckStockUI.copyText;
 
     function copyElement(node) {
-        var value = node && node.getAttribute('data-copy-value') || '';
+        var value = (node && node.getAttribute('data-copy-value')) || '';
         if (!value) return Promise.resolve(false);
         window.clearTimeout(resetTimer);
-        return copyText(value).then(function () {
-            document.querySelectorAll(SELECTOR + '.is-copied').forEach(function (item) {
-                item.classList.remove('is-copied');
+        return copyText(value)
+            .then(function () {
+                document.querySelectorAll(SELECTOR + '.is-copied').forEach(function (item) {
+                    item.classList.remove('is-copied');
+                });
+                node.classList.add('is-copied');
+                showTooltip(node, 'Скопировано');
+                showToast(identifierKind(node) + ' скопирован');
+                resetTimer = window.setTimeout(function () {
+                    node.classList.remove('is-copied');
+                    if (active === node) showTooltip(node, tooltipText(node));
+                }, 1100);
+                return true;
+            })
+            .catch(function () {
+                showTooltip(node, 'Не удалось скопировать');
+                showToast('Не удалось скопировать', true);
+                return false;
             });
-            node.classList.add('is-copied');
-            showTooltip(node, 'Скопировано');
-            showToast(identifierKind(node) + ' скопирован');
-            resetTimer = window.setTimeout(function () {
-                node.classList.remove('is-copied');
-                if (active === node) showTooltip(node, tooltipText(node));
-            }, 1100);
-            return true;
-        }).catch(function () {
-            showTooltip(node, 'Не удалось скопировать');
-            showToast('Не удалось скопировать', true);
-            return false;
-        });
     }
 
     function html(kind, value, label, className) {
         var raw = String(value === null || value === undefined ? '' : value);
         if (!raw) return escapeHtml(label || '—');
-        return '<button class="copy-identifier' + (className ? ' ' + escapeHtml(className) : '')
-            + '" type="button" data-copy-kind="' + escapeHtml(kind) + '" data-copy-value="'
-            + escapeHtml(raw) + '" data-copy-tooltip="Нажмите, чтобы скопировать" aria-label="Скопировать '
-            + escapeHtml(kind.toLocaleLowerCase('ru-RU')) + ' ' + escapeHtml(raw) + '">'
-            + escapeHtml(label === undefined ? raw : label) + '</button>';
+        return window.CheckStockUI.render('common/identifier-copy/html', {
+            content: className ? ' ' + escapeHtml(className) : '',
+            kind: kind,
+            raw: raw,
+            content_2: kind.toLocaleLowerCase('ru-RU'),
+            raw_2: raw,
+            content_3: label === undefined ? raw : label,
+        });
     }
 
     document.addEventListener('pointerover', function (event) {
@@ -137,15 +124,27 @@
         var node = event.target.closest && event.target.closest(SELECTOR);
         if (node) hideTooltip(node);
     });
-    document.addEventListener('click', function (event) {
-        var node = event.target.closest && event.target.closest(SELECTOR);
-        if (!node) return;
-        event.preventDefault();
-        event.stopPropagation();
-        copyElement(node);
-    }, true);
-    window.addEventListener('scroll', function () { hideTooltip(); }, true);
-    window.addEventListener('resize', function () { hideTooltip(); });
+    document.addEventListener(
+        'click',
+        function (event) {
+            var node = event.target.closest && event.target.closest(SELECTOR);
+            if (!node) return;
+            event.preventDefault();
+            event.stopPropagation();
+            copyElement(node);
+        },
+        true,
+    );
+    window.addEventListener(
+        'scroll',
+        function () {
+            hideTooltip();
+        },
+        true,
+    );
+    window.addEventListener('resize', function () {
+        hideTooltip();
+    });
 
     window.CheckStockIdentifierCopy = { copyElement: copyElement, html: html };
 })();

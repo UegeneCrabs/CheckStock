@@ -1,0 +1,78 @@
+<section class="ue1cs-page" id="yandex-buyout-settings" aria-label="Параметры выкупа Яндекс Маркета">
+    <h3>Процент выкупа Яндекс Маркета</h3>
+    <p class="ue1cs-notice"
+        >Обновляется каждые 4 часа за выбранное число завершённых дней. При отсутствии статистики или нулевом
+        выкупе применяется заданный процент по умолчанию. Изменение периода вступает в силу при следующей
+        загрузке.</p
+    >
+    <div class="ue1cs-grid" data-yandex-buyout-grid></div>
+    <p data-yandex-buyout-status role="status" aria-live="polite"></p>
+</section>
+<script type="application/json" id="yandex-buyout-config">
+    $yandex_settings_config
+</script>
+<script src="/static/economics/yandex/buyout-settings.js?v=20260912"></script>
+
+<link rel="stylesheet" href="/static/economics/yandex/settings.css?v=20260912" />
+<section class="ue1cs-page" id="yandex-economics-settings" aria-labelledby="ym-settings-title">
+    <div
+        ><h3 id="ym-settings-title">Экономика Яндекс Маркета · закупка и расходы</h3>
+        <p class="ym-settings-help"
+            >Постоянные параметры хранятся в базе сайта. Общие значения применяются к кабинету; настройки
+            товара имеют приоритет. Цены, заказы, реклама и доступные тарифы поступают автоматически.</p
+        ></div
+    >
+    <form data-ym-settings-selector class="ym-settings-selector">
+        <label class="integration-field"
+            ><span>Кабинет ЯМ</span
+            ><select data-ym-settings-store></select
+        ></label>
+        <label class="integration-field"
+            ><span>Модель работы</span
+            ><select data-ym-settings-scheme
+                ><option>FBY</option
+                ><option>FBS</option></select
+            ></label
+        >
+        <label class="integration-field"
+            ><span>Уровень настроек</span
+            ><select data-ym-settings-scope
+                ><option value="cabinet">Общие для кабинета</option
+                ><option value="product">Отдельный товар</option></select
+            ></label
+        >
+        <label class="integration-field" data-ym-article-wrap hidden
+            ><span>Артикул ЯМ</span
+            ><input
+                type="search"
+                data-ym-settings-article
+                list="ym-settings-articles"
+                placeholder="Введите артикул"
+                autocomplete="off" /><datalist id="ym-settings-articles"></datalist
+        ></label>
+        <button type="submit" class="btn-secondary">Открыть параметры</button>
+    </form>
+    <form data-ym-settings-editor class="ue1cs-card" hidden>
+        <div class="ue1cs-card-head"><h3 data-ym-settings-heading></h3></div>
+        <div class="ue1cs-card-body"
+            ><p class="ym-settings-help"
+                >Пустое поле и кнопка ↺ возвращают значение источника. Ноль — явное значение без расходов.
+                Сохраняются только изменённые поля.</p
+            >
+            <div data-ym-settings-fields></div>
+        </div>
+        <div class="ue1cs-card-foot ym-settings-actions">
+            <button type="submit" class="btn-primary" data-ym-settings-save disabled
+                >Сохранить параметры</button
+            >
+            <button type="button" class="btn-secondary" data-ym-settings-reload>Отменить изменения</button>
+            <button type="button" class="btn-secondary" data-ym-settings-refresh hidden
+                >Обновить данные API</button
+            >
+            <a href="/sales/unit-economics-1c/yandex-market">К калькулятору ЯМ</a>
+        </div>
+    </form>
+    <p class="ym-settings-status" data-ym-settings-message role="status" aria-live="polite"></p>
+</section>
+<script src="/static/economics/yandex/fields.js?v=20260912"></script>
+<script src="/static/economics/yandex/settings.js?v=20260912"></script>

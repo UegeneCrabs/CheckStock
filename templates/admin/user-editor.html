@@ -1,0 +1,149 @@
+<div class="ad-editor" data-user-id="$user_id">
+    <nav class="ad-editor-tabs" aria-label="Настройки сотрудника">
+        <button type="button" class="is-active" data-editor-tab="access" aria-pressed="true"
+            >Доступ к системе</button
+        >
+        <button type="button" data-editor-tab="account" aria-pressed="false">Учётная запись</button>
+    </nav>
+    <div class="ad-editor-body">
+        <p class="ad-notice" $readonly_hidden>$readonly_message</p>
+        <div data-editor-pane="access">
+            <div class="ad-access-summary"
+                ><span>Текущий доступ</span><strong>$profile_label</strong
+                ><div class="ad-badges">$access_summary</div><small>Изменения стока: $stock_label</small></div
+            >
+            <form class="ad-edit-form" data-endpoint="access-policy" $policy_hidden>
+                <fieldset $policy_disabled>
+                    <div class="ad-block-heading"
+                        ><h3>Должность и рабочая область</h3
+                        ><p
+                            >Должность задаёт набор действий. Кабинеты и площадки определяют, с какими данными
+                            работает сотрудник.</p
+                        ></div
+                    >
+                    <label class="ad-field"
+                        ><span>Как назначать права</span
+                        ><select class="ad-input" name="access_profile"
+                            >$profile_options</select
+                        ></label
+                    ><p class="ad-profile-description" data-profile-description>$profile_description</p
+                    ><input type="hidden" name="scope_version" value="2" />
+                    <div class="ad-field" data-marketplaces
+                        ><span>Площадки — маркетплейсы внутри кабинета</span>$marketplace_options<p
+                            class="ad-hint"
+                            data-policy-hint
+                            >Для менеджера и управляющего площадкой выберите одну площадку.</p
+                        ></div
+                    >
+                    <div class="ad-field"
+                        ><div class="ad-field-heading"
+                            ><span>Кабинеты — магазины компании</span
+                            ><button class="ad-text-button" type="button" data-select-stores
+                                >Выбрать все</button
+                            ></div
+                        >$store_options</div
+                    >
+                    <p class="ad-scope-preview" data-working-scope aria-live="polite"></p
+                    ><div class="ad-form-footer"
+                        ><span class="ad-form-state" aria-live="polite"></span
+                        ><button class="ad-button ad-button--primary" type="submit" disabled
+                            >Сохранить доступ</button
+                        ></div
+                    >
+                </fieldset>
+            </form>
+            <form class="ad-edit-form" data-endpoint="stores" $stores_hidden>
+                <fieldset $stores_disabled
+                    ><div class="ad-block-heading"
+                        ><h3>Доступ к кабинетам</h3
+                        ><p>Выберите кабинеты, с которыми работает сотрудник.</p></div
+                    >$store_options
+                    <div class="ad-form-footer"
+                        ><span class="ad-form-state" aria-live="polite"></span
+                        ><button class="ad-button ad-button--primary" type="submit" disabled
+                            >Сохранить кабинеты</button
+                        ></div
+                    >
+                </fieldset>
+            </form>
+            <form class="ad-edit-form" data-endpoint="sections" $sections_hidden>
+                <fieldset $sections_disabled
+                    ><div class="ad-block-heading"
+                        ><h3>Доступ по вкладкам</h3
+                        ><p
+                            >«По умолчанию» сохраняет прежние права или права должности. Можно закрыть
+                            отдельную вкладку или оставить только просмотр. Для расширения прав сверх
+                            должности выберите назначение вручную.</p
+                        ></div
+                    >$section_fields
+                    <div class="ad-form-footer" $sections_save_hidden
+                        ><span class="ad-form-state" aria-live="polite"></span
+                        ><button class="ad-button ad-button--primary" type="submit" disabled
+                            >Сохранить права</button
+                        ></div
+                    >
+                </fieldset>
+            </form>
+            <div class="ad-block" $stock_hidden
+                ><h3>Изменения стока</h3
+                ><button class="ad-button" type="button" data-user-action="toggle-stock-edit"
+                    >$stock_action</button
+                ></div
+            >
+        </div>
+        <div data-editor-pane="account" hidden>
+            <dl class="ad-details"
+                ><div><dt>ФИО</dt><dd>$full_name</dd></div
+                ><div><dt>Электронная почта</dt><dd>$email</dd></div
+                ><div><dt>Логин</dt><dd>$login</dd></div
+                ><div><dt>Создан</dt><dd>$created_at</dd></div
+                ><div><dt>Роль</dt><dd>$role_label</dd></div></dl
+            >
+            <form class="ad-edit-form" data-endpoint="role" $role_hidden>
+                <fieldset $role_disabled
+                    ><div class="ad-block-heading"
+                        ><h3>Роль в системе</h3
+                        ><p
+                            >Сотрудник работает с данными. Администратор управляет сотрудниками в своих
+                            кабинетах. Суперадминистратору доступны все кабинеты, вкладки и настройки.</p
+                        ></div
+                    >
+                    <label class="ad-field"
+                        ><span>Роль сотрудника</span
+                        ><select class="ad-input" name="role"
+                            >$role_options</select
+                        ></label
+                    >
+                    <div class="ad-form-footer"
+                        ><span class="ad-form-state" aria-live="polite"></span
+                        ><button class="ad-button ad-button--primary" type="submit" disabled
+                            >Сохранить роль</button
+                        ></div
+                    >
+                </fieldset>
+            </form>
+            <fieldset class="ad-account-actions u-actions" $actions_hidden$actions_disabled>
+                <div class="ad-action-row"
+                    ><div><h3>Пароль</h3><p>Задать новый пароль и завершить все сеансы.</p></div
+                    ><button type="button" class="ad-button" data-user-action="reset-password"
+                        >Сбросить пароль</button
+                    ></div
+                >
+                <div class="ad-action-row"
+                    ><div><h3>Вход в систему</h3><p>$toggle_description</p></div
+                    ><button type="button" class="ad-button" data-user-action="toggle-active"
+                        >$toggle_label</button
+                    ></div
+                >
+                <div class="ad-action-row ad-action-row--danger"
+                    ><div
+                        ><h3>Удаление сотрудника</h3
+                        ><p>Учётная запись будет удалена. Журнал действий сохранится.</p></div
+                    ><button type="button" class="ad-button ad-button--danger" data-user-action="delete"
+                        >Удалить</button
+                    ></div
+                >
+            </fieldset>
+        </div>
+    </div>
+</div>

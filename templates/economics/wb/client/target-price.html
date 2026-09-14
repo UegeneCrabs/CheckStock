@@ -1,0 +1,29 @@
+<!-- template: copy-identifier -->
+<button class="copy-identifier" type="button" data-copy-kind="Артикул" data-copy-value="{{article}}" data-copy-tooltip="Нажмите, чтобы скопировать" aria-label="Скопировать артикул {{article_2}}">{{article_3}}</button>
+<!-- endtemplate -->
+
+<!-- template: cell -->
+<td data-filter-value="{{content}}" class="{{{content_2}}}{{{content_3}}}"><span{{{content_4}}}>{{{value}}}</span></td>
+<!-- endtemplate -->
+
+
+
+<!-- template: render -->
+<tr><td data-filter-value="{{content}}"><div class="uetp-product">{{{image}}}<div><strong><button class="uetp-product-link" type="button" data-open-product="{{content_2}}" title="Открыть калькулятор">{{name}}</button></strong><small>Арт. {{{article}}}</small></div></div></td><td>{{store_name}}</td><td>{{content_3}}</td>{{{content_4}}}{{{content_5}}}{{{content_6}}}{{{content_7}}}{{{content_8}}}{{{content_9}}}</tr>
+<!-- endtemplate -->
+
+<!-- template: render-2 -->
+<tr class="empty-row"><td colspan="9">Нет товаров по выбранным условиям.</td></tr>
+<!-- endtemplate -->
+
+<!-- template: target-tile -->
+<div data-result="target_price"><span>Целевая цена</span><strong>{{{targetPrice}}}{{{content}}}</strong></div>
+<!-- endtemplate -->
+
+<!-- template: calculate -->
+<p>Недостаточно данных для расчёта.</p>{{{targetTile}}}
+<!-- endtemplate -->
+
+<!-- template: calculate-2 -->
+<div><span>Чистая прибыль</span><strong class="{{{content}}}">{{{margin}}} ₽</strong></div><div><span>ROI</span><strong class="{{{content_2}}}">{{{roi}}}%</strong></div>{{{targetTile}}}
+<!-- endtemplate -->
