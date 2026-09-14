@@ -12,7 +12,7 @@ from app.main import create_app
 from app.web.routers import agent_analytics as api
 
 
-@pytest.mark.parametrize("profile", ["senior_marketplace_manager", "marketplace_lead", "store_manager"])
+@pytest.mark.parametrize("profile", [None, "senior_marketplace_manager", "marketplace_lead", "store_manager"])
 def test_profile_economics_access_includes_other_managers(
     agent_client, database_path, monkeypatch, user_factory, profile
 ):
@@ -24,8 +24,9 @@ def test_profile_economics_access_includes_other_managers(
     client, identity, *_ = agent_client
     user = user_factory(role=Role.USER, stores=("rimili",)).model_copy(
         update={
-            "access_profile": AccessProfile(profile),
+            "access_profile": AccessProfile(profile) if profile else None,
             "access_scopes": (MarketplaceAccessScope(store_slug="rimili", marketplace="WB"),),
+            "full_name": "Андрей Жериков",
         }
     )
     identity.get_user.return_value = user
@@ -71,8 +72,9 @@ def test_profile_without_economics_still_denied(agent_client, database_path, use
     client, identity, *_ = agent_client
     identity.get_user.return_value = user_factory(role=Role.USER).model_copy(
         update={
-            "access_profile": AccessProfile(profile),
+            "access_profile": AccessProfile(profile) if profile else None,
             "access_scopes": (MarketplaceAccessScope(store_slug="rimili", marketplace="WB"),),
+            "full_name": "Андрей Жериков",
         }
     )
     assert client.get(f"{api.PREFIX}/current-economics", params={"store": "rimili"}).status_code == 403
@@ -142,6 +144,7 @@ def test_campaign_ctr_filter_pagination_and_manager_scope(
         "store": "rimili",
         "date_from": "2026-09-09",
         "date_to": "2026-09-09",
+        "manager": "Selected Manager",
         "ctr_below": 5,
         "limit": 1,
         "sort_by": "ctr_percent",
@@ -162,7 +165,9 @@ def test_campaign_ctr_filter_pagination_and_manager_scope(
     )
 
 
-def test_economic_manager_scope_before_totals(agent_client, database_path, monkeypatch, user_factory):
+def test_individual_access_does_not_infer_manager_from_employee_name(
+    agent_client, database_path, monkeypatch, user_factory
+):
     from app.agents import reports as agent_reports
 
     client, identity, *_ = agent_client
@@ -176,9 +181,9 @@ def test_economic_manager_scope_before_totals(agent_client, database_path, monke
         ],
     )
     body = client.get(f"{api.PREFIX}/costs", params={"store": "rimili"}).json()
-    assert [r["article"] for r in body["rows"]] == ["a"]
+    assert {r["article"] for r in body["rows"]} == {"a", "b"}
     body = client.get(f"{api.PREFIX}/costs", params={"store": "rimili", "manager": "User 8"}).json()
-    assert body["rows"] == []
+    assert [r["article"] for r in body["rows"]] == ["b"]
 
 
 @pytest.fixture
@@ -194,3 +199,55 @@ def agent_client(tmp_path, monkeypatch, user_factory):
     client = TestClient(app)
     client.headers["Authorization"] = f"Bearer {token}"
     return client, identity, path, token, record
+
+
+def test_individual_access_loss_report_and_explicit_denial(
+    agent_client, database_path, monkeypatch, user_factory
+):
+    from app.agents import reports
+    from app.dto.identity import SectionAccessLevel, SectionName
+
+    client, identity, *_ = agent_client
+    user = user_factory(role=Role.USER, stores=("rimili",)).model_copy(update={"full_name": "Андрей Жериков"})
+    identity.get_user.return_value = user
+    monkeypatch.setattr(
+        reports.db,
+        "get_unit_economics_1c_product_reference_rows",
+        lambda *args: [
+            {"article": "123", "manager": "Другой менеджер"},
+            {"article": "456", "manager": ""},
+        ],
+    )
+
+    async def report(request):
+        refs = reports.references(request.state.user, "rimili")
+        return {
+            "rows": [
+                dict(
+                    store_slug="rimili",
+                    article=r["article"],
+                    name="Товар",
+                    margin=-100,
+                    margin_complete=True,
+                    orders_count=10,
+                )
+                for r in refs
+            ]
+        }
+
+    monkeypatch.setattr(api, "_unit_economics_1c_unit_profit_report_data", report)
+    params = {"store": "rimili", "date_from": "2026-09-07", "date_to": "2026-09-13"}
+    response = client.get(f"{api.PREFIX}/loss-products", params=params)
+    assert response.status_code == 200
+    assert response.json()["total_products_checked"] == 2
+    assert response.json()["total_loss_products"] == 2
+    assert client.get(f"{api.PREFIX}/loss-products", params=params | {"store": "tris"}).status_code == 403
+    identity.get_user.return_value = user.model_copy(
+        update={
+            "section_access": {
+                SectionName.UNIT_ECONOMICS_WB: SectionAccessLevel.NONE,
+                SectionName.AI_AGENTS: SectionAccessLevel.READ,
+            }
+        }
+    )
+    assert client.get(f"{api.PREFIX}/loss-products", params=params).status_code == 403
