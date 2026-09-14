@@ -2,7 +2,6 @@
 .idea
 .venv
 .tmp
-.pytest_cache
 .ruff_cache
 .merge-*
 .env
@@ -13,11 +12,8 @@ __pycache__
 *.db
 *.db-journal
 *.db-wal
-.coverage
-htmlcov
 data
 docs
-tests
 templates_files
 secrets/*
 !secrets/example

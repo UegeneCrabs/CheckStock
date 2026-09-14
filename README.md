@@ -19,15 +19,10 @@ make run
 ```text
 make format
 make lint
-make test-unit
-make test-integration
-make test-e2e
-make coverage-unit
-make coverage
 make check
 ```
 
-`coverage-unit` требует минимум 90% покрытия строк и ветвлений кода из `app`. Integration-тесты поднимают временную SQLite, проверяют успешные и ошибочные сценарии сервисов и контролируют принадлежность всех HTTP-маршрутов тестовым группам. E2E-тесты запускают настоящий Uvicorn на свободном локальном порту и проходят полные цепочки складского сервиса, RNP и администрирования. `check` последовательно запускает lint, unit coverage, integration и E2E.
+`check` запускает проверку форматирования и Ruff для `app` и `scripts`. Автоматические тесты удалены; новый набор будет добавлен отдельно.
 
 ## Docker
 
