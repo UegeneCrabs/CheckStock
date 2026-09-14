@@ -12,8 +12,6 @@
     var empty = document.getElementById('ue1cs-empty');
     var toast = document.getElementById('ue1cs-toast');
     var cabinetCount = document.getElementById('ue1cs-cabinet-count');
-    var sourceSync = document.getElementById('ue1cs-source-sync');
-    var priceSync = document.getElementById('ue1cs-price-sync');
     var toastTimer = 0;
     var roiDefaults = { A: 20, B: 30, C: 50, D: 0, F: 50, NEW: 50, U: 20 };
     var fields = [
@@ -50,17 +48,17 @@
             group: 'goals',
             warning: 'Введите цель по ДРР от 0 до 100%.',
         },
-        { key: 'acceptance_coefficient', label: 'КФ приёмки', step: '0.01', group: 'logistics' },
+        { key: 'acceptance_coefficient', label: 'Коэффициент приёмки', step: '0.01', group: 'logistics' },
         {
             key: 'wb_extra_tariff_percent',
-            label: 'Доп. тарифы WB',
+            label: 'Дополнительные тарифы',
             step: '0.01',
             suffix: '%',
             group: 'logistics',
         },
         {
             key: 'acquiring_percent',
-            label: 'Процент эквайринга',
+            label: 'Эквайринг',
             step: '0.01',
             max: '100',
             suffix: '%',
@@ -68,7 +66,7 @@
         },
         {
             key: 'team_commission_percent',
-            label: 'Комиссия команды · Google Sheets',
+            label: 'Комиссия команды · из Google Sheets',
             step: '0.01',
             max: '100',
             suffix: '%',
@@ -122,13 +120,12 @@
         }),
     );
     var fieldGroups = [
-        { key: 'buyout', title: 'Процент выкупа WB', hint: 'Завершённые дни, сегодня не включается' },
-        { key: 'goals', title: 'Целевая цена', hint: 'Цели отчёта для этого кабинета · ДРР с учётом выкупа' },
-        { key: 'logistics', title: 'Логистика WB', hint: 'Приёмка и тарифы' },
-        { key: 'expenses', title: 'Расходы', hint: 'Доли в процентах' },
+        { key: 'buyout', title: 'Процент выкупа', hint: 'Период без сегодняшнего дня · обновление каждые 4 часа' },
+        { key: 'logistics', title: 'Логистика', hint: 'Приёмка и дополнительные тарифы WB' },
+        { key: 'goals', title: 'Целевая цена', hint: 'ДРР с учётом выкупа и целевой ROI по коду товара' },
+        { key: 'expenses', title: 'Расходы и налоги', hint: 'Ставки для расчёта юнит-экономики' },
     ];
 
-    var escapeHtml = window.CheckStockUI.escapeHtml;
     function showToast(message, error) {
         window.clearTimeout(toastTimer);
         toast.textContent = message;
@@ -392,101 +389,30 @@
         }
     }
 
-    function applySourceSettings(updatedItems) {
-        (Array.isArray(updatedItems) ? updatedItems : []).forEach(function (item) {
-            var card = grid.querySelector('[data-store="' + CSS.escape(item.store_slug) + '"]');
-            if (!card) return;
-            var commission = card.querySelector('[data-setting="team_commission_percent"]');
-            if (commission) commission.value = item.team_commission_percent;
-            var state = card.querySelector('[data-state]');
-            if (state) state.textContent = formatUpdated(item);
-        });
-    }
-    function setSourceSyncBusy(busy) {
-        if (!sourceSync) return;
-        sourceSync.disabled = busy || !canEdit;
-        sourceSync.classList.toggle('is-loading', busy);
-        var label = sourceSync.querySelector('[data-source-sync-label]');
-        if (label) label.textContent = busy ? 'Загружаем…' : 'Выгрузить себес';
-    }
-    async function syncSourceData() {
-        if (!canEdit || !sourceSync) return;
-        setSourceSyncBusy(true);
-        try {
-            var response = await window.fetch('/api/unit-economics-1c/source-data/sync', {
-                method: 'POST',
-                headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
-            });
-            var result = await response.json();
-            if (Array.isArray(result.items)) applySourceSettings(result.items);
-            if (!response.ok || !result.ok)
-                throw new Error(result.error || 'Не удалось загрузить себестоимость');
-            var report = result.report || {};
-            var sources = report.marketplaces || {};
-            showToast(
-                'Себес обновлён: WB — ' +
-                    Number((sources.WB || report).saved || 0) +
-                    ', ЯМ — ' +
-                    Number((sources['YANDEX MARKET'] || {}).saved || 0) +
-                    ' товаров',
-            );
-        } catch (error) {
-            showToast(error.message || 'Не удалось загрузить себестоимость', true);
-        } finally {
-            setSourceSyncBusy(false);
-        }
-    }
-
-    function setPriceSyncBusy(busy) {
-        if (!priceSync) return;
-        priceSync.disabled = busy || !canEdit;
-        priceSync.classList.toggle('is-loading', busy);
-        var label = priceSync.querySelector('[data-price-sync-label]');
-        if (label) label.textContent = busy ? 'Загружаем…' : 'Выгрузить цены';
-    }
-    async function syncPrices() {
-        if (!canEdit || !priceSync) return;
-        setPriceSyncBusy(true);
-        try {
-            var response = await window.fetch('/api/unit-economics-1c/prices/sync', {
-                method: 'POST',
-                headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
-            });
-            var result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Не удалось загрузить цены');
-            var reports = Object.values(result.report || {});
-            var saved = reports.reduce(function (total, report) {
-                return total + Number(report.rows || 0);
-            }, 0);
-            var partial = reports.filter(function (report) {
-                return !report.ok;
-            }).length;
-            showToast(
-                'Цены обновлены: ' +
-                    saved +
-                    ' товаров' +
-                    (partial ? ' · частично в ' + partial + ' кабинетах' : ''),
-            );
-        } catch (error) {
-            showToast(error.message || 'Не удалось загрузить цены', true);
-        } finally {
-            setPriceSyncBusy(false);
-        }
-    }
-
     grid.innerHTML = items.map(cardHtml).join('');
     if (cabinetCount) cabinetCount.textContent = String(items.length);
     empty.hidden = items.length !== 0;
-    if (sourceSync) {
-        sourceSync.disabled = !canEdit;
-        if (!canEdit) sourceSync.title = 'Требуются права на изменение раздела';
-        sourceSync.addEventListener('click', syncSourceData);
+    var cabinetNav = root.querySelector('[data-wb-cabinet-nav]');
+    function selectCabinet(slug) {
+        grid.querySelectorAll('[data-store]').forEach(function (card) {
+            card.hidden = card.dataset.store !== slug;
+        });
+        cabinetNav.querySelectorAll('button').forEach(function (button) {
+            button.setAttribute('aria-pressed', String(button.dataset.cabinet === slug));
+        });
     }
-    if (priceSync) {
-        priceSync.disabled = !canEdit;
-        if (!canEdit) priceSync.title = 'Требуются права на изменение раздела';
-        priceSync.addEventListener('click', syncPrices);
-    }
+    items.forEach(function (item) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = item.store_name;
+        button.dataset.cabinet = item.store_slug;
+        button.setAttribute('aria-controls', 'ue1cs-grid');
+        button.addEventListener('click', function () {
+            selectCabinet(item.store_slug);
+        });
+        cabinetNav.appendChild(button);
+    });
+    if (items.length) selectCabinet(items[0].store_slug);
     grid.addEventListener('click', function (event) {
         var button = event.target.closest('[data-save]');
         if (!button) return;

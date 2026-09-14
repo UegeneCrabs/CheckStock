@@ -318,5 +318,14 @@
         scope.value = 'product';
     }
     root.querySelector('[data-ym-article-wrap]').hidden = scope.value !== 'product';
+    document.getElementById('ym-cabinet-panel').addEventListener('ym-cabinet-change', function (event) {
+        if (event.detail.store === store.value) return;
+        store.value = event.detail.store;
+        // A product article belongs to its cabinet; open cabinet defaults on a store change.
+        scope.value = 'cabinet';
+        article.value = '';
+        root.querySelector('[data-ym-article-wrap]').hidden = true;
+        load(target());
+    });
     load(target());
 })();

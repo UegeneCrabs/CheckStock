@@ -90,10 +90,23 @@
     <div class="integration-section-head"
         ><div
             ><h2>Параметры кабинетов</h2
-            ><p>Ввод данных по кабинетам для расчётов юнит-экономики WB и Яндекс Маркета.</p></div
+            ><p>Выберите маркетплейс и кабинет, чтобы настроить расчёт юнит-экономики.</p></div
         ></div
     >
-    $cabinet_settings
+    <div class="cabinet-workspace" data-cabinet-workspace>
+        <div class="cabinet-market-switch" role="group" aria-label="Маркетплейс кабинета">
+            <button type="button" data-cabinet-market="wb" aria-pressed="true" aria-controls="ue1cs-page">
+                <span class="cabinet-market-mark is-wb" aria-hidden="true">WB</span>
+                <span>Wildberries</span>
+            </button>
+            <button type="button" data-cabinet-market="ym" aria-pressed="false" aria-controls="ym-cabinet-panel">
+                <span class="cabinet-market-mark is-ym" aria-hidden="true">YM</span>
+                <span>Яндекс Маркет</span>
+            </button>
+        </div>
+        $cabinet_settings
+    </div>
+    <script src="/static/integrations/cabinets.js?v=20260914"></script>
 </section>
 
 <dialog

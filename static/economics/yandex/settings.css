@@ -1,11 +1,11 @@
 #yandex-economics-settings {
-    margin-top: 28px;
+    margin-top: 10px;
     scroll-margin-top: 100px;
 }
 .ym-settings-help {
     margin: 8px 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.6;
 }
 .ym-settings-selector {
@@ -13,6 +13,10 @@
     gap: 12px;
     flex-wrap: wrap;
     align-items: end;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg) 40%, var(--card));
 }
 .ym-settings-selector label {
     flex: 1 1 150px;
@@ -29,19 +33,22 @@
     background: var(--card);
     color: var(--text);
     font: inherit;
-    font-size: 12px;
+    font-size: 14px;
+    min-height: 44px;
 }
 .ym-settings-group {
-    border: 0;
-    padding: 0;
-    margin: 20px 0 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    margin: 24px 0 0;
     min-width: 0;
 }
 .ym-settings-group legend,
 .ym-settings-group summary {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 700;
     margin-bottom: 12px;
+    padding: 0 6px;
 }
 .ym-settings-group summary {
     cursor: pointer;
@@ -56,7 +63,7 @@
 }
 .ym-settings-field > span {
     display: block;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     margin-bottom: 6px;
 }
@@ -67,7 +74,7 @@
 }
 .ym-settings-input b {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 12px;
     white-space: nowrap;
 }
 .ym-settings-input button {
@@ -76,6 +83,8 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 20px;
+    min-width: 32px;
+    min-height: 36px;
 }
 .ym-settings-input button:disabled {
     opacity: 0.4;
@@ -85,7 +94,7 @@
     display: block;
     margin-top: 5px;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.4;
 }
 .ym-settings-actions {
@@ -94,13 +103,50 @@
     gap: 10px;
 }
 .ym-settings-actions a {
-    font-size: 12px;
+    font-size: 13px;
     align-self: center;
 }
 .ym-settings-status {
     margin: 0;
-    font-size: 12px;
+    font-size: 13px;
     min-height: 20px;
+}
+.ym-settings-selector .integration-field > span { font-size: 13px; }
+.ym-settings-selector .btn-secondary { min-height: 44px; font-size: 13px; }
+.ym-settings-actions { justify-content: flex-start; }
+.ym-settings-actions button.btn-secondary {
+    background: var(--card);
+    border-color: var(--border);
+    color: var(--text);
+}
+.ym-buyout-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.6fr) minmax(180px, 1fr);
+    align-items: center;
+}
+.ym-buyout-card .ue1cs-card-head { display: grid; gap: 4px; border: 0; background: transparent; }
+.ym-buyout-card .ue1cs-card-body { padding: 18px; }
+.ym-buyout-card .ue1cs-field-group { padding: 0; border: 0; background: transparent; }
+.ym-buyout-card .ue1cs-card-foot { flex-wrap: wrap; border: 0; background: transparent; padding: 18px; }
+.ym-buyout-card .ym-settings-status:empty { display: none; }
+.ym-settings-input input:focus-visible,
+.ym-settings-input select:focus-visible,
+.ym-settings-input button:focus-visible,
+.ym-settings-selector input:focus-visible,
+.ym-settings-selector select:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--ue1cs-accent) 20%, transparent);
+    outline-offset: 2px;
+}
+@media (max-width: 1050px) {
+    .ym-buyout-card { grid-template-columns: minmax(0, 1fr); }
+    .ym-buyout-card .ue1cs-card-head { border-bottom: 1px solid var(--border); }
+    .ym-buyout-card .ue1cs-card-foot { border-top: 1px solid var(--border); }
+}
+@media (max-width: 600px) {
+    .ym-settings-selector { padding: 14px; }
+    .ym-settings-selector label { flex-basis: 100%; }
+    .ym-settings-selector > button { width: 100%; }
+    .ym-settings-group { padding: 14px; }
 }
 .ym-settings-status.is-error {
     color: #c3344b;

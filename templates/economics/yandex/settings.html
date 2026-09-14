@@ -1,29 +1,34 @@
+<section class="ue1cs-page ym-cabinet-panel" id="ym-cabinet-panel" data-cabinet-panel="ym" aria-label="Параметры кабинетов Яндекс Маркета" hidden>
+    <div class="cabinet-picker">
+        <div class="cabinet-picker-label">Кабинет <span data-ym-cabinet-count>—</span></div>
+        <div class="cabinet-store-nav" data-ym-cabinet-nav role="group" aria-label="Кабинеты YM"></div>
+        <p class="ym-settings-status is-error" data-ym-cabinet-status role="status" aria-live="polite" hidden></p>
+    </div>
 <section class="ue1cs-page" id="yandex-buyout-settings" aria-label="Параметры выкупа Яндекс Маркета">
-    <h3>Процент выкупа Яндекс Маркета</h3>
-    <p class="ue1cs-notice"
-        >Обновляется каждые 4 часа за выбранное число завершённых дней. При отсутствии статистики или нулевом
-        выкупе применяется заданный процент по умолчанию. Изменение периода вступает в силу при следующей
-        загрузке.</p
-    >
+    <details class="cabinet-help">
+        <summary>Как рассчитывается выкуп Яндекс Маркета</summary>
+        <div>
+            <p>Обновляется каждые 4 часа за выбранное число завершённых дней, без сегодняшнего. Новый период применяется при следующей загрузке.</p>
+            <p>Если статистики нет или выкуп равен 0, используется процент по умолчанию. При пустом поле подстановка не применяется.</p>
+        </div>
+    </details>
     <div class="ue1cs-grid" data-yandex-buyout-grid></div>
-    <p data-yandex-buyout-status role="status" aria-live="polite"></p>
 </section>
 <script type="application/json" id="yandex-buyout-config">
     $yandex_settings_config
 </script>
-<script src="/static/economics/yandex/buyout-settings.js?v=20260912"></script>
+<script src="/static/economics/yandex/buyout-settings.js?v=20260914"></script>
 
-<link rel="stylesheet" href="/static/economics/yandex/settings.css?v=20260912" />
+<link rel="stylesheet" href="/static/economics/yandex/settings.css?v=20260914" />
 <section class="ue1cs-page" id="yandex-economics-settings" aria-labelledby="ym-settings-title">
     <div
-        ><h3 id="ym-settings-title">Экономика Яндекс Маркета · закупка и расходы</h3>
+        ><h3 id="ym-settings-title">Экономика и расходы</h3>
         <p class="ym-settings-help"
-            >Постоянные параметры хранятся в базе сайта. Общие значения применяются к кабинету; настройки
-            товара имеют приоритет. Цены, заказы, реклама и доступные тарифы поступают автоматически.</p
+            >Общие значения применяются ко всему кабинету. Для отдельного товара можно задать свои параметры.</p
         ></div
     >
     <form data-ym-settings-selector class="ym-settings-selector">
-        <label class="integration-field"
+        <label class="integration-field" hidden
             ><span>Кабинет ЯМ</span
             ><select data-ym-settings-store></select
         ></label>
@@ -74,5 +79,7 @@
     </form>
     <p class="ym-settings-status" data-ym-settings-message role="status" aria-live="polite"></p>
 </section>
-<script src="/static/economics/yandex/fields.js?v=20260912"></script>
-<script src="/static/economics/yandex/settings.js?v=20260912"></script>
+<script src="/static/economics/yandex/fields.js?v=20260914"></script>
+<script src="/static/economics/yandex/settings.js?v=20260914"></script>
+
+</section>
