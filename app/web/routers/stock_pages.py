@@ -219,7 +219,7 @@ async def stock(request: Request):
     )
     last_sync = await run_in_threadpool(db.get_last_sync_at)
     content = fill_template(
-        "stock_content.html",
+        "stock/stock_content.html",
         last_sync=html.escape(format_dt(last_sync)),
         stock_summary=stock_summary,
         store_cards="\n".join(cards),
@@ -248,7 +248,7 @@ async def stock_supplies(request: Request):
         for slug in allowed_stores
     )
     content = fill_template(
-        "stock_supplies_content.html",
+        "stock/stock_supplies_content.html",
         wb_store_options=wb_store_options,
         manual_store_options=manual_store_options,
         wb_date_min=date_bounds["min_date"].isoformat(),
@@ -307,7 +307,7 @@ async def stock_randomizer(request: Request, ff: str = ""):
         format_dt(str(state["generated_at"])) if state.get("generated_at") else "Ещё не запускался"
     )
     content = fill_template(
-        "stock_randomizer_content.html",
+        "stock/stock_randomizer_content.html",
         fulfillment_options=_randomizer_fulfillment_options(fulfillments, selected),
         fulfillment_disabled="" if fulfillments else " disabled",
         month_label=html.escape(month_label),
@@ -373,7 +373,7 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
         raise HTTPException(status_code=403, detail="Нет доступных маркетплейсов в этом магазине")
     marketplace = mp if mp in allowed_marketplaces else allowed_marketplaces[0]
     content = fill_template(
-        "store_content.html",
+        "stock/store_content.html",
         store_name=store["name"],
         slug=slug.lower(),
         ff_options=render_ff_options(),

@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/stock-total.css?v=13">
+<link rel="stylesheet" href="/static/stock/stock-total.css?v=13">
 
         <a class="back-link" href="/stock">&larr; Все магазины</a>
 
@@ -1227,7 +1227,7 @@ $mp_source_options
 
             function requireRowEditor() {
                 if (typeof window.createRowEditor !== 'function') {
-                    throw new Error('не загрузился /static/stock-rows.js');
+                    throw new Error('не загрузился /static/stock/stock-rows.js');
                 }
                 return window.createRowEditor;
             }

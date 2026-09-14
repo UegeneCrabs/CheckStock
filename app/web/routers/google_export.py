@@ -218,7 +218,7 @@ async def render_google_export() -> str:
     await run_in_threadpool(stock_sheet_export.ensure_defaults)
     settings = await run_in_threadpool(stock_sheet_export.list_settings)
     return fill_template(
-        "google_export_content.html",
+        "integrations/google_export_content.html",
         store_tabs="".join(
             '<button type="button" class="export-store-tab'
             f'{" is-active" if index == 0 else ""}" data-export-store-tab="{item.store_slug}" aria-pressed="{str(index == 0).lower()}">'

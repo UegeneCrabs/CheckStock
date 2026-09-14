@@ -1259,7 +1259,7 @@ async def sales_unit_economics_1c(request: Request):
         ),
     }
     content = fill_template(
-        "unit_economics_1c_content.html",
+        "economics/wb/unit_economics_1c_content.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
         marketplace_name="Wildberries",
         marketplace_label="WB",
@@ -2052,7 +2052,7 @@ async def sales_unit_economics_1c_unit_profit_report(request: Request):
         "defaultDateTo": today.isoformat(),
     }
     content = fill_template(
-        "unit_economics_1c_report_content.html",
+        "economics/wb/unit_economics_1c_report_content.html",
         unit_1c_report_config=json.dumps(config, ensure_ascii=False).replace("</", "<\\/"),
         unit_1c_manager_filter=(
             '<div class="ue1cr-filter"><span>Менеджеры</span>'
@@ -2806,7 +2806,7 @@ def _render_unit_economics_1c_placeholder(
     heading: str,
 ) -> str:
     content = fill_template(
-        "unit_economics_1c_placeholder_content.html",
+        "economics/shared/unit_economics_1c_placeholder_content.html",
         logo=logo,
         logo_class=logo_class,
         heading=heading,
@@ -2923,7 +2923,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
         "productsEndpoint": "/sales/unit-economics-1c/yandex-market?data=1",
     }
     content = fill_template(
-        "unit_economics_1c_content.html",
+        "economics/wb/unit_economics_1c_content.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
         marketplace_name="Яндекс Маркет",
         marketplace_label="Яндекс Маркета",
@@ -2935,7 +2935,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
             "запас — по заказам за 21 день. Экономика FBY — расчётная; калькулятор — в карточке товара. Постоянные параметры — в «API-ключи и фоновые выгрузки».</p>"
         ),
     )
-    content += '<link rel="stylesheet" href="/static/yandex-economics.css?v=3"><script src="/static/yandex-economics-fields.js?v=1"></script><script src="/static/yandex-economics.js?v=3"></script>'
+    content += '<link rel="stylesheet" href="/static/economics/yandex/yandex-economics.css?v=3"><script src="/static/economics/yandex/yandex-economics-fields.js?v=1"></script><script src="/static/economics/yandex/yandex-economics.js?v=3"></script>'
     return render_page(
         "CheckStock — Юнит-экономика 1С — Яндекс Маркет",
         "unit_1c_yandex",

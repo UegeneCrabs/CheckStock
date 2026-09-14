@@ -37,11 +37,18 @@
     var search = document.querySelector('[data-sync-search]');
     var statusFilter = document.querySelector('[data-sync-filter]');
     var jobRows = Array.from(document.querySelectorAll('[data-sync-job]'));
+    var jobGroups = Array.from(document.querySelectorAll('[data-sync-group]'));
+    var groupFilters = Array.from(document.querySelectorAll('[data-sync-group-filter]'));
+    var selectedGroup = 'all';
     function filterJobs() {
         var query = search.value.trim().toLocaleLowerCase('ru');
         var count = 0;
         jobRows.forEach(function (row) {
-            var matches = row.children[0].textContent.toLocaleLowerCase('ru').includes(query)
+            var group = row.closest('[data-sync-group]');
+            var searchable = row.children[0].textContent + ' ' + group.querySelector('h3').textContent
+                + ' ' + group.querySelector('.integration-job-group-head p').textContent;
+            var matches = (selectedGroup === 'all' || group.dataset.syncGroup === selectedGroup)
+                && searchable.toLocaleLowerCase('ru').includes(query)
                 && (statusFilter.value === 'all' || row.querySelector('.sync-status').classList.contains('is-' + statusFilter.value));
             row.hidden = !matches;
             if (matches) count += 1;
@@ -51,12 +58,27 @@
         });
         document.querySelector('[data-sync-count]').textContent = 'Показано: ' + count + ' из ' + jobRows.length;
         document.querySelector('[data-sync-empty]').hidden = count !== 0;
-        document.querySelector('.integration-sync-table-wrap').hidden = count === 0;
+        jobGroups.forEach(function (group) {
+            var rows = Array.from(group.querySelectorAll('[data-sync-job]'));
+            var visible = rows.filter(function (row) { return !row.hidden; }).length;
+            group.hidden = visible === 0;
+            group.querySelector('[data-sync-group-count]').textContent = visible === rows.length
+                ? 'Выгрузок: ' + visible : 'Выгрузок: ' + visible + ' из ' + rows.length;
+        });
     }
+    function selectGroup(value) {
+        selectedGroup = value;
+        groupFilters.forEach(function (button) {
+            button.setAttribute('aria-pressed', String(button.dataset.syncGroupFilter === value));
+        });
+    }
+    groupFilters.forEach(function (button) {
+        button.addEventListener('click', function () { selectGroup(button.dataset.syncGroupFilter); filterJobs(); });
+    });
     search.addEventListener('input', filterJobs);
     statusFilter.addEventListener('change', filterJobs);
     document.querySelector('[data-sync-reset]').addEventListener('click', function () {
-        search.value = ''; statusFilter.value = 'all'; filterJobs(); search.focus();
+        search.value = ''; statusFilter.value = 'all'; selectGroup('all'); filterJobs(); search.focus();
     });
     filterJobs();
 
@@ -247,8 +269,8 @@
         var label = labels[state.status] || ['Ещё не запускалась', 'is-empty'];
         var badge = row.querySelector('.sync-status');
         badge.textContent = label[0]; badge.className = 'sync-status ' + label[1];
-        row.children[2].textContent = runDate(state.last_finished_at || state.last_started_at);
-        row.children[3].textContent = state.last_trigger === 'manual' ? 'Вручную'
+        row.querySelector('[data-sync-last-run]').textContent = runDate(state.last_finished_at || state.last_started_at);
+        row.querySelector('[data-sync-trigger]').textContent = state.last_trigger === 'manual' ? 'Вручную'
             : state.last_trigger === 'scheduled' ? 'По расписанию' : '—';
         var next = row.querySelector('[data-sync-next-run]');
         next.textContent = 'Следующая: ' + (state.next_run_at ? runDate(state.next_run_at) : 'Рассчитывается');
@@ -262,9 +284,7 @@
             runMessage(state.name, launchErrors[state.name], true);
             return;
         }
-        runMessage(state.name, state.running ? 'Выполняется в фоне. Страницу можно закрыть.'
-            : state.status === 'error' ? state.error || 'Не удалось завершить выгрузку. Подробности в истории.'
-            : '', state.status === 'error');
+        runMessage(state.name, '', false);
     }
     function refreshRunStates() {
         if (polling) return Promise.resolve();
@@ -297,9 +317,9 @@
             }).then(function (data) {
                 button.textContent = 'Выполняется…';
                 runMessage(job, data.message || 'Выгрузка выполняется в фоне', false);
-            }).catch(function (error) {
-                launchErrors[job] = error.message;
-                runMessage(job, error.message, true);
+            }).catch(function () {
+                launchErrors[job] = 'Не удалось запустить выгрузку. Попробуйте ещё раз.';
+                runMessage(job, launchErrors[job], true);
                 button.disabled = false;
                 button.textContent = 'Выгрузить вручную';
             }).finally(function () {
@@ -319,10 +339,13 @@
     var historyMessage = historyDialog.querySelector('[data-history-message]');
     var historyTable = historyDialog.querySelector('[data-history-table]');
     var historyRows = historyDialog.querySelector('[data-history-rows]');
+    var historySummary = historyDialog.querySelector('[data-history-summary]');
+    var historyGeneration = 0;
     var statusLabels = {
         running: ['Выполняется', 'is-running'],
         success: ['Успешно', 'is-success'],
-        error: ['Ошибка', 'is-error']
+        error: ['Ошибка', 'is-error'],
+        interrupted: ['Прервано', 'is-interrupted']
     };
 
     function runDate(value) {
@@ -340,27 +363,37 @@
         var seconds = Number(milliseconds) / 1000;
         if (seconds < 1) return Math.max(0, Number(milliseconds)) + ' мс';
         if (seconds < 60) return seconds.toLocaleString('ru-RU', {maximumFractionDigits: 1}) + ' сек.';
-        var minutes = Math.floor(seconds / 60);
-        var remainder = Math.round(seconds % 60);
+        var rounded = Math.round(seconds);
+        var minutes = Math.floor(rounded / 60);
+        var remainder = rounded % 60;
         return minutes + ' мин. ' + remainder + ' сек.';
     }
 
-    function cell(text) {
+    function cell(text, label) {
         var node = document.createElement('td');
         node.textContent = text;
+        node.dataset.label = label;
         return node;
     }
 
     function renderHistory(runs) {
         historyRows.replaceChildren();
+        historySummary.hidden = !runs.length;
         if (!runs.length) {
             historyTable.hidden = true;
-            historyMessage.textContent = 'Запусков пока нет. Новые запуски появятся здесь автоматически.';
+            historyMessage.textContent = 'Запусков пока нет. Здесь появится история после первой выгрузки.';
             return;
         }
-        runs.forEach(function (run) {
+        historyDialog.querySelector('[data-history-count]').textContent = runs.length;
+        historyDialog.querySelector('[data-history-success]').textContent = runs.filter(function (run) { return run.status === 'success'; }).length;
+        historyDialog.querySelector('[data-history-error]').textContent = runs.filter(function (run) { return run.status === 'error'; }).length;
+        var interruptedCount = runs.filter(function (run) { return run.status === 'interrupted'; }).length;
+        historyDialog.querySelector('[data-history-interrupted]').textContent = interruptedCount;
+        historyDialog.querySelector('[data-history-interrupted-summary]').hidden = interruptedCount === 0;
+        runs.forEach(function (run, index) {
             var row = document.createElement('tr');
             var dateCell = document.createElement('td');
+            dateCell.dataset.label = 'Начало';
             var started = document.createElement('strong');
             started.textContent = runDate(run.started_at);
             dateCell.appendChild(started);
@@ -372,26 +405,43 @@
             row.appendChild(dateCell);
 
             var statusCell = document.createElement('td');
+            statusCell.dataset.label = 'Результат';
             var status = statusLabels[run.status] || ['Неизвестно', 'is-empty'];
             var badge = document.createElement('span');
             badge.className = 'sync-status ' + status[1];
             badge.textContent = status[0];
             statusCell.appendChild(badge);
             row.appendChild(statusCell);
-            row.appendChild(cell(run.trigger === 'manual' ? 'Вручную' : run.trigger === 'scheduled' ? 'По расписанию' : '—'));
-            row.appendChild(cell(runDuration(run.duration_ms)));
-
-            var errorCell = document.createElement('td');
-            if (run.error) {
-                var error = document.createElement('pre');
-                error.className = 'integration-history-error';
-                error.textContent = run.error;
-                errorCell.appendChild(error);
-            } else {
-                errorCell.textContent = '—';
-            }
-            row.appendChild(errorCell);
+            row.appendChild(cell(run.trigger === 'manual' ? 'Вручную' : run.trigger === 'scheduled' ? 'По расписанию' : '—', 'Запуск'));
+            row.appendChild(cell(run.status === 'running' ? 'В процессе' : runDuration(run.duration_ms), 'Длительность'));
             historyRows.appendChild(row);
+            if (run.status === 'error' || run.status === 'interrupted') {
+                var detailRow = document.createElement('tr');
+                detailRow.className = 'integration-history-detail-row';
+                detailRow.hidden = true;
+                detailRow.id = 'integration-history-detail-' + index;
+                var detailCell = document.createElement('td');
+                detailCell.colSpan = 4;
+                var detail = document.createElement('pre');
+                detail.className = 'integration-history-error-detail';
+                detail.textContent = run.error || 'Текст ошибки для этого запуска не сохранился.';
+                detailCell.appendChild(detail);
+                detailRow.appendChild(detailCell);
+                var toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.className = 'integration-history-error-toggle';
+                var showLabel = run.status === 'interrupted' ? 'Почему прервано' : 'Показать ошибку';
+                toggle.textContent = showLabel;
+                toggle.setAttribute('aria-expanded', 'false');
+                toggle.setAttribute('aria-controls', detailRow.id);
+                toggle.addEventListener('click', function () {
+                    detailRow.hidden = !detailRow.hidden;
+                    toggle.setAttribute('aria-expanded', String(!detailRow.hidden));
+                    toggle.textContent = detailRow.hidden ? showLabel : 'Скрыть подробности';
+                });
+                statusCell.appendChild(toggle);
+                historyRows.appendChild(detailRow);
+            }
         });
         historyMessage.textContent = '';
         historyTable.hidden = false;
@@ -400,18 +450,23 @@
     document.querySelectorAll('[data-sync-history]').forEach(function (button) {
         button.addEventListener('click', function () {
             var job = button.getAttribute('data-sync-history');
+            var generation = ++historyGeneration;
             historyTitle.textContent = button.getAttribute('data-sync-title') || 'История выгрузки';
             historyRows.replaceChildren();
             historyTable.hidden = true;
+            historySummary.hidden = true;
             historyMessage.textContent = 'Загружаю историю…';
             historyDialog.showModal();
+            document.documentElement.classList.add('integration-history-open');
             button.disabled = true;
             request('/api/admin/integrations/sync-jobs/' + encodeURIComponent(job) + '/history?limit=50', {
                 headers: {'Accept': 'application/json', 'X-Requested-With': 'fetch'}
             }).then(function (data) {
-                renderHistory(data.runs || []);
-            }).catch(function (error) {
-                historyMessage.textContent = error.message;
+                if (generation === historyGeneration && historyDialog.open) renderHistory(data.runs || []);
+            }).catch(function () {
+                if (generation === historyGeneration && historyDialog.open) {
+                    historyMessage.textContent = 'Не удалось загрузить историю. Закройте окно и попробуйте ещё раз.';
+                }
             }).finally(function () {
                 button.disabled = false;
             });
@@ -421,7 +476,13 @@
     historyDialog.querySelector('[data-history-close]').addEventListener('click', function () {
         historyDialog.close();
     });
+    historyDialog.addEventListener('close', function () {
+        historyGeneration += 1;
+        document.documentElement.classList.remove('integration-history-open');
+    });
     historyDialog.addEventListener('click', function (event) {
-        if (event.target === historyDialog) historyDialog.close();
+        var bounds = historyDialog.getBoundingClientRect();
+        if (event.target === historyDialog && (event.clientX < bounds.left || event.clientX > bounds.right
+            || event.clientY < bounds.top || event.clientY > bounds.bottom)) historyDialog.close();
     });
 })();

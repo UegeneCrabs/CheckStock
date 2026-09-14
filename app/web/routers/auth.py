@@ -26,7 +26,7 @@ async def login_form(request: Request, identities: IdentityServiceDependency):
         user = await run_in_threadpool(identities.user_for_token, token)
     if user is not None:
         return RedirectResponse(landing_path(user), status_code=303)
-    return fill_template("login.html", error="")
+    return fill_template("auth/login.html", error="")
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -37,7 +37,7 @@ async def login_submit(
     user = await run_in_threadpool(identities.authenticate, credentials)
     if user is None:
         page = fill_template(
-            "login.html",
+            "auth/login.html",
             error='<p class="login-error">Неверный логин или пароль</p>',
         )
         return HTMLResponse(page, status_code=401)

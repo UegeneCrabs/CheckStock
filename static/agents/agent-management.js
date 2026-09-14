@@ -91,7 +91,7 @@
   document.getElementById('agent-copy-key').onclick = () => copy(token.value);
   document.getElementById('agent-copy-instructions').onclick = async () => {
     try {
-      const response = await fetch('/static/agent-instructions.txt', {cache: 'no-store'});
+      const response = await fetch('/static/agents/agent-instructions.txt', {cache: 'no-store'});
       if (!response.ok) throw new Error('Не удалось загрузить инструкцию.');
       await copy(await response.text());
     } catch (error) { tell(error.message); }

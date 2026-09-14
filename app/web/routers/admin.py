@@ -705,7 +705,7 @@ def render_user_editor(actor: User, user: User) -> str:
         else render_store_badges(user.store_slugs)
     )
     return fill_template(
-        "admin_user_editor.html",
+        "admin/admin_user_editor.html",
         user_id=str(user.id),
         full_name=html.escape(user.full_name),
         email=html.escape(user.google_email),
@@ -886,7 +886,7 @@ async def admin_page(request: Request, identities: IdentityServiceDependency):
         else []
     )
     content = fill_template(
-        "admin_content.html",
+        "admin/admin_content.html",
         role_options=render_role_options(user),
         profile_options=render_profile_options(),
         marketplace_options=render_marketplace_checkboxes(tuple(MARKETPLACES)),

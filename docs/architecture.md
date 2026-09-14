@@ -30,6 +30,8 @@ FastAPI route -> Pydantic DTO -> application service -> repository Protocol
 
 `app.repositories` и `app.db` остаются compatibility-слоем для крупных аналитических read-моделей и синхронизаторов. Новые сценарии и изменения состояния не должны добавляться в этот слой; он мигрируется предметными срезами в SQLAlchemy-репозитории.
 
+`templates` и `static` разделены на `stock`, `economics`, `admin`, `integrations`, `agents`. Общие шаблоны находятся в `templates/layout`, общие CSS и JavaScript — в `static/common`.
+
 В `scripts` команды разделены на `ops`, `sync`, `imports`, `exports`, `diagnostics` и `parsers`. Предпочтительный запуск — `python -m scripts.<раздел>.<имя>` из корня проекта.
 
 Локальная БД — `data/checkstock.db`; в Docker используется именованный том PostgreSQL. Резервные копии находятся в `data/backups`, состояние браузерного парсера — в `data/yandex-storefront`. Эти данные не входят в Git.

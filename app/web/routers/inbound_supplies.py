@@ -50,7 +50,7 @@ async def inbound_page(request: Request, store: str = "", mp: str = ""):
         )
 
     content = fill_template(
-        "inbound_supplies_content.html",
+        "stock/inbound_supplies_content.html",
         store_options=options(((slug, STORES[slug].name) for slug in stores), store.strip().lower()),
         marketplace_options=options(
             ((value, MARKETPLACE_LABELS[value]) for value in marketplaces), mp.strip().upper()

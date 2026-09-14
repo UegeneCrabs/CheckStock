@@ -193,7 +193,7 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
     counts["transfer"] = sum(counts.get(item, 0) for item in TRANSFER_KINDS)
 
     content = fill_template(
-        "operations_content.html",
+        "stock/operations_content.html",
         slug=slug.lower(),
         store_name=store["name"],
         kind=active,
@@ -444,7 +444,7 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
 
     def build_content() -> str:
         return fill_template(
-            "warehouse_content.html",
+            "stock/warehouse_content.html",
             store_name=store["name"],
             slug=slug.lower(),
             marketplace=html.escape(marketplace),

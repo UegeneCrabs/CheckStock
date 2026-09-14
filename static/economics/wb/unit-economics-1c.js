@@ -1278,8 +1278,10 @@
             ? quote.message : 'Из отчёта «Целевая цена» за последние 7 полных дней';
         var target = targetPriceForProduct(product);
         var wallet = finite(values.wallet, null);
-        nodes.walletPriceInput.classList.toggle('is-target-price-different', target !== null
-            && wallet !== null && wallet >= 0 && Math.abs(Math.round(wallet * 100) - Math.round(target * 100)) > 200);
+        var priceDifference = target !== null && wallet !== null && wallet >= 0
+            ? Math.round(target * 100) - Math.round(wallet * 100) : 0;
+        nodes.walletPriceInput.classList.toggle('is-target-price-higher', priceDifference > 200);
+        nodes.walletPriceInput.classList.toggle('is-target-price-lower', priceDifference < -200);
     }
     function targetPriceForProduct(product) {
         return targetPriceQuote && targetPriceQuote.productId === product.id ? targetPriceQuote.price : null;

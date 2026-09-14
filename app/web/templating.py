@@ -48,7 +48,7 @@ def render_access_denied_page(
         heading = heading or "Нет доступных разделов"
         description = description or ("Обратитесь к суперадминистратору, чтобы он открыл нужные разделы.")
     content = fill_template(
-        "access_denied_content.html",
+        "auth/access_denied_content.html",
         heading=html.escape(heading),
         description=html.escape(description),
     )
@@ -201,7 +201,7 @@ def render_page(
         return "" if allowed else " hidden"
 
     header = fill_template(
-        "header.html",
+        "layout/header.html",
         stock_open="",
         stock_expanded="false",
         stock_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[0][1])),
@@ -251,7 +251,7 @@ def render_page(
         profile_active="profile--active" if active == "profile" else "",
     )
     return fill_template(
-        "page.html",
+        "layout/page.html",
         title=title,
         header=header,
         content_class=html.escape(content_class),

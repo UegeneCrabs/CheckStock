@@ -76,7 +76,7 @@ async def profile_page(request: Request):
         user, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
     )
     content = fill_template(
-        "profile_content.html",
+        "account/profile_content.html",
         full_name=html.escape(user.full_name),
         email=html.escape(user.google_email or "Не указана"),
         login=html.escape(user.login),

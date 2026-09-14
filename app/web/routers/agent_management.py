@@ -51,7 +51,7 @@ async def storage_call(function):
 async def agent_page(request: Request, user: Owner):
     return HTMLResponse(
         render_page(
-            "CheckStock — ИИ-агенты", "ai_agents", fill_template("agent_management.html"), user
+            "CheckStock — ИИ-агенты", "ai_agents", fill_template("agents/agent_management.html"), user
         ),
         headers={"Cache-Control": "no-store"},
     )

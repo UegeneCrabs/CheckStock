@@ -26,7 +26,7 @@ def cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
 
 def render_cabinet_settings(user) -> str:
     wb_content = fill_template(
-        "unit_economics_1c_cabinet_settings_content.html",
+        "economics/wb/unit_economics_1c_cabinet_settings_content.html",
         cabinet_settings_config=json.dumps(
             {
                 "marketplace": "WB",
@@ -49,7 +49,7 @@ def render_cabinet_settings(user) -> str:
         for slug in accessible_stores(user, "YANDEX MARKET")
     ]
     return wb_content + fill_template(
-        "unit_economics_yandex_settings.html",
+        "economics/yandex/unit_economics_yandex_settings.html",
         yandex_settings_config=json.dumps(
             {
                 "items": yandex_items,
