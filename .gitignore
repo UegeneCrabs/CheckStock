@@ -20,6 +20,7 @@ data/*.dump
 data/exports/
 data/yandex-storefront/
 data/.sync-locks/
+data/backups/
 
 identifier.sqlite
 
