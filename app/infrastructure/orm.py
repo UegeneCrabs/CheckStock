@@ -982,6 +982,15 @@ class UnitEconomics1CDailyAdvertisingRecord(OrmBase):
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class AdvertisingCampaignSnapshotRecord(OrmBase):
+    __tablename__ = "wb_advertising_campaign_snapshot"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    attempted_at: Mapped[str] = mapped_column(String, nullable=False)
+    payload_json: Mapped[str | None] = mapped_column(Text)
+
+
 class UnitEconomics1CDailyMarginSnapshotRecord(OrmBase):
     __tablename__ = "unit_economics_1c_daily_margin_snapshots"
     __table_args__ = (Index("idx_ue1c_margin_snapshot_period", "store_slug", "day", "article"),)

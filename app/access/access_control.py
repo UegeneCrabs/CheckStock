@@ -172,6 +172,22 @@ def profile_has_permission(user: User | None, permission: ActionPermission) -> b
     return permission in PROFILE_PERMISSIONS[normalized.access_profile]
 
 
+def restricts_unit_economics_to_manager(user: User | None) -> bool:
+    """Legacy employees are manager-scoped; explicit economics profiles are not.
+
+    This does not grant section/store/marketplace access: callers must still check it.
+    """
+    normalized = coerce_user(user)
+    if normalized is None:
+        return True
+    if normalized.role is not Role.USER:
+        return False
+    return not (
+        normalized.access_profile is not None
+        and profile_has_permission(normalized, ActionPermission.UNIT_ECONOMICS_VIEW)
+    )
+
+
 def has_action_permission(
     user: User | None,
     permission: ActionPermission,
