@@ -4,9 +4,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 
-from app import stock_total as stock_total_service
-from app.access_control import ActionPermission, profile_has_permission, scope_pairs
-from app.stores import STORES
+from app.access.access_control import ActionPermission, profile_has_permission, scope_pairs
+from app.core.stores import STORES
+from app.stock import total as stock_total_service
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num
 from app.web.downloads import _download_headers
@@ -27,7 +27,7 @@ def _money(value: float) -> str:
 
 def _render_rows(rows: list[dict]) -> str:
     if not rows:
-        return '<tr class="empty-row"><td colspan="23">Пока нет товаров и остатков</td></tr>'
+        return '<tr class="empty-row"><td colspan="24">Нет товаров с остатками</td></tr>'
 
     result = []
     for row in rows:
@@ -37,8 +37,11 @@ def _render_rows(rows: list[dict]) -> str:
         quantities = [int(row.get(key) or 0) for key in stock_total_service.VALUE_KEYS]
         purchase_price = row.get("purchase_price")
         purchase_price_value = "" if purchase_price is None else str(float(purchase_price))
+        locations = str(row.get("store_marketplaces") or "")
+        identifiers = " ".join([*row.get("articles", []), *row.get("barcodes", [])])
         result.append(
             f'<tr data-store="{html.escape(str(row["store_slug"]), quote=True)}" '
+            f'data-search-aliases="{html.escape(identifiers, quote=True)}" '
             f'data-grand-total="{quantities[0]}" '
             f'data-purchase-price="{html.escape(purchase_price_value, quote=True)}">'
             f"<td>{copy_identifier(article, 'Артикул')}</td>"
@@ -46,8 +49,9 @@ def _render_rows(rows: list[dict]) -> str:
             f'<td title="{html.escape(name, quote=True)}">{html.escape(name)}</td>'
             + (
                 f'<td data-filter-value="{purchase_price_value}">'
-                f'{_money(purchase_price) if purchase_price is not None else "—"}</td>'
+                f"{_money(purchase_price) if purchase_price is not None else '—'}</td>"
             )
+            + f'<td class="stock-total-locations">{html.escape(locations)}</td>'
             + "".join(_quantity_cell(value) for value in quantities)
             + "</tr>"
         )
@@ -55,13 +59,10 @@ def _render_rows(rows: list[dict]) -> str:
 
 
 def _render_totals(rows: list[dict]) -> str:
-    values = [
-        sum(int(row.get(key) or 0) for row in rows)
-        for key in stock_total_service.VALUE_KEYS
-    ]
+    values = [sum(int(row.get(key) or 0) for row in rows) for key in stock_total_service.VALUE_KEYS]
     cells = "".join(
         f'<th data-total-column="{column}">{_fmt_num(value)}</th>'
-        for column, value in enumerate(values, start=4)
+        for column, value in enumerate(values, start=5)
     )
     cost_values = [
         round(
@@ -76,18 +77,18 @@ def _render_totals(rows: list[dict]) -> str:
     ]
     cost_cells = "".join(
         f'<th data-cost-total-column="{column}">{_money(value)}</th>'
-        for column, value in enumerate(cost_values, start=4)
+        for column, value in enumerate(cost_values, start=5)
     )
     priced_positions = sum(1 for row in rows if row.get("purchase_price") is not None)
     return (
         '<tr class="totals-row">'
         "<th>ИТОГО</th><th></th>"
         f"<th data-total-positions>позиций: {len(rows)}</th>"
-        f"<th></th>{cells}</tr>"
+        f"<th></th><th></th>{cells}</tr>"
         '<tr class="totals-row totals-row--cost">'
         "<th>ИТОГО В ЗЦ</th><th></th>"
         f"<th data-cost-total-positions>ЗЦ: {priced_positions} из {len(rows)} поз.</th>"
-        f"<th></th>{cost_cells}</tr>"
+        f"<th></th><th></th>{cost_cells}</tr>"
     )
 
 
@@ -95,8 +96,8 @@ def _store_options(store_slugs: tuple[str, ...], selected_store: str = "") -> st
     options = ['<option value="">Все магазины</option>']
     options.extend(
         f'<option value="{html.escape(slug, quote=True)}"'
-        f'{" selected" if slug == selected_store else ""}>'
-        f'{html.escape(STORES[slug]["name"])}</option>'
+        f"{' selected' if slug == selected_store else ''}>"
+        f"{html.escape(STORES[slug]['name'])}</option>"
         for slug in store_slugs
     )
     return "".join(options)
@@ -123,9 +124,10 @@ async def stock_total(request: Request, store: str = ""):
         stock_total_service.build_rows,
         store_slugs,
         scope_pairs(request.state.user),
+        selected_store,
     )
     content = fill_template(
-        "stock_total_content.html",
+        "stock/total.html",
         store_options=_store_options(store_slugs, selected_store),
         download_href=(
             f"/stock/total.xlsx?store={html.escape(selected_store, quote=True)}"
@@ -150,16 +152,11 @@ async def stock_total_xlsx(request: Request, store: str = ""):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке сводных остатков")
     store_slugs = accessible_store_slugs(request.state.user)
     selected_store = _selected_store(store, store_slugs)
-    export_store_slugs = (selected_store,) if selected_store else store_slugs
     allowed_pairs = scope_pairs(request.state.user)
-    if selected_store:
-        allowed_pairs = tuple(
-            pair for pair in allowed_pairs if pair[0] == selected_store
-        )
 
     def build() -> tuple[bytes, str]:
         return stock_total_service.build_xlsx(
-            stock_total_service.build_rows(export_store_slugs, allowed_pairs)
+            stock_total_service.build_rows(store_slugs, allowed_pairs, selected_store)
         )
 
     content, filename = await run_in_threadpool(build)

@@ -1,6 +1,6 @@
 import hashlib
 
-from app.domain import DEFAULT_MARKETPLACE
+from app.core.domain import DEFAULT_MARKETPLACE
 from app.repositories.catalog import get_catalog_items
 from app.repositories.core import get_connection
 
@@ -458,7 +458,7 @@ def search_catalog(
             continue
 
         article = item["article"].casefold()
-        barcode = item["barcode"].casefold()
+        barcode = " ".join(item.get("barcodes") or [item["barcode"]]).casefold()
         name = item["name"].casefold()
 
         if article.startswith(query):

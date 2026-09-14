@@ -1,6 +1,7 @@
 import html
 
-from app import db, health
+from app import db
+from app.core import health
 from app.web.common import _cell, _fmt_num
 from app.yandex import sync as ya_sync
 
@@ -195,13 +196,14 @@ def render_stock_rows(store_slug: str, marketplace: str) -> str:
         row_total = ff_available + transit_quantity + sale_total
 
         stuck = ff_available > 0 and sale_total == 0
-        row_class = ' class="row-alert"' if stuck else ""
+        row_class = ' class="row-alert"' if stuck or ff_available < 0 else ""
         article = str(item["article"] or "")
         barcode = str(item["barcode"] or "")
         name = str(item["name"] or article)
         product_cell = render_product_cell(article, barcode, name, str(item.get("image_url") or ""))
         rows.append(
             f'                            <tr{row_class} data-article="{html.escape(article, quote=True)}" '
+            f'data-search-aliases="{html.escape(" ".join(item.get("barcodes") or []), quote=True)}" '
             f'tabindex="0" aria-label="Открыть карточку {html.escape(name, quote=True)}">'
             + product_cell
             + f'<td class="col-row-total">{_cell(row_total)}</td>'

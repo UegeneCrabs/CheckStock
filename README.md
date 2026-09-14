@@ -2,6 +2,16 @@
 
 FastAPI-приложение для синхронизации каталогов, остатков, продаж и аналитики WB, Ozon и Яндекс Маркета.
 
+## Структура проекта
+
+- [app](app/README.md) — серверная логика по предметным разделам.
+- [templates](templates/README.md) — шаблоны страниц по разделам сайта.
+- [static](static/README.md) — CSS, JavaScript и изображения тех же разделов.
+- [scripts](scripts/README.md) — команды обслуживания, синхронизации, импорта, экспорта и диагностики.
+- [docs](docs/README.md) — актуальные инструкции.
+- `data` — рабочая локальная БД, состояние парсера и `backups` с резервными копиями.
+- `deploy` — сборка и настройки контейнера парсера.
+
 ## Локальный запуск
 
 ```powershell
@@ -19,15 +29,10 @@ make run
 ```text
 make format
 make lint
-make test-unit
-make test-integration
-make test-e2e
-make coverage-unit
-make coverage
 make check
 ```
 
-`coverage-unit` требует минимум 90% покрытия строк и ветвлений кода из `app`. Integration-тесты поднимают временную SQLite, проверяют успешные и ошибочные сценарии сервисов и контролируют принадлежность всех HTTP-маршрутов тестовым группам. E2E-тесты запускают настоящий Uvicorn на свободном локальном порту и проходят полные цепочки складского сервиса, RNP и администрирования. `check` последовательно запускает lint, unit coverage, integration и E2E.
+`check` запускает проверку форматирования и Ruff для `app` и `scripts`. Автоматические тесты удалены; новый набор будет добавлен отдельно.
 
 ## Docker
 
@@ -37,7 +42,7 @@ docker compose up --build -d
 docker compose logs --follow app
 ```
 
-Приложение доступно на `http://localhost:8000`. База хранится в именованном volume `checkstock-data`, секреты подключаются read-only из локального каталога `secrets/`. `/healthz` проверяет процесс, `/readyz` дополнительно проверяет соединение с SQLite.
+Перед запуском задайте `POSTGRES_PASSWORD` в `.env`. Приложение доступно на `http://localhost:8000`. Docker Compose использует PostgreSQL: база хранится в именованном volume `postgres-data`, секреты подключаются read-only из локального каталога `secrets/`. `/healthz` проверяет процесс, `/readyz` дополнительно проверяет соединение с настроенной БД. При обычном локальном запуске без `CHECKSTOCK_DATABASE_URL` используется SQLite в `data/checkstock.db`.
 
 Остановка:
 

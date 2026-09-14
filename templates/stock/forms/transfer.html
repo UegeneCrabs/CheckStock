@@ -1,0 +1,90 @@
+<section
+    class="panel panel--collapsible stock-operation-card stock-operation-card--move"
+    data-collapse-id="ff-move"
+    data-collapsed
+>
+    <h3 class="panel-title">Перемещение остатков</h3>
+    <p class="stock-operation-summary">Отправить товар с одного ФФ на другой через состояние «В пути».</p>
+
+    <div class="panel-body">
+        <p class="panel-desc"
+            >После отправки товар списывается с исходного ФФ и появляется в колонке «В пути». На ФФ назначения
+            он попадёт только после приёмки партии.</p
+        >
+
+        <div class="route">
+            <div class="route-side">
+                <span class="route-label">Откуда</span>
+                <select class="select-control" id="mv-from-ff">
+                    <option value="">Фулфилмент</option>
+                    $ff_options
+                </select>
+                <select class="select-control" id="mv-from-mp">
+                    $mp_source_options
+                </select>
+            </div>
+
+            <div class="route-arrow" aria-hidden="true">&rarr;</div>
+
+            <div class="route-side">
+                <span class="route-label">Куда</span>
+                <select class="select-control" id="mv-to-ff">
+                    <option value="">Фулфилмент</option>
+                    $ff_options
+                </select>
+                <select class="select-control" id="mv-to-mp">
+                    $mp_target_options
+                </select>
+            </div>
+        </div>
+
+        <input
+            type="text"
+            class="select-control"
+            id="mv-note"
+            placeholder="Примечание обязательно: причина перемещения"
+            maxlength="200"
+            required
+            aria-required="true"
+        />
+
+        <div class="io-block" id="mv-io">
+            <div class="io-block-head">
+                <span class="io-block-title">Товары и количества</span>
+                <div class="io-tabs" role="tablist">
+                    <button type="button" class="io-tab is-active" data-method="manual">Вручную</button>
+                    <button type="button" class="io-tab" data-method="sheet">Ссылкой</button>
+                    <button type="button" class="io-tab" data-method="file">Файлом</button>
+                </div>
+            </div>
+
+            <div class="io-method" data-method="manual">
+                <div id="mv-rows"></div>
+                <button class="btn-link" type="button" id="mv-add-row">+ ещё позицию</button>
+            </div>
+
+            <div class="io-method is-hidden" data-method="sheet">
+                <input
+                    type="text"
+                    class="select-control"
+                    id="mv-url"
+                    placeholder="https://docs.google.com/spreadsheets/..."
+                />
+            </div>
+
+            <div class="io-method is-hidden" data-method="file">
+                <p class="io-method-desc"
+                    >Колонки: <b>BARCODE</b> или <b>ARTICLE</b> и <b>КОЛИЧЕСТВО</b>. Маршрут берётся из полей
+                    выше.</p
+                >
+                <label class="file-drop">
+                    <input type="file" accept=".xlsx" hidden id="mv-file" />
+                    <span class="file-drop-text">Выбрать файл .xlsx</span>
+                </label>
+            </div>
+        </div>
+
+        <button class="btn-primary" type="button" id="mv-btn">Отправить в путь</button>
+        <p class="ff-select-status" id="mv-status"></p>
+    </div>
+</section>

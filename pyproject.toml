@@ -9,22 +9,5 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*.py" = ["E402"]
+"scripts/**/*.py" = ["E402"]
 "app/web/routers/stock_mutations.py" = ["B008"]
-
-[tool.coverage.run]
-branch = true
-source = ["app"]
-
-[tool.coverage.report]
-show_missing = true
-skip_covered = true
-fail_under = 90
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "--strict-config --strict-markers"
-markers = [
-    "unit: isolated business and component test",
-    "integration: application integration with isolated database and mocked external systems",
-    "e2e: full HTTP chain through a real server",
-]

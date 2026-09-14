@@ -1,19 +1,44 @@
 import html
+import re
 from string import Template
 
-from app import auth, db, health
-from app.access_control import ActionPermission, accessible_marketplaces, profile_has_permission
+from app import db
+from app.access import auth
+from app.access.access_control import accessible_marketplaces
+from app.access.sections import (
+    SECTION_GROUPS,
+    SECTION_LABELS,
+    SECTION_PARENTS,
+    access_level,
+    active_section,
+    has_access,
+    section_path,
+)
 from app.config import settings
+from app.core import health
+from app.core.formatting import format_dt
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
-from app.formatting import format_dt
-from app.section_access import SECTION_LABELS, SECTION_PATHS, access_level, active_section, has_access
-from app.stores import STORES
 from app.wb import token_watch
 from app.web.access import accessible_store_slugs
+from app.web.client_templates import render_client_templates
 
 
 def read_template(name: str) -> str:
-    return (settings.templates_dir / name).read_text(encoding="utf-8")
+    def read(current: str, parents: tuple[str, ...]) -> str:
+        if current in parents:
+            raise ValueError(f"Recursive template include: {current}")
+        path = (settings.templates_dir / current).resolve()
+        if not path.is_relative_to(settings.templates_dir.resolve()):
+            raise ValueError(f"Template is outside the template directory: {current}")
+        source = path.read_text(encoding="utf-8")
+        return re.sub(
+            r"<!-- include: ([\w/.-]+\.html) -->",
+            lambda match: read(match[1], (*parents, current)),
+            source,
+        )
+
+    return read(name, ())
 
 
 def fill_template(name: str, **values: str) -> str:
@@ -38,7 +63,7 @@ def render_access_denied_page(
         heading = heading or "Нет доступных разделов"
         description = description or ("Обратитесь к суперадминистратору, чтобы он открыл нужные разделы.")
     content = fill_template(
-        "access_denied_content.html",
+        "auth/access-denied.html",
         heading=html.escape(heading),
         description=html.escape(description),
     )
@@ -142,8 +167,11 @@ def render_page(
     content_class: str = "",
     alerts: list[dict[str, str]] | None = None,
 ) -> str:
+    stylesheet = re.compile(r'<link\b(?=[^>]*\brel=["\']stylesheet["\'])[^>]*>', re.IGNORECASE)
+    page_styles = "\n".join(dict.fromkeys(stylesheet.findall(content)))
+    content = stylesheet.sub("", content)
     admin_link = ""
-    if auth.has_role(user, "admin"):
+    if auth.has_role(user, "admin") and has_access(user, SectionName.ADMIN_USERS):
         admin_cls = "active" if active == "admin" else ""
         admin_link = (
             f'                <a class="nav-item {admin_cls}" href="/admin" title="Админ-панель" aria-label="Админ-панель">'
@@ -153,41 +181,24 @@ def render_page(
             "</svg><span>Админ</span></a>"
         )
     if auth.has_role(user, "superadmin"):
-        usage_cls = "active" if active == "admin_activity" else ""
-        admin_link += (
-            f'                <a class="nav-item {usage_cls}" href="/admin/activity" title="Статистика использования" aria-label="Статистика использования">'
-            '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'
-            '<path d="M4 19V9"></path><path d="M10 19V5"></path>'
-            '<path d="M16 19v-7"></path><path d="M22 19H2"></path>'
-            "</svg><span>Статистика</span></a>"
-        )
-        export_cls = "active" if active == "admin_google_export" else ""
-        admin_link += (
-            f'                <a class="nav-item {export_cls}" href="/admin/google-export" '
-            'title="Выгрузка в Google Таблицы" aria-label="Выгрузка в Google Таблицы">'
-            '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'
-            '<path d="M4 4h16v16H4Z"></path><path d="M4 9h16M9 4v16"></path>'
-            "</svg><span>Выгрузки</span></a>"
-        )
-        integrations_cls = "active" if active == "admin_integrations" else ""
+        integrations_cls = "active" if active in {"admin_integrations", "admin_google_export"} else ""
         admin_link += (
             f'                <a class="nav-item {integrations_cls}" href="/admin/integrations" '
-            'title="API-ключи и фоновые выгрузки" aria-label="API-ключи и фоновые выгрузки">'
+            'title="Интеграции и выгрузки" aria-label="Интеграции и выгрузки">'
             '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'
             '<path d="M7 14a5 5 0 1 1 3.9 1.9L8 19H5v-3l2-2Z"></path>'
             '<path d="m14 8 2 2m-4 2 2 2"></path>'
-            "</svg><span>API</span></a>"
+            "</svg><span>Интеграции</span></a>"
         )
 
     full_name = user["full_name"] if user else ""
     name_parts = [part for part in full_name.split() if part]
     user_initials = "".join(part[0] for part in name_parts[:2]).upper() or "CS"
-    sales_open = active in {"sales", "sales_ephemerides"}
     stock_open = active in {
         "stock",
         "stock_total",
-        "stock2",
         "stock_supplies",
+        "stock_inbound",
         "stock_randomizer",
         "stock_cost_report",
     }
@@ -199,41 +210,23 @@ def render_page(
     }
     reports_open = active in {"unit_1c_reports", "unit_1c_target_price"}
     visible = {section: has_access(user, section) for section in SectionName}
-    sales_sections = (
-        SectionName.SALES,
-        SectionName.EPHEMERIDES,
-    )
-    stock_sections = (SectionName.STOCK, SectionName.STOCK_OVERVIEW)
-    first_sales = next((section for section in sales_sections if visible[section]), None)
-    first_stock = next((section for section in stock_sections if visible[section]), None)
     current_section = active_section(active)
     current_access = (
         access_level(user, current_section) if current_section is not None else SectionAccessLevel.WRITE
     )
+
     def hidden(allowed: bool) -> str:
         return "" if allowed else " hidden"
 
     header = fill_template(
-        "header.html",
-        decision_active="active" if active == "sales_decision" else "",
-        decision_hidden=hidden(visible[SectionName.DECISION_CENTER]),
-        sales_active="active" if sales_open else "",
-        sales_open="",
-        sales_expanded="false",
-        sales_group_hidden=hidden(first_sales is not None),
-        sales_href=SECTION_PATHS[first_sales] if first_sales is not None else "/access-denied",
-        sales_overview_hidden=hidden(visible[SectionName.SALES]),
-        sales_ephemerides_hidden=hidden(visible[SectionName.EPHEMERIDES]),
-        sales_overview_active="active" if active == "sales" else "",
-        sales_ephemerides_active="active" if active == "sales_ephemerides" else "",
+        "layout/header.html",
         stock_open="",
         stock_expanded="false",
-        stock_group_hidden=hidden(first_stock is not None),
-        stock_href=SECTION_PATHS[first_stock] if first_stock is not None else "/access-denied",
+        stock_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[0][1])),
         stock_group_active="active" if stock_open else "",
         unit_1c_open="",
         unit_1c_expanded="false",
-        unit_1c_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
+        unit_1c_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[1][1])),
         unit_1c_group_active="active" if unit_1c_open else "",
         unit_1c_settings_active="active" if active == "unit_1c_settings" else "",
         unit_1c_wb_active="active" if active == "unit_1c_wb" else "",
@@ -241,31 +234,34 @@ def render_page(
         unit_1c_yandex_active="active" if active == "unit_1c_yandex" else "",
         reports_open="",
         reports_expanded="false",
-        reports_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_1C]),
+        reports_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[2][1])),
         reports_group_active="active" if reports_open else "",
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
         unit_1c_target_price_active="active" if active == "unit_1c_target_price" else "",
-        supply_active="active" if active == "supply" else "",
         ai_agents_active="active" if active == "ai_agents" else "",
-        ai_agents_hidden=hidden(any(visible.values())),
-        supply_hidden=hidden(visible[SectionName.SUPPLY]),
+        ai_agents_hidden=hidden(visible[SectionName.AI_AGENTS]),
         stock_active="active" if active == "stock" else "",
-        stock_hidden=hidden(visible[SectionName.STOCK]),
+        stock_hidden=hidden(visible[SectionName.STOCK_BALANCES]),
         stock_total_active="active" if active == "stock_total" else "",
-        stock_total_hidden=hidden(
-            visible[SectionName.STOCK]
-            and profile_has_permission(user, ActionPermission.STOCK_TOTAL_VIEW)
-        ),
-        stock2_active="active" if active == "stock2" else "",
-        stock2_hidden=hidden(visible[SectionName.STOCK_OVERVIEW]),
+        stock_total_hidden=hidden(visible[SectionName.STOCK_TOTAL]),
         stock_supplies_active="active" if active == "stock_supplies" else "",
-        stock_supplies_hidden=hidden(visible[SectionName.STOCK]),
+        stock_inbound_active="active" if active == "stock_inbound" else "",
+        stock_supplies_hidden=hidden(visible[SectionName.STOCK_SUPPLIES]),
+        stock_inbound_hidden=hidden(visible[SectionName.STOCK_INBOUND]),
         stock_randomizer_active="active" if active == "stock_randomizer" else "",
         stock_randomizer_hidden=hidden(
-            visible[SectionName.STOCK] and "WB" in accessible_marketplaces(user)
+            visible[SectionName.STOCK_RANDOMIZER] and "WB" in accessible_marketplaces(user)
         ),
         stock_cost_report_active="active" if active == "stock_cost_report" else "",
-        stock_cost_report_hidden=hidden(visible[SectionName.STOCK]),
+        stock_cost_report_hidden=hidden(visible[SectionName.STOCK_COST_REPORT]),
+        stock_operations_active="active" if active == "stock_operations" else "",
+        stock_operations_hidden=hidden(visible[SectionName.STOCK_OPERATIONS]),
+        stock_operations_path=section_path(user, SectionName.STOCK_OPERATIONS),
+        unit_1c_wb_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_WB]),
+        unit_1c_ozon_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_OZON]),
+        unit_1c_yandex_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_YANDEX]),
+        unit_1c_reports_hidden=hidden(visible[SectionName.REPORT_UNIT_PROFIT]),
+        unit_1c_target_price_hidden=hidden(visible[SectionName.REPORT_TARGET_PRICE]),
         admin_link=admin_link,
         user_name=html.escape(full_name),
         user_role=html.escape(db.ROLE_LABELS.get(user["role"], user["role"])) if user else "",
@@ -273,11 +269,17 @@ def render_page(
         profile_active="profile--active" if active == "profile" else "",
     )
     return fill_template(
-        "page.html",
+        "layout/page.html",
         title=title,
         header=header,
         content_class=html.escape(content_class),
         content=render_system_alerts(user, alerts) + content,
-        section=current_section.value if current_section is not None else active,
+        section=(
+            SECTION_PARENTS.get(current_section, current_section).value
+            if current_section is not None and not active.startswith("admin")
+            else active
+        ),
         access_level=current_access.value,
+        client_templates=render_client_templates(read_template("layout/page.html") + content),
+        page_styles=page_styles,
     )

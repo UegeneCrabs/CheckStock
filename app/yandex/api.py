@@ -57,6 +57,8 @@ class YandexApiError(Exception):
 
     @property
     def friendly(self) -> str:
+        if self.status == 403 and "API_DISABLED:" in self.detail:
+            return f"API кампании отключён в Яндекс Маркете ({self.detail})"
         base = _FRIENDLY_BY_STATUS.get(self.status)
         if base:
             return f"{base} ({self.detail})" if self.detail else base

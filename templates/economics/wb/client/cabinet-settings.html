@@ -1,0 +1,33 @@
+<!-- template: control -->
+<option value="{{value}}"{{{content}}}>{{label}}</option>
+<!-- endtemplate -->
+
+<!-- template: control-2 -->
+<select data-setting="{{{key}}}"{{{content}}}>{{{content_2}}}</select>
+<!-- endtemplate -->
+
+<!-- template: control-3 -->
+<input type="number" min="{{{content}}}"{{{content_2}}}{{{content_3}}} step="{{{step}}}" data-setting="{{{key}}}" value="{{content_4}}"{{{content_5}}}>
+<!-- endtemplate -->
+
+
+
+<!-- template: field-html-2 -->
+<small class="ue1cs-field-warning" data-field-warning hidden>{{warning}}</small>
+<!-- endtemplate -->
+
+<!-- template: field-html-3 -->
+<label class="ue1cs-field"{{{content}}}{{{content_2}}}><span>{{label}}</span><span class="ue1cs-input-wrap">{{{control}}}{{{content_3}}}</span>{{{content_4}}}</label>
+<!-- endtemplate -->
+
+<!-- template: field-group-html -->
+<fieldset class="ue1cs-roi-group"><legend>Целевой ROI по коду товара</legend><div class="ue1cs-roi-fields">{{{content}}}</div></fieldset>
+<!-- endtemplate -->
+
+<!-- template: field-group-html-2 -->
+<section class="ue1cs-field-group"><div class="ue1cs-field-group-head"><strong>{{title}}</strong><span>{{hint}}</span></div><div class="ue1cs-fields">{{{content}}}</div>{{{content_2}}}</section>
+<!-- endtemplate -->
+
+<!-- template: card-html -->
+<article class="ue1cs-card" data-store="{{store_slug}}" style="--store-color:{{store_color}};--store-text:{{store_text}}"><div class="ue1cs-card-head"><span class="ue1cs-avatar">{{store_initials}}</span><div><h3>{{store_name}}</h3></div><span class="ue1cs-state" data-state>{{item}}</span></div><div class="ue1cs-card-body">{{{content}}}</div><div class="ue1cs-card-foot"><button type="button" data-save{{{content_2}}}>Сохранить</button></div></article>
+<!-- endtemplate -->

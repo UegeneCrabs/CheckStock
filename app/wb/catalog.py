@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 
 from app import db
-from app.stores import STORES
+from app.core.stores import STORES
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
@@ -71,6 +71,7 @@ def build_items(cards: list[dict]) -> tuple[list[dict], dict]:
                 {
                     "article": f"{nm_id}{suffix}",
                     "barcode": size["barcode"],
+                    "barcodes": [size["barcode"], *size.get("extra_barcodes", [])],
                     "name": name,
                     "mp_sku": None,
                     "mp_product_id": None,

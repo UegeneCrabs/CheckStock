@@ -1,0 +1,84 @@
+<!-- template: connection-cards -->
+<p>{{error}}</p>
+<!-- endtemplate -->
+
+<!-- template: connection-cards-2 -->
+<div class="inbound-connection {{{content}}}">
+            <strong>{{store_name}} · {{marketplace_name}}</strong>
+            <small>{{content_2}}{{{content_3}}}</small>
+            <small>Успешная загрузка: {{{last_success}}} МСК</small>
+            {{{content_4}}}</div>
+<!-- endtemplate -->
+
+<!-- template: stage-cards -->
+<button class="inbound-stage {{{content}}}" type="button" data-stage="{{{value}}}" aria-pressed="{{{content_2}}}">
+                <span>{{{label}}}</span><strong>{{{length}}}</strong><small>{{{units}}} шт. по заявкам{{{content_3}}}</small></button>
+<!-- endtemplate -->
+
+<!-- template: card-body -->
+<p class="inbound-card-warning">{{warning}}</p>
+<!-- endtemplate -->
+
+<!-- template: card-body-2 -->
+<p class="inbound-card-note">{{note}}</p>
+<!-- endtemplate -->
+
+<!-- template: card-body-3 -->
+<th class="inbound-num">Готово к продаже по поставке</th>
+<!-- endtemplate -->
+
+<!-- template: card-body-4 -->
+<small>{{vendor_code}}</small>
+<!-- endtemplate -->
+
+<!-- template: card-body-5 -->
+<td class="inbound-num">{{{ready_quantity}}}</td>
+<!-- endtemplate -->
+
+<!-- template: card-body-6 -->
+<tr>
+                <td>{{content}}{{{content_2}}}</td>
+                <td>{{content_3}}</td><td>{{content_4}}</td>
+                <td class="inbound-num">{{{quantity}}}</td><td class="inbound-num">{{{accepted_quantity}}}</td>
+                {{{content_5}}}<td class="inbound-num">{{{content_6}}}</td>
+                <td class="inbound-num">{{{shortage_quantity}}}</td><td class="inbound-num">{{{surplus_quantity}}}</td><td class="inbound-num">{{{defect_quantity}}}</td>
+            </tr>
+<!-- endtemplate -->
+
+<!-- template: card-body-7 -->
+<tr><td colspan="{{{content}}}">В составе заявки пока нет товаров.</td></tr>
+<!-- endtemplate -->
+
+<!-- template: card-body-8 -->
+<div class="inbound-card-body">
+            {{{content}}}
+            {{{content_2}}}
+            <p class="inbound-card-note">Поставка {{supply_id}}{{{content_3}}} · Проверено: {{{checked_at}}} МСК. «—» означает, что количество не подтверждено площадкой.</p>
+            <div class="inbound-table-scroll"><table class="inbound-table"><thead><tr>
+                <th>Артикул</th><th>Баркод</th><th>Название</th><th class="inbound-num">В заявке</th><th class="inbound-num">Принято</th>
+                {{{content_4}}}<th class="inbound-num">Не завершено</th>
+                <th class="inbound-num">Недостача</th><th class="inbound-num">Излишек</th><th class="inbound-num">Брак</th>
+            </tr></thead><tbody>{{{content_5}}}</tbody></table></div>
+        </div>
+<!-- endtemplate -->
+
+<!-- template: card -->
+<small>Через: {{transit_warehouse}}</small>
+<!-- endtemplate -->
+
+<!-- template: card-2 -->
+<details class="inbound-card" data-card-key="{{key}}"{{{content}}}>
+            <summary><div class="inbound-card-title">{{store_name}} · {{marketplace_name}}
+                <small>№ {{content_2}}{{{content_3}}}</small></div>
+                <div class="inbound-card-route">{{content_4}}{{{content_5}}}
+                    <small>План: {{{planned_at}}} МСК</small></div>
+                <div><span class="inbound-badge inbound-badge--{{{content_6}}}">{{content_7}}</span>
+                    <small>{{status_label}}{{{content_8}}}{{{content_9}}}</small></div>
+                <div class="inbound-card-numbers"><strong>{{{quantity}}}</strong> шт. в заявке
+                    <small>Принято: {{{accepted_quantity}}} · не завершено: {{{remaining_quantity}}}</small></div>
+                <span class="inbound-chevron" aria-hidden="true">›</span></summary>{{{content_10}}}</details>
+<!-- endtemplate -->
+
+<!-- template: render -->
+<div class="inbound-empty">{{{content}}}<br>{{{content_2}}}</div>
+<!-- endtemplate -->

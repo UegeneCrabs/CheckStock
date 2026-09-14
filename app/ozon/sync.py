@@ -3,9 +3,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from app import db
+from app.core.stores import STORES
 from app.ozon import api as ozon_api
 from app.ozon import tokens as ozon_tokens
-from app.stores import STORES
+from app.repositories.stock_snapshot import replace_snapshot
+from app.stock.fulfillment_names import fulfillment_lookup, normalize
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +80,14 @@ def _cluster_by_warehouse() -> dict[str, str]:
 
 
 def sync_store(store_slug: str) -> int:
-
     ozon_api.set_store_context(_store_label(store_slug))
+    try:
+        return _sync_store(store_slug)
+    finally:
+        ozon_api.clear_store_context()
+
+
+def _sync_store(store_slug: str) -> int:
     client_id, api_key = ozon_tokens.get_credentials(store_slug)
 
     catalog = db.get_catalog_items(store_slug, MARKETPLACE)
@@ -92,6 +100,16 @@ def sync_store(store_slug: str) -> int:
     fbo_skus_by_article = _fbo_skus_by_article(items, known_articles)
 
     fbo_rows = ozon_api.get_fbo_stock_by_warehouse(client_id, api_key)
+    own_warehouses = {
+        str(row["warehouse_id"]): row for row in ozon_api.get_own_warehouses(client_id, api_key)
+    }
+    skus = [
+        str(stock["sku"])
+        for item in items
+        for stock in item.get("stocks", [])
+        if stock.get("sku") and stock.get("type", "").lower() in {"fbs", "rfbs"}
+    ]
+    fbs_rows = ozon_api.get_fbs_stock_by_warehouse(client_id, api_key, skus)
 
     clusters = _cluster_by_warehouse()
 
@@ -124,21 +142,38 @@ def sync_store(store_slug: str) -> int:
         for (article, warehouse), quantity in warehouse_quantities.items()
     ]
 
-    with _DB_LOCK:
-        db.replace_mp_warehouse_stock(store_slug, MARKETPLACE, "fbo", warehouse_entries)
+    names = fulfillment_lookup(db.get_fulfillments())
+    seller_quantities: dict[str, dict[tuple[str, str], int]] = {"fbs": {}, "rfbs": {}}
+    seen_stock = set()
+    for row in fbs_rows:
+        article = str(row.get("offer_id") or "")
+        if article not in known_articles:
+            continue
+        warehouse_id = str(row.get("warehouse_id") or "")
+        identity = (article, str(row.get("sku")), warehouse_id)
+        if identity in seen_stock:
+            continue
+        seen_stock.add(identity)
+        quantity = int(row.get("free_stock") or 0)
+        if not quantity:
+            continue
+        info = own_warehouses.get(warehouse_id)
+        if info is None:
+            raise ozon_api.OzonApiError(None, f"Неизвестный склад FBS {warehouse_id}; остатки сохранены")
+        scheme = "rfbs" if info.get("is_rfbs") or info.get("warehouse_type") == "rfbs" else "fbs"
+        raw_name = str(row.get("warehouse_name") or info.get("name") or warehouse_id)
+        warehouse = names.get(normalize(raw_name), raw_name)
+        key = (article, warehouse)
+        seller_quantities[scheme][key] = seller_quantities[scheme].get(key, 0) + quantity
 
-        for scheme in SCHEMES:
-            scheme_totals = totals[scheme]
-
-            for item in catalog:
-                db.upsert_mp_stock(
-                    store_slug,
-                    item["article"],
-                    MARKETPLACE,
-                    scheme,
-                    scheme_totals.get(item["article"], 0),
-                    now,
-                )
+    warehouse_snapshot = {"fbo": [entry[:4] for entry in warehouse_entries]}
+    for scheme, quantities in seller_quantities.items():
+        totals[scheme] = {}
+        warehouse_snapshot[scheme] = []
+        for (article, warehouse), quantity in quantities.items():
+            totals[scheme][article] = totals[scheme].get(article, 0) + quantity
+            warehouse_snapshot[scheme].append((article, warehouse, None, quantity))
+    replace_snapshot(store_slug, MARKETPLACE, totals, warehouse_snapshot, now)
 
     covered = len(seen_articles | {a for s in totals.values() for a in s})
     logger.info(
@@ -148,7 +183,6 @@ def sync_store(store_slug: str) -> int:
         len(warehouse_entries),
         len(set(clusters.values())),
     )
-    ozon_api.clear_store_context()
     return covered
 
 

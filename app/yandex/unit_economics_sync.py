@@ -8,23 +8,32 @@ import urllib.parse
 import urllib.request
 import zipfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from threading import Lock
 
-from app import sales
 from app.config import settings
-from app.domain import MOSCOW_TIMEZONE
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.repositories import unit_economics_yandex as repository
-from app.stores import STORES
+from app.stock import sales
 from app.yandex import api, tokens
 
 logger = logging.getLogger(__name__)
-SYNC_INTERVAL_SECONDS = {"orders": 15 * 60, "reputation": 24 * 60 * 60, "advertising": 15 * 60}
+SYNC_INTERVAL_SECONDS = {
+    "orders": 15 * 60,
+    "reputation": 24 * 60 * 60,
+    "advertising": 15 * 60,
+    "buyout": 4 * 60 * 60,
+}
 RECENT_ORDER_DAYS = 7
-SOURCES = ("orders", "reputation", "advertising")
+SOURCES = ("orders", "reputation", "advertising", "buyout")
 _REPORT_LOCKS: dict[int, Lock] = {}
 _REPORT_LOCKS_GUARD = Lock()
+_REPORT_LAST_REQUEST: dict[tuple[int, str], float] = {}
+_REPORT_INTERVALS = {"boost-consolidated": 120, "shows-boost": 120, "shows-sales": 600}
+_STORE_LOCKS = {(slug, source): Lock() for slug in STORES for source in SOURCES}
 
 
 def _number(value: object) -> float:
@@ -86,12 +95,21 @@ def download_report(url: str, sheet: str, identifier: str) -> list[dict]:
 
 
 def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
-    """Serialize report generation per business while allowing orders to sync independently."""
+    """Serialize report generation per business while allowing orders to sync independently.
+
+    Count from completion, including retries and network delay, so the next generation cannot land inside the server's quota window."""
     business_id = int(payload["businessId"])
     with _REPORT_LOCKS_GUARD:
         report_lock = _REPORT_LOCKS.setdefault(business_id, Lock())
     with report_lock:
-        return _load_report(api_key, report, payload, sheet, identifier)
+        key = (business_id, report)
+        delay = _REPORT_INTERVALS.get(report, 0) - (time.monotonic() - _REPORT_LAST_REQUEST.get(key, -1e20))
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            return _load_report(api_key, report, payload, sheet, identifier)
+        finally:
+            _REPORT_LAST_REQUEST[key] = time.monotonic()
 
 
 def _load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
@@ -145,7 +163,6 @@ def load_advertising(api_key: str, business_id: int, start: date, end: date) -> 
             item["spend"] += _number(row.get(spend))
             item["impressions"] += int(_number(row.get(impressions)))
 
-
             click_count = row[clicks]
             item["clicks"] += int(_number(0 if click_count is None else click_count))
     return [
@@ -170,6 +187,12 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
         if not start.isoformat() <= day <= end.isoformat():
             continue
         item = grouped[(line["article"], day)]
+        scheme = "FBY" if line["scheme"] == "fbo" else "FBS"
+        scheme_data = item.setdefault("schemes", {}).setdefault(
+            scheme, {"orders_count": 0, "orders_amount": 0}
+        )
+        scheme_data["orders_count"] += line["quantity"]
+        scheme_data["orders_amount"] += line["order_amount"]
         for field, source in (
             ("orders_count", "quantity"),
             ("orders_amount", "order_amount"),
@@ -181,8 +204,65 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
     return [{"article": article, "day": day, **values} for (article, day), values in grouped.items()]
 
 
-def sync_store(store_slug: str, source: str, today: date | None = None) -> dict:
-    """Refresh exactly one source without requesting or changing the other snapshots."""
+def load_buyout(api_key: str, business_id: int, start: date, end: date) -> list[dict]:
+    """Use creation-date cohorts, including returns in WB's cancellation denominator."""
+    rows = load_report(
+        api_key,
+        "shows-sales",
+        {
+            "businessId": business_id,
+            "dateFrom": start.isoformat(),
+            "dateTo": end.isoformat(),
+            "grouping": "OFFERS",
+        },
+        "sales_funnel_report",
+        "offerId",
+    )
+    grouped = defaultdict(lambda: {"buyout_count": 0, "cancel_count": 0, "return_count": 0})
+    for row in rows:
+        article = str(row["offerId"] or "").strip()
+        if not article:
+            raise ValueError("В отчёте выкупа ЯМ отсутствует SKU")
+        for field, column in (
+            ("buyout_count", "orderItemsDeliveredFromOrderedCount"),
+            ("cancel_count", "orderItemsCanceledByCreatedAtCount"),
+            ("return_count", "orderItemsReturnedByCreatedAtCount"),
+        ):
+            value = row[column]
+            count = _number(0 if value is None else value)
+            if not count.is_integer():
+                raise ValueError("В отчёте выкупа ЯМ нецелое количество товаров")
+            grouped[article][field] += int(count)
+    result = []
+    for article, values in grouped.items():
+        denominator = sum(values.values())
+        result.append(
+            {
+                "article": article,
+                **values,
+                "buyout_percent": round(values["buyout_count"] / denominator * 100, 2)
+                if denominator
+                else 0.0,
+            }
+        )
+    return result
+
+
+def sync_store(
+    store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False
+) -> dict:
+    if store_slug not in STORES or source not in SOURCES:
+        raise ValueError("Неизвестный кабинет или источник юнит-экономики ЯМ")
+    with _STORE_LOCKS[(store_slug, source)]:
+        return _sync_store(store_slug, source, today, previous_day=previous_day)
+
+
+def _sync_store(
+    store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False
+) -> dict:
+    """Refresh exactly one source without requesting or changing the other snapshots.
+
+    Seed the oldest completed day once, so a first installation can display a full week."""
     if store_slug not in STORES:
         raise ValueError("Неизвестный кабинет")
     if source not in SOURCES:
@@ -196,14 +276,34 @@ def sync_store(store_slug: str, source: str, today: date | None = None) -> dict:
         business_id = resolve_business_id(store_slug, api_key)
         if source == "orders":
             start, end = today - timedelta(days=RECENT_ORDER_DAYS - 1), today
+            if previous_day:
+                start = end = today - timedelta(days=1)
             rows = load_orders(store_slug, api_key, business_id, start, end)
         elif source == "reputation":
             start = end = today
             rows = load_reputation(api_key, business_id)
+        elif source == "buyout":
+            days = max(1, min(int(repository.get_buyout_settings(store_slug)["buyout_period_days"]), 29))
+            end = today - timedelta(days=1)
+            start = end - timedelta(days=days - 1)
+            rows = load_buyout(api_key, business_id, start, end)
         else:
-            start, end = today - timedelta(days=7), today - timedelta(days=1)
-            rows = load_advertising(api_key, business_id, start, end)
-        repository.save_snapshot(store_slug, source, rows, start.isoformat(), end.isoformat(), now)
+            start, end = today - timedelta(days=6), today
+
+            oldest = (today - timedelta(days=7)).isoformat()
+            if not repository.get_history(store_slug, source, oldest, oldest)[1]:
+                start -= timedelta(days=1)
+            rows = []
+            for day in repository.days_between(start.isoformat(), end.isoformat()):
+                current = date.fromisoformat(day)
+                daily = [
+                    {**row, "day": day} for row in load_advertising(api_key, business_id, current, current)
+                ]
+                repository.save_daily(store_slug, source, daily, day, day, datetime.now(UTC).isoformat())
+                rows.extend(daily)
+        repository.save_snapshot(
+            store_slug, source, rows, start.isoformat(), end.isoformat(), datetime.now(UTC).isoformat()
+        )
         return {"ok": True, "source": source, "rows": len(rows)}
     except Exception as error:
         message = str(error)[:700]
@@ -215,8 +315,26 @@ def sync_store(store_slug: str, source: str, today: date | None = None) -> dict:
 def sync_all(source: str, store_slugs: tuple[str, ...] | None = None) -> dict:
     if source not in SOURCES:
         raise ValueError("Неизвестный источник юнит-экономики ЯМ")
-    return {
-        slug: sync_store(slug, source)
+    stores = [
+        slug
         for slug in (tuple(STORES) if store_slugs is None else store_slugs)
         if tokens.has_credentials(slug)
-    }
+    ]
+    with ThreadPoolExecutor(max_workers=max(1, min(len(stores), 6))) as executor:
+        return dict(zip(stores, executor.map(lambda slug: sync_store(slug, source), stores), strict=True))
+
+
+def sync_previous_day_all(store_slugs: tuple[str, ...] | None = None) -> dict:
+    stores = [
+        slug
+        for slug in (tuple(STORES) if store_slugs is None else store_slugs)
+        if tokens.has_credentials(slug)
+    ]
+    with ThreadPoolExecutor(max_workers=max(1, min(len(stores), 6))) as executor:
+        return dict(
+            zip(
+                stores,
+                executor.map(lambda slug: sync_store(slug, "orders", previous_day=True), stores),
+                strict=True,
+            )
+        )

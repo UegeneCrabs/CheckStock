@@ -35,8 +35,7 @@ def record_started(name: str, trigger: str, started_at: str, run_id: str) -> Non
             (run_id, name, trigger, started_at),
         )
         retention_cutoff = (
-            datetime.fromisoformat(started_at).astimezone(UTC)
-            - timedelta(days=SYNC_RUN_RETENTION_DAYS)
+            datetime.fromisoformat(started_at).astimezone(UTC) - timedelta(days=SYNC_RUN_RETENTION_DAYS)
         ).isoformat()
         connection.execute(
             "DELETE FROM sync_job_runs WHERE started_at < ?",

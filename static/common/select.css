@@ -1,0 +1,184 @@
+.cs-native {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.cs-wrap {
+    position: relative;
+    margin-bottom: var(--space-sm);
+}
+
+.cs-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6em;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.65em 0.9em;
+    cursor: pointer;
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease;
+}
+
+.cs-trigger:hover {
+    border-color: var(--accent);
+}
+
+.cs-wrap.open .cs-trigger {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.cs-trigger.placeholder .cs-label {
+    color: var(--text-muted);
+}
+
+.cs-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+}
+
+.cs-wrap.open .cs-chevron {
+    transform: rotate(180deg);
+}
+
+.cs-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 60;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
+    max-height: 260px;
+    overflow-y: auto;
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
+}
+
+.cs-wrap.open .cs-panel {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.cs-option {
+    padding: 0.6em 0.9em;
+    font-size: var(--fs-sm);
+    color: var(--text);
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s ease;
+}
+
+.cs-option:last-child {
+    border-bottom: none;
+}
+
+.cs-option:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.cs-option.selected {
+    background: var(--accent);
+    color: var(--navy);
+    font-weight: 600;
+}
+
+.field-row .cs-wrap {
+    margin-bottom: 0;
+}
+
+.cs-panel {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hover) var(--card);
+}
+
+.cs-panel::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.cs-panel::-webkit-scrollbar-track {
+    background: var(--card);
+}
+
+.cs-panel::-webkit-scrollbar-thumb {
+    background-color: var(--border-hover);
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--card);
+}
+
+.cs-panel::-webkit-scrollbar-thumb:hover {
+    background-color: var(--accent);
+}
+
+.cs-trigger {
+    color: var(--ink);
+    border: 1px solid #dce2ea;
+    border-radius: 7px;
+    background: #fbfcfd;
+}
+
+.cs-trigger:hover,
+.cs-wrap.open .cs-trigger {
+    border-color: #7890ed;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(73, 105, 255, 0.08);
+}
+
+.cs-panel {
+    border-color: var(--border);
+    border-radius: 8px;
+    color: var(--ink);
+    background: #ffffff;
+    box-shadow: 0 16px 34px rgba(20, 33, 55, 0.16);
+}
+
+.cs-option {
+    color: var(--ink);
+    border-color: var(--border);
+}
+
+.cs-option:hover {
+    background: #f3f6fb;
+}
+
+.cs-option.selected {
+    color: #244ed9;
+    background: #edf1ff;
+}
+
+.cs-panel {
+    scrollbar-color: #c4ccd8 #f2f4f7;
+}
+
+.cs-panel::-webkit-scrollbar-track {
+    background: #f2f4f7;
+}
+
+.cs-panel::-webkit-scrollbar-thumb {
+    border-color: #f2f4f7;
+    background: #c4ccd8;
+}

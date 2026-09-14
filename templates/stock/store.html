@@ -1,0 +1,355 @@
+<link rel="stylesheet" href="/static/stock/total.css?v=20260912" />
+
+<a class="back-link" href="/stock">&larr; Все магазины</a>
+
+<div class="mp-tabs" role="tablist"> $mp_tabs $total_button </div>
+
+<section class="panel mp-placeholder" id="mp-placeholder" data-ready="$mp_ready">
+    <p class="mp-placeholder-title">Данных пока нет</p>
+    <p class="mp-placeholder-text"
+        >Информация по $marketplace станет доступна после добавления ключа в систему.</p
+    >
+</section>
+
+<div id="access-problems" data-problems="$access_problems" data-can-edit="$can_edit_stock" hidden></div>
+
+<div class="store-layout" id="store-layout" data-store="$slug" data-marketplace="$marketplace">
+    <section class="panel stock-table-panel" data-stock-marketplace-view>
+        <div class="stock-table-header">
+            <div>
+                <h3 class="panel-title">Все товары — $store_name</h3>
+            </div>
+            <div class="panel-header-actions">
+                <a class="btn-secondary" href="/stock/inbound?store=$slug">Поставки FBO</a>
+                <a class="btn-secondary" href="/stock/$slug/operations">Перемещение стока</a>
+                <a class="btn-secondary" id="wh-link" href="/stock/$slug/warehouses?mp=$marketplace"
+                    >Склады FBS</a
+                >
+                <a class="btn-secondary" id="stock-xlsx-link" href="/stock/$slug/stock.xlsx?mp=$marketplace"
+                    >Excel</a
+                >
+            </div>
+        </div>
+
+        <div class="stock-warehouse-anchor">
+            <label class="stock-warehouse-control">
+                <span>Фулфилмент</span>
+                <select class="select-control" id="wh-select">
+                    <option value="">Все склады</option>
+                    $ff_options
+                </select>
+            </label>
+        </div>
+
+        <div class="table-wrap table-wrap--scroll">
+            <table
+                class="data-table data-table--stock"
+                id="stock-table"
+                data-color-filter
+                data-schemes="$scheme_list"
+                data-scheme-count="$scheme_count"
+            >
+                <thead> $stock_head </thead>
+                <tbody> $stock_rows </tbody>
+            </table>
+        </div>
+        <div class="stock-table-footer">
+            <p class="ff-select-status" id="ff-select-status"></p>
+            <span data-stock-visible-count></span>
+        </div>
+    </section>
+
+    <section class="stock-total-panel stock-store-total-view" data-stock-store-total-view hidden>
+        <div class="stock-total-controls stock-store-total-controls" aria-label="Обозначения колонок">
+            <p><span class="stock-total-legend stock-total-legend--ff"></span>ФФ</p>
+            <p><span class="stock-total-legend stock-total-legend--transit"></span>В пути</p>
+            <p><span class="stock-total-legend stock-total-legend--fbs"></span>FBS</p>
+            <p><span class="stock-total-legend stock-total-legend--rfbs"></span>rFBS</p>
+            <p><span class="stock-total-legend stock-total-legend--fbo"></span>FBO</p>
+            $total_download_button
+        </div>
+        <div class="table-wrap stock-total-table-wrap">
+            <table class="data-table data-table--stock-total" data-table-filter id="store-stock-total-table">
+                <colgroup>
+                    <col class="stock-total-col stock-total-col--article" />
+                    <col class="stock-total-col stock-total-col--barcode" />
+                    <col class="stock-total-col stock-total-col--name" />
+                    <col class="stock-total-col stock-total-col--purchase" />
+                    <col class="stock-total-col stock-total-col--grand" />
+                    <col class="stock-total-col stock-total-col--marketplace-total" span="3" />
+                    <col class="stock-total-col stock-total-col--quantity" span="15" />
+                </colgroup>
+                <thead>
+                    <tr class="stock-total-groups">
+                        <th rowspan="2" data-filter-column="0">АРТИКУЛ</th>
+                        <th rowspan="2" data-filter-column="1">ШТРИХКОД</th>
+                        <th rowspan="2" data-filter-column="2">НАЗВАНИЕ</th>
+                        <th rowspan="2" data-filter-column="3" data-filter-type="number">ТЕКУЩАЯ ЗЦ, ₽</th>
+                        <th colspan="4" class="stock-total-group stock-total-group--total">ТОТАЛ</th>
+                        <th colspan="3" class="stock-total-group stock-total-group--ff">ДОСТУПНО ФФ</th>
+                        <th colspan="3" class="stock-total-group stock-total-group--transit"
+                            >В ПУТИ МЕЖДУ ФФ</th
+                        >
+                        <th colspan="3" class="stock-total-group stock-total-group--fbs"
+                            >СТОК В ПРОДАЖЕ FBS</th
+                        >
+                        <th colspan="3" class="stock-total-group stock-total-group--rfbs"
+                            >СТОК В ПРОДАЖЕ rFBS</th
+                        >
+                        <th colspan="3" class="stock-total-group stock-total-group--fbo"
+                            >СТОК В ПРОДАЖЕ FBO</th
+                        >
+                    </tr>
+                    <tr class="stock-total-marketplaces">
+                        <th data-filter-column="4" data-filter-type="number">ГРАНД ТОТАЛ</th>
+                        <th data-filter-column="5" data-filter-type="number">ВБ</th>
+                        <th data-filter-column="6" data-filter-type="number">ОЗОН</th>
+                        <th data-filter-column="7" data-filter-type="number">ЯМ</th>
+                        <th data-filter-column="8" data-filter-type="number">ВБ</th>
+                        <th data-filter-column="9" data-filter-type="number">ОЗОН</th>
+                        <th data-filter-column="10" data-filter-type="number">ЯМ</th>
+                        <th data-filter-column="11" data-filter-type="number">ВБ</th>
+                        <th data-filter-column="12" data-filter-type="number">ОЗОН</th>
+                        <th data-filter-column="13" data-filter-type="number">ЯМ</th>
+                        <th data-filter-column="14" data-filter-type="number">ВБ</th>
+                        <th data-filter-column="15" data-filter-type="number">ОЗОН</th>
+                        <th data-filter-column="16" data-filter-type="number">ЯМ</th>
+                        <th data-filter-column="17" data-filter-type="number">ВБ</th>
+                        <th data-filter-column="18" data-filter-type="number">ОЗОН</th>
+                        <th data-filter-column="19" data-filter-type="number">ЯМ</th>
+                        <th data-filter-column="20" data-filter-type="number">ВБ</th>
+                        <th data-filter-column="21" data-filter-type="number">ОЗОН</th>
+                        <th data-filter-column="22" data-filter-type="number">ЯМ</th>
+                    </tr>
+                    <tr class="totals-row">
+                        <th>ИТОГО</th>
+                        <th></th>
+                        <th data-store-total-positions>позиций: 0</th>
+                        <th></th>
+                        <th data-store-total-key="grand_total">0</th>
+                        <th data-store-total-key="total_wb">0</th>
+                        <th data-store-total-key="total_ozon">0</th>
+                        <th data-store-total-key="total_yandex">0</th>
+                        <th data-store-total-key="ff_wb">0</th>
+                        <th data-store-total-key="ff_ozon">0</th>
+                        <th data-store-total-key="ff_yandex">0</th>
+                        <th data-store-total-key="transit_wb">0</th>
+                        <th data-store-total-key="transit_ozon">0</th>
+                        <th data-store-total-key="transit_yandex">0</th>
+                        <th data-store-total-key="fbs_wb">0</th>
+                        <th data-store-total-key="fbs_ozon">0</th>
+                        <th data-store-total-key="fbs_yandex">0</th>
+                        <th data-store-total-key="rfbs_wb">0</th>
+                        <th data-store-total-key="rfbs_ozon">0</th>
+                        <th data-store-total-key="rfbs_yandex">0</th>
+                        <th data-store-total-key="fbo_wb">0</th>
+                        <th data-store-total-key="fbo_ozon">0</th>
+                        <th data-store-total-key="fbo_yandex">0</th>
+                    </tr>
+                    <tr class="totals-row totals-row--cost">
+                        <th>ИТОГО В ЗЦ</th>
+                        <th></th>
+                        <th data-store-cost-positions>ЗЦ: 0 из 0 поз.</th>
+                        <th></th>
+                        <th data-store-cost-key="grand_total">0 ₽</th>
+                        <th data-store-cost-key="total_wb">0 ₽</th>
+                        <th data-store-cost-key="total_ozon">0 ₽</th>
+                        <th data-store-cost-key="total_yandex">0 ₽</th>
+                        <th data-store-cost-key="ff_wb">0 ₽</th>
+                        <th data-store-cost-key="ff_ozon">0 ₽</th>
+                        <th data-store-cost-key="ff_yandex">0 ₽</th>
+                        <th data-store-cost-key="transit_wb">0 ₽</th>
+                        <th data-store-cost-key="transit_ozon">0 ₽</th>
+                        <th data-store-cost-key="transit_yandex">0 ₽</th>
+                        <th data-store-cost-key="fbs_wb">0 ₽</th>
+                        <th data-store-cost-key="fbs_ozon">0 ₽</th>
+                        <th data-store-cost-key="fbs_yandex">0 ₽</th>
+                        <th data-store-cost-key="rfbs_wb">0 ₽</th>
+                        <th data-store-cost-key="rfbs_ozon">0 ₽</th>
+                        <th data-store-cost-key="rfbs_yandex">0 ₽</th>
+                        <th data-store-cost-key="fbo_wb">0 ₽</th>
+                        <th data-store-cost-key="fbo_ozon">0 ₽</th>
+                        <th data-store-cost-key="fbo_yandex">0 ₽</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="empty-row"><td colspan="23">Нажмите «ТОТАЛ», чтобы загрузить остатки</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="ff-select-status" data-stock-store-total-status></p>
+    </section>
+
+    <div class="side-panels stock-operations" id="stock-operations" data-stock-marketplace-view>
+        <div class="stock-operations-head">
+            <div>
+                <h3>Движение товаров</h3>
+            </div>
+        </div>
+        <section class="panel stock-operation-card stock-transit-panel" data-stock-transit-panel>
+            <div class="stock-transit-head">
+                <div>
+                    <h3 class="panel-title">Перемещения между ФФ</h3>
+                    <p class="stock-operation-summary"
+                        >Активные партии и полная история их отправки, приёмки и отмены.</p
+                    >
+                </div>
+                <button class="btn-link" type="button" data-stock-transit-refresh>Обновить</button>
+            </div>
+            <div class="stock-transit-tabs" role="tablist" aria-label="Перемещения между фулфилментами">
+                <button
+                    class="stock-transit-tab is-active"
+                    type="button"
+                    role="tab"
+                    aria-selected="true"
+                    data-stock-transit-view="active"
+                    >В пути</button
+                >
+                <button
+                    class="stock-transit-tab"
+                    type="button"
+                    role="tab"
+                    aria-selected="false"
+                    data-stock-transit-view="history"
+                    >История</button
+                >
+            </div>
+            <p class="ff-select-status" data-stock-transit-status></p>
+            <div class="stock-transit-list" data-stock-transit-list>
+                <div class="stock-transit-empty">Загрузка перемещений...</div>
+            </div>
+        </section>
+        <dialog
+            class="stock-transit-reopen-dialog"
+            data-stock-transit-reopen-dialog
+            aria-labelledby="stock-transit-reopen-title"
+        >
+            <form class="stock-transit-reopen-form" data-stock-transit-reopen-form novalidate>
+                <header class="stock-transit-reopen-head">
+                    <div>
+                        <span>Корректировка перемещения</span>
+                        <h3 id="stock-transit-reopen-title">Вернуть приёмку в путь</h3>
+                    </div>
+                    <button type="button" data-stock-transit-reopen-close aria-label="Закрыть форму"
+                        >×</button
+                    >
+                </header>
+                <div class="stock-transit-reopen-body">
+                    <p class="stock-transit-reopen-description" data-stock-transit-reopen-description></p>
+                    <div class="stock-transit-reopen-warning">
+                        <span>Со склада назначения будет снято</span>
+                        <strong data-stock-transit-reopen-quantity>0 ед.</strong>
+                    </div>
+                    <label class="stock-transit-reopen-reason">
+                        <span>Причина возврата <b>*</b></span>
+                        <textarea
+                            class="select-control"
+                            data-stock-transit-reopen-reason
+                            maxlength="200"
+                            rows="3"
+                            required
+                            placeholder="Например: машина ещё в пути"
+                        ></textarea>
+                        <small>Причина сохранится в журнале операций.</small>
+                    </label>
+                    <p class="stock-transit-reopen-error" data-stock-transit-reopen-error hidden></p>
+                </div>
+                <footer class="stock-transit-reopen-foot">
+                    <button class="btn-secondary" type="button" data-stock-transit-reopen-close
+                        >Отмена</button
+                    >
+                    <button class="btn-primary" type="submit" data-stock-transit-reopen-submit
+                        >Вернуть в путь</button
+                    >
+                </footer>
+            </form>
+        </dialog>
+        <!-- include: stock/forms/upload.html -->
+
+        <!-- include: stock/forms/transfer.html -->
+
+        <!-- include: stock/forms/shipment.html -->
+    </div>
+</div>
+
+<div class="stock-drawer-backdrop" data-stock-drawer hidden>
+    <aside
+        class="stock-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stock-drawer-title"
+        tabindex="-1"
+    >
+        <button class="stock-drawer-close" type="button" data-stock-drawer-close aria-label="Закрыть"
+            >×</button
+        >
+        <span class="stock-drawer-kicker"
+            >КАРТОЧКА ТОВАРА · <span data-stock-drawer-marketplace>WB</span></span
+        >
+
+        <div class="stock-drawer-product">
+            <span class="stock-drawer-media" data-stock-drawer-media aria-hidden="true">
+                <span data-stock-drawer-initial>Т</span>
+                <img data-stock-drawer-image alt="" hidden />
+            </span>
+            <div>
+                <h2 id="stock-drawer-title" data-stock-drawer-name>Товар</h2>
+                <p
+                    ><span data-stock-drawer-article></span><span aria-hidden="true"> · </span
+                    ><span data-stock-drawer-barcode></span
+                ></p>
+            </div>
+        </div>
+
+        <div class="stock-drawer-total">
+            <span>Итого по товару</span>
+            <strong><span data-stock-drawer-total>0</span> <small>шт.</small></strong>
+        </div>
+
+        <div class="stock-drawer-metrics">
+            <article><span>Доступно ФФ</span><strong data-stock-drawer-available>0</strong></article>
+            <article><span>В пути</span><strong data-stock-drawer-transit-total>0</strong></article>
+            <article><span>В продаже FBS</span><strong data-stock-drawer-fbs>0</strong></article>
+            <article><span>В продаже FBO</span><strong data-stock-drawer-fbo>0</strong></article>
+        </div>
+
+        <div class="stock-drawer-section-head">
+            <div>
+                <h3>Остатки по фулфилментам</h3>
+            </div>
+            <span data-stock-drawer-warehouse-count></span>
+        </div>
+        <div class="stock-drawer-warehouses" data-stock-drawer-warehouses>
+            <div class="stock-drawer-loading">Загрузка складов...</div>
+        </div>
+        <div class="stock-drawer-section-head stock-drawer-section-head--transit">
+            <div><h3>Партии в пути</h3></div>
+            <span data-stock-drawer-transit-count></span>
+        </div>
+        <div class="stock-drawer-transit" data-stock-drawer-transit>
+            <div class="stock-drawer-loading">Нет партий в пути</div>
+        </div>
+        <p class="stock-drawer-note"
+            >«Доступно ФФ» — ручной остаток для распределения. FBS показывает товар, уже выставленный в
+            продажу с выбранного склада.</p
+        >
+
+        <button class="btn-primary stock-drawer-operation" type="button" data-stock-drawer-operation
+            >Переместить остаток</button
+        >
+    </aside>
+</div>
+
+<script src="/static/common/file-inputs.js?v=20260912"></script>
+<script src="/static/stock/suggestions.js?v=20260912"></script>
+<script src="/static/stock/row-editor.js?v=20260912"></script>
+<script src="/static/stock/forms/helpers.js?v=20260912"></script>
+<script src="/static/stock/store.js?v=20260912"></script>
+<script src="/static/stock/forms/upload.js?v=20260912"></script>
+<script src="/static/stock/store-access.js?v=20260912"></script>
+<script src="/static/stock/forms/transfer.js?v=20260912"></script>
+<script src="/static/stock/forms/shipment.js?v=20260912"></script>
+
+<script src="/static/stock/product-drawer.js?v=20260912"></script>
+<script src="/static/stock/store-total.js?v=20260912"></script>
+<script src="/static/stock/transit.js?v=20260912"></script>

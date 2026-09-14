@@ -50,10 +50,6 @@ def _env_int(name: str, default: int, *, minimum: int = 0, maximum: int | None =
     return parsed
 
 
-def _env_csv(name: str) -> tuple[str, ...]:
-    return tuple(value.strip() for value in os.getenv(name, "").split(",") if value.strip())
-
-
 def _env_choice(
     name: str,
     default: str,
@@ -108,8 +104,8 @@ class Settings(BaseModel):
     token_check_interval_seconds: int = Field(ge=1)
     unit_economics_1c_price_sync_startup_delay_seconds: int = Field(ge=0)
     wb_advertising_sync_startup_delay_seconds: int = Field(ge=0)
-    decision_sync_startup_delay_seconds: int = Field(ge=0)
     auto_sync_interval_seconds: int = Field(ge=1)
+    inbound_sync_interval_seconds: int = Field(default=1800, ge=300)
     catalog_sync_hour: int = Field(ge=0, le=23)
     wb_advertising_sync_interval_seconds: int = Field(ge=1)
     wb_funnel_orders_sync_interval_seconds: int = Field(ge=1)
@@ -117,15 +113,9 @@ class Settings(BaseModel):
     unit_economics_1c_wallet_sync_interval_seconds: int = Field(ge=1)
     wb_storefront_dest: str = Field(min_length=1)
     wb_storefront_batch_size: int = Field(ge=1, le=1_000)
-    decision_sync_check_interval_seconds: int = Field(ge=1)
     session_ttl_days: int = Field(ge=1)
     session_cookie_secure: bool
     pbkdf2_iterations: int = Field(ge=MIN_PBKDF2_ITERATIONS, le=MAX_PBKDF2_ITERATIONS)
-    stock_window_days: int = Field(ge=1)
-    stock_frozen_days: int = Field(ge=1)
-    stock_excess_days: int = Field(ge=1)
-    stock_cache_ttl_seconds: int = Field(ge=1)
-    stock_detail_page_size: int = Field(ge=1)
     warehouse_display_limit: int = Field(ge=1)
     operation_history_limit: int = Field(ge=1)
     ff_import_timeout_seconds: int = Field(ge=1)
@@ -139,11 +129,9 @@ class Settings(BaseModel):
     ozon_retry_backoff_seconds: int = Field(ge=0)
     yandex_retry_backoff_seconds: int = Field(ge=0)
     wb_sales_max_pages: int = Field(ge=1)
-    rnp_sync_cooldown_minutes: int = Field(ge=0)
     rnp_report_download_timeout_seconds: int = Field(ge=1)
     rnp_report_poll_attempts: int = Field(ge=1)
     rnp_report_poll_interval_seconds: int = Field(ge=0)
-    experimental_owner_logins: tuple[str, ...] = ()
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65_535)
     smtp_username: str = ""
@@ -152,9 +140,7 @@ class Settings(BaseModel):
     smtp_starttls: bool = True
 
     @model_validator(mode="after")
-    def validate_stock_thresholds(self) -> "Settings":
-        if self.stock_frozen_days > self.stock_excess_days:
-            raise ValueError("stock_frozen_days must not exceed stock_excess_days")
+    def validate_runtime_settings(self) -> "Settings":
         start_minutes = self.ftp_export_start_hour * 60 + self.ftp_export_start_minute
         if start_minutes >= self.ftp_export_deadline_hour * 60:
             raise ValueError("FTP export start must be earlier than its deadline")
@@ -178,7 +164,9 @@ class Settings(BaseModel):
             database_busy_timeout_ms=_env_int("CHECKSTOCK_DB_BUSY_TIMEOUT_MS", 30_000, minimum=1),
             templates_dir=Path(os.getenv("CHECKSTOCK_TEMPLATES_DIR", base_dir / "templates")),
             static_dir=Path(os.getenv("CHECKSTOCK_STATIC_DIR", base_dir / "static")),
-            agent_tokens_path=Path(os.getenv("CHECKSTOCK_AGENT_TOKENS_PATH", base_dir / "secrets" / "chatgpt_tokens.json")),
+            agent_tokens_path=Path(
+                os.getenv("CHECKSTOCK_AGENT_TOKENS_PATH", base_dir / "secrets" / "chatgpt_tokens.json")
+            ),
             admin_seed_path=Path(
                 os.getenv("CHECKSTOCK_ADMIN_SEED_PATH", base_dir / "secrets" / "admin_seed.json")
             ),
@@ -200,6 +188,9 @@ class Settings(BaseModel):
             log_level=log_level,
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
+            inbound_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_INBOUND_SYNC_INTERVAL_SECONDS", 1800, minimum=300
+            ),
             funnel_orders_sync_enabled=_env_bool("CHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED", True),
             unit_economics_1c_price_sync_enabled=_env_bool(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_ENABLED", True
@@ -208,12 +199,8 @@ class Settings(BaseModel):
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR", 2, maximum=23
             ),
             ftp_export_enabled=_env_bool("CHECKSTOCK_FTP_EXPORT_ENABLED", True),
-            ftp_export_start_hour=_env_int(
-                "CHECKSTOCK_FTP_EXPORT_START_HOUR", 3, maximum=23
-            ),
-            ftp_export_start_minute=_env_int(
-                "CHECKSTOCK_FTP_EXPORT_START_MINUTE", 15, maximum=59
-            ),
+            ftp_export_start_hour=_env_int("CHECKSTOCK_FTP_EXPORT_START_HOUR", 3, maximum=23),
+            ftp_export_start_minute=_env_int("CHECKSTOCK_FTP_EXPORT_START_MINUTE", 15, maximum=59),
             ftp_export_deadline_hour=_env_int(
                 "CHECKSTOCK_FTP_EXPORT_DEADLINE_HOUR", 6, minimum=1, maximum=23
             ),
@@ -240,12 +227,8 @@ class Settings(BaseModel):
                     "no": "off",
                 },
             ),
-            ftp_mode=_env_choice(
-                "CHECKSTOCK_FTP_MODE", "auto", {"auto", "passive", "active"}
-            ),
-            ftp_prot=_env_choice(
-                "CHECKSTOCK_FTP_PROT", "auto", {"auto", "private", "clear"}
-            ),
+            ftp_mode=_env_choice("CHECKSTOCK_FTP_MODE", "auto", {"auto", "passive", "active"}),
+            ftp_prot=_env_choice("CHECKSTOCK_FTP_PROT", "auto", {"auto", "private", "clear"}),
             token_check_interval_seconds=_env_int(
                 "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 24 * 60 * 60, minimum=1
             ),
@@ -254,9 +237,6 @@ class Settings(BaseModel):
             ),
             wb_advertising_sync_startup_delay_seconds=_env_int(
                 "CHECKSTOCK_WB_ADVERTISING_SYNC_STARTUP_DELAY_SECONDS", 10, minimum=0
-            ),
-            decision_sync_startup_delay_seconds=_env_int(
-                "CHECKSTOCK_DECISION_SYNC_STARTUP_DELAY_SECONDS", 20, minimum=0
             ),
             auto_sync_interval_seconds=_env_int("CHECKSTOCK_AUTO_SYNC_INTERVAL_SECONDS", 30 * 60, minimum=1),
             catalog_sync_hour=_env_int("CHECKSTOCK_CATALOG_SYNC_HOUR", 3, maximum=23),
@@ -280,9 +260,6 @@ class Settings(BaseModel):
             wb_storefront_batch_size=_env_int(
                 "CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE", 1_000, minimum=1, maximum=1_000
             ),
-            decision_sync_check_interval_seconds=_env_int(
-                "CHECKSTOCK_DECISION_SYNC_INTERVAL_SECONDS", 15 * 60, minimum=1
-            ),
             session_ttl_days=_env_int("CHECKSTOCK_SESSION_TTL_DAYS", 14, minimum=1),
             session_cookie_secure=_env_bool("CHECKSTOCK_SESSION_COOKIE_SECURE", False),
             pbkdf2_iterations=_env_int(
@@ -291,11 +268,6 @@ class Settings(BaseModel):
                 minimum=MIN_PBKDF2_ITERATIONS,
                 maximum=MAX_PBKDF2_ITERATIONS,
             ),
-            stock_window_days=_env_int("CHECKSTOCK_STOCK_WINDOW_DAYS", 30, minimum=1),
-            stock_frozen_days=_env_int("CHECKSTOCK_STOCK_FROZEN_DAYS", 60, minimum=1),
-            stock_excess_days=_env_int("CHECKSTOCK_STOCK_EXCESS_DAYS", 90, minimum=1),
-            stock_cache_ttl_seconds=_env_int("CHECKSTOCK_STOCK_CACHE_TTL_SECONDS", 5 * 60, minimum=1),
-            stock_detail_page_size=_env_int("CHECKSTOCK_STOCK_DETAIL_PAGE_SIZE", 100, minimum=1),
             warehouse_display_limit=_env_int("CHECKSTOCK_WAREHOUSE_DISPLAY_LIMIT", 8, minimum=1),
             operation_history_limit=_env_int("CHECKSTOCK_OPERATION_HISTORY_LIMIT", 500, minimum=1),
             ff_import_timeout_seconds=_env_int("CHECKSTOCK_FF_IMPORT_TIMEOUT_SECONDS", 30, minimum=1),
@@ -311,7 +283,6 @@ class Settings(BaseModel):
             ozon_retry_backoff_seconds=_env_int("CHECKSTOCK_OZON_RETRY_BACKOFF_SECONDS", 5, minimum=0),
             yandex_retry_backoff_seconds=_env_int("CHECKSTOCK_YANDEX_RETRY_BACKOFF_SECONDS", 5, minimum=0),
             wb_sales_max_pages=_env_int("CHECKSTOCK_WB_SALES_MAX_PAGES", 30, minimum=1),
-            rnp_sync_cooldown_minutes=_env_int("CHECKSTOCK_RNP_SYNC_COOLDOWN_MINUTES", 55, minimum=0),
             rnp_report_download_timeout_seconds=_env_int(
                 "CHECKSTOCK_RNP_REPORT_DOWNLOAD_TIMEOUT_SECONDS", 45, minimum=1
             ),
@@ -319,7 +290,6 @@ class Settings(BaseModel):
             rnp_report_poll_interval_seconds=_env_int(
                 "CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS", 1, minimum=0
             ),
-            experimental_owner_logins=_env_csv("CHECKSTOCK_EXPERIMENTAL_OWNER_LOGINS"),
             smtp_host=os.getenv("CHECKSTOCK_SMTP_HOST", "").strip(),
             smtp_port=_env_int("CHECKSTOCK_SMTP_PORT", 587, minimum=1, maximum=65_535),
             smtp_username=os.getenv("CHECKSTOCK_SMTP_USERNAME", "").strip(),

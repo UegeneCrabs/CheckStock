@@ -3,11 +3,11 @@ import html
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from app.access.identity_policy import ROLE_LABELS, can_manage_users
+from app.access.sections import SECTION_GROUPS, SECTION_LABELS, access_level, has_access, section_path
+from app.core.formatting import format_dt
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
-from app.formatting import format_dt
-from app.identity_policy import ROLE_LABELS, can_manage_users
-from app.section_access import SECTION_LABELS, SECTION_PATHS, access_level
-from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.templating import fill_template, render_page
 
@@ -45,12 +45,12 @@ def _render_store_cards(user) -> str:
 def _render_section_rows(user) -> tuple[str, int]:
     rows = []
     writable = 0
-    for section in SectionName:
+    for section in (item for _, group in SECTION_GROUPS for item in group):
         level = access_level(user, section)
         writable += int(level is SectionAccessLevel.WRITE)
         label = html.escape(SECTION_LABELS[section])
         title = (
-            f'<a href="{SECTION_PATHS[section]}">{label}</a>'
+            f'<a href="{section_path(user, section)}">{label}</a>'
             if level is not SectionAccessLevel.NONE
             else f"<strong>{label}</strong>"
         )
@@ -70,11 +70,13 @@ async def profile_page(request: Request):
     user = request.state.user
     section_rows, writable_sections = _render_section_rows(user)
     stock_edit_allowed = (
-        user.can_edit_stock and access_level(user, SectionName.STOCK) is SectionAccessLevel.WRITE
+        user.can_edit_stock and access_level(user, SectionName.STOCK_BALANCES) is SectionAccessLevel.WRITE
     )
-    users_manage_allowed = can_manage_users(user)
+    users_manage_allowed = can_manage_users(user) and has_access(
+        user, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
+    )
     content = fill_template(
-        "profile_content.html",
+        "account/profile.html",
         full_name=html.escape(user.full_name),
         email=html.escape(user.google_email or "Не указана"),
         login=html.escape(user.login),

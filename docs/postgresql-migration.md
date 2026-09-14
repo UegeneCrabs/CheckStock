@@ -18,7 +18,7 @@ The migration target must be empty. Run the importer through the application ima
 docker compose build app
 docker compose run --rm \
   -v /opt/checkstock-migration:/migration:ro \
-  app python -m scripts.migrate_sqlite_to_postgres /migration/checkstock.db
+  app python -m scripts.imports.migrate_sqlite_to_postgres /migration/checkstock.db
 ```
 
 The importer checks SQLite integrity and foreign keys before copying, imports all mapped tables in
@@ -29,7 +29,7 @@ After a successful import, initialize the application with background work disab
 
 ```bash
 docker compose run --rm -e CHECKSTOCK_DISABLE_BACKGROUND_SYNC=1 app \
-  python -c "from app.background import _initialize_application; _initialize_application()"
+  python -c "from app.jobs.background import _initialize_application; _initialize_application()"
 docker compose up -d app
 ```
 

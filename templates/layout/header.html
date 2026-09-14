@@ -1,0 +1,182 @@
+<header class="sidebar app-header" id="app-header">
+    <div class="sidebar-brand-row">
+        <a class="brand" href="/" aria-label="РАКЕТА — на главную">
+            <span class="brand-mark">Р</span>
+            <span class="brand-label">РАКЕТА</span>
+        </a>
+    </div>
+
+    <nav class="side-nav" aria-label="Основная навигация">
+        <div class="nav-group $stock_open" data-nav-group$stock_group_hidden>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger $stock_group_active"
+                    type="button"
+                    title="Сток"
+                    aria-expanded="$stock_expanded"
+                    aria-controls="nav-stock-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                            d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+                        ></path>
+                        <path d="m3.3 7 8.7 5 8.7-5"></path>
+                        <path d="M12 22V12"></path>
+                    </svg>
+                    <span>Сток</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-stock-submenu" data-nav-submenu>
+                <a class="nav-subitem $stock_active" href="/stock" $stock_hidden>Остатки</a>
+                <a class="nav-subitem $stock_total_active" href="/stock/total" $stock_total_hidden
+                    >Остатки Тотал</a
+                >
+                <a class="nav-subitem $stock_supplies_active" href="/stock/supplies" $stock_supplies_hidden
+                    >Поставки</a
+                >
+                <a class="nav-subitem $stock_inbound_active" href="/stock/inbound" $stock_inbound_hidden
+                    >Поставки FBO</a
+                >
+                <a
+                    class="nav-subitem $stock_randomizer_active"
+                    href="/stock/randomizer"
+                    $stock_randomizer_hidden
+                    >Рандомайзер</a
+                >
+                <a
+                    class="nav-subitem $stock_cost_report_active"
+                    href="/stock/cost-report"
+                    $stock_cost_report_hidden
+                    >Движение и ЗЦ</a
+                >
+                <a
+                    class="nav-subitem $stock_operations_active"
+                    href="$stock_operations_path"
+                    $stock_operations_hidden
+                    >История операций</a
+                >
+            </div>
+        </div>
+
+        <div class="nav-group $unit_1c_open" data-nav-group$unit_1c_group_hidden>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger $unit_1c_group_active"
+                    type="button"
+                    title="Юнит-экономика 1С"
+                    aria-expanded="$unit_1c_expanded"
+                    aria-controls="nav-unit-1c-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 5h16v14H4Z"></path>
+                        <path d="M8 9h8"></path>
+                        <path d="M8 13h3"></path>
+                        <path d="M14 13h2"></path>
+                        <path d="M8 17h3"></path>
+                        <path d="M14 17h2"></path>
+                    </svg>
+                    <span>Юнит-экономика 1С</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-unit-1c-submenu" data-nav-submenu>
+                <a class="nav-subitem $unit_1c_wb_active" href="/sales/unit-economics-1c" $unit_1c_wb_hidden
+                    >Wildberries</a
+                >
+                <a
+                    class="nav-subitem $unit_1c_ozon_active"
+                    href="/sales/unit-economics-1c/ozon"
+                    $unit_1c_ozon_hidden
+                    >Ozon</a
+                >
+                <a
+                    class="nav-subitem $unit_1c_yandex_active"
+                    href="/sales/unit-economics-1c/yandex-market"
+                    $unit_1c_yandex_hidden
+                    >Яндекс Маркет</a
+                >
+            </div>
+        </div>
+
+        <div class="nav-group $reports_open" data-nav-group$reports_group_hidden>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger $reports_group_active"
+                    type="button"
+                    title="Отчёты"
+                    aria-expanded="$reports_expanded"
+                    aria-controls="nav-reports-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 19V5"></path>
+                        <path d="M4 19h16"></path>
+                        <path d="m7 15 4-4 3 2 5-6"></path>
+                    </svg>
+                    <span>Отчёты</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-reports-submenu" data-nav-submenu>
+                <a
+                    class="nav-subitem $unit_1c_reports_active"
+                    href="/sales/unit-economics-1c/reports/unit-profit"
+                    $unit_1c_reports_hidden
+                    >Юниточная прибыль</a
+                >
+                <a
+                    class="nav-subitem $unit_1c_target_price_active"
+                    href="/sales/unit-economics-1c/reports/target-price"
+                    $unit_1c_target_price_hidden
+                    >Целевая цена</a
+                >
+            </div>
+        </div>
+
+        <a
+            class="nav-item agent-nav $ai_agents_active"
+            href="/ai-agents"
+            $ai_agents_hidden
+            title="ИИ-агенты — подключение и API-ключи"
+        >
+            <span>ИИ-агенты</span>
+        </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <div class="nav-utility">$admin_link</div>
+        <div class="profile $profile_active">
+            <a
+                class="profile-main"
+                href="/profile"
+                title="Открыть профиль пользователя"
+                aria-label="Открыть профиль пользователя"
+            >
+                <span class="avatar">$user_initials</span>
+                <span class="profile-copy">
+                    <strong>$user_name</strong>
+                    <small>$user_role</small>
+                    <span class="profile-connection"
+                        ><span class="live-dot" aria-hidden="true"></span><span>Подключено</span></span
+                    >
+                </span>
+            </a>
+            <a class="profile-logout" href="/logout" title="Выйти" aria-label="Выйти">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M10 17l5-5-5-5"></path>
+                    <path d="M15 12H3"></path>
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>

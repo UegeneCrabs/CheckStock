@@ -1,0 +1,36 @@
+<a class="back-link" href="/stock/$slug">&larr; К остаткам $store_name</a>
+
+<section class="panel" data-warehouses data-store="$slug" data-marketplace="$marketplace">
+    <div class="panel-header-row">
+        <div class="warehouse-context">
+            <span class="mp-badge">$marketplace</span>
+            <div class="wh-tabs" role="tablist">
+                <button class="wh-tab active" type="button" role="tab" data-target="wh-fbo"
+                    >FBO — склады маркетплейса</button
+                >
+                <button class="wh-tab" type="button" role="tab" data-target="wh-fbs"
+                    >FBS — склады продавца</button
+                >
+                <button class="wh-tab" type="button" role="tab" data-target="wh-ff">ФФ — фулфилменты</button>
+                <button class="wh-tab" type="button" role="tab" data-target="wh-trash">Мусорка</button>
+            </div>
+        </div>
+        <a class="btn-secondary" href="/stock/$slug/warehouses/xlsx?mp=$marketplace">Выгрузить в Excel</a>
+    </div>
+
+    <div class="wh-pane" id="wh-fbo"> $fbo_table </div>
+
+    <div class="wh-pane is-hidden" id="wh-fbs"> $fbs_table </div>
+
+    <div class="wh-pane is-hidden" id="wh-ff"> $ff_table </div>
+
+    <div class="wh-pane is-hidden" id="wh-trash">
+        <p class="panel-desc"
+            >Товар, который числился у нас, но не нашёлся на фулфилменте. Склад в колонке — тот, с которого он
+            потерялся.</p
+        >
+        <div class="table-wrap table-wrap--scroll-10"> $trash_table </div>
+    </div>
+</section>
+
+<script src="/static/stock/warehouses.js?v=20260912"></script>

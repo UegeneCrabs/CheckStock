@@ -1,14 +1,12 @@
 from fastapi import HTTPException, Request
 
-from app import auth
-from app.access_control import (
-    accessible_marketplaces as policy_accessible_marketplaces,
-)
-from app.access_control import accessible_stores as policy_accessible_stores
-from app.access_control import has_scope
+from app.access import auth
+from app.access.access_control import accessible_marketplaces as policy_accessible_marketplaces
+from app.access.access_control import accessible_stores as policy_accessible_stores
+from app.access.access_control import has_scope
+from app.core.stores import STORES
 from app.dto.identity import User, coerce_user
 from app.dto.stores import StoreAccessContext, StoreCollection, StoreItem
-from app.stores import STORES
 
 
 def accessible_store_slugs(user: User | None) -> tuple[str, ...]:
@@ -17,7 +15,7 @@ def accessible_store_slugs(user: User | None) -> tuple[str, ...]:
         return ()
     if auth.has_role(user, "superadmin"):
         return tuple(STORES)
-    if user.access_profile is not None:
+    if user.access_profile is not None or user.access_scopes:
         return policy_accessible_stores(user)
     allowed = set(user.store_slugs or tuple(STORES))
     return tuple(slug for slug in STORES if slug in allowed)

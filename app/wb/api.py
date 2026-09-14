@@ -310,7 +310,24 @@ def get_own_warehouses(token: str) -> list[dict]:
     return data
 
 
-def get_fbs_stock(token: str, warehouse_id: int, barcodes: list[str]) -> dict[str, int]:
+def barcode_chrt_ids(cards: list[dict]) -> dict[str, int]:
+    result = {}
+    for card in cards:
+        for size in card.get("sizes") or []:
+            if not size.get("chrtID"):
+                continue
+            chrt_id = int(size["chrtID"])
+            for code in size.get("skus") or []:
+                barcode = str(code).strip()
+                if barcode in result and result[barcode] != chrt_id:
+                    raise WBApiError(None, detail=f"Штрихкод {barcode} связан с несколькими размерами WB")
+                result[barcode] = chrt_id
+    return result
+
+
+def get_fbs_stock(
+    token: str, warehouse_id: int, barcodes: list[str], *, chrt_ids_by_barcode: dict[str, int] | None = None
+) -> dict[str, int]:
 
     unique: list[str] = []
     seen: set[str] = set()
@@ -323,23 +340,30 @@ def get_fbs_stock(token: str, warehouse_id: int, barcodes: list[str]) -> dict[st
     if not unique:
         return {}
 
-    result: dict[str, int] = {}
-    for start in range(0, len(unique), FBS_SKUS_PER_REQUEST):
-        chunk = unique[start : start + FBS_SKUS_PER_REQUEST]
+    mapping = (
+        chrt_ids_by_barcode if chrt_ids_by_barcode is not None else barcode_chrt_ids(get_cards_list(token))
+    )
+    chrt_ids = sorted({mapping[code] for code in unique if code in mapping})
+
+    by_chrt_id = {}
+    for start in range(0, len(chrt_ids), FBS_SKUS_PER_REQUEST):
+        chunk = chrt_ids[start : start + FBS_SKUS_PER_REQUEST]
         data = _request(
             "POST",
             f"{FBS_BASE}/api/v3/stocks/{warehouse_id}",
             token,
-            json_body={"skus": chunk},
+            json_body={"chrtIds": chunk},
         )
-        stocks = (data or {}).get("stocks", [])
+        stocks = (data or {}).get("stocks")
+        if not isinstance(stocks, list):
+            raise WBApiError(None, detail="неожиданный формат остатков FBS: нет stocks")
         try:
             for item in stocks:
-                result[str(item["sku"])] = item.get("amount", 0)
-        except (AttributeError, KeyError, TypeError) as e:
+                by_chrt_id[int(item["chrtId"])] = int(item.get("amount", 0))
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             raise WBApiError(None, detail=f"неожиданный формат остатков FBS: {stocks!r}"[:300]) from e
 
-    return result
+    return {code: by_chrt_id.get(mapping[code], 0) for code in unique if code in mapping}
 
 
 def get_fbs_orders(token: str, date_from: int, date_to: int) -> list[dict]:

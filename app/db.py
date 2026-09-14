@@ -1,4 +1,4 @@
-from app.domain import DEFAULT_MARKETPLACE, MARKETPLACES
+from app.core.domain import DEFAULT_MARKETPLACE, MARKETPLACES
 from app.repositories.access_control import (
     create_access_request,
     decide_access_request,
@@ -95,17 +95,6 @@ from app.repositories.operations import (
     get_store_operations,
     log_action_for_operation,
     record_operation,
-)
-from app.repositories.rnp import (
-    add_rnp_action_log,
-    get_rnp_action_logs,
-    get_rnp_catalog_page,
-    get_rnp_daily_totals,
-    get_rnp_product_daily,
-    get_rnp_stock_total,
-    get_rnp_strategies,
-    rnp_article_exists,
-    save_rnp_strategy,
 )
 from app.repositories.sales import (
     get_fbs_order_totals_for_period,
@@ -235,6 +224,9 @@ from app.repositories.unit_economics_1c import (
     list_product_settings as list_unit_economics_1c_product_settings,
 )
 from app.repositories.unit_economics_1c import (
+    list_purchase_price_stock_items as list_purchase_price_stock_items,
+)
+from app.repositories.unit_economics_1c import (
     list_wb_commissions as list_unit_economics_1c_wb_commissions,
 )
 from app.repositories.unit_economics_1c import (
@@ -295,7 +287,6 @@ __all__ = (
     "ROLE_LABELS",
     "SOURCE_LABELS",
     "WRITE_LOCK",
-    "add_rnp_action_log",
     "delete_mp_stock_scheme_variants",
     "apply_ff_import_snapshot",
     "apply_ff_shipment",
@@ -350,12 +341,6 @@ __all__ = (
     "get_operations_with_items",
     "get_operations_with_items_for_period",
     "get_purchase_price_rows",
-    "get_rnp_action_logs",
-    "get_rnp_catalog_page",
-    "get_rnp_daily_totals",
-    "get_rnp_product_daily",
-    "get_rnp_stock_total",
-    "get_rnp_strategies",
     "get_sales_available_range",
     "get_sales_daily",
     "get_sales_export_rows",
@@ -403,6 +388,7 @@ __all__ = (
     "list_unit_economics_1c_price_sync_states",
     "list_unit_economics_1c_product_settings",
     "list_unit_economics_1c_active_wb_stock_items",
+    "list_purchase_price_stock_items",
     "log_action",
     "log_action_for_operation",
     "normalize_store_slugs",
@@ -425,9 +411,7 @@ __all__ = (
     "replace_fulfillment_stock_daily_history",
     "replace_marketplace_stock_daily_history",
     "replace_mp_warehouse_stock",
-    "rnp_article_exists",
     "sales_has_history",
-    "save_rnp_strategy",
     "save_warehouse_clusters",
     "replace_unit_economics_1c_daily_advertising",
     "replace_unit_economics_1c_product_categories",

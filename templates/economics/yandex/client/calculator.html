@@ -1,0 +1,97 @@
+<!-- template: metric -->
+<div><span>{{{label}}}</span><strong class="{{{content}}}">{{{value}}}{{{content_2}}}</strong></div>
+<!-- endtemplate -->
+
+
+
+<!-- template: field-2 -->
+<select data-ym-field="{{{key}}}" aria-label="{{label}}"{{{content}}}><option value="">Не задано</option>{{{content_2}}}</select>
+<!-- endtemplate -->
+
+<!-- template: field-3 -->
+<input data-ym-field="{{{key}}}" aria-label="{{label}}" type="number" min="0" step="any"{{{content}}}{{{content_2}}} placeholder="—" value="{{value}}"><b>{{content_3}}</b>
+<!-- endtemplate -->
+
+<!-- template: field-4 -->
+<label class="ue1c-calculator-row{{{content}}}" style="--compact-order:{{{order}}};--expanded-order:{{{index}}}"><span title="{{content_2}}">{{label}}<em class="ue1c-expanded-only ym-origin" data-ym-origin="{{{key}}}">{{content_3}}</em></span><span class="ue1c-calculator-field">{{{control}}}</span></label>
+<!-- endtemplate -->
+
+<!-- template: parameter -->
+<button type="button" class="ue1c-copy-value" data-copy-value="{{value}}" data-copy-kind="{{label}}" data-copy-tooltip="нажмите чтобы скопировать" data-copy-tooltip-default="нажмите чтобы скопировать" aria-label="Скопировать {{label_2}}">
+<!-- endtemplate -->
+
+<!-- template: parameter-2 -->
+</button>
+<!-- endtemplate -->
+
+<!-- template: parameter-3 -->
+<div class="ue1c-parameter"><span>{{label}}</span>{{{content}}}<strong title="{{content_2}}">{{display}}{{{content_3}}}</strong>{{{content_4}}}</div>
+<!-- endtemplate -->
+
+<!-- template: parameter-group -->
+<section class="ue1c-parameter-group"><h4>{{title}}</h4><div class="ue1c-parameter-grid">{{{content}}}</div></section>
+<!-- endtemplate -->
+
+<!-- template: render-parameters -->
+<a class="ue1c-save-price ym-settings-link" href="{{content}}">Настроить параметры</a>
+<!-- endtemplate -->
+
+<!-- template: render-parameters-2 -->
+<span>Параметры задаёт администратор</span>
+<!-- endtemplate -->
+
+<!-- template: render-parameters-3 -->
+{{{content}}}<div class="ue1c-parameter-save"><span>Действующие параметры · {{scheme}}</span>{{{content_2}}}</div><section class="ue1c-parameter-group"><h4>Экономика за период</h4><div class="ym-period" data-ym-period></div></section><section class="ue1c-parameter-group"><h4 data-ym-costs-title>Расшифровка расходов</h4><dl class="ym-costs" data-ym-costs></dl><p class="ym-diagnostics" data-ym-diagnostics></p></section>
+<!-- endtemplate -->
+
+<!-- template: draw -->
+<button class="ue1c-drawer-tab {{{content}}}" type="button" data-ym-mode="{{{key}}}" aria-pressed="{{{content_2}}}">{{{content_3}}}</button>
+<!-- endtemplate -->
+
+<!-- template: draw-2 -->
+<button type="button" class="ue1c-break-even" data-ym-quote>Пересчитать тариф API</button>
+<!-- endtemplate -->
+
+<!-- template: draw-3 -->
+<button type="button" class="ue1c-break-even" data-ym-calculator>Калькулятор</button>
+<!-- endtemplate -->
+
+<!-- template: draw-4 -->
+<a class="ue1c-save-price ym-settings-link" href="{{content}}">Настроить закупку и расходы</a>
+<!-- endtemplate -->
+
+<!-- template: draw-5 -->
+<span title="Постоянные параметры задаёт администратор в разделе API-ключи и фоновые выгрузки">Параметры задаёт администратор</span>
+<!-- endtemplate -->
+
+<!-- template: draw-6 -->
+<header class="ue1c-calculator-head"><h3>Расчёт чистой прибыли</h3><div class="ue1c-calculator-tools"><label class="ue1c-calculator-mode"><span>Подробный расчёт</span><input data-ym-expanded type="checkbox" role="switch"{{{content}}} aria-controls="ym-calculator-inputs"><i aria-hidden="true"></i></label><details class="ue1c-formula-popover"><summary aria-label="Показать формулу ЯМ">?</summary><div><p><strong>Чистая прибыль</strong> = цена продавца − все расходы.</p><p><strong>ROI</strong> = прибыль ÷ закупочная цена × 100%.</p><p><strong>Маржинальность</strong> = прибыль ÷ цена покупателя без Пэй × 100%.</p><p>Невыкупы и утилизация умножаются на (1 − выкуп). Реклама сегодня = расходы ÷ (заказы × выкуп). В сценарии плановая реклама = цена продавца × ДРР.</p></div></details><button class="ue1c-calculator-reset" type="button" data-ym-reset>Сбросить</button></div></header><div class="ym-mode-bar" role="group" aria-label="Режим расчёта">{{{content_2}}}<select class="ym-scheme" data-ym-scheme aria-label="Модель работы"><option value="FBY"{{{content_3}}}>FBY</option><option value="FBS"{{{content_4}}}>FBS</option></select></div><p class="ue1c-calculator-note">{{{content_5}}}</p><div class="ue1c-calculator-body"><div class="ue1c-calculator-inputs{{{content_6}}}" id="ym-calculator-inputs">{{{content_7}}}</div><aside class="ue1c-calculator-results" data-ym-result aria-live="polite"></aside></div><p class="ue1c-calculator-note" data-ym-message role="status"></p><footer class="ue1c-calculator-actions">{{{content_8}}}{{{content_9}}}</footer>
+<!-- endtemplate -->
+
+<!-- template: show-result -->
+<div><dt>{{content}}</dt><dd>{{{content_2}}} ₽</dd></div>
+<!-- endtemplate -->
+
+<!-- template: show-result-2 -->
+<strong>Экономика за {{{periodDays}}} завершённых дней · {{{scheme}}}</strong><span>Прибыль: {{{margin}}} ₽ · ROI: {{{roi}}}%</span><small>Дней с данными: {{{content}}}/{{{periodDays_2}}}{{{content_2}}}</small>
+<!-- endtemplate -->
+
+<!-- template: show-history -->
+<tr><td>{{day}}</td><td>{{{orders_count}}}</td><td>{{{expected_buyouts}}}</td><td>{{{advertising_spend}}} ₽</td><td>{{{profit}}} ₽</td></tr>
+<!-- endtemplate -->
+
+<!-- template: show-history-2 -->
+<table><thead><tr><th>Дата</th><th>Заказы</th><th>Выкупы, расчёт</th><th>Реклама</th><th>Прибыль</th></tr></thead><tbody>{{{content}}}</tbody></table>
+<!-- endtemplate -->
+
+<!-- template: show-history-3 -->
+<p>Снимки ещё не накоплены. Прошлые дни не заполняются сегодняшними параметрами.</p>
+<!-- endtemplate -->
+
+<!-- template: show-history-4 -->
+<details class="ym-history"><summary>История по дням</summary>{{{content}}}</details>
+<!-- endtemplate -->
+
+<!-- template: load-history -->
+<div class="ym-history"><button type="button" class="ue1c-calculator-reset" data-ym-history-retry>Повторить загрузку</button></div>
+<!-- endtemplate -->

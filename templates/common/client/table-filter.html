@@ -1,0 +1,19 @@
+<!-- template: filter_icon -->
+<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.6 5.4v4L7.6 14v-5.6z"/></svg>
+<!-- endtemplate -->
+
+<!-- template: items-html -->
+<label class="tf-value-item"><input type="checkbox" value="{{v}}"{{{content}}}><span>{{label}}</span></label>
+<!-- endtemplate -->
+
+<!-- template: render-popover-content -->
+<div class="tf-values-empty">Нет значений</div>
+<!-- endtemplate -->
+
+<!-- template: render-popover-content-2 -->
+<div class="tf-sort"><button type="button" class="tf-sort-btn" data-dir="asc">{{{ascLabel}}}</button><button type="button" class="tf-sort-btn" data-dir="desc">{{{descLabel}}}</button></div><div class="tf-divider"></div><div class="tf-quick-row"><button type="button" class="tf-link" data-action="select-all">Выбрать все ({{{length}}})</button><button type="button" class="tf-link" data-action="reset">Сбросить</button><span class="tf-shown">Показано: <span class="tf-shown-count"></span></span></div><div class="tf-search-wrap"><input type="text" class="tf-search-input" placeholder="Поиск"></div><div class="tf-values">{{{content}}}</div><div class="tf-actions"><button type="button" class="tf-btn-cancel" data-action="cancel">Отмена</button><button type="button" class="tf-btn-ok" data-action="ok">OK</button></div>
+<!-- endtemplate -->
+
+<!-- template: build-toolbar -->
+{{{FILTER_ICON}}}<span>Цвет</span>
+<!-- endtemplate -->

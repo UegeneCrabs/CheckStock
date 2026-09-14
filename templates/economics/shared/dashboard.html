@@ -1,0 +1,152 @@
+<link rel="stylesheet" href="/static/economics/shared/dashboard.css?v=20260912" />
+
+<section class="ue1c-page" id="unit-economics-1c" aria-label="Юнит-экономика $marketplace_name">
+    $unit_1c_notice
+    <div class="ue1c-toolbar">
+        <label class="ue1c-field ue1c-search-field">
+            <span aria-hidden="true">⌕</span>
+            <input
+                id="ue1c-search"
+                type="search"
+                placeholder="Поиск по всем столбцам"
+                aria-label="Поиск по всем столбцам таблицы"
+                autocomplete="off"
+            />
+        </label>
+        <select class="ue1c-select" id="ue1c-store-filter" aria-label="Магазин">
+            <option value="all">Все магазины</option>
+        </select>
+        <div class="ue1c-segments" aria-label="Фильтр состояния">
+            <button class="ue1c-segment is-active" data-state-filter="all" type="button">Все</button>
+            <button class="ue1c-segment" data-state-filter="negative" type="button">Товары в минус</button>
+            <button class="ue1c-segment" data-state-filter="new" type="button">Новинки</button>
+        </div>
+        <label class="ue1c-period-select">
+            <span>Период</span>
+            <select class="ue1c-select" id="ue1c-period-days" aria-label="Период экономики">
+                <option value="7" selected>7 дней</option>
+                <option value="14">14 дней</option>
+                <option value="30">30 дней</option>
+                <option value="custom">Свои даты</option>
+            </select>
+        </label>
+        <div class="ue1c-period-range" aria-label="Диапазон экономики и рекламы">
+            <label>
+                <span>С</span>
+                <input id="ue1c-period-from" type="date" aria-label="Начало периода" />
+            </label>
+            <span class="ue1c-period-separator" aria-hidden="true">—</span>
+            <label>
+                <span>По</span>
+                <input id="ue1c-period-to" type="date" aria-label="Конец периода" />
+            </label>
+            <button class="ue1c-period-apply" id="ue1c-period-apply" type="button">Применить</button>
+        </div>
+        <div class="ue1c-column-settings">
+            <button class="ue1c-ghost-button" id="ue1c-columns-toggle" type="button" aria-expanded="false"
+                >Колонки</button
+            >
+            <div class="ue1c-column-panel" id="ue1c-column-panel" hidden>
+                <strong>Порядок и видимость</strong>
+                <div id="ue1c-column-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <section class="ue1c-table-card" aria-label="Таблица товаров">
+        <div class="ue1c-table-wrap" id="ue1c-table-wrap">
+            <table class="data-table ue1c-redesign-table" id="ue1c-table">
+                <colgroup id="ue1c-colgroup"></colgroup>
+                <thead id="ue1c-table-head"></thead>
+                <tbody id="ue1c-product-rows"></tbody>
+            </table>
+            <div class="ue1c-load-state" id="ue1c-products-loading" role="status" aria-live="polite">
+                <i aria-hidden="true"></i>
+                <strong>Загружаем данные $marketplace_label…</strong>
+                <span>$loading_description</span>
+            </div>
+            <div class="ue1c-load-state ue1c-load-state--error" id="ue1c-products-error" role="alert" hidden>
+                <strong>Не удалось загрузить данные $marketplace_label</strong>
+                <span id="ue1c-products-error-text"></span>
+                <button type="button" id="ue1c-products-retry">Повторить</button>
+            </div>
+            <div class="ue1c-empty" id="ue1c-empty" hidden>
+                Ничего не найдено. Измените поиск или фильтр.
+            </div>
+        </div>
+        <footer class="ue1c-table-footer">
+            <span id="ue1c-pagination-summary">Показано 0 товаров</span>
+            <div class="ue1c-footer-actions">
+                <label class="ue1c-page-size"
+                    >На странице
+                    <select id="ue1c-page-size" aria-label="Товаров на странице">
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+                <nav class="ue1c-pagination" id="ue1c-pagination" aria-label="Страницы">
+                    <button
+                        class="ue1c-page-button"
+                        id="ue1c-page-prev"
+                        type="button"
+                        aria-label="Предыдущая страница"
+                        >‹</button
+                    >
+                    <div class="ue1c-page-numbers" id="ue1c-page-numbers"></div>
+                    <button
+                        class="ue1c-page-button"
+                        id="ue1c-page-next"
+                        type="button"
+                        aria-label="Следующая страница"
+                        >›</button
+                    >
+                </nav>
+            </div>
+        </footer>
+    </section>
+
+    <div class="ue1c-overlay" id="ue1c-overlay"></div>
+    <!-- include: economics/shared/product-drawer.html -->
+
+    <div class="ue1c-modal-backdrop" id="ue1c-price-confirm-modal" aria-hidden="true">
+        <section
+            class="ue1c-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ue1c-price-confirm-title"
+        >
+            <header class="ue1c-modal-head">
+                <div
+                    ><h2 id="ue1c-price-confirm-title">Подтвердите изменение цены</h2>
+                    <p id="ue1c-price-confirm-product">Проверьте артикул и рассчитанные параметры WB.</p></div
+                >
+                <button
+                    class="ue1c-close"
+                    id="ue1c-price-confirm-close"
+                    type="button"
+                    aria-label="Закрыть подтверждение"
+                    >×</button
+                >
+            </header>
+            <div class="ue1c-price-confirm-body">
+                <strong class="ue1c-price-confirm-target" id="ue1c-price-confirm-target"></strong>
+                <div class="ue1c-price-confirm-grid" id="ue1c-price-confirm-grid"></div>
+                <p class="ue1c-price-confirm-warning" id="ue1c-price-confirm-warning" hidden></p>
+            </div>
+            <footer class="ue1c-modal-foot">
+                <button class="ue1c-modal-tool" id="ue1c-price-confirm-cancel" type="button">Отмена</button>
+                <button class="ue1c-primary-button" id="ue1c-price-confirm-send" type="button">
+                    Подтвердить и отправить
+                </button>
+            </footer>
+        </section>
+    </div>
+    <div class="ue1c-toast" id="ue1c-toast" role="status" aria-live="polite"></div>
+</section>
+
+<script type="application/json" id="ue1c-config">
+    $unit_1c_config
+</script>
+<script src="/static/economics/shared/wb-calculator.js?v=20260912"></script>
+<script src="/static/economics/shared/dashboard.js?v=20260912"></script>

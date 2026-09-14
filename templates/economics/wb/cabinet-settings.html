@@ -1,0 +1,22 @@
+<link rel="stylesheet" href="/static/economics/wb/cabinet-settings.css?v=20260914" />
+<section class="ue1cs-page" id="ue1cs-page" data-cabinet-panel="wb" aria-label="Параметры кабинетов Wildberries">
+    <div class="cabinet-picker">
+        <div class="cabinet-picker-label">Кабинет <span id="ue1cs-cabinet-count">—</span></div>
+        <div class="cabinet-store-nav" data-wb-cabinet-nav role="group" aria-label="Кабинеты WB"></div>
+    </div>
+    <details class="cabinet-help">
+        <summary>Как обновляются выкуп и комиссия команды</summary>
+        <div>
+            <p>Выкуп WB обновляется каждые 4 часа. В период входят только завершённые дни, без сегодняшнего.</p>
+            <p>Если статистики нет или WB возвращает 0, применяется выкуп по умолчанию. При пустом поле подстановка не работает. Этот процент сохраняется в дневном снимке маржи.</p>
+            <p>Комиссия команды обновляется ночью из Google Sheets.</p>
+        </div>
+    </details>
+    <div class="ue1cs-grid" id="ue1cs-grid"></div>
+    <div class="ue1cs-empty" id="ue1cs-empty" hidden>Для вашей учётной записи нет доступных кабинетов WB.</div>
+    <div class="ue1cs-toast" id="ue1cs-toast" role="status" aria-live="polite"></div>
+</section>
+<script type="application/json" id="ue1cs-config">
+    $cabinet_settings_config
+</script>
+<script src="/static/economics/wb/cabinet-settings.js?v=20260914"></script>

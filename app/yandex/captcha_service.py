@@ -45,7 +45,6 @@ class Client:
             with urllib.request.urlopen(request, timeout=30) as response:
                 result = json.load(response)
         except (OSError, ValueError):
-
             raise CaptchaError("2Captcha: ошибка соединения или ответа") from None
         if result.get("errorId"):
             code = str(result.get("errorCode") or "API_ERROR")

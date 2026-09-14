@@ -1,5 +1,4 @@
 from app.web.routers import (
-    activity,
     admin,
     agent_analytics,
     agent_full,
@@ -8,10 +7,11 @@ from app.web.routers import (
     google_export,
     integrations,
     profile,
-    sales,
     stock,
-    stock_overview,
     system,
+    target_prices,
+    unit_economics,
+    yandex_economics,
 )
 
 agent_analytics.router.include_router(agent_full.router)
@@ -22,13 +22,13 @@ ROUTERS = (
     system.router,
     auth.router,
     profile.router,
-    activity.router,
-    sales.router,
-    stock_overview.router,
     stock.router,
+    unit_economics.router,
+    target_prices.router,
     admin.router,
     google_export.router,
     integrations.router,
+    yandex_economics.router,
 )
 
 __all__ = ("ROUTERS",)

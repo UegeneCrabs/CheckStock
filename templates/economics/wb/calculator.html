@@ -1,0 +1,100 @@
+<section class="ue1c-tab-panel" id="ue1c-panel-economics" role="tabpanel">
+    <section class="ue1c-calculator" aria-labelledby="ue1c-calculator-title">
+        <header class="ue1c-calculator-head">
+            <h3 class="visually-hidden" id="ue1c-calculator-title">Расчёт чистой прибыли</h3>
+            <div class="ue1c-calculator-tools">
+                <label class="ue1c-calculator-mode" for="ue1c-calculator-mode">
+                    <span>Подробный расчёт</span>
+                    <input
+                        id="ue1c-calculator-mode"
+                        type="checkbox"
+                        role="switch"
+                        aria-controls="ue1c-calculator-inputs"
+                    />
+                    <i aria-hidden="true"></i>
+                </label>
+                <details class="ue1c-formula-popover">
+                    <summary aria-label="Показать формулу чистой прибыли">?</summary>
+                    <div>
+                        <p
+                            ><strong>Чистая прибыль</strong> = чистая выручка − закупочная цена − фулфилмент −
+                            комиссия компании − НДС − УСН/ОСНО.</p
+                        >
+                        <p
+                            ><strong>Чистая выручка</strong> = цена без СПП − эквайринг − логистика − хранение
+                            − комиссия WB − реклама на единицу.</p
+                        >
+                        <p
+                            ><strong>Фактическая реклама на единицу</strong> = рекламные расходы за 7 дней ÷
+                            заказы воронки за 7 дней ÷ (процент выкупа ÷ 100).</p
+                        >
+                        <p
+                            ><strong>ДРР с выкупом</strong> = рекламные расходы за 7 дней ÷ (оборот заказов за
+                            7 дней × процент выкупа ÷ 100) × 100%.</p
+                        >
+                        <p
+                            ><strong>В ручном расчёте реклама на единицу</strong> = цена без СПП × выбранный
+                            ДРР ÷ 100 × процент выкупа ÷ 100.</p
+                        >
+                        <p><strong>НДС</strong> = цена с СПП ÷ (100 + ставка) × ставка.</p>
+                        <p><strong>УСН</strong> = (цена покупателя − НДС) × ставка ÷ 100.</p>
+                    </div>
+                </details>
+                <button class="ue1c-calculator-reset" id="ue1c-calculator-reset" type="button"
+                    >Сбросить</button
+                >
+            </div>
+        </header>
+        <p class="ue1c-calculator-note" id="ue1c-calculator-source" role="status" hidden></p>
+        <div class="ue1c-calculator-body">
+            <!-- include: economics/wb/calculator-fields.html -->
+            <aside class="ue1c-calculator-results" id="ue1c-price-metrics" aria-live="polite"></aside>
+        </div>
+        <footer class="ue1c-calculator-actions">
+            <button class="ue1c-break-even" id="ue1c-break-even" type="button">Цена без убытка</button>
+            <button class="ue1c-save-price" id="ue1c-save-price" type="button">Сохранить цену</button>
+        </footer>
+    </section>
+
+    <section class="ue1c-calculator ue1c-drawer-section">
+        <header class="ue1c-calculator-head">
+            <h3>Динамика за 14 дней</h3>
+        </header>
+        <div class="ue1c-chart-card" id="ue1c-chart-wrap">
+            <div class="ue1c-chart-controls" aria-label="Показатели графика">
+                <label
+                    class="is-orders"
+                    title="Высота столбиков увеличена в 10 раз; в подсказке показано фактическое значение"
+                    ><input type="checkbox" data-chart-series="orders" />Заказы воронки ×10</label
+                >
+                <label class="is-stock"><input type="checkbox" data-chart-series="stock" />Остатки</label>
+                <label class="is-margin"><input type="checkbox" data-chart-series="margin" />Прибыль</label>
+                <label class="is-ads"><input type="checkbox" data-chart-series="ads" />Реклама</label>
+                <label class="is-drr"><input type="checkbox" data-chart-series="drr" />ДРР с выкупом</label>
+                <label class="is-compare"
+                    ><input type="checkbox" data-chart-compare />Воронка неделей ранее</label
+                >
+            </div>
+            <div
+                class="ue1c-chart-daily-sales"
+                id="ue1c-chart-daily-sales"
+                aria-label="Продажи по дням в штуках"
+                hidden
+            ></div>
+            <svg
+                class="ue1c-chart"
+                id="ue1c-chart"
+                viewBox="0 0 440 220"
+                role="img"
+                aria-label="Динамика товара за четырнадцать дней"
+            ></svg>
+            <div class="ue1c-chart-series-tooltip" id="ue1c-chart-series-tooltip" hidden></div>
+            <div class="ue1c-chart-tooltip" id="ue1c-chart-tooltip" hidden></div>
+        </div>
+    </section>
+
+    <section class="ue1c-calculator ue1c-drawer-section" id="ue1c-glued-section" hidden>
+        <header class="ue1c-calculator-head"><h3>Связанные артикулы</h3></header>
+        <div class="ue1c-glued-products" id="ue1c-glued-products"></div>
+    </section>
+</section>

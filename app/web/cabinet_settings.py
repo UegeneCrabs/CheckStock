@@ -3,10 +3,11 @@
 import json
 
 from app import db
-from app.access_control import accessible_stores
+from app.access.access_control import accessible_stores
+from app.access.sections import has_access
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
-from app.section_access import has_access
-from app.stores import STORES
+from app.repositories import unit_economics_yandex
 from app.web.templating import fill_template
 
 
@@ -24,15 +25,35 @@ def cabinet_settings_payload(store_slugs: tuple[str, ...]) -> list[dict]:
 
 
 def render_cabinet_settings(user) -> str:
-    return fill_template(
-        "unit_economics_1c_cabinet_settings_content.html",
+    wb_content = fill_template(
+        "economics/wb/cabinet-settings.html",
         cabinet_settings_config=json.dumps(
             {
                 "marketplace": "WB",
                 "canEdit": has_access(
-                    user, SectionName.UNIT_ECONOMICS_1C, SectionAccessLevel.WRITE,
+                    user,
+                    SectionName.UNIT_ECONOMICS_WB,
+                    SectionAccessLevel.WRITE,
                 ),
                 "items": cabinet_settings_payload(accessible_stores(user, "WB")),
+            },
+            ensure_ascii=False,
+        ).replace("</", "<\\/"),
+    )
+    yandex_items = [
+        {
+            "store_slug": slug,
+            "store_name": STORES[slug]["name"],
+            **unit_economics_yandex.get_buyout_settings(slug),
+        }
+        for slug in accessible_stores(user, "YANDEX MARKET")
+    ]
+    return wb_content + fill_template(
+        "economics/yandex/settings.html",
+        yandex_settings_config=json.dumps(
+            {
+                "items": yandex_items,
+                "canEdit": has_access(user, SectionName.UNIT_ECONOMICS_WB, SectionAccessLevel.WRITE),
             },
             ensure_ascii=False,
         ).replace("</", "<\\/"),

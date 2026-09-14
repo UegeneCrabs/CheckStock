@@ -1,0 +1,49 @@
+$stock_summary
+
+<div class="sync-panel stock-sync-panel" id="sync-products-panel">
+    <div class="stock-sync-main">
+        <span class="stock-sync-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+                <path d="M20 11a8 8 0 0 0-14.9-3"></path>
+                <path d="M4 4v5h5"></path>
+                <path d="M4 13a8 8 0 0 0 14.9 3"></path>
+                <path d="M20 20v-5h-5"></path>
+            </svg>
+        </span>
+        <span class="stock-sync-copy">
+            <strong>Обновление остатков</strong>
+            <small>Обновляет каталоги и текущие остатки WB, Ozon и Яндекс Маркета</small>
+        </span>
+    </div>
+
+    <div class="stock-sync-actions">
+        <p class="sync-last">
+            <svg
+                class="sync-last-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <circle cx="12" cy="12" r="9"></circle>
+                <polyline points="12 7 12 12 15 14"></polyline>
+            </svg>
+            <span>Последняя выгрузка:</span>
+            <strong id="sync-products-last">$last_sync</strong>
+        </p>
+        $sync_products_button
+    </div>
+
+    <span class="sync-status" id="sync-products-status" role="status" aria-live="polite"></span>
+
+    <div class="sync-results" id="sync-products-results" aria-label="Результаты синхронизации"></div>
+</div>
+
+<div class="store-grid stock-store-grid"> $store_cards </div>
+
+<script src="/static/stock/index.js?v=20260912"></script>

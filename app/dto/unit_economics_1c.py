@@ -8,7 +8,13 @@ from app.dto.common import DtoModel
 TargetRoiCode = Literal["A", "B", "C", "D", "F", "NEW", "U"]
 TargetRoiPercent = Annotated[float, Field(ge=0, le=1_000_000, allow_inf_nan=False)]
 DEFAULT_TARGET_ROI_BY_CODE: dict[TargetRoiCode, float] = {
-    "A": 20, "B": 30, "C": 50, "D": 0, "F": 50, "NEW": 50, "U": 20,
+    "A": 20,
+    "B": 30,
+    "C": 50,
+    "D": 0,
+    "F": 50,
+    "NEW": 50,
+    "U": 20,
 }
 
 
@@ -84,6 +90,11 @@ class UnitEconomics1CProductSettings(UnitEconomics1CProductValues):
     updated_at: str | None = None
     updated_by_user_id: int | None = None
     updated_by_name: str | None = None
+
+
+class YandexBuyoutSettingsRequest(DtoModel):
+    buyout_period_days: int = Field(ge=1, le=29)
+    default_buyout_percent: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
 
 
 class UnitEconomics1CProductTargetRequest(DtoModel):

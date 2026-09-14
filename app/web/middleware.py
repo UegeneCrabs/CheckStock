@@ -6,18 +6,18 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
-from app import auth
+from app.access import auth
+from app.access.sections import has_access as has_section_access
+from app.access.sections import section_for_path
 from app.config import settings
+from app.core.logging_config import new_request_id, request_id_context
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SessionToken
-from app.logging_config import new_request_id, request_id_context
-from app.section_access import has_access as has_section_access
-from app.section_access import section_for_path
-from app.stores import STORES
 from app.web.access import has_store_access
 from app.web.templating import render_access_denied_page
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
-QUIET_PATH_PREFIXES = ("/static/", "/api/activity/heartbeat")
+QUIET_PATH_PREFIXES = ("/static/",)
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +57,11 @@ async def authentication_middleware(request: Request, call_next):
     required_access = (
         SectionAccessLevel.READ if request.method in {"GET", "HEAD", "OPTIONS"} else SectionAccessLevel.WRITE
     )
+    if request.method == "POST" and (
+        path.startswith("/api/unit-economics-1c/yandex-market/calculate/")
+        or path == "/api/unit-economics-1c/reports/target-price.xlsx"
+    ):
+        required_access = SectionAccessLevel.READ
     if section is not None and not has_section_access(user, section, required_access):
         wants_json = "application/json" in request.headers.get("accept", "") or (
             request.headers.get("x-requested-with") == "fetch"

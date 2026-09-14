@@ -9,8 +9,8 @@ from datetime import UTC, date, datetime, timedelta
 from threading import Lock
 
 from app import db
-from app.domain import MOSCOW_TIMEZONE
-from app.stores import STORES
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
@@ -440,7 +440,8 @@ def _parallel_store_results(
     store_slugs: tuple[str, ...] | None = None,
 ) -> dict[str, dict]:
     store_slugs = tuple(
-        store_slug for store_slug in (tuple(STORES) if store_slugs is None else store_slugs)
+        store_slug
+        for store_slug in (tuple(STORES) if store_slugs is None else store_slugs)
         if store_slug in STORES
     )
     if not store_slugs:

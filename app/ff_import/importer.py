@@ -270,30 +270,34 @@ def _apply_entries(
     negative_skipped = negative_skipped or []
 
     catalog = db.get_catalog_items(store_slug, marketplace)
-    by_barcode = {item["barcode"]: item["article"] for item in catalog}
-    known_articles = {item["article"] for item in catalog}
+    from app.stock.catalog_identity import CatalogIndex, CatalogMatchError
+
+    index = CatalogIndex(catalog)
     meta_by_article = {item["article"]: item for item in catalog}
 
     def _label(barcode: str, article: str) -> str:
 
-        target = by_barcode.get(barcode)
-        if target is None and article in known_articles:
-            target = article
-        return target or article or barcode or "?"
+        try:
+            item = index.resolve(article, barcode)
+        except CatalogMatchError:
+            item = None
+        return item["article"] if item else article or barcode or "?"
 
     resolved: dict[str, int] = {}
     unmatched = 0
     unmatched_quantity = 0
 
     for barcode, article, quantity in entries:
-        target_article = by_barcode.get(barcode)
-        if target_article is None and article in known_articles:
-            target_article = article
-        if target_article is None:
+        try:
+            target = index.resolve(article, barcode)
+        except CatalogMatchError as error:
+            raise FFImportError(str(error)) from error
+        if target is None:
             unmatched += 1
             unmatched_quantity += quantity
             continue
 
+        target_article = target["article"]
         resolved[target_article] = resolved.get(target_article, 0) + quantity
 
     skipped_labels = [

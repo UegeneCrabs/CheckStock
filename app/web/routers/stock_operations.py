@@ -6,11 +6,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app import db
-from app.access_control import ActionPermission, has_action_permission, scope_pairs
+from app.access.access_control import ActionPermission, has_action_permission, scope_pairs
 from app.config import settings
+from app.core.formatting import format_dt
+from app.core.stores import STORES
 from app.ff_import import export as ff_export
-from app.formatting import format_dt
-from app.stores import STORES
 from app.web.common import _fmt_num
 from app.web.downloads import _download_headers
 from app.web.stock_rendering import (
@@ -177,9 +177,12 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
     allowed_pairs = scope_pairs(request.state.user)
     all_operations = _operations_in_scope(all_operations, allowed_pairs)
     operations = (
-        _operations_in_scope(await run_in_threadpool(
-            db.get_store_operations, slug.lower(), kinds, settings.operation_history_limit
-        ), allowed_pairs)
+        _operations_in_scope(
+            await run_in_threadpool(
+                db.get_store_operations, slug.lower(), kinds, settings.operation_history_limit
+            ),
+            allowed_pairs,
+        )
         if kinds
         else all_operations
     )
@@ -190,7 +193,7 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
     counts["transfer"] = sum(counts.get(item, 0) for item in TRANSFER_KINDS)
 
     content = fill_template(
-        "operations_content.html",
+        "stock/operations.html",
         slug=slug.lower(),
         store_name=store["name"],
         kind=active,
@@ -200,7 +203,7 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
     )
     return render_page(
         f"CheckStock — Перемещение стока — {store['name']}",
-        "stock",
+        "stock_operations",
         content,
         request.state.user,
         content_class="content--operations",
@@ -441,7 +444,7 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
 
     def build_content() -> str:
         return fill_template(
-            "warehouse_content.html",
+            "stock/warehouses.html",
             store_name=store["name"],
             slug=slug.lower(),
             marketplace=html.escape(marketplace),

@@ -10,17 +10,28 @@
 - `app.wb`, `app.ozon`, `app.yandex` — внешние API-клиенты и синхронизация маркетплейсов.
 - `app.ff_import` — парсеры табличных файлов; изменение складских остатков выполняет прикладной сервис.
 - `app.config` — единый источник путей, интервалов, лимитов, retry и timeout.
-- `app.logging_config`, `app.scheduling`, `app.background` — структурный контекст запросов, жизненный цикл и фоновые задачи.
+- `app.core.logging_config`, `app.jobs.scheduling`, `app.jobs.background` — структурный контекст запросов, жизненный цикл и фоновые задачи.
+- `app.stock` — TOTAL, идентификация товаров, поставки, история и складские отчёты.
+- `app.economics` — расчёты и отчёты WB/ЯМ; исходные данные и ЗЦ находятся в `sources`.
+- `app.access` и `app.agents` — доступы пользователей и API ИИ-агентов.
+- `app.jobs` — расписания, настройки, блокировки и ручные запуски синхронизаций.
+- `app.exports` и `app.integrations` — выгрузки и общие внешние подключения.
 
 Основной поток зависимости:
 
 ```text
 FastAPI route -> Pydantic DTO -> application service -> repository Protocol
-                                                    -> SQLAlchemy Unit of Work -> SQLite
+                                                    -> SQLAlchemy Unit of Work -> SQLite/PostgreSQL
 ```
 
-Через этот контур работают аутентификация, команды РНП, статусы центра решений и складские перемещения. Прикладные сервисы тестируются через моки портов, инфраструктурные репозитории — на отдельной временной БД, HTTP-цепочки — через integration и E2E.
+Через этот контур работают аутентификация и складские перемещения. Шаблоны страниц обрабатываются через `string.Template`.
 
 Синхронные SQLite, HTTP-клиенты, PBKDF2 и OpenPyXL не выполняются в event loop: асинхронные маршруты передают их в thread pool. Отдельный process pool сейчас не нужен: длительных вычислительных задач в профиле приложения нет; его следует добавлять только по результатам измерений.
 
 `app.repositories` и `app.db` остаются compatibility-слоем для крупных аналитических read-моделей и синхронизаторов. Новые сценарии и изменения состояния не должны добавляться в этот слой; он мигрируется предметными срезами в SQLAlchemy-репозитории.
+
+`templates` и `static` разделены на `stock`, `economics`, `admin`, `integrations`, `agents`. Общие шаблоны находятся в `templates/layout`, общие CSS и JavaScript — в `static/common`.
+
+В `scripts` команды разделены на `ops`, `sync`, `imports`, `exports`, `diagnostics` и `parsers`. Предпочтительный запуск — `python -m scripts.<раздел>.<имя>` из корня проекта.
+
+Локальная БД — `data/checkstock.db`; в Docker используется именованный том PostgreSQL. Резервные копии находятся в `data/backups`, состояние браузерного парсера — в `data/yandex-storefront`. Эти данные не входят в Git.

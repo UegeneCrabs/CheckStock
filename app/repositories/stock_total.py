@@ -16,10 +16,20 @@ def get_source_rows(
         catalog = connection.execute(
             f"""
             SELECT source.id, source.store_slug, source.marketplace, source.article,
-                   source.barcode, source.name, prices.purchase_price
+                   source.barcode, source.name,
+                   CASE
+                       WHEN prices.purchase_price IS NULL THEN yandex_prices.purchase_price
+                       WHEN yandex_prices.purchase_price IS NULL THEN prices.purchase_price
+                       WHEN prices.purchase_price >= yandex_prices.purchase_price THEN prices.purchase_price
+                       ELSE yandex_prices.purchase_price
+                   END AS purchase_price
               FROM stock_items source
               LEFT JOIN unit_economics_1c_source_values prices
                 ON prices.stock_item_id=source.id
+              LEFT JOIN unit_economics_yandex_source_values yandex_prices
+                ON source.marketplace='YANDEX MARKET'
+               AND yandex_prices.store_slug=source.store_slug
+               AND yandex_prices.article=source.article
              WHERE source.store_slug IN ({placeholders})
                AND source.is_service = 0
              ORDER BY source.store_slug,
@@ -33,6 +43,17 @@ def get_source_rows(
             """,
             store_slugs,
         ).fetchall()
+        catalog = [dict(row) for row in catalog]
+        aliases = {}
+        for row in connection.execute(
+            "SELECT cb.stock_item_id,cb.barcode FROM catalog_barcodes cb "
+            "JOIN stock_items si ON si.id=cb.stock_item_id "
+            f"WHERE si.store_slug IN ({placeholders})",
+            store_slugs,
+        ):
+            aliases.setdefault(row["stock_item_id"], []).append(row["barcode"])
+        for row in catalog:
+            row["barcodes"] = aliases.get(row["id"], [])
         marketplace_stock = connection.execute(
             f"""
             SELECT source.store_slug, source.marketplace, source.article,

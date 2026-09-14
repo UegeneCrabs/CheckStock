@@ -6,20 +6,23 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from app import auth, db, stock_cost_report, stock_cost_report_export
-from app.access_control import (
+from app import db
+from app.access.access_control import (
     ActionPermission,
     has_action_permission,
     profile_has_permission,
     scope_pairs,
 )
-from app.domain import MARKETPLACES, MOSCOW_TIMEZONE
-from app.stores import STORES
+from app.access.sections import has_access
+from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.core.stores import STORES
+from app.dto.identity import SectionAccessLevel, SectionName
+from app.stock import cost_report as stock_cost_report
+from app.stock import cost_report_export as stock_cost_report_export
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num, _now_iso
 from app.web.downloads import _download_headers
 from app.web.identifiers import copy_identifier
-from app.web.routers.stock_mutations import _guard_stock_edit
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -305,11 +308,11 @@ async def stock_cost_report_page(
         detail = _operation_table(
             stock_cost_report.operations_for_view(report, view),
             query,
-            auth.can_edit_stock(request.state.user),
+            has_access(request.state.user, SectionName.STOCK_COST_REPORT, SectionAccessLevel.WRITE),
         )
     export_url = "/stock/cost-report.xlsx?" + urlencode(query)
     content = fill_template(
-        "stock_cost_report_content.html",
+        "stock/cost-report.html",
         date_from=start.isoformat(),
         date_to=end.isoformat(),
         store_options=store_options,
@@ -384,16 +387,13 @@ async def classify_shipment_as_fbs_transfer(
     marketplace: str = Form(""),
     view: str = Form("shipments"),
 ):
-    denied = _guard_stock_edit(request.state.user)
-    if denied:
-        raise HTTPException(status_code=403, detail=denied)
+    if not has_access(request.state.user, SectionName.STOCK_COST_REPORT, SectionAccessLevel.WRITE):
+        raise HTTPException(status_code=403, detail="Нет права изменять движение и ЗЦ")
     operation = await run_in_threadpool(db.get_operation, operation_id)
     allowed_stores = accessible_store_slugs(request.state.user)
     if operation is None or operation.get("store_slug") not in allowed_stores:
         raise HTTPException(status_code=404, detail="Операция не найдена")
-    operation_marketplace = str(
-        operation.get("from_marketplace") or operation.get("to_marketplace") or ""
-    )
+    operation_marketplace = str(operation.get("from_marketplace") or operation.get("to_marketplace") or "")
     if not operation_marketplace or not has_action_permission(
         request.state.user,
         ActionPermission.STOCK_SHIPMENT,

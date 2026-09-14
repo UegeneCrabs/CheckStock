@@ -72,9 +72,7 @@ def _attach_items(batches: list[dict]) -> list[dict]:
     for row in receipt_rows:
         receipt = dict(row)
         receipt["items"] = receipt_items.get(int(receipt["id"]), [])
-        receipt["received_units"] = sum(
-            int(item["quantity"] or 0) for item in receipt["items"]
-        )
+        receipt["received_units"] = sum(int(item["quantity"] or 0) for item in receipt["items"])
         receipts_by_batch.setdefault(int(receipt["batch_id"]), []).append(receipt)
 
     for batch in batches:

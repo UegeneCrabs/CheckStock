@@ -6,19 +6,21 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app import auth, db, stock_sheet_export
-from app.domain import MOSCOW_TIMEZONE
-from app.formatting import format_dt
+from app import db
+from app.access import auth
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.formatting import format_dt
+from app.core.stores import STORES
+from app.exports import stock_sheet as stock_sheet_export
+from app.jobs.tracking import run_tracked
 from app.repositories.stock_sheet_export import (
     ExportTarget,
     MarketplaceSpreadsheet,
     StockSheetExportSettings,
 )
-from app.stores import STORES
-from app.sync_tracking import run_tracked
-from app.web.templating import fill_template, render_page
+from app.web.templating import fill_template
 
 router = APIRouter()
 
@@ -86,8 +88,8 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
     marketplace_sections = []
     combined_store_hint = (
         '<p class="panel-desc"><strong>TOYKA добавляется автоматически:</strong> '
-        'стоки и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. '
-        'Ручной запуск и расписание настраиваются у ROCKKIDDO.</p>'
+        "стоки, товары в пути и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. "
+        "Ручной запуск и расписание настраиваются у ROCKKIDDO.</p>"
         if settings.store_slug == "rockkiddo"
         else ""
     )
@@ -106,7 +108,9 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             f'<input class="input-control" name="{prefix}_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" '
             'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
-            '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:G будет полностью заменён: шапка в строке 2, товары — с строки 3.</p>'
+            '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:I будет полностью заменён: шапка в строке 2, товары — с строки 3. '
+            "A:G сохраняют прежний порядок; H — «В пути между ФФ», I — «В пути на склады МП». "
+            "Если H2:I заняты другими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>"
             '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
             f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace, "fbs_orders"))}" maxlength="200" '
@@ -117,7 +121,7 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             'data-export-kind="stocks">Выгрузить стоки</button>'
             f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
             'data-export-kind="fbs_orders">Выгрузить FBS-заказы</button>'
-            '</div>'
+            "</div>"
             "</section>"
         )
     return (
@@ -129,16 +133,19 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         '<label class="export-enabled"><input type="checkbox" name="enabled" value="1"'
         f"{checked}><span>Автовыгрузка включена</span></label></div>"
         '<div class="export-schedule-grid">'
-        '<label><span>Периодичность</span><select class="select-control" name="schedule_kind" '
+        '<label><span>Периодичность</span><select class="integration-select" name="schedule_kind" '
         'data-schedule-kind><option value="daily"'
         f'{daily_selected}>Каждый день</option><option value="weekly"{weekly_selected}>Раз в неделю</option></select></label>'
-        '<label data-weekday-field><span>День недели</span><select class="select-control" name="weekday">'
+        '<label data-weekday-field><span>День недели</span><select class="integration-select" name="weekday">'
         f"{_render_weekdays(settings.weekday)}</select></label>"
         '<label><span>Время (Москва)</span><input class="input-control" type="time" name="run_time" '
         f'value="{_input(settings.run_time)}" required></label></div>'
         + combined_store_hint
+        + '<div class="integration-export-marketplaces">'
         + "".join(marketplace_sections)
-        + f'<p class="export-status {status_class}" data-export-status>{html.escape(status_text)}</p>'
+        + "</div>"
+        + f'<p class="export-status {status_class}" data-export-status role="status" aria-live="polite">{html.escape(status_text)}</p>'
+        '<p class="integration-hint">Ручная выгрузка использует сохранённые настройки. После изменений сначала нажмите «Сохранить настройки».</p>'
         '<div class="export-actions"><button class="btn-primary" type="submit">Сохранить настройки</button>'
         '<button class="btn-secondary" type="button" data-export-now>Выгрузить сейчас</button></div>'
         "</form>"
@@ -203,13 +210,18 @@ def _settings_from_form(
 @router.get("/admin/google-export", response_class=HTMLResponse)
 async def google_export_page(request: Request):
     _require_superadmin(request)
+    return RedirectResponse("/admin/integrations?tab=google", status_code=303)
+
+
+async def render_google_export() -> str:
+    """Embed the existing export editor in the integrations page."""
     await run_in_threadpool(stock_sheet_export.ensure_defaults)
     settings = await run_in_threadpool(stock_sheet_export.list_settings)
-    content = fill_template(
-        "google_export_content.html",
+    return fill_template(
+        "integrations/google-export.html",
         store_tabs="".join(
             '<button type="button" class="export-store-tab'
-            f'{" is-active" if index == 0 else ""}" data-export-store-tab="{item.store_slug}">'
+            f'{" is-active" if index == 0 else ""}" data-export-store-tab="{item.store_slug}" aria-pressed="{str(index == 0).lower()}">'
             f"{html.escape(STORES[item.store_slug].name)}</button>"
             for index, item in enumerate(settings)
         ),
@@ -217,13 +229,6 @@ async def google_export_page(request: Request):
             _render_store_card(item, active=index == 0) for index, item in enumerate(settings)
         ),
         service_account_email=html.escape(google_service_account_email()),
-    )
-    return render_page(
-        "CheckStock — Выгрузка в Google Таблицы",
-        "admin_google_export",
-        content,
-        request.state.user,
-        "content--google-export",
     )
 
 

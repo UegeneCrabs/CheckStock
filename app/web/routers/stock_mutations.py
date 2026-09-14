@@ -5,8 +5,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app import access_notifications, auth, db
-from app.access_control import ActionPermission, has_action_permission
+from app import db
+from app.access import auth
+from app.access import notifications as access_notifications
+from app.access.access_control import ActionPermission, has_action_permission
+from app.core.errors import StockValidationError
+from app.core.formatting import format_dt
+from app.core.stores import STORES
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
     AddFulfillmentItemsCommand,
@@ -21,12 +26,9 @@ from app.dto.stock import (
     SignedStockEntries,
     TransferStockCommand,
 )
-from app.errors import StockValidationError
 from app.ff_import import importer as ff_stock_import
 from app.ff_import import shipment as ff_shipment
 from app.ff_import import transfer as ff_transfer
-from app.formatting import format_dt
-from app.stores import STORES
 from app.web.access import accessible_marketplaces
 from app.web.common import _now_iso
 from app.web.dependencies import StockMovementServiceDependency
@@ -181,6 +183,7 @@ async def upload_ff_stock(
         return JSONResponse({"ok": True, "preview": report})
 
     actor = request.state.user
+
     def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
@@ -288,6 +291,7 @@ async def add_ff_items(
 
     actor = request.state.user
     details = ", ".join(f"{item.article} +{item.added}" for item in results.root)
+
     def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
@@ -949,6 +953,7 @@ async def ship_ff_stock(
         )
 
     shipped = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
+
     def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
@@ -970,11 +975,7 @@ async def ship_ff_stock(
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            (
-                "Списание в мусорку"
-                if trash
-                else ("Перемещение на FBS" if fbs_transfer else "Отгрузка стока")
-            ),
+            ("Списание в мусорку" if trash else ("Перемещение на FBS" if fbs_transfer else "Отгрузка стока")),
             f"{store.name} · {fulfillment}/{marketplace.value} · {shipped}"
             + (f" · {note_text}" if note_text else ""),
             now,

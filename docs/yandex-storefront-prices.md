@@ -1,6 +1,6 @@
 # Выгрузка цен витрины Яндекс Маркета
 
-Сборщик `scripts/parse_yandex_storefront_prices.py` берёт список из
+Сборщик `scripts/parsers/parse_yandex_storefront_prices.py` берёт список из
 `app/yandex/unit_economics_assortment.json` (155 пар магазин/артикул), находит товары в
 каталоге БД, получает B2C-ссылки через официальный `offer-mappings` и последовательно
 открывает их в одной вкладке с постоянным профилем браузера. Добавленные в JSON товары
@@ -28,13 +28,13 @@
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-parser.txt
-.\.venv\Scripts\python.exe .\scripts\parse_yandex_storefront_prices.py --force
+.\.venv\Scripts\python.exe .\scripts\parsers\parse_yandex_storefront_prices.py --force
 ```
 
 Нужен установленный Google Chrome. Для постоянной работы в том же браузере:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\parse_yandex_storefront_prices.py --loop
+.\.venv\Scripts\python.exe .\scripts\parsers\parse_yandex_storefront_prices.py --loop
 ```
 
 `--loop` проверяет включённые магазины ежедневно в **01:00** и каждый час
@@ -74,11 +74,11 @@ Start-ScheduledTask -TaskName CheckStock-YandexStorefront-Hourly
 
 ```powershell
 # Проверить один товар из списка
-.\.venv\Scripts\python.exe .\scripts\parse_yandex_storefront_prices.py --article tris:153985484
+.\.venv\Scripts\python.exe .\scripts\parsers\parse_yandex_storefront_prices.py --article tris:153985484
 # Повторить только ошибки; уже полученные цены и подтверждённое отсутствие пропускаются
-.\.venv\Scripts\python.exe .\scripts\parse_yandex_storefront_prices.py --retry-failed
+.\.venv\Scripts\python.exe .\scripts\parsers\parse_yandex_storefront_prices.py --retry-failed
 # Проверить сопоставление с БД и API без браузера (цены продавца сохраняются)
-.\.venv\Scripts\python.exe .\scripts\parse_yandex_storefront_prices.py --prepare-only
+.\.venv\Scripts\python.exe .\scripts\parsers\parse_yandex_storefront_prices.py --prepare-only
 ```
 
 Для сохранения сессии всегда используйте один `--state-dir`; по умолчанию это
@@ -128,7 +128,7 @@ docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml logs --
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml stop yandex-parser
-docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml run --rm --no-deps yandex-parser xvfb-run -a python -u scripts/parse_yandex_storefront_prices.py --force
+docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml run --rm --no-deps yandex-parser xvfb-run -a python -u scripts/parsers/parse_yandex_storefront_prices.py --force
 docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml up -d yandex-parser
 ```
 
@@ -143,6 +143,6 @@ sandbox и профилем seccomp Playwright; перезапускается �
 вариант проверен живым обходом; сборка и запуск Linux-контейнера требуют проверки
 на целевом сервере (в текущем окружении Docker отсутствует).
 
-Веб-приложение не запускает второй браузер через `app/background.py`: автоматический
+Веб-приложение не запускает второй браузер через `app/jobs/background.py`: автоматический
 обход выполняет отдельный процесс/контейнер. Статус и следующий запуск записываются
 в существующий журнал фоновых загрузок сайта.

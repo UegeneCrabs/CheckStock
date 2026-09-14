@@ -3,6 +3,7 @@ from types import TracebackType
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import StockValidationError
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
     ApplyShipmentCommand,
@@ -20,8 +21,9 @@ from app.dto.stock import (
     StockQuantityQuery,
     TransitActionResult,
 )
-from app.errors import StockValidationError
 from app.infrastructure.orm import (
+    CatalogArticleAliasRecord,
+    CatalogBarcodeRecord,
     FulfillmentStockRecord,
     FulfillmentTransferRecord,
     FulfillmentTransitBatchRecord,
@@ -39,6 +41,24 @@ class SqlAlchemyStockRepository:
         self._session = session
 
     def catalog(self, query: CatalogQuery) -> CatalogItems:
+        article_aliases: dict[str, list[str]] = {}
+        for row in self._session.scalars(
+            select(CatalogArticleAliasRecord).where(
+                CatalogArticleAliasRecord.store_slug == query.store_slug,
+                CatalogArticleAliasRecord.marketplace == query.marketplace.value,
+            )
+        ):
+            article_aliases.setdefault(row.target_article, []).append(row.article)
+        aliases: dict[int, list[str]] = {}
+        for item_id, barcode in self._session.execute(
+            select(CatalogBarcodeRecord.stock_item_id, CatalogBarcodeRecord.barcode)
+            .join(StockItemRecord, StockItemRecord.id == CatalogBarcodeRecord.stock_item_id)
+            .where(
+                StockItemRecord.store_slug == query.store_slug,
+                StockItemRecord.marketplace == query.marketplace.value,
+            )
+        ):
+            aliases.setdefault(item_id, []).append(barcode)
         records = self._session.scalars(
             select(StockItemRecord)
             .where(
@@ -58,13 +78,15 @@ class SqlAlchemyStockRepository:
                     mp_sku=record.mp_sku,
                     mp_product_id=record.mp_product_id,
                     image_url=record.image_url,
+                    barcodes=tuple(aliases.get(record.id, [])),
+                    article_aliases=tuple(article_aliases.get(record.article, [])),
                 )
                 for record in records
             )
         )
 
     def quantity(self, query: StockQuantityQuery) -> StockQuantity:
-        record = self._stock_record(query)
+        record = self._stock_record(query, for_update=True)
         return StockQuantity(record.quantity if record else 0)
 
     def increment(self, command: StockIncrement) -> None:
@@ -74,7 +96,7 @@ class SqlAlchemyStockRepository:
             fulfillment=command.fulfillment,
             marketplace=command.marketplace,
         )
-        record = self._stock_record(query)
+        record = self._stock_record(query, for_update=True)
         if record is None:
             record = FulfillmentStockRecord(
                 store_slug=command.store_slug,
