@@ -53,6 +53,8 @@ class ReportQuery(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=100000)
     is_new: bool | None = None
+    active_only: bool = True
+    ctr_below: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     tag_column: Literal["goal_week", "goal_day", "status", "ends", "code", "fact", "plan"] | None = None
     tag_value: str | None = Field(default=None, min_length=1, max_length=100)
     tag_operator: Literal["eq", "gte", "lte"] = "eq"
@@ -145,6 +147,12 @@ SPECS = {
         "date_from date_to article manager group_by",
         "WB advertising spend, impressions, clicks, CTR and CPC. No invented attribution.",
     ),
+    "advertising-campaigns": (
+        S.UNIT_ECONOMICS_WB,
+        True,
+        "date_from date_to article manager active_only ctr_below",
+        "Campaign/product CTR. active_only=true: observed status 9 and membership; ctr_below: strict percent filter. Check loaded period/status freshness in context. Advertising impressions only.",
+    ),
     "stocks": (
         S.STOCK_BALANCES,
         False,
@@ -194,7 +202,7 @@ SPECS = {
         "Read website target-price recommendations for its closed week. No price updates.",
     ),
 }
-PERIOD_REPORTS = {"advertising", "stock-operations", "supplies", "profit"}
+PERIOD_REPORTS = {"advertising-campaigns", "advertising", "stock-operations", "supplies", "profit"}
 ECONOMIC = {
     name
     for name, spec in SPECS.items()
@@ -604,6 +612,27 @@ async def execute(name, request, user, query):
             warnings.append(
                 "warehouse_breakdown — отдельный снимок остатков по складам со своими датами обновления; его не нужно прибавлять к quantity."
             )
+    elif name == "advertising-campaigns":
+        from app.economics.wb import campaigns as advertising_campaigns
+
+        rows, context = await run_in_threadpool(advertising_campaigns.report, query)
+        rows = reports.filtered(rows, query)
+        rows = await run_in_threadpool(reports.economic_filter, rows, user, query.store, query.manager)
+        names = {
+            r["article"]: r.get("name") for r in await run_in_threadpool(reports.catalog, query.store, "WB")
+        }
+        for row in rows:
+            row["name"] = names.get(row["article"])
+        if query.ctr_below is not None:
+            rows = [r for r in rows if r["ctr_percent"] is not None and r["ctr_percent"] < query.ctr_below]
+        metrics = ("spend", "impressions", "clicks")
+        warnings.append(
+            "Одна строка — товар в кампании. Статус и состав кампании на момент обновления, не в реальном времени и не за исторический период. CTR только этой кампании за выбранные даты. Без показов CTR неизвестен. Показы только рекламные."
+        )
+        if not context["available"]:
+            warnings.append(
+                "Снимок кампаний отсутствует, старше 24 часов, не обновлён или не покрывает весь период. Выборка не подтверждает отсутствие активной рекламы."
+            )
     elif name == "advertising":
         rows = await run_in_threadpool(reports.advertising, query)
         rows = reports.filtered(rows, query)
@@ -614,6 +643,10 @@ async def execute(name, request, user, query):
             row["ctr_percent"] = row["clicks"] / row["impressions"] * 100 if row["impressions"] else None
             row["cpc_rub"] = row["spend"] / row["clicks"] if row["clicks"] else None
         warnings.append("Рекламная атрибуция заказов этим источником не предоставляется.")
+        context["impressions_basis"] = "advertising_only"
+        warnings.append(
+            "Показы — рекламные, как в блоке «Реклама» отчёта «Юниточная прибыль», не все показы поиска/каталога. Для сравнения дней используйте одинаковые даты и источник."
+        )
     elif name in {"stocks", "stock-value"}:
         rows = reports.filtered(await run_in_threadpool(reports.stocks, query), query)
         metrics = ("quantity",)
@@ -737,6 +770,7 @@ async def execute(name, request, user, query):
                 "period_from": data.get("period_from"),
                 "period_to": data.get("period_to"),
                 "basis": "website_unit_profit_report",
+                "impressions_basis": "advertising_only",
                 "field_labels": {
                     "orders_amount": "ТО заказов, ₽",
                     "net_orders_amount": "ТО после отмен, ₽",
@@ -769,6 +803,8 @@ async def execute(name, request, user, query):
         sort_fields = ("drr", "ctr", "cpc", "roi")
     elif name == "product-reputation":
         sort_fields = ("rating", "reviews_count")
+    elif name in {"advertising", "advertising-campaigns"}:
+        sort_fields = ("ctr_percent", "cpc_rub")
     payload = reports.page(rows, query, metrics, sort_fields=sort_fields)
     if name == "stocks" and query.view == "summary":
         payload["totals"] = {key: sum(row.get(key) or 0 for row in rows) for key in metrics}

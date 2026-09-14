@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
+from app.economics.wb import campaigns as advertising_campaigns
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
@@ -108,6 +109,15 @@ def _flatten_stats(response: object, date_from: date, date_to: date) -> list[dic
                     rows.append(
                         {
                             "nm_id": nm_id,
+                            "campaign_id": str(_integer(campaign.get("advertId"))),
+                            "metrics_complete": all(
+                                value is not None
+                                for value in (
+                                    nm.get("sum") if nm.get("sum") is not None else nm.get("spend"),
+                                    nm.get("views") if nm.get("views") is not None else nm.get("impressions"),
+                                    nm.get("clicks"),
+                                )
+                            ),
                             "day": day_value,
                             "spend": _number(nm.get("sum") if nm.get("sum") is not None else nm.get("spend")),
                             "impressions": _integer(
@@ -119,8 +129,17 @@ def _flatten_stats(response: object, date_from: date, date_to: date) -> list[dic
     return rows
 
 
-def _load_daily_rows(token: str, date_from: date, date_to: date) -> tuple[list[dict], int]:
+def _load_daily_rows(
+    token: str,
+    date_from: date,
+    date_to: date,
+    *,
+    campaign_rows: list | None = None,
+    campaign_ids_out: list | None = None,
+) -> tuple[list[dict], int]:
     campaign_ids = _campaign_ids(token, date_from)
+    if campaign_ids_out is not None:
+        campaign_ids_out.extend(campaign_ids)
     grouped: dict[tuple[str, str], dict[str, float | int]] = defaultdict(
         lambda: {"spend": 0.0, "impressions": 0, "clicks": 0}
     )
@@ -137,6 +156,8 @@ def _load_daily_rows(token: str, date_from: date, date_to: date) -> tuple[list[d
             },
         )
         for row in _flatten_stats(response, date_from, date_to):
+            if campaign_rows is not None:
+                campaign_rows.append(row)
             item = grouped[(row["nm_id"], row["day"])]
             item["spend"] += row["spend"]
             item["impressions"] += row["impressions"]
@@ -195,6 +216,7 @@ def sync_store(
     date_to = date_to or _today()
     date_from = date_to - timedelta(days=max(1, period_days) - 1)
     attempted_at = _now()
+    advertising_campaigns.mark_unavailable(store_slug, attempted_at)
     if not wb_tokens.has_token(store_slug):
         error = "нет WB-токена для кабинета"
         _record_state(
@@ -211,7 +233,11 @@ def sync_store(
 
     try:
         token = wb_tokens.get_token(store_slug)
-        daily_rows, campaigns_count = _load_daily_rows(token, date_from, date_to)
+        campaign_rows: list[dict] = []
+        campaign_ids: list[str] = []
+        daily_rows, campaigns_count = _load_daily_rows(
+            token, date_from, date_to, campaign_rows=campaign_rows, campaign_ids_out=campaign_ids
+        )
         rows = [
             {
                 "store_slug": store_slug,
@@ -227,6 +253,13 @@ def sync_store(
             date_to.isoformat(),
             rows,
         )
+        # Campaign metadata failure must not discard the existing product advertising report.
+        try:
+            advertising_campaigns.refresh(
+                store_slug, token, date_from, date_to, campaign_ids, campaign_rows, attempted_at
+            )
+        except Exception as error:
+            logger.warning("Campaign metadata not refreshed for %s: %s", store_slug, type(error).__name__)
         _record_state(
             store_slug,
             status="ok",

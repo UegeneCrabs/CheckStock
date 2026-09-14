@@ -1,0 +1,68 @@
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from app import db
+from app.core.stores import STORES
+from app.dto.identity import Role, User
+from app.infrastructure.database import dispose_databases
+from app.repositories import core
+
+
+@pytest.fixture(autouse=True)
+def disable_application_background_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep TestClient lifespans from starting real marketplace sync threads."""
+    from app.jobs import background
+
+    monkeypatch.setattr(
+        background,
+        "settings",
+        background.settings.model_copy(
+            update={
+                "background_sync_enabled": False,
+                "funnel_orders_sync_enabled": False,
+                "unit_economics_1c_price_sync_enabled": False,
+            }
+        ),
+    )
+
+
+@pytest.fixture
+def database_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    path = tmp_path / "checkstock-test.sqlite3"
+    dispose_databases()
+    monkeypatch.setattr(core, "DB_PATH", path)
+    db.init_db()
+    db.seed_defaults()
+    yield path
+    dispose_databases()
+
+
+@pytest.fixture
+def user_factory() -> Callable[..., User]:
+    def factory(
+        *,
+        user_id: int = 1,
+        role: Role = Role.SUPERADMIN,
+        stores: tuple[str, ...] = tuple(STORES),
+        can_edit_stock: bool = True,
+        can_manage_users: bool = True,
+        active: bool = True,
+    ) -> User:
+        return User(
+            id=user_id,
+            full_name=f"User {user_id}",
+            google_email=f"user{user_id}@example.test",
+            login=f"user{user_id}",
+            password_hash="test-password-hash",
+            role=role,
+            is_active=active,
+            can_edit_stock=can_edit_stock,
+            can_manage_users=can_manage_users,
+            created_at=datetime(2026, 8, 12, tzinfo=UTC),
+            store_slugs=stores,
+        )
+
+    return factory

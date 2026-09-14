@@ -12,12 +12,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from app import db
 from app.access import auth
-from app.access.access_control import accessible_stores, has_scope
+from app.access.access_control import accessible_stores, has_scope, restricts_unit_economics_to_manager
 from app.access.sections import has_access as has_section_access
 from app.core import health
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import Role, SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
 from app.dto.unit_economics_1c import (
     UnitEconomics1CCabinetSettingsWebRequest,
     UnitEconomics1CColumnPreferencesRequest,
@@ -1991,7 +1991,7 @@ def _unit_profit_report_filter_options(
         if str(reference.get("manager") or "").strip()
     }
     allowed_manager_keys: set[str] | None = None
-    if current_user is not None and current_user.role == Role.USER:
+    if current_user is not None and restricts_unit_economics_to_manager(current_user):
         allowed_manager_keys = {
             _manager_identity_key(manager)
             for manager in available_managers
@@ -2041,10 +2041,7 @@ def _unit_profit_report_filter_options(
 async def sales_unit_economics_1c_unit_profit_report(request: Request):
     store_slugs = accessible_stores(request.state.user, "WB")
     current_user = coerce_user(request.state.user)
-    show_manager_filter = current_user is not None and current_user.role in {
-        Role.ADMIN,
-        Role.SUPERADMIN,
-    }
+    show_manager_filter = current_user is not None and not restricts_unit_economics_to_manager(current_user)
     today = datetime.now(MOSCOW_TIMEZONE).date()
     config = {
         "stores": [{"slug": slug, "name": STORES[slug]["name"]} for slug in store_slugs],
@@ -2213,7 +2210,7 @@ async def _unit_economics_1c_unit_profit_report_data(
             if str(reference.get("manager") or "").strip()
         }
         allowed_manager_keys: set[str] | None = None
-        if current_user is not None and current_user.role == Role.USER:
+        if current_user is not None and restricts_unit_economics_to_manager(current_user):
             allowed_manager_keys = {
                 _manager_identity_key(manager)
                 for manager in available_managers
