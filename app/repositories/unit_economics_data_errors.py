@@ -18,11 +18,13 @@ def source_states(store_slugs: tuple[str, ...]) -> dict[str, dict[str, dict]]:
         ).fetchall()
         funnel = connection.execute(
             f"SELECT store_slug, status FROM wb_funnel_orders_sync_state "
-            f"WHERE store_slug IN ({placeholders})", store_slugs,
+            f"WHERE store_slug IN ({placeholders})",
+            store_slugs,
         ).fetchall()
         fulfillment = connection.execute(
             f"SELECT DISTINCT store_slug FROM ff_stock_deliveries "
-            f"WHERE marketplace='WB' AND store_slug IN ({placeholders})", store_slugs,
+            f"WHERE marketplace='WB' AND store_slug IN ({placeholders})",
+            store_slugs,
         ).fetchall()
     result = {store: {} for store in store_slugs}
     for row in rows:

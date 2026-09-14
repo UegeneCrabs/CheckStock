@@ -6,10 +6,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.agent_access import create_credential, credential_lock, read_credentials, save_credentials
+from app.access.sections import has_access
+from app.agents.access import create_credential, credential_lock, read_credentials, save_credentials
 from app.config import settings
 from app.dto.identity import SectionName, User
-from app.section_access import has_access
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -50,7 +50,9 @@ async def storage_call(function):
 @router.get("/ai-agents", response_class=HTMLResponse)
 async def agent_page(request: Request, user: Owner):
     return HTMLResponse(
-        render_page("CheckStock — ИИ-агенты", "ai_agents", fill_template("agent_management.html"), user),
+        render_page(
+            "CheckStock — ИИ-агенты", "ai_agents", fill_template("agent_management.html"), user
+        ),
         headers={"Cache-Control": "no-store"},
     )
 

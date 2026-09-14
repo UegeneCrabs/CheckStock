@@ -1,8 +1,8 @@
-from app.catalog_identity import barcodes
 from app.infrastructure.database import DatabaseConnection
 from app.repositories import yandex_assortment
 from app.repositories.catalog_reconciliation import reconcile_renames
 from app.repositories.core import get_connection
+from app.stock.catalog_identity import barcodes
 
 
 def get_catalog_items(

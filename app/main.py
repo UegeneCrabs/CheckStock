@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.background import lifespan
 from app.config import settings
 from app.container import ApplicationContainer
-from app.logging_config import configure_logging
+from app.core.logging_config import configure_logging
+from app.jobs.background import lifespan
 from app.web.middleware import authentication_middleware, request_logging_middleware
 from app.web.routers import ROUTERS
 

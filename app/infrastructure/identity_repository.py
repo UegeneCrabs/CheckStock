@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.application.ports import IdentityRepository
+from app.core.stores import STORES
 from app.dto.identity import (
     AccessProfile,
     ActivityCommand,
@@ -49,7 +50,6 @@ from app.infrastructure.orm import (
     UserStoreAccessRecord,
     WbTokenInfoRecord,
 )
-from app.stores import STORES
 
 
 def _as_datetime(value: str) -> datetime:
@@ -113,9 +113,7 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             UserStoreAccessRecord(store_slug=slug) for slug in _normalize_store_slugs(command.store_slugs)
         ]
         if command.access_profile is not None:
-            record.access_profile_record = UserAccessProfileRecord(
-                profile=command.access_profile.value
-            )
+            record.access_profile_record = UserAccessProfileRecord(profile=command.access_profile.value)
         record.marketplace_access = [
             UserMarketplaceAccessRecord(
                 store_slug=scope.store_slug,
@@ -216,8 +214,16 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
                 previous_stores = {store for store, _ in previous}
                 markets = {market for _, market in previous}
                 pairs = {(store, market) for store, market in previous if store in selected}
-                pairs.update((store, market) for store in selected if store not in previous_stores for market in markets)
-                record.marketplace_access = [UserMarketplaceAccessRecord(store_slug=store, marketplace=market) for store, market in sorted(pairs)]
+                pairs.update(
+                    (store, market)
+                    for store in selected
+                    if store not in previous_stores
+                    for market in markets
+                )
+                record.marketplace_access = [
+                    UserMarketplaceAccessRecord(store_slug=store, marketplace=market)
+                    for store, market in sorted(pairs)
+                ]
             record.store_access = [UserStoreAccessRecord(store_slug=slug) for slug in selected]
 
     def set_role(self, command: UserRoleChange) -> None:
@@ -256,9 +262,7 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         if command.access_profile is None:
             record.access_profile_record = None
         elif record.access_profile_record is None:
-            record.access_profile_record = UserAccessProfileRecord(
-                profile=command.access_profile.value
-            )
+            record.access_profile_record = UserAccessProfileRecord(profile=command.access_profile.value)
         else:
             record.access_profile_record.profile = command.access_profile.value
         record.marketplace_access = [

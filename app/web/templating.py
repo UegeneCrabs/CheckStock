@@ -1,12 +1,10 @@
 import html
 from string import Template
 
-from app import auth, db, health
-from app.access_control import accessible_marketplaces
-from app.config import settings
-from app.dto.identity import SectionAccessLevel, SectionName
-from app.formatting import format_dt
-from app.section_access import (
+from app import db
+from app.access import auth
+from app.access.access_control import accessible_marketplaces
+from app.access.sections import (
     SECTION_GROUPS,
     SECTION_LABELS,
     SECTION_PARENTS,
@@ -15,7 +13,11 @@ from app.section_access import (
     has_access,
     section_path,
 )
-from app.stores import STORES
+from app.config import settings
+from app.core import health
+from app.core.formatting import format_dt
+from app.core.stores import STORES
+from app.dto.identity import SectionAccessLevel, SectionName
 from app.wb import token_watch
 from app.web.access import accessible_store_slugs
 
@@ -194,6 +196,7 @@ def render_page(
     current_access = (
         access_level(user, current_section) if current_section is not None else SectionAccessLevel.WRITE
     )
+
     def hidden(allowed: bool) -> str:
         return "" if allowed else " hidden"
 
@@ -253,7 +256,10 @@ def render_page(
         header=header,
         content_class=html.escape(content_class),
         content=render_system_alerts(user, alerts) + content,
-        section=(SECTION_PARENTS.get(current_section, current_section).value
-                 if current_section is not None and not active.startswith("admin") else active),
+        section=(
+            SECTION_PARENTS.get(current_section, current_section).value
+            if current_section is not None and not active.startswith("admin")
+            else active
+        ),
         access_level=current_access.value,
     )

@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 
 from app import db
-from app.stores import STORES
+from app.core.stores import STORES
 from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
 

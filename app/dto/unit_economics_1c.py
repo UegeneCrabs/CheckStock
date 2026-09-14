@@ -8,7 +8,13 @@ from app.dto.common import DtoModel
 TargetRoiCode = Literal["A", "B", "C", "D", "F", "NEW", "U"]
 TargetRoiPercent = Annotated[float, Field(ge=0, le=1_000_000, allow_inf_nan=False)]
 DEFAULT_TARGET_ROI_BY_CODE: dict[TargetRoiCode, float] = {
-    "A": 20, "B": 30, "C": 50, "D": 0, "F": 50, "NEW": 50, "U": 20,
+    "A": 20,
+    "B": 30,
+    "C": 50,
+    "D": 0,
+    "F": 50,
+    "NEW": 50,
+    "U": 20,
 }
 
 

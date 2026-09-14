@@ -3,9 +3,9 @@
 import json
 from pathlib import Path
 
+from app.core.stores import STORES
 from app.infrastructure.database import DatabaseConnection
 from app.repositories.core import get_connection
-from app.stores import STORES
 
 ASSORTMENT_PATH = Path(__file__).resolve().parents[1] / "yandex" / "unit_economics_assortment.json"
 

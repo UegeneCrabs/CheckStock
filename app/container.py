@@ -2,16 +2,16 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from app.access.security import Pbkdf2PasswordService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
 from app.config import settings
-from app.inbound_supplies import build_service as build_inbound_service
 from app.infrastructure.database import database_for_path
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.repositories import core
-from app.security import Pbkdf2PasswordService
+from app.stock.inbound_supplies import build_service as build_inbound_service
 
 
 class ApplicationContainer:
@@ -34,8 +34,6 @@ class ApplicationContainer:
         database = database_for_path(self._database_path())
         return SqlAlchemyIdentityUnitOfWork(database.session_factory)
 
-
     def _stock_unit_of_work(self) -> SqlAlchemyStockUnitOfWork:
         database = database_for_path(self._database_path())
         return SqlAlchemyStockUnitOfWork(database.session_factory)
-

@@ -4,7 +4,7 @@ Operation history is deliberately immutable. The alias records the relationship
 between the historical article and its current seller offer.
 """
 
-from app.catalog_identity import barcodes
+from app.stock.catalog_identity import barcodes
 
 
 def reconcile_renames(conn, store, marketplace, existing, incoming, now):

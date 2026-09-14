@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from app.domain import MOSCOW_TIMEZONE
+from app.core.domain import MOSCOW_TIMEZONE
 from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.repositories import yandex_source_values, yandex_storefront

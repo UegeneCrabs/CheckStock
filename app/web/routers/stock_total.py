@@ -4,9 +4,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 
-from app import stock_total as stock_total_service
-from app.access_control import ActionPermission, profile_has_permission, scope_pairs
-from app.stores import STORES
+from app.access.access_control import ActionPermission, profile_has_permission, scope_pairs
+from app.core.stores import STORES
+from app.stock import total as stock_total_service
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num
 from app.web.downloads import _download_headers

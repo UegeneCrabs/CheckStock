@@ -8,17 +8,17 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app import db
-from app import unit_economics_1c as economics
-from app import unit_economics_1c_target_price_export as target_export
-from app import unit_economics_1c_target_prices as pricing
-from app.access_control import accessible_stores, has_scope
+from app.access.access_control import accessible_stores, has_scope
+from app.access.sections import has_access as has_section_access
+from app.core.stores import STORES
 from app.dto.identity import Role, SectionAccessLevel, SectionName, coerce_user
 from app.dto.unit_economics_1c import (
     UnitEconomics1CProductTargetRequest,
     UnitEconomics1CTargetPriceExportRequest,
 )
-from app.section_access import has_access as has_section_access
-from app.stores import STORES
+from app.economics.wb import calculations as economics
+from app.economics.wb import target_price_export as target_export
+from app.economics.wb import target_prices as pricing
 from app.web.downloads import _download_headers
 from app.web.routers.unit_economics import _manager_matches_user, _report_historical_economics
 from app.web.templating import fill_template, render_page
@@ -129,17 +129,14 @@ async def target_price_data(request: Request):
                         ),
                         "orders_count": int(product_metrics.get("orders_count") or 0),
                         "buyout_percent": float(product_metrics.get("buyout_percent") or 0),
-                        "buyout_default_applied": bool(
-                            product_metrics.get("buyout_default_applied")
-                        ),
+                        "buyout_default_applied": bool(product_metrics.get("buyout_default_applied")),
                         "drr": product_metrics.get("drr"),
                         "advertising_per_unit": product_metrics.get("spend_per_order"),
                     }
                 )
                 product_weekly["average_order_price"] = (
                     product_weekly["orders_amount"] / product_weekly["orders_count"]
-                    if product_weekly["orders_count"] > 0
-                    and product_weekly["orders_amount"] > 0
+                    if product_weekly["orders_count"] > 0 and product_weekly["orders_amount"] > 0
                     else None
                 )
                 daily_advertising = {
@@ -216,11 +213,13 @@ async def _target_product_error(request: Request, store_slug: str, article: str)
         return JSONResponse({"ok": False, "error": "Товар не найден в актуальном каталоге"}, status_code=404)
     user = coerce_user(request.state.user)
     if user is not None and user.role == Role.USER:
-        references = await run_in_threadpool(
-            db.get_unit_economics_1c_product_reference_rows, (store_slug,)
-        )
+        references = await run_in_threadpool(db.get_unit_economics_1c_product_reference_rows, (store_slug,))
         manager = next(
-            (str(item.get("manager") or "") for item in references if str(item.get("article") or "") == article),
+            (
+                str(item.get("manager") or "")
+                for item in references
+                if str(item.get("article") or "") == article
+            ),
             "",
         )
         if not _manager_matches_user(manager, user):
@@ -228,9 +227,13 @@ async def _target_product_error(request: Request, store_slug: str, article: str)
     return None
 
 
-def _save_product_targets(request: Request, store_slug: str, article: str,
-                          target_drr_percent: float | None,
-                          target_roi_percent: float | None):
+def _save_product_targets(
+    request: Request,
+    store_slug: str,
+    article: str,
+    target_drr_percent: float | None,
+    target_roi_percent: float | None,
+):
     updated_at = datetime.now(UTC).isoformat()
     user = request.state.user
     saved = db.save_unit_economics_1c_product_targets(

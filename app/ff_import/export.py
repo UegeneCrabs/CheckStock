@@ -1,7 +1,7 @@
 import io
 
 from app import db
-from app.formatting import format_dt
+from app.core.formatting import format_dt
 
 
 def _safe_filename(value: str) -> str:

@@ -119,7 +119,6 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
     if without_advertising:
         advertising = Decimal(0)
     elif values.get("advertising_mode", "actual") == "plan":
-
         advertising = price * d("plan_drr") / 100
     elif advertising_spend is None or orders_count is None:
         return {

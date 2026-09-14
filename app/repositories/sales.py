@@ -127,7 +127,9 @@ def get_fbs_order_totals_for_period(
 ) -> dict[str, int]:
     """Return FBS units grouped by article for the exact order period and statuses."""
     normalized_statuses = tuple(
-        dict.fromkeys(str(status or "").strip().casefold() for status in statuses if str(status or "").strip())
+        dict.fromkeys(
+            str(status or "").strip().casefold() for status in statuses if str(status or "").strip()
+        )
     )
     if not normalized_statuses:
         return {}

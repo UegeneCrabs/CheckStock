@@ -33,6 +33,7 @@ class PermissionName(StrEnum):
 
 class SectionName(StrEnum):
     """Persisted keys; navigable sections are defined by section_access.SECTION_PATHS."""
+
     SALES = "sales"
     DECISION_CENTER = "decision_center"
     EPHEMERIDES = "ephemerides"

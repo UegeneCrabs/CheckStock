@@ -5,10 +5,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
-from app import auth
+from app.access import auth
+from app.access.sections import landing_path
 from app.config import settings
 from app.dto.identity import Credentials, SessionToken, UserId
-from app.section_access import landing_path
 from app.web.dependencies import IdentityServiceDependency
 from app.web.templating import fill_template
 

@@ -3,11 +3,11 @@ import html
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from app.access.identity_policy import ROLE_LABELS, can_manage_users
+from app.access.sections import SECTION_GROUPS, SECTION_LABELS, access_level, has_access, section_path
+from app.core.formatting import format_dt
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
-from app.formatting import format_dt
-from app.identity_policy import ROLE_LABELS, can_manage_users
-from app.section_access import SECTION_GROUPS, SECTION_LABELS, access_level, has_access, section_path
-from app.stores import STORES
 from app.web.access import accessible_store_slugs
 from app.web.templating import fill_template, render_page
 
@@ -72,7 +72,9 @@ async def profile_page(request: Request):
     stock_edit_allowed = (
         user.can_edit_stock and access_level(user, SectionName.STOCK_BALANCES) is SectionAccessLevel.WRITE
     )
-    users_manage_allowed = can_manage_users(user) and has_access(user, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE)
+    users_manage_allowed = can_manage_users(user) and has_access(
+        user, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
+    )
     content = fill_template(
         "profile_content.html",
         full_name=html.escape(user.full_name),

@@ -112,7 +112,7 @@ services:
       CHECKSTOCK_WATCHDOG_INTERVAL_SECONDS: ${CHECKSTOCK_WATCHDOG_INTERVAL_SECONDS:-60}
       CHECKSTOCK_WATCHDOG_TIMEOUT_SECONDS: ${CHECKSTOCK_WATCHDOG_TIMEOUT_SECONDS:-10}
       CHECKSTOCK_WATCHDOG_FAILURE_THRESHOLD: ${CHECKSTOCK_WATCHDOG_FAILURE_THRESHOLD:-3}
-    command: ["python", "-m", "scripts.health_watchdog"]
+    command: ["python", "-m", "scripts.ops.health_watchdog"]
     healthcheck:
       disable: true
     read_only: true

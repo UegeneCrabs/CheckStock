@@ -70,7 +70,7 @@ GOGOL — 6, ROCKKIDDO — 6.
 статусы. До первой успешной проверки в колонке стоит «— / Не проверен».
 После проверки отображаются «Новинка» или «Обычный»; фильтр «Новинки» включён.
 
-Ручной запуск: `.venv/Scripts/python.exe scripts/sync_unit_economics_yandex.py --store rimili --source novelty`.
+Ручной запуск: `.venv/Scripts/python.exe scripts/sync/sync_unit_economics_yandex.py --store rimili --source novelty`.
 
 ### Метрики
 
@@ -167,17 +167,17 @@ GOGOL — 6, ROCKKIDDO — 6.
 
 При ошибке API предыдущие успешные данные сохраняются. Текущие снимки источников
 и их ошибки хранятся в `unit_economics_yandex_snapshots`. Загрузка не меняет
-`sales_order_lines`, RNP и таблицы WB. Существующие переключатели общей старой
+`sales_order_lines` и таблицы WB. Существующие переключатели общей старой
 задачи переносятся на независимые задачи; новые выкуп и закрытие дня наследуют
 настройки заказов один раз, без изменения уже настроенных переключателей.
 
 Ручной запуск отдельного источника:
 
 ```powershell
-.venv/Scripts/python.exe scripts/sync_unit_economics_yandex.py --store rimili --source orders
-.venv/Scripts/python.exe scripts/sync_unit_economics_yandex.py --store rimili --source reputation
-.venv/Scripts/python.exe scripts/sync_unit_economics_yandex.py --store rimili --source advertising
-.venv/Scripts/python.exe scripts/sync_unit_economics_yandex.py --store rimili --source buyout
+.venv/Scripts/python.exe scripts/sync/sync_unit_economics_yandex.py --store rimili --source orders
+.venv/Scripts/python.exe scripts/sync/sync_unit_economics_yandex.py --store rimili --source reputation
+.venv/Scripts/python.exe scripts/sync/sync_unit_economics_yandex.py --store rimili --source advertising
+.venv/Scripts/python.exe scripts/sync/sync_unit_economics_yandex.py --store rimili --source buyout
 ```
 
 Ключи берутся из существующих настроек ЯМ. При неоднозначном кабинете нужен

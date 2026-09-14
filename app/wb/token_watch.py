@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from app import db
-from app.stores import STORES
+from app.core.stores import STORES
 from app.wb import tokens as wb_tokens
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ def refresh_token_info(store_slugs: tuple[str, ...] | None = None) -> int:
     processed = 0
 
     with db.WRITE_LOCK:
-        for slug in (tuple(STORES) if store_slugs is None else store_slugs):
+        for slug in tuple(STORES) if store_slugs is None else store_slugs:
             if slug not in STORES:
                 continue
             if not wb_tokens.has_token(slug):

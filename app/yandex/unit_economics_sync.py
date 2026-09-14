@@ -13,15 +13,20 @@ from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from threading import Lock
 
-from app import sales
 from app.config import settings
-from app.domain import MOSCOW_TIMEZONE
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.repositories import unit_economics_yandex as repository
-from app.stores import STORES
+from app.stock import sales
 from app.yandex import api, tokens
 
 logger = logging.getLogger(__name__)
-SYNC_INTERVAL_SECONDS = {"orders": 15 * 60, "reputation": 24 * 60 * 60, "advertising": 15 * 60, "buyout": 4 * 60 * 60}
+SYNC_INTERVAL_SECONDS = {
+    "orders": 15 * 60,
+    "reputation": 24 * 60 * 60,
+    "advertising": 15 * 60,
+    "buyout": 4 * 60 * 60,
+}
 RECENT_ORDER_DAYS = 7
 SOURCES = ("orders", "reputation", "advertising", "buyout")
 _REPORT_LOCKS: dict[int, Lock] = {}
@@ -104,8 +109,6 @@ def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier
         try:
             return _load_report(api_key, report, payload, sheet, identifier)
         finally:
-
-
             _REPORT_LAST_REQUEST[key] = time.monotonic()
 
 
@@ -160,7 +163,6 @@ def load_advertising(api_key: str, business_id: int, start: date, end: date) -> 
             item["spend"] += _number(row.get(spend))
             item["impressions"] += int(_number(row.get(impressions)))
 
-
             click_count = row[clicks]
             item["clicks"] += int(_number(0 if click_count is None else click_count))
     return [
@@ -186,7 +188,9 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
             continue
         item = grouped[(line["article"], day)]
         scheme = "FBY" if line["scheme"] == "fbo" else "FBS"
-        scheme_data = item.setdefault("schemes", {}).setdefault(scheme, {"orders_count": 0, "orders_amount": 0})
+        scheme_data = item.setdefault("schemes", {}).setdefault(
+            scheme, {"orders_count": 0, "orders_amount": 0}
+        )
         scheme_data["orders_count"] += line["quantity"]
         scheme_data["orders_amount"] += line["order_amount"]
         for field, source in (
@@ -202,9 +206,18 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
 
 def load_buyout(api_key: str, business_id: int, start: date, end: date) -> list[dict]:
     """Use creation-date cohorts, including returns in WB's cancellation denominator."""
-    rows = load_report(api_key, "shows-sales", {
-        "businessId": business_id, "dateFrom": start.isoformat(), "dateTo": end.isoformat(), "grouping": "OFFERS",
-    }, "sales_funnel_report", "offerId")
+    rows = load_report(
+        api_key,
+        "shows-sales",
+        {
+            "businessId": business_id,
+            "dateFrom": start.isoformat(),
+            "dateTo": end.isoformat(),
+            "grouping": "OFFERS",
+        },
+        "sales_funnel_report",
+        "offerId",
+    )
     grouped = defaultdict(lambda: {"buyout_count": 0, "cancel_count": 0, "return_count": 0})
     for row in rows:
         article = str(row["offerId"] or "").strip()
@@ -223,19 +236,30 @@ def load_buyout(api_key: str, business_id: int, start: date, end: date) -> list[
     result = []
     for article, values in grouped.items():
         denominator = sum(values.values())
-        result.append({"article": article, **values,
-                       "buyout_percent": round(values["buyout_count"] / denominator * 100, 2) if denominator else 0.0})
+        result.append(
+            {
+                "article": article,
+                **values,
+                "buyout_percent": round(values["buyout_count"] / denominator * 100, 2)
+                if denominator
+                else 0.0,
+            }
+        )
     return result
 
 
-def sync_store(store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False) -> dict:
+def sync_store(
+    store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False
+) -> dict:
     if store_slug not in STORES or source not in SOURCES:
         raise ValueError("Неизвестный кабинет или источник юнит-экономики ЯМ")
     with _STORE_LOCKS[(store_slug, source)]:
         return _sync_store(store_slug, source, today, previous_day=previous_day)
 
 
-def _sync_store(store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False) -> dict:
+def _sync_store(
+    store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False
+) -> dict:
     """Refresh exactly one source without requesting or changing the other snapshots.
 
     Seed the oldest completed day once, so a first installation can display a full week."""
@@ -272,10 +296,14 @@ def _sync_store(store_slug: str, source: str, today: date | None = None, *, prev
             rows = []
             for day in repository.days_between(start.isoformat(), end.isoformat()):
                 current = date.fromisoformat(day)
-                daily = [{**row, "day": day} for row in load_advertising(api_key, business_id, current, current)]
+                daily = [
+                    {**row, "day": day} for row in load_advertising(api_key, business_id, current, current)
+                ]
                 repository.save_daily(store_slug, source, daily, day, day, datetime.now(UTC).isoformat())
                 rows.extend(daily)
-        repository.save_snapshot(store_slug, source, rows, start.isoformat(), end.isoformat(), datetime.now(UTC).isoformat())
+        repository.save_snapshot(
+            store_slug, source, rows, start.isoformat(), end.isoformat(), datetime.now(UTC).isoformat()
+        )
         return {"ok": True, "source": source, "rows": len(rows)}
     except Exception as error:
         message = str(error)[:700]
@@ -287,12 +315,26 @@ def _sync_store(store_slug: str, source: str, today: date | None = None, *, prev
 def sync_all(source: str, store_slugs: tuple[str, ...] | None = None) -> dict:
     if source not in SOURCES:
         raise ValueError("Неизвестный источник юнит-экономики ЯМ")
-    stores = [slug for slug in (tuple(STORES) if store_slugs is None else store_slugs) if tokens.has_credentials(slug)]
+    stores = [
+        slug
+        for slug in (tuple(STORES) if store_slugs is None else store_slugs)
+        if tokens.has_credentials(slug)
+    ]
     with ThreadPoolExecutor(max_workers=max(1, min(len(stores), 6))) as executor:
         return dict(zip(stores, executor.map(lambda slug: sync_store(slug, source), stores), strict=True))
 
 
 def sync_previous_day_all(store_slugs: tuple[str, ...] | None = None) -> dict:
-    stores = [slug for slug in (tuple(STORES) if store_slugs is None else store_slugs) if tokens.has_credentials(slug)]
+    stores = [
+        slug
+        for slug in (tuple(STORES) if store_slugs is None else store_slugs)
+        if tokens.has_credentials(slug)
+    ]
     with ThreadPoolExecutor(max_workers=max(1, min(len(stores), 6))) as executor:
-        return dict(zip(stores, executor.map(lambda slug: sync_store(slug, "orders", previous_day=True), stores), strict=True))
+        return dict(
+            zip(
+                stores,
+                executor.map(lambda slug: sync_store(slug, "orders", previous_day=True), stores),
+                strict=True,
+            )
+        )

@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 
 from app import db
-from app.stores import STORES
+from app.core.stores import STORES
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 

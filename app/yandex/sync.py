@@ -2,9 +2,9 @@ import logging
 from datetime import UTC, datetime
 
 from app import db
-from app.fulfillment_names import fulfillment_lookup, normalize
+from app.core.stores import STORES
 from app.repositories.stock_snapshot import replace_snapshot
-from app.stores import STORES
+from app.stock.fulfillment_names import fulfillment_lookup, normalize
 from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
 

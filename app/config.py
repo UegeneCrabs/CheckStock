@@ -50,8 +50,6 @@ def _env_int(name: str, default: int, *, minimum: int = 0, maximum: int | None =
     return parsed
 
 
-
-
 def _env_choice(
     name: str,
     default: str,
@@ -166,7 +164,9 @@ class Settings(BaseModel):
             database_busy_timeout_ms=_env_int("CHECKSTOCK_DB_BUSY_TIMEOUT_MS", 30_000, minimum=1),
             templates_dir=Path(os.getenv("CHECKSTOCK_TEMPLATES_DIR", base_dir / "templates")),
             static_dir=Path(os.getenv("CHECKSTOCK_STATIC_DIR", base_dir / "static")),
-            agent_tokens_path=Path(os.getenv("CHECKSTOCK_AGENT_TOKENS_PATH", base_dir / "secrets" / "chatgpt_tokens.json")),
+            agent_tokens_path=Path(
+                os.getenv("CHECKSTOCK_AGENT_TOKENS_PATH", base_dir / "secrets" / "chatgpt_tokens.json")
+            ),
             admin_seed_path=Path(
                 os.getenv("CHECKSTOCK_ADMIN_SEED_PATH", base_dir / "secrets" / "admin_seed.json")
             ),
@@ -188,7 +188,9 @@ class Settings(BaseModel):
             log_level=log_level,
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
-            inbound_sync_interval_seconds=_env_int("CHECKSTOCK_INBOUND_SYNC_INTERVAL_SECONDS", 1800, minimum=300),
+            inbound_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_INBOUND_SYNC_INTERVAL_SECONDS", 1800, minimum=300
+            ),
             funnel_orders_sync_enabled=_env_bool("CHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED", True),
             unit_economics_1c_price_sync_enabled=_env_bool(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_ENABLED", True
@@ -197,12 +199,8 @@ class Settings(BaseModel):
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR", 2, maximum=23
             ),
             ftp_export_enabled=_env_bool("CHECKSTOCK_FTP_EXPORT_ENABLED", True),
-            ftp_export_start_hour=_env_int(
-                "CHECKSTOCK_FTP_EXPORT_START_HOUR", 3, maximum=23
-            ),
-            ftp_export_start_minute=_env_int(
-                "CHECKSTOCK_FTP_EXPORT_START_MINUTE", 15, maximum=59
-            ),
+            ftp_export_start_hour=_env_int("CHECKSTOCK_FTP_EXPORT_START_HOUR", 3, maximum=23),
+            ftp_export_start_minute=_env_int("CHECKSTOCK_FTP_EXPORT_START_MINUTE", 15, maximum=59),
             ftp_export_deadline_hour=_env_int(
                 "CHECKSTOCK_FTP_EXPORT_DEADLINE_HOUR", 6, minimum=1, maximum=23
             ),
@@ -229,12 +227,8 @@ class Settings(BaseModel):
                     "no": "off",
                 },
             ),
-            ftp_mode=_env_choice(
-                "CHECKSTOCK_FTP_MODE", "auto", {"auto", "passive", "active"}
-            ),
-            ftp_prot=_env_choice(
-                "CHECKSTOCK_FTP_PROT", "auto", {"auto", "private", "clear"}
-            ),
+            ftp_mode=_env_choice("CHECKSTOCK_FTP_MODE", "auto", {"auto", "passive", "active"}),
+            ftp_prot=_env_choice("CHECKSTOCK_FTP_PROT", "auto", {"auto", "private", "clear"}),
             token_check_interval_seconds=_env_int(
                 "CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS", 24 * 60 * 60, minimum=1
             ),

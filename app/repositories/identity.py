@@ -1,6 +1,6 @@
+from app.core.stores import STORES
 from app.infrastructure.database import DatabaseConnection, DatabaseRow
 from app.repositories.core import get_connection
-from app.stores import STORES
 
 ROLES = ["superadmin", "admin", "user"]
 

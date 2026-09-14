@@ -15,13 +15,13 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.access_control import accessible_stores
-from app.agent_access import resolve_credential
+from app.access.access_control import accessible_stores
+from app.access.sections import has_access
+from app.agents.access import resolve_credential
 from app.config import settings
-from app.domain import MOSCOW_TIMEZONE
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.dto.identity import SectionName, User, UserId
-from app.section_access import has_access
-from app.stores import STORES
 from app.web.routers.unit_economics import _unit_economics_1c_unit_profit_report_data
 
 PREFIX = "/api/agent/v1"
@@ -110,12 +110,17 @@ class LossReport(BaseModel):
 @router.get("/stores", operation_id="listAnalyticsStores", response_model=list[StoreInfo])
 async def stores(user: Employee):
     """List accessible stores and marketplaces. Permissions do not imply data is loaded."""
-    from app.access_control import accessible_marketplaces
+    from app.access.access_control import accessible_marketplaces
 
-    return [StoreInfo(slug=slug, name=STORES[slug]["name"],
-                      marketplace=next(iter(accessible_marketplaces(user, slug)), "WB"),
-                      marketplaces=list(accessible_marketplaces(user, slug)))
-            for slug in accessible_stores(user)]
+    return [
+        StoreInfo(
+            slug=slug,
+            name=STORES[slug]["name"],
+            marketplace=next(iter(accessible_marketplaces(user, slug)), "WB"),
+            marketplaces=list(accessible_marketplaces(user, slug)),
+        )
+        for slug in accessible_stores(user)
+    ]
 
 
 def finite_number(value: object) -> float | None:
@@ -185,8 +190,7 @@ async def losses(request: Request, user: Employee, query: Annotated[LossQuery, Q
     """
     from app.web.routers.agent_full import guard
 
-    guard(user, SectionName.UNIT_ECONOMICS_WB,
-          SimpleNamespace(store=query.store, marketplace="WB"))
+    guard(user, SectionName.UNIT_ECONOMICS_WB, SimpleNamespace(store=query.store, marketplace="WB"))
     if query.date_from > query.date_to or (query.date_to - query.date_from).days >= 90:
         raise HTTPException(422, "Choose an ordered period of 1 to 90 days")
     if query.date_to > datetime.now(MOSCOW_TIMEZONE).date():
@@ -214,7 +218,13 @@ async def action_schema():
     schema = get_openapi(title="CheckStock employee analytics", version="2.0.0", routes=router.routes)
     for path, item in schema["paths"].items():
         name = path.rsplit("/", 1)[-1]
-        fields = allowed_fields(name) if name in SPECS else {"store", "marketplace"} if name == "data-status" else None
+        fields = (
+            allowed_fields(name)
+            if name in SPECS
+            else {"store", "marketplace"}
+            if name == "data-status"
+            else None
+        )
         if fields is not None:
             item["get"]["parameters"] = [p for p in item["get"].get("parameters", []) if p["name"] in fields]
         for parameter in item["get"].get("parameters", []):
@@ -230,21 +240,32 @@ async def action_schema():
                     parameter["schema"].pop("default", None)
             if name in PERIOD_REPORTS and parameter["name"] in {"date_from", "date_to"}:
                 parameter["required"] = True
-                parameter["description"] = "Required inclusive date in YYYY-MM-DD format. Supply both dates; at most 90 days."
+                parameter["description"] = (
+                    "Required inclusive date in YYYY-MM-DD format. Supply both dates; at most 90 days."
+                )
             if name == "product-details" and parameter["name"] == "article":
                 parameter["required"] = True
             if parameter["name"] == "store" and (name in SPECS or name == "data-status"):
                 parameter["required"] = name == "data-status"
                 parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 100}
-                parameter["description"] = "Optional with exact article: server resolves store automatically. Omit unknown store; never guess." if name in SPECS else "Store slug"
+                parameter["description"] = (
+                    "Optional with exact article: server resolves store automatically. Omit unknown store; never guess."
+                    if name in SPECS
+                    else "Store slug"
+                )
         if name in SPECS:
-            item["get"]["description"] = item["get"].get("description", "") + " With article, omit unknown store for automatic resolution; see context.store_resolution if ambiguous."
+            item["get"]["description"] = (
+                item["get"].get("description", "")
+                + " With article, omit unknown store for automatic resolution; see context.store_resolution if ambiguous."
+            )
         if name == "profit-calculator":
             for parameter in item["get"]["parameters"]:
                 if parameter["name"] == "article":
                     parameter["required"] = True
                     parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 100}
-                    parameter["description"] = "Exact product article, e.g. 856546716. Ask the user if missing."
+                    parameter["description"] = (
+                        "Exact product article, e.g. 856546716. Ask the user if missing."
+                    )
     public_url = os.getenv("CHECKSTOCK_AGENT_PUBLIC_URL", "").strip().rstrip("/")
     schema["servers"] = [{"url": public_url}] if public_url else []
     return schema

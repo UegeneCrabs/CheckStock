@@ -1,6 +1,7 @@
 import html
 
-from app import db, health
+from app import db
+from app.core import health
 from app.web.common import _cell, _fmt_num
 from app.yandex import sync as ya_sync
 

@@ -270,7 +270,7 @@ def _apply_entries(
     negative_skipped = negative_skipped or []
 
     catalog = db.get_catalog_items(store_slug, marketplace)
-    from app.catalog_identity import CatalogIndex, CatalogMatchError
+    from app.stock.catalog_identity import CatalogIndex, CatalogMatchError
 
     index = CatalogIndex(catalog)
     meta_by_article = {item["article"]: item for item in catalog}

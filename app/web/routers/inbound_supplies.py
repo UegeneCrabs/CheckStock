@@ -6,12 +6,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.access_control import ActionPermission, profile_has_permission, scope_pairs
+from app.access.access_control import ActionPermission, profile_has_permission, scope_pairs
+from app.access.sections import access_level
 from app.config import settings
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.inbound_supplies import STAGE_LABELS, InboundSyncRequest
-from app.section_access import access_level
-from app.stores import STORES
 from app.web.dependencies import ContainerDependency
 from app.web.templating import fill_template, render_page
 

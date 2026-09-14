@@ -1,4 +1,4 @@
-from app.domain import DEFAULT_MARKETPLACE, MARKETPLACES
+from app.core.domain import DEFAULT_MARKETPLACE, MARKETPLACES
 from app.repositories.access_control import (
     create_access_request,
     decide_access_request,

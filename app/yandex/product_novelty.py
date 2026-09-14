@@ -3,10 +3,10 @@
 import logging
 from datetime import UTC, date, datetime
 
-from app.domain import MOSCOW_TIMEZONE
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.repositories import unit_economics_yandex as snapshots
 from app.repositories import yandex_product_statuses as repository
-from app.stores import STORES
 from app.yandex import tokens, unit_economics_sync
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,6 @@
 from app.application.inbound_supplies import InboundSourceError
 from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSupply
-from app.inbound_common import MAX_PAGES, count, identifier, object_row, recent, rows
+from app.stock.inbound_common import MAX_PAGES, count, identifier, object_row, recent, rows
 from app.yandex import api
 
 STATES = {

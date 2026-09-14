@@ -53,11 +53,15 @@ def showcase_url(offer: dict, business_id: int) -> str | None:
 def load_mappings(key: str, business_id: int, articles: list[str]) -> dict[str, dict]:
     result = {}
     for offset in range(0, len(articles), 200):
-        wanted = articles[offset:offset + 200]
+        wanted = articles[offset : offset + 200]
         page_token, seen = "", set()
         while True:
-            data = api.request(f"/v2/businesses/{business_id}/offer-mappings", key,
-                               payload={"offerIds": wanted}, params={"limit": 200, "page_token": page_token})
+            data = api.request(
+                f"/v2/businesses/{business_id}/offer-mappings",
+                key,
+                payload={"offerIds": wanted},
+                params={"limit": 200, "page_token": page_token},
+            )
             for row in data.get("offerMappings") or []:
                 article = str((row.get("offer") or {}).get("offerId") or "")
                 if article in wanted:
@@ -106,11 +110,15 @@ def prepare(selection: set[tuple[str, str]] | None = None) -> tuple[list[dict], 
                 repository.record(target, result)
                 skipped.append(result)
                 continue
-            target.update({
-                "name": catalog[article].get("name"), "business_id": business_id,
-                "market_sku": str(mapping.get("marketSku") or catalog[article].get("mp_sku") or ""),
-                "card_id": card_id(url), "url": url,
-            })
+            target.update(
+                {
+                    "name": catalog[article].get("name"),
+                    "business_id": business_id,
+                    "market_sku": str(mapping.get("marketSku") or catalog[article].get("mp_sku") or ""),
+                    "card_id": card_id(url),
+                    "url": url,
+                }
+            )
             repository.save_target(target)
             targets.append(target)
 
@@ -120,9 +128,15 @@ def prepare(selection: set[tuple[str, str]] | None = None) -> tuple[list[dict], 
                 values = {}
                 articles_to_price = list(store_targets)
                 for offset in range(0, len(articles_to_price), 200):
-                    prices = api.request(f"/v2/businesses/{business_id}/offer-prices", key,
-                                         payload={"offerIds": articles_to_price[offset:offset + 200]}, params={"limit": 200})
-                    values.update({str(p.get("offerId")): number(p.get("price")) for p in prices.get("offers") or []})
+                    prices = api.request(
+                        f"/v2/businesses/{business_id}/offer-prices",
+                        key,
+                        payload={"offerIds": articles_to_price[offset : offset + 200]},
+                        params={"limit": 200},
+                    )
+                    values.update(
+                        {str(p.get("offerId")): number(p.get("price")) for p in prices.get("offers") or []}
+                    )
                 for article, target in store_targets.items():
                     repository.seller_price(target, values.get(article))
             except Exception:
@@ -207,15 +221,32 @@ def parse_prices(html: str, url: str, target: dict) -> dict:
         value = number(prices["price"])
         currency = prices["price"].get("currency", "RUR")
         if value is not None and currency in ("RUR", "RUB"):
-            matches.append({"status": "ok", "buyer_price": value,
-                            "currency": currency, "offer_key": str(key)})
+            matches.append(
+                {"status": "ok", "buyer_price": value, "currency": currency, "offer_key": str(key)}
+            )
     if matches:
         if len({item["buyer_price"] for item in matches}) != 1:
-            return {"status": "ambiguous", "buyer_price": None, "message": "Несколько цен выбранного продавца"}
+            return {
+                "status": "ambiguous",
+                "buyer_price": None,
+                "message": "Несколько цен выбранного продавца",
+            }
         return matches[0]
     text = " ".join(parsed.text).lower()
-    sold_out = any(t in text for t in (
-        "нет в продаже", "продавец удалил этот товар", "товар закончился", "товар распродан", "разобрали в магазине",
-    ))
-    return {"status": "out_of_stock" if sold_out else "price_missing", "buyer_price": None,
-            "message": "Товар недоступен на витрине выбранного продавца" if sold_out else "Цена выбранного продавца на странице не найдена"}
+    sold_out = any(
+        t in text
+        for t in (
+            "нет в продаже",
+            "продавец удалил этот товар",
+            "товар закончился",
+            "товар распродан",
+            "разобрали в магазине",
+        )
+    )
+    return {
+        "status": "out_of_stock" if sold_out else "price_missing",
+        "buyer_price": None,
+        "message": "Товар недоступен на витрине выбранного продавца"
+        if sold_out
+        else "Цена выбранного продавца на странице не найдена",
+    }

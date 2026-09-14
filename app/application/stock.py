@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from app.application.ports import StockRepository, StockUnitOfWorkFactory
-from app.catalog_identity import CatalogIndex, CatalogMatchError
+from app.core.errors import StockValidationError
 from app.dto.stock import (
     AddedFulfillmentItem,
     AddedFulfillmentItems,
@@ -32,7 +32,7 @@ from app.dto.stock import (
     TransferStockCommand,
     TransitActionResult,
 )
-from app.errors import StockValidationError
+from app.stock.catalog_identity import CatalogIndex, CatalogMatchError
 
 
 class StockMovementService:

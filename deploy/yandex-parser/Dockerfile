@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements-parser.txt \
 COPY app ./app
 COPY scripts ./scripts
 USER parser
-CMD ["xvfb-run", "-a", "python", "-u", "scripts/parse_yandex_storefront_prices.py", "--loop"]
+CMD ["xvfb-run", "-a", "python", "-u", "-m", "scripts.parsers.parse_yandex_storefront_prices", "--loop"]

@@ -280,9 +280,9 @@ def get_stock_overview(
     scope_clause = ""
     scope_params: list[str] = []
     if allowed_pairs is not None:
-        scope_clause = " AND (" + " OR ".join(
-            "(store_slug = ? AND marketplace = ?)" for _pair in allowed_pairs
-        ) + ")"
+        scope_clause = (
+            " AND (" + " OR ".join("(store_slug = ? AND marketplace = ?)" for _pair in allowed_pairs) + ")"
+        )
         for store_slug, marketplace in allowed_pairs:
             scope_params.extend((store_slug, marketplace))
     marketplaces_aggregate = (
@@ -323,9 +323,11 @@ def get_stock_overview(
     transit_scope_clause = ""
     transit_scope_params: list[str] = []
     if allowed_pairs is not None:
-        transit_scope_clause = " AND (" + " OR ".join(
-            "(batch.store_slug = ? AND batch.to_marketplace = ?)" for _pair in allowed_pairs
-        ) + ")"
+        transit_scope_clause = (
+            " AND ("
+            + " OR ".join("(batch.store_slug = ? AND batch.to_marketplace = ?)" for _pair in allowed_pairs)
+            + ")"
+        )
         for store_slug, marketplace in allowed_pairs:
             transit_scope_params.extend((store_slug, marketplace))
     transit_rows = conn.execute(
@@ -375,7 +377,5 @@ def get_stock_overview(
         item.setdefault("fulfillment_stock", 0)
         item.setdefault("transit_stock", 0)
         item.setdefault("last_sync", None)
-        item["total_stock"] = (
-            item["marketplace_stock"] + item["fulfillment_stock"] + item["transit_stock"]
-        )
+        item["total_stock"] = item["marketplace_stock"] + item["fulfillment_stock"] + item["transit_stock"]
     return result

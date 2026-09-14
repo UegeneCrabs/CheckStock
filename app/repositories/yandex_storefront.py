@@ -75,7 +75,13 @@ def record(target: dict, result: dict) -> None:
             connection.execute(
                 """UPDATE yandex_storefront_prices SET buyer_price=?, price_checked_at=?, currency=?
                 WHERE store_slug=? AND article=?""",
-                (result["buyer_price"], timestamp, result.get("currency", "RUR"), target["store_slug"], target["article"]),
+                (
+                    result["buyer_price"],
+                    timestamp,
+                    result.get("currency", "RUR"),
+                    target["store_slug"],
+                    target["article"],
+                ),
             )
         connection.commit()
 
@@ -98,8 +104,16 @@ def add_missing_catalog_item(store_slug: str, product: dict) -> None:
             (store_slug, marketplace, article, barcode, name, mp_sku, mp_updated_at, image_url, updated_at)
             VALUES (?, 'YANDEX MARKET', ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(store_slug, marketplace, article) DO NOTHING""",
-            (store_slug, product["article"], product["barcode"], product["name"],
-             str(product.get("market_sku") or "") or None, product.get("updated_at"), product.get("image_url"), now()),
+            (
+                store_slug,
+                product["article"],
+                product["barcode"],
+                product["name"],
+                str(product.get("market_sku") or "") or None,
+                product.get("updated_at"),
+                product.get("image_url"),
+                now(),
+            ),
         )
         connection.commit()
 
@@ -112,9 +126,13 @@ def refresh_assortment() -> None:
 
 def get_prices(store_slug: str) -> dict[str, dict]:
     with get_connection() as connection:
-        return {row["article"]: dict(row) for row in connection.execute(
-            "SELECT * FROM yandex_storefront_prices WHERE store_slug=?", (store_slug,),
-        )}
+        return {
+            row["article"]: dict(row)
+            for row in connection.execute(
+                "SELECT * FROM yandex_storefront_prices WHERE store_slug=?",
+                (store_slug,),
+            )
+        }
 
 
 def fresh(timestamp: str | None, at: datetime | None = None) -> bool:
@@ -124,8 +142,9 @@ def fresh(timestamp: str | None, at: datetime | None = None) -> bool:
         checked = datetime.fromisoformat(timestamp)
         current = at or datetime.now(UTC)
 
-        deadline = max(checked + timedelta(seconds=PRICE_MAX_AGE_SECONDS),
-                       next_run_at(checked) + timedelta(hours=1))
+        deadline = max(
+            checked + timedelta(seconds=PRICE_MAX_AGE_SECONDS), next_run_at(checked) + timedelta(hours=1)
+        )
         return checked <= current <= deadline
     except (ValueError, TypeError):
         return False
@@ -133,7 +152,9 @@ def fresh(timestamp: str | None, at: datetime | None = None) -> bool:
 
 def start_run(run_id: str) -> None:
     with WRITE_LOCK, get_connection() as connection:
-        connection.execute("INSERT INTO yandex_storefront_runs (run_id, started_at) VALUES (?, ?)", (run_id, now()))
+        connection.execute(
+            "INSERT INTO yandex_storefront_runs (run_id, started_at) VALUES (?, ?)", (run_id, now())
+        )
         connection.commit()
 
 

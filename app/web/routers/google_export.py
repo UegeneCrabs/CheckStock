@@ -8,16 +8,18 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app import auth, db, stock_sheet_export
-from app.domain import MOSCOW_TIMEZONE
-from app.formatting import format_dt
+from app import db
+from app.access import auth
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.formatting import format_dt
+from app.core.stores import STORES
+from app.exports import stock_sheet as stock_sheet_export
+from app.jobs.tracking import run_tracked
 from app.repositories.stock_sheet_export import (
     ExportTarget,
     MarketplaceSpreadsheet,
     StockSheetExportSettings,
 )
-from app.stores import STORES
-from app.sync_tracking import run_tracked
 from app.web.templating import fill_template
 
 router = APIRouter()
@@ -86,8 +88,8 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
     marketplace_sections = []
     combined_store_hint = (
         '<p class="panel-desc"><strong>TOYKA добавляется автоматически:</strong> '
-        'стоки, товары в пути и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. '
-        'Ручной запуск и расписание настраиваются у ROCKKIDDO.</p>'
+        "стоки, товары в пути и FBS-заказы суммируются с ROCKKIDDO и записываются в назначения этого магазина. "
+        "Ручной запуск и расписание настраиваются у ROCKKIDDO.</p>"
         if settings.store_slug == "rockkiddo"
         else ""
     )
@@ -107,8 +109,8 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" '
             'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
             '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:I будет полностью заменён: шапка в строке 2, товары — с строки 3. '
-            'A:G сохраняют прежний порядок; H — «В пути между ФФ», I — «В пути на склады МП». '
-            'Если H2:I заняты другими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>'
+            "A:G сохраняют прежний порядок; H — «В пути между ФФ», I — «В пути на склады МП». "
+            "Если H2:I заняты другими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>"
             '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
             f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace, "fbs_orders"))}" maxlength="200" '
@@ -119,7 +121,7 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             'data-export-kind="stocks">Выгрузить стоки</button>'
             f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
             'data-export-kind="fbs_orders">Выгрузить FBS-заказы</button>'
-            '</div>'
+            "</div>"
             "</section>"
         )
     return (
@@ -139,7 +141,9 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
         '<label><span>Время (Москва)</span><input class="input-control" type="time" name="run_time" '
         f'value="{_input(settings.run_time)}" required></label></div>'
         + combined_store_hint
-        + '<div class="integration-export-marketplaces">' + "".join(marketplace_sections) + '</div>'
+        + '<div class="integration-export-marketplaces">'
+        + "".join(marketplace_sections)
+        + "</div>"
         + f'<p class="export-status {status_class}" data-export-status role="status" aria-live="polite">{html.escape(status_text)}</p>'
         '<p class="integration-hint">Ручная выгрузка использует сохранённые настройки. После изменений сначала нажмите «Сохранить настройки».</p>'
         '<div class="export-actions"><button class="btn-primary" type="submit">Сохранить настройки</button>'
@@ -206,7 +210,7 @@ def _settings_from_form(
 @router.get("/admin/google-export", response_class=HTMLResponse)
 async def google_export_page(request: Request):
     _require_superadmin(request)
-    return RedirectResponse('/admin/integrations?tab=google', status_code=303)
+    return RedirectResponse("/admin/integrations?tab=google", status_code=303)
 
 
 async def render_google_export() -> str:

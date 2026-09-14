@@ -3,6 +3,7 @@ from types import TracebackType
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import StockValidationError
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
     ApplyShipmentCommand,
@@ -20,7 +21,6 @@ from app.dto.stock import (
     StockQuantityQuery,
     TransitActionResult,
 )
-from app.errors import StockValidationError
 from app.infrastructure.orm import (
     CatalogArticleAliasRecord,
     CatalogBarcodeRecord,

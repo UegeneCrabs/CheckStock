@@ -1,7 +1,7 @@
 from app.application.inbound_supplies import InboundSourceError
 from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSupply
-from app.inbound_common import MAX_PAGES, count, identifier, object_row, recent, rows
 from app.ozon import api
+from app.stock.inbound_common import MAX_PAGES, count, identifier, object_row, recent, rows
 
 STATES = {
     "DATA_FILLING": ("planned", "Заполнение данных"),

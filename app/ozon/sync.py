@@ -3,11 +3,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from app import db
-from app.fulfillment_names import fulfillment_lookup, normalize
+from app.core.stores import STORES
 from app.ozon import api as ozon_api
 from app.ozon import tokens as ozon_tokens
 from app.repositories.stock_snapshot import replace_snapshot
-from app.stores import STORES
+from app.stock.fulfillment_names import fulfillment_lookup, normalize
 
 logger = logging.getLogger(__name__)
 

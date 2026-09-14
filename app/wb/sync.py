@@ -3,9 +3,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from app import db
-from app.catalog_identity import barcodes as item_barcodes
+from app.core.stores import STORES
 from app.repositories.stock_snapshot import replace_snapshot
-from app.stores import STORES
+from app.stock.catalog_identity import barcodes as item_barcodes
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 

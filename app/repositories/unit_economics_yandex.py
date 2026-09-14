@@ -115,7 +115,8 @@ def _replace_daily(conn, store: str, source: str, rows: list[dict], start: str, 
     )
     conn.executemany(
         "INSERT INTO unit_economics_yandex_daily_metrics (store_slug,source,day,article,data_json,updated_at) "
-        "VALUES (?,?,?,?,?,?)", encoded,
+        "VALUES (?,?,?,?,?,?)",
+        encoded,
     )
     conn.executemany(
         "INSERT INTO unit_economics_yandex_loaded_days (store_slug,source,day,updated_at) VALUES (?,?,?,?) "
@@ -136,14 +137,25 @@ def migrate_order_snapshot(conn, snapshot: dict) -> None:
     if snapshot.get("data_json") is None:
         return
     store = snapshot["store_slug"]
-    loaded = {row["day"] for row in conn.execute(
-        "SELECT day FROM unit_economics_yandex_loaded_days WHERE store_slug=? AND source='orders'", (store,),
-    )}
+    loaded = {
+        row["day"]
+        for row in conn.execute(
+            "SELECT day FROM unit_economics_yandex_loaded_days WHERE store_slug=? AND source='orders'",
+            (store,),
+        )
+    }
     rows = json.loads(snapshot["data_json"])
     for day in days_between(snapshot["period_from"], snapshot["period_to"]):
         if day not in loaded:
-            _replace_daily(conn, store, "orders", [r for r in rows if r["day"] == day], day, day,
-                           snapshot["last_success_at"])
+            _replace_daily(
+                conn,
+                store,
+                "orders",
+                [r for r in rows if r["day"] == day],
+                day,
+                day,
+                snapshot["last_success_at"],
+            )
 
 
 def get_history(store: str, source: str, start: str, end: str) -> tuple[list[dict], set[str]]:
@@ -164,12 +176,15 @@ def get_buyout_settings(store: str) -> dict:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT buyout_period_days,default_buyout_percent FROM unit_economics_1c_cabinet_settings "
-            "WHERE store_slug=? AND marketplace=?", (store, MARKETPLACE),
+            "WHERE store_slug=? AND marketplace=?",
+            (store, MARKETPLACE),
         ).fetchone()
     return dict(row) if row else {"buyout_period_days": 14, "default_buyout_percent": None}
 
 
-def save_buyout_settings(store: str, period: int, default: float | None, now: str, user_id: int, user_name: str):
+def save_buyout_settings(
+    store: str, period: int, default: float | None, now: str, user_id: int, user_name: str
+):
     with WRITE_LOCK, get_connection() as conn:
         conn.execute(
             "INSERT INTO unit_economics_1c_cabinet_settings "

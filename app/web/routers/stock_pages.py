@@ -7,21 +7,24 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import auth, db, health, supply_planning
-from app import stock_total as stock_total_service
-from app.access_control import (
+from app import db
+from app.access import auth
+from app.access.access_control import (
     ActionPermission,
     accessible_stores,
     has_action_permission,
     profile_has_permission,
     scope_pairs,
 )
-from app.domain import MOSCOW_TIMEZONE
+from app.access.sections import access_level, has_access
+from app.core import health
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.formatting import format_dt
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
 from app.dto.stock import StockRandomizerGenerateRequest
-from app.formatting import format_dt
-from app.section_access import access_level, has_access
-from app.stores import STORES
+from app.stock import supply_planning
+from app.stock import total as stock_total_service
 from app.web.access import accessible_marketplaces, accessible_store_slugs
 from app.web.common import _fmt_num
 from app.web.identifiers import copy_identifier

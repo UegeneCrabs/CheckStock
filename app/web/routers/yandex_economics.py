@@ -3,24 +3,34 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
-from app import auth
-from app.access_control import has_scope
-from app.domain import MOSCOW_TIMEZONE
+from app.access import auth
+from app.access.access_control import has_scope
+from app.access.sections import has_access
+from app.core.domain import MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.yandex_economics import CalculationRequest, Scheme, SettingsChange
 from app.repositories import yandex_assortment
 from app.repositories import yandex_economics as repository
-from app.section_access import has_access
-from app.stores import STORES
 from app.yandex import economics, economics_api
 from app.yandex.economics_calculation import calculate
 
 router = APIRouter(prefix="/api/unit-economics-1c/yandex-market")
 
 CABINET_FIELDS = {
-    "fulfillment_cost", "storage_days", "tax_base", "tax_percent", "other_percent", "other_cost",
-    "capital_percent", "turnover_days", "loss_percent", "disposal_cost", "transit_cost",
-    "frequency", "payment_delay_weeks",
+    "fulfillment_cost",
+    "storage_days",
+    "tax_base",
+    "tax_percent",
+    "other_percent",
+    "other_cost",
+    "capital_percent",
+    "turnover_days",
+    "loss_percent",
+    "disposal_cost",
+    "transit_cost",
+    "frequency",
+    "payment_delay_weeks",
 }
 SCENARIO_FIELDS = {"seller_price", "buyer_price", "advertising_mode", "plan_drr"}
 
@@ -35,14 +45,22 @@ def authorize_settings(request, store, article, *, write=False):
 
 def settings_payload(store, article, scheme):
     saved = repository.settings(store, article, scheme)
-    state = economics.effective(store, article, scheme) if article else {
-        "values": saved["values"],
-        "origins": {key: "Настройки кабинета" for key in saved["values"]},
-    }
+    state = (
+        economics.effective(store, article, scheme)
+        if article
+        else {
+            "values": saved["values"],
+            "origins": {key: "Настройки кабинета" for key in saved["values"]},
+        }
+    )
     return {
-        "ok": True, "article": article, "scheme": scheme,
-        "revision": saved["revision"], "overrides": saved["values"],
-        "values": state["values"], "origins": state["origins"],
+        "ok": True,
+        "article": article,
+        "scheme": scheme,
+        "revision": saved["revision"],
+        "overrides": saved["values"],
+        "values": state["values"],
+        "origins": state["origins"],
         "articles": sorted(yandex_assortment.active_articles(store)),
     }
 
@@ -58,10 +76,19 @@ async def update_settings(request: Request, store: str, payload: SettingsChange,
     authorize_settings(request, store, article, write=True)
     changes = payload.values.model_dump(exclude_unset=True)
     if changes.keys() & SCENARIO_FIELDS or (not article and changes.keys() - CABINET_FIELDS):
-        raise HTTPException(422, "Цены и план рекламы задаются в калькуляторе; закупка и тарифы — отдельно для товара")
+        raise HTTPException(
+            422, "Цены и план рекламы задаются в калькуляторе; закупка и тарифы — отдельно для товара"
+        )
     try:
-        await run_in_threadpool(repository.save_settings, store, article, payload.scheme,
-                                changes, payload.revision, str(request.state.user["full_name"]))
+        await run_in_threadpool(
+            repository.save_settings,
+            store,
+            article,
+            payload.scheme,
+            changes,
+            payload.revision,
+            str(request.state.user["full_name"]),
+        )
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
     await run_in_threadpool(economics.capture_today, (store,), only_article=article or None)

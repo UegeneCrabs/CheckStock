@@ -6,17 +6,19 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from app import db, stock_cost_report, stock_cost_report_export
-from app.access_control import (
+from app import db
+from app.access.access_control import (
     ActionPermission,
     has_action_permission,
     profile_has_permission,
     scope_pairs,
 )
-from app.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.access.sections import has_access
+from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
-from app.section_access import has_access
-from app.stores import STORES
+from app.stock import cost_report as stock_cost_report
+from app.stock import cost_report_export as stock_cost_report_export
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num, _now_iso
 from app.web.downloads import _download_headers
@@ -391,9 +393,7 @@ async def classify_shipment_as_fbs_transfer(
     allowed_stores = accessible_store_slugs(request.state.user)
     if operation is None or operation.get("store_slug") not in allowed_stores:
         raise HTTPException(status_code=404, detail="Операция не найдена")
-    operation_marketplace = str(
-        operation.get("from_marketplace") or operation.get("to_marketplace") or ""
-    )
+    operation_marketplace = str(operation.get("from_marketplace") or operation.get("to_marketplace") or "")
     if not operation_marketplace or not has_action_permission(
         request.state.user,
         ActionPermission.STOCK_SHIPMENT,
