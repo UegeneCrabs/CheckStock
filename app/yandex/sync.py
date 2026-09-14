@@ -7,6 +7,7 @@ from app.repositories.stock_snapshot import replace_snapshot
 from app.stock.fulfillment_names import fulfillment_lookup, normalize
 from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
+from app.yandex.accounts import resolve_business_id
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +48,29 @@ def _error_message(e: Exception) -> str:
 def resolve_campaigns(store_slug: str, api_key: str) -> list[dict]:
 
     configured = ya_tokens.get_campaigns(store_slug)
+    rows = ya_api.get_campaigns(api_key)
+    business_id = resolve_business_id(store_slug, api_key, campaigns=rows)
+    own_campaigns = {
+        campaign["campaign_id"]: campaign
+        for row in rows
+        if (campaign := ya_api.normalize_campaign(row))["business_id"] == business_id
+        and campaign["campaign_id"]
+    }
     if configured:
+        invalid_ids = {row["id"] for row in configured} - own_campaigns.keys()
+        if invalid_ids:
+            raise ValueError(
+                f"Яндекс {store_slug}: кампании {sorted(invalid_ids)} не найдены "
+                f"в кабинете {business_id}; проверьте настройки интеграции"
+            )
         return configured
 
+    if not own_campaigns:
+        raise ValueError(f"Яндекс {store_slug}: в кабинете {business_id} не найдены магазины")
+
     campaigns = []
-    for row in ya_api.get_campaigns(api_key):
-        normalized = ya_api.normalize_campaign(row)
+    for normalized in own_campaigns.values():
         campaign_id = normalized["campaign_id"]
-        if not campaign_id:
-            continue
         campaigns.append(
             {
                 "id": campaign_id,

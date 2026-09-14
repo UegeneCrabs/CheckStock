@@ -161,6 +161,15 @@ def request(
     return _request(path, api_key, payload, params, method)
 
 
+def _next_page_token(data: dict, seen: set[str]) -> str:
+    token = str((data.get("paging") or {}).get("nextPageToken") or "").strip()
+    if token:
+        if token in seen:
+            raise YandexApiError(None, "Яндекс повторил страницу выгрузки; данные не обновлены")
+        seen.add(token)
+    return token
+
+
 def get_campaigns(api_key: str) -> list[dict]:
 
     campaigns: list[dict] = []
@@ -176,15 +185,9 @@ def get_campaigns(api_key: str) -> list[dict]:
         chunk = data.get("campaigns") or []
         campaigns.extend(chunk)
 
-        next_page_token = str((data.get("paging") or {}).get("nextPageToken") or "").strip()
-        if not next_page_token:
+        page_token = _next_page_token(data, seen_page_tokens)
+        if not page_token:
             return campaigns
-        if next_page_token in seen_page_tokens:
-            logger.warning("Яндекс вернул повторяющийся токен страницы списка кабинетов")
-            return campaigns
-
-        seen_page_tokens.add(next_page_token)
-        page_token = next_page_token
 
 
 def normalize_campaign(row: dict) -> dict:
@@ -193,7 +196,7 @@ def normalize_campaign(row: dict) -> dict:
     placement = str(row.get("placementType") or "").upper()
     return {
         "campaign_id": row.get("id"),
-        "business_id": business.get("id"),
+        "business_id": business.get("id") or row.get("businessId"),
         "business_name": business.get("name") or "",
         "domain": row.get("domain") or "",
         "placement": placement,
@@ -247,24 +250,24 @@ def get_catalog(api_key: str, business_id: int) -> list[dict]:
 
     items: list[dict] = []
     page_token = ""
+    seen_page_tokens: set[str] = set()
 
     while True:
         data = _request(
             f"/v2/businesses/{business_id}/offer-mappings",
             api_key,
             payload={},
-            params={"limit": PAGE_SIZE, "page_token": page_token},
+            params={"limit": PAGE_SIZE, "pageToken": page_token},
         )
         chunk = data.get("offerMappings") or []
         items.extend(chunk)
 
-        page_token = (data.get("paging") or {}).get("nextPageToken") or ""
-        if not page_token or not chunk:
+        page_token = _next_page_token(data, seen_page_tokens)
+        if not page_token:
             return items
 
         if len(items) > 200_000:
-            logger.warning("Яндекс: прервали обход каталога на %s позициях", len(items))
-            return items
+            raise YandexApiError(None, "Каталог Яндекса превышает лимит выгрузки; данные не обновлены")
 
 
 def normalize_catalog_item(row: dict) -> dict:
@@ -301,13 +304,14 @@ def get_stocks(api_key: str, campaign_id: int, archived: bool = False) -> list[d
 
     rows: list[dict] = []
     page_token = ""
+    seen_page_tokens: set[str] = set()
 
     while True:
         data = _request(
             f"/v2/campaigns/{campaign_id}/offers/stocks",
             api_key,
             payload={"archived": archived},
-            params={"limit": PAGE_SIZE, "page_token": page_token},
+            params={"limit": PAGE_SIZE, "pageToken": page_token},
         )
 
         warehouses = data.get("warehouses") or []
@@ -323,13 +327,12 @@ def get_stocks(api_key: str, campaign_id: int, archived: bool = False) -> list[d
                     }
                 )
 
-        page_token = (data.get("paging") or {}).get("nextPageToken") or ""
-        if not page_token or not warehouses:
+        page_token = _next_page_token(data, seen_page_tokens)
+        if not page_token:
             return rows
 
         if len(rows) > 500_000:
-            logger.warning("Яндекс: прервали обход остатков на %s строках", len(rows))
-            return rows
+            raise YandexApiError(None, "Остатки Яндекса превышают лимит выгрузки; данные не обновлены")
 
 
 def available_quantity(stocks: list[dict]) -> int:

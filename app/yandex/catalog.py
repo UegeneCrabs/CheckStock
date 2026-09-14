@@ -5,6 +5,7 @@ from app import db
 from app.core.stores import STORES
 from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
+from app.yandex.accounts import resolve_business_id
 
 logger = logging.getLogger(__name__)
 
@@ -20,32 +21,11 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def resolve_business_id(store_slug: str, api_key: str) -> int | None:
-
-    business_id = ya_tokens.get_business_id(store_slug)
-    if business_id:
-        return business_id
-
-    campaigns = [ya_api.normalize_campaign(row) for row in ya_api.get_campaigns(api_key)]
-    ids = {c["business_id"] for c in campaigns if c["business_id"]}
-    if len(ids) > 1:
-        logger.warning(
-            "Яндекс %s: у ключа несколько кабинетов %s — беру первый, "
-            "пропишите нужный в secrets/yandex_tokens.json",
-            _store_label(store_slug),
-            sorted(ids),
-        )
-    return next(iter(sorted(ids)), None)
-
-
 def sync_store(store_slug: str) -> dict:
 
     api_key = ya_tokens.get_api_key(store_slug)
 
     business_id = resolve_business_id(store_slug, api_key)
-    if not business_id:
-        return {"total": 0, "added": 0, "updated": 0, "removed": 0, "no_barcode": 0}
-
     raw = ya_api.get_catalog(api_key, business_id)
 
     items = []

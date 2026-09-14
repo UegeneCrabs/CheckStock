@@ -19,6 +19,7 @@ from app.core.stores import STORES
 from app.repositories import unit_economics_yandex as repository
 from app.stock import sales
 from app.yandex import api, tokens
+from app.yandex.accounts import resolve_business_id
 
 logger = logging.getLogger(__name__)
 SYNC_INTERVAL_SECONDS = {
@@ -44,21 +45,6 @@ def _number(value: object) -> float:
     if not math.isfinite(result) or result < 0:
         raise ValueError("В отчёте ЯМ некорректный числовой показатель")
     return result
-
-
-def resolve_business_id(store_slug: str, api_key: str) -> int:
-    configured = tokens.get_business_id(store_slug)
-    if configured:
-        return configured
-    campaign_ids = {row["id"] for row in tokens.get_campaigns(store_slug)}
-    ids = {
-        int((row.get("business") or {}).get("id") or row.get("businessId") or 0)
-        for row in api.get_campaigns(api_key)
-        if not campaign_ids or row.get("id") in campaign_ids
-    } - {0}
-    if len(ids) != 1:
-        raise ValueError("Укажите однозначный business_id ЯМ в настройках кабинета")
-    return ids.pop()
 
 
 def _report_rows(value: object, identifier: str):
