@@ -53,10 +53,10 @@ def test_profile_economics_access_includes_other_managers(
     assert {r["article"] for r in body["rows"]} == {"a", "b"}
     body = client.get(f"{api.PREFIX}/costs", params={"store": "rimili", "manager": "Other Person"}).json()
     assert [r["article"] for r in body["rows"]] == ["a"]
-    assert client.get(f"{api.PREFIX}/costs", params={"store": "tris"}).status_code == 403
+    assert client.get(f"{api.PREFIX}/costs", params={"store": "tris"}).status_code == 200
     assert (
         client.get(f"{api.PREFIX}/stocks", params={"store": "rimili", "marketplace": "OZON"}).status_code
-        == 403
+        == 200
     )
     monkeypatch.setattr(unit_economics.db, "get_stock_items", lambda *args: products)
     options = unit_economics._unit_profit_report_filter_options(("rimili",), user)
@@ -65,7 +65,9 @@ def test_profile_economics_access_includes_other_managers(
 
 
 @pytest.mark.parametrize("profile", ["marketplace_manager", "procurement"])
-def test_profile_without_economics_still_denied(agent_client, database_path, user_factory, profile):
+def test_profile_without_website_economics_has_agent_access(
+    agent_client, database_path, user_factory, profile
+):
     from app.dto.identity import AccessProfile, MarketplaceAccessScope
 
     client, identity, *_ = agent_client
@@ -75,7 +77,7 @@ def test_profile_without_economics_still_denied(agent_client, database_path, use
             "access_scopes": (MarketplaceAccessScope(store_slug="rimili", marketplace="WB"),),
         }
     )
-    assert client.get(f"{api.PREFIX}/current-economics", params={"store": "rimili"}).status_code == 403
+    assert client.get(f"{api.PREFIX}/costs", params={"store": "rimili"}).status_code == 200
 
 
 def test_campaign_ctr_filter_pagination_and_manager_scope(
@@ -142,6 +144,7 @@ def test_campaign_ctr_filter_pagination_and_manager_scope(
         "store": "rimili",
         "date_from": "2026-09-09",
         "date_to": "2026-09-09",
+        "manager": "Selected Manager",
         "ctr_below": 5,
         "limit": 1,
         "sort_by": "ctr_percent",
@@ -154,7 +157,7 @@ def test_campaign_ctr_filter_pagination_and_manager_scope(
     assert data["totals"]["spend"] == 2
     assert (
         client.get(f"{api.PREFIX}/advertising-campaigns", params=params | {"store": "tris"}).status_code
-        == 403
+        == 200
     )
     assert (
         client.get(f"{api.PREFIX}/advertising-campaigns", params=params | {"ctr_below": -1}).status_code
@@ -162,7 +165,7 @@ def test_campaign_ctr_filter_pagination_and_manager_scope(
     )
 
 
-def test_economic_manager_scope_before_totals(agent_client, database_path, monkeypatch, user_factory):
+def test_agent_manager_filter_is_explicit(agent_client, database_path, monkeypatch, user_factory):
     from app.agents import reports as agent_reports
 
     client, identity, *_ = agent_client
@@ -176,9 +179,9 @@ def test_economic_manager_scope_before_totals(agent_client, database_path, monke
         ],
     )
     body = client.get(f"{api.PREFIX}/costs", params={"store": "rimili"}).json()
-    assert [r["article"] for r in body["rows"]] == ["a"]
+    assert {r["article"] for r in body["rows"]} == {"a", "b"}
     body = client.get(f"{api.PREFIX}/costs", params={"store": "rimili", "manager": "User 8"}).json()
-    assert body["rows"] == []
+    assert [r["article"] for r in body["rows"]] == ["b"]
 
 
 @pytest.fixture
@@ -194,3 +197,72 @@ def agent_client(tmp_path, monkeypatch, user_factory):
     client = TestClient(app)
     client.headers["Authorization"] = f"Bearer {token}"
     return client, identity, path, token, record
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        None,
+        "marketplace_manager",
+        "procurement",
+        "store_manager",
+        "marketplace_lead",
+        "senior_marketplace_manager",
+    ],
+)
+def test_company_access_is_request_local(agent_client, database_path, monkeypatch, user_factory, profile):
+    from app.agents import reports
+    from app.core.stores import STORES
+    from app.dto.identity import AccessProfile, MarketplaceAccessScope, SectionAccessLevel, SectionName
+
+    client, identity, *_ = agent_client
+    original = user_factory(role=Role.USER, stores=("rimili",)).model_copy(
+        update={
+            "access_profile": AccessProfile(profile) if profile else None,
+            "access_scopes": (MarketplaceAccessScope(store_slug="rimili", marketplace="WB"),),
+            "section_access": {section: SectionAccessLevel.NONE for section in SectionName},
+        }
+    )
+    identity.get_user.return_value = original
+    identity.user_for_token.return_value = original
+    from app.access import auth
+
+    client.cookies.set(auth.SESSION_COOKIE, "test-browser-session")
+    before = original.model_dump()
+    response = client.get(f"{api.PREFIX}/stores")
+    assert response.status_code == 200
+    assert {s["slug"] for s in response.json()} == set(STORES)
+    monkeypatch.setattr(
+        reports.db,
+        "get_unit_economics_1c_product_reference_rows",
+        lambda *args: [{"article": "a", "manager": "Someone else"}],
+    )
+    assert client.get(f"{api.PREFIX}/costs", params={"store": "tris"}).json()["total_rows"] == 1
+    assert original.model_dump() == before
+    assert (
+        client.get(
+            "/api/unit-economics-1c/reports/unit-profit", headers={"Accept": "application/json"}
+        ).status_code
+        == 403
+    )
+    for method in ("post", "put", "patch", "delete"):
+        assert getattr(client, method)(f"{api.PREFIX}/stores").status_code == 405
+
+
+@pytest.mark.parametrize("failure", ["missing", "invalid", "expired", "revoked", "inactive", "deleted"])
+def test_company_access_still_requires_valid_employee_key(agent_client, user_factory, failure):
+    client, identity, path, token, record = agent_client
+    if failure == "missing":
+        client.headers.pop("Authorization")
+    elif failure == "invalid":
+        client.headers["Authorization"] = "Bearer invalid"
+    elif failure == "revoked":
+        path.write_text("[]", encoding="utf-8")
+    elif failure == "expired":
+        record = record.model_copy(update={"expires_at": datetime.now(UTC) - timedelta(days=1)})
+        path.write_bytes(TypeAdapter(list[AgentCredential]).dump_json([record]))
+    elif failure == "inactive":
+        identity.get_user.return_value = user_factory(active=False)
+    elif failure == "deleted":
+        identity.get_user.return_value = None
+    assert client.get(f"{api.PREFIX}/stores").status_code == 401

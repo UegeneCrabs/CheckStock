@@ -1,4 +1,4 @@
-"""Small read-only API for ChatGPT Actions, reusing the website's report and ACLs."""
+"""Small read-only API for ChatGPT Actions, reusing website reports with company-wide read access."""
 
 import logging
 import math
@@ -16,12 +16,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.access.access_control import accessible_stores
-from app.access.sections import has_access
 from app.agents.access import resolve_credential
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import SectionName, User, UserId
+from app.dto.identity import Role, SectionName, User, UserId
 from app.web.routers.unit_economics import _unit_economics_1c_unit_profit_report_data
 
 PREFIX = "/api/agent/v1"
@@ -48,11 +47,13 @@ async def employee(
         raise HTTPException(
             401, "Invalid or expired employee API key", headers={"WWW-Authenticate": "Bearer"}
         )
-    if not has_access(user, SectionName.AI_AGENTS):
-        raise HTTPException(403, "No access to analytics sections")
-    request.state.user = user
+    # This identity exists only inside the read-only agent request. Never persist
+    # it or reuse it for browser sessions: company policy grants all agent data.
+    request.state.agent_actor = user
+    analytics_user = user.model_copy(update={"role": Role.SUPERADMIN})
+    request.state.user = analytics_user
     logger.info("agent_access user_id=%s key_id=%s path=%s", user.id, record.key_id, request.url.path)
-    return user
+    return analytics_user
 
 
 Employee = Annotated[User, Depends(employee)]
