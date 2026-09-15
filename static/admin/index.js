@@ -239,12 +239,8 @@
                     ? `Рабочая область: ${stores.join(', ')}. В каждом кабинете: ${markets.join(', ')}.`
                     : 'Выберите хотя бы один кабинет и одну площадку.';
         }
-        const single = ['marketplace_manager', 'senior_marketplace_manager', 'marketplace_lead'].includes(
-            profile.value,
-        );
-        one('[data-policy-hint]', form).textContent = single
-            ? 'Для этой должности выберите ровно один маркетплейс.'
-            : 'Можно выбрать несколько маркетплейсов.';
+        one('[data-policy-hint]', form).textContent =
+            'Для любой должности можно выбрать одну или несколько площадок.';
     }
 
     function updateDirty(form) {
@@ -287,19 +283,10 @@
         if (form.querySelector('[name="stores"]') && !one('[name="stores"]:checked', form)) {
             throw Object.assign(new Error('Выберите хотя бы один кабинет.'), { field: 'stores' });
         }
-        const profile = one('[name="access_profile"]', form)?.value;
         if (!form.querySelector('[name="marketplaces"]')) return;
         const count = all('[name="marketplaces"]:checked', form).length;
         if (!count)
             throw Object.assign(new Error('Выберите хотя бы один маркетплейс.'), { field: 'marketplaces' });
-        if (
-            ['marketplace_manager', 'senior_marketplace_manager', 'marketplace_lead'].includes(profile) &&
-            count !== 1
-        ) {
-            throw Object.assign(new Error('Для этой должности выберите ровно один маркетплейс.'), {
-                field: 'marketplaces',
-            });
-        }
     }
 
     async function refresh(options = {}) {

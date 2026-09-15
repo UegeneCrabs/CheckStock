@@ -601,16 +601,6 @@ def _access_policy_from_form(
         return None, (), (), "выберите хотя бы один кабинет"
     if not marketplaces:
         return None, (), (), "выберите хотя бы один маркетплейс"
-    if (
-        profile
-        in {
-            AccessProfile.MARKETPLACE_MANAGER,
-            AccessProfile.SENIOR_MARKETPLACE_MANAGER,
-            AccessProfile.MARKETPLACE_LEAD,
-        }
-        and len(marketplaces) != 1
-    ):
-        return None, (), (), "для этой должности нужно выбрать ровно один маркетплейс"
     scopes = tuple(
         MarketplaceAccessScope(store_slug=store_slug, marketplace=marketplace)
         for store_slug in store_slugs
