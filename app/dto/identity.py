@@ -47,6 +47,7 @@ class SectionName(StrEnum):
     UNIT_ECONOMICS_WB = "unit_economics_wb"
     STOCK_SUPPLIES = "stock_supplies"
     STOCK_INBOUND = "stock_inbound"
+    STOCK_ARRIVALS = "stock_arrivals"
     STOCK_RANDOMIZER = "stock_randomizer"
     STOCK_COST_REPORT = "stock_cost_report"
     STOCK_OPERATIONS = "stock_operations"

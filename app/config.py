@@ -106,6 +106,11 @@ class Settings(BaseModel):
     wb_advertising_sync_startup_delay_seconds: int = Field(ge=0)
     auto_sync_interval_seconds: int = Field(ge=1)
     inbound_sync_interval_seconds: int = Field(default=1800, ge=300)
+    supply_arrivals_spreadsheet_id: str = Field(
+        default="16yqGq_tIuhtjgDG55QrF8asiAPIMFNq1zrqOdBEPBoc", pattern=r"^[A-Za-z0-9_-]+$"
+    )
+    supply_arrivals_sheet_gid: int = Field(default=582873931, ge=0)
+    supply_arrivals_sync_interval_seconds: int = Field(default=900, ge=300)
     catalog_sync_hour: int = Field(ge=0, le=23)
     wb_advertising_sync_interval_seconds: int = Field(ge=1)
     wb_funnel_orders_sync_interval_seconds: int = Field(ge=1)
@@ -190,6 +195,13 @@ class Settings(BaseModel):
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
             inbound_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_INBOUND_SYNC_INTERVAL_SECONDS", 1800, minimum=300
+            ),
+            supply_arrivals_spreadsheet_id=os.getenv(
+                "CHECKSTOCK_SUPPLY_ARRIVALS_SPREADSHEET_ID", "16yqGq_tIuhtjgDG55QrF8asiAPIMFNq1zrqOdBEPBoc"
+            ),
+            supply_arrivals_sheet_gid=_env_int("CHECKSTOCK_SUPPLY_ARRIVALS_SHEET_GID", 582873931),
+            supply_arrivals_sync_interval_seconds=_env_int(
+                "CHECKSTOCK_SUPPLY_ARRIVALS_SYNC_INTERVAL_SECONDS", 900, minimum=300
             ),
             funnel_orders_sync_enabled=_env_bool("CHECKSTOCK_FUNNEL_ORDERS_SYNC_ENABLED", True),
             unit_economics_1c_price_sync_enabled=_env_bool(

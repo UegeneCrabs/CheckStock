@@ -1,0 +1,44 @@
+<link rel="stylesheet" href="/static/stock/supply-arrivals.css?v=20260915-2" />
+<section class="arrivals-page" data-arrivals-page data-preference-key="$preference_key">
+    <div class="arrivals-heading">
+        <h1>Табло поставок</h1>
+        <div class="arrivals-actions">
+            <button type="button" class="arrivals-button arrivals-primary" data-arrivals-refresh$refresh_hidden>Обновить данные</button>
+        </div>
+    </div>
+    <div class="arrivals-meta">
+        <span data-arrivals-updated>Читаем реестр поставок…</span>
+        <span>Автообновление каждые $interval_minutes мин. · Даты по Москве</span>
+        <a data-arrivals-source target="_blank" rel="noopener noreferrer" hidden>Открыть Google Таблицу ↗</a>
+    </div>
+    <div class="arrivals-notice" data-arrivals-notice role="status" aria-live="polite" hidden></div>
+    <div class="arrivals-kpis" aria-label="Итоги поставок">
+        <article class="arrivals-kpi arrivals-kpi-main">
+            <span>Поставки на этой неделе</span><strong data-arrivals-kpi="week">—</strong>
+            <small data-arrivals-week-caption>Текущая неделя</small>
+        </article>
+        <article class="arrivals-kpi"><span>Объём, м³</span><strong data-arrivals-kpi="volume">—</strong><small data-arrivals-caption="volume">По выбранным поставкам</small></article>
+        <article class="arrivals-kpi"><span>Вес, кг</span><strong data-arrivals-kpi="weight">—</strong><small data-arrivals-caption="weight">По выбранным поставкам</small></article>
+        <article class="arrivals-kpi"><span>Короба</span><strong data-arrivals-kpi="boxes">—</strong><small data-arrivals-caption="boxes">По выбранным поставкам</small></article>
+    </div>
+    <div class="arrivals-filters" aria-label="Фильтры поставок">
+        <label class="arrivals-search">Поиск<input type="search" aria-label="Поиск" data-arrivals-search placeholder="Заказ, группа, проект или категория" /></label>
+        <label>Проект<select aria-label="Проект" data-arrivals-project><option value="">Все проекты</option></select></label>
+        <label>Склад ФФ<select aria-label="Склад ФФ" data-arrivals-warehouse><option value="">Все склады</option></select></label>
+        <div class="arrivals-filter"><span>Статус поставки</span><details data-arrivals-filter="statuses"><summary data-arrivals-summary="statuses">В пути из китая</summary><div class="arrivals-options" data-arrivals-options="statuses"></div></details></div>
+        <div class="arrivals-filter"><span>Неделя прихода</span><details data-arrivals-filter="weeks"><summary data-arrivals-summary="weeks">Текущая и следующая</summary><div class="arrivals-options" data-arrivals-options="weeks"></div></details></div>
+        <button type="button" class="arrivals-button arrivals-reset" data-arrivals-reset>Сбросить</button>
+    </div>
+    <div class="arrivals-table-toolbar">
+        <strong data-arrivals-count>Загрузка…</strong>
+        <div class="arrivals-legend"><span class="arrival-dot urgent">Сегодня / завтра</span><span class="arrival-dot next">Следующая неделя</span><span class="arrival-dot later">Позже</span><span class="arrival-dot delayed">Опаздывает</span></div>
+    </div>
+    <div class="arrivals-table-scroll" tabindex="0" role="region" aria-label="Реестр поставок — таблицу можно прокручивать вправо">
+        <table class="arrivals-table">
+            <caption class="arrivals-sr-only">Поставки по плановой дате прихода в Москву</caption>
+            <thead><tr><th scope="col">Неделя</th><th scope="col">Проект</th><th scope="col">Заказ / группа</th><th scope="col">Файл</th><th scope="col">Категория</th><th scope="col">Склад ФФ</th><th scope="col">Статус поставки</th><th scope="col">План прихода</th><th scope="col" class="arrivals-number">Объём, м³</th><th scope="col" class="arrivals-number">Вес, кг</th><th scope="col" class="arrivals-number">Короба</th><th scope="col">Доставка</th></tr></thead>
+            <tbody data-arrivals-body><tr><td colspan="12" class="arrivals-empty">Загружаем данные…</td></tr></tbody>
+        </table>
+    </div>
+</section>
+<script src="/static/stock/supply-arrivals.js?v=20260915-2" defer></script>

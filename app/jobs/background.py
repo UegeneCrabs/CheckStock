@@ -25,7 +25,7 @@ from app.jobs.scheduling import BackgroundJob, run_background_job
 from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
 from app.stock import history as stock_history
-from app.stock import inbound_supplies
+from app.stock import inbound_supplies, supply_arrivals
 from app.wb import catalog as wb_catalog
 from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import sync as wb_sync
@@ -359,6 +359,13 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             run_callback=_sync_stocks_configured,
         ),
         *_wb_stock_history_jobs(catalog_ready),
+        BackgroundJob(
+            supply_arrivals.JOB_NAME,
+            supply_arrivals.sync,
+            _fixed_delay(settings.supply_arrivals_sync_interval_seconds),
+            startup_delay_seconds=20,
+            is_enabled=lambda: _job_enabled(supply_arrivals.JOB_NAME),
+        ),
         BackgroundJob(
             inbound_supplies.JOB_NAME,
             inbound_supplies.sync_all,

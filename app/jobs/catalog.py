@@ -65,6 +65,13 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             ("WB", "OZON", "YANDEX MARKET"),
         ),
         SyncJobDefinition(
+            "supply_arrivals_sync",
+            "Табло поставок из Google Таблицы",
+            "Загружает реестр грузов, план прихода, группы, объём, вес и короба.",
+            _interval(settings.supply_arrivals_sync_interval_seconds),
+            base,
+        ),
+        SyncJobDefinition(
             "wb_advertising_sync",
             "Реклама WB",
             "Обновляет кампании, расходы, показы и клики Wildberries.",

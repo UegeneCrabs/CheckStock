@@ -8,9 +8,11 @@ from app.web.routers import (
     stock_pages,
     stock_supplies,
     stock_total,
+    supply_arrivals,
 )
 
 router = APIRouter()
+router.include_router(supply_arrivals.router)
 router.include_router(inbound_supplies.router)
 router.include_router(stock_cost_report.router)
 router.include_router(stock_total.router)

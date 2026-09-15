@@ -199,6 +199,7 @@ def render_page(
         "stock_total",
         "stock_supplies",
         "stock_inbound",
+        "stock_arrivals",
         "stock_randomizer",
         "stock_cost_report",
     }
@@ -248,6 +249,8 @@ def render_page(
         stock_inbound_active="active" if active == "stock_inbound" else "",
         stock_supplies_hidden=hidden(visible[SectionName.STOCK_SUPPLIES]),
         stock_inbound_hidden=hidden(visible[SectionName.STOCK_INBOUND]),
+        stock_arrivals_active="active" if active == "stock_arrivals" else "",
+        stock_arrivals_hidden=hidden(visible[SectionName.STOCK_ARRIVALS]),
         stock_randomizer_active="active" if active == "stock_randomizer" else "",
         stock_randomizer_hidden=hidden(
             visible[SectionName.STOCK_RANDOMIZER] and "WB" in accessible_marketplaces(user)

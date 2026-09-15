@@ -17,6 +17,17 @@ class OrmBase(DeclarativeBase):
     pass
 
 
+class SupplyArrivalsSnapshotRecord(OrmBase):
+    __tablename__ = "supply_arrivals_snapshots"
+
+    source_key: Mapped[str] = mapped_column(String, primary_key=True)
+    sheet_title: Mapped[str] = mapped_column(String, default="", nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    last_attempt: Mapped[str | None] = mapped_column(String)
+    last_success: Mapped[str | None] = mapped_column(String)
+    error: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+
 class InboundSupplySnapshotRecord(OrmBase):
     __tablename__ = "inbound_supply_snapshots"
 
