@@ -6,6 +6,8 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.repositories import yandex_source_values, yandex_storefront
+from app.yandex.category_commissions import SOURCE as CATEGORY_COMMISSION_SOURCE
+from app.yandex.category_commissions import commission_value
 from app.yandex.economics_calculation import VERSION, aggregate, calculate, resolve
 
 
@@ -26,6 +28,9 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
     saved_sources = cache["sources"]
     seed = saved_sources.get((article, "initial:" + scheme), {})
     catalog = saved_sources.get((article, "catalog"), {})
+    category = saved_sources.get((article, "category"), {})
+    category_values = category.get("values", {})
+    commission = saved_sources.get((article, CATEGORY_COMMISSION_SOURCE + scheme), {}).get("values", {})
     cabinet = cache["settings"].get(("", scheme), {"revision": 0, "values": {}})
     product = cache["settings"].get((article, scheme), {"revision": 0, "values": {}})
     source_1c = cache["source_1c"].get(article, {})
@@ -69,7 +74,14 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
             },
         ),
     ]
+    if category.get("updated_at", "") >= catalog.get("updated_at", ""):
+        layers.insert(
+            3, ("API: категория", {key: category_values.get(key) for key in ("category_id", "category_name")})
+        )
     values, _ = resolve(*layers, ("Сценарий", scenario or {}))
+    reference_percent = commission_value(commission, values)
+    if reference_percent is not None:
+        layers.insert(-2, ("API: комиссия категории за неделю", {"commission_percent": reference_percent}))
     tariff = saved_sources.get((article, "tariff:" + scheme), {})
     tariff_data = tariff.get("values", {})
 
@@ -77,7 +89,7 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
         values, scheme
     ) and yandex_storefront.fresh(tariff.get("updated_at"))
     if tariff_valid:
-        layers.insert(4, ("API: тариф", tariff_data.get("components", {})))
+        layers.insert(-2, ("API: тариф", tariff_data.get("components", {})))
     values, origins = resolve(*layers, ("Сценарий", scenario or {}))
     return {
         "values": values,
@@ -85,6 +97,10 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
         "revision": product["revision"],
         "overrides": product["values"],
         "cabinet_revision": cabinet["revision"],
+        "category": category_values
+        if category_values.get("category_id") == values.get("category_id")
+        else {},
+        "category_commission": {**commission, "valid": reference_percent is not None},
         "tariff": {
             "valid": tariff_valid,
             "updated_at": tariff.get("updated_at"),
@@ -146,9 +162,15 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
         "signature"
     ) == tariff_signature(values, scheme)
     state["tariff"]["valid"] = tariff_valid
+    reference_percent = commission_value(state["category_commission"], values)
+    state["category_commission"]["valid"] = reference_percent is not None
     fields = ("commission_percent", "payment_acceptance", "payment_transfer_percent", "delivery_cost")
     for field in fields:
         if origins.get(field) in {"Изменено на сайте", "Настройки кабинета", "Сценарий"}:
+            continue
+        if field == "commission_percent" and not tariff_valid and reference_percent is not None:
+            values[field] = reference_percent
+            origins[field] = "API: комиссия категории за неделю"
             continue
         values[field] = quote.get("components", {}).get(field) if tariff_valid else None
         origins[field] = "API: тариф за сегодня" if tariff_valid else "Нет тарифа за сегодня"

@@ -170,6 +170,10 @@
         function renderParameters() {
             var values = data.calculator_values || data.values,
                 origins = data.calculator_origins || data.origins;
+            var categoryPath = ((data.category || {}).path || [])
+                .map(function (entry) { return entry.name; })
+                .join(' → ');
+            var categoryCommission = data.category_commission || {};
             var definitions = [].concat.apply(
                 [],
                 fields.groups.map(function (group) {
@@ -195,7 +199,12 @@
                     content:
                         parameterGroup(
                             'Товар',
-                            parameter('Категория', values.category_name) +
+                            parameter('Категория', categoryPath || values.category_name) +
+                                parameter(
+                                    'Категория проверена',
+                                    (data.category || {}).checked_at
+                                        ? new Date(data.category.checked_at).toLocaleString('ru-RU') : null,
+                                ) +
                                 parameter('Артикул', product.article, '', '', true) +
                                 parameter('Баркод', product.barcode, '', '', true) +
                                 parameter('Магазин', product.store_name) +
@@ -210,7 +219,15 @@
                                 'payment_transfer_percent',
                                 'tax_base',
                                 'tax_percent',
-                            ]),
+                            ]) +
+                                parameter('Комиссия по категории', categoryCommission.status === 'ok'
+                                    ? categoryCommission.commission_percent : null, ' %') +
+                                parameter('Комиссия категории проверена', categoryCommission.checked_at
+                                    ? new Date(categoryCommission.checked_at).toLocaleString('ru-RU') : null) +
+                                (categoryCommission.error
+                                    ? parameter('Проверка комиссии', categoryCommission.error) : '') +
+                                (categoryCommission.needs_campaign
+                                    ? parameter('Комиссия категории', 'Различается между магазинами; выберите кампанию в параметрах товара') : ''),
                         ) +
                         parameterGroup(
                             'Продажи и реклама',

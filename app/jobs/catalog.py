@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import settings
+from app.yandex.category_commissions import JOB as YANDEX_CATEGORY_COMMISSIONS_JOB
 from app.yandex.product_novelty import SYNC_INTERVAL_SECONDS as YANDEX_NOVELTY_INTERVAL_SECONDS
 from app.yandex.unit_economics_sync import SYNC_INTERVAL_SECONDS as YANDEX_SYNC_INTERVAL_SECONDS
 
@@ -157,6 +158,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "Отдельный браузерный сборщик: цены покупателя без Пэй для актуального ассортимента в БД.",
             "Ежедневно 08:00–19:00 каждый час и 01:00 · Екатеринбург",
             True,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
+            YANDEX_CATEGORY_COMMISSIONS_JOB,
+            "Категории и комиссии Яндекс Маркета",
+            "Проверяет полную ветку категории каждого товара и комиссию размещения по магазинам FBY/FBS.",
+            "По понедельникам в 04:00 · МСК; пропущенная проверка — после запуска приложения",
+            base,
             "store_marketplaces",
             ("YANDEX MARKET",),
         ),

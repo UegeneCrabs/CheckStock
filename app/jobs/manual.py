@@ -100,6 +100,10 @@ def callback_for(name: str) -> Callable[[], object]:
         for job in (*background._jobs(asyncio.Event()), *background._unit_economics_1c_price_jobs())
     }
     overrides = {
+        background.ya_category_commissions.JOB: lambda: background.ya_category_commissions.sync_all(
+            sync_settings.enabled_stores(background.ya_category_commissions.JOB, "YANDEX MARKET"),
+            force=True,
+        ),
         "catalog_sync": lambda: _marketplaces_now(
             "catalog_sync",
             (

@@ -100,6 +100,20 @@ def save_source(store, article, source, values, *, updated_at=None, initial_only
         conn.commit()
 
 
+def save_sources(store, entries, *, updated_at=None):
+    """Publish one store's category checks atomically, without touching manual settings."""
+    timestamp = updated_at or now()
+    rows = [(store, article, source, encode(values), timestamp) for article, source, values in entries]
+    with WRITE_LOCK, get_connection() as conn:
+        conn.executemany(
+            "INSERT INTO yandex_economics_sources (store_slug,article,source,payload_json,updated_at) "
+            "VALUES (?,?,?,?,?) ON CONFLICT(store_slug,article,source) DO UPDATE SET "
+            "payload_json=excluded.payload_json,updated_at=excluded.updated_at",
+            rows,
+        )
+        conn.commit()
+
+
 def save_day(store, article, scheme, day, payload):
     with WRITE_LOCK, get_connection() as conn:
         conn.execute(
