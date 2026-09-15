@@ -132,8 +132,11 @@
     function request(url, options) {
         return fetch(url, options).then(function (response) {
             return response.json().then(function (data) {
-                if (!response.ok || !data.ok)
-                    throw new Error(data.error || data.detail || 'Не удалось выполнить действие');
+                if (!response.ok || !data.ok) {
+                    var error = new Error(data.error || data.detail || 'Не удалось выполнить действие');
+                    error.cooldown = data.status === 'cooldown';
+                    throw error;
+                }
                 return data;
             });
         });
@@ -341,11 +344,22 @@
                   : '—';
         var next = row.querySelector('[data-sync-next-run]');
         next.textContent =
-            'Следующая: ' + (state.next_run_at ? runDate(state.next_run_at) : 'Рассчитывается');
+            'Следующая: ' +
+            (state.next_run_message ||
+                (state.next_run_at ? runDate(state.next_run_at) : 'Рассчитывается'));
         var button = row.querySelector('[data-sync-run]');
         if (button) {
-            button.disabled = Boolean(state.running);
-            button.textContent = state.running ? 'Выполняется…' : 'Выгрузить вручную';
+            button.disabled = Boolean(state.running || state.cooldown_until);
+            button.textContent = state.running
+                ? 'Выполняется…'
+                : state.cooldown_until
+                  ? 'Пауза'
+                  : 'Выгрузить вручную';
+        }
+        if (state.cooldown_until) {
+            delete launchErrors[state.name];
+            runMessage(state.name, state.cooldown_message, false);
+            return;
         }
         if (state.running) delete launchErrors[state.name];
         if (launchErrors[state.name]) {
@@ -397,8 +411,16 @@
                     button.textContent = 'Выполняется…';
                     runMessage(job, data.message || 'Выгрузка выполняется в фоне', false);
                 })
-                .catch(function () {
-                    launchErrors[job] = 'Не удалось запустить выгрузку. Попробуйте ещё раз.';
+                .catch(function (error) {
+                    if (error.cooldown) {
+                        delete launchErrors[job];
+                        runMessage(job, error.message, false);
+                        button.disabled = true;
+                        button.textContent = 'Пауза';
+                        return;
+                    }
+                    launchErrors[job] =
+                        error.message || 'Не удалось запустить выгрузку. Попробуйте ещё раз.';
                     runMessage(job, launchErrors[job], true);
                     button.disabled = false;
                     button.textContent = 'Выгрузить вручную';

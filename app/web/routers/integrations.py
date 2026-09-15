@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -216,7 +216,9 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
     trigger = str(state.get("last_trigger") or "")
     trigger_text = {"manual": "Вручную", "scheduled": "По расписанию"}.get(trigger, "—")
     last_run = state.get("last_finished_at") or state.get("last_started_at")
-    next_run = format_dt(state.get("next_run_at")) if state.get("next_run_at") else "Рассчитывается"
+    next_run = state.get("next_run_message") or (
+        format_dt(state.get("next_run_at")) if state.get("next_run_at") else "Рассчитывается"
+    )
     target_button = ""
     if config["targets"]:
         target_button = (
@@ -230,7 +232,8 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
             '<button class="btn-primary integration-run-button" type="button" '
             f'data-sync-run="{html.escape(definition.name)}" '
             f'data-sync-title="{html.escape(definition.title)}"'
-            f"{' disabled' if state.get('running') else ''}>Выгрузить вручную</button>"
+            f"{' disabled' if state.get('running') or state.get('cooldown_until') else ''}>"
+            f"{'Пауза' if state.get('cooldown_until') else 'Выгрузить вручную'}</button>"
         )
     row = (
         f'<tr data-sync-job="{html.escape(definition.name)}">'
@@ -255,7 +258,8 @@ def _sync_row(definition, state: dict | None, config: dict) -> str:
         + '<button class="btn-secondary integration-history-button" type="button" '
         f'data-sync-history="{html.escape(definition.name)}" '
         f'data-sync-title="{html.escape(definition.title)}">История</button></div>'
-        '<p class="integration-sync-setting-message" data-sync-run-message aria-live="polite"></p></td>'
+        '<p class="integration-sync-setting-message" data-sync-run-message aria-live="polite">'
+        f"{html.escape(state.get('cooldown_message') or '')}</p></td>"
         "</tr>"
     )
     return row + _target_settings(definition, config)
@@ -422,6 +426,36 @@ async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     }
 
 
+def _storefront_state(state: dict) -> None:
+    from app.repositories import yandex_storefront
+    from app.yandex.storefront_schedule import next_run_at
+
+    current = datetime.now(UTC)
+    pause = yandex_storefront.cooldown(current)
+    if pause:
+        state["cooldown_until"] = pause["retry_after"]
+        state["cooldown_message"] = (
+            f"Пауза после ограничения Яндекса до {format_dt(pause['retry_after'])}. "
+            "Новые запросы не отправляются. Снятие ограничения пока не подтверждено."
+        )
+    config = sync_settings.configuration(state["name"])
+    if not config["effective_enabled"] or not config["enabled_target_count"]:
+        state.update(next_run_at=None, next_run_message="Автовыгрузка выключена")
+        return
+    try:
+        planned = datetime.fromisoformat(state.get("next_run_at") or "")
+        if planned.tzinfo is None or planned <= current:
+            planned = None
+    except ValueError:
+        planned = None
+    if planned is None:
+        state.update(next_run_at=None, next_run_message="Сборщик не подтвердил следующий запуск")
+    elif pause and planned < datetime.fromisoformat(pause["retry_after"]):
+        state["next_run_at"] = next_run_at(
+            datetime.fromisoformat(pause["retry_after"]) - timedelta(microseconds=1)
+        ).isoformat()
+
+
 def _sync_states() -> list[dict]:
     stored = {state["name"]: state for state in db.list_sync_job_states()}
     states = []
@@ -432,6 +466,8 @@ def _sync_states() -> list[dict]:
             state["status"] = "running"
         elif state.get("status") == "running":
             state.update(status="error", error="Выполнение прервано. Можно запустить выгрузку повторно.")
+        if definition.name == "yandex_storefront_prices_sync":
+            _storefront_state(state)
         states.append(state)
     return states
 
@@ -456,6 +492,11 @@ async def run_sync_job(request: Request, job_name: str):
     try:
         if await run_in_threadpool(manual_sync.is_running, job_name):
             raise SyncJobBusyError()
+        if job_name == "yandex_storefront_prices_sync":
+            from app.repositories import yandex_storefront
+
+            if pause := await run_in_threadpool(yandex_storefront.cooldown):
+                return JSONResponse(pause, status_code=409)
         callback = manual_sync.callback_for(job_name)
         run_id = await run_in_threadpool(queue_tracked, job_name, callback)
     except SyncJobBusyError as error:

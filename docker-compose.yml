@@ -98,7 +98,7 @@ services:
       CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS: ${CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS:-1}
     volumes:
       - ./secrets:/app/secrets:ro
-      - yandex-manual-data:/app/data/yandex-storefront/manual
+      - yandex-parser-data:/app/data/yandex-storefront
     stop_grace_period: 60s
 
   watchdog:
@@ -124,5 +124,5 @@ services:
     stop_grace_period: 10s
 
 volumes:
-  yandex-manual-data:
+  yandex-parser-data:
   postgres-data:

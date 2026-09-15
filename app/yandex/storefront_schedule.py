@@ -1,9 +1,9 @@
-"""Daily storefront checks at 01:00 and hourly 08:00–19:00, Yekaterinburg time."""
+"""Daily storefront checks at 01:00 and hourly 08:00–19:00, Moscow time."""
 
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-TIMEZONE = ZoneInfo("Asia/Yekaterinburg")
+TIMEZONE = ZoneInfo("Europe/Moscow")
 RUN_HOURS = (1, *range(8, 20))
 
 

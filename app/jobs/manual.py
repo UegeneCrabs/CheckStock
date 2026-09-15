@@ -1,7 +1,6 @@
 """Manual entry points for the same loaders used by the application scheduler."""
 
 import asyncio
-import os
 from collections.abc import Callable
 
 from app.exports import ftp as ftp_export
@@ -53,9 +52,7 @@ def _marketplaces_now(name: str, loaders: tuple) -> dict:
 
 
 def _storefront_now() -> dict:
-    """Reuse the collector's parsing, API preparation, lease and persistence. A separate browser profile allows a one-off run while the scheduled browser is idle."""
-    from playwright.sync_api import sync_playwright
-
+    """Use the scheduled collector's browser, profile, pacing and access cooldown."""
     from scripts.parsers import parse_yandex_storefront_prices as collector
 
     stores = set(sync_settings.enabled_stores(collector.JOB, "YANDEX MARKET"))
@@ -64,33 +61,13 @@ def _storefront_now() -> dict:
     )
     if not selected:
         return {"ok": False, "error": "В выбранных магазинах нет товаров для загрузки цен"}
-    arguments = ["--headless", "--state-dir", str(collector.ROOT / "data/yandex-storefront/manual")]
+    arguments = []
     for slug, article in selected:
         arguments.extend(["--article", f"{slug}:{article}"])
-    args = collector.arguments(arguments)
-    with collector.profile_lock(args.state_dir), sync_playwright() as playwright:
-        context = playwright.chromium.launch_persistent_context(
-            str(args.state_dir / "browser-profile"),
-            headless=True,
-            channel="chrome" if os.name == "nt" else "chromium",
-            locale="ru-RU",
-            timezone_id="Europe/Moscow",
-            viewport={"width": 1440, "height": 1000},
-            accept_downloads=False,
-            chromium_sandbox=True,
-            timeout=30000,
-        )
-        try:
-            page = context.pages[0] if context.pages else context.new_page()
-            for extra in context.pages[1:]:
-                extra.close()
-            context.on("page", lambda popup: popup.close() if popup != page else None)
-            report = collector.run_once(collector.Browser(page, args), args)
-            if report.get("status") == "already_running":
-                raise sync_locks.SyncJobBusyError()
-            return report
-        finally:
-            context.close()
+    report = collector.run_browser_once(collector.arguments(arguments))
+    if report.get("status") == "already_running":
+        raise sync_locks.SyncJobBusyError()
+    return report
 
 
 def callback_for(name: str) -> Callable[[], object]:

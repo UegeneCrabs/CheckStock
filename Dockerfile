@@ -7,12 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --system checkstock && useradd --system --gid checkstock --home-dir /app checkstock
+RUN groupadd --system --gid 10001 checkstock && useradd --system --uid 10001 --gid checkstock --home-dir /app checkstock
 
 COPY requirements.txt requirements-parser.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements-parser.txt \
     && python -m playwright install --with-deps chromium \
+    && apt-get update && apt-get install -y --no-install-recommends xvfb xauth \
     && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
@@ -20,7 +21,7 @@ COPY scripts ./scripts
 COPY static ./static
 COPY templates ./templates
 
-RUN mkdir -p /app/data/yandex-storefront/manual /app/secrets && chown -R checkstock:checkstock /app
+RUN mkdir -p /app/data/yandex-storefront /app/secrets && chown -R checkstock:checkstock /app
 
 USER checkstock
 

@@ -3,12 +3,41 @@
 import json
 from datetime import UTC, datetime, timedelta
 
+from app.core.domain import MOSCOW_TIMEZONE
 from app.repositories import yandex_assortment
 from app.repositories.core import WRITE_LOCK, get_connection
 from app.yandex.storefront_schedule import next_run_at
 
 LEASE_SECONDS = 600
 PRICE_MAX_AGE_SECONDS = 2 * 60 * 60
+
+
+def cooldown(at: datetime | None = None) -> dict | None:
+    """Respect only an explicit Retry-After from Yandex, never a locally imposed pause."""
+    current = at or datetime.now(UTC)
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT finished_at, report_json FROM yandex_storefront_runs "
+            "WHERE finished_at IS NOT NULL ORDER BY finished_at DESC",
+        ).fetchall()
+    latest = None
+    for row in rows:
+        report = json.loads(row["report_json"] or "{}")
+        if report.get("status") != "blocked" or not report.get("server_retry_after"):
+            continue
+        deadline = datetime.fromisoformat(report["server_retry_after"])
+        if deadline > current and (latest is None or deadline > latest[0]):
+            latest = (deadline, report.get("error") or "Маркет ограничил доступ к витрине")
+    if latest is None:
+        return None
+    deadline, reason = latest
+    local = deadline.astimezone(MOSCOW_TIMEZONE)
+    return {
+        "ok": False,
+        "status": "cooldown",
+        "retry_after": deadline.isoformat(),
+        "error": f"{reason}. Повторный обход разрешён не ранее {local:%d.%m.%Y %H:%M} МСК. Запросы к витрине не отправлялись.",
+    }
 
 
 def now() -> str:
