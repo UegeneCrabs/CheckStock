@@ -91,7 +91,18 @@ def _parse_error_body(raw: str) -> tuple[str, str]:
         payload = json.loads(raw)
     except (ValueError, TypeError):
         return "", raw[:200]
-    return payload.get("title", ""), payload.get("detail", "")
+    if not isinstance(payload, dict):
+        return "", raw[:200]
+    title = str(payload.get("title") or "")
+    detail = next(
+        (
+            value.strip()
+            for key in ("detail", "errorText", "message", "error")
+            if isinstance((value := payload.get(key)), str) and value.strip()
+        ),
+        title,
+    )
+    return title, detail[:1000]
 
 
 def _retry_after_seconds(http_error: urllib.error.HTTPError, attempt: int) -> float:

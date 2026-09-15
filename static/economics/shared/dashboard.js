@@ -2580,10 +2580,6 @@
         }
         Object.assign(product, result.product);
         product._detailLoaded = true;
-        if (product._pendingPricePlan) {
-            applyPricePlan(product, product._pendingPricePlan);
-            delete product._pendingPricePlan;
-        }
         productsById[product.id] = product;
         return product;
     }
@@ -2913,27 +2909,6 @@
         });
         writeJson(priceJobsKey, pendingPriceJobs);
     }
-    function applyPricePlan(product, plan) {
-        if (!product.price) {
-            product._pendingPricePlan = plan;
-            return;
-        }
-        product.price.current = finite(plan.display_retail_price, product.price.current);
-        product.price.with_spp = finite(plan.predicted_spp_price, product.price.with_spp);
-        product.price.with_wallet = finite(plan.predicted_wallet_price, product.price.with_wallet);
-    }
-    function applyPriceJobResult(result) {
-        var accepted = result && Array.isArray(result.accepted) ? result.accepted : [];
-        accepted.forEach(function (plan) {
-            var product = productsById[plan.product_id];
-            if (!product) return;
-            applyPricePlan(product, plan);
-        });
-        renderPage();
-        if (state.selected && productsById[state.selected] && productsById[state.selected]._detailLoaded) {
-            renderPriceCalculation(productsById[state.selected]);
-        }
-    }
     async function pollPriceJob(jobId) {
         try {
             var response = await window.fetch(
@@ -2955,9 +2930,14 @@
                 return;
             }
             finishPriceJob(jobId);
+            var refreshed = await loadProducts({ silent: true, refreshDetail: true });
             if (job.status === 'success') {
-                applyPriceJobResult(job.result);
-                showToast('Цена успешно отправлена в WB');
+                showToast(
+                    refreshed
+                        ? 'Цена применена в WB, данные сайта обновлены'
+                        : 'Цена применена в WB. Обновите страницу, чтобы увидеть свежие данные',
+                    refreshed ? undefined : 'error',
+                );
             } else {
                 showToast(job.error || 'WB не принял изменение цены', 'error');
             }

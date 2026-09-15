@@ -348,10 +348,12 @@ def _price_factors(snapshot: dict) -> tuple[Decimal, Decimal | None]:
 
 def _project_customer_prices(
     retail_price: Decimal,
-    spp_factor: Decimal,
+    spp_factor: Decimal | None,
     wallet_discount_percent: float | None,
     wallet_factor: Decimal | None,
-) -> tuple[int, int | None]:
+) -> tuple[int | None, int | None]:
+    if spp_factor is None:
+        return None, None
     spp_price = _round_ruble(retail_price * spp_factor)
     wallet_price = (
         calculate_wallet_price(spp_price, wallet_discount_percent)
@@ -373,10 +375,15 @@ def _plan_price_change(
     retail_price = _retail_price_for_product(product)
     current_base = int(base_price)
     current_discount = _current_discount_for_product(product, base_price, retail_price)
-    spp_factor, wallet_factor = _price_factors(snapshot)
     target_kind = str(change.get("target_kind") or "retail").strip().lower()
     if target_kind not in {"retail", "spp", "wallet"}:
         raise PriceChangeError("Неизвестный тип целевой цены")
+    try:
+        spp_factor, wallet_factor = _price_factors(snapshot)
+    except PriceChangeError:
+        if target_kind != "retail":
+            raise
+        spp_factor, wallet_factor = None, None
     try:
         requested_target = Decimal(str(change.get("target_price")))
     except (InvalidOperation, TypeError, ValueError) as error:
@@ -535,6 +542,11 @@ def _prepare_price_changes(store_slug: str, changes: list[dict]) -> dict:
                 change,
                 wallet_discount_percent,
             )
+            if (
+                plan["base_price"] == plan["previous_base_price"]
+                and plan["discount"] == plan["previous_discount"]
+            ):
+                raise PriceChangeError("Эта цена и скидка уже установлены в WB; повторная отправка не нужна")
         except PriceChangeError as error:
             errors.append({"product_id": product_id, "article": article, "error": str(error)})
             continue
@@ -658,9 +670,28 @@ def finalize_price_change_report(store_slug: str, report: dict) -> dict:
         )
 
     time.sleep(PRICE_SYNC_AFTER_UPLOAD_DELAY_SECONDS)
-    sync_report = sync_store(store_slug)
+    try:
+        sync_report = sync_store(store_slug)
+    except Exception as error:
+        sync_report = {"ok": False, "error": _friendly_error(error)}
     report["sync"] = sync_report
-    report["price_data_refreshed"] = bool(sync_report.get("ok") or int(sync_report.get("rows") or 0) > 0)
+    refreshed_prices = sync_report.get("refreshed_prices") or {}
+    unconfirmed = []
+    for item in report.get("accepted") or []:
+        actual = refreshed_prices.get(item["article"]) or {}
+        if _number(actual.get("seller_base_price")) != _number(item["base_price"]) or _number(
+            actual.get("retail_price")
+        ) != _number(item["calculated_price"]):
+            unconfirmed.append(item)
+    report.setdefault("errors", []).extend(
+        {
+            "product_id": item["product_id"],
+            "article": item["article"],
+            "error": "WB обработал загрузку, но новая цена этого товара ещё не подтверждена в данных сайта",
+        }
+        for item in unconfirmed
+    )
+    report["price_data_refreshed"] = bool(report.get("accepted")) and not unconfirmed
     report["ok"] = not report.get("errors") and report["price_data_refreshed"]
     return report
 
@@ -819,6 +850,9 @@ def _sync_store(
     storefront_products = list(storefront_report.get("products") or [])
     storefront_rows = _storefront_price_rows(storefront_products)
     targets = _targets(store_slug, storefront_rows, seller_rows)
+    fresh_seller_articles = {
+        str(target["article"]) for target in targets if _number(target.get("retail_price")) is not None
+    }
     order_retail_rows: list[dict] = []
     if load_retail_prices:
         missing_without_spp = [
@@ -922,11 +956,17 @@ def _sync_store(
         )
         if storefront_price is None:
             unresolved_rows += 1
-            continue
+            # Seller prices remain usable when an out-of-stock card has no buyer price.
+            # With no fresh seller price either, preserve the previous snapshot.
+            if article not in fresh_seller_articles:
+                continue
         if spp_estimated:
             estimated_spp_rows += 1
-        storefront_rows_saved += 1
-        if wallet_discount_report.get("ok"):
+        if storefront_price is not None:
+            storefront_rows_saved += 1
+        if storefront_price is None:
+            wallet_price = None
+        elif wallet_discount_report.get("ok"):
             wallet_price = calculate_wallet_price(
                 storefront_price,
                 wallet_discount_percent,
@@ -1008,6 +1048,19 @@ def _sync_store(
         "retail_fallback_rows": len(order_retail_rows),
         "retail_missing_rows": len(retail_missing_targets),
         "unresolved_rows": unresolved_rows,
+        "refreshed_prices": {
+            row["article"]: {
+                key: row[key]
+                for key in (
+                    "seller_base_price",
+                    "retail_price",
+                    "customer_price_with_spp",
+                    "customer_price_with_wallet",
+                )
+            }
+            for row in snapshots
+            if row["article"] in fresh_seller_articles
+        },
     }
     if errors:
         report["error"] = "; ".join(errors)
