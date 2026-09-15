@@ -6,14 +6,18 @@ JOB = "yandex_economics_sync"
 
 
 def sync_all(store_slugs=None):
-    stores = tuple(store_slugs) if store_slugs is not None else tuple(tokens.stores_with_credentials())
+    stores = tuple(
+        store
+        for store in (store_slugs if store_slugs is not None else tokens.stores_with_credentials())
+        if tokens.has_credentials(store)
+    )
     result = {}
     economics.bootstrap_1c(stores)
     for store in stores:
         try:
             result[store] = {"ok": True, **economics_api.refresh_store(store)}
         except Exception as error:
-            result[store] = {"ok": False, "error": type(error).__name__}
+            result[store] = {"ok": False, "error": f"{type(error).__name__}: {str(error)[:700]}"}
         result[store].update(economics.capture_today((store,)))
         result[store].update(economics.close_days((store,)))
     return result

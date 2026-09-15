@@ -60,7 +60,7 @@ def load_mappings(key: str, business_id: int, articles: list[str]) -> dict[str, 
                 f"/v2/businesses/{business_id}/offer-mappings",
                 key,
                 payload={"offerIds": wanted},
-                params={"limit": 200, "page_token": page_token},
+                params={"limit": 200, "pageToken": page_token},
             )
             for row in data.get("offerMappings") or []:
                 article = str((row.get("offer") or {}).get("offerId") or "")

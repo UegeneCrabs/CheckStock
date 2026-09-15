@@ -132,6 +132,10 @@ def _request(
             last_error = YandexApiError(e.code, detail)
 
             if e.code in (420, 429) or 500 <= e.code < 600:
+                # Report generation has minute-long quotas. Its caller waits for
+                # the actual report interval instead of retrying every few seconds.
+                if e.code in (420, 429) and path.startswith("/v2/reports/") and path.endswith("/generate"):
+                    raise last_error from e
                 if attempt < MAX_ATTEMPTS:
                     pause = RETRY_BACKOFF_SECONDS * attempt
                     logger.warning("Яндекс %s: %s, повтор через %s с", path, last_error.friendly, pause)

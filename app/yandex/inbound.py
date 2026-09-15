@@ -137,6 +137,37 @@ def load(
                 key, base, "requests", {"requestIds": [int(value) for value in missing[start : start + 100]]}
             )
             by_id.update({request_id(row): row for row in fetched})
+        linked_children = {
+            str(link["id"]["id"]): link["id"]
+            for row in by_id.values()
+            for link in (row.get("childrenLinks") or [])
+            if isinstance(link, dict)
+            and link.get("type") == "VIRTUAL_DISTRIBUTION"
+            and isinstance(link.get("id"), dict)
+        }
+        missing_children = sorted(set(linked_children) - set(by_id))
+        for start in range(0, len(missing_children), 100):
+            fetched = paged(
+                key,
+                base,
+                "requests",
+                {"requestIds": [int(value) for value in missing_children[start : start + 100]]},
+            )
+            by_id.update({request_id(row): row for row in fetched})
+        empty_children = set()
+        previous_ids = {supply.supply_id for supply in previous if supply.campaign_id == str(campaign["id"])}
+        for child_id in set(missing_children) - set(by_id):
+            link = linked_children[child_id]
+            # Market also links unused distribution slots: no actual request,
+            # no marketplace/warehouse number and no items. Verify all three
+            # before ignoring one; never discard a previously saved supply.
+            if (
+                child_id not in previous_ids
+                and not link.get("marketplaceRequestId")
+                and not link.get("warehouseRequestId")
+                and not paged(key, f"{base}/items", "items", {"requestId": int(child_id)})
+            ):
+                empty_children.add(child_id)
         children_by_parent: dict[str, list[str]] = {}
         for row in by_id.values():
             parent = row.get("parentLink") or {}
@@ -158,7 +189,7 @@ def load(
             ]
             child_ids = list(dict.fromkeys([*child_ids, *children_by_parent.get(internal_id, [])]))
             if child_ids:
-                if any(child_id not in by_id for child_id in child_ids):
+                if any(child_id not in by_id and child_id not in empty_children for child_id in child_ids):
                     raise InboundSourceError(
                         "Не получены все дочерние поставки Яндекс Маркета. Состав сохранён до полного обновления."
                     )

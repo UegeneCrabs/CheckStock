@@ -33,7 +33,12 @@ SOURCES = ("orders", "reputation", "advertising", "buyout")
 _REPORT_LOCKS: dict[int, Lock] = {}
 _REPORT_LOCKS_GUARD = Lock()
 _REPORT_LAST_REQUEST: dict[tuple[int, str], float] = {}
-_REPORT_INTERVALS = {"boost-consolidated": 120, "shows-boost": 120, "shows-sales": 600}
+_REPORT_INTERVALS = {
+    "boost-consolidated": 120,
+    "shows-boost": 120,
+    "shows-sales": 600,
+    "goods-feedback": 600,
+}
 _STORE_LOCKS = {(slug, source): Lock() for slug in STORES for source in SOURCES}
 
 
@@ -87,15 +92,30 @@ def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier
     business_id = int(payload["businessId"])
     with _REPORT_LOCKS_GUARD:
         report_lock = _REPORT_LOCKS.setdefault(business_id, Lock())
-    with report_lock:
-        key = (business_id, report)
-        delay = _REPORT_INTERVALS.get(report, 0) - (time.monotonic() - _REPORT_LAST_REQUEST.get(key, -1e20))
-        if delay > 0:
-            time.sleep(delay)
-        try:
-            return _load_report(api_key, report, payload, sheet, identifier)
-        finally:
-            _REPORT_LAST_REQUEST[key] = time.monotonic()
+    key = (business_id, report)
+    interval = _REPORT_INTERVALS.get(report, 120)
+    attempts = 0
+    while True:
+        with report_lock:
+            delay = interval - (time.monotonic() - _REPORT_LAST_REQUEST.get(key, -1e20))
+            if delay <= 0:
+                quota_padding = 0
+                attempts += 1
+                try:
+                    return _load_report(api_key, report, payload, sheet, identifier)
+                except api.YandexApiError as error:
+                    if error.status not in (420, 429) or attempts == 3:
+                        raise
+                    quota_padding = 5
+                    delay = interval + quota_padding
+                    logger.warning(
+                        "ЯМ %s: ожидаем квоту отчёта %s с (кабинет %s)", report, delay, business_id
+                    )
+                finally:
+                    _REPORT_LAST_REQUEST[key] = time.monotonic() + quota_padding
+        # A quota wait must not block other report types for this business.
+        # Recheck the deadline under the lock after waking up.
+        time.sleep(delay)
 
 
 def _load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
