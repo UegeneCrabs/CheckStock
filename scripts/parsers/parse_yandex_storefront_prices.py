@@ -479,6 +479,7 @@ def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
         for index, target in enumerate(targets[: args.limit or None], 1):
             if lost.is_set():
                 raise RuntimeError("Потеряна блокировка загрузки")
+            target = {**target, "_price_basis": repository.price_basis(target)}
             try:
                 result = browser.fetch(target)
             except CaptchaError as error:

@@ -1,4 +1,4 @@
-"""Resolve selected catalog offers and read ordinary storefront prices, excluding Pay."""
+"""Read separate ordinary and Yandex Pay prices for the selected seller and offer."""
 
 import json
 import math
@@ -216,13 +216,31 @@ def parse_prices(html: str, url: str, target: dict) -> dict:
         if (osku and osku != target["card_id"]) or (not osku and sku != target["market_sku"]):
             continue
         prices = offer.get("prices") or {}
-        if not isinstance(prices, dict) or not isinstance(prices.get("price"), dict):
+        if not isinstance(prices, dict):
             continue
-        value = number(prices["price"])
-        currency = prices["price"].get("currency", "RUR")
-        if value is not None and currency in ("RUR", "RUB"):
+        ordinary = prices.get("price") or {}
+        green = prices.get("greenPrice") or {}
+        ordinary = ordinary if isinstance(ordinary, dict) else {}
+        green = green if isinstance(green, dict) else {}
+        green_price = green.get("price") or {}
+        green_price = green_price if isinstance(green_price, dict) else {}
+        value = number(ordinary) if ordinary.get("currency", "RUR") in ("RUR", "RUB") else None
+        pay = (
+            number(green_price)
+            if green.get("type") == "ya-card" and green_price.get("currency", "RUR") in ("RUR", "RUB")
+            else None
+        )
+        if pay is not None and value is not None and pay > value:
+            pay = None
+        if value is not None or pay is not None:
             matches.append(
-                {"status": "ok", "buyer_price": value, "currency": currency, "offer_key": str(key)}
+                {
+                    "status": "ok" if value is not None else "price_missing",
+                    "buyer_price": value,
+                    "pay_price": pay,
+                    "currency": "RUR",
+                    "offer_key": str(key),
+                }
             )
     if matches:
         if len({item["buyer_price"] for item in matches}) != 1:
@@ -231,7 +249,12 @@ def parse_prices(html: str, url: str, target: dict) -> dict:
                 "buyer_price": None,
                 "message": "Несколько цен выбранного продавца",
             }
-        return matches[0]
+        result = matches[0]
+        pay_prices = {item["pay_price"] for item in matches if item["pay_price"] is not None}
+        result["pay_price"] = pay_prices.pop() if len(pay_prices) == 1 else None
+        if result["buyer_price"] is None:
+            result["message"] = "Цена без Пэй не найдена; получена только цена Пэй"
+        return result
     text = " ".join(parsed.text).lower()
     sold_out = any(
         t in text

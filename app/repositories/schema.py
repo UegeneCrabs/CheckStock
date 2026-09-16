@@ -22,6 +22,7 @@ def init_db() -> None:
     _migrate_manual_supply_note(database)
     _backfill_sync_job_runs(database)
     _migrate_yandex_sync_settings(database)
+    _migrate_yandex_price_discounts(database)
     _migrate_yandex_daily_orders(database)
     _remove_legacy_catalog_product_exclusions(database)
     _remove_legacy_unit_economics(database)
@@ -61,6 +62,45 @@ def _sync_yandex_assortment(database: Database) -> None:
     active = yandex_assortment.load_active_products()
     with core.WRITE_LOCK, database.connect() as connection:
         yandex_assortment.refresh(connection, active, datetime.now(UTC).isoformat())
+        connection.commit()
+
+
+def _migrate_yandex_price_discounts(database: Database) -> None:
+    from app.yandex.price_calculation import discount_percent, paired_at
+
+    with core.WRITE_LOCK, database.connect() as connection:
+        columns = connection.column_names("yandex_storefront_prices")
+        additions = {
+            "buyer_seller_price": "FLOAT",
+            "pay_price": "FLOAT",
+            "pay_checked_at": "TEXT",
+            "pay_seller_price": "FLOAT",
+            "pay_buyer_price": "FLOAT",
+            "spp_percent": "FLOAT",
+            "spp_checked_at": "TEXT",
+            "pay_discount_percent": "FLOAT",
+            "pay_discount_checked_at": "TEXT",
+        }
+        for name, kind in additions.items():
+            if name not in columns:
+                connection.execute(f"ALTER TABLE yandex_storefront_prices ADD COLUMN {name} {kind}")
+        # Legacy rows have no seller snapshot. Only backfill an ordered, recent pair;
+        # a later seller refresh may already belong to a different price.
+        if "spp_percent" not in columns:
+            for raw in connection.execute("SELECT * FROM yandex_storefront_prices").fetchall():
+                row = dict(raw)
+                percent = discount_percent(row["seller_price"], row["buyer_price"])
+                if percent is not None and paired_at(row["seller_checked_at"], row["price_checked_at"]):
+                    connection.execute(
+                        "UPDATE yandex_storefront_prices SET spp_percent=?, spp_checked_at=?, buyer_seller_price=? WHERE store_slug=? AND article=?",
+                        (
+                            percent,
+                            row["price_checked_at"],
+                            row["seller_price"],
+                            row["store_slug"],
+                            row["article"],
+                        ),
+                    )
         connection.commit()
 
 

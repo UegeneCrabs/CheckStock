@@ -34,14 +34,8 @@ def catalog_product(
     article = str(product["article"])
     source_values = source_values or {}
     prices = prices or {}
-    seller_price = (
-        prices.get("seller_price") if yandex_storefront.fresh(prices.get("seller_checked_at")) else None
-    )
-    buyer_price = (
-        prices.get("buyer_price")
-        if (prices.get("status") == "ok" and yandex_storefront.fresh(prices.get("price_checked_at")))
-        else None
-    )
+    pricing = yandex_storefront.resolved_prices(prices)
+    seller_price, buyer_price = pricing["seller_price"], pricing["buyer_price"]
     return {
         "id": f"yandex:{store_slug}:{article}",
         "marketplace": MARKETPLACE,
@@ -57,8 +51,9 @@ def catalog_product(
         "reviews_count": (reputation or {}).get("reviews_count"),
         "is_new": is_new,
         "sales_days": None,
-        "price": {"current": seller_price, "with_spp": buyer_price, "with_wallet": None},
+        "price": {"current": seller_price, "with_spp": buyer_price, "with_wallet": pricing["pay_price"]},
         "price_check": {
+            **pricing,
             "status": prices.get("status", "pending"),
             "checked_at": prices.get("checked_at"),
             "price_checked_at": prices.get("price_checked_at"),

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from app.core.domain import MOSCOW_TIMEZONE
 from app.repositories import yandex_assortment
 from app.repositories.core import WRITE_LOCK, get_connection
+from app.yandex.price_calculation import discount_percent, discounted_price, paired_at, positive
 from app.yandex.storefront_schedule import next_run_at
 
 LEASE_SECONDS = 600
@@ -82,17 +83,48 @@ def save_target(target: dict) -> None:
         if changed:
             connection.execute(
                 """UPDATE yandex_storefront_prices SET buyer_price=NULL, price_checked_at=NULL,
-                seller_price=NULL, seller_checked_at=NULL, status='pending', message=NULL
+                seller_price=NULL, seller_checked_at=NULL, status='pending', message=NULL,
+                buyer_seller_price=NULL, pay_price=NULL, pay_checked_at=NULL,
+                pay_seller_price=NULL, pay_buyer_price=NULL,
+                spp_percent=NULL, spp_checked_at=NULL,
+                pay_discount_percent=NULL, pay_discount_checked_at=NULL
                 WHERE store_slug=? AND article=?""",
                 (target["store_slug"], target["article"]),
             )
         connection.commit()
 
 
+def price_basis(target: dict) -> dict:
+    """Capture the seller quote before opening the storefront page."""
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT seller_price, seller_checked_at FROM yandex_storefront_prices WHERE store_slug=? AND article=?",
+            (target["store_slug"], target["article"]),
+        ).fetchone()
+    return dict(row) if row else {}
+
+
 def record(target: dict, result: dict) -> None:
     timestamp = now()
-    success = result.get("status") == "ok" and result.get("buyer_price") is not None
+    trusted = result.get("status") in {"ok", "price_missing"} and result.get("currency", "RUR") in {
+        "RUR",
+        "RUB",
+    }
+    buyer = positive(result.get("buyer_price")) if trusted and result["status"] == "ok" else None
+    pay = positive(result.get("pay_price")) if trusted else None
+    basis = target.get("_price_basis", {})
     with WRITE_LOCK, get_connection() as connection:
+        previous = connection.execute(
+            "SELECT * FROM yandex_storefront_prices WHERE store_slug=? AND article=?",
+            (target["store_slug"], target["article"]),
+        ).fetchone()
+        old = dict(previous) if previous else {}
+        identity = json.loads(old.get("target_json") or "{}")
+        if any(
+            target.get(k) is not None and target[k] != identity.get(k)
+            for k in ("business_id", "market_sku", "card_id")
+        ):
+            return  # A remapped article must not accept an in-flight old observation.
         connection.execute(
             """INSERT INTO yandex_storefront_prices (store_slug, article, status, checked_at, message)
             VALUES (?, ?, ?, ?, ?)
@@ -100,22 +132,45 @@ def record(target: dict, result: dict) -> None:
             checked_at=excluded.checked_at, message=excluded.message""",
             (target["store_slug"], target["article"], result["status"], timestamp, result.get("message")),
         )
-        if success:
+        seller = positive(basis.get("seller_price"))
+        paired = paired_at(basis.get("seller_checked_at"), timestamp) and seller == old.get("seller_price")
+        if buyer is not None:
             connection.execute(
-                """UPDATE yandex_storefront_prices SET buyer_price=?, price_checked_at=?, currency=?
+                """UPDATE yandex_storefront_prices SET buyer_price=?, price_checked_at=?, currency=?, buyer_seller_price=?
                 WHERE store_slug=? AND article=?""",
                 (
-                    result["buyer_price"],
+                    buyer,
                     timestamp,
                     result.get("currency", "RUR"),
+                    seller,
                     target["store_slug"],
                     target["article"],
                 ),
             )
+            percent = discount_percent(seller, buyer) if paired else None
+            if percent is not None:
+                connection.execute(
+                    "UPDATE yandex_storefront_prices SET spp_percent=?, spp_checked_at=? WHERE store_slug=? AND article=?",
+                    (percent, timestamp, target["store_slug"], target["article"]),
+                )
+        if pay is not None and (buyer is None or pay <= buyer):
+            connection.execute(
+                "UPDATE yandex_storefront_prices SET pay_price=?, pay_checked_at=?, pay_seller_price=?, pay_buyer_price=? WHERE store_slug=? AND article=?",
+                (pay, timestamp, seller, buyer, target["store_slug"], target["article"]),
+            )
+            percent = discount_percent(buyer, pay)
+            if percent is not None:
+                connection.execute(
+                    "UPDATE yandex_storefront_prices SET pay_discount_percent=?, pay_discount_checked_at=? WHERE store_slug=? AND article=?",
+                    (percent, timestamp, target["store_slug"], target["article"]),
+                )
         connection.commit()
 
 
 def seller_price(target: dict, value: float | None) -> None:
+    value = positive(value)
+    if value is None:
+        return  # A missing API price must not erase the last observed seller price.
     with WRITE_LOCK, get_connection() as connection:
         connection.execute(
             """UPDATE yandex_storefront_prices SET seller_price=?, seller_checked_at=?
@@ -151,6 +206,66 @@ def refresh_assortment() -> None:
     with WRITE_LOCK, get_connection() as connection:
         yandex_assortment.refresh(connection, yandex_assortment.load_active_products(), now())
         connection.commit()
+
+
+def resolved_prices(row: dict) -> dict:
+    """Observed prices while current; estimates keep the last real discounts indefinitely."""
+    seller = positive(row.get("seller_price"))
+    buyer_current = (
+        row.get("status") == "ok"
+        and row.get("price_checked_at") == row.get("checked_at")
+        and fresh(row.get("price_checked_at"))
+        and (row.get("buyer_seller_price") is None or row["buyer_seller_price"] == seller)
+    )
+    buyer = (
+        positive(row.get("buyer_price"))
+        if buyer_current
+        else discounted_price(seller, row.get("spp_percent"))
+    )
+    pay_current = (
+        row.get("status") in {"ok", "price_missing"}
+        and row.get("pay_checked_at") == row.get("checked_at")
+        and fresh(row.get("pay_checked_at"))
+        and (row.get("pay_seller_price") is None or row["pay_seller_price"] == seller)
+        and (row.get("pay_buyer_price") is None or row["pay_buyer_price"] == buyer)
+    )
+    pay = (
+        positive(row.get("pay_price"))
+        if pay_current
+        else discounted_price(buyer, row.get("pay_discount_percent"))
+    )
+    origins = {
+        "seller_price": "API: цена продавца"
+        if fresh(row.get("seller_checked_at"))
+        else "Последняя цена продавца из API",
+        "buyer_price": "Витрина: цена с СПП" if buyer_current else "Расчётная: по последнему СПП",
+        "pay_price": "Витрина: цена с Пэй" if pay_current else "Расчётная: по последней скидке Пэй",
+    }
+    values = {"seller_price": seller, "buyer_price": buyer, "pay_price": pay}
+    for key, value in values.items():
+        if value is None:
+            origins[key] = "Нет цены или сохранённой скидки"
+    return {
+        **values,
+        "origins": origins,
+        "buyer_estimated": buyer is not None and not buyer_current,
+        "pay_estimated": pay is not None and not pay_current,
+        **{
+            key: row.get(key)
+            for key in (
+                "spp_percent",
+                "spp_checked_at",
+                "pay_discount_percent",
+                "pay_discount_checked_at",
+                "price_checked_at",
+                "pay_checked_at",
+                "seller_checked_at",
+                "checked_at",
+                "status",
+                "message",
+            )
+        },
+    }
 
 
 def get_prices(store_slug: str) -> dict[str, dict]:
