@@ -72,6 +72,15 @@ def save_settings(store, article, scheme, changes, revision, actor):
     return settings(store, article, scheme)
 
 
+def source(store, article, name):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT payload_json,updated_at FROM yandex_economics_sources WHERE store_slug=? AND article=? AND source=?",
+            (store, article, name),
+        ).fetchone()
+    return {"values": json.loads(row["payload_json"]), "updated_at": row["updated_at"]} if row else {}
+
+
 def sources(store):
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM yandex_economics_sources WHERE store_slug=?", (store,)).fetchall()

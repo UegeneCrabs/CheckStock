@@ -1,13 +1,14 @@
 """YM calculations, with explicit input provenance and no network/database side effects."""
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
-VERSION = 2
+VERSION = 5
+DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost", "storage_per_day", "storage_days")
 OPTIONAL_DEFAULTS = {
     "advertising_mode": "actual",
-    "tax_base": "buyer",
     "frequency": "WEEKLY",
     "payment_delay_weeks": 0,
+    "tariff_extra": 0,
 }
 LABELS = {
     "seller_price": "Цена продавца",
@@ -21,6 +22,7 @@ LABELS = {
     "return_cost": "Обратная доставка",
     "storage_per_day": "Хранение за день",
     "storage_days": "Дни хранения",
+    "volume_l": "Объём товара (нужны положительные длина, ширина и высота упаковки)",
     "transit_cost": "Транзит",
     "other_percent": "Прочие расходы, %",
     "other_cost": "Прочие расходы, ₽",
@@ -35,22 +37,93 @@ LABELS = {
 
 
 def money(value):
-    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    # Spreadsheet/API floats can leave a binary tail just below half a kopeck.
+    # Strip that tail for display only; profit still uses the unrounded costs.
+    display_value = Decimal(format(Decimal(str(value)), ".15g"))
+    return float(display_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def resolve(*layers):
     values, provenance = dict(OPTIONAL_DEFAULTS), {}
     for name, layer in layers:
         for key, value in layer.items():
+            # Older saved settings may still contain the removed tax-base choice.
+            if key == "tax_base":
+                continue
             if value is not None:
                 values[key], provenance[key] = value, name
     return values, provenance
 
 
-def calculate(values, *, advertising_spend=None, orders_count=None, without_advertising=False):
-    """Preserve the YM sheet's AT and AY formulas; do not normalize these by q. DRR is defined against expected bought seller turnover."""
+def sheet_logistics(values, *, scenario=None):
+    """AO and AP + 15 from the sheet, independent of the successful-delivery API quote.
+
+    Dimensions are in cm; volume is in litres, without rounding up. Legacy
+    return/storage settings are ignored. Only explicit calculator scenario
+    overrides replace the formulas, before calculating their dependent costs.
+    """
+    result = dict.fromkeys(DERIVED_FIELDS)
+    manual = {key: value for key, value in (scenario or {}).items() if value is not None}
+    result["storage_days"] = manual.get("storage_days", 30)
+    dimensions = [values.get(key) for key in ("length", "width", "height")]
+    volume = None
+    if "volume_l" in manual:
+        volume = Decimal(str(manual["volume_l"]))
+    elif all(value is not None and value > 0 for value in dimensions):
+        length, width, height = (Decimal(str(value)) for value in dimensions)
+        volume = length * width * height / 1000
+    if volume is None:
+        middle_mile = None
+    elif volume <= 1:
+        middle_mile = Decimal(80)
+    elif volume <= 30:
+        middle_mile = 80 + (volume - 1) * 9
+    elif volume <= 200:
+        middle_mile = 80 + 29 * 9 + (volume - 30) * 7
+    else:
+        middle_mile = 80 + 29 * 9 + 170 * 7 + (volume - 200) * 5
+    if middle_mile is not None:
+        middle_mile = min(middle_mile, Decimal(5500))
+    if "return_middle_mile" in manual:
+        middle_mile = Decimal(str(manual["return_middle_mile"]))
+    result.update(
+        volume_l=float(volume) if volume is not None else None,
+        return_middle_mile=float(middle_mile) if middle_mile is not None else None,
+        return_cost=manual.get("return_cost", float(middle_mile + 15) if middle_mile is not None else None),
+    )
+    turnover = values.get("turnover_days")
+    if turnover is not None and volume is not None:
+        rate = next(
+            rate
+            for limit, rate in ((120, "0"), (180, "0.75"), (300, "1"), (450, "1.25"), (float("inf"), "1.75"))
+            if turnover <= limit
+        )
+        result["storage_per_day"] = float(Decimal(rate) * volume)
+    if "storage_per_day" in manual:
+        result["storage_per_day"] = manual["storage_per_day"]
+    return result
+
+
+def calculate(
+    values,
+    *,
+    advertising_spend=None,
+    orders_count=None,
+    without_advertising=False,
+    scenario=None,
+    precise=False,
+):
+    """Match AH (profit), AI (margin) and BB (ROI) in the YM sheet.
+
+    AS returns and AX disposal multiply by the non-buyout fraction, without
+    dividing by buyout. Planned advertising is seller price times DRR; only
+    actual advertising is allocated over expected bought units. With precise=True,
+    margin stays a Decimal for finding a price without hiding fractional losses.
+    """
+    values = {**values, **sheet_logistics(values, scenario=scenario)}
     required = [
         "seller_price",
+        "buyer_price",
         "purchase_price",
         "fulfillment_cost",
         "commission_percent",
@@ -70,9 +143,7 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
         "disposal_cost",
         "buyout_percent",
     ]
-    if values.get("tax_base", "buyer") == "buyer":
-        required.append("buyer_price")
-    if not without_advertising and values.get("advertising_mode", "actual") == "plan":
+    if not without_advertising and values.get("advertising_mode", "actual") in {"plan", "weekly"}:
         required.append("plan_drr")
     missing = [key for key in required if values.get(key) is None]
     if missing:
@@ -88,7 +159,7 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
         return Decimal(str(values.get(key, 0)))
 
     price, purchase, q = d("seller_price"), d("purchase_price"), d("buyout_percent") / 100
-    if q <= 0:
+    if q <= 0 and values.get("advertising_mode", "actual") == "actual":
         return {
             "margin": None,
             "roi": None,
@@ -108,9 +179,7 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
         "purchase": purchase,
         "fulfillment": d("fulfillment_cost"),
         "other": price * d("other_percent") / 100 + d("other_cost"),
-        "tax": (d("buyer_price") if values.get("tax_base", "buyer") == "buyer" else price)
-        * d("tax_percent")
-        / 100,
+        "tax": d("buyer_price") * d("tax_percent") / 100,
         "capital": purchase * d("capital_percent") / 100 * d("turnover_days") / 365,
         "loss": price * d("loss_percent") / 100,
         "disposal": d("disposal_cost") * (1 - q),
@@ -118,14 +187,16 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
     }
     if without_advertising:
         advertising = Decimal(0)
-    elif values.get("advertising_mode", "actual") == "plan":
+    elif values.get("advertising_mode", "actual") in {"plan", "weekly"}:
         advertising = price * d("plan_drr") / 100
     elif advertising_spend is None or orders_count is None:
         return {
             "margin": None,
             "roi": None,
             "missing": ["advertising"],
-            "messages": ["Нет полной рекламы и заказов за сегодня. Плановый расчёт доступен в калькуляторе."],
+            "messages": [
+                "Нет полной рекламы и заказов за сегодня. Для планового расчёта выберите «Плановый ДРР» в подробных параметрах."
+            ],
             "costs": {key: money(value) for key, value in costs.items()},
         }
     elif orders_count <= 0:
@@ -135,7 +206,7 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
                 "roi": None,
                 "missing": ["orders_count"],
                 "messages": [
-                    "Есть рекламные расходы, но нет заказов для распределения. Плановый расчёт доступен в калькуляторе."
+                    "Есть рекламные расходы, но нет заказов для распределения. Для планового расчёта выберите «Плановый ДРР» в подробных параметрах."
                 ],
                 "costs": {key: money(value) for key, value in costs.items()},
             }
@@ -146,9 +217,11 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
     margin = price - sum(costs.values())
     buyer = values.get("buyer_price")
     return {
-        "margin": money(margin),
+        "margin": margin if precise else money(margin),
         "roi": money(margin / purchase * 100) if purchase > 0 else None,
-        "margin_percent": money(margin / Decimal(str(buyer)) * 100) if buyer and buyer > 0 else None,
+        "margin_percent": (
+            money(margin / Decimal(str(buyer)) * 100) if buyer and buyer > 0 else 0.0 if buyer == 0 else None
+        ),
         "costs": {key: money(value) for key, value in costs.items()},
         "total_cost": money(sum(costs.values())),
         "missing": [],
@@ -158,24 +231,75 @@ def calculate(values, *, advertising_spend=None, orders_count=None, without_adve
     }
 
 
+def break_even_prices(values, *, scenario=None):
+    """Keep current costs and price ratios; find a non-loss price in steps of 10 RUB."""
+    initial = calculate(values, scenario=scenario, precise=True)
+    if initial["margin"] is None:
+        raise ValueError("Для цены без убытка не хватает данных. " + " ".join(initial["messages"]))
+    seller = Decimal(str(values["seller_price"]))
+    if seller <= 0:
+        raise ValueError("Для цены без убытка задайте положительную цену продавца.")
+    buyer_factor = Decimal(str(values["buyer_price"])) / seller
+    pay_factor = Decimal(str(values["pay_price"])) / seller if values.get("pay_price") is not None else None
+
+    def margin(price, buyer):
+        return calculate(
+            {**values, "seller_price": price, "buyer_price": buyer}, scenario=scenario, precise=True
+        )["margin"]
+
+    fixed_margin = margin(Decimal(0), Decimal(0))
+    contribution = margin(Decimal(1), buyer_factor) - fixed_margin
+    if contribution <= 0:
+        raise ValueError(
+            "При заданных процентах расходов цена без убытка недостижима. Уменьшите расходы или ДРР."
+        )
+    price = max(
+        Decimal(10), (-fixed_margin / contribution / 10).to_integral_value(rounding=ROUND_CEILING) * 10
+    )
+    # Tax uses the rounded buyer price. Its rounding can move the exact boundary.
+    for _ in range(2):
+        buyer = Decimal(str(money(price * buyer_factor)))
+        pay = money(price * pay_factor) if pay_factor is not None else None
+        if max(price, buyer, Decimal(str(pay or 0))) > 1_000_000_000:
+            raise ValueError("Цена без убытка превышает допустимый предел калькулятора.")
+        profit = margin(price, buyer)
+        if profit >= 0:
+            return {"seller_price": float(price), "buyer_price": float(buyer), "pay_price": pay}
+        rounding_cost = Decimal("0.005") * Decimal(str(values["tax_percent"])) / 100
+        price = max(
+            price + 10,
+            ((-fixed_margin + rounding_cost) / contribution / 10).to_integral_value(rounding=ROUND_CEILING)
+            * 10,
+        )
+    raise ValueError("Не удалось подобрать цену без убытка с заданными параметрами.")
+
+
 def aggregate(days, expected_dates):
+    """Use the same saved days for profit and invested purchase cost, including partial periods."""
+    expected_dates = sorted(set(expected_dates))
     present = {row["day"]: row for row in days}
     known = [present[day] for day in expected_dates if day in present]
-    covered = [row for row in known if row.get("profit") is not None]
-    missing = [day for day in expected_dates if day not in present or present[day].get("profit") is None]
+    covered = [
+        row for row in known if row.get("profit") is not None and row.get("purchase_value") is not None
+    ]
+    dates = [row["day"] for row in covered]
+    missing = sorted(set(expected_dates).difference(dates))
     profit = sum(Decimal(str(row["profit"])) for row in covered)
     basis = sum(Decimal(str(row["purchase_value"])) for row in covered)
     unallocated_ads = sum(
-        float(row.get("advertising_spend") or 0) for row in known if row.get("profit") is None
+        float(row.get("advertising_spend") or 0) for row in known if row["day"] in missing
     )
     return {
         "margin": money(profit) if covered else None,
         "roi": money(profit / basis * 100) if covered and basis > 0 else None,
         "purchase_value": money(basis) if covered else None,
         "coverage": {
+            "dates": dates,
             "days": len(covered),
             "expected_days": len(expected_dates),
             "complete": not missing,
+            "period_from": dates[0] if dates else None,
+            "period_to": dates[-1] if dates else None,
             "missing_dates": missing,
         },
         "unallocated_advertising": money(unallocated_ads),

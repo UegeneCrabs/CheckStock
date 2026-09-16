@@ -2927,12 +2927,13 @@ async def sales_unit_economics_1c_yandex(request: Request):
         loading_description="Загружаем товары из каталога.",
         unit_1c_notice=(
             '<p class="ue1c-placeholder-note" role="status">Яндекс Маркет · Остатки из БД, '
-            "рейтинг и отзывы из API. Цена покупателя без Пэй — с витрины: каждый час 08:00–19:00 и в 01:00 (Екатеринбург). "
+            "рейтинг и отзывы из API. Цены с СПП и Пэй — с витрины: каждый час 08:00–19:00 и в 01:00 (МСК). "
+            "При пропуске цены используем последние известные скидки; источник указан в карточке. "
             "ТО и реклама — за выбранный период завершённых дней; "
             "запас — по заказам за 21 день. Экономика FBY — расчётная; калькулятор — в карточке товара. Постоянные параметры — в «API-ключи и фоновые выгрузки».</p>"
         ),
     )
-    content += '<link rel="stylesheet" href="/static/economics/yandex/calculator.css?v=20260912"><script src="/static/economics/yandex/fields.js?v=20260912"></script><script src="/static/economics/yandex/calculator.js?v=20260912"></script>'
+    content += '<link rel="stylesheet" href="/static/economics/yandex/calculator.css?v=20260916-period-history"><script src="/static/economics/yandex/fields.js?v=20260916-category-names"></script><script src="/static/economics/yandex/categories.js?v=20260916-category-names"></script><script src="/static/economics/yandex/calculator.js?v=20260916-period-history"></script>'
     return render_page(
         "CheckStock — Юнит-экономика 1С — Яндекс Маркет",
         "unit_1c_yandex",

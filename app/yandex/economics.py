@@ -8,7 +8,16 @@ from app.repositories import yandex_economics as repository
 from app.repositories import yandex_source_values, yandex_storefront
 from app.yandex.category_commissions import SOURCE as CATEGORY_COMMISSION_SOURCE
 from app.yandex.category_commissions import commission_value
-from app.yandex.economics_calculation import VERSION, aggregate, calculate, resolve
+from app.yandex.economics_advertising import apply_calculator_drr, product_drr, weekly_history
+from app.yandex.economics_calculation import (
+    VERSION,
+    aggregate,
+    break_even_prices,
+    calculate,
+    resolve,
+    sheet_logistics,
+)
+from app.yandex.price_calculation import discounted_price
 
 
 def context(store):
@@ -22,8 +31,8 @@ def context(store):
     }
 
 
-def effective(store, article, scheme, *, scenario=None, state_cache=None):
-    """Quotes may only be used for exactly the price/dimensions/payment schedule requested."""
+def effective(store, article, scheme, *, scenario=None, state_cache=None, estimate_tariff=False):
+    """Current quotes must match; planning can keep the last compatible saved tariff."""
     cache = state_cache if state_cache is not None else context(store)
     saved_sources = cache["sources"]
     seed = saved_sources.get((article, "initial:" + scheme), {})
@@ -40,11 +49,8 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
         "other_percent": source_1c.get("team_commission_percent"),
     }
     prices = cache["prices"].get(article, {})
-    price_values = {}
-    if yandex_storefront.fresh(prices.get("seller_checked_at")):
-        price_values["seller_price"] = prices.get("seller_price")
-    if prices.get("status") == "ok" and yandex_storefront.fresh(prices.get("price_checked_at")):
-        price_values["buyer_price"] = prices.get("buyer_price")
+    pricing = yandex_storefront.resolved_prices(prices)
+    price_layers = [(pricing["origins"][key], {key: pricing[key]}) for key in ("seller_price", "buyer_price")]
     buyout_settings = cache["buyout_settings"]
     snap = cache["snapshots"].get("buyout", {})
     if snap.get("period_from") and snap.get("period_to"):
@@ -62,17 +68,10 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
         ("Начальные данные 1С", base),
         ("Перенесено из листа", seed.get("values", {})),
         ("API: каталог", catalog.get("values", {})),
-        ("API / витрина: цена", price_values),
+        *price_layers,
         ("API: выкуп", {"buyout_percent": buyout}),
         ("Настройки кабинета", cabinet["values"]),
-        (
-            "Изменено на сайте",
-            {
-                key: value
-                for key, value in product["values"].items()
-                if key not in (scenario or {}) or scenario[key] is not None
-            },
-        ),
+        ("Изменено на сайте", product["values"]),
     ]
     if category.get("updated_at", "") >= catalog.get("updated_at", ""):
         layers.insert(
@@ -85,28 +84,87 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None):
     tariff = saved_sources.get((article, "tariff:" + scheme), {})
     tariff_data = tariff.get("values", {})
 
-    tariff_valid = tariff_data.get("signature") == tariff_signature(
-        values, scheme
-    ) and yandex_storefront.fresh(tariff.get("updated_at"))
-    if tariff_valid:
-        layers.insert(-2, ("API: тариф", tariff_data.get("components", {})))
+    tariff_fresh = yandex_storefront.fresh(tariff.get("updated_at"))
+    tariff_valid = tariff_data.get("signature") == tariff_signature(values, scheme) and tariff_fresh
+    estimated_tariff = (
+        estimate_tariff
+        and not tariff_valid
+        and isinstance(tariff_data.get("signature"), dict)
+        and {key: value for key, value in tariff_data["signature"].items() if key != "seller_price"}
+        == {key: value for key, value in tariff_signature(values, scheme).items() if key != "seller_price"}
+    )
+    if tariff_valid or estimated_tariff:
+        origin = "Последний загруженный тариф API" if estimated_tariff else "API: тариф"
+        components = tariff_data.get("components", {})
+        # A saved quote is a planning fallback, not a replacement for a current category rate.
+        if estimated_tariff and reference_percent is not None:
+            components = {key: value for key, value in components.items() if key != "commission_percent"}
+        layers.insert(-2, (origin, components))
     values, origins = resolve(*layers, ("Сценарий", scenario or {}))
+    apply_sheet_logistics(values, origins, scenario=scenario)
+    if (scenario or {}).get("seller_price") is not None and (scenario or {}).get("buyer_price") is None:
+        values["buyer_price"] = discounted_price(values["seller_price"], pricing.get("spp_percent"))
+        origins["buyer_price"] = (
+            "Сценарий: по последнему СПП" if values["buyer_price"] is not None else "Нет сохранённого СПП"
+        )
+    if any(values.get(key) != pricing[key] for key in ("seller_price", "buyer_price")):
+        pricing = {
+            **pricing,
+            "seller_price": values.get("seller_price"),
+            "buyer_price": values.get("buyer_price"),
+            "buyer_estimated": values.get("buyer_price") is not None
+            and origins.get("buyer_price") == "Сценарий: по последнему СПП",
+            "pay_price": discounted_price(values.get("buyer_price"), pricing.get("pay_discount_percent")),
+            "pay_estimated": True,
+            "origins": {
+                **pricing["origins"],
+                "buyer_price": origins.get("buyer_price"),
+                "pay_price": "Сценарий: по последней скидке Пэй",
+            },
+        }
+    if (scenario or {}).get("pay_price") is not None:
+        pricing = {
+            **pricing,
+            "pay_price": scenario["pay_price"],
+            "pay_estimated": False,
+            "origins": {**pricing["origins"], "pay_price": "Сценарий"},
+        }
+    values["pay_price"] = pricing["pay_price"]
+    origins["pay_price"] = pricing["origins"]["pay_price"]
     return {
         "values": values,
         "origins": origins,
         "revision": product["revision"],
-        "overrides": product["values"],
+        "overrides": {key: value for key, value in product["values"].items() if key != "tax_base"},
         "cabinet_revision": cabinet["revision"],
+        "pricing": pricing,
         "category": category_values
         if category_values.get("category_id") == values.get("category_id")
         else {},
         "category_commission": {**commission, "valid": reference_percent is not None},
         "tariff": {
             "valid": tariff_valid,
+            "approximate": bool(estimated_tariff),
+            "stale": bool(estimated_tariff and not tariff_fresh),
             "updated_at": tariff.get("updated_at"),
             "services": tariff_data.get("services", []),
         },
     }
+
+
+def apply_sheet_logistics(values, origins, *, scenario=None):
+    derived = sheet_logistics(values, scenario=scenario)
+    values.update(derived)
+    origins.update(
+        volume_l="Габариты упаковки: длина × ширина × высота / 1000",
+        return_middle_mile="По формуле таблицы: средняя миля от объёма",
+        return_cost="По формуле таблицы: средняя миля + 15 ₽",
+        storage_per_day="По формуле таблицы: объём × ставка по оборачиваемости",
+        storage_days="По формуле таблицы: 30 дней",
+    )
+    for key in derived:
+        if (scenario or {}).get(key) is not None:
+            origins[key] = "Сценарий"
 
 
 def tariff_signature(values, scheme):
@@ -134,7 +192,7 @@ def checked_today(timestamp, today):
 
 
 def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=None):
-    """Today's observations plus standing cost settings; never planned/stale prices or DRR.
+    """Today's metrics and standing costs, with explicit price estimates when needed.
 
     A price scenario is never a current marketplace observation. A stored tariff must have been quoted today for these observed prices."""
     cache = state_cache if state_cache is not None else context(store)
@@ -142,17 +200,23 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
     scenario = {
         key: value
         for key, value in (scenario or {}).items()
-        if key not in {"seller_price", "buyer_price", "advertising_mode", "plan_drr"}
+        if key
+        not in {
+            "seller_price",
+            "buyer_price",
+            "pay_price",
+            "advertising_mode",
+            "plan_drr",
+            "advertising_spend",
+        }
     }
     state = effective(store, article, scheme, scenario=scenario, state_cache=cache)
     values, origins = state["values"], state["origins"]
-    prices = cache["prices"].get(article, {})
-    for field, stamp in (("seller_price", "seller_checked_at"), ("buyer_price", "price_checked_at")):
-        valid = checked_today(prices.get(stamp), today) and (
-            field != "buyer_price" or prices.get("status") == "ok"
-        )
-        values[field] = prices.get(field) if valid else None
-        origins[field] = "API / витрина: сегодня" if valid else "Нет цены за сегодня"
+    pricing = yandex_storefront.resolved_prices(cache["prices"].get(article, {}))
+    state["pricing"] = pricing
+    for field in ("seller_price", "buyer_price", "pay_price"):
+        values[field] = pricing[field]
+        origins[field] = pricing["origins"][field]
     values["advertising_mode"] = "actual"
     origins["advertising_mode"] = "Реклама и заказы за сегодня"
 
@@ -174,7 +238,8 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
             continue
         values[field] = quote.get("components", {}).get(field) if tariff_valid else None
         origins[field] = "API: тариф за сегодня" if tariff_valid else "Нет тарифа за сегодня"
-    values["tariff_extra"] = quote.get("components", {}).get("tariff_extra", 0) if tariff_valid else 0
+    if origins.get("tariff_extra") not in {"Изменено на сайте", "Настройки кабинета", "Сценарий"}:
+        values["tariff_extra"] = quote.get("components", {}).get("tariff_extra", 0) if tariff_valid else 0
     return state
 
 
@@ -210,14 +275,26 @@ def detail(
     mode="current",
 ):
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
-    calculator = effective(store, article, scheme, scenario=scenario, state_cache=state_cache)
+    cache = state_cache if state_cache is not None else context(store)
+    calculator = effective(store, article, scheme, scenario=scenario, state_cache=cache, estimate_tariff=True)
+    if cache.get("advertising_week", {}).get("period_to") != (today - timedelta(days=1)).isoformat():
+        cache["advertising_week"] = weekly_history(store, today)
+    weekly = product_drr(cache["advertising_week"], article, calculator["values"].get("buyout_percent"))
+    apply_calculator_drr(calculator["values"], calculator["origins"], weekly, scenario)
     config = (
-        current_inputs(store, article, scheme, today=today, scenario=scenario, state_cache=state_cache)
+        current_inputs(store, article, scheme, today=today, scenario=scenario, state_cache=cache)
         if mode == "current"
         else calculator
     )
     spend, orders = advertising if advertising is not None else current_ads(store, article, today, scheme)
-    config["result"] = calculate(config["values"], advertising_spend=spend, orders_count=orders)
+    config["result"] = calculate(
+        config["values"], advertising_spend=spend, orders_count=orders, scenario=scenario
+    )
+    calculator_result = (
+        config["result"]
+        if mode == "calculator"
+        else calculate(calculator["values"], advertising_spend=spend, orders_count=orders, scenario=scenario)
+    )
     config.update(
         {
             "scheme": scheme,
@@ -227,6 +304,9 @@ def detail(
             "mode": mode,
             "calculator_values": calculator["values"],
             "calculator_origins": calculator["origins"],
+            "calculator_result": calculator_result,
+            "calculator_pricing": calculator["pricing"],
+            "calculator_advertising": weekly,
         }
     )
     if include_history:
@@ -236,6 +316,28 @@ def detail(
         config["period"] = aggregate(daily, metrics.days_between(start, end))
         config["history"] = daily
     return config
+
+
+def break_even_scenario(store, article, scheme, *, scenario=None):
+    cache = context(store)
+    state = detail(store, article, scheme, scenario=scenario, state_cache=cache, mode="calculator")
+    prices = break_even_prices(state["values"], scenario=scenario)
+    # The button keeps the displayed expense basis, like the WB calculator.
+    costs = {
+        key: state["values"][key]
+        for key in (
+            "commission_percent",
+            "payment_acceptance",
+            "payment_transfer_percent",
+            "delivery_cost",
+            "tariff_extra",
+        )
+        if state["values"].get(key) is not None
+    }
+    updated = {**(scenario or {}), **costs, **prices}
+    result = detail(store, article, scheme, scenario=updated, state_cache=cache, mode="calculator")
+    result["break_even_scenario"] = updated
+    return result
 
 
 def attach(products, start, end, today, scheme="FBY"):
@@ -280,6 +382,7 @@ def attach(products, start, end, today, scheme="FBY"):
             {
                 "margin": period["margin"],
                 "roi": period["roi"],
+                "purchase_value": period["purchase_value"],
                 "margin_coverage": period["coverage"],
                 "roi_coverage": period["coverage"],
                 "complete": period["complete"],
@@ -316,7 +419,8 @@ def capture_today(stores, *, today=None, only_article=None):
                             "origins": state["origins"],
                             "result": result,
                             "version": VERSION,
-                            "basis": "today_observations",
+                            "basis": "today_prices",
+                            "pricing": state["pricing"],
                         },
                     )
                     count += 1
@@ -351,7 +455,7 @@ def close_days(stores, *, today=None):
             if day not in ads_days or day not in order_days:
                 continue
             state = snapshot["values"]
-            if state.get("basis") != "today_observations":
+            if state.get("basis") not in {"today_observations", "today_prices"}:
                 continue
             values = state["values"]
             scheme_rows = [row for row in orders if row["article"] == article]

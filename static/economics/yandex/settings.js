@@ -34,7 +34,6 @@
                 'purchase_price',
                 'fulfillment_cost',
                 'transit_cost',
-                'storage_days',
                 'turnover_days',
                 'other_percent',
                 'other_cost',
@@ -42,7 +41,7 @@
         ],
         [
             'Налоги, капитал и потери',
-            ['tax_base', 'tax_percent', 'capital_percent', 'loss_percent', 'disposal_cost'],
+            ['tax_percent', 'capital_percent', 'loss_percent', 'disposal_cost'],
         ],
         ['Параметры выплат', ['frequency', 'payment_delay_weeks']],
         [
@@ -52,10 +51,7 @@
                 'payment_acceptance',
                 'payment_transfer_percent',
                 'delivery_cost',
-                'return_cost',
-                'storage_per_day',
                 'buyout_percent',
-                'category_id',
                 'category_name',
                 'length',
                 'width',
@@ -124,12 +120,12 @@
                     .join(''),
             });
         } else {
-            var integer = ['category_id', 'campaign_id', 'storage_days', 'turnover_days'].indexOf(key) >= 0;
+            var integer = ['campaign_id', 'turnover_days'].indexOf(key) >= 0;
             control = window.CheckStockUI.render('economics/yandex/settings/field-3', {
                 key: key,
                 content: spec[1],
                 content_2: spec[3] === 'text' ? 'text' : 'number',
-                content_3: key === 'category_id' || key === 'campaign_id' ? 1 : 0,
+                content_3: key === 'campaign_id' ? 1 : 0,
                 content_4: integer ? '1' : 'any',
                 content_5: spec[2] === '%' ? ' max="100"' : '',
                 val: val,

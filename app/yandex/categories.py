@@ -1,8 +1,12 @@
 """Category ancestry and weekly refresh calendar for Yandex Market."""
 
 from datetime import datetime, timedelta
+from threading import Lock
 
 from app.core.domain import MOSCOW_TIMEZONE
+
+TREE_SOURCE = "category_tree"
+_catalog_lock = Lock()
 
 
 def category_paths(tree: dict) -> dict[int, dict]:
@@ -27,6 +31,48 @@ def category_paths(tree: dict) -> dict[int, dict]:
         }
         pending.extend((child, path) for child in children)
     return result
+
+
+def save_tree(tree):
+    from app.repositories import yandex_economics as repository
+
+    paths = category_paths(tree)
+    items = [
+        {
+            "id": row["category_id"],
+            "name": row["category_name"],
+            "parent_id": row["path"][-2]["id"] if len(row["path"]) > 1 else None,
+            "leaf": row["leaf"],
+        }
+        for row in paths.values()
+    ]
+    payload = {"root_id": int(tree["id"]), "items": items}
+    repository.save_source("", "", TREE_SOURCE, payload)
+    return payload
+
+
+def catalog(store):
+    """Share the public tree locally; retain the last successful tree on API failure."""
+    from app.repositories import yandex_economics as repository
+    from app.yandex import api, tokens
+
+    with _catalog_lock:
+        saved = repository.source("", "", TREE_SOURCE)
+        try:
+            current = datetime.fromisoformat(saved["updated_at"]) >= week_start()
+        except (KeyError, TypeError, ValueError):
+            current = False
+        if current:
+            return {**saved["values"], "stale": False}
+        try:
+            tree = api.request("/v2/categories/tree", tokens.get_api_key(store), payload={"language": "RU"})
+            return {**save_tree(tree), "stale": False}
+        except (api.YandexApiError, KeyError, ValueError):
+            if saved.get("values", {}).get("items"):
+                return {**saved["values"], "stale": True}
+            raise ValueError(
+                "Не удалось загрузить категории ЯМ. Проверьте доступ API и повторите попытку."
+            ) from None
 
 
 def week_start(now=None):

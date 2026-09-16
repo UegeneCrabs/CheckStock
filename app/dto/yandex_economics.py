@@ -12,6 +12,7 @@ Scheme = Literal["FBY", "FBS"]
 class EconomicsValues(DtoModel):
     seller_price: Amount | None = None
     buyer_price: Amount | None = None
+    pay_price: Amount | None = None
     purchase_price: Amount | None = None
     fulfillment_cost: Amount | None = None
     category_id: int | None = Field(default=None, gt=0)
@@ -24,21 +25,26 @@ class EconomicsValues(DtoModel):
     payment_acceptance: Amount | None = None
     payment_transfer_percent: Percent | None = None
     delivery_cost: Amount | None = None
+    # Explicit calculator scenarios may override the automatic logistics values.
+    volume_l: Amount | None = None
+    return_middle_mile: Amount | None = None
     return_cost: Amount | None = None
     storage_per_day: Amount | None = None
     storage_days: int | None = Field(default=None, ge=0, le=3650)
     transit_cost: Amount | None = None
+    tariff_extra: Amount | None = None
     other_percent: Percent | None = None
     other_cost: Amount | None = None
     tax_percent: Percent | None = None
-    tax_base: Literal["buyer", "seller"] | None = None
     capital_percent: Percent | None = None
     turnover_days: int | None = Field(default=None, ge=0, le=3650)
     loss_percent: Percent | None = None
     disposal_cost: Amount | None = None
     buyout_percent: Percent | None = None
-    plan_drr: Percent | None = None
-    advertising_mode: Literal["actual", "plan"] | None = None
+    # DRR may exceed 100% when advertising costs exceed the bought-out turnover.
+    plan_drr: Amount | None = None
+    advertising_spend: Amount | None = None
+    advertising_mode: Literal["actual", "plan", "weekly"] | None = None
     campaign_id: int | None = Field(default=None, gt=0)
     frequency: Literal["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"] | None = None
     payment_delay_weeks: Literal[0, 1, 2, 4] | None = None
@@ -55,6 +61,7 @@ class CalculationRequest(DtoModel):
     mode: Literal["current", "calculator"] = "calculator"
     values: EconomicsValues = Field(default_factory=EconomicsValues)
     refresh_tariffs: bool = False
+    break_even: bool = False
 
 
 class SyncRequest(DtoModel):

@@ -9,7 +9,7 @@ from decimal import Decimal
 from app.repositories import yandex_economics as repository
 from app.yandex import api, tokens
 from app.yandex.accounts import resolve_business_id
-from app.yandex.categories import category_paths, week_start
+from app.yandex.categories import category_paths, save_tree, week_start
 
 JOB = "yandex_category_commissions_sync"
 SOURCE = "category_commission:"
@@ -249,9 +249,11 @@ def sync_all(store_slugs=None, *, force=False):
     for store, saved in pending.items():
         try:
             if tree is None:
-                tree = category_paths(
-                    api.request("/v2/categories/tree", tokens.get_api_key(store), payload={"language": "RU"})
+                response = api.request(
+                    "/v2/categories/tree", tokens.get_api_key(store), payload={"language": "RU"}
                 )
+                save_tree(response)
+                tree = category_paths(response)
             report[store] = refresh_store(store, tree, saved)
         except Exception as error:
             report[store] = {"ok": False, "error": str(error)[:700]}

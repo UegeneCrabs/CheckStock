@@ -4,13 +4,50 @@
 }
 .ue1c-page.is-yandex-economics .ym-economics {
     margin-bottom: 0;
+    /* Clip rounded corners without creating a scroll container for sticky results. */
+    overflow: clip;
 }
-.ym-mode-bar {
+.ym-economics .ue1c-calculator-head {
+    position: static;
+    z-index: auto;
+    backdrop-filter: none;
+}
+.ym-economics .ue1c-calculator-body {
+    grid-template-columns: minmax(0, 1fr) 170px;
+}
+.ym-economics .ue1c-calculator-results {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    align-self: start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+    border: 0;
+    border-left: 1px solid var(--ue-line);
+    background: linear-gradient(180deg, var(--ue-soft), var(--ue-surface));
+}
+.ym-economics .ue1c-calculator-results > div {
+    padding: 10px 12px;
+    background: var(--ue-soft);
+}
+.ym-economics .ue1c-calculator-results span {
+    font-size: 11px;
+}
+.ym-economics .ue1c-calculator-results strong {
+    margin-top: 4px;
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+}
+.ym-scheme-row {
     display: flex;
     align-items: center;
     border-bottom: 1px solid var(--ue-line);
-    padding: 0 12px;
+    padding: 8px 12px;
     gap: 16px;
+    font-size: 11px;
+    color: var(--ue-muted);
 }
 .ym-scheme,
 .ym-economics .ue1c-calculator-field select {
@@ -31,12 +68,107 @@
 .ym-scheme {
     margin-left: auto;
 }
-.ym-origin {
-    display: block !important;
-    margin-top: 3px;
+.ym-categories {
+    order: var(--expanded-order);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--ue-line);
+    min-width: 0;
 }
-.ym-economics .ue1c-calculator-inputs:not(.is-expanded) .ym-origin {
-    display: none !important;
+.ym-category-search,
+.ym-category-level {
+    display: grid;
+    gap: 5px;
+    margin-bottom: 8px;
+    font-size: 11px;
+}
+.ym-categories input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 7px;
+    border: 1px solid var(--ue-line);
+    border-radius: 7px;
+    color: var(--ue-text);
+    background: var(--ue-soft);
+    font: inherit;
+}
+.ym-category-status {
+    margin: 5px 0 0;
+    font-size: 10px;
+    color: var(--ue-muted);
+    line-height: 1.4;
+}
+.ym-categories [hidden] {
+    display: none;
+}
+.ym-dimensions {
+    order: var(--expanded-order);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--ue-line);
+    min-width: 0;
+    gap: 8px;
+}
+.ym-dimensions-title {
+    font-size: 11px;
+    font-weight: 600;
+}
+.ym-dimensions-fields {
+    display: flex;
+    padding: 7px;
+    border: 1px solid var(--ue-line);
+    border-radius: 7px;
+    background: var(--ue-soft);
+}
+.ym-dimension {
+    display: flex;
+    align-items: end;
+    flex: 1;
+    min-width: 0;
+}
+.ym-dimension label {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    gap: 4px;
+    color: var(--ue-muted);
+    font-size: 9px;
+}
+.ym-dimension input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    height: 30px;
+    padding: 0 3px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--ue-text);
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+}
+.ym-dimension input:focus {
+    border-color: var(--ue-line);
+    outline: 2px solid var(--ue-line);
+    background: var(--ue-card, #fff);
+}
+.ym-dimension-separator {
+    padding: 0 5px 7px;
+    color: var(--ue-muted);
+}
+.ym-dimension-separator:empty {
+    display: none;
+}
+.ym-drr-row.is-incomplete,
+.ym-ad-row.is-incomplete {
+    background: #fff4d6;
+}
+.ym-drr-row.is-incomplete input,
+.ym-ad-row.is-incomplete input {
+    border-color: #ba7c12;
+}
+.ym-category-status:empty,
+.ym-economics [data-ym-message]:empty {
+    display: none;
 }
 .ym-settings-link {
     display: flex;
@@ -60,6 +192,12 @@
 }
 .ym-period small {
     font-size: 9px;
+}
+.ym-period.is-incomplete {
+    padding: 8px;
+    border-radius: 6px;
+    background: #fff7df;
+    color: #8a5b00;
 }
 .ym-costs {
     display: grid;
@@ -121,6 +259,19 @@
     opacity: 0.5;
     cursor: default;
 }
+@media (max-width: 760px) {
+    .ym-economics .ue1c-calculator-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .ym-economics .ue1c-calculator-results {
+        grid-row: 1;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        top: -16px;
+        border-left: 0;
+        border-bottom: 1px solid var(--ue-line);
+        background: var(--ue-surface);
+    }
+}
 @media (max-width: 480px) {
     .ym-costs {
         grid-template-columns: 1fr;
@@ -129,7 +280,7 @@
     .ym-economics .ue1c-calculator-tools {
         flex-wrap: wrap;
     }
-    .ym-mode-bar {
+    .ym-scheme-row {
         gap: 12px;
     }
 }

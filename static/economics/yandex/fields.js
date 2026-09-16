@@ -7,6 +7,7 @@
             [
                 ['seller_price', 'Цена продавца', '₽'],
                 ['buyer_price', 'Цена покупателя без Пэй', '₽'],
+                ['pay_price', 'Цена с СПП и картой Пэй', '₽'],
                 ['purchase_price', 'Закупочная цена', '₽'],
                 ['fulfillment_cost', 'Фулфилмент', '₽'],
             ],
@@ -14,8 +15,7 @@
         [
             'Продажи и реклама',
             [
-                ['advertising_mode', 'Реклама', '', { actual: 'Расходы за сегодня', plan: 'Плановый ДРР' }],
-                ['plan_drr', 'Плановый ДРР к выкупленному обороту', '%'],
+                ['plan_drr', 'ДРР с выкупом за 7 дней', '%'],
                 ['buyout_percent', 'Ожидаемый выкуп', '%'],
             ],
         ],
@@ -26,17 +26,19 @@
                 ['payment_acceptance', 'Приём платежа', '₽'],
                 ['payment_transfer_percent', 'Перевод платежа', '%'],
                 ['delivery_cost', 'Успешная доставка', '₽/шт.'],
+                ['volume_l', 'Объём упаковки', 'л'],
+                ['return_middle_mile', 'Средняя миля для невыкупа', '₽'],
                 ['return_cost', 'Расход на один невыкуп', '₽'],
                 ['transit_cost', 'Транзит', '₽/шт.'],
+                ['tariff_extra', 'Другие услуги ЯМ', '₽/шт.'],
                 ['storage_per_day', 'Хранение единицы в день', '₽'],
-                ['storage_days', 'Срок хранения', 'дней'],
+                ['storage_days', 'Период расчёта хранения', 'дней'],
             ],
         ],
         [
             'Налоги и собственные расходы',
             [
-                ['tax_base', 'База налога', '', { buyer: 'Цена покупателя', seller: 'Цена продавца' }],
-                ['tax_percent', 'Налоговая ставка', '%'],
+                ['tax_percent', 'Налог от цены покупателя без Пэй', '%'],
                 ['other_percent', 'Прочие к цене продавца', '%'],
                 ['other_cost', 'Прочие фиксированные', '₽/шт.'],
                 ['capital_percent', 'Стоимость капитала в год', '%'],
@@ -48,7 +50,6 @@
         [
             'Данные для расчёта тарифов',
             [
-                ['category_id', 'ID категории Маркета', ''],
                 ['category_name', 'Категория', '', 'text'],
                 ['length', 'Длина упаковки', 'см'],
                 ['width', 'Ширина', 'см'],
@@ -105,8 +106,6 @@
 
     var cabinetFields = [
         'fulfillment_cost',
-        'storage_days',
-        'tax_base',
         'tax_percent',
         'other_percent',
         'other_cost',
@@ -118,11 +117,12 @@
         'frequency',
         'payment_delay_weeks',
     ];
-    var scenarioOnly = ['seller_price', 'buyer_price', 'advertising_mode', 'plan_drr'];
+    var scenarioOnly = ['seller_price', 'buyer_price', 'pay_price', 'advertising_mode', 'plan_drr', 'advertising_spend'];
     window.YandexEconomicsFields = {
         groups: groups,
         cabinetFields: cabinetFields,
         scenarioOnly: scenarioOnly,
+        derived: ['volume_l', 'return_middle_mile', 'return_cost', 'storage_per_day', 'storage_days'],
         esc: esc,
         number: number,
         request: request,

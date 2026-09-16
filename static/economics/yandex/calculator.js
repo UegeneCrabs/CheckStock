@@ -7,17 +7,23 @@
     var compact = [
         'seller_price',
         'buyer_price',
+        'pay_price',
         'plan_drr',
+        'advertising_spend',
         'buyout_percent',
         'fulfillment_cost',
         'purchase_price',
     ];
     var specs = [].concat.apply(
         [],
-        fields.groups.slice(0, 4).map(function (g) {
+        fields.groups.map(function (g) {
             return g[1];
         }),
-    );
+    ).filter(function (spec) {
+        return !['campaign_id', 'frequency', 'payment_delay_weeks'].includes(spec[0]);
+    });
+    var tariffFields = ['commission_percent', 'payment_acceptance', 'payment_transfer_percent', 'delivery_cost', 'tariff_extra'];
+    var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
     var costs = {
         commission: 'Размещение',
         payment_acceptance: 'Приём платежа',
@@ -36,6 +42,11 @@
         advertising: 'Реклама',
         tariff_extra: 'Другие услуги ЯМ',
     };
+    function inputValue(key, value) {
+        if (value == null) return '';
+        return key === 'commission_percent' || key === 'advertising_spend'
+            ? Number(value).toFixed(2) : String(value);
+    }
     function metric(label, value, unit) {
         return window.CheckStockUI.render('economics/yandex/calculator/metric', {
             label: label,
@@ -46,19 +57,25 @@
     }
     function render(container, product, options) {
         if (container._ymDispose) container._ymDispose();
-        var data = product.ym_economics;
-        if (!data) {
+        var initial = product.ym_economics;
+        if (!initial) {
             container.textContent = 'Данные экономики недоступны. Обновите страницу.';
             return;
         }
+        var data = Object.assign({}, initial, {
+            values: initial.calculator_values || initial.values,
+            origins: initial.calculator_origins || initial.origins,
+            result: initial.calculator_result || initial.result,
+            pricing: initial.calculator_pricing || initial.pricing,
+        });
         container.classList.add('ym-economics');
         var scheme = data.scheme || 'FBY',
-            mode = 'current',
             changed = {},
             sequence = 0,
             timer,
             alive = true,
             expanded = false;
+        var picker, categoryEdited = false, tariffNeedsQuote = false, manualTariffs = {};
         var historyCache = {},
             historySequence = 0,
             parameters = options.parameters;
@@ -68,6 +85,7 @@
             clearTimeout(timer);
             sequence++;
             historySequence++;
+            if (picker) picker.dispose();
         };
         function message(text, error) {
             var node = container.querySelector('[data-ym-message]');
@@ -92,16 +110,27 @@
                 value = data.values[key],
                 label = spec[1],
                 order = compact.indexOf(key);
-            if (key === 'plan_drr')
-                label = mode === 'current' ? 'ДРР с выкупом · сегодня' : 'Плановый ДРР с выкупом';
-            var control,
-                disabled =
-                    mode === 'current' || (key === 'plan_drr' && data.values.advertising_mode !== 'plan');
+            if (key === 'category_name') return window.CheckStockUI.render('economics/yandex/categories/container', { index: index });
+            if (key === 'length') return window.CheckStockUI.render('economics/yandex/calculator/dimensions', {
+                index: index,
+                content: ['length', 'height', 'width', 'weight'].map(function (dimension, position) {
+                    var definition = specs.find(function (entry) { return entry[0] === dimension; });
+                    return window.CheckStockUI.render('economics/yandex/calculator/dimension', {
+                        key: dimension,
+                        label: definition[1],
+                        unit: definition[2],
+                        value: data.values[dimension],
+                        separator: position === 3 ? ', ' : position ? '×' : '',
+                    });
+                }).join(''),
+            });
+            if (['height', 'width', 'weight'].includes(key)) return '';
+            var control;
             if (spec[3] && typeof spec[3] === 'object') {
                 control = window.CheckStockUI.render('economics/yandex/calculator/field-2', {
                     key: key,
                     label: label,
-                    content: disabled ? ' disabled' : '',
+                    content: '',
                     content_2: Object.keys(spec[3])
                         .map(function (v) {
                             return window.CheckStockUI.render('common/ui/select-option', {
@@ -113,31 +142,31 @@
                         .join(''),
                 });
             } else {
-                if (key === 'plan_drr' && data.values.advertising_mode !== 'plan') {
-                    value =
-                        data.result.costs.advertising != null && data.values.seller_price > 0
-                            ? (data.result.costs.advertising / data.values.seller_price) * 100
-                            : null;
-                }
+                var text = spec[3] === 'text',
+                    days = key === 'storage_days' || key === 'turnover_days';
                 control = window.CheckStockUI.render('economics/yandex/calculator/field-3', {
                     key: key,
                     label: label,
-                    content: spec[2] === '%' ? ' max="100"' : '',
-                    content_2: disabled ? ' disabled' : '',
-                    value: value,
+                    type: text ? 'text' : 'number',
+                    content: text ? ' maxlength="500"' :
+                        ' min="0" step="' + (days ? 1 : 'any') + '"' +
+                        (spec[2] === '%' && key !== 'plan_drr' ? ' max="100"' : days ? ' max="3650"' : ''),
+                    value: inputValue(key, value),
                     content_3: spec[2],
                 });
             }
-            return window.CheckStockUI.render('economics/yandex/calculator/field-4', {
-                content: order < 0 ? ' ue1c-calculator-row--expanded' : '',
+            var row = window.CheckStockUI.render('economics/yandex/calculator/field-4', {
+                content: (order < 0 ? ' ue1c-calculator-row--expanded' : '') +
+                    (key === 'plan_drr' ? ' ym-drr-row' : ''),
                 order: order,
                 index: index,
-                content_2: data.origins[key] || 'Не задано',
                 label: label,
                 key: key,
-                content_3: data.origins[key] || 'Не задано',
                 control: control,
             });
+            return row + (key === 'plan_drr' ? window.CheckStockUI.render('economics/yandex/calculator/advertising-spend', {
+                order: compact.indexOf('advertising_spend'), index: index,
+            }) : '');
         }
         function parameter(label, value, unit, origin, copy) {
             var display =
@@ -217,7 +246,6 @@
                                 'commission_percent',
                                 'payment_acceptance',
                                 'payment_transfer_percent',
-                                'tax_base',
                                 'tax_percent',
                             ]) +
                                 parameter('Комиссия по категории', categoryCommission.status === 'ok'
@@ -240,6 +268,8 @@
                             parametersFor([
                                 'fulfillment_cost',
                                 'delivery_cost',
+                                'volume_l',
+                                'return_middle_mile',
                                 'return_cost',
                                 'transit_cost',
                                 'length',
@@ -270,52 +300,44 @@
             );
         }
         function draw() {
+            if (picker) picker.dispose();
             container.innerHTML = window.CheckStockUI.render('economics/yandex/calculator/draw-6', {
                 content: expanded ? ' checked' : '',
-                content_2: ['current', 'calculator']
-                    .map(function (key) {
-                        return window.CheckStockUI.render('economics/yandex/calculator/draw', {
-                            content: mode === key ? 'is-active' : '',
-                            key: key,
-                            content_2: mode === key,
-                            content_3: key === 'current' ? 'Текущая экономика' : 'Калькулятор',
-                        });
-                    })
-                    .join(''),
                 content_3: scheme === 'FBY' ? ' selected' : '',
                 content_4: scheme === 'FBS' ? ' selected' : '',
-                content_5:
-                    mode === 'current'
-                        ? 'Цены и реклама — за сегодня (МСК). Закупка и расходы — из действующих настроек.'
-                        : 'Пробный расчёт. Изменения полей действуют только в этом сценарии.',
                 content_6: expanded ? ' is-expanded' : '',
                 content_7: specs.map(field).join(''),
-                content_8:
-                    mode === 'calculator'
-                        ? window.CheckStockUI.render('economics/yandex/calculator/draw-2')
-                        : window.CheckStockUI.render('economics/yandex/calculator/draw-3'),
-                content_9: options.canManageSettings
-                    ? window.CheckStockUI.render('economics/yandex/calculator/draw-4', {
-                          content: settingsUrl(),
-                      })
-                    : window.CheckStockUI.render('economics/yandex/calculator/draw-5'),
+                content_8: window.CheckStockUI.render('economics/yandex/calculator/draw-2'),
             });
             renderParameters();
             showResult(data);
+            picker = window.YandexCategoryPicker.mount(container.querySelector('[data-ym-categories]'),
+                product.store_slug, changed.category_id || data.values.category_id, function (category) {
+                    clearTimeout(timer);
+                    sequence++;
+                    categoryEdited = true;
+                    tariffNeedsQuote = true;
+                    pending();
+                    container.querySelector('[data-ym-break-even]').disabled = true;
+                    if (!category) {
+                        message('Выберите конечную категорию ЯМ для расчёта комиссии.');
+                        return;
+                    }
+                    changed.category_id = category.id;
+                    changed.category_name = category.name;
+                    delete manualTariffs.commission_percent;
+                    delete changed.commission_percent;
+                    preview(false);
+                });
             container.querySelector('[data-ym-expanded]').onchange = function (event) {
                 expanded = event.target.checked;
                 container.querySelector('#ym-calculator-inputs').classList.toggle('is-expanded', expanded);
             };
             container.querySelector('[data-ym-scheme]').onchange = function (event) {
-                load(mode, event.target.value);
+                load(event.target.value);
             };
-            container.querySelectorAll('[data-ym-mode]').forEach(function (button) {
-                button.onclick = function () {
-                    load(button.dataset.ymMode, scheme);
-                };
-            });
             container.querySelector('[data-ym-reset]').onclick = function () {
-                load(mode, scheme);
+                load(scheme);
             };
             container.querySelectorAll('[data-ym-field]').forEach(function (input) {
                 input.oninput = function () {
@@ -326,16 +348,14 @@
                             : input.type === 'number'
                               ? Number(input.value)
                               : input.value;
-                    container.querySelector('[data-ym-origin="' + key + '"]').textContent = 'Сценарий';
-                    if (key === 'advertising_mode') {
-                        var drr = container.querySelector('[data-ym-field="plan_drr"]');
-                        drr.disabled = input.value !== 'plan';
-                        drr.value =
-                            changed.plan_drr != null
-                                ? changed.plan_drr
-                                : data.values.plan_drr == null
-                                  ? ''
-                                  : data.values.plan_drr;
+                    if (tariffFields.includes(key)) {
+                        manualTariffs[key] = changed[key] != null;
+                        if (changed[key] == null) tariffNeedsQuote = true;
+                    }
+                    if (quoteFields.includes(key)) tariffNeedsQuote = true;
+                    if (key === 'plan_drr' || key === 'advertising_spend') {
+                        delete changed[key === 'plan_drr' ? 'advertising_spend' : 'plan_drr'];
+                        changed.advertising_mode = changed[key] == null ? 'weekly' : 'plan';
                     }
                     clearTimeout(timer);
                     sequence++;
@@ -345,24 +365,16 @@
                     }, 350);
                 };
             });
-            var quote = container.querySelector('[data-ym-quote]');
-            if (quote)
-                quote.onclick = function () {
-                    clearTimeout(timer);
-                    preview(true);
-                };
-            var calculatorButton = container.querySelector('[data-ym-calculator]');
-            if (calculatorButton)
-                calculatorButton.onclick = function () {
-                    load('calculator', scheme);
-                };
+            container.querySelector('[data-ym-break-even]').onclick = function () {
+                clearTimeout(timer);
+                preview(true);
+            };
             loadHistory();
         }
         function pending() {
             container.querySelector('[data-ym-result]').innerHTML =
                 metric('Чистая прибыль', null, ' ₽') +
-                metric('ROI', null, '%') +
-                metric('Маржинальность', null, '%');
+                metric('ROI', null, '%');
             parameters.querySelector('[data-ym-costs]').innerHTML = '';
             message('Пересчитываем…');
         }
@@ -373,11 +385,17 @@
                         ? product.ym_economics.period || {}
                         : data.period || {},
                 coverage = period.coverage || {};
+            specs.forEach(function (spec) {
+                var key = spec[0];
+                var input = container.querySelector('[data-ym-field="' + key + '"]');
+                if (!input) return;
+                var value = inputValue(key, state.values[key]);
+                if (input.value !== value) input.value = value;
+            });
             var periodDays = coverage.expected_days || 7;
             container.querySelector('[data-ym-result]').innerHTML =
                 metric('Чистая прибыль', r.margin, ' ₽') +
-                metric('ROI', r.roi, '%') +
-                metric('Маржинальность', r.margin_percent, '%');
+                metric('ROI', r.roi, '%');
             parameters.querySelector('[data-ym-costs]').innerHTML = Object.keys(r.costs || {})
                 .map(function (key) {
                     return window.CheckStockUI.render('economics/yandex/calculator/show-result', {
@@ -386,55 +404,66 @@
                     });
                 })
                 .join('');
-            parameters.querySelector('[data-ym-period]').innerHTML = window.CheckStockUI.render(
+            var periodElement = parameters.querySelector('[data-ym-period]');
+            periodElement.classList.toggle('is-incomplete', coverage.days > 0 && !coverage.complete);
+            var coveredDates = (coverage.dates || []).map(function (day) {
+                return day.split('-').reverse().join('.');
+            });
+            periodElement.innerHTML = window.CheckStockUI.render(
                 'economics/yandex/calculator/show-result-2',
                 {
                     periodDays: periodDays,
                     scheme: scheme,
-                    margin: number(period.margin),
-                    roi: number(period.roi),
-                    content: coverage.days || 0,
-                    periodDays_2: periodDays,
-                    content_2: coverage.complete ? '' : ' · история ещё не полная',
+                    margin: number(period.margin) + (period.margin == null ? '' : ' ₽'),
+                    roi: number(period.roi) + (period.roi == null ? '' : '%'),
+                    coveredDays: coverage.days || 0,
+                    coverageStatus: coverage.complete ? '' : ' · история ещё не полная',
+                    coverageDates: coveredDates.length
+                        ? 'Учтены дни: ' + coveredDates.join(', ')
+                        : 'Нет сохранённых расчётов за завершённые дни.',
                 },
             );
-            parameters.querySelector('[data-ym-costs-title]').textContent =
-                'Расходы · ' + (mode === 'calculator' ? 'сценарий' : 'текущая экономика');
+            parameters.querySelector('[data-ym-costs-title]').textContent = 'Расходы по расчёту';
             parameters.querySelector('[data-ym-diagnostics]').textContent = r.messages.join(' ');
             message(
                 r.messages.length
                     ? 'Не хватает данных для расчёта. Подробности — во вкладке «Параметры».'
-                    : mode === 'calculator'
-                      ? 'Сценарий рассчитан. Тариф API — оценка; при изменении цены пересчитайте тариф.'
-                      : 'Действующие параметры · ' + state.advertising_day + ' (МСК)',
+                    : '',
                 !!r.messages.length,
             );
-            var drr = container.querySelector('[data-ym-field="plan_drr"]');
-            if (state.values.advertising_mode !== 'plan' && drr) {
-                drr.value =
-                    r.costs.advertising != null && state.values.seller_price > 0
-                        ? Number(((r.costs.advertising / state.values.seller_price) * 100).toFixed(2))
-                        : '';
-            }
+            var weekly = state.calculator_advertising || {},
+                manual = state.values.advertising_mode === 'plan';
+            container.querySelector('[data-ym-field="advertising_spend"]').value =
+                inputValue('advertising_spend', state.values.advertising_spend);
+            container.querySelector('.ym-drr-row').classList.toggle('is-incomplete',
+                !manual && (!weekly.complete || weekly.drr == null));
+            container.querySelector('.ym-ad-row').classList.toggle('is-incomplete',
+                !manual && !weekly.advertising_complete);
+            if (!manual && weekly.message) parameters.querySelector('[data-ym-diagnostics]').textContent =
+                r.messages.filter(function (text) { return text !== 'Не задано: Плановый ДРР'; }).concat(weekly.message).join(' ');
         }
-        async function load(nextMode, nextScheme) {
+        async function load(nextScheme) {
             clearTimeout(timer);
             var current = ++sequence;
             pending();
             container.querySelectorAll('[data-ym-field]').forEach(function (input) {
                 input.disabled = true;
             });
+            container.querySelector('[data-ym-break-even]').disabled = true;
+            if (picker) picker.disable();
             try {
                 var result = await request('calculate/' + productPath, 'POST', {
                     scheme: nextScheme,
-                    mode: nextMode,
+                    mode: 'calculator',
                     values: {},
                 });
                 if (alive && current === sequence) {
                     data = result.economics;
-                    mode = nextMode;
                     scheme = nextScheme;
                     changed = {};
+                    categoryEdited = false;
+                    tariffNeedsQuote = false;
+                    manualTariffs = {};
                     draw();
                 }
             } catch (error) {
@@ -444,9 +473,14 @@
                 }
             }
         }
-        async function preview(quote) {
+        async function preview(breakEven) {
             var current = ++sequence;
             pending();
+            if (categoryEdited && !picker.complete()) {
+                container.querySelector('[data-ym-break-even]').disabled = true;
+                message('Выберите конечную категорию ЯМ для расчёта комиссии.');
+                return;
+            }
             var invalid = Array.from(container.querySelectorAll('[data-ym-field]')).find(function (input) {
                 return !input.checkValidity();
             });
@@ -455,15 +489,58 @@
                 return;
             }
             try {
+                if (tariffNeedsQuote) {
+                    container.querySelector('[data-ym-break-even]').disabled = true;
+                    picker.status('Пересчитываем тарифы…');
+                    var quoteValues = Object.assign({}, changed);
+                    tariffFields.forEach(function (key) {
+                        if (!manualTariffs[key] || (categoryEdited && key === 'commission_percent')) delete quoteValues[key];
+                    });
+                    var quotePayload = { scheme: scheme, mode: 'calculator', values: quoteValues };
+                    if (!categoryEdited) quotePayload.refresh_tariffs = true;
+                    var quoted = await request((categoryEdited ? 'category-tariff/' : 'calculate/') + productPath,
+                        'POST', quotePayload);
+                    if (!alive || current !== sequence) return;
+                    var manualCommission = categoryEdited && manualTariffs.commission_percent
+                        ? changed.commission_percent : null;
+                    if (categoryEdited) {
+                        changed = quoted.economics.category_scenario;
+                    } else {
+                        // Keep this quote in the scenario for subsequent non-tariff edits.
+                        // A later dimension/price change removes automatic values before quoting again.
+                        tariffFields.forEach(function (key) {
+                            if (!manualTariffs[key]) changed[key] = quoted.economics.values[key];
+                        });
+                    }
+                    if (manualCommission != null) changed.commission_percent = manualCommission;
+                    tariffNeedsQuote = false;
+                    picker.status('');
+                    if (!breakEven && manualCommission == null) {
+                        showResult(quoted.economics);
+                        container.querySelector('[data-ym-break-even]').disabled = false;
+                        return;
+                    }
+                }
                 var result = await request('calculate/' + productPath, 'POST', {
                     scheme: scheme,
                     mode: 'calculator',
                     values: changed,
-                    refresh_tariffs: quote,
+                    break_even: breakEven,
                 });
-                if (alive && current === sequence) showResult(result.economics);
+                if (alive && current === sequence) {
+                    if (breakEven) changed = result.economics.break_even_scenario;
+                    showResult(result.economics);
+                    container.querySelector('[data-ym-break-even]').disabled = false;
+                    if (breakEven) message('Цена без убытка подставлена.');
+                }
             } catch (error) {
-                if (alive && current === sequence) message(error.message, true);
+                if (alive && current === sequence) {
+                    message(error.message, true);
+                    if (tariffNeedsQuote) {
+                        picker.status('Не удалось пересчитать тарифы. Проверьте параметры и повторите изменение.');
+                        container.querySelector('[data-ym-break-even]').disabled = true;
+                    }
+                }
             }
         }
         function showHistory(rows) {
@@ -520,6 +597,7 @@
             }
         }
         draw();
+        if (!initial.calculator_result && initial.mode !== 'calculator') load(scheme);
     }
     window.YandexEconomics = { render: render };
 })();

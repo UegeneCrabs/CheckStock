@@ -12,15 +12,14 @@ from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.yandex_economics import CalculationRequest, Scheme, SettingsChange
 from app.repositories import yandex_assortment
 from app.repositories import yandex_economics as repository
-from app.yandex import economics, economics_api
-from app.yandex.economics_calculation import calculate
+from app.yandex import categories, category_selection, economics, economics_api
+from app.yandex.economics_advertising import apply_calculator_drr
+from app.yandex.economics_calculation import DERIVED_FIELDS, calculate
 
 router = APIRouter(prefix="/api/unit-economics-1c/yandex-market")
 
 CABINET_FIELDS = {
     "fulfillment_cost",
-    "storage_days",
-    "tax_base",
     "tax_percent",
     "other_percent",
     "other_cost",
@@ -32,7 +31,21 @@ CABINET_FIELDS = {
     "frequency",
     "payment_delay_weeks",
 }
-SCENARIO_FIELDS = {"seller_price", "buyer_price", "advertising_mode", "plan_drr"}
+SCENARIO_FIELDS = {
+    "seller_price",
+    "buyer_price",
+    "pay_price",
+    "advertising_mode",
+    "plan_drr",
+    "advertising_spend",
+}
+
+
+def validate_manual_costs(changes):
+    if any(changes.get(key) is not None for key in DERIVED_FIELDS):
+        raise HTTPException(
+            422, "Хранение и возвраты рассчитываются автоматически по габаритам и оборачиваемости"
+        )
 
 
 def authorize_settings(request, store, article, *, write=False):
@@ -45,12 +58,13 @@ def authorize_settings(request, store, article, *, write=False):
 
 def settings_payload(store, article, scheme):
     saved = repository.settings(store, article, scheme)
+    saved_values = {key: value for key, value in saved["values"].items() if key != "tax_base"}
     state = (
         economics.effective(store, article, scheme)
         if article
         else {
-            "values": saved["values"],
-            "origins": {key: "Настройки кабинета" for key in saved["values"]},
+            "values": saved_values,
+            "origins": {key: "Настройки кабинета" for key in saved_values},
         }
     )
     return {
@@ -58,7 +72,7 @@ def settings_payload(store, article, scheme):
         "article": article,
         "scheme": scheme,
         "revision": saved["revision"],
-        "overrides": saved["values"],
+        "overrides": saved_values,
         "values": state["values"],
         "origins": state["origins"],
         "articles": sorted(yandex_assortment.active_articles(store)),
@@ -75,6 +89,7 @@ async def read_settings(request: Request, store: str, article: str = "", scheme:
 async def update_settings(request: Request, store: str, payload: SettingsChange, article: str = ""):
     authorize_settings(request, store, article, write=True)
     changes = payload.values.model_dump(exclude_unset=True)
+    validate_manual_costs(changes)
     if changes.keys() & SCENARIO_FIELDS or (not article and changes.keys() - CABINET_FIELDS):
         raise HTTPException(
             422, "Цены и план рекламы задаются в калькуляторе; закупка и тарифы — отдельно для товара"
@@ -112,16 +127,46 @@ async def product_economics(request: Request, store: str, article: str, scheme: 
     return {"ok": True, "economics": data}
 
 
+@router.get("/categories/{store}")
+async def category_catalog(request: Request, store: str):
+    authorize(request, store, "")
+    try:
+        tree = await run_in_threadpool(categories.catalog, store)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {"ok": True, **tree}
+
+
+@router.post("/category-tariff/{store}/{article:path}")
+async def category_tariff(request: Request, store: str, article: str, payload: CalculationRequest):
+    authorize(request, store, article)
+    if payload.mode != "calculator":
+        raise HTTPException(400, "Категория выбирается в калькуляторе.")
+    try:
+        state = await run_in_threadpool(
+            category_selection.select_category,
+            store,
+            article,
+            payload.scheme,
+            payload.values.model_dump(exclude_unset=True),
+        )
+    except Exception as error:
+        raise HTTPException(400, safe_error(error)) from error
+    return {"ok": True, "economics": state}
+
+
 @router.put("/economics/{store}/{article:path}")
 async def save_economics(request: Request, store: str, article: str, payload: SettingsChange):
     authorize(request, store, article, write=True)
+    changes = payload.values.model_dump(exclude_unset=True)
+    validate_manual_costs(changes)
     try:
         await run_in_threadpool(
             repository.save_settings,
             store,
             article,
             payload.scheme,
-            payload.values.model_dump(exclude_unset=True),
+            changes,
             payload.revision,
             str(request.state.user["full_name"]),
         )
@@ -139,6 +184,16 @@ async def simulate(request: Request, store: str, article: str, payload: Calculat
     """Saved manual values and explicit scenario edits retain priority."""
     authorize(request, store, article)
     scenario = payload.values.model_dump(exclude_unset=True)
+    if payload.break_even:
+        if payload.mode != "calculator" or payload.refresh_tariffs:
+            raise HTTPException(400, "Цена без убытка рассчитывается по текущим параметрам калькулятора.")
+        try:
+            state = await run_in_threadpool(
+                economics.break_even_scenario, store, article, payload.scheme, scenario=scenario
+            )
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return {"ok": True, "economics": state}
     state = await run_in_threadpool(
         economics.detail, store, article, payload.scheme, scenario=scenario, mode=payload.mode
     )
@@ -152,21 +207,31 @@ async def simulate(request: Request, store: str, article: str, payload: Calculat
         except Exception as error:
             raise HTTPException(400, safe_error(error)) from error
 
-        overrides = {
-            key: value
-            for key, value in state["overrides"].items()
-            if key not in scenario or scenario[key] is not None
-        }
+        overrides = {key: value for key, value in state["overrides"].items() if value is not None}
         values = {
             **state["values"],
             **quoted["components"],
             **overrides,
             **{key: value for key, value in scenario.items() if value is not None},
         }
+        for key in quoted["components"]:
+            if scenario.get(key) is not None:
+                state["origins"][key] = "Сценарий"
+            elif overrides.get(key) is not None:
+                state["origins"][key] = "Изменено на сайте"
+            else:
+                state["origins"][key] = "API: тариф сценария"
+        economics.apply_sheet_logistics(values, state["origins"], scenario=scenario)
+        apply_calculator_drr(values, state["origins"], state["calculator_advertising"], scenario)
         state["values"] = values
         state["result"] = calculate(
-            values, advertising_spend=state["advertising_spend"], orders_count=state["orders_count"]
+            values,
+            advertising_spend=state["advertising_spend"],
+            orders_count=state["orders_count"],
+            scenario=scenario,
         )
+        state["calculator_values"] = values
+        state["calculator_result"] = state["result"]
         state["tariff"] = {"valid": True, "services": quoted["services"], "approximate": True}
     return {"ok": True, "economics": state}
 

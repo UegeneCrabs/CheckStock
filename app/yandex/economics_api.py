@@ -137,6 +137,8 @@ def parse_quote(values, scheme, parameters, row):
 
 
 def quote(store, article, scheme, *, scenario=None, persist=True):
+    from app.yandex.category_commissions import parse_fee
+
     values = effective(store, article, scheme, scenario=scenario)["values"]
     parameters, offer = quote_request(store, values, scheme)
     data = api.request(
@@ -148,6 +150,7 @@ def quote(store, article, scheme, *, scenario=None, persist=True):
     if len(rows) != 1:
         raise ValueError("Маркет вернул неполный расчёт тарифа.")
     result = parse_quote(values, scheme, parameters, rows[0])
+    result["components"]["commission_percent"] = parse_fee(offer, rows[0])["commission_percent"]
     if persist:
         repository.save_source(store, article, "tariff:" + scheme, result)
     return result

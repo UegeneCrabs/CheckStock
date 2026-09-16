@@ -1,0 +1,15 @@
+<!-- template: container -->
+<div class="ym-categories ue1c-calculator-row--expanded" style="--expanded-order:{{index}}" data-ym-categories></div>
+<!-- endtemplate -->
+
+<!-- template: picker -->
+<label class="ym-category-search"><span>Поиск категории ЯМ</span><input type="search" data-ym-category-search list="{{prefix}}-search" placeholder="Название категории…" aria-label="Поиск категории ЯМ" autocomplete="off" disabled></label><datalist id="{{prefix}}-search" data-ym-category-options></datalist><div data-ym-category-levels></div><p class="ym-category-status" data-ym-category-status role="status"></p><button type="button" data-ym-category-retry hidden>Повторить загрузку категорий</button>
+<!-- endtemplate -->
+
+<!-- template: level -->
+<label class="ym-category-level" data-ym-category-row="{{depth}}"><span>{{label}}</span><input type="text" list="{{id}}" data-ym-category-level="{{depth}}" aria-label="{{label}}" value="{{value}}" placeholder="Найти и выбрать…" autocomplete="off"><datalist id="{{id}}">{{{options}}}</datalist></label>
+<!-- endtemplate -->
+
+<!-- template: option -->
+<option value="{{value}}">{{label}}</option>
+<!-- endtemplate -->
