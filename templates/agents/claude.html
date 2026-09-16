@@ -1,0 +1,32 @@
+<link rel="stylesheet" href="/static/agents/index.css?v=20260916-video" />
+<section class="agent-page">
+<div class="agent-heading"><h1>ИИ-агенты · Claude</h1><span class="agent-badge">Только чтение данных</span></div>
+<nav class="agent-provider-nav" aria-label="Выбор ИИ-агента"><a href="/ai-agents/gpt">GPT</a><a href="/ai-agents/claude" aria-current="page">Claude</a></nav>
+    <section class="agent-card" aria-labelledby="mcp-title">
+        <h2 id="mcp-title">Подключить к Claude</h2>
+        <p>Задавайте вопросы о ваших магазинах в своём Claude. Доступ совпадает с вашими правами на сайте.</p>
+        <ol>
+            <li>В настройках Claude откройте «Коннекторы» и добавьте пользовательский коннектор.</li>
+            <li>Вставьте адрес: <code id="mcp-url">Загрузка…</code> <button type="button" id="mcp-copy" disabled>Скопировать</button></li>
+            <li>Подключитесь, войдите в CheckStock и разрешите чтение данных.</li>
+        </ol>
+        <p>Пример вопроса: «Покажи остатки по моим магазинам». Через 30 дней подключение нужно разрешить заново.</p>
+        <h3>Мои подключения Claude</h3>
+        <p id="mcp-status" role="status" aria-live="polite"></p>
+        <ul id="mcp-connections"></ul>
+        <button type="button" id="mcp-refresh">Обновить подключения</button>
+    </section>
+    <section class="agent-card agent-video" aria-labelledby="claude-video-title">
+        <h2 id="claude-video-title">Видеоинструкция</h2>
+        <p>Как подключить Claude к данным сайта и начать работу.</p>
+        <div class="agent-video-placeholder">
+            <svg viewBox="0 0 64 48" width="64" height="48" aria-hidden="true">
+                <rect x="1" y="1" width="62" height="46" rx="12" fill="currentColor"></rect>
+                <path d="m26 15 16 9-16 9Z" fill="white"></path>
+            </svg>
+            <strong>Видео скоро появится</strong>
+            <span>Здесь будет инструкция на YouTube</span>
+        </div>
+    </section>
+</section>
+<script src="/static/agents/mcp.js?v=20260916" defer></script>

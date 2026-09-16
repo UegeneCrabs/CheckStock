@@ -18,9 +18,14 @@ from app.access.access_control import ActionPermission, has_action_permission, s
 from app.access.sections import has_access
 from app.agents import reports as reports
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.core.stores import STORES
 from app.dto.identity import SectionName
 from app.stock import supply_planning
 from app.web.routers.agent_analytics import Employee
+from app.web.routers.agent_product_analysis import AnalysisQuery
+from app.web.routers.agent_product_analysis import router as product_analysis_router
+from app.web.routers.agent_profit_summary import SummaryQuery
+from app.web.routers.agent_profit_summary import router as profit_summary_router
 from app.web.routers.target_prices import target_price_data
 from app.web.routers.unit_economics import _unit_economics_1c_unit_profit_report_data
 
@@ -340,6 +345,32 @@ async def capabilities(user: Employee):
             for name, (section, wb_only, fields, description) in SPECS.items()
             if has_access(user, section)
         ]
+        + [
+            {
+                "report": "profit-summary",
+                "path": "/api/agent/v1/profit-summary",
+                "description": "Server totals and equal-period comparison without product pagination.",
+                "filters": sorted(SummaryQuery.model_fields),
+                "scopes": [
+                    {"store": store, "marketplace": "WB"}
+                    for store in STORES
+                    if permitted(user, S.REPORT_UNIT_PROFIT, store, "WB")
+                ],
+            }
+        ]
+        + [
+            {
+                "report": "product-analysis",
+                "path": "/api/agent/v1/product-analysis",
+                "description": "Complete server-side product joins, filters and turnover ranking for six common questions.",
+                "filters": sorted(AnalysisQuery.model_fields),
+                "scopes": [
+                    {"store": store, "marketplace": "WB"}
+                    for store in STORES
+                    if permitted(user, S.REPORT_UNIT_PROFIT, store, "WB")
+                ],
+            }
+        ]
         + (
             [
                 {
@@ -415,7 +446,7 @@ def planned(query):
         return data
 
 
-async def execute(name, request, user, query):
+async def execute(name, request, user, query, *, paginate=True):
     section = validate(name, query, request.query_params)
     if query.store is None:
         if not query.article:
@@ -805,7 +836,8 @@ async def execute(name, request, user, query):
         sort_fields = ("rating", "reviews_count")
     elif name in {"advertising", "advertising-campaigns"}:
         sort_fields = ("ctr_percent", "cpc_rub")
-    payload = reports.page(rows, query, metrics, sort_fields=sort_fields)
+    page_query = query if paginate else query.model_copy(update={"offset": 0, "limit": max(1, len(rows))})
+    payload = reports.page(rows, page_query, metrics, sort_fields=sort_fields)
     if name == "stocks" and query.view == "summary":
         payload["totals"] = {key: sum(row.get(key) or 0 for row in rows) for key in metrics}
         context["totals_basis"] = "observed_values_like_table"
@@ -845,3 +877,7 @@ for report_name, spec in SPECS.items():
         description=spec[3],
         response_model=ReportResponse,
     )
+
+router.include_router(profit_summary_router)
+
+router.include_router(product_analysis_router)

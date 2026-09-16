@@ -3,6 +3,7 @@ from app.web.routers import (
     agent_analytics,
     agent_full,
     agent_management,
+    agent_mcp,
     auth,
     google_export,
     integrations,
@@ -19,6 +20,7 @@ agent_analytics.router.include_router(agent_full.router)
 ROUTERS = (
     agent_analytics.router,
     agent_management.router,
+    agent_mcp.router,
     system.router,
     auth.router,
     profile.router,

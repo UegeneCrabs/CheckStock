@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.access.sections import has_access
@@ -49,8 +49,21 @@ async def storage_call(function):
 
 @router.get("/ai-agents", response_class=HTMLResponse)
 async def agent_page(request: Request, user: Owner):
+    return RedirectResponse("/ai-agents/gpt", status_code=303, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/ai-agents/gpt", response_class=HTMLResponse)
+async def gpt_page(request: Request, user: Owner):
     return HTMLResponse(
-        render_page("CheckStock — ИИ-агенты", "ai_agents", fill_template("agents/index.html"), user),
+        render_page("CheckStock — GPT", "ai_agents", fill_template("agents/index.html"), user),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/ai-agents/claude", response_class=HTMLResponse)
+async def claude_page(request: Request, user: Owner):
+    return HTMLResponse(
+        render_page("CheckStock — Claude", "ai_agents", fill_template("agents/claude.html"), user),
         headers={"Cache-Control": "no-store"},
     )
 

@@ -1,0 +1,7 @@
+body { font: 17px/1.6 system-ui, sans-serif; color: #182b43; background: #f1f5f9; margin: 0; }
+main { max-width: 620px; margin: 8vh auto; background: white; padding: 32px; border-radius: 16px; }
+button, a { font: inherit; }
+button { padding: 10px 20px; border: 1px solid #2463eb; border-radius: 8px; background: #2463eb; color: white; cursor: pointer; }
+button[value="deny"] { color: #182b43; background: white; border-color: #cbd5e1; }
+a { color: #174fbe; }
+@media (max-width: 680px) { main { margin: 20px 12px; padding: 24px; } }
