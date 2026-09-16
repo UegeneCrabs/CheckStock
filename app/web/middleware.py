@@ -25,6 +25,16 @@ async def authentication_middleware(request: Request, call_next):
 
     path = request.url.path
 
+    from app.web.routers.agent_mcp import PUBLIC_PATHS as MCP_PUBLIC_PATHS
+
+    if path in MCP_PUBLIC_PATHS:
+        # These endpoints enforce OAuth/session authentication themselves. Never
+        # redirect the MCP client to an HTML login page instead of its 401 challenge.
+        request.state.user = None
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     if path.startswith("/api/agent/v1/"):
         request.state.user = None
         if request.method != "GET":

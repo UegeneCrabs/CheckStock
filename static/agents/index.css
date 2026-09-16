@@ -4,6 +4,44 @@
     padding: 12px 0 32px;
     color: var(--text, #182844);
 }
+.agent-provider-nav {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 24px;
+}
+.agent-provider-nav a {
+    padding: 10px 24px;
+    border: 1px solid #dde4ef;
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text, #182844);
+    background: var(--panel, #fff);
+    font-weight: 600;
+}
+.agent-provider-nav a[aria-current="page"] {
+    background: #3459ff;
+    border-color: #3459ff;
+    color: #fff;
+}
+#mcp-url { overflow-wrap: anywhere; }
+.agent-video-placeholder {
+    aspect-ratio: 16 / 9;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    box-sizing: border-box;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: #f4f6fb;
+    text-align: center;
+    color: #64748b;
+}
+.agent-video-placeholder strong { color: #182844; font-size: 20px; }
+.agent-video-placeholder svg { color: #8492ad; }
 .agent-heading,
 .agent-section-heading {
     display: flex;
