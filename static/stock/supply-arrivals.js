@@ -153,11 +153,16 @@
             && (!search || [row.project, row.order, row.category, row.group].join(' ').toLocaleLowerCase('ru-RU').includes(search)));
         const filtered = base.filter((row) => !state.weeks.length || state.weeks.includes(weekKey(row.arrival)));
         q('[data-arrivals-kpi="week"]').textContent = snapshot.last_success ? String(base.filter((row) => weekKey(row.arrival) === weekKey(today)).length) : '—';
-        q('[data-arrivals-week-caption]').textContent = `${weekLabel(weekKey(today))} · без фильтра недель`;
+        const weekCaption = `${weekLabel(weekKey(today))} · без фильтра недель`;
+        q('[data-arrivals-week-caption]').textContent = weekCaption;
+        q('[data-arrivals-kpi="week"]').closest('.arrivals-kpi').title = weekCaption;
         for (const field of ['volume', 'weight', 'boxes']) {
             const total = sum(filtered, field);
             q(`[data-arrivals-kpi="${field}"]`).textContent = snapshot.last_success ? number(total.value) : '—';
-            q(`[data-arrivals-caption="${field}"]`).textContent = total.missing ? `Без значения: ${total.missing} из ${filtered.length}` : 'По выбранным поставкам';
+            const caption = q(`[data-arrivals-caption="${field}"]`);
+            caption.textContent = total.missing ? `Без значения: ${total.missing} из ${filtered.length}` : 'По выбранным поставкам';
+            caption.classList.toggle('arrivals-sr-only', !total.missing);
+            caption.closest('.arrivals-kpi').title = `По выбранным поставкам${total.missing ? ` · ${caption.textContent}` : ''}`;
         }
         q('[data-arrivals-count]').textContent = `Показано ${filtered.length} из ${rows.length} поставок`;
         renderTable(filtered);
@@ -187,7 +192,7 @@
         clearTimeout(timer);
         loading = true;
         try {
-            const data = await request('/stock/arrivals/data');
+            const data = await request('/supply-schedule/data');
             snapshot = data;
             rows = data.rows;
             today = data.today;
@@ -258,7 +263,7 @@
         pendingRefresh = true;
         q('[data-arrivals-refresh]').disabled = true;
         q('[data-arrivals-refresh]').textContent = 'Обновление…';
-        try { await request('/stock/arrivals/sync', { method: 'POST' }); await load(); }
+        try { await request('/supply-schedule/sync', { method: 'POST' }); await load(); }
         catch (error) { notice(error.message); pendingRefresh = false; q('[data-arrivals-refresh]').disabled = false; q('[data-arrivals-refresh]').textContent = 'Повторить обновление'; }
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });

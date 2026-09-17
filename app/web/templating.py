@@ -199,7 +199,6 @@ def render_page(
         "stock_total",
         "stock_supplies",
         "stock_inbound",
-        "stock_arrivals",
         "stock_randomizer",
         "stock_cost_report",
     }
@@ -223,7 +222,9 @@ def render_page(
         "layout/header.html",
         stock_open="",
         stock_expanded="false",
-        stock_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[0][1])),
+        stock_group_hidden=hidden(
+            any(visible[item] for item in SECTION_GROUPS[0][1] if item is not SectionName.STOCK_ARRIVALS)
+        ),
         stock_group_active="active" if stock_open else "",
         unit_1c_open="",
         unit_1c_expanded="false",

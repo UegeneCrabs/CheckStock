@@ -1,25 +1,27 @@
-<link rel="stylesheet" href="/static/stock/supply-arrivals.css?v=20260915-2" />
+<link rel="stylesheet" href="/static/stock/supply-arrivals.css?v=20260917-compact-1" />
 <section class="arrivals-page" data-arrivals-page data-preference-key="$preference_key">
     <div class="arrivals-heading">
-        <h1>Табло поставок</h1>
-        <div class="arrivals-actions">
-            <button type="button" class="arrivals-button arrivals-primary" data-arrivals-refresh$refresh_hidden>Обновить данные</button>
+        <div class="arrivals-title">
+            <h1>Расписание поставок</h1>
+            <div class="arrivals-meta">
+                <span data-arrivals-updated>Читаем реестр поставок…</span>
+                <span title="Автообновление каждые $interval_minutes мин. · Даты по Москве">Авто · $interval_minutes мин. · МСК</span>
+            </div>
         </div>
-    </div>
-    <div class="arrivals-meta">
-        <span data-arrivals-updated>Читаем реестр поставок…</span>
-        <span>Автообновление каждые $interval_minutes мин. · Даты по Москве</span>
-        <a data-arrivals-source target="_blank" rel="noopener noreferrer" hidden>Открыть Google Таблицу ↗</a>
+        <div class="arrivals-actions">
+            <a data-arrivals-source target="_blank" rel="noopener noreferrer" hidden>Google Таблица ↗</a>
+            <button type="button" class="arrivals-button" data-arrivals-refresh$refresh_hidden>Обновить данные</button>
+        </div>
     </div>
     <div class="arrivals-notice" data-arrivals-notice role="status" aria-live="polite" hidden></div>
     <div class="arrivals-kpis" aria-label="Итоги поставок">
         <article class="arrivals-kpi arrivals-kpi-main">
-            <span>Поставки на этой неделе</span><strong data-arrivals-kpi="week">—</strong>
-            <small data-arrivals-week-caption>Текущая неделя</small>
+            <span>На этой неделе</span><strong data-arrivals-kpi="week">—</strong>
+            <small class="arrivals-sr-only" data-arrivals-week-caption>Текущая неделя</small>
         </article>
-        <article class="arrivals-kpi"><span>Объём, м³</span><strong data-arrivals-kpi="volume">—</strong><small data-arrivals-caption="volume">По выбранным поставкам</small></article>
-        <article class="arrivals-kpi"><span>Вес, кг</span><strong data-arrivals-kpi="weight">—</strong><small data-arrivals-caption="weight">По выбранным поставкам</small></article>
-        <article class="arrivals-kpi"><span>Короба</span><strong data-arrivals-kpi="boxes">—</strong><small data-arrivals-caption="boxes">По выбранным поставкам</small></article>
+        <article class="arrivals-kpi"><span>Объём, м³</span><strong data-arrivals-kpi="volume">—</strong><small class="arrivals-sr-only" data-arrivals-caption="volume">По выбранным поставкам</small></article>
+        <article class="arrivals-kpi"><span>Вес, кг</span><strong data-arrivals-kpi="weight">—</strong><small class="arrivals-sr-only" data-arrivals-caption="weight">По выбранным поставкам</small></article>
+        <article class="arrivals-kpi"><span>Короба</span><strong data-arrivals-kpi="boxes">—</strong><small class="arrivals-sr-only" data-arrivals-caption="boxes">По выбранным поставкам</small></article>
     </div>
     <div class="arrivals-filters" aria-label="Фильтры поставок">
         <label class="arrivals-search">Поиск<input type="search" aria-label="Поиск" data-arrivals-search placeholder="Заказ, группа, проект или категория" /></label>
@@ -41,4 +43,4 @@
         </table>
     </div>
 </section>
-<script src="/static/stock/supply-arrivals.js?v=20260915-2" defer></script>
+<script src="/static/stock/supply-arrivals.js?v=20260917-compact-1" defer></script>

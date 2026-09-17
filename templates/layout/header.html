@@ -41,9 +41,6 @@
                 <a class="nav-subitem $stock_inbound_active" href="/stock/inbound" $stock_inbound_hidden
                     >Поставки FBO</a
                 >
-                <a class="nav-subitem $stock_arrivals_active" href="/stock/arrivals" $stock_arrivals_hidden
-                    >Табло поставок</a
-                >
                 <a
                     class="nav-subitem $stock_randomizer_active"
                     href="/stock/randomizer"
@@ -64,6 +61,15 @@
                 >
             </div>
         </div>
+
+        <a class="nav-item $stock_arrivals_active" href="/supply-schedule" $stock_arrivals_hidden
+            title="Расписание поставок" aria-label="Расписание поставок">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M16 3v4M8 3v4M3 11h18M8 15h3M8 18h6"></path>
+            </svg>
+            <span>Расписание поставок</span>
+        </a>
 
         <div class="nav-group $unit_1c_open" data-nav-group$unit_1c_group_hidden>
             <div class="nav-group-head">
