@@ -27,6 +27,7 @@ def sync_store(store_slug: str) -> dict:
 
     business_id = resolve_business_id(store_slug, api_key)
     raw = ya_api.get_catalog(api_key, business_id)
+    archived = ya_api.get_catalog(api_key, business_id, archived=True)
 
     items = []
     no_barcode = 0
@@ -57,6 +58,22 @@ def sync_store(store_slug: str) -> dict:
     with db.WRITE_LOCK:
         result = db.replace_catalog(store_slug, MARKETPLACE, items, _now())
 
+    from app.repositories import unit_economics_yandex
+
+    now = _now()
+    unit_economics_yandex.save_snapshot(
+        store_slug,
+        "archive",
+        [
+            {"article": item["article"]}
+            for row in archived
+            if (item := ya_api.normalize_catalog_item(row))["article"]
+        ],
+        now[:10],
+        now[:10],
+        now,
+    )
+
     from app.repositories import yandex_economics
     from app.yandex.economics_api import catalog_values
 
@@ -65,7 +82,7 @@ def sync_store(store_slug: str) -> dict:
         if article:
             yandex_economics.save_source(store_slug, article, "catalog", catalog_values(row))
 
-    report = {"total": len(items), "no_barcode": no_barcode, **result}
+    report = {"total": len(items), "archived": len(archived), "no_barcode": no_barcode, **result}
     logger.debug("Каталог Яндекса %s: %s", _store_label(store_slug), report)
     return report
 

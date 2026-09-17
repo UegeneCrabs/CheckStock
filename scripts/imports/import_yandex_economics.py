@@ -16,6 +16,7 @@ from app.dto.yandex_economics import EconomicsValues
 from app.repositories import yandex_economics as repository
 from app.repositories.yandex_assortment import active_articles
 from app.yandex import economics
+from app.yandex.economics_calculation import REMOVED_FIELDS
 
 
 def import_rows(rows):
@@ -31,7 +32,13 @@ def import_rows(rows):
         if article not in active[store]:
             skipped += 1
             continue
-        incoming = EconomicsValues.model_validate(row["values"]).model_dump(exclude_none=True)
+        incoming = EconomicsValues.model_validate(
+            {
+                key: value
+                for key, value in row["values"].items()
+                if key not in REMOVED_FIELDS and key != "company_commission_percent"
+            }
+        ).model_dump(exclude_none=True)
         existing = caches[store].get((article, "initial:" + scheme), {}).get("values", {})
         # Existing 1C purchase/fulfillment take precedence during initial migration.
         merged = {**incoming, **{key: value for key, value in existing.items() if value is not None}}

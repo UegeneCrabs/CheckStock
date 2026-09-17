@@ -1,30 +1,27 @@
-from datetime import datetime, timedelta
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
 from app.access import auth
 from app.access.access_control import has_scope
 from app.access.sections import has_access
-from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.yandex_economics import CalculationRequest, Scheme, SettingsChange
 from app.repositories import yandex_assortment
 from app.repositories import yandex_economics as repository
-from app.yandex import categories, category_selection, economics, economics_api
+from app.yandex import categories, category_selection, economics, economics_api, economics_history
 from app.yandex.economics_advertising import apply_calculator_drr
-from app.yandex.economics_calculation import DERIVED_FIELDS, calculate
+from app.yandex.economics_calculation import DERIVED_FIELDS, REMOVED_FIELDS, calculate
 
 router = APIRouter(prefix="/api/unit-economics-1c/yandex-market")
 
 CABINET_FIELDS = {
     "fulfillment_cost",
     "tax_percent",
-    "other_percent",
+    "company_commission_percent",
     "other_cost",
-    "capital_percent",
-    "turnover_days",
+    "storage_per_day",
+    "storage_days",
     "loss_percent",
     "disposal_cost",
     "transit_cost",
@@ -43,9 +40,7 @@ SCENARIO_FIELDS = {
 
 def validate_manual_costs(changes):
     if any(changes.get(key) is not None for key in DERIVED_FIELDS):
-        raise HTTPException(
-            422, "Хранение и возвраты рассчитываются автоматически по габаритам и оборачиваемости"
-        )
+        raise HTTPException(422, "Объём и возвраты рассчитываются автоматически по габаритам")
 
 
 def authorize_settings(request, store, article, *, write=False):
@@ -58,7 +53,7 @@ def authorize_settings(request, store, article, *, write=False):
 
 def settings_payload(store, article, scheme):
     saved = repository.settings(store, article, scheme)
-    saved_values = {key: value for key, value in saved["values"].items() if key != "tax_base"}
+    saved_values = {key: value for key, value in saved["values"].items() if key not in REMOVED_FIELDS}
     state = (
         economics.effective(store, article, scheme)
         if article
@@ -90,6 +85,8 @@ async def update_settings(request: Request, store: str, payload: SettingsChange,
     authorize_settings(request, store, article, write=True)
     changes = payload.values.model_dump(exclude_unset=True)
     validate_manual_costs(changes)
+    if article and "company_commission_percent" in changes:
+        raise HTTPException(422, "Комиссия компании задаётся в общих параметрах кабинета")
     if changes.keys() & SCENARIO_FIELDS or (not article and changes.keys() - CABINET_FIELDS):
         raise HTTPException(
             422, "Цены и план рекламы задаются в калькуляторе; закупка и тарифы — отдельно для товара"
@@ -160,6 +157,8 @@ async def save_economics(request: Request, store: str, article: str, payload: Se
     authorize(request, store, article, write=True)
     changes = payload.values.model_dump(exclude_unset=True)
     validate_manual_costs(changes)
+    if "company_commission_percent" in changes:
+        raise HTTPException(422, "Комиссия компании задаётся в общих параметрах кабинета")
     try:
         await run_in_threadpool(
             repository.save_settings,
@@ -261,15 +260,9 @@ async def refresh_tariff(request: Request, store: str, article: str, payload: Ca
 @router.get("/economics-history/{store}/{article:path}")
 async def history(request: Request, store: str, article: str, scheme: Scheme = "FBY"):
     authorize(request, store, article)
-    today = datetime.now(MOSCOW_TIMEZONE).date()
-    rows = await run_in_threadpool(
-        repository.history,
-        store,
-        (today - timedelta(days=30)).isoformat(),
-        (today - timedelta(days=1)).isoformat(),
-    )
+    data = await run_in_threadpool(economics_history.product_history, store, article, scheme)
     return {
         "ok": True,
-        "history": [row["data"] for row in rows if row["article"] == article and row["scheme"] == scheme],
+        **data,
         "audit": await run_in_threadpool(repository.audit, store, article),
     }

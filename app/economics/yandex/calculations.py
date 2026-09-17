@@ -7,6 +7,7 @@ from app import db
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.economics.wb import calculations as unit_economics_1c
+from app.exports import stock_sheet_inbound
 from app.repositories import unit_economics_yandex as repository
 from app.repositories import (
     yandex_assortment,
@@ -169,6 +170,9 @@ def load_products(
     for slug in store_slugs:
         active = yandex_assortment.active_articles(slug)
         catalog = [row for row in db.get_catalog_items(slug, MARKETPLACE) if row["article"] in active]
+        inbound = stock_sheet_inbound.load(slug, MARKETPLACE, catalog, include_yandex_approved=True)
+        archived = yandex_assortment.archived_articles(slug)
+        catalog = [row for row in inbound.catalog if row["article"] not in archived]
         stocks = {row["article"]: row for row in db.get_stock_items(slug, MARKETPLACE, ("fbs", "fbo"))}
         snapshots = repository.get_snapshots(slug)
         product_statuses = yandex_product_statuses.get_statuses(slug)
@@ -209,7 +213,6 @@ def load_products(
             set(repository.days_between(stock_start.isoformat(), today.isoformat())) <= loaded_orders
         )
         turnover_coverage = _coverage(loaded_orders, start, end)
-        closed_known = turnover_coverage["complete"]
         by_article = defaultdict(list)
         for row in orders:
             if history_start.isoformat() <= row["day"] <= today.isoformat():
@@ -234,8 +237,16 @@ def load_products(
             ads_coverage = _coverage(
                 set(repository.days_between(start.isoformat(), end.isoformat())), start, end
             )
+        matching_days = loaded_orders & (set(ads_coverage["dates"]) if legacy_ads else loaded_ads)
+        # Aggregated legacy advertising cannot be apportioned over missing order days.
+        if legacy_ads and not turnover_coverage["complete"]:
+            matching_days = set()
+        drr_coverage = _coverage(matching_days, start, end)
+        drr_spend = defaultdict(float)
         ads = defaultdict(lambda: {"spend": 0.0, "impressions": 0, "clicks": 0})
         for row in daily_ads:
+            if (legacy_ads and drr_coverage["complete"]) or row.get("day") in matching_days:
+                drr_spend[row["article"]] += float(row.get("spend") or 0)
             for key in ("spend", "impressions", "clicks"):
                 ads[row["article"]][key] += row.get(key) or 0
         buyout_settings = repository.get_buyout_settings(slug)
@@ -267,11 +278,27 @@ def load_products(
             stock_orders = sum(
                 int(row.get("orders_count") or 0) for row in rows if row["day"] >= stock_start.isoformat()
             )
+            inbound_quantity = inbound.quantities.get(sku)
+            inbound_partial = inbound_quantity is None
+            if inbound_partial:
+                inbound_quantity = inbound.confirmed_quantities.get(sku) or None
+            inbound_message = "Утверждённые заявки и ещё не принятые товары в отправленных поставках."
+            if not inbound.available:
+                inbound_message = "Нет полного свежего снимка поставок: количество в пути не подтверждено."
+            elif inbound_partial:
+                inbound_message = (
+                    f"Не менее {inbound_quantity} шт. По части поставок количество ещё не принятых товаров неизвестно."
+                    if inbound_quantity is not None
+                    else "Количество ещё не принятых товаров в поставках не подтверждено."
+                )
             stock = {
                 "total": total,
                 "fbs": fbs,
                 "fbo": fbo,
                 "fulfillment": ff,
+                "inbound": inbound_quantity,
+                "inbound_partial": inbound_partial,
+                "inbound_message": inbound_message,
                 "days": unit_economics_1c.calculate_stock_coverage_days(total, stock_orders)
                 if orders_known
                 else None,
@@ -285,6 +312,16 @@ def load_products(
             closed_rows = [row for row in rows if start.isoformat() <= row["day"] <= end.isoformat()]
             order_amount = round(sum(float(row.get("orders_amount") or 0) for row in closed_rows), 2)
             cancel_amount = round(sum(float(row.get("cancel_amount") or 0) for row in closed_rows), 2)
+            if not article and not (
+                total > 0 or (stock["inbound"] or 0) > 0 or order_amount - cancel_amount != 0
+            ):
+                continue
+            drr_amount = round(
+                sum(
+                    float(row.get("orders_amount") or 0) for row in closed_rows if row["day"] in matching_days
+                ),
+                2,
+            )
             raw_buyout = (buyouts.get(sku) or {}).get("buyout_percent", 0.0) if buyout_available else None
             buyout_percent = unit_economics_1c.resolve_buyout_percent(
                 raw_buyout, buyout_settings["default_buyout_percent"]
@@ -299,7 +336,9 @@ def load_products(
             ad = {
                 **dict.fromkeys(("drr", "spend", "ctr", "cpc")),
                 **period,
-                "orders_amount": order_amount if closed_known else None,
+                "orders_amount": drr_amount if drr_coverage["days"] else None,
+                "drr_spend": round(drr_spend[sku], 2) if drr_coverage["days"] else None,
+                "drr_coverage": drr_coverage,
                 "buyout_percent": buyout_percent,
                 "raw_buyout_percent": raw_buyout,
                 "buyout_default_applied": not raw_buyout and buyout_percent > 0,
@@ -319,8 +358,10 @@ def load_products(
                         "clicks": clicks,
                         "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
                         "cpc": round(spend / clicks, 2) if clicks else 0.0,
-                        "drr": unit_economics_1c.calculate_drr_percent(spend, order_amount, buyout_percent)
-                        if closed_known and ads_coverage["complete"]
+                        "drr": unit_economics_1c.calculate_drr_percent(
+                            drr_spend[sku], drr_amount, buyout_percent
+                        )
+                        if drr_coverage["days"]
                         else None,
                     }
                 )

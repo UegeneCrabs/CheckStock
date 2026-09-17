@@ -250,7 +250,7 @@ def get_fulfillment_warehouses(api_key: str) -> list[dict]:
     return data.get("warehouses") or []
 
 
-def get_catalog(api_key: str, business_id: int) -> list[dict]:
+def get_catalog(api_key: str, business_id: int, *, archived: bool = False) -> list[dict]:
 
     items: list[dict] = []
     page_token = ""
@@ -260,7 +260,7 @@ def get_catalog(api_key: str, business_id: int) -> list[dict]:
         data = _request(
             f"/v2/businesses/{business_id}/offer-mappings",
             api_key,
-            payload={},
+            payload={"archived": archived},
             params={"limit": PAGE_SIZE, "pageToken": page_token},
         )
         chunk = data.get("offerMappings") or []

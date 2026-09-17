@@ -10,6 +10,7 @@ from app.yandex.category_commissions import SOURCE as CATEGORY_COMMISSION_SOURCE
 from app.yandex.category_commissions import commission_value
 from app.yandex.economics_advertising import apply_calculator_drr, product_drr, weekly_history
 from app.yandex.economics_calculation import (
+    REMOVED_FIELDS,
     VERSION,
     aggregate,
     break_even_prices,
@@ -17,6 +18,7 @@ from app.yandex.economics_calculation import (
     resolve,
     sheet_logistics,
 )
+from app.yandex.economics_diagnostics import current_issues
 from app.yandex.price_calculation import discounted_price
 
 
@@ -46,7 +48,6 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
     base = {
         "purchase_price": source_1c.get("purchase_price"),
         "fulfillment_cost": source_1c.get("fulfillment_cost"),
-        "other_percent": source_1c.get("team_commission_percent"),
     }
     prices = cache["prices"].get(article, {})
     pricing = yandex_storefront.resolved_prices(prices)
@@ -135,7 +136,7 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
         "values": values,
         "origins": origins,
         "revision": product["revision"],
-        "overrides": {key: value for key, value in product["values"].items() if key != "tax_base"},
+        "overrides": {key: value for key, value in product["values"].items() if key not in REMOVED_FIELDS},
         "cabinet_revision": cabinet["revision"],
         "pricing": pricing,
         "category": category_values
@@ -159,9 +160,8 @@ def apply_sheet_logistics(values, origins, *, scenario=None):
         volume_l="Габариты упаковки: длина × ширина × высота / 1000",
         return_middle_mile="По формуле таблицы: средняя миля от объёма",
         return_cost="По формуле таблицы: средняя миля + 15 ₽",
-        storage_per_day="По формуле таблицы: объём × ставка по оборачиваемости",
-        storage_days="По формуле таблицы: 30 дней",
     )
+    origins.setdefault("storage_days", "Период хранения: 30 дней")
     for key in derived:
         if (scenario or {}).get(key) is not None:
             origins[key] = "Сценарий"
@@ -253,13 +253,26 @@ def allocate_today(ads, orders, article, scheme):
     return (spend * quantity / total if total else spend if scheme == "FBY" else 0), quantity
 
 
-def current_ads(store, article, today, scheme="FBY"):
+def current_metrics(store, article, today, scheme="FBY", *, history=None):
     key = today.isoformat()
-    ads, ads_days = metrics.get_history(store, "advertising", key, key)
-    orders, order_days = metrics.get_history(store, "orders", key, key)
-    if key not in ads_days or key not in order_days:
-        return None, None
-    return allocate_today(ads, orders, article, scheme)
+    if history is None:
+        ads, ads_days = metrics.get_history(store, "advertising", key, key)
+        orders, order_days = metrics.get_history(store, "orders", key, key)
+    else:
+        ads, ads_days, orders, order_days = history
+    issues = []
+    if key not in ads_days:
+        issues.append("Не загружены расходы на рекламу за сегодня (" + key + ", МСК).")
+    orders_known = key in order_days
+    if not orders_known:
+        issues.append("Не загружены заказы за сегодня (" + key + ", МСК).")
+    elif any("schemes" not in row for row in orders if row["article"] == article):
+        issues.append("В заказах за сегодня нет разбивки по FBY/FBS.")
+        orders_known = False
+    spend, count = allocate_today(ads, orders, article, scheme) if orders_known else (None, None)
+    if key not in ads_days:
+        spend = None
+    return {"spend": spend, "orders": count, "issues": issues}
 
 
 def detail(
@@ -270,7 +283,7 @@ def detail(
     today=None,
     scenario=None,
     state_cache=None,
-    advertising=None,
+    daily_metrics=None,
     include_history=True,
     mode="current",
 ):
@@ -286,7 +299,8 @@ def detail(
         if mode == "current"
         else calculator
     )
-    spend, orders = advertising if advertising is not None else current_ads(store, article, today, scheme)
+    daily = daily_metrics if daily_metrics is not None else current_metrics(store, article, today, scheme)
+    spend, orders = daily["spend"], daily["orders"]
     config["result"] = calculate(
         config["values"], advertising_spend=spend, orders_count=orders, scenario=scenario
     )
@@ -309,6 +323,8 @@ def detail(
             "calculator_advertising": weekly,
         }
     )
+    if mode == "current":
+        config["current_issues"] = current_issues(config, daily)
     if include_history:
         start, end = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
         rows = repository.history(store, start, end)
@@ -348,19 +364,18 @@ def attach(products, start, end, today, scheme="FBY"):
         key = today.isoformat()
         ads, ad_days = metrics.get_history(store, "advertising", key, key)
         orders, order_days = metrics.get_history(store, "orders", key, key)
-        current[store] = (ads, orders, key in ad_days and key in order_days)
+        current[store] = (ads, ad_days, orders, order_days)
     expected = metrics.days_between(start.isoformat(), end.isoformat())
     for product in products:
         store, article = product["store_slug"], product["article"]
-        ads, orders, complete = current[store]
-        ad_values = allocate_today(ads, orders, article, scheme) if complete else (None, None)
+        daily = current_metrics(store, article, today, scheme, history=current[store])
         config = detail(
             store,
             article,
             scheme,
             today=today,
             state_cache=contexts[store],
-            advertising=ad_values,
+            daily_metrics=daily,
             include_history=False,
         )
         product["ym_economics"] = config
@@ -372,6 +387,7 @@ def attach(products, start, end, today, scheme="FBY"):
                 "buyout_percent": config["values"].get("buyout_percent"),
                 "advertising_spend": config["advertising_spend"],
                 "period_to": today.isoformat(),
+                "issues": config["current_issues"],
             }
         )
         daily = [
@@ -502,8 +518,7 @@ def bootstrap_1c(stores):
                     store,
                     article,
                     "initial:" + scheme,
-                    {key: row.get(key) for key in ("purchase_price", "fulfillment_cost")}
-                    | {"other_percent": row.get("team_commission_percent")},
+                    {key: row.get(key) for key in ("purchase_price", "fulfillment_cost")},
                     initial_only=True,
                 )
                 count += 1

@@ -27,6 +27,9 @@ def init_db() -> None:
     _remove_legacy_catalog_product_exclusions(database)
     _remove_legacy_unit_economics(database)
     _migrate_unit_economics_1c_cabinet_settings(database)
+    from app.repositories.yandex_economics_migration import migrate_company_commission
+
+    migrate_company_commission(database)
     _migrate_unit_economics_1c_product_settings(database)
     _migrate_unit_economics_1c_source_values(database)
     _migrate_unit_economics_1c_daily_prices(database)

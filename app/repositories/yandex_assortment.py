@@ -58,11 +58,23 @@ def refresh(
 
 
 def active_articles(store_slug: str) -> set[str]:
+    """All non-archived catalog offers; dashboard visibility depends on stock/turnover."""
     with get_connection() as connection:
-        return {
+        articles = {
             row["article"]
             for row in connection.execute(
-                "SELECT article FROM unit_economics_yandex_assortment WHERE store_slug=? AND is_legacy=0",
+                "SELECT article FROM stock_items WHERE store_slug=? "
+                "AND marketplace='YANDEX MARKET' AND is_service=0",
                 (store_slug,),
             )
         }
+    return articles - archived_articles(store_slug)
+
+
+def archived_articles(store_slug: str) -> set[str]:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT data_json FROM unit_economics_yandex_snapshots WHERE store_slug=? AND source='archive'",
+            (store_slug,),
+        ).fetchone()
+    return {item["article"] for item in json.loads(row["data_json"] or "[]")} if row else set()

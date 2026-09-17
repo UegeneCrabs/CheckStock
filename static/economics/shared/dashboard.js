@@ -9,6 +9,7 @@
     var placeholderMode = config.placeholderMode === true;
     var marketplaceLabel = String(config.marketplaceLabel || 'WB');
     root.classList.toggle('is-placeholder', placeholderMode);
+    root.classList.toggle('has-totals', config.yandexMetrics === true);
     var products = Array.isArray(config.products) ? config.products : [];
     var productsEndpoint = String(config.productsEndpoint || '/sales/unit-economics-1c?data=1');
     var commissionsEndpoint = String(
@@ -20,6 +21,8 @@
     var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     var AUTO_REFRESH_STALE_MS = 60 * 1000;
     var lastProductsLoadedAt = 0;
+    var productsRequestId = 0;
+    var productsController = null;
     var canEdit = !placeholderMode && config.canEdit === true;
     var productsById = {};
     products.forEach(function (product) {
@@ -72,8 +75,8 @@
         status: 'all',
         page: 1,
         pageSize: 20,
-        periodMode: 'preset',
-        periodDays: configuredPeriodDays,
+        periodMode: config.periodMode === 'custom' ? 'custom' : 'preset',
+        periodDays: Math.max(1, Number(config.periodDays) || configuredPeriodDays),
         periodFrom: String(config.periodFrom || ''),
         periodTo: String(config.periodTo || ''),
         lastCompleteDay: String(config.lastCompleteDay || config.periodTo || ''),
@@ -215,6 +218,12 @@
     var defaultColumnOrder = columnGroups.map(function (group) {
         return group.key;
     });
+    if (config.yandexMetrics === true) {
+        columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
+            index: 25, label: 'В пути на склады FBO', number: true, width: 125,
+            help: 'Утверждённые заявки и ещё не принятые товары в отправленных поставках. Черновики, отменённые и завершённые заявки исключены. Знак ≥ означает, что часть количеств пока неизвестна.',
+        });
+    }
     var savedColumns =
         config.columnPreferences && Array.isArray(config.columnPreferences.order)
             ? config.columnPreferences
@@ -535,6 +544,30 @@
             'economics/shared/dashboard/render-table-header-5',
             { top: top, sub: sub },
         );
+        if (config.yandexMetrics === true) {
+            nodes.tableHead.insertAdjacentHTML('beforeend', '<tr class="ue1c-totals-row" id="ue1c-totals"></tr>');
+            renderTotals(state.productsLoading ? [] : filteredProducts());
+        }
+    }
+    function renderTotals(items) {
+        var row = id('ue1c-totals');
+        if (!row || !window.CheckStockYandexTotals) return;
+        var totals = window.CheckStockYandexTotals(items);
+        row.innerHTML = visibleColumnGroups().map(function (group) {
+            return group.columns.map(function (column) {
+                var total = totals[column.index] || {};
+                var value = column.index === 0 ? 'Итого · ' + items.length : nullable(total.value,
+                    total.unit === 'money' ? money : decimal, total.unit === 'percent' ? '%' : '');
+                if (total.lowerBound && total.value != null) value = '≥ ' + value;
+                return window.CheckStockUI.render('economics/shared/dashboard/total-cell', {
+                    index: column.index, value: value, key: group.key,
+                    state: total.partial ? ' ue1c-partial-cell' : '',
+                    title: (total.title || 'Показатель не суммируется.') +
+                        (total.partial ? '\nЧасть данных отсутствует: итог по доступным значениям.' : '') +
+                        '\nВсе товары по текущим фильтрам, включая другие страницы.',
+                });
+            }).join('');
+        }).join('');
     }
     function saveColumnPreferences() {
         columnPreferences.order = ['product'].concat(
@@ -662,6 +695,7 @@
                     ? 'Обычный'
                     : 'Нет',
             calculateSppPercent(product),
+            product.stock.inbound,
         ];
         var value = values[Number(columnIndex)];
         return String(value === null || value === undefined ? '—' : value);
@@ -705,7 +739,7 @@
             'Сегодня, ' +
             nullText(current.period_to) +
             ' · заказы ' +
-            integer.format(finite(current.orders, 0)) +
+            nullable(current.orders, integer) +
             ' · выкуп ' +
             (finite(current.buyout_percent, null) === null
                 ? '—'
@@ -714,16 +748,12 @@
             ' · реклама ' +
             nullable(current.advertising_spend, preciseMoney);
         if (placeholderMode) {
-            currentTitle = 'Данные пока не подключены';
             if (config.yandexEconomics && product.ym_economics) {
                 var ym = product.ym_economics;
                 currentTitle =
-                    'Формула YM · ' +
-                    ym.scheme +
-                    '. Цены, реклама и заказы за сегодня (МСК).' +
-                    (ym.result.messages.length
-                        ? ' ' + ym.result.messages.join(' ')
-                        : ' Параметры в карточке товара.');
+                    'Яндекс Маркет · ' + ym.scheme + ' · МСК\n' + currentTitle;
+            } else {
+                currentTitle = 'Данные пока не подключены';
             }
             if (config.yandexMetrics === true) {
                 advertisingTitle =
@@ -767,7 +797,10 @@
         });
         cells.comments = window.CheckStockUI.render('economics/shared/dashboard/render-product-2', {
             id: product.id,
-            content: placeholderMode ? ' placeholder="—" disabled' : ' placeholder="Добавить комментарий…"',
+            content:
+                placeholderMode && config.yandexMetrics !== true
+                    ? ' placeholder="—" disabled'
+                    : ' placeholder="Добавить комментарий…"',
             name: product.name,
             id_2: commentText(product.id),
         });
@@ -787,11 +820,20 @@
                       }),
         });
         var currentSpp = calculateSppPercent(product);
+        var currentIssues = current.issues || {};
+        var marginIssues = currentIssues.margin || [];
+        var roiIssues = currentIssues.roi || [];
         cells.current = window.CheckStockUI.render('economics/shared/dashboard/render-product-6', {
-            currentTitle: currentTitle,
+            marginState: marginIssues.length ? ' ue1c-partial-cell' : '',
+            currentTitle: currentTitle + (marginIssues.length
+                ? '\nМаржа на 1 штуку не рассчитана:\n• ' + marginIssues.join('\n• ')
+                : '\nЧистая прибыль на одну выкупленную штуку.'),
             content: nullable(current.margin, money),
             roi: negativeValueClass(current.roi),
-            currentTitle_2: currentTitle,
+            roiState: roiIssues.length ? ' ue1c-partial-cell' : '',
+            currentTitle_2: currentTitle + (roiIssues.length
+                ? '\nROI не рассчитан:\n• ' + roiIssues.join('\n• ')
+                : '\nROI = маржа на 1 штуку ÷ закупочная цена × 100%.'),
             content_2: nullable(current.roi, decimal, '%'),
             content_3: nullable(currentSpp, decimal, '%'),
         });
@@ -805,8 +847,10 @@
             content_3: coverageValue('ROI', economics.roi, decimal, roiCoverage, '%'),
         });
         cells.advertising = window.CheckStockUI.render('economics/shared/dashboard/render-product-8', {
+            drrCoverage: coverageCellClass(product.advertising.drr_coverage),
             drrClass: drrClass,
-            advertisingTitle: advertisingTitle,
+            advertisingTitle: advertisingTitle + (config.yandexMetrics === true
+                ? '\n' + coverageTitle('ДРР: совпадающие дни заказов и рекламы', product.advertising.drr_coverage) : ''),
             content: drr === null ? '—' : decimal.format(drr) + '%',
             advertisingTitle_2: advertisingTitle,
             content_2: nullable(product.advertising.spend, money),
@@ -831,6 +875,13 @@
             stockTitle: stockTitle,
             content_5: nullable(product.stock.days, integer),
         });
+        if (config.yandexMetrics === true) cells.stock += window.CheckStockUI.render(
+            'economics/shared/dashboard/inbound-cell', {
+                value: (stock.inbound_partial && stock.inbound != null ? '≥ ' : '') + nullable(stock.inbound, integer),
+                state: stock.inbound_partial || stock.inbound == null ? ' ue1c-partial-cell' : '',
+                title: stock.inbound_message || (stock.inbound == null
+                    ? 'Количество в поставках не подтверждено.' : 'Отправлено, ещё не принято на склад FBO.'),
+            });
         return window.CheckStockUI.render('economics/shared/dashboard/render-product-11', {
             id: product.id,
             content: rowClasses.length ? ' class="' + rowClasses.join(' ') + '"' : '',
@@ -942,12 +993,14 @@
     }
     function renderPage() {
         if (state.productsLoading) {
+            renderTotals([]);
             nodes.rows.innerHTML = '';
             nodes.empty.hidden = true;
             renderPagination(0);
             return;
         }
         var filtered = filteredProducts();
+        renderTotals(filtered);
         state.page = Math.min(
             Math.max(1, state.page),
             Math.max(1, Math.ceil(filtered.length / state.pageSize)),
@@ -1023,7 +1076,11 @@
         options = options || {};
         var silent = options.silent === true;
         var loaded = false;
-        if (state.productsRefreshing) return false;
+        if (silent && state.productsRefreshing) return false;
+        if (productsController) productsController.abort();
+        productsController = new AbortController();
+        var requestId = ++productsRequestId;
+        var requestedMode = state.periodMode;
         state.productsRefreshing = true;
         var scrollTop = nodes.tableWrap.scrollTop;
         var scrollLeft = nodes.tableWrap.scrollLeft;
@@ -1035,8 +1092,10 @@
         try {
             var response = await window.fetch(productsRequestUrl(), {
                 headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
+                signal: productsController.signal,
             });
             var result = await response.json();
+            if (requestId !== productsRequestId) return false;
             if (!response.ok || !result.ok)
                 throw new Error(result.error || 'Не удалось загрузить данные ' + marketplaceLabel);
             replaceProducts(result.products, silent);
@@ -1044,7 +1103,7 @@
             state.periodFrom = String(result.period_from || state.periodFrom);
             state.periodTo = String(result.period_to || state.periodTo);
             state.lastCompleteDay = String(result.last_complete_day || state.lastCompleteDay);
-            state.periodMode = result.period_mode === 'custom' ? 'custom' : 'preset';
+            state.periodMode = result.period_mode || requestedMode;
             syncPeriodControls();
             renderTableHeader();
             if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
@@ -1065,6 +1124,7 @@
             loaded = true;
             return true;
         } catch (error) {
+            if (requestId !== productsRequestId || error.name === 'AbortError') return false;
             if (!silent) {
                 replaceProducts([]);
                 nodes.productsErrorText.textContent = error.message || 'Повторите попытку чуть позже.';
@@ -1072,12 +1132,15 @@
             }
             return false;
         } finally {
-            state.productsRefreshing = false;
-            if (!silent) {
-                setProductsLoading(false);
-                renderPage();
+            if (requestId === productsRequestId) {
+                productsController = null;
+                state.productsRefreshing = false;
+                if (!silent) {
+                    setProductsLoading(false);
+                    renderPage();
+                }
+                if (loaded) openTargetCalculator();
             }
-            if (loaded) openTargetCalculator();
         }
     }
     function resetPageAndRender() {
@@ -1913,6 +1976,11 @@
         if (!allHistory.length) {
             nodes.chart.innerHTML = '';
             renderChartDailySales([]);
+            var emptyCompareInput = nodes.chartWrap.querySelector('[data-chart-compare]');
+            if (emptyCompareInput) {
+                emptyCompareInput.disabled = true;
+                if (config.yandexEconomics) emptyCompareInput.checked = false;
+            }
             return;
         }
         var history = allHistory.slice(-14);
@@ -1921,8 +1989,8 @@
         var canCompare =
             previousHistory.length === history.length &&
             (!config.yandexEconomics ||
-                history.concat(previousHistory).every(function (row) {
-                    return row.orders_count != null;
+                history.some(function (row, index) {
+                    return row.orders_count != null && previousHistory[index].orders_count != null;
                 }));
         var compare = chartPreferences.compare && canCompare;
         var compareInput = nodes.chartWrap.querySelector('[data-chart-compare]');
@@ -1931,7 +1999,8 @@
             if (config.yandexEconomics) compareInput.checked = compare;
         }
         var enabled = function (key) {
-            return chartPreferences.series.indexOf(key) !== -1;
+            var control = nodes.chartWrap.querySelector('[data-chart-series="' + key + '"]');
+            return chartPreferences.series.indexOf(key) !== -1 && !(control && control.disabled);
         };
         var left = 42;
         var right = 398;
@@ -2003,7 +2072,8 @@
             return orderBaselineY - (value / orderMaximum) * Math.max(orderBaselineY - top, 1);
         }
         function drrY(value) {
-            return bottom - (value / drrMaximum) * height;
+            // Align 0% with the money zero so positive DRR never appears as a loss.
+            return orderBaselineY - (value / drrMaximum) * Math.max(orderBaselineY - top, 1);
         }
         function complete(items, key) {
             return (
@@ -2039,7 +2109,7 @@
         var drrAxis = enabled('drr')
             ? [0, 0.5, 1]
                   .map(function (ratio) {
-                      var y = bottom - height * ratio;
+                      var y = drrY(drrMaximum * ratio);
                       return window.CheckStockUI.render('economics/shared/dashboard/drr-axis', {
                           content: y + 3,
                           content_2: decimal.format(drrMaximum * ratio),
@@ -2056,6 +2126,7 @@
             if (!enabled('orders') || !items.length) return '';
             return items
                 .map(function (item, index) {
+                    if (item.orders_count == null) return '';
                     var actualOrders = Math.max(0, Math.round(finite(item.orders_count, 0)));
                     var scaledOrders = actualOrders * orderScale;
                     var y = orderY(Math.min(scaledOrders, orderMaximum));
@@ -2352,36 +2423,8 @@
                 .join(''),
         });
     }
-    function renderYandexHistory(product, rows, today, message) {
-        var byDay = {};
-        rows.forEach(function (row) {
-            byDay[row.day] = row;
-        });
-        var end = new Date(today + 'T00:00:00Z');
-        product.history = [];
-        for (var offset = 21; offset > 0; offset--) {
-            var day = new Date(end);
-            day.setUTCDate(day.getUTCDate() - offset);
-            var key = day.toISOString().slice(0, 10),
-                row = byDay[key] || {},
-                inputs = row.inputs || {};
-            var turnover =
-                finite(row.expected_buyouts, null) !== null && finite(inputs.seller_price, null) !== null
-                    ? row.expected_buyouts * inputs.seller_price
-                    : null;
-            product.history.push({
-                day: key,
-                label: key.slice(8, 10) + '.' + key.slice(5, 7),
-                orders_count: finite(row.orders_count, null),
-                stock_units: finite(row.stock_units, null),
-                margin_rub: finite(row.profit, null),
-                advertising_rub: finite(row.advertising_spend, null),
-                drr_percent:
-                    turnover > 0 && row.advertising_spend != null
-                        ? (row.advertising_spend / turnover) * 100
-                        : null,
-            });
-        }
+    function renderYandexHistory(product, rows, message) {
+        product.history = rows;
         var visible = product.history.slice(-14);
         var seriesKeys = {
             orders: 'orders_count',
@@ -2401,6 +2444,9 @@
         });
         var orderLabel = nodes.chartWrap.querySelector('.is-orders');
         orderLabel.lastChild.textContent = 'Заказы ×10';
+        if (!orderLabel.querySelector('input').disabled) {
+            orderLabel.title = 'Высота столбиков увеличена в 10 раз; в подсказке показано фактическое значение';
+        }
         var compareLabel = nodes.chartWrap.querySelector('.is-compare');
         compareLabel.lastChild.textContent = 'Заказы неделей ранее';
         nodes.chartDailySales.setAttribute('aria-label', 'Заказы по дням в штуках');
@@ -2419,7 +2465,7 @@
         });
         empty.hidden = hasData;
         empty.textContent =
-            message || 'Данных для графика пока нет. История появится после накопления ежедневных снимков.';
+            message || 'Данных для графика пока нет. История появится после загрузки заказов, рекламы или остатков.';
         nodes.chart.style.display = hasData ? '' : 'none';
         hideChartTooltip();
         renderChart(product);
@@ -2451,8 +2497,8 @@
                 canManageSettings: config.canManageYandexSettings === true,
                 parameters: nodes.parameters,
                 historyContainer: historyPanel,
-                onHistory: function (rows, today, message) {
-                    renderYandexHistory(product, rows, today, message);
+                onHistory: function (rows, message) {
+                    renderYandexHistory(product, rows, message);
                 },
             });
             renderGluedProducts(product);
@@ -2586,6 +2632,8 @@
     async function refreshSelectedDetail() {
         var product = productsById[state.selected];
         if (!product || !nodes.detail.classList.contains('is-open')) return;
+        // YM keeps a live scenario in its drawer; background data must not rebuild it.
+        if (config.yandexEconomics === true) return;
         if (targetCalculatorContext) return;
         var requestId = detailRequestId;
         var active = document.activeElement;
@@ -3111,6 +3159,15 @@
         resetPageAndRender();
     });
     function reloadForPeriod() {
+        if (config.yandexMetrics === true) {
+            var url = new URL(window.location.href);
+            ['period_days', 'date_from', 'date_to'].forEach(function (key) { url.searchParams.delete(key); });
+            if (state.periodMode === 'custom') {
+                url.searchParams.set('date_from', state.periodFrom);
+                url.searchParams.set('date_to', state.periodTo);
+            } else url.searchParams.set('period_days', String(state.periodDays));
+            window.history.replaceState(null, '', url);
+        }
         state.page = 1;
         state.tableFilters = {};
         renderTableHeader();
@@ -3372,6 +3429,9 @@
     });
     function refreshProductsIfStale(force) {
         if (document.hidden || state.productsRefreshing) return;
+        if (config.yandexMetrics === true && (state.selected ||
+            (document.activeElement && root.contains(document.activeElement) &&
+             /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)))) return;
         if (!force && Date.now() - lastProductsLoadedAt < AUTO_REFRESH_STALE_MS) return;
         loadProducts({ silent: true, refreshDetail: true });
     }

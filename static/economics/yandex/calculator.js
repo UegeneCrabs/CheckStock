@@ -35,8 +35,8 @@
         purchase: 'Закупка',
         fulfillment: 'Фулфилмент',
         other: 'Прочие',
+        company_commission: 'Комиссия компании',
         tax: 'Налог',
-        capital: 'Стоимость капитала',
         loss: 'Потери',
         disposal: 'Утилизация',
         advertising: 'Реклама',
@@ -143,7 +143,7 @@
                 });
             } else {
                 var text = spec[3] === 'text',
-                    days = key === 'storage_days' || key === 'turnover_days';
+                    days = key === 'storage_days';
                 control = window.CheckStockUI.render('economics/yandex/calculator/field-3', {
                     key: key,
                     label: label,
@@ -282,10 +282,8 @@
                         parameterGroup(
                             'Прочие расходы',
                             parametersFor([
-                                'other_percent',
+                                'company_commission_percent',
                                 'other_cost',
-                                'capital_percent',
-                                'turnover_days',
                                 'loss_percent',
                                 'disposal_cost',
                             ]),
@@ -543,8 +541,9 @@
                 }
             }
         }
-        function showHistory(rows) {
-            options.onHistory(rows, data.advertising_day);
+        function showHistory(result) {
+            var rows = result.history || [];
+            options.onHistory(result.chart || []);
             options.historyContainer.innerHTML = window.CheckStockUI.render(
                 'economics/yandex/calculator/show-history-4',
                 {
@@ -580,16 +579,16 @@
                 showHistory(historyCache[scheme]);
                 return;
             }
-            options.onHistory([], data.advertising_day, 'Загружаем историю…');
+            options.onHistory([], 'Загружаем историю…');
             options.historyContainer.innerHTML = '';
             try {
                 var result = await request('economics-history/' + productPath + '?scheme=' + scheme);
                 if (!alive || current !== historySequence || scheme !== currentScheme) return;
-                historyCache[scheme] = result.history || [];
+                historyCache[scheme] = result;
                 showHistory(historyCache[scheme]);
             } catch (error) {
                 if (!alive || current !== historySequence) return;
-                options.onHistory([], data.advertising_day, error.message);
+                options.onHistory([], error.message);
                 options.historyContainer.innerHTML = window.CheckStockUI.render(
                     'economics/yandex/calculator/load-history',
                 );

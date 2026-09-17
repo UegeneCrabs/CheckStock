@@ -69,7 +69,7 @@
 <!-- endtemplate -->
 
 <!-- template: render-product-6 -->
-<td class="ue1c-num ue1c-group-start"><strong title="{{currentTitle}}">{{{content}}}</strong></td><td class="ue1c-num{{{roi}}}"><strong><span title="{{currentTitle_2}}">{{{content_2}}}</span></strong></td><td class="ue1c-num"><strong>{{{content_3}}}</strong></td>
+<td class="ue1c-num ue1c-group-start{{{marginState}}}" title="{{currentTitle}}"><strong>{{{content}}}</strong></td><td class="ue1c-num{{{roi}}}{{{roiState}}}" title="{{currentTitle_2}}"><strong>{{{content_2}}}</strong></td><td class="ue1c-num"><strong>{{{content_3}}}</strong></td>
 <!-- endtemplate -->
 
 <!-- template: render-product-7 -->
@@ -77,7 +77,15 @@
 <!-- endtemplate -->
 
 <!-- template: render-product-8 -->
-<td class="ue1c-num ue1c-group-start"><span class="ue1c-drr{{{drrClass}}}" title="{{advertisingTitle}}">{{{content}}}</span></td><td class="ue1c-num"><strong title="{{advertisingTitle_2}}">{{{content_2}}}</strong></td><td class="ue1c-num">{{{content_3}}}</td><td class="ue1c-num">{{{content_4}}}</td>
+<td class="ue1c-num ue1c-group-start{{{drrCoverage}}}" title="{{advertisingTitle}}"><span class="ue1c-drr{{{drrClass}}}">{{{content}}}</span></td><td class="ue1c-num"><strong title="{{advertisingTitle_2}}">{{{content_2}}}</strong></td><td class="ue1c-num">{{{content_3}}}</td><td class="ue1c-num">{{{content_4}}}</td>
+<!-- endtemplate -->
+
+<!-- template: inbound-cell -->
+<td class="ue1c-num{{{state}}}" title="{{title}}">{{{value}}}</td>
+<!-- endtemplate -->
+
+<!-- template: total-cell -->
+<th class="ue1c-num{{{state}}}" data-column-group="{{key}}" data-total-column="{{index}}" title="{{title}}">{{{value}}}</th>
 <!-- endtemplate -->
 
 <!-- template: render-product-9 -->

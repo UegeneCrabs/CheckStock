@@ -68,6 +68,51 @@ def save_settings(store, article, scheme, changes, revision, actor):
                 actor,
             ),
         )
+        # Company commission belongs to the cabinet, so both selling models share it.
+        if not article and "company_commission_percent" in changes:
+            other_scheme = "FBS" if scheme == "FBY" else "FBY"
+            other = conn.execute(
+                "SELECT revision,payload_json FROM yandex_economics_settings "
+                "WHERE store_slug=? AND article='' AND scheme=?",
+                (store, other_scheme),
+            ).fetchone()
+            other_before = json.loads(other["payload_json"]) if other else {}
+            other_after = {
+                **other_before,
+                "company_commission_percent": changes["company_commission_percent"],
+            }
+            other_after = {key: value for key, value in other_after.items() if value is not None}
+            other_revision = other["revision"] if other else 0
+            updated = conn.execute(
+                "INSERT INTO yandex_economics_settings "
+                "(store_slug,article,scheme,revision,payload_json,updated_at,updated_by) VALUES (?,'',?,?,?,?,?) "
+                "ON CONFLICT(store_slug,article,scheme) DO UPDATE SET revision=excluded.revision, "
+                "payload_json=excluded.payload_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by "
+                "WHERE yandex_economics_settings.revision=?",
+                (
+                    store,
+                    other_scheme,
+                    other_revision + 1,
+                    encode(other_after),
+                    timestamp,
+                    actor,
+                    other_revision,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("Параметры кабинета уже изменены. Обновите страницу.")
+            conn.execute(
+                "INSERT INTO yandex_economics_audit (id,store_slug,article,scheme,payload_json,created_at,actor) "
+                "VALUES (?,?,'',?,?,?,?)",
+                (
+                    uuid.uuid4().hex,
+                    store,
+                    other_scheme,
+                    encode({"before": other_before, "after": other_after}),
+                    timestamp,
+                    actor,
+                ),
+            )
         conn.commit()
     return settings(store, article, scheme)
 

@@ -34,14 +34,15 @@
                 'purchase_price',
                 'fulfillment_cost',
                 'transit_cost',
-                'turnover_days',
-                'other_percent',
+                'company_commission_percent',
+                'storage_per_day',
+                'storage_days',
                 'other_cost',
             ],
         ],
         [
-            'Налоги, капитал и потери',
-            ['tax_percent', 'capital_percent', 'loss_percent', 'disposal_cost'],
+            'Налоги и потери',
+            ['tax_percent', 'loss_percent', 'disposal_cost'],
         ],
         ['Параметры выплат', ['frequency', 'payment_delay_weeks']],
         [
@@ -120,7 +121,7 @@
                     .join(''),
             });
         } else {
-            var integer = ['campaign_id', 'turnover_days'].indexOf(key) >= 0;
+            var integer = ['campaign_id', 'storage_days'].indexOf(key) >= 0;
             control = window.CheckStockUI.render('economics/yandex/settings/field-3', {
                 key: key,
                 content: spec[1],
@@ -154,6 +155,7 @@
         root.querySelector('[data-ym-settings-fields]').innerHTML = groups
             .map(function (group, index) {
                 var keys = group[1].filter(function (key) {
+                    if (loadedTarget.article && key === 'company_commission_percent') return false;
                     return loadedTarget.article || fields.cabinetFields.indexOf(key) >= 0;
                 });
                 if (!keys.length) return '';

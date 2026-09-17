@@ -1,7 +1,6 @@
 """Import the single YM sheet using explicit store and ARTICLE identifiers."""
 
 import logging
-from collections import Counter, defaultdict
 
 from app import db
 from app.core.stores import STORES
@@ -11,7 +10,11 @@ from app.repositories import yandex_source_values as repository
 logger = logging.getLogger(__name__)
 MARKETPLACE = "YANDEX MARKET"
 SHEET_TITLE = "YM"
-SOURCE_COLUMNS = {**source.SOURCE_COLUMNS, "article": "article", "store": "магазин"}
+SOURCE_COLUMNS = {
+    **{key: value for key, value in source.SOURCE_COLUMNS.items() if key != "team_commission"},
+    "article": "article",
+    "store": "магазин",
+}
 STORE_ALIASES = {
     **{source._header_key(slug): slug for slug in STORES},
     **{source._header_key(store["name"]): slug for slug, store in STORES.items()},
@@ -41,7 +44,6 @@ def parse_source_values(sheets: list[dict]) -> dict:
     rows = list(sheet.get("rows") or [])
     header_index, columns = _find_header(rows)
     parsed_by_item = {}
-    commissions_by_store = defaultdict(Counter)
     source_rows = duplicates = 0
     for source_row, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
 
@@ -64,7 +66,6 @@ def parse_source_values(sheets: list[dict]) -> dict:
             "manager": source._text(cell("manager")) or None,
             "purchase_price": _number(cell("purchase_price")),
             "fulfillment_cost": _number(cell("fulfillment_cost")),
-            "team_commission_percent": _number(cell("team_commission")),
             **source._split_tag(cell("tag")),
             **source._split_supplier_external(cell("supplier_external")),
             "source_sheet_id": int(sheet["sheet_id"]),
@@ -81,18 +82,8 @@ def parse_source_values(sheets: list[dict]) -> dict:
             duplicates += 1
             continue
         parsed_by_item[key] = parsed
-        if parsed["team_commission_percent"] is not None:
-            commissions_by_store[store_slug][parsed["team_commission_percent"]] += 1
     return {
         "rows": list(parsed_by_item.values()),
-        "team_commissions": {
-            slug: counts.most_common(1)[0][0] for slug, counts in commissions_by_store.items()
-        },
-        "commission_conflicts": {
-            slug: dict(sorted(counts.items()))
-            for slug, counts in commissions_by_store.items()
-            if len(counts) > 1
-        },
         "sheet_count": 1,
         "source_rows": source_rows,
         "matched": len(parsed_by_item),
@@ -105,7 +96,7 @@ def sync_all(sheets: list[dict] | None = None) -> dict:
     now = source._now()
     try:
         report = parse_source_values(sheets if sheets is not None else source.fetch_sheet_rows(SHEET_TITLE))
-        saved = repository.replace_values(report.pop("rows"), report.pop("team_commissions"), now)
+        saved = repository.replace_values(report.pop("rows"), now)
     except Exception as error:
         for slug in STORES:
             db.record_sync_health(slug, MARKETPLACE, "unit_economics_1c_source", False, str(error), now)

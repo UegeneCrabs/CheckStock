@@ -33,11 +33,9 @@ class EconomicsValues(DtoModel):
     storage_days: int | None = Field(default=None, ge=0, le=3650)
     transit_cost: Amount | None = None
     tariff_extra: Amount | None = None
-    other_percent: Percent | None = None
+    company_commission_percent: Percent | None = None
     other_cost: Amount | None = None
     tax_percent: Percent | None = None
-    capital_percent: Percent | None = None
-    turnover_days: int | None = Field(default=None, ge=0, le=3650)
     loss_percent: Percent | None = None
     disposal_cost: Amount | None = None
     buyout_percent: Percent | None = None

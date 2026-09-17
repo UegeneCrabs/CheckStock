@@ -14,13 +14,12 @@ def get_values(store_slug: str) -> dict[str, dict]:
         }
 
 
-def replace_values(rows: list[dict], team_commissions: dict[str, float], synced_at: str) -> int:
+def replace_values(rows: list[dict], synced_at: str) -> int:
     columns = (
         "store_slug",
         "article",
         "purchase_price",
         "fulfillment_cost",
-        "team_commission_percent",
         "manager",
         "tag_raw",
         "goal_week",
@@ -42,19 +41,6 @@ def replace_values(rows: list[dict], team_commissions: dict[str, float], synced_
             f"INSERT INTO unit_economics_yandex_source_values ({', '.join(columns)}) "
             f"VALUES ({', '.join('?' for _ in columns)})",
             [[row.get(column) if column != "synced_at" else synced_at for column in columns] for row in rows],
-        )
-        connection.executemany(
-            """
-            INSERT INTO unit_economics_1c_cabinet_settings
-                (store_slug, marketplace, team_commission_percent, updated_at, updated_by_user_id, updated_by_name)
-            VALUES (?, 'YANDEX MARKET', ?, ?, 0, 'Google Sheets')
-            ON CONFLICT(store_slug, marketplace) DO UPDATE SET
-                team_commission_percent=excluded.team_commission_percent,
-                updated_at=excluded.updated_at,
-                updated_by_user_id=excluded.updated_by_user_id,
-                updated_by_name=excluded.updated_by_name
-            """,
-            [(slug, value, synced_at) for slug, value in team_commissions.items()],
         )
         connection.commit()
     return len(rows)

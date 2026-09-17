@@ -416,6 +416,26 @@ body:has(.content--unit-1c) {
     height: 74px;
     vertical-align: middle;
 }
+.ue1c-totals-row th {
+    top: 74px;
+    height: 38px;
+    color: var(--ue-text);
+    background: #edf1fa;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.ue1c-totals-row th.ue1c-partial-cell {
+    background: #fff8d9;
+}
+.ue1c-page.has-totals .ue1c-redesign-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+.ue1c-page.has-totals .ue1c-redesign-table thead th {
+    top: auto;
+}
 .ue1c-header-group {
     color: #445066;
     text-align: center !important;

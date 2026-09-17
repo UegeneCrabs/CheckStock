@@ -2860,7 +2860,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
     store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
     today = datetime.now(MOSCOW_TIMEZONE).date()
     last_complete_day = today - timedelta(days=1)
-    period_days, period_start, period_end, _, period_error = _unit_economics_period(
+    period_days, period_start, period_end, custom_period, period_error = _unit_economics_period(
         request, last_complete_day
     )
     if period_error and request.query_params.get("data") == "1":
@@ -2893,6 +2893,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
                 "period_days": period_days,
                 "period_from": period_from,
                 "period_to": period_to,
+                "period_mode": "custom" if custom_period else "preset",
                 "last_complete_day": last_complete_day.isoformat(),
             }
         )
@@ -2900,6 +2901,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
     unit_config = {
         "userKey": str(request.state.user["id"]),
         "storageNamespace": "checkstock.unit-economics-yandex",
+        "periodMode": "custom" if custom_period else "preset",
         "marketplaceLabel": "Яндекс Маркета",
         "placeholderMode": True,
         "yandexMetrics": True,
@@ -2925,15 +2927,9 @@ async def sales_unit_economics_1c_yandex(request: Request):
         marketplace_name="Яндекс Маркет",
         marketplace_label="Яндекс Маркета",
         loading_description="Загружаем товары из каталога.",
-        unit_1c_notice=(
-            '<p class="ue1c-placeholder-note" role="status">Яндекс Маркет · Остатки из БД, '
-            "рейтинг и отзывы из API. Цены с СПП и Пэй — с витрины: каждый час 08:00–19:00 и в 01:00 (МСК). "
-            "При пропуске цены используем последние известные скидки; источник указан в карточке. "
-            "ТО и реклама — за выбранный период завершённых дней; "
-            "запас — по заказам за 21 день. Экономика FBY — расчётная; калькулятор — в карточке товара. Постоянные параметры — в «API-ключи и фоновые выгрузки».</p>"
-        ),
+        unit_1c_notice="",
     )
-    content += '<link rel="stylesheet" href="/static/economics/yandex/calculator.css?v=20260916-period-history"><script src="/static/economics/yandex/fields.js?v=20260916-category-names"></script><script src="/static/economics/yandex/categories.js?v=20260916-category-names"></script><script src="/static/economics/yandex/calculator.js?v=20260916-period-history"></script>'
+    content += '<link rel="stylesheet" href="/static/economics/yandex/calculator.css?v=20260916-period-history"><script src="/static/economics/yandex/fields.js?v=20260917-company"></script><script src="/static/economics/yandex/categories.js?v=20260916-category-names"></script><script src="/static/economics/yandex/calculator.js?v=20260917-company"></script>'
     return render_page(
         "CheckStock — Юнит-экономика 1С — Яндекс Маркет",
         "unit_1c_yandex",

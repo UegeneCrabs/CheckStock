@@ -2,8 +2,9 @@
 
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
-VERSION = 5
-DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost", "storage_per_day", "storage_days")
+VERSION = 6
+DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
+REMOVED_FIELDS = {"tax_base", "capital_percent", "turnover_days", "other_percent"}
 OPTIONAL_DEFAULTS = {
     "advertising_mode": "actual",
     "frequency": "WEEKLY",
@@ -24,11 +25,9 @@ LABELS = {
     "storage_days": "Дни хранения",
     "volume_l": "Объём товара (нужны положительные длина, ширина и высота упаковки)",
     "transit_cost": "Транзит",
-    "other_percent": "Прочие расходы, %",
+    "company_commission_percent": "Комиссия компании",
     "other_cost": "Прочие расходы, ₽",
     "tax_percent": "Налог",
-    "capital_percent": "Стоимость капитала",
-    "turnover_days": "Оборачиваемость",
     "loss_percent": "Потери",
     "disposal_cost": "Утилизация",
     "buyout_percent": "Выкуп",
@@ -47,8 +46,7 @@ def resolve(*layers):
     values, provenance = dict(OPTIONAL_DEFAULTS), {}
     for name, layer in layers:
         for key, value in layer.items():
-            # Older saved settings may still contain the removed tax-base choice.
-            if key == "tax_base":
+            if key in REMOVED_FIELDS:
                 continue
             if value is not None:
                 values[key], provenance[key] = value, name
@@ -59,12 +57,12 @@ def sheet_logistics(values, *, scenario=None):
     """AO and AP + 15 from the sheet, independent of the successful-delivery API quote.
 
     Dimensions are in cm; volume is in litres, without rounding up. Legacy
-    return/storage settings are ignored. Only explicit calculator scenario
-    overrides replace the formulas, before calculating their dependent costs.
+    return settings are ignored. Storage is an explicit cost, independent of turnover.
     """
     result = dict.fromkeys(DERIVED_FIELDS)
     manual = {key: value for key, value in (scenario or {}).items() if value is not None}
-    result["storage_days"] = manual.get("storage_days", 30)
+    result["storage_days"] = manual.get("storage_days", values.get("storage_days", 30))
+    result["storage_per_day"] = manual.get("storage_per_day", values.get("storage_per_day"))
     dimensions = [values.get(key) for key in ("length", "width", "height")]
     volume = None
     if "volume_l" in manual:
@@ -91,16 +89,6 @@ def sheet_logistics(values, *, scenario=None):
         return_middle_mile=float(middle_mile) if middle_mile is not None else None,
         return_cost=manual.get("return_cost", float(middle_mile + 15) if middle_mile is not None else None),
     )
-    turnover = values.get("turnover_days")
-    if turnover is not None and volume is not None:
-        rate = next(
-            rate
-            for limit, rate in ((120, "0"), (180, "0.75"), (300, "1"), (450, "1.25"), (float("inf"), "1.75"))
-            if turnover <= limit
-        )
-        result["storage_per_day"] = float(Decimal(rate) * volume)
-    if "storage_per_day" in manual:
-        result["storage_per_day"] = manual["storage_per_day"]
     return result
 
 
@@ -134,11 +122,9 @@ def calculate(
         "storage_per_day",
         "storage_days",
         "transit_cost",
-        "other_percent",
+        "company_commission_percent",
         "other_cost",
         "tax_percent",
-        "capital_percent",
-        "turnover_days",
         "loss_percent",
         "disposal_cost",
         "buyout_percent",
@@ -178,9 +164,9 @@ def calculate(
         "transit": d("transit_cost"),
         "purchase": purchase,
         "fulfillment": d("fulfillment_cost"),
-        "other": price * d("other_percent") / 100 + d("other_cost"),
+        "company_commission": price * d("company_commission_percent") / 100,
+        "other": d("other_cost"),
         "tax": d("buyer_price") * d("tax_percent") / 100,
-        "capital": purchase * d("capital_percent") / 100 * d("turnover_days") / 365,
         "loss": price * d("loss_percent") / 100,
         "disposal": d("disposal_cost") * (1 - q),
         "tariff_extra": d("tariff_extra"),
@@ -286,9 +272,7 @@ def aggregate(days, expected_dates):
     missing = sorted(set(expected_dates).difference(dates))
     profit = sum(Decimal(str(row["profit"])) for row in covered)
     basis = sum(Decimal(str(row["purchase_value"])) for row in covered)
-    unallocated_ads = sum(
-        float(row.get("advertising_spend") or 0) for row in known if row["day"] in missing
-    )
+    unallocated_ads = sum(float(row.get("advertising_spend") or 0) for row in known if row["day"] in missing)
     return {
         "margin": money(profit) if covered else None,
         "roi": money(profit / basis * 100) if covered and basis > 0 else None,
