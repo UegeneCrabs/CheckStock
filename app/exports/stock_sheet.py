@@ -1043,12 +1043,23 @@ def run_store(
             marketplace,
             export_kind,
         )
-        return export_store(
+        report = export_store(
             store_slug,
             now,
             marketplace=marketplace,
             export_kind=export_kind,
         )
+        exported_times = [
+            str(part["exported_at"])
+            for item in report["marketplaces"]
+            for part in (item, item.get("fbs_orders") or {})
+            if part.get("exported_at") and not part.get("skipped")
+        ]
+        if exported_times:
+            exported_at = max(exported_times)
+            repository.record_success(store_slug, exported_at)
+            report["last_success_at"] = exported_at
+        return report
 
     attempted_at = _now_iso(now)
     logger.info("stock_sheet_export_started store=%s", store_slug)
@@ -1084,6 +1095,7 @@ def run_store(
         len(report["marketplaces"]),
         updated_cells,
     )
+    report["last_success_at"] = attempted_at
     return report
 
 

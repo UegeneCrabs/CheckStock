@@ -228,6 +228,23 @@ def record_attempt(store_slug: str, attempted_at: str) -> None:
             conn.close()
 
 
+def record_success(store_slug: str, exported_at: str) -> None:
+    """Remember a successful scoped write without postponing the full scheduled export."""
+    with WRITE_LOCK:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE stock_sheet_export_settings SET last_success_at = ? WHERE store_slug = ?",
+                (exported_at, store_slug),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 def record_result(
     store_slug: str,
     attempted_at: str,

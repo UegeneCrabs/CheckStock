@@ -296,4 +296,13 @@ async def run_google_export(request: Request, store_slug: str):
             {"ok": False, "error": f"{type(error).__name__}: {error}"},
             status_code=502,
         )
-    return JSONResponse({"ok": True, "report": report})
+    successful_at = report.get("last_success_at")
+    return JSONResponse(
+        {
+            "ok": True,
+            "report": report,
+            "last_success_text": (
+                f"Последняя успешная выгрузка: {format_dt(successful_at)}" if successful_at else None
+            ),
+        }
+    )

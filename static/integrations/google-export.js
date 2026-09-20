@@ -47,6 +47,9 @@
         }
 
         function showExportResult(result, message) {
+            if (result.data.last_success_text) {
+                message += '. ' + result.data.last_success_text;
+            }
             var reports = (result.data.report || {}).marketplaces || [];
             var warnings = reports.reduce(function (all, report) {
                 return all.concat(report.warnings || []);
