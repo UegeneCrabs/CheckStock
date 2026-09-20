@@ -9,10 +9,38 @@
         'buyer_price',
         'pay_price',
         'plan_drr',
-        'advertising_spend',
         'buyout_percent',
-        'fulfillment_cost',
+        'advertising_spend',
         'purchase_price',
+    ];
+    // Common fields follow the WB calculator; YM logistics stay beside delivery.
+    var expandedOrder = [
+        'seller_price',
+        'buyer_price',
+        'pay_price',
+        'category_name',
+        'commission_percent',
+        'delivery_cost',
+        'length',
+        'width',
+        'height',
+        'weight',
+        'volume_l',
+        'return_middle_mile',
+        'return_cost',
+        'transit_cost',
+        'tariff_extra',
+        'plan_drr',
+        'buyout_percent',
+        'advertising_spend',
+        'payment_transfer_percent',
+        'payment_acceptance',
+        'purchase_price',
+        'company_commission_percent',
+        'vat_percent',
+        'usn_percent',
+        'loss_percent',
+        'disposal_cost',
     ];
     var specs = [].concat.apply(
         [],
@@ -21,22 +49,22 @@
         }),
     ).filter(function (spec) {
         return !['campaign_id', 'frequency', 'payment_delay_weeks'].includes(spec[0]);
+    }).sort(function (a, b) {
+        return expandedOrder.indexOf(a[0]) - expandedOrder.indexOf(b[0]);
     });
     var tariffFields = ['commission_percent', 'payment_acceptance', 'payment_transfer_percent', 'delivery_cost', 'tariff_extra'];
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
     var costs = {
-        commission: 'Размещение',
+        commission: 'Комиссия YM',
         payment_acceptance: 'Приём платежа',
-        payment_transfer: 'Перевод платежа',
-        delivery: 'Доставка',
+        payment_transfer: 'Эквайринг',
+        delivery: 'Логистика',
         returns: 'Невыкупы и возвраты',
-        storage: 'Хранение',
         transit: 'Транзит',
-        purchase: 'Закупка',
-        fulfillment: 'Фулфилмент',
-        other: 'Прочие',
+        purchase: 'Закупочная стоимость',
         company_commission: 'Комиссия компании',
-        tax: 'Налог',
+        vat: 'Налог НДС, руб',
+        usn: 'Налог УСН, руб',
         loss: 'Потери',
         disposal: 'Утилизация',
         advertising: 'Реклама',
@@ -105,8 +133,9 @@
                 '#yandex-economics-settings'
             );
         }
-        function field(spec, index) {
+        function field(spec) {
             var key = spec[0],
+                index = expandedOrder.indexOf(key),
                 value = data.values[key],
                 label = spec[1],
                 order = compact.indexOf(key);
@@ -142,15 +171,14 @@
                         .join(''),
                 });
             } else {
-                var text = spec[3] === 'text',
-                    days = key === 'storage_days';
+                var text = spec[3] === 'text';
                 control = window.CheckStockUI.render('economics/yandex/calculator/field-3', {
                     key: key,
                     label: label,
                     type: text ? 'text' : 'number',
                     content: text ? ' maxlength="500"' :
-                        ' min="0" step="' + (days ? 1 : 'any') + '"' +
-                        (spec[2] === '%' && key !== 'plan_drr' ? ' max="100"' : days ? ' max="3650"' : ''),
+                        ' min="0" step="any"' +
+                        (spec[2] === '%' && key !== 'plan_drr' ? ' max="100"' : ''),
                     value: inputValue(key, value),
                     content_3: spec[2],
                 });
@@ -161,11 +189,13 @@
                 order: order,
                 index: index,
                 label: label,
+                expandedLabel: fields.expandedLabels[key] || label,
+                hint: fields.hints[key] || '',
                 key: key,
                 control: control,
             });
-            return row + (key === 'plan_drr' ? window.CheckStockUI.render('economics/yandex/calculator/advertising-spend', {
-                order: compact.indexOf('advertising_spend'), index: index,
+            return row + (key === 'buyout_percent' ? window.CheckStockUI.render('economics/yandex/calculator/advertising-spend', {
+                order: compact.indexOf('advertising_spend'), index: expandedOrder.indexOf('advertising_spend'),
             }) : '');
         }
         function parameter(label, value, unit, origin, copy) {
@@ -237,7 +267,7 @@
                                 parameter('Артикул', product.article, '', '', true) +
                                 parameter('Баркод', product.barcode, '', '', true) +
                                 parameter('Магазин', product.store_name) +
-                                parameter('Закупочная цена', values.purchase_price, ' ₽') +
+                                parameter('Закупочная стоимость', values.purchase_price, ' ₽') +
                                 parameter('Модель работы', scheme),
                         ) +
                         parameterGroup(
@@ -246,7 +276,8 @@
                                 'commission_percent',
                                 'payment_acceptance',
                                 'payment_transfer_percent',
-                                'tax_percent',
+                                'vat_percent',
+                                'usn_percent',
                             ]) +
                                 parameter('Комиссия по категории', categoryCommission.status === 'ok'
                                     ? categoryCommission.commission_percent : null, ' %') +
@@ -266,7 +297,6 @@
                         parameterGroup(
                             'Логистика',
                             parametersFor([
-                                'fulfillment_cost',
                                 'delivery_cost',
                                 'volume_l',
                                 'return_middle_mile',
@@ -278,12 +308,10 @@
                                 'weight',
                             ]),
                         ) +
-                        parameterGroup('Хранение', parametersFor(['storage_per_day', 'storage_days'])) +
                         parameterGroup(
                             'Прочие расходы',
                             parametersFor([
                                 'company_commission_percent',
-                                'other_cost',
                                 'loss_percent',
                                 'disposal_cost',
                             ]),
@@ -438,7 +466,7 @@
             container.querySelector('.ym-ad-row').classList.toggle('is-incomplete',
                 !manual && !weekly.advertising_complete);
             if (!manual && weekly.message) parameters.querySelector('[data-ym-diagnostics]').textContent =
-                r.messages.filter(function (text) { return text !== 'Не задано: Плановый ДРР'; }).concat(weekly.message).join(' ');
+                r.messages.filter(function (text) { return text !== 'Не задано: ДРР с выкупом'; }).concat(weekly.message).join(' ');
         }
         async function load(nextScheme) {
             clearTimeout(timer);

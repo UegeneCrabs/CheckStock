@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from app import db
+from app.core.stores import STORES
 from app.jobs import settings as sync_settings
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import run_tracked, set_next_run
@@ -50,6 +51,10 @@ RETRYABLE_NETWORK_ERRORS = PROXY_NETWORK_ERRORS | {
     "ERR_ABORTED",
     "ERR_CONNECTION_CLOSED",
     "ERR_CONNECTION_RESET",
+    "ERR_CONNECTION_REFUSED",
+    "ERR_CONNECTION_TIMED_OUT",
+    "ERR_NAME_NOT_RESOLVED",
+    "ERR_ADDRESS_UNREACHABLE",
     "ERR_TIMED_OUT",
     "ERR_EMPTY_RESPONSE",
     "ERR_HTTP2_PROTOCOL_ERROR",
@@ -258,13 +263,17 @@ class Browser:
         raise CaptchaError("Маркет не принял решение капчи после двух попыток")
 
     def fetch(self, target: dict) -> dict:
+        navigation_timed_out = False
+
         def navigate():
+            nonlocal navigation_timed_out
             try:
                 return self.page.goto(target["url"], wait_until="domcontentloaded", timeout=40000)
             except Exception as error:
                 if type(error).__name__ != "TimeoutError":
                     raise
                 # Some cards render before slow advertising/navigation requests finish.
+                navigation_timed_out = True
                 return None
 
         try:
@@ -307,11 +316,13 @@ class Browser:
             if result["status"] not in {"price_missing", "wrong_page"}:
                 break
             self.page.wait_for_timeout(250)
+        if navigation_timed_out and result["status"] in {"price_missing", "wrong_page"}:
+            return {"status": "network_error", "error_code": "ERR_TIMED_OUT", "message": "ERR_TIMED_OUT"}
         return result
 
 
 class StoreBrowsers:
-    """One browser at a time, fixed routes, isolated profiles and one CAPTCHA budget."""
+    """One browser at a time; unavailable proxies fall back to the host's direct connection."""
 
     def __init__(self, args, proxies, launch):
         self.args, self.proxies, self.launch = args, proxies, launch
@@ -340,15 +351,9 @@ class StoreBrowsers:
 
     def fetch(self, target):
         slug = target["store_slug"]
-        if slug in self.failed:
-            return self.failed[slug]
-        proxy = self.proxies.get(slug) if self.proxies is not None else None
+        proxy = self.proxies.get(slug) if self.proxies is not None and slug not in self.failed else None
         if self.proxies is not None and proxy is None:
-            self.failed[slug] = {
-                "status": "proxy_error",
-                "message": f"{slug}: прокси не настроен; прямое подключение не выполнялось",
-            }
-            return self.failed[slug]
+            self.failed.setdefault(slug, "Прокси не настроен")
         route = slug if proxy else "direct"
         if route != self.current_route or self.browser is None:
             self.close()
@@ -365,11 +370,7 @@ class StoreBrowsers:
             except Exception:
                 if not proxy:
                     raise
-                self.failed[slug] = {
-                    "status": "proxy_error",
-                    "message": f"{slug}: не удалось запустить браузер с прокси; смена подключения не выполнялась",
-                }
-                return self.failed[slug]
+                return self.fetch_direct(target, "Не удалось запустить браузер с прокси")
         self.browser.client = self.client
         try:
             result = self.browser.fetch(target)
@@ -391,34 +392,46 @@ class StoreBrowsers:
         finally:
             self.client = self.browser.client
         if proxy and (
-            result.get("error_code") in PROXY_NETWORK_ERRORS or result.get("message") == "HTTP 407"
+            result.get("error_code") in RETRYABLE_NETWORK_ERRORS or result.get("message") == "HTTP 407"
         ):
             code = result.get("error_code") or "HTTP 407"
-            self.failed[slug] = {
-                "status": "proxy_error",
-                "error_code": code,
-                "message": f"{slug}: {code}; соединение через прокси не восстановилось после повтора",
-            }
-            return self.failed[slug]
+            return self.fetch_direct(
+                target, f"{code}; соединение через прокси не восстановилось после повтора"
+            )
         return result
+
+    def fetch_direct(self, target, reason):
+        slug = target["store_slug"]
+        self.failed[slug] = reason
+        LOG.warning("%s: %s; продолжаем напрямую с IP сервера", slug, reason)
+        self.close()
+        return self.fetch(target)
 
     def diagnostics(self):
         return self.browser.diagnostics() if self.browser else {}
 
 
 def selection(args):
-    selected = yandex_assortment.load_active_products()
-    if args.loop:
-        enabled = set(sync_settings.enabled_stores(JOB, "YANDEX MARKET"))
-        selected = {(slug, article) for slug, article in selected if slug in enabled}
+    enabled = (
+        tuple(sync_settings.enabled_stores(JOB, "YANDEX MARKET"))
+        if args.loop
+        else tuple(args.store)
+        if args.store
+        else None
+    )
+    selected = yandex_assortment.storefront_products(enabled)
     if args.article:
         wanted = set()
         for value in args.article:
             slug, separator, article = value.partition(":")
-            if not separator or (slug, article) not in selected:
-                raise ValueError("--article должен иметь вид магазин:артикул и входить в актуальный список")
+            if not separator or slug not in STORES or not article.strip():
+                raise ValueError(
+                    "--article должен иметь вид магазин:артикул с известным магазином и непустым артикулом"
+                )
             wanted.add((slug, article))
-        selected = wanted
+        # A product can lose its stock/activity between the button click and this read.
+        # Such products are skipped, without cancelling all other selected products.
+        selected &= wanted
     if args.retry_failed:
         prices = {slug: repository.get_prices(slug) for slug, _ in selected}
         selected = {
@@ -546,6 +559,8 @@ def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
                 pass
         return report
     finally:
+        if isinstance(browser, StoreBrowsers) and browser.failed:
+            report["direct_fallbacks"] = dict(browser.failed)
         if browser and browser.client:
             report.update(captcha_tasks=browser.client.submitted, captcha_cost=str(browser.client.cost))
         try:
@@ -569,6 +584,12 @@ def arguments(argv=None):
     )
     parser.add_argument("--loop", action="store_true", help="Ежедневно в 01:00 и 08:00–19:00 каждый час, МСК")
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument(
+        "--store",
+        action="append",
+        choices=tuple(STORES),
+        help="Ограничить разовый запуск выбранными магазинами",
+    )
     parser.add_argument("--article", action="append")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--delay", type=float, default=5, help="Пауза между карточками, минимум 5 секунд")
@@ -589,7 +610,9 @@ def arguments(argv=None):
     args = parser.parse_args(argv)
     if args.limit < 0 or args.delay < 0 or not math.isfinite(args.delay) or args.max_captchas < 1:
         parser.error("Некорректные ограничения")
-    if args.loop and (args.prepare_only or args.inspect or args.article or args.limit or args.retry_failed):
+    if args.loop and (
+        args.prepare_only or args.inspect or args.article or args.store or args.limit or args.retry_failed
+    ):
         parser.error(
             "Автоматический режим обходит весь включённый список; фильтры и диагностика доступны однократно"
         )
@@ -601,7 +624,11 @@ def run_browser_once(args) -> dict:
     with profile_lock(args.state_dir):
         if args.prepare_only or repository.cooldown():
             return run_once(None, args)
-        proxies = storefront_proxies.load()
+        try:
+            proxies = storefront_proxies.load()
+        except storefront_proxies.ProxyConfigError as error:
+            LOG.warning("%s; продолжаем напрямую с IP сервера", error)
+            proxies = None
         from playwright.sync_api import sync_playwright
 
         with ExitStack() as stack:

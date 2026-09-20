@@ -32,17 +32,13 @@
             'Закупка и собственные расходы',
             [
                 'purchase_price',
-                'fulfillment_cost',
                 'transit_cost',
                 'company_commission_percent',
-                'storage_per_day',
-                'storage_days',
-                'other_cost',
             ],
         ],
         [
             'Налоги и потери',
-            ['tax_percent', 'loss_percent', 'disposal_cost'],
+            ['vat_percent', 'usn_percent', 'loss_percent', 'disposal_cost'],
         ],
         ['Параметры выплат', ['frequency', 'payment_delay_weeks']],
         [
@@ -121,7 +117,7 @@
                     .join(''),
             });
         } else {
-            var integer = ['campaign_id', 'storage_days'].indexOf(key) >= 0;
+            var integer = key === 'campaign_id';
             control = window.CheckStockUI.render('economics/yandex/settings/field-3', {
                 key: key,
                 content: spec[1],

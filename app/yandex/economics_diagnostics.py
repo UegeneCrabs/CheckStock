@@ -16,14 +16,14 @@ def current_issues(state, daily):
         if key == "buyer_price":
             missing = []
             if values.get("seller_price") is None:
-                missing.append("цена продавца")
+                missing.append("цена без СПП")
             if state["pricing"].get("spp_percent") is None:
                 missing.append("последний процент СПП")
-            reason = "Цена покупателя без Пэй: не получена с витрины."
+            reason = label + ": не получена с витрины."
             if missing:
                 reason += " Для расчёта не хватает: " + ", ".join(missing) + "."
         elif key == "seller_price":
-            reason = "Цена продавца: не загружена из API ЯМ."
+            reason = label + ": не загружена из API ЯМ."
         elif state["origins"].get(key) == "Нет тарифа за сегодня":
             reason = label + ": нет актуального тарифа за сегодня."
         elif key == "return_cost":
@@ -55,5 +55,5 @@ def current_issues(state, daily):
         issues = result["messages"] or ["Недостаточно данных для расчёта маржи на одну штуку."]
     roi_issues = list(issues)
     if values.get("purchase_price") is not None and values["purchase_price"] <= 0:
-        roi_issues.append("Закупочная цена равна 0 ₽: для ROI нужна положительная закупочная цена.")
+        roi_issues.append("Закупочная стоимость равна 0 ₽: для ROI нужна положительная закупочная стоимость.")
     return {"margin": issues, "roi": roi_issues}

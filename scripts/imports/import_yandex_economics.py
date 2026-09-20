@@ -40,8 +40,15 @@ def import_rows(rows):
             }
         ).model_dump(exclude_none=True)
         existing = caches[store].get((article, "initial:" + scheme), {}).get("values", {})
-        # Existing 1C purchase/fulfillment take precedence during initial migration.
-        merged = {**incoming, **{key: value for key, value in existing.items() if value is not None}}
+        # Existing purchase data takes precedence; obsolete costs cannot be reintroduced.
+        merged = {
+            **incoming,
+            **{
+                key: value
+                for key, value in existing.items()
+                if value is not None and key not in REMOVED_FIELDS
+            },
+        }
         prepared.append((store, article, scheme, merged, row.get("source", {})))
     for store, article, scheme, values, source in prepared:
         repository.save_source(store, article, "initial:" + scheme, values)

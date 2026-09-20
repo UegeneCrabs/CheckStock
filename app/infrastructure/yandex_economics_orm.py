@@ -4,6 +4,11 @@ from app.infrastructure.orm import OrmBase
 
 for table_name, keys, fields in (
     (
+        "yandex_report_limits",
+        ("business_id", "report"),
+        (Column("next_request_at", String, nullable=False),),
+    ),
+    (
         "yandex_economics_settings",
         ("store_slug", "article", "scheme"),
         (

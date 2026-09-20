@@ -16,7 +16,9 @@ from threading import Lock
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
+from app.jobs import locks as sync_locks
 from app.repositories import unit_economics_yandex as repository
+from app.repositories import yandex_report_limits as report_limits
 from app.stock import sales
 from app.yandex import api, tokens
 from app.yandex.accounts import resolve_business_id
@@ -32,7 +34,6 @@ RECENT_ORDER_DAYS = 7
 SOURCES = ("orders", "reputation", "advertising", "buyout")
 _REPORT_LOCKS: dict[int, Lock] = {}
 _REPORT_LOCKS_GUARD = Lock()
-_REPORT_LAST_REQUEST: dict[tuple[int, str], float] = {}
 _REPORT_INTERVALS = {
     "boost-consolidated": 120,
     "shows-boost": 120,
@@ -92,30 +93,54 @@ def load_report(api_key: str, report: str, payload: dict, sheet: str, identifier
     business_id = int(payload["businessId"])
     with _REPORT_LOCKS_GUARD:
         report_lock = _REPORT_LOCKS.setdefault(business_id, Lock())
-    key = (business_id, report)
     interval = _REPORT_INTERVALS.get(report, 120)
     attempts = 0
     while True:
         with report_lock:
-            delay = interval - (time.monotonic() - _REPORT_LAST_REQUEST.get(key, -1e20))
-            if delay <= 0:
-                quota_padding = 0
-                attempts += 1
+            try:
+                handle = sync_locks.acquire(f"yandex-reports:{business_id}")
+            except sync_locks.SyncJobBusyError:
+                delay = 1.0
+            else:
                 try:
-                    return _load_report(api_key, report, payload, sheet, identifier)
-                except api.YandexApiError as error:
-                    if error.status not in (420, 429) or attempts == 3:
-                        raise
-                    quota_padding = 5
-                    delay = interval + quota_padding
-                    logger.warning(
-                        "ЯМ %s: ожидаем квоту отчёта %s с (кабинет %s)", report, delay, business_id
-                    )
+                    delay = report_limits.remaining(business_id, report)
+                    if delay <= 0:
+                        # Reserve before the request so --reload/crashes cannot erase the quota window.
+                        report_limits.defer(
+                            business_id, report, datetime.now(UTC) + timedelta(seconds=interval + 5)
+                        )
+                        attempts += 1
+                        retry_at = None
+                        retry_delay = interval + 5
+                        try:
+                            return _load_report(api_key, report, payload, sheet, identifier)
+                        except api.YandexApiError as error:
+                            retry_at = error.retry_at
+                            if error.status in (420, 429):
+                                retry_delay *= 2 ** (attempts - 1)
+                            if not error.retryable or attempts == 3:
+                                raise
+                            delay = max(
+                                retry_delay,
+                                (retry_at - datetime.now(UTC)).total_seconds() + 5 if retry_at else 0,
+                            )
+                            logger.warning(
+                                "ЯМ %s: повтор после ошибки %s через %.0f с (кабинет %s)",
+                                report,
+                                error.status or "сети",
+                                delay,
+                                business_id,
+                            )
+                        finally:
+                            deadline = datetime.now(UTC) + timedelta(seconds=retry_delay)
+                            if retry_at:
+                                deadline = max(deadline, retry_at + timedelta(seconds=5))
+                            report_limits.defer(business_id, report, deadline)
                 finally:
-                    _REPORT_LAST_REQUEST[key] = time.monotonic() + quota_padding
+                    handle.close()
         # A quota wait must not block other report types for this business.
         # Recheck the deadline under the lock after waking up.
-        time.sleep(delay)
+        time.sleep(min(delay, 30))
 
 
 def _load_report(api_key: str, report: str, payload: dict, sheet: str, identifier: str) -> list[dict]:
@@ -254,6 +279,24 @@ def load_buyout(api_key: str, business_id: int, start: date, end: date) -> list[
     return result
 
 
+def advertising_refresh_days(loaded: dict[str, str], today: date, now: datetime) -> list[str]:
+    """Refresh today first; historical attribution stays revisitable without reloading a week every 15 min."""
+    days = []
+    for age in range(8):
+        day = (today - timedelta(days=age)).isoformat()
+        ttl = SYNC_INTERVAL_SECONDS["advertising"] if age == 0 else 3600 if age == 1 else 86400
+        try:
+            updated = datetime.fromisoformat(loaded.get(day, ""))
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=UTC)
+            if 0 <= (now - updated).total_seconds() < ttl:
+                continue
+        except (TypeError, ValueError):
+            pass
+        days.append(day)
+    return days
+
+
 def sync_store(
     store_slug: str, source: str, today: date | None = None, *, previous_day: bool = False
 ) -> dict:
@@ -294,23 +337,23 @@ def _sync_store(
             start = end - timedelta(days=days - 1)
             rows = load_buyout(api_key, business_id, start, end)
         else:
-            start, end = today - timedelta(days=6), today
-
-            oldest = (today - timedelta(days=7)).isoformat()
-            if not repository.get_history(store_slug, source, oldest, oldest)[1]:
-                start -= timedelta(days=1)
-            rows = []
-            for day in repository.days_between(start.isoformat(), end.isoformat()):
+            start, end = today - timedelta(days=7), today
+            loaded = repository.loaded_day_times(store_slug, source, start.isoformat(), end.isoformat())
+            refresh_days = advertising_refresh_days(loaded, today, datetime.now(UTC))
+            for day in refresh_days:
                 current = date.fromisoformat(day)
                 daily = [
                     {**row, "day": day} for row in load_advertising(api_key, business_id, current, current)
                 ]
                 repository.save_daily(store_slug, source, daily, day, day, datetime.now(UTC).isoformat())
-                rows.extend(daily)
+            rows, _ = repository.get_history(store_slug, source, start.isoformat(), end.isoformat())
         repository.save_snapshot(
             store_slug, source, rows, start.isoformat(), end.isoformat(), datetime.now(UTC).isoformat()
         )
-        return {"ok": True, "source": source, "rows": len(rows)}
+        result = {"ok": True, "source": source, "rows": len(rows)}
+        if source == "advertising":
+            result.update(refreshed_days=refresh_days, cached_days=8 - len(refresh_days))
+        return result
     except Exception as error:
         message = str(error)[:700]
         repository.record_error(store_slug, source, message, now)

@@ -68,8 +68,13 @@ def save_settings(store, article, scheme, changes, revision, actor):
                 actor,
             ),
         )
-        # Company commission belongs to the cabinet, so both selling models share it.
-        if not article and "company_commission_percent" in changes:
+        # Cabinet taxes and company commission do not depend on the selling model.
+        shared_changes = {
+            key: changes[key]
+            for key in ("company_commission_percent", "vat_percent", "usn_percent")
+            if key in changes
+        }
+        if not article and shared_changes:
             other_scheme = "FBS" if scheme == "FBY" else "FBY"
             other = conn.execute(
                 "SELECT revision,payload_json FROM yandex_economics_settings "
@@ -79,7 +84,7 @@ def save_settings(store, article, scheme, changes, revision, actor):
             other_before = json.loads(other["payload_json"]) if other else {}
             other_after = {
                 **other_before,
-                "company_commission_percent": changes["company_commission_percent"],
+                **shared_changes,
             }
             other_after = {key: value for key, value in other_after.items() if value is not None}
             other_revision = other["revision"] if other else 0

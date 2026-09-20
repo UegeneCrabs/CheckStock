@@ -47,7 +47,6 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
     source_1c = cache["source_1c"].get(article, {})
     base = {
         "purchase_price": source_1c.get("purchase_price"),
-        "fulfillment_cost": source_1c.get("fulfillment_cost"),
     }
     prices = cache["prices"].get(article, {})
     pricing = yandex_storefront.resolved_prices(prices)
@@ -161,7 +160,6 @@ def apply_sheet_logistics(values, origins, *, scenario=None):
         return_middle_mile="По формуле таблицы: средняя миля от объёма",
         return_cost="По формуле таблицы: средняя миля + 15 ₽",
     )
-    origins.setdefault("storage_days", "Период хранения: 30 дней")
     for key in derived:
         if (scenario or {}).get(key) is not None:
             origins[key] = "Сценарий"
@@ -518,7 +516,7 @@ def bootstrap_1c(stores):
                     store,
                     article,
                     "initial:" + scheme,
-                    {key: row.get(key) for key in ("purchase_price", "fulfillment_cost")},
+                    {"purchase_price": row.get("purchase_price")},
                     initial_only=True,
                 )
                 count += 1

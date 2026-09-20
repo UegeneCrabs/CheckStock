@@ -5,42 +5,39 @@
         [
             'Цены и себестоимость',
             [
-                ['seller_price', 'Цена продавца', '₽'],
-                ['buyer_price', 'Цена покупателя без Пэй', '₽'],
-                ['pay_price', 'Цена с СПП и картой Пэй', '₽'],
-                ['purchase_price', 'Закупочная цена', '₽'],
-                ['fulfillment_cost', 'Фулфилмент', '₽'],
+                ['seller_price', 'Цена без СПП', '₽'],
+                ['buyer_price', 'Цена с СПП', '₽'],
+                ['pay_price', 'Цена с картой Пэй', '₽'],
+                ['purchase_price', 'Закупочная стоимость', '₽'],
             ],
         ],
         [
             'Продажи и реклама',
             [
-                ['plan_drr', 'ДРР с выкупом за 7 дней', '%'],
-                ['buyout_percent', 'Ожидаемый выкуп', '%'],
+                ['plan_drr', 'ДРР с выкупом', '%'],
+                ['buyout_percent', 'Процент выкупа', '%'],
             ],
         ],
         [
             'Услуги Маркета',
             [
-                ['commission_percent', 'Комиссия размещения', '%'],
+                ['commission_percent', 'Комиссия YM, %', '%'],
                 ['payment_acceptance', 'Приём платежа', '₽'],
-                ['payment_transfer_percent', 'Перевод платежа', '%'],
-                ['delivery_cost', 'Успешная доставка', '₽/шт.'],
+                ['payment_transfer_percent', 'Эквайринг, %', '%'],
+                ['delivery_cost', 'Логистика, руб', '₽/шт.'],
                 ['volume_l', 'Объём упаковки', 'л'],
                 ['return_middle_mile', 'Средняя миля для невыкупа', '₽'],
                 ['return_cost', 'Расход на один невыкуп', '₽'],
                 ['transit_cost', 'Транзит', '₽/шт.'],
                 ['tariff_extra', 'Другие услуги ЯМ', '₽/шт.'],
-                ['storage_per_day', 'Хранение единицы в день', '₽'],
-                ['storage_days', 'Период расчёта хранения', 'дней'],
             ],
         ],
         [
             'Налоги и собственные расходы',
             [
-                ['tax_percent', 'Налог от цены покупателя без Пэй', '%'],
-                ['company_commission_percent', 'Комиссия компании от цены продавца', '%'],
-                ['other_cost', 'Прочие фиксированные', '₽/шт.'],
+                ['vat_percent', 'НДС, %', '%'],
+                ['usn_percent', 'УСН, %', '%'],
+                ['company_commission_percent', 'Комиссия компании, %', '%'],
                 ['loss_percent', 'Потери к цене продавца', '%'],
                 ['disposal_cost', 'Утилизация одного невыкупленного товара', '₽'],
             ],
@@ -103,12 +100,9 @@
     }
 
     var cabinetFields = [
-        'fulfillment_cost',
-        'tax_percent',
+        'vat_percent',
+        'usn_percent',
         'company_commission_percent',
-        'other_cost',
-        'storage_per_day',
-        'storage_days',
         'loss_percent',
         'disposal_cost',
         'transit_cost',
@@ -118,6 +112,20 @@
     var scenarioOnly = ['seller_price', 'buyer_price', 'pay_price', 'advertising_mode', 'plan_drr', 'advertising_spend'];
     window.YandexEconomicsFields = {
         groups: groups,
+        expandedLabels: {
+            seller_price: 'Цена без СПП, руб',
+            buyer_price: 'Цена с СПП, руб',
+            pay_price: 'Цена с картой Пэй, руб',
+            plan_drr: 'ДРР с выкупом, % (7 дней)',
+        },
+        hints: {
+            buyer_price: 'Цена покупателя без скидки по карте Пэй',
+            plan_drr: 'ДРР с выкупом за последние 7 завершённых дней',
+            delivery_cost: 'Доставка выкупленного товара. Невыкупы и транзит учитываются отдельно.',
+            company_commission_percent: 'Рассчитывается от цены без СПП',
+            vat_percent: 'НДС = цена с СПП × ставка НДС / (100 + ставка НДС)',
+            usn_percent: 'УСН = (цена с СПП − НДС) × ставка УСН / 100',
+        },
         cabinetFields: cabinetFields,
         scenarioOnly: scenarioOnly,
         derived: ['volume_l', 'return_middle_mile', 'return_cost'],

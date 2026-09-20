@@ -14,7 +14,6 @@ class EconomicsValues(DtoModel):
     buyer_price: Amount | None = None
     pay_price: Amount | None = None
     purchase_price: Amount | None = None
-    fulfillment_cost: Amount | None = None
     category_id: int | None = Field(default=None, gt=0)
     category_name: str | None = Field(default=None, max_length=500)
     length: Amount | None = None
@@ -29,13 +28,11 @@ class EconomicsValues(DtoModel):
     volume_l: Amount | None = None
     return_middle_mile: Amount | None = None
     return_cost: Amount | None = None
-    storage_per_day: Amount | None = None
-    storage_days: int | None = Field(default=None, ge=0, le=3650)
     transit_cost: Amount | None = None
     tariff_extra: Amount | None = None
     company_commission_percent: Percent | None = None
-    other_cost: Amount | None = None
-    tax_percent: Percent | None = None
+    vat_percent: Percent | None = None
+    usn_percent: Percent | None = None
     loss_percent: Percent | None = None
     disposal_cost: Amount | None = None
     buyout_percent: Percent | None = None

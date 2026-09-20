@@ -76,7 +76,10 @@ def load_mappings(key: str, business_id: int, articles: list[str]) -> dict[str, 
 
 
 def prepare(selection: set[tuple[str, str]] | None = None) -> tuple[list[dict], list[dict]]:
-    selected = selection if selection is not None else yandex_assortment.load_active_products()
+    eligible = yandex_assortment.storefront_products(
+        tuple(sorted({slug for slug, _ in selection})) if selection is not None else None
+    )
+    selected = eligible if selection is None else selection & eligible
     targets, skipped = [], []
     for store in sorted({slug for slug, _ in selected}):
         articles = sorted(article for slug, article in selected if slug == store)
@@ -141,7 +144,6 @@ def prepare(selection: set[tuple[str, str]] | None = None) -> tuple[list[dict], 
                     repository.seller_price(target, values.get(article))
             except Exception:
                 pass
-    repository.refresh_assortment()
     return targets, skipped
 
 

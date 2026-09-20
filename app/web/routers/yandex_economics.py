@@ -16,12 +16,9 @@ from app.yandex.economics_calculation import DERIVED_FIELDS, REMOVED_FIELDS, cal
 router = APIRouter(prefix="/api/unit-economics-1c/yandex-market")
 
 CABINET_FIELDS = {
-    "fulfillment_cost",
-    "tax_percent",
+    "vat_percent",
+    "usn_percent",
     "company_commission_percent",
-    "other_cost",
-    "storage_per_day",
-    "storage_days",
     "loss_percent",
     "disposal_cost",
     "transit_cost",

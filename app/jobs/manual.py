@@ -9,7 +9,7 @@ from app.jobs import background
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs.tracking import set_next_run
-from app.repositories import core, yandex_assortment
+from app.repositories import core
 
 
 def is_running(name: str) -> bool:
@@ -56,14 +56,17 @@ def _storefront_now() -> dict:
     from scripts.parsers import parse_yandex_storefront_prices as collector
 
     stores = set(sync_settings.enabled_stores(collector.JOB, "YANDEX MARKET"))
-    selected = sorted(
-        (slug, article) for slug, article in yandex_assortment.load_active_products() if slug in stores
-    )
-    if not selected:
-        return {"ok": False, "error": "В выбранных магазинах нет товаров для загрузки цен"}
+    if not stores:
+        return {
+            "ok": True,
+            "status": "complete",
+            "selected": 0,
+            "checked": 0,
+            "message": "Нет включённых магазинов для загрузки цен",
+        }
     arguments = []
-    for slug, article in selected:
-        arguments.extend(["--article", f"{slug}:{article}"])
+    for slug in sorted(stores):
+        arguments.extend(["--store", slug])
     report = collector.run_browser_once(collector.arguments(arguments))
     if report.get("status") == "already_running":
         raise sync_locks.SyncJobBusyError()

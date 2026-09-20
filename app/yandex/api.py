@@ -5,6 +5,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 
 from app.config import settings
 
@@ -50,9 +52,18 @@ _FRIENDLY_BY_STATUS = {
 
 
 class YandexApiError(Exception):
-    def __init__(self, status: int | None, detail: str = ""):
+    def __init__(
+        self,
+        status: int | None,
+        detail: str = "",
+        *,
+        retry_at: datetime | None = None,
+        retryable: bool = False,
+    ):
         self.status = status
         self.detail = detail
+        self.retry_at = retry_at
+        self.retryable = retryable or status in (420, 429) or (status is not None and 500 <= status < 600)
         super().__init__(self.friendly)
 
     @property
@@ -65,6 +76,29 @@ class YandexApiError(Exception):
         if self.status:
             return f"Маркет вернул ошибку {self.status}: {self.detail or 'без описания'}"
         return self.detail or "неизвестная ошибка при обращении к Яндекс Маркету"
+
+
+def _retry_at(headers) -> datetime | None:
+    """Honor the server's resource window and Retry-After, without exposing credentials."""
+    now = datetime.now(UTC)
+    deadlines = []
+    for name in ("X-RateLimit-Resource-Until", "Retry-After"):
+        value = (headers or {}).get(name)
+        if not value:
+            continue
+        try:
+            if name == "Retry-After" and str(value).strip().isdigit():
+                deadline = now + timedelta(seconds=int(value))
+            else:
+                deadline = parsedate_to_datetime(value)
+                deadline = (
+                    deadline.replace(tzinfo=UTC) if deadline.tzinfo is None else deadline.astimezone(UTC)
+                )
+            if deadline > now:
+                deadlines.append(deadline)
+        except (TypeError, ValueError, OverflowError):
+            continue
+    return max(deadlines) if deadlines else None
 
 
 def _parse_error_body(raw: str) -> str:
@@ -101,8 +135,12 @@ def _request(
 
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     last_error: YandexApiError | None = None
+    # A timed-out generation may already have consumed the quota. Only the
+    # report loader can retry it, under the shared business lock and deadline.
+    report_generation = path.startswith("/v2/reports/") and path.endswith("/generate")
+    max_attempts = 1 if report_generation else MAX_ATTEMPTS
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, max_attempts + 1):
         request = urllib.request.Request(
             url,
             data=body,
@@ -129,14 +167,10 @@ def _request(
 
         except urllib.error.HTTPError as e:
             detail = _parse_error_body(e.read().decode("utf-8", errors="replace"))
-            last_error = YandexApiError(e.code, detail)
+            last_error = YandexApiError(e.code, detail, retry_at=_retry_at(e.headers))
 
             if e.code in (420, 429) or 500 <= e.code < 600:
-                # Report generation has minute-long quotas. Its caller waits for
-                # the actual report interval instead of retrying every few seconds.
-                if e.code in (420, 429) and path.startswith("/v2/reports/") and path.endswith("/generate"):
-                    raise last_error from e
-                if attempt < MAX_ATTEMPTS:
+                if attempt < max_attempts:
                     pause = RETRY_BACKOFF_SECONDS * attempt
                     logger.warning("Яндекс %s: %s, повтор через %s с", path, last_error.friendly, pause)
                     time.sleep(pause)
@@ -144,8 +178,8 @@ def _request(
             raise last_error from e
 
         except TimeoutError as e:
-            last_error = YandexApiError(None, "Маркет не ответил за отведённое время")
-            if attempt < MAX_ATTEMPTS:
+            last_error = YandexApiError(None, "Маркет не ответил за отведённое время", retryable=True)
+            if attempt < max_attempts:
                 time.sleep(RETRY_BACKOFF_SECONDS * attempt)
                 continue
             raise last_error from e
@@ -153,8 +187,8 @@ def _request(
         except urllib.error.URLError as e:
             reason = e.reason
             if isinstance(reason, (socket.timeout, TimeoutError)):
-                raise YandexApiError(None, "Маркет не ответил за отведённое время") from e
-            raise YandexApiError(None, f"сеть: {reason}") from e
+                raise YandexApiError(None, "Маркет не ответил за отведённое время", retryable=True) from e
+            raise YandexApiError(None, f"сеть: {reason}", retryable=True) from e
 
     raise last_error or YandexApiError(None, "не удалось выполнить запрос к Маркету")
 

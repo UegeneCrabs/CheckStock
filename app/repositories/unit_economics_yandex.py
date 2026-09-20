@@ -172,6 +172,16 @@ def get_history(store: str, source: str, start: str, end: str) -> tuple[list[dic
     return [json.loads(row["data_json"]) for row in rows], {row["day"] for row in loaded}
 
 
+def loaded_day_times(store: str, source: str, start: str, end: str) -> dict[str, str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT day,updated_at FROM unit_economics_yandex_loaded_days "
+            "WHERE store_slug=? AND source=? AND day>=? AND day<=?",
+            (store, source, start, end),
+        ).fetchall()
+    return {row["day"]: row["updated_at"] for row in rows}
+
+
 def get_buyout_settings(store: str) -> dict:
     with get_connection() as conn:
         row = conn.execute(

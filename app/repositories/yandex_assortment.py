@@ -78,3 +78,11 @@ def archived_articles(store_slug: str) -> set[str]:
             (store_slug,),
         ).fetchone()
     return {item["article"] for item in json.loads(row["data_json"] or "[]")} if row else set()
+
+
+def storefront_products(store_slugs: tuple[str, ...] | None = None) -> set[tuple[str, str]]:
+    """Use the unit table's seven completed days, stock and inbound, without calculating profit."""
+    from app.economics.yandex.calculations import load_products
+
+    products = load_products(tuple(STORES) if store_slugs is None else store_slugs, include_economics=False)
+    return {(product["store_slug"], product["article"]) for product in products}

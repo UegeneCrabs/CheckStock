@@ -2,9 +2,19 @@
 
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
-VERSION = 6
+VERSION = 7
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
-REMOVED_FIELDS = {"tax_base", "capital_percent", "turnover_days", "other_percent"}
+REMOVED_FIELDS = {
+    "tax_base",
+    "capital_percent",
+    "turnover_days",
+    "other_percent",
+    "fulfillment_cost",
+    "storage_per_day",
+    "storage_days",
+    "other_cost",
+    "tax_percent",
+}
 OPTIONAL_DEFAULTS = {
     "advertising_mode": "actual",
     "frequency": "WEEKLY",
@@ -12,26 +22,23 @@ OPTIONAL_DEFAULTS = {
     "tariff_extra": 0,
 }
 LABELS = {
-    "seller_price": "Цена продавца",
-    "buyer_price": "Цена покупателя",
-    "purchase_price": "Закупочная цена",
-    "fulfillment_cost": "Фулфилмент",
-    "commission_percent": "Комиссия Маркета",
+    "seller_price": "Цена без СПП",
+    "buyer_price": "Цена с СПП",
+    "purchase_price": "Закупочная стоимость",
+    "commission_percent": "Комиссия YM, %",
     "payment_acceptance": "Приём платежа",
-    "payment_transfer_percent": "Перевод платежа",
-    "delivery_cost": "Доставка",
+    "payment_transfer_percent": "Эквайринг, %",
+    "delivery_cost": "Логистика, руб",
     "return_cost": "Обратная доставка",
-    "storage_per_day": "Хранение за день",
-    "storage_days": "Дни хранения",
     "volume_l": "Объём товара (нужны положительные длина, ширина и высота упаковки)",
     "transit_cost": "Транзит",
-    "company_commission_percent": "Комиссия компании",
-    "other_cost": "Прочие расходы, ₽",
-    "tax_percent": "Налог",
+    "company_commission_percent": "Комиссия компании, %",
+    "vat_percent": "НДС, %",
+    "usn_percent": "УСН, %",
     "loss_percent": "Потери",
     "disposal_cost": "Утилизация",
-    "buyout_percent": "Выкуп",
-    "plan_drr": "Плановый ДРР",
+    "buyout_percent": "Процент выкупа",
+    "plan_drr": "ДРР с выкупом",
 }
 
 
@@ -57,12 +64,10 @@ def sheet_logistics(values, *, scenario=None):
     """AO and AP + 15 from the sheet, independent of the successful-delivery API quote.
 
     Dimensions are in cm; volume is in litres, without rounding up. Legacy
-    return settings are ignored. Storage is an explicit cost, independent of turnover.
+    return settings are ignored.
     """
     result = dict.fromkeys(DERIVED_FIELDS)
     manual = {key: value for key, value in (scenario or {}).items() if value is not None}
-    result["storage_days"] = manual.get("storage_days", values.get("storage_days", 30))
-    result["storage_per_day"] = manual.get("storage_per_day", values.get("storage_per_day"))
     dimensions = [values.get(key) for key in ("length", "width", "height")]
     volume = None
     if "volume_l" in manual:
@@ -101,7 +106,7 @@ def calculate(
     scenario=None,
     precise=False,
 ):
-    """Match AH (profit), AI (margin) and BB (ROI) in the YM sheet.
+    """YM unit profit with WB-style VAT and USN, without the removed fixed costs.
 
     AS returns and AX disposal multiply by the non-buyout fraction, without
     dividing by buyout. Planned advertising is seller price times DRR; only
@@ -113,18 +118,15 @@ def calculate(
         "seller_price",
         "buyer_price",
         "purchase_price",
-        "fulfillment_cost",
         "commission_percent",
         "payment_acceptance",
         "payment_transfer_percent",
         "delivery_cost",
         "return_cost",
-        "storage_per_day",
-        "storage_days",
         "transit_cost",
         "company_commission_percent",
-        "other_cost",
-        "tax_percent",
+        "vat_percent",
+        "usn_percent",
         "loss_percent",
         "disposal_cost",
         "buyout_percent",
@@ -154,19 +156,20 @@ def calculate(
             "costs": {},
         }
 
+    buyer = d("buyer_price")
+    vat = buyer * d("vat_percent") / (100 + d("vat_percent"))
+    usn = (buyer - vat) * d("usn_percent") / 100
     costs = {
         "commission": price * d("commission_percent") / 100,
         "payment_acceptance": d("payment_acceptance"),
         "payment_transfer": price * d("payment_transfer_percent") / 100,
         "delivery": d("delivery_cost"),
         "returns": d("return_cost") * (1 - q),
-        "storage": d("storage_per_day") * d("storage_days"),
         "transit": d("transit_cost"),
         "purchase": purchase,
-        "fulfillment": d("fulfillment_cost"),
         "company_commission": price * d("company_commission_percent") / 100,
-        "other": d("other_cost"),
-        "tax": d("buyer_price") * d("tax_percent") / 100,
+        "vat": vat,
+        "usn": usn,
         "loss": price * d("loss_percent") / 100,
         "disposal": d("disposal_cost") * (1 - q),
         "tariff_extra": d("tariff_extra"),
@@ -181,7 +184,7 @@ def calculate(
             "roi": None,
             "missing": ["advertising"],
             "messages": [
-                "Нет полной рекламы и заказов за сегодня. Для планового расчёта выберите «Плановый ДРР» в подробных параметрах."
+                "Нет полной рекламы и заказов за сегодня. Для планового расчёта задайте «ДРР с выкупом» в калькуляторе."
             ],
             "costs": {key: money(value) for key, value in costs.items()},
         }
@@ -192,7 +195,7 @@ def calculate(
                 "roi": None,
                 "missing": ["orders_count"],
                 "messages": [
-                    "Есть рекламные расходы, но нет заказов для распределения. Для планового расчёта выберите «Плановый ДРР» в подробных параметрах."
+                    "Есть рекламные расходы, но нет заказов для распределения. Для планового расчёта задайте «ДРР с выкупом» в калькуляторе."
                 ],
                 "costs": {key: money(value) for key, value in costs.items()},
             }
@@ -251,7 +254,9 @@ def break_even_prices(values, *, scenario=None):
         profit = margin(price, buyer)
         if profit >= 0:
             return {"seller_price": float(price), "buyer_price": float(buyer), "pay_price": pay}
-        rounding_cost = Decimal("0.005") * Decimal(str(values["tax_percent"])) / 100
+        vat_rate = Decimal(str(values["vat_percent"]))
+        usn_rate = Decimal(str(values["usn_percent"]))
+        rounding_cost = Decimal("0.005") * (vat_rate + usn_rate) / (100 + vat_rate)
         price = max(
             price + 10,
             ((-fixed_margin + rounding_cost) / contribution / 10).to_integral_value(rounding=ROUND_CEILING)

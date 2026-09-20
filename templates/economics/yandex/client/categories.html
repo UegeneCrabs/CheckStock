@@ -3,13 +3,34 @@
 <!-- endtemplate -->
 
 <!-- template: picker -->
-<label class="ym-category-search"><span>Поиск категории ЯМ</span><input type="search" data-ym-category-search list="{{prefix}}-search" placeholder="Название категории…" aria-label="Поиск категории ЯМ" autocomplete="off" disabled></label><datalist id="{{prefix}}-search" data-ym-category-options></datalist><div data-ym-category-levels></div><p class="ym-category-status" data-ym-category-status role="status"></p><button type="button" data-ym-category-retry hidden>Повторить загрузку категорий</button>
+<div class="ym-category-heading" id="{{prefix}}-label">Категория Яндекс Маркета</div>
+<button type="button" class="ym-category-current" data-ym-category-toggle aria-expanded="false" aria-controls="{{prefix}}-editor" disabled>
+    <span class="ym-category-current-text"><strong data-ym-category-name>Загружаем категории…</strong><span data-ym-category-path></span></span>
+    <span class="ym-category-edit" data-ym-category-action>Изменить <span aria-hidden="true">⌄</span></span>
+</button>
+<div class="ym-category-editor" id="{{prefix}}-editor" data-ym-category-editor hidden>
+    <div class="ym-category-search">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg>
+        <input type="search" data-ym-category-search role="combobox" aria-label="Поиск категории ЯМ" aria-autocomplete="list" aria-expanded="false" aria-controls="{{prefix}}-options" placeholder="Название или ID категории" autocomplete="off" disabled>
+        <button type="button" class="ym-category-clear" data-ym-category-clear aria-label="Очистить поиск категории" hidden>×</button>
+    </div>
+    <nav class="ym-category-breadcrumbs" data-ym-category-breadcrumbs aria-label="Разделы категорий"></nav>
+    <p class="ym-category-caption" data-ym-category-caption role="status"></p>
+    <div class="ym-category-options" id="{{prefix}}-options" data-ym-category-options role="listbox" aria-labelledby="{{prefix}}-label"></div>
+    <button type="button" class="ym-category-more" data-ym-category-more hidden>Показать ещё</button>
+    <div class="ym-category-footer"><span>↑ ↓ — навигация · Enter — выбрать</span><button type="button" data-ym-category-close>Закрыть</button></div>
+</div>
+<p class="ym-category-status" data-ym-category-status role="status"></p>
+<button type="button" class="ym-category-more" data-ym-category-retry hidden>Повторить загрузку категорий</button>
 <!-- endtemplate -->
 
-<!-- template: level -->
-<label class="ym-category-level" data-ym-category-row="{{depth}}"><span>{{label}}</span><input type="text" list="{{id}}" data-ym-category-level="{{depth}}" aria-label="{{label}}" value="{{value}}" placeholder="Найти и выбрать…" autocomplete="off"><datalist id="{{id}}">{{{options}}}</datalist></label>
+<!-- template: breadcrumb -->
+<button type="button" data-ym-category-parent="{{id}}"{{{current}}}>{{name}}</button>
 <!-- endtemplate -->
 
 <!-- template: option -->
-<option value="{{value}}">{{label}}</option>
+<div class="ym-category-option" id="{{id}}" role="option" aria-selected="{{selected}}" data-ym-category-id="{{nodeId}}">
+    <span class="ym-category-option-text"><strong>{{name}}</strong><small>{{path}}</small></span>
+    <span class="ym-category-option-end" aria-hidden="true">{{suffix}}</span>
+</div>
 <!-- endtemplate -->

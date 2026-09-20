@@ -157,6 +157,7 @@ def load_products(
     today: date | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    include_economics: bool = True,
 ) -> list[dict]:
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     end = date_to or today - timedelta(days=1)
@@ -312,9 +313,7 @@ def load_products(
             closed_rows = [row for row in rows if start.isoformat() <= row["day"] <= end.isoformat()]
             order_amount = round(sum(float(row.get("orders_amount") or 0) for row in closed_rows), 2)
             cancel_amount = round(sum(float(row.get("cancel_amount") or 0) for row in closed_rows), 2)
-            if not article and not (
-                total > 0 or (stock["inbound"] or 0) > 0 or order_amount - cancel_amount != 0
-            ):
+            if not article and not has_activity(stock, order_amount - cancel_amount):
                 continue
             drr_amount = round(
                 sum(
@@ -380,9 +379,19 @@ def load_products(
             )
             products[-1]["details"]["buyout_percent"] = buyout_percent
             products[-1]["details"]["drr"] = ad["drr"]
+    if not include_economics:
+        return products
+
     from app.yandex.economics import attach
 
     return attach(products, start, end, today)
+
+
+def has_activity(stock: dict, turnover: float | None) -> bool:
+    """Inbound FBO, including approved applications, keeps an otherwise empty SKU visible."""
+    return any((stock.get(key) or 0) > 0 for key in ("fbs", "fbo", "fulfillment", "inbound")) or bool(
+        turnover
+    )
 
 
 def _coverage(loaded: set[str], start: date, end: date) -> dict:
