@@ -816,6 +816,38 @@ def _catalog_nm_ids(store_slugs: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(nm_ids, key=int))
 
 
+def _inactive_wallet_nm_ids(store_slug: str, snapshot_day: date, products: dict[str, dict]) -> set[str]:
+    """Allow missing buyer prices only with a covered week and no WB stock/turnover."""
+    start = snapshot_day - timedelta(days=7)
+    history = db.get_unit_economics_1c_funnel_daily_order_rows(
+        (store_slug,), start.isoformat(), snapshot_day.isoformat()
+    )
+    required_days = {(start + timedelta(days=offset)).isoformat() for offset in range(7)}
+    if not required_days.issubset({str(row["day"]) for row in history}):
+        return set()
+    turnover: dict[str, float] = defaultdict(float)
+    today_turnover: dict[str, float] = defaultdict(float)
+    for row in history:
+        totals = today_turnover if str(row["day"]) == snapshot_day.isoformat() else turnover
+        totals[_nm_id(row["article"])] += _number(row.get("net_orders_amount")) or 0
+    stocks: dict[str, list[dict]] = defaultdict(list)
+    for row in db.get_stock_items(store_slug, MARKETPLACE):
+        stocks[_nm_id(row["article"])].append(row)
+    inactive = set()
+    for nm_id, rows in stocks.items():
+        quantities = [_number(row.get(field)) for row in rows for field in ("fbs_stock", "fbo_stock")]
+        storefront_quantity = _integer((products.get(nm_id) or {}).get("totalQuantity"))
+        if (
+            not round(turnover[nm_id], 2)
+            and not round(today_turnover[nm_id], 2)
+            and not any(quantity for quantity in quantities if quantity is not None)
+            and (storefront_quantity is None or storefront_quantity == 0)
+            and (any(quantity is not None for quantity in quantities) or storefront_quantity == 0)
+        ):
+            inactive.add(nm_id)
+    return inactive
+
+
 def _sync_store(
     store_slug: str,
     snapshot_day: date,
@@ -905,6 +937,15 @@ def _sync_store(
     missing_nm_ids = {str(target["nm_id"]) for target in missing_targets}
     failed_nm_ids = {str(value) for value in storefront_report.get("failed_nm_ids") or []}
     affected_nm_ids = missing_nm_ids | (failed_nm_ids & {str(target["nm_id"]) for target in targets})
+    ignored_inactive_nm_ids = set()
+    if not load_retail_prices and affected_nm_ids:
+        ignored_inactive_nm_ids = affected_nm_ids & _inactive_wallet_nm_ids(
+            store_slug, snapshot_day, returned_products
+        )
+        # Missing cards in a successful response are normal; failed HTTP batches are not.
+        if storefront_report.get("errors"):
+            ignored_inactive_nm_ids -= failed_nm_ids
+        affected_nm_ids -= ignored_inactive_nm_ids
     storefront_ok = not affected_nm_ids
     retail_ok = not load_retail_prices or not retail_missing_targets
     logger.debug(
@@ -922,9 +963,9 @@ def _sync_store(
     if affected_nm_ids:
         errors.append(
             f"витрина WB: нет актуальной цены для {len(affected_nm_ids)} товаров "
-            f"(не возвращены: {len(omitted_nm_ids)}, без цены: "
-            f"{len(returned_without_price_nm_ids)}, из них без остатка: "
-            f"{len(out_of_stock_nm_ids)})"
+            f"(не возвращены: {len(omitted_nm_ids & affected_nm_ids)}, без цены: "
+            f"{len(returned_without_price_nm_ids & affected_nm_ids)}, из них без остатка: "
+            f"{len(out_of_stock_nm_ids & affected_nm_ids)})"
         )
     if load_retail_prices and retail_missing_targets and seller_report.get("ok"):
         errors.append(f"цена без СПП: нет значения для {len(retail_missing_targets)} товаров")
@@ -942,6 +983,7 @@ def _sync_store(
     wallet_rows_saved = 0
     estimated_spp_rows = 0
     unresolved_rows = 0
+    required_unresolved_rows = 0
     for target in targets:
         article = str(target.get("article") or "").strip()
         nm_id = str(target.get("nm_id") or _nm_id(article)).strip()
@@ -956,6 +998,8 @@ def _sync_store(
         )
         if storefront_price is None:
             unresolved_rows += 1
+            if nm_id not in ignored_inactive_nm_ids:
+                required_unresolved_rows += 1
             # Seller prices remain usable when an out-of-stock card has no buyer price.
             # With no fresh seller price either, preserve the previous snapshot.
             if article not in fresh_seller_articles:
@@ -1008,7 +1052,7 @@ def _sync_store(
         )
 
     rows_saved = db.upsert_unit_economics_1c_daily_prices(snapshots)
-    if unresolved_rows or not retail_ok:
+    if required_unresolved_rows or not retail_ok or (not load_retail_prices and affected_nm_ids):
         status = "partial" if rows_saved else "error"
     elif load_retail_prices and not seller_report.get("ok"):
         status = "fallback"
@@ -1044,6 +1088,7 @@ def _sync_store(
         "storefront_omitted_products": len(omitted_nm_ids),
         "storefront_without_price_products": len(returned_without_price_nm_ids),
         "storefront_out_of_stock_products": len(out_of_stock_nm_ids),
+        "storefront_ignored_inactive_products": len(ignored_inactive_nm_ids),
         "retail_rows": len(seller_rows),
         "retail_fallback_rows": len(order_retail_rows),
         "retail_missing_rows": len(retail_missing_targets),
