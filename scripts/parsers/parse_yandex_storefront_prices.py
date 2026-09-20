@@ -59,6 +59,7 @@ RETRYABLE_NETWORK_ERRORS = PROXY_NETWORK_ERRORS | {
     "ERR_EMPTY_RESPONSE",
     "ERR_HTTP2_PROTOCOL_ERROR",
 }
+CHROMIUM_SINGLETONS = ("SingletonLock", "SingletonSocket", "SingletonCookie")
 
 
 def wait_for_next_run():
@@ -105,6 +106,26 @@ def profile_lock(path: Path):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def clear_chromium_singletons(profile: Path) -> None:
+    """Remove locks left by a replaced Linux container while holding profile_lock."""
+    if os.name == "nt":
+        return
+    removed = []
+    for name in CHROMIUM_SINGLETONS:
+        path = profile / name
+        if not path.is_symlink() and not path.exists():
+            continue
+        if path.is_dir() and not path.is_symlink():
+            raise RuntimeError(f"В профиле Chromium {name} неожиданно является каталогом")
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        removed.append(name)
+    if removed:
+        LOG.info("Удалены устаревшие блокировки профиля Chromium: %s", ", ".join(removed))
 
 
 class AccessBlocked(CaptchaError):
@@ -644,8 +665,10 @@ def run_browser_once(args) -> dict:
 
             def launch(browser_args, proxy):
                 options = {"proxy": proxy} if proxy else {}
+                profile = browser_args.state_dir / "browser-profile"
+                clear_chromium_singletons(profile)
                 return playwright.chromium.launch_persistent_context(
-                    str(browser_args.state_dir / "browser-profile"),
+                    str(profile),
                     headless=args.headless,
                     channel="chrome" if os.name == "nt" else "chromium",
                     locale="ru-RU",
