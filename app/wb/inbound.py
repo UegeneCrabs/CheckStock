@@ -164,6 +164,27 @@ def load(token: str, previous: tuple[InboundSupply, ...] = ()) -> tuple[InboundS
             )
             result.append(normalize(row, detail, get_goods(token, supply_id, preorder)))
         except api.WBApiError as error:
+            # WB returns 400, not 404, for explicitly deleted drafts.
+            # Keep their saved contents, but stop polling/counting them as open.
+            if (
+                old is not None
+                and key not in listed
+                and error.status == 400
+                and error.detail.strip().casefold()
+                in {"поставка удалена", "fail to get supply details: поставка удалена"}
+            ):
+                result.append(
+                    old.model_copy(
+                        update={
+                            "stage": "cancelled",
+                            "status": "deleted",
+                            "status_label": "Удалена",
+                            "unavailable": False,
+                            "warning": "",
+                        }
+                    )
+                )
+                continue
             if error.status == 404 and key not in listed:
                 continue
             raise
