@@ -40,6 +40,8 @@ _REPORT_INTERVALS = {
     "shows-sales": 600,
     "goods-feedback": 600,
 }
+# Poll the same generated report for ten minutes, without spending generation quota again.
+_EXTENDED_REPORT_POLLING = {"goods-feedback", "boost-consolidated", "shows-boost"}
 _STORE_LOCKS = {(slug, source): Lock() for slug in STORES for source in SOURCES}
 
 
@@ -150,14 +152,18 @@ def _load_report(api_key: str, report: str, payload: dict, sheet: str, identifie
     report_id = generated.get("reportId")
     if not report_id:
         raise ValueError("ЯМ не вернул идентификатор отчёта")
-    for attempt in range(settings.rnp_report_poll_attempts):
+    poll_attempts = settings.rnp_report_poll_attempts
+    poll_interval = settings.rnp_report_poll_interval_seconds
+    if report in _EXTENDED_REPORT_POLLING:
+        poll_attempts, poll_interval = 121, 5
+    for attempt in range(poll_attempts):
         info = api.request(f"/v2/reports/info/{report_id}", api_key, method="GET")
         if info.get("status") == "DONE":
             return download_report(str(info.get("file") or ""), sheet, identifier)
         if info.get("status") == "FAILED":
             raise RuntimeError("ЯМ не смог сформировать отчёт")
-        if attempt + 1 < settings.rnp_report_poll_attempts:
-            time.sleep(settings.rnp_report_poll_interval_seconds)
+        if attempt + 1 < poll_attempts:
+            time.sleep(poll_interval)
     raise TimeoutError("Отчёт ЯМ ещё формируется")
 
 
