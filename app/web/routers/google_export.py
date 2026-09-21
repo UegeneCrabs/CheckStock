@@ -76,15 +76,14 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
     daily_selected = " selected" if settings.schedule_kind == "daily" else ""
     weekly_selected = " selected" if settings.schedule_kind == "weekly" else ""
     status_class = "export-status--error" if settings.last_error else "export-status--ok"
-    status_text = (
-        f"Ошибка {format_dt(settings.last_attempt_at)}: {settings.last_error}"
-        if settings.last_error
-        else (
-            f"Последняя успешная выгрузка: {format_dt(settings.last_success_at)}"
-            if settings.last_success_at
-            else "Выгрузка ещё не запускалась"
+    status_parts = []
+    if settings.last_success_at:
+        status_parts.append(f"Последняя успешная выгрузка: {format_dt(settings.last_success_at)}.")
+    if settings.last_error:
+        status_parts.append(
+            f"Ошибка последней полной выгрузки {format_dt(settings.last_attempt_at)}: {settings.last_error}"
         )
-    )
+    status_text = " ".join(status_parts) or "Выгрузка ещё не запускалась"
     marketplace_sections = []
     combined_store_hint = (
         '<p class="panel-desc"><strong>TOYKA добавляется автоматически:</strong> '

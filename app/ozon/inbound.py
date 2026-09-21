@@ -227,11 +227,16 @@ def load(client_id: str, key: str, previous: tuple[InboundSupply, ...] = ()) -> 
                             "акты поставки Ozon",
                         )
                     except api.OzonApiError as error:
-                        warning = (
-                            "Нет доступа к актам приёмки Ozon. Проверьте права ключа. Фактическое количество не подтверждено."
-                            if error.status in (401, 403)
-                            else "Акты приёмки Ozon пока не получены. Фактическое количество не подтверждено."
-                        )
+                        if error.status in (401, 403):
+                            reason = "Нет доступа к актам приёмки Ozon. Проверьте права ключа."
+                        elif error.status == 429:
+                            reason = "Ozon ограничил частоту запросов актов приёмки. Загрузка повторится при следующем обновлении."
+                        elif error.status and error.status >= 500:
+                            reason = "Сервис актов приёмки Ozon временно недоступен."
+                        else:
+                            reason = "Акты приёмки Ozon пока не получены."
+                        code = f" Код {error.status}." if error.status else ""
+                        warning = f"{reason}{code} Фактическое количество не подтверждено."
                         if error.status in {401, 403, 429} or (error.status and error.status >= 500):
                             acts_unavailable = warning
                 result.append(normalize(order, supply, goods, acts, warning))

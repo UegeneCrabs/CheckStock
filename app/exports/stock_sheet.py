@@ -23,6 +23,8 @@ RIMILI_SPREADSHEET_URL = (
 SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 HEADER_SCAN_ROWS = 25
+GOOGLE_REQUEST_TIMEOUT_SECONDS = 120
+GOOGLE_REQUEST_RETRIES = 2
 FBS_ORDER_LOOKBACK_DAYS = 30
 EXPORT_KINDS = ("stocks", "fbs_orders")
 DESTINATION_STORE_COMPANIONS = {"rockkiddo": ("toyka",)}
@@ -382,6 +384,8 @@ def _google_service():
             f"Нет ключа сервисного аккаунта: {google_service_account.CREDENTIALS_PATH}"
         )
     try:
+        import httplib2
+        from google_auth_httplib2 import AuthorizedHttp
         from googleapiclient.discovery import build
     except ImportError as error:
         raise StockSheetExportError(
@@ -390,7 +394,10 @@ def _google_service():
     return build(
         "sheets",
         "v4",
-        credentials=google_service_account.get_credentials(),
+        http=AuthorizedHttp(
+            google_service_account.get_credentials(),
+            http=httplib2.Http(timeout=GOOGLE_REQUEST_TIMEOUT_SECONDS),
+        ),
         cache_discovery=False,
     )
 
@@ -518,7 +525,7 @@ def _sheet_metadata(service, spreadsheet_id: str) -> dict[str, dict]:
             fields="sheets(properties(sheetId,title),merges)",
             includeGridData=False,
         )
-        .execute()
+        .execute(num_retries=GOOGLE_REQUEST_RETRIES)
     )
     return {
         str(sheet.get("properties", {}).get("title") or ""): sheet for sheet in metadata.get("sheets") or ()
@@ -544,7 +551,7 @@ def _check_timestamp_cells(service, spreadsheet_id: str, sheets: dict[str, dict]
                 valueRenderOption="FORMULA",
                 dateTimeRenderOption="SERIAL_NUMBER",
             )
-            .execute()
+            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
         )
         rows = response.get("values") or []
         label, value = ((rows[0] if rows else []) + [None, None])[:2]
@@ -610,7 +617,17 @@ def _write_export_timestamp(service, spreadsheet_id: str, sheets: dict[str, dict
                 },
             ]
         )
-    service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": requests}).execute()
+    try:
+        (
+            service.spreadsheets()
+            .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": requests})
+            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
+        )
+    except TimeoutError as error:
+        raise StockSheetExportError(
+            "Google не подтвердил запись отметки времени после повторных попыток. "
+            "Товарные данные уже записаны; повторите выгрузку для подтверждения её даты."
+        ) from error
     return exported_at.isoformat(timespec="seconds")
 
 
@@ -748,7 +765,7 @@ def _check_transit_columns(service, spreadsheet_id: str, sheet_names: list[str])
                 range=f"{_quote_sheet(sheet_name)}!H2:I",
                 valueRenderOption="FORMULA",
             )
-            .execute()
+            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
         )
         rows = response.get("values", [])
         occupied = any(value not in (None, "") for row in rows for value in row)
@@ -816,7 +833,7 @@ def _write_marketplace(
             spreadsheetId=spreadsheet_id,
             body={"ranges": clear_ranges},
         )
-        .execute()
+        .execute(num_retries=GOOGLE_REQUEST_RETRIES)
     )
     updates = [
         {
@@ -833,7 +850,7 @@ def _write_marketplace(
                 spreadsheetId=spreadsheet_id,
                 body={"valueInputOption": "RAW", "data": updates},
             )
-            .execute()
+            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
         )
     row_count = len(data_rows)
     exported_at = _write_export_timestamp(service, spreadsheet_id, destination_sheets)
@@ -882,7 +899,7 @@ def _write_fbs_orders(
             spreadsheetId=spreadsheet_id,
             body={"ranges": [f"{quoted_sheet}!A2:B"]},
         )
-        .execute()
+        .execute(num_retries=GOOGLE_REQUEST_RETRIES)
     )
     (
         service.spreadsheets()
@@ -899,7 +916,7 @@ def _write_fbs_orders(
                 ],
             },
         )
-        .execute()
+        .execute(num_retries=GOOGLE_REQUEST_RETRIES)
     )
     exported_at = _write_export_timestamp(service, spreadsheet_id, destination_sheets)
     return {
@@ -972,14 +989,19 @@ def export_store(
                 current_marketplace,
                 now=now,
             )
-            marketplace_report = _write_marketplace(
-                google_service(),
-                spreadsheet_id,
-                settings,
-                current_marketplace,
-                catalog,
-                values_by_metric,
-            )
+            try:
+                marketplace_report = _write_marketplace(
+                    google_service(),
+                    spreadsheet_id,
+                    settings,
+                    current_marketplace,
+                    catalog,
+                    values_by_metric,
+                )
+            except Exception as error:
+                raise StockSheetExportError(
+                    f"{store_slug} / {current_marketplace} / стоки: {error}"
+                ) from error
             marketplace_report["store_slugs"] = combined_store_slugs
             marketplace_report["warnings"] = warnings
         else:
@@ -1001,13 +1023,18 @@ def export_store(
                 current_marketplace,
                 now=now,
             )
-            orders_report = _write_fbs_orders(
-                google_service(),
-                spreadsheet_id,
-                settings,
-                current_marketplace,
-                order_totals,
-            )
+            try:
+                orders_report = _write_fbs_orders(
+                    google_service(),
+                    spreadsheet_id,
+                    settings,
+                    current_marketplace,
+                    order_totals,
+                )
+            except Exception as error:
+                raise StockSheetExportError(
+                    f"{store_slug} / {current_marketplace} / FBS-заказы: {error}"
+                ) from error
             orders_report["store_slugs"] = order_store_slugs
         else:
             orders_report = {

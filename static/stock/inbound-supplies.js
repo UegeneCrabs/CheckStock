@@ -88,6 +88,22 @@
                 .includes(term),
         );
 
+    function connectionIssue(target) {
+        if (target.error) return target.error;
+        if (target.status !== 'partial') return '';
+        const affected = target.supplies.filter((supply) => supply.warning || supply.unavailable);
+        const reasons = Array.from(
+            new Set(
+                affected.map(
+                    (supply) =>
+                        supply.warning ||
+                        'Поставка отсутствует в последнем ответе площадки. Показаны последние полученные данные.',
+                ),
+            ),
+        );
+        return affected.length ? `Поставок с замечаниями: ${affected.length}. ${reasons.join(' ')}` : '';
+    }
+
     function connectionCards() {
         const trouble = targets.filter(
             (target) =>
@@ -112,9 +128,9 @@
                     content_2: statuses[target.status] || target.status,
                     content_3: target.stale && target.last_success ? ' · данные устарели' : '',
                     last_success: date(target.last_success),
-                    content_4: target.error
+                    content_4: connectionIssue(target)
                         ? window.CheckStockUI.render('stock/inbound-supplies/connection-cards', {
-                              error: target.error,
+                              error: connectionIssue(target),
                           })
                         : '',
                 }),

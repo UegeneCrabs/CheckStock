@@ -284,6 +284,20 @@ class Browser:
         raise CaptchaError("Маркет не принял решение капчи после двух попыток")
 
     def fetch(self, target: dict) -> dict:
+        result = self._fetch_once(target)
+        if result["status"] == "price_missing":
+            LOG.info(
+                "%s:%s — %s; один повтор открытия карточки",
+                target["store_slug"],
+                target["article"],
+                result.get("message") or result["status"],
+            )
+            self.page.wait_for_timeout(max(5, self.args.delay) * 1000)
+            # Reopen the original target; parsing must verify its seller/card again.
+            result = self._fetch_once(target)
+        return result
+
+    def _fetch_once(self, target: dict) -> dict:
         navigation_timed_out = False
 
         def navigate():
@@ -463,6 +477,21 @@ def selection(args):
     return selected
 
 
+def record_failed_card(report: dict, target: dict, result: dict) -> None:
+    if result["status"] in {"ok", "out_of_stock"}:
+        return
+    failure = {"store_slug": target["store_slug"], "article": target["article"]}
+    failure.update({key: result[key] for key in ("status", "message", "error_code") if result.get(key)})
+    report["failed_cards"].append(failure)
+    LOG.warning(
+        "%s:%s %s — %s",
+        target["store_slug"],
+        target["article"],
+        result["status"],
+        result.get("message") or result.get("error_code") or "Цена не подтверждена",
+    )
+
+
 def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
     selected = selection(args)
     run_id = uuid.uuid4().hex
@@ -488,6 +517,7 @@ def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
         "checked": 0,
         "statuses": {},
         "skipped": [],
+        "failed_cards": [],
         "ok": False,
         "full_scan": not any((args.article, args.limit, args.retry_failed, args.prepare_only, args.inspect)),
         "captcha_tasks": 0,
@@ -522,6 +552,7 @@ def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
                     "message": str(error),
                 }
                 repository.record(target, result)
+                record_failed_card(report, target, result)
                 counts[result["status"]] += 1
                 report.update(checked=index, statuses=dict(counts), remaining=len(targets) - index)
                 try:
@@ -530,6 +561,7 @@ def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
                     report["diagnostics_error"] = "Не удалось сохранить страницу"
                 raise
             repository.record(target, result)
+            record_failed_card(report, target, result)
             if result["status"] == "proxy_error":
                 report.setdefault("proxy_errors", {})[target["store_slug"]] = result["message"]
             counts[result["status"]] += 1
@@ -551,6 +583,14 @@ def run_once(browser: Browser | StoreBrowsers | None, args) -> dict:
             report["message"] = (
                 f"Обход завершён: пропусков {len(skipped)}, карточек без подтверждённой цены {missing}"
             )
+            if report["failed_cards"]:
+                report["message"] += ". " + "; ".join(
+                    f"{item['store_slug']}:{item['article']} ({item['status']}): "
+                    f"{item.get('message') or item.get('error_code') or 'Цена не подтверждена'}"
+                    for item in report["failed_cards"][:5]
+                )
+                if missing > 5:
+                    report["message"] += f"; ещё {missing - 5} — см. failed_cards в отчёте"
             if report.get("proxy_errors"):
                 report["message"] += ". " + "; ".join(report["proxy_errors"].values())
         if args.inspect:

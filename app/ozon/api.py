@@ -46,6 +46,8 @@ PATH_MAX_ATTEMPTS = {
 THROTTLED_PATHS = {
     "/v1/analytics/stocks": 1.5,
     "supply-orders": 0.55,
+    # Successful list/bundle requests must not relax backoff learned from act failures.
+    "/v1/supply-order/act/product/get": 0.55,
 }
 
 
@@ -61,25 +63,36 @@ _interval: dict[str, float] = {}
 _calm_streak: dict[str, int] = {}
 
 
-def _throttle(path: str) -> None:
+def _throttle_key(path: str) -> str:
+    if path in THROTTLED_PATHS:
+        return path
+    return "supply-orders" if "/supply-order/" in path else path
 
-    path = "supply-orders" if "/supply-order/" in path else path
-    if path not in THROTTLED_PATHS:
+
+def _throttle(path: str) -> None:
+    key = _throttle_key(path)
+    if key not in THROTTLED_PATHS:
         return
+    paths = [key]
+    if "/supply-order/" in path and key != "supply-orders":
+        paths.append("supply-orders")
 
     with _throttle_lock:
-        min_interval = _interval.setdefault(path, THROTTLED_PATHS[path])
         now = time.monotonic()
-        wait = min_interval - (now - _last_call_at.get(path, 0.0))
+        wait = max(
+            _interval.setdefault(name, THROTTLED_PATHS[name]) - (now - _last_call_at.get(name, 0.0))
+            for name in paths
+        )
         if wait > 0:
             time.sleep(wait)
             now = time.monotonic()
-        _last_call_at[path] = now
+        for name in paths:
+            _last_call_at[name] = now
 
 
 def _note_rate_limit(path: str) -> float:
 
-    path = "supply-orders" if "/supply-order/" in path else path
+    path = _throttle_key(path)
     if path not in THROTTLED_PATHS:
         return 0.0
 
@@ -101,7 +114,7 @@ def _note_rate_limit(path: str) -> float:
 
 def _note_success(path: str) -> None:
 
-    path = "supply-orders" if "/supply-order/" in path else path
+    path = _throttle_key(path)
     if path not in THROTTLED_PATHS:
         return
 
