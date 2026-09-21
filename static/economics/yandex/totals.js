@@ -36,16 +36,24 @@
         ratio(6, period, function (p) { return p.economics_7d.margin; }, function (p) { return p.economics_7d.purchase_value; },
             100, 'percent', 'ROI: суммарная прибыль / закупочная стоимость по тем же сохранённым дням.',
             period.some(function (p) { return !p.economics_7d.complete; }));
-        var ads = products.filter(function (p) {
-            var a = p.advertising;
-            return known(a.drr_spend) && known(a.orders_amount) && known(a.buyout_percent) && a.buyout_percent > 0;
+        function buyout(p) {
+            var values = (p.ym_economics || {}).values || {};
+            return known(values.buyout_percent) ? Number(values.buyout_percent) : p.advertising.buyout_percent;
+        }
+        var adRows = products.filter(function (p) { return known(p.advertising.spend); });
+        var turnoverRows = products.filter(function (p) {
+            return known(p.economics_7d.turnover) &&
+                (Number(p.economics_7d.turnover) === 0 || known(buyout(p)));
         });
-        ratio(7, ads, function (p) { return p.advertising.drr_spend; }, function (p) {
-            return p.advertising.orders_amount * p.advertising.buyout_percent / 100;
-        }, 100, 'percent', 'ДРР: расходы / оборот с учётом выкупа. Для каждого товара берутся совпадающие дни заказов и рекламы.',
-            ads.some(function (p) { return !p.advertising.drr_coverage.complete; }));
-        // Preserve the same no-turnover convention as individual WB/YM rows.
-        if (ads.length && result[7].value == null) result[7].value = ads.some(function (p) { return p.advertising.drr_spend > 0; }) ? 100 : 0;
+        var totalSpend = adRows.reduce(function (s, p) { return s + Number(p.advertising.spend); }, 0);
+        var boughtTurnover = turnoverRows.reduce(function (s, p) {
+            return s + (Number(p.economics_7d.turnover) === 0 ? 0 : Number(p.economics_7d.turnover) * Number(buyout(p)) / 100);
+        }, 0);
+        metric(7, products, adRows.length && boughtTurnover > 0 ? totalSpend / boughtTurnover * 100 : null,
+            'percent', 'ДРР: все рекламные расходы / Σ(ТО товара × процент выкупа товара / 100) × 100%. Расходы и ТО — за выбранный период. При нулевом знаменателе ДРР не определён.',
+            adRows.length < products.length || turnoverRows.length < products.length ||
+            adRows.some(function (p) { return !p.advertising.coverage || !p.advertising.coverage.complete; }) ||
+            turnoverRows.some(function (p) { return !p.economics_7d.turnover_coverage || !p.economics_7d.turnover_coverage.complete; }));
         sum(8, function (p) { return p.advertising.spend; }, 'money', 'Общие расходы на рекламу.', function (p) { return p.advertising.coverage; });
         var clicks = products.filter(function (p) { return known(p.advertising.clicks) && known(p.advertising.impressions) && known(p.advertising.spend); });
         var adsPartial = clicks.some(function (p) { return !p.advertising.coverage.complete; });
