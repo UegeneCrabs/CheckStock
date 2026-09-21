@@ -20,6 +20,7 @@
         'pay_price',
         'category_name',
         'commission_percent',
+        'commission_rub',
         'delivery_cost',
         'length',
         'width',
@@ -46,31 +47,33 @@
         fields.groups.map(function (g) {
             return g[1];
         }),
-    ).filter(function (spec) {
+    ).concat([['commission_rub', 'Комиссия YM, руб', '₽']]).filter(function (spec) {
         return !['campaign_id', 'frequency', 'payment_delay_weeks'].includes(spec[0]);
     }).sort(function (a, b) {
         return expandedOrder.indexOf(a[0]) - expandedOrder.indexOf(b[0]);
     });
     var tariffFields = ['commission_percent', 'payment_acceptance', 'delivery_cost'];
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
+    var logisticsFields = ['length', 'width', 'height', 'weight', 'volume_l',
+        'return_middle_mile', 'return_cost', 'transit_cost'];
     var costs = {
         commission: 'Комиссия YM',
         payment_acceptance: 'Приём платежа (Экваиринг 2)',
         acquiring: 'Перевод платежа (Экваринг1)',
-        delivery: 'Логистика',
+        delivery: 'Доставка выкупленного товара',
         returns: 'Невыкупы и возвраты',
         transit: 'Транзит',
         purchase: 'Закупочная стоимость',
         company_commission: 'Комиссия компании',
         vat: 'Налог НДС, руб',
         usn: 'Налог УСН, руб',
-        loss: 'Потери',
+        loss: 'Потери от закупочной цены',
         disposal: 'Утилизация',
         advertising: 'Реклама',
     };
     function inputValue(key, value) {
         if (value == null) return '';
-        return key === 'commission_percent' || key === 'advertising_spend'
+        return key === 'commission_percent' || key === 'commission_rub' || key === 'advertising_spend'
             ? Number(value).toFixed(2) : String(value);
     }
     function metric(label, value, unit) {
@@ -93,6 +96,7 @@
             origins: initial.calculator_origins || initial.origins,
             result: initial.calculator_result || initial.result,
             pricing: initial.calculator_pricing || initial.pricing,
+            tariff: initial.calculator_tariff || initial.tariff,
         });
         container.classList.add('ym-economics');
         var scheme = data.scheme || 'FBY',
@@ -102,6 +106,7 @@
             alive = true,
             expanded = false;
         var picker, categoryEdited = false, tariffNeedsQuote = false, manualTariffs = {};
+        var logisticsOpen = false, tariffDetails = null;
         var historyCache = {},
             historySequence = 0,
             parameters = options.parameters;
@@ -131,12 +136,37 @@
                 '#yandex-economics-settings'
             );
         }
-        function field(spec) {
+        function computedRow(key, label, index, hint, className) {
+            return window.CheckStockUI.render('economics/yandex/calculator/computed-row', {
+                key: key, label: label, index: index, hint: hint || '', className: className || '',
+            });
+        }
+        function logisticsBlock() {
+            function input(key) {
+                return field(specs.find(function (spec) { return spec[0] === key; }), true);
+            }
+            return window.CheckStockUI.render('economics/yandex/calculator/logistics', {
+                index: expandedOrder.indexOf('delivery_cost'),
+                open: logisticsOpen ? ' open' : '',
+                content: input('length') + input('volume_l') + input('delivery_cost') +
+                    computedRow('delivery-customer', 'Доставка покупателю', 0, 'Входит в доставку выкупленного товара.', 'ym-tariff-part') +
+                    computedRow('delivery-middle', 'Средняя миля', 0, 'Входит в доставку выкупленного товара.', 'ym-tariff-part') +
+                    computedRow('delivery-other', 'Другие услуги доставки', 0, '', 'ym-tariff-part') +
+                    window.CheckStockUI.render('economics/yandex/calculator/delivery-note') +
+                    input('return_middle_mile') + input('return_cost') +
+                    computedRow('logistics-returns', 'Невыкупы с учётом процента выкупа', 0,
+                        'Расход на один невыкуп × (1 − процент выкупа / 100). Именно эта сумма входит в итог.') +
+                    input('transit_cost'),
+            });
+        }
+        function field(spec, inLogistics) {
             var key = spec[0],
                 index = expandedOrder.indexOf(key),
                 value = data.values[key],
                 label = spec[1],
                 order = compact.indexOf(key);
+            if (!inLogistics && key === 'delivery_cost') return logisticsBlock();
+            if (!inLogistics && logisticsFields.includes(key)) return '';
             if (key === 'category_name') return window.CheckStockUI.render('economics/yandex/categories/container', { index: index });
             if (key === 'length') return window.CheckStockUI.render('economics/yandex/calculator/dimensions', {
                 index: index,
@@ -330,9 +360,12 @@
                 content_3: scheme === 'FBY' ? ' selected' : '',
                 content_4: scheme === 'FBS' ? ' selected' : '',
                 content_6: expanded ? ' is-expanded' : '',
-                content_7: specs.map(field).join(''),
+                content_7: specs.map(function (spec) { return field(spec, false); }).join(''),
                 content_8: window.CheckStockUI.render('economics/yandex/calculator/draw-2'),
             });
+            var logistics = container.querySelector('[data-ym-logistics]');
+            logistics.ontoggle = function () { logisticsOpen = logistics.open; };
+            arrangeMode();
             renderParameters();
             showResult(data);
             picker = window.YandexCategoryPicker.mount(container.querySelector('[data-ym-categories]'),
@@ -355,7 +388,7 @@
                 });
             container.querySelector('[data-ym-expanded]').onchange = function (event) {
                 expanded = event.target.checked;
-                container.querySelector('#ym-calculator-inputs').classList.toggle('is-expanded', expanded);
+                arrangeMode();
             };
             container.querySelector('[data-ym-scheme]').onchange = function (event) {
                 scheme = event.target.value;
@@ -369,12 +402,26 @@
             container.querySelectorAll('[data-ym-field]').forEach(function (input) {
                 input.oninput = function () {
                     var key = input.dataset.ymField;
-                    changed[key] =
+                    var value =
                         input.value === ''
                             ? null
                             : input.type === 'number'
                               ? Number(input.value)
                               : input.value;
+                    if (key === 'commission_rub') {
+                        var seller = container.querySelector('[data-ym-field="seller_price"]');
+                        var price = seller.value === '' ? null : Number(seller.value);
+                        input.setCustomValidity(value != null && !(price > 0)
+                            ? 'Для комиссии в рублях задайте положительную цену без СПП.' : '');
+                        // Rubles and percent are two views of the same commission, not two expenses.
+                        // Send the unrounded rate so the entered amount is preserved to the kopeck.
+                        value = value == null || !(price > 0) ? null : value / price * 100;
+                        key = 'commission_percent';
+                        container.querySelector('[data-ym-field="commission_percent"]').value = inputValue(key, value);
+                    } else if (key === 'commission_percent' || key === 'seller_price') {
+                        container.querySelector('[data-ym-field="commission_rub"]').setCustomValidity('');
+                    }
+                    changed[key] = value;
                     if (tariffFields.includes(key)) {
                         manualTariffs[key] = changed[key] != null;
                         if (changed[key] == null) tariffNeedsQuote = true;
@@ -398,11 +445,60 @@
             };
             loadHistory();
         }
+        function arrangeMode() {
+            var inputs = container.querySelector('#ym-calculator-inputs');
+            inputs.classList.toggle('is-expanded', expanded);
+            var buyout = container.querySelector('[data-ym-field="buyout_percent"]').closest('.ue1c-calculator-row');
+            // Move the existing control so switching modes keeps unsent edits and focus state.
+            if (expanded) container.querySelector('[data-ym-logistics-fields]').prepend(buyout);
+            else inputs.appendChild(buyout);
+        }
+        function showComputed(key, value) {
+            var node = container.querySelector('[data-ym-computed="' + key + '"]');
+            if (node) node.textContent = number(value) + (value == null ? '' : ' ₽');
+        }
+        function showLogistics(state) {
+            var r = state.result, values = state.values, tariff = state.tariff || {};
+            var logistics = r.logistics || {};
+            showComputed('logistics-total', logistics.total);
+            showComputed('logistics-returns', logistics.returns);
+            container.querySelector('[data-ym-logistics]').classList.toggle('is-incomplete', logistics.total == null);
+            var basis = JSON.stringify(['seller_price', 'category_id', 'length', 'width', 'height', 'weight']
+                .map(function (key) { return values[key] == null ? null : values[key]; }));
+            if ((tariff.valid || tariff.approximate) && (tariff.services || []).length) {
+                tariffDetails = { basis: basis, services: tariff.services };
+            }
+            var amounts = { 'delivery-customer': 0, 'delivery-middle': 0, 'delivery-other': 0 };
+            var types = {
+                DELIVERY_TO_CUSTOMER: 'delivery-customer', MIDDLE_MILE: 'delivery-middle',
+                CROSSREGIONAL_DELIVERY: 'delivery-other', EXPRESS_DELIVERY: 'delivery-other', SORTING: 'delivery-other',
+            };
+            var count = 0;
+            if (tariffDetails && tariffDetails.basis === basis) tariffDetails.services.forEach(function (service) {
+                var key = types[service.type], amount = Number(service.amount);
+                if (key && service.amount != null && Number.isFinite(amount)) {
+                    amounts[key] += amount;
+                    count++;
+                }
+            });
+            var total = Object.keys(amounts).reduce(function (sum, key) { return sum + amounts[key]; }, 0);
+            var matched = count > 0 && values.delivery_cost != null && Math.abs(total - values.delivery_cost) < 0.005;
+            Object.keys(amounts).forEach(function (key) {
+                var node = container.querySelector('[data-ym-computed="' + key + '"]');
+                node.closest('.ue1c-calculator-row').hidden = !matched || (key === 'delivery-other' && !amounts[key]);
+                showComputed(key, matched ? amounts[key] : null);
+            });
+            container.querySelector('[data-ym-delivery-note]').textContent = matched
+                ? 'Состав доставки по тарифу ЯМ. Эти суммы уже входят в доставку выкупленного товара выше.'
+                : values.delivery_cost == null ? 'Не задана стоимость доставки выкупленного товара.'
+                : 'Сумма доставки задана без соответствующей детализации API. Разбивка на доставку покупателю и среднюю милю неизвестна.';
+        }
         function pending() {
             container.querySelector('[data-ym-result]').innerHTML =
                 metric('Чистая прибыль', null, ' ₽') +
                 metric('ROI', null, '%');
             parameters.querySelector('[data-ym-costs]').innerHTML = '';
+            container.querySelectorAll('[data-ym-computed]').forEach(function (node) { node.textContent = '—'; });
             message('Пересчитываем…');
         }
         function showResult(state) {
@@ -412,12 +508,21 @@
                         ? product.ym_economics.period || {}
                         : data.period || {},
                 coverage = period.coverage || {};
+            showLogistics(state);
             specs.forEach(function (spec) {
                 var key = spec[0];
                 var input = container.querySelector('[data-ym-field="' + key + '"]');
                 if (!input) return;
-                var value = inputValue(key, state.values[key]);
+                var value = inputValue(key, key === 'commission_rub' ? r.commission_rub : state.values[key]);
                 if (input.value !== value) input.value = value;
+                if (key === 'commission_rub') {
+                    var sellerPrice = state.values.seller_price;
+                    input.max = sellerPrice > 0 ? String(sellerPrice) : '1000000000';
+                    input.disabled = !(sellerPrice > 0);
+                    input.title = sellerPrice > 0 ? fields.hints.commission_rub
+                        : 'Сначала задайте положительную цену без СПП.';
+                    input.setCustomValidity('');
+                }
             });
             var periodDays = coverage.expected_days || 7;
             container.querySelector('[data-ym-result]').innerHTML =

@@ -1,4 +1,49 @@
 /* Keep the YM drawer on the same cards, spacing and controls as WB. */
+.ym-economics .ue1c-calculator-inputs.is-expanded .ym-logistics {
+    display: block;
+    order: var(--expanded-order);
+    margin: 10px 8px;
+    border: 1px solid var(--ue-accent, #315efb);
+    border-radius: 10px;
+    overflow: clip;
+}
+.ym-logistics > summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    cursor: pointer;
+    list-style: none;
+    background: var(--ue-accent-soft, #edf1ff);
+}
+.ym-logistics > summary:hover { background: #e3eaff; }
+.ym-logistics > summary::-webkit-details-marker { display: none; }
+.ym-logistics-heading { font-size: 12px; font-weight: 700; line-height: 1.4; }
+.ym-logistics-heading small { display: block; margin-top: 4px; font-size: 10px; font-weight: 400; color: var(--ue-muted); }
+.ym-logistics .ym-logistics-total { padding: 7px 9px; border-radius: 7px; background: var(--ue-surface, #fff); color: var(--ue-accent); font-size: 13px; white-space: nowrap; }
+.ym-logistics-toggle { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 1px solid #d1dcff; color: var(--ue-accent); font-size: 11px; font-weight: 600; }
+.ym-logistics-toggle svg {
+    flex-shrink: 0;
+    transition: transform .15s;
+}
+.ym-logistics[open] .ym-logistics-toggle svg { transform: rotate(180deg); }
+.ym-logistics-hide,
+.ym-logistics[open] .ym-logistics-show { display: none; }
+.ym-logistics[open] .ym-logistics-hide { display: inline; }
+.ym-logistics > summary:focus-visible { outline: 2px solid var(--ue-accent); outline-offset: -2px; }
+.ym-logistics-fields { display: flex; flex-direction: column; }
+.ym-logistics-fields > * { order: initial !important; }
+.ym-logistics-fields [hidden] { display: none !important; }
+.ym-logistics strong,
+.ym-computed-row strong {
+    text-align: right;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.ym-tariff-part { padding-left: 24px; color: var(--ue-muted); }
+.ym-logistics-note { margin: 0; padding: 8px 12px; color: var(--ue-muted); font-size: 10px; line-height: 1.5; }
+.ym-logistics.is-incomplete > summary { background: #fff7d6; }
 .ue1c-page.is-placeholder.is-yandex-economics .ue1c-ym-chart {
     display: block;
 }

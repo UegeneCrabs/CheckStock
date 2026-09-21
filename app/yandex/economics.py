@@ -340,6 +340,7 @@ def detail(
             "calculator_origins": calculator["origins"],
             "calculator_result": calculator_result,
             "calculator_pricing": calculator["pricing"],
+            "calculator_tariff": calculator["tariff"],
             "calculator_advertising": weekly,
         }
     )

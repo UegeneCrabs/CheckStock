@@ -2,7 +2,7 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 
-VERSION = 11
+VERSION = 12
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
 REMOVED_FIELDS = {
     "payment_transfer_percent",
@@ -31,14 +31,14 @@ LABELS = {
     "commission_percent": "Комиссия YM, %",
     "payment_acceptance": "Приём платежа (Экваиринг 2)",
     "acquiring_percent": "Перевод платежа (Экваринг1)",
-    "delivery_cost": "Логистика, руб",
+    "delivery_cost": "Доставка выкупленного товара",
     "return_cost": "Обратная доставка",
     "volume_l": "Объём товара (нужны положительные длина, ширина и высота упаковки)",
     "transit_cost": "Транзит",
     "company_commission_percent": "Комиссия компании, %",
     "vat_percent": "НДС, %",
     "usn_percent": "УСН, %",
-    "loss_percent": "Потери",
+    "loss_percent": "Потери от закупочной цены",
     "disposal_cost": "Утилизация",
     "buyout_percent": "Процент выкупа",
     "plan_drr": "ДРР с выкупом",
@@ -100,6 +100,40 @@ def sheet_logistics(values, *, scenario=None):
     return result
 
 
+def logistics_costs(values):
+    """The same three expense lines used by profit and the logistics subtotal."""
+
+    def amount(key):
+        value = values.get(key)
+        return Decimal(str(value)) if value is not None else None
+
+    returns, buyout = amount("return_cost"), amount("buyout_percent")
+    return {
+        "delivery": amount("delivery_cost"),
+        "returns": returns * (1 - buyout / 100) if returns is not None and buyout is not None else None,
+        "transit": amount("transit_cost"),
+    }
+
+
+def calculator_summary(values):
+    """Show known charges even when unrelated inputs prevent calculating profit."""
+    logistics = logistics_costs(values)
+    total = sum(logistics.values()) if all(value is not None for value in logistics.values()) else None
+    price, percent = values.get("seller_price"), values.get("commission_percent")
+    commission = (
+        Decimal(str(price)) * Decimal(str(percent)) / 100
+        if price is not None and percent is not None
+        else None
+    )
+    return {
+        "commission_rub": money(commission) if commission is not None else None,
+        "logistics": {
+            **{key: money(value) if value is not None else None for key, value in logistics.items()},
+            "total": money(total) if total is not None else None,
+        },
+    }
+
+
 def calculate(
     values,
     *,
@@ -108,6 +142,7 @@ def calculate(
     without_advertising=False,
     scenario=None,
     precise=False,
+    version=VERSION,
 ):
     """YM unit profit with WB-style VAT and USN, without the removed fixed costs.
 
@@ -117,6 +152,7 @@ def calculate(
     margin stays a Decimal for finding a price without hiding fractional losses.
     """
     values = {**values, **sheet_logistics(values, scenario=scenario)}
+    summary = calculator_summary(values)
     required = [
         "seller_price",
         "buyer_price",
@@ -139,6 +175,7 @@ def calculate(
     missing = [key for key in required if values.get(key) is None]
     if missing:
         return {
+            **summary,
             "margin": None,
             "roi": None,
             "missing": missing,
@@ -152,6 +189,7 @@ def calculate(
     price, purchase, q = d("seller_price"), d("purchase_price"), d("buyout_percent") / 100
     if q <= 0 and values.get("advertising_mode", "actual") == "actual":
         return {
+            **summary,
             "margin": None,
             "roi": None,
             "missing": ["buyout_percent"],
@@ -166,14 +204,12 @@ def calculate(
         "commission": price * d("commission_percent") / 100,
         "payment_acceptance": d("payment_acceptance"),
         "acquiring": price * d("acquiring_percent") / 100,
-        "delivery": d("delivery_cost"),
-        "returns": d("return_cost") * (1 - q),
-        "transit": d("transit_cost"),
+        **logistics_costs(values),
         "purchase": purchase,
         "company_commission": price * d("company_commission_percent") / 100,
         "vat": vat,
         "usn": usn,
-        "loss": price * d("loss_percent") / 100,
+        "loss": (price if version < 12 else purchase) * d("loss_percent") / 100,
         "disposal": d("disposal_cost") * (1 - q),
     }
     if without_advertising:
@@ -182,6 +218,7 @@ def calculate(
         advertising = price * d("plan_drr") / 100
     elif advertising_spend is None or orders_count is None:
         return {
+            **summary,
             "margin": None,
             "roi": None,
             "missing": ["advertising"],
@@ -193,6 +230,7 @@ def calculate(
     elif orders_count <= 0:
         if advertising_spend > 0:
             return {
+                **summary,
                 "margin": None,
                 "roi": None,
                 "missing": ["orders_count"],
@@ -208,6 +246,7 @@ def calculate(
     margin = price - sum(costs.values())
     buyer = values.get("buyer_price")
     return {
+        **summary,
         "margin": margin if precise else money(margin),
         "roi": money(margin / purchase * 100) if purchase > 0 else None,
         "margin_percent": (
@@ -217,7 +256,7 @@ def calculate(
         "total_cost": money(sum(costs.values())),
         "missing": [],
         "messages": [],
-        "calculation_version": VERSION,
+        "calculation_version": version,
         "basis": "ym_sheet_unit",
     }
 
@@ -236,6 +275,7 @@ def daily_profit(values, orders_count, advertising_spend, baseline, version):
         advertising_spend=advertising_spend,
         orders_count=orders_count,
         precise=True,
+        version=version,
     )
     return money(result["margin"] * bought) if result["margin"] is not None else None
 

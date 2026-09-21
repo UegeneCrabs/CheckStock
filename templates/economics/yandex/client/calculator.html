@@ -28,6 +28,18 @@
 <div class="ym-dimensions ue1c-calculator-row--expanded" style="--expanded-order:{{index}}" role="group" aria-label="Габариты и вес"><span class="ym-dimensions-title">Габариты и вес</span><div class="ym-dimensions-fields">{{{content}}}</div></div>
 <!-- endtemplate -->
 
+<!-- template: computed-row -->
+<div class="ue1c-calculator-row ue1c-calculator-row--expanded ym-computed-row {{className}}" style="--expanded-order:{{index}}"><span title="{{hint}}">{{label}}</span><strong data-ym-computed="{{key}}" aria-live="polite">—</strong></div>
+<!-- endtemplate -->
+
+<!-- template: logistics -->
+<details class="ym-logistics ue1c-calculator-row--expanded" data-ym-logistics style="--expanded-order:{{index}}"{{{open}}}><summary class="ym-logistics-summary"><span class="ym-logistics-heading">Логистика на один выкуп<small>Доставка, невыкупы и транзит</small></span><strong class="ym-logistics-total" data-ym-computed="logistics-total" aria-live="polite">—</strong><span class="ym-logistics-toggle"><span class="ym-logistics-show">Показать состав расходов</span><span class="ym-logistics-hide">Скрыть состав расходов</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></summary><div class="ym-logistics-fields" data-ym-logistics-fields>{{{content}}}</div><p class="ym-logistics-note">Итого: доставка выкупленного товара + невыкупы с учётом процента выкупа + транзит. Средняя миля для невыкупа уже включена в расход на один невыкуп.</p></details>
+<!-- endtemplate -->
+
+<!-- template: delivery-note -->
+<p class="ym-logistics-note" data-ym-delivery-note></p>
+<!-- endtemplate -->
+
 <!-- template: dimension -->
 <span class="ym-dimension"><span class="ym-dimension-separator" aria-hidden="true">{{separator}}</span><label><span>{{label}}, {{unit}}</span><input data-ym-field="{{key}}" aria-label="{{label}}" type="number" min="0" step="any" placeholder="—" value="{{value}}"></label></span>
 <!-- endtemplate -->
