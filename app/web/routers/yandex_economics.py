@@ -26,7 +26,6 @@ CABINET_FIELDS = {
     "frequency",
     "payment_delay_weeks",
     "acquiring_percent",
-    "payment_transfer_percent",
 }
 SCENARIO_FIELDS = {
     "seller_price",

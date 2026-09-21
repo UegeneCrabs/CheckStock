@@ -32,7 +32,6 @@
         'plan_drr',
         'buyout_percent',
         'advertising_spend',
-        'payment_transfer_percent',
         'acquiring_percent',
         'payment_acceptance',
         'purchase_price',
@@ -56,9 +55,8 @@
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
     var costs = {
         commission: 'Комиссия YM',
-        payment_acceptance: 'Приём платежа',
-        acquiring: 'Эквайринг',
-        payment_transfer: 'Вывод средств',
+        payment_acceptance: 'Приём платежа (Экваиринг 2)',
+        acquiring: 'Перевод платежа (Экваринг1)',
         delivery: 'Логистика',
         returns: 'Невыкупы и возвраты',
         transit: 'Транзит',
@@ -275,7 +273,6 @@
                             parametersFor([
                                 'commission_percent',
                                 'payment_acceptance',
-                                'payment_transfer_percent',
                                 'acquiring_percent',
                                 'vat_percent',
                                 'usn_percent',
@@ -434,14 +431,6 @@
                     });
                 })
                 .join('');
-            if (r.withdrawal_base != null) {
-                parameters.querySelector('[data-ym-costs]').innerHTML += window.CheckStockUI.render(
-                    'economics/yandex/calculator/show-result', {
-                        content: 'База вывода средств · после расходов Маркета',
-                        content_2: number(r.withdrawal_base),
-                    },
-                );
-            }
             var periodElement = parameters.querySelector('[data-ym-period]');
             periodElement.classList.toggle('is-incomplete', coverage.days > 0 && !coverage.complete);
             var coveredDates = (coverage.dates || []).map(function (day) {

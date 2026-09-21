@@ -28,7 +28,7 @@
         }),
     );
     var groups = [
-        ['Платежи и вывод средств', ['acquiring_percent', 'payment_transfer_percent']],
+        ['Платежи', ['acquiring_percent']],
         [
             'Закупка и собственные расходы',
             [

@@ -95,8 +95,8 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
     tariff_fresh = yandex_storefront.fresh(tariff.get("updated_at"))
     if tariff_valid or estimated_tariff:
         origin = "Последний загруженный тариф API" if estimated_tariff else "API: тариф"
-        # PAYMENT_TRANSFER is a separate configurable payout fee now. A legacy
-        # API quote must not restore it as acquiring or overwrite cabinet rates.
+        # Legacy API quotes must not restore the removed withdrawal fee
+        # or overwrite the configurable payment-transfer rate.
         components = {
             key: value
             for key, value in tariff_data.get("components", {}).items()
@@ -364,7 +364,6 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
         for key in (
             "commission_percent",
             "payment_acceptance",
-            "payment_transfer_percent",
             "acquiring_percent",
             "delivery_cost",
         )

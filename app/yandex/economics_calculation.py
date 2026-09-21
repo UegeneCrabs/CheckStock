@@ -2,9 +2,10 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 
-VERSION = 10
+VERSION = 11
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
 REMOVED_FIELDS = {
+    "payment_transfer_percent",
     "tariff_extra",
     "tax_base",
     "capital_percent",
@@ -16,7 +17,7 @@ REMOVED_FIELDS = {
     "other_cost",
     "tax_percent",
 }
-CABINET_DEFAULTS = {"payment_transfer_percent": 1.6, "acquiring_percent": 1.6}
+CABINET_DEFAULTS = {"acquiring_percent": 1.6}
 OPTIONAL_DEFAULTS = {
     **CABINET_DEFAULTS,
     "advertising_mode": "actual",
@@ -28,9 +29,8 @@ LABELS = {
     "buyer_price": "Цена с СПП",
     "purchase_price": "Закупочная стоимость",
     "commission_percent": "Комиссия YM, %",
-    "payment_acceptance": "Приём платежа",
-    "payment_transfer_percent": "Вывод средств, %",
-    "acquiring_percent": "Эквайринг, %",
+    "payment_acceptance": "Приём платежа (Экваиринг 2)",
+    "acquiring_percent": "Перевод платежа (Экваринг1)",
     "delivery_cost": "Логистика, руб",
     "return_cost": "Обратная доставка",
     "volume_l": "Объём товара (нужны положительные длина, ширина и высота упаковки)",
@@ -123,7 +123,6 @@ def calculate(
         "purchase_price",
         "commission_percent",
         "payment_acceptance",
-        "payment_transfer_percent",
         "acquiring_percent",
         "delivery_cost",
         "return_cost",
@@ -206,20 +205,6 @@ def calculate(
     else:
         advertising = Decimal(str(advertising_spend)) / Decimal(str(orders_count)) / q
     costs["advertising"] = advertising
-    # Meeting 21 Sep, 12:32 recording, 07:20: payout after Market services,
-    # before purchase cost, taxes and the company's internal expenses.
-    market_costs = (
-        "commission",
-        "payment_acceptance",
-        "acquiring",
-        "delivery",
-        "returns",
-        "transit",
-        "disposal",
-        "advertising",
-    )
-    withdrawal_base = max(Decimal(0), price - sum(costs[key] for key in market_costs))
-    costs["payment_transfer"] = withdrawal_base * d("payment_transfer_percent") / 100
     margin = price - sum(costs.values())
     buyer = values.get("buyer_price")
     return {
@@ -230,7 +215,6 @@ def calculate(
         ),
         "costs": {key: money(value) for key, value in costs.items()},
         "total_cost": money(sum(costs.values())),
-        "withdrawal_base": money(withdrawal_base),
         "missing": [],
         "messages": [],
         "calculation_version": VERSION,
@@ -239,7 +223,7 @@ def calculate(
 
 
 def daily_profit(values, orders_count, advertising_spend, baseline, version):
-    """New snapshots allocate ads before the payout fee; legacy days keep their formula."""
+    """Calculate daily profit without the removed withdrawal fee."""
     if baseline.get("margin") is None:
         return None
     bought = Decimal(str(orders_count)) * Decimal(str(values["buyout_percent"])) / 100
@@ -272,7 +256,6 @@ def break_even_prices(values, *, scenario=None):
             {**values, "seller_price": price, "buyer_price": buyer}, scenario=scenario, precise=True
         )["margin"]
 
-    # A payout fee on max(0, receipts) makes the formula piecewise linear.
     # Search the actual 10-ruble price grid, including rounded buyer-side taxes.
     lower = 1
     upper = int(Decimal(1_000_000_000) / max(Decimal(1), buyer_factor, pay_factor or 0) / 10)

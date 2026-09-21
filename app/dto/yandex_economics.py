@@ -22,7 +22,6 @@ class EconomicsValues(DtoModel):
     weight: Amount | None = None
     commission_percent: Percent | None = None
     payment_acceptance: Amount | None = None
-    payment_transfer_percent: Percent | None = None
     acquiring_percent: Percent | None = None
     delivery_cost: Amount | None = None
     # Explicit calculator scenarios may override the automatic logistics values.
