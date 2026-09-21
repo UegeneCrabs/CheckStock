@@ -235,8 +235,6 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
             continue
         values[field] = quote.get("components", {}).get(field) if tariff_valid else None
         origins[field] = "API: тариф за сегодня" if tariff_valid else "Нет тарифа за сегодня"
-    if origins.get("tariff_extra") not in {"Изменено на сайте", "Настройки кабинета", "Сценарий"}:
-        values["tariff_extra"] = quote.get("components", {}).get("tariff_extra", 0) if tariff_valid else 0
     return state
 
 
@@ -343,7 +341,6 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
             "payment_acceptance",
             "payment_transfer_percent",
             "delivery_cost",
-            "tariff_extra",
         )
         if state["values"].get(key) is not None
     }

@@ -2,9 +2,10 @@
 
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
-VERSION = 7
+VERSION = 8
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
 REMOVED_FIELDS = {
+    "tariff_extra",
     "tax_base",
     "capital_percent",
     "turnover_days",
@@ -19,7 +20,6 @@ OPTIONAL_DEFAULTS = {
     "advertising_mode": "actual",
     "frequency": "WEEKLY",
     "payment_delay_weeks": 0,
-    "tariff_extra": 0,
 }
 LABELS = {
     "seller_price": "Цена без СПП",
@@ -172,7 +172,6 @@ def calculate(
         "usn": usn,
         "loss": price * d("loss_percent") / 100,
         "disposal": d("disposal_cost") * (1 - q),
-        "tariff_extra": d("tariff_extra"),
     }
     if without_advertising:
         advertising = Decimal(0)

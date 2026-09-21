@@ -29,7 +29,6 @@ class EconomicsValues(DtoModel):
     return_middle_mile: Amount | None = None
     return_cost: Amount | None = None
     transit_cost: Amount | None = None
-    tariff_extra: Amount | None = None
     company_commission_percent: Percent | None = None
     vat_percent: Percent | None = None
     usn_percent: Percent | None = None

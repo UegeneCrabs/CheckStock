@@ -29,7 +29,6 @@
         'return_middle_mile',
         'return_cost',
         'transit_cost',
-        'tariff_extra',
         'plan_drr',
         'buyout_percent',
         'advertising_spend',
@@ -52,7 +51,7 @@
     }).sort(function (a, b) {
         return expandedOrder.indexOf(a[0]) - expandedOrder.indexOf(b[0]);
     });
-    var tariffFields = ['commission_percent', 'payment_acceptance', 'payment_transfer_percent', 'delivery_cost', 'tariff_extra'];
+    var tariffFields = ['commission_percent', 'payment_acceptance', 'payment_transfer_percent', 'delivery_cost'];
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
     var costs = {
         commission: 'Комиссия YM',
@@ -68,7 +67,6 @@
         loss: 'Потери',
         disposal: 'Утилизация',
         advertising: 'Реклама',
-        tariff_extra: 'Другие услуги ЯМ',
     };
     function inputValue(key, value) {
         if (value == null) return '';

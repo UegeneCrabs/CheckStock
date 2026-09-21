@@ -135,9 +135,8 @@ def parse_quote(values, scheme, parameters, row):
         "payment_acceptance": amounts.get("AGENCY_COMMISSION", 0),
         "payment_transfer_percent": transfer_percent,
         "delivery_cost": sum(amounts.get(kind, 0) for kind in DELIVERY_TYPES),
-        "tariff_extra": amounts.get("ITEM_BOOKING", 0),
     }
-    EconomicsValues.model_validate({key: value for key, value in components.items() if key != "tariff_extra"})
+    EconomicsValues.model_validate(components)
     return {
         "components": components,
         "services": tariffs,
