@@ -218,8 +218,23 @@ def render_page(
     def hidden(allowed: bool) -> str:
         return "" if allowed else " hidden"
 
+    marketplace = {
+        "unit_1c_wb": ("wb", "WB", "Wildberries"),
+        "unit_1c_ozon": ("ozon", "O", "Ozon"),
+        "unit_1c_yandex": ("ym", "Я", "Яндекс Маркет"),
+    }.get(active)
+    marketplace_badge = ""
+    if marketplace:
+        color, mark, label = marketplace
+        marketplace_badge = (
+            f'<span class="marketplace-badge" aria-label="Юнит-экономика: {label}">'
+            f'<span class="marketplace-badge-mark" aria-hidden="true">{mark}</span>'
+            f'<span class="marketplace-badge-label">{label}</span></span>'
+        )
     header = fill_template(
         "layout/header.html",
+        marketplace_header_class=" marketplace-" + marketplace[0] if marketplace else "",
+        marketplace_badge=marketplace_badge,
         stock_open="",
         stock_expanded="false",
         stock_group_hidden=hidden(

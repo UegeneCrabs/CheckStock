@@ -23,7 +23,8 @@
             [
                 ['commission_percent', 'Комиссия YM, %', '%'],
                 ['payment_acceptance', 'Приём платежа', '₽'],
-                ['payment_transfer_percent', 'Эквайринг, %', '%'],
+                ['acquiring_percent', 'Эквайринг, %', '%'],
+                ['payment_transfer_percent', 'Вывод средств, %', '%'],
                 ['delivery_cost', 'Логистика, руб', '₽/шт.'],
                 ['volume_l', 'Объём упаковки', 'л'],
                 ['return_middle_mile', 'Средняя миля для невыкупа', '₽'],
@@ -99,6 +100,8 @@
     }
 
     var cabinetFields = [
+        'acquiring_percent',
+        'payment_transfer_percent',
         'vat_percent',
         'usn_percent',
         'company_commission_percent',
@@ -118,6 +121,8 @@
             plan_drr: 'ДРР с выкупом, % (7 дней)',
         },
         hints: {
+            acquiring_percent: 'Эквайринг от цены продавца. По умолчанию 1,6%; настраивается в параметрах кабинета.',
+            payment_transfer_percent: 'От положительной суммы после услуг Маркета и рекламы, до закупки, налогов, комиссии компании и потерь. По умолчанию 1,6%.',
             buyer_price: 'Цена покупателя без скидки по карте Пэй',
             plan_drr: 'ДРР с выкупом за последние 7 завершённых дней',
             delivery_cost: 'Доставка выкупленного товара. Невыкупы и транзит учитываются отдельно.',

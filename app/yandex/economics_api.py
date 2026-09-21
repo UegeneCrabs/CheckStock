@@ -117,8 +117,6 @@ def parse_quote(values, scheme, parameters, row):
     unknown = set(amounts) - DELIVERY_TYPES - {"FEE", "AGENCY_COMMISSION", "PAYMENT_TRANSFER", "ITEM_BOOKING"}
     if unknown or "FEE" not in amounts:
         raise ValueError("Неизвестный или неполный набор услуг Маркета.")
-    if "PAYMENT_TRANSFER" not in amounts:
-        raise ValueError("ЯМ не вернул эквайринг (PAYMENT_TRANSFER); нулевая ставка не подтверждена.")
     price = values["seller_price"]
     transfer_percent = 0.0
     for service in tariffs:
@@ -136,7 +134,6 @@ def parse_quote(values, scheme, parameters, row):
     components = {
         "commission_percent": amounts["FEE"] / price * 100,
         "payment_acceptance": amounts.get("AGENCY_COMMISSION", 0),
-        "payment_transfer_percent": transfer_percent,
         "delivery_cost": sum(amounts.get(kind, 0) for kind in DELIVERY_TYPES),
     }
     EconomicsValues.model_validate(components)
@@ -146,6 +143,7 @@ def parse_quote(values, scheme, parameters, row):
         "signature": tariff_signature(values, scheme),
         "campaign_id": parameters.get("campaignId"),
         "parameters": parameters,
+        "api_payment_transfer_percent": transfer_percent if "PAYMENT_TRANSFER" in amounts else None,
         "approximate": True,
     }
 

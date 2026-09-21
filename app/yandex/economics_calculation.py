@@ -1,8 +1,8 @@
 """YM calculations, with explicit input provenance and no network/database side effects."""
 
-from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
-VERSION = 9
+VERSION = 10
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
 REMOVED_FIELDS = {
     "tariff_extra",
@@ -16,7 +16,9 @@ REMOVED_FIELDS = {
     "other_cost",
     "tax_percent",
 }
+CABINET_DEFAULTS = {"payment_transfer_percent": 1.6, "acquiring_percent": 1.6}
 OPTIONAL_DEFAULTS = {
+    **CABINET_DEFAULTS,
     "advertising_mode": "actual",
     "frequency": "WEEKLY",
     "payment_delay_weeks": 0,
@@ -27,7 +29,8 @@ LABELS = {
     "purchase_price": "Закупочная стоимость",
     "commission_percent": "Комиссия YM, %",
     "payment_acceptance": "Приём платежа",
-    "payment_transfer_percent": "Эквайринг, %",
+    "payment_transfer_percent": "Вывод средств, %",
+    "acquiring_percent": "Эквайринг, %",
     "delivery_cost": "Логистика, руб",
     "return_cost": "Обратная доставка",
     "volume_l": "Объём товара (нужны положительные длина, ширина и высота упаковки)",
@@ -121,6 +124,7 @@ def calculate(
         "commission_percent",
         "payment_acceptance",
         "payment_transfer_percent",
+        "acquiring_percent",
         "delivery_cost",
         "return_cost",
         "transit_cost",
@@ -162,7 +166,7 @@ def calculate(
     costs = {
         "commission": price * d("commission_percent") / 100,
         "payment_acceptance": d("payment_acceptance"),
-        "payment_transfer": price * d("payment_transfer_percent") / 100,
+        "acquiring": price * d("acquiring_percent") / 100,
         "delivery": d("delivery_cost"),
         "returns": d("return_cost") * (1 - q),
         "transit": d("transit_cost"),
@@ -202,6 +206,20 @@ def calculate(
     else:
         advertising = Decimal(str(advertising_spend)) / Decimal(str(orders_count)) / q
     costs["advertising"] = advertising
+    # Meeting 21 Sep, 12:32 recording, 07:20: payout after Market services,
+    # before purchase cost, taxes and the company's internal expenses.
+    market_costs = (
+        "commission",
+        "payment_acceptance",
+        "acquiring",
+        "delivery",
+        "returns",
+        "transit",
+        "disposal",
+        "advertising",
+    )
+    withdrawal_base = max(Decimal(0), price - sum(costs[key] for key in market_costs))
+    costs["payment_transfer"] = withdrawal_base * d("payment_transfer_percent") / 100
     margin = price - sum(costs.values())
     buyer = values.get("buyer_price")
     return {
@@ -212,11 +230,30 @@ def calculate(
         ),
         "costs": {key: money(value) for key, value in costs.items()},
         "total_cost": money(sum(costs.values())),
+        "withdrawal_base": money(withdrawal_base),
         "missing": [],
         "messages": [],
         "calculation_version": VERSION,
         "basis": "ym_sheet_unit",
     }
+
+
+def daily_profit(values, orders_count, advertising_spend, baseline, version):
+    """New snapshots allocate ads before the payout fee; legacy days keep their formula."""
+    if baseline.get("margin") is None:
+        return None
+    bought = Decimal(str(orders_count)) * Decimal(str(values["buyout_percent"])) / 100
+    if version < 10:
+        return round(baseline["margin"] * float(bought) - advertising_spend, 2)
+    if not bought:
+        return money(-Decimal(str(advertising_spend)))
+    result = calculate(
+        {**values, "advertising_mode": "actual"},
+        advertising_spend=advertising_spend,
+        orders_count=orders_count,
+        precise=True,
+    )
+    return money(result["margin"] * bought) if result["margin"] is not None else None
 
 
 def break_even_prices(values, *, scenario=None):
@@ -235,33 +272,29 @@ def break_even_prices(values, *, scenario=None):
             {**values, "seller_price": price, "buyer_price": buyer}, scenario=scenario, precise=True
         )["margin"]
 
-    fixed_margin = margin(Decimal(0), Decimal(0))
-    contribution = margin(Decimal(1), buyer_factor) - fixed_margin
-    if contribution <= 0:
-        raise ValueError(
-            "При заданных процентах расходов цена без убытка недостижима. Уменьшите расходы или ДРР."
-        )
-    price = max(
-        Decimal(10), (-fixed_margin / contribution / 10).to_integral_value(rounding=ROUND_CEILING) * 10
-    )
-    # Tax uses the rounded buyer price. Its rounding can move the exact boundary.
-    for _ in range(2):
-        buyer = Decimal(str(money(price * buyer_factor)))
-        pay = money(price * pay_factor) if pay_factor is not None else None
-        if max(price, buyer, Decimal(str(pay or 0))) > 1_000_000_000:
-            raise ValueError("Цена без убытка превышает допустимый предел калькулятора.")
-        profit = margin(price, buyer)
-        if profit >= 0:
-            return {"seller_price": float(price), "buyer_price": float(buyer), "pay_price": pay}
-        vat_rate = Decimal(str(values["vat_percent"]))
-        usn_rate = Decimal(str(values["usn_percent"]))
-        rounding_cost = Decimal("0.005") * (vat_rate + usn_rate) / (100 + vat_rate)
-        price = max(
-            price + 10,
-            ((-fixed_margin + rounding_cost) / contribution / 10).to_integral_value(rounding=ROUND_CEILING)
-            * 10,
-        )
-    raise ValueError("Не удалось подобрать цену без убытка с заданными параметрами.")
+    # A payout fee on max(0, receipts) makes the formula piecewise linear.
+    # Search the actual 10-ruble price grid, including rounded buyer-side taxes.
+    lower = 1
+    upper = int(Decimal(1_000_000_000) / max(Decimal(1), buyer_factor, pay_factor or 0) / 10)
+
+    def profit_at(step):
+        price = Decimal(step * 10)
+        return margin(price, Decimal(str(money(price * buyer_factor))))
+
+    if upper < lower or profit_at(upper) < 0:
+        raise ValueError("Цена без убытка недостижима в допустимом диапазоне. Уменьшите расходы или ДРР.")
+    while lower < upper:
+        middle = (lower + upper) // 2
+        if profit_at(middle) >= 0:
+            upper = middle
+        else:
+            lower = middle + 1
+    price = Decimal(lower * 10)
+    return {
+        "seller_price": float(price),
+        "buyer_price": money(price * buyer_factor),
+        "pay_price": money(price * pay_factor) if pay_factor is not None else None,
+    }
 
 
 def aggregate(days, expected_dates):

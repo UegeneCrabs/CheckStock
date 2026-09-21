@@ -33,6 +33,7 @@
         'buyout_percent',
         'advertising_spend',
         'payment_transfer_percent',
+        'acquiring_percent',
         'payment_acceptance',
         'purchase_price',
         'company_commission_percent',
@@ -51,12 +52,13 @@
     }).sort(function (a, b) {
         return expandedOrder.indexOf(a[0]) - expandedOrder.indexOf(b[0]);
     });
-    var tariffFields = ['commission_percent', 'payment_acceptance', 'payment_transfer_percent', 'delivery_cost'];
+    var tariffFields = ['commission_percent', 'payment_acceptance', 'delivery_cost'];
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
     var costs = {
         commission: 'Комиссия YM',
         payment_acceptance: 'Приём платежа',
-        payment_transfer: 'Эквайринг',
+        acquiring: 'Эквайринг',
+        payment_transfer: 'Вывод средств',
         delivery: 'Логистика',
         returns: 'Невыкупы и возвраты',
         transit: 'Транзит',
@@ -274,6 +276,7 @@
                                 'commission_percent',
                                 'payment_acceptance',
                                 'payment_transfer_percent',
+                                'acquiring_percent',
                                 'vat_percent',
                                 'usn_percent',
                             ]) +
@@ -431,6 +434,14 @@
                     });
                 })
                 .join('');
+            if (r.withdrawal_base != null) {
+                parameters.querySelector('[data-ym-costs]').innerHTML += window.CheckStockUI.render(
+                    'economics/yandex/calculator/show-result', {
+                        content: 'База вывода средств · после расходов Маркета',
+                        content_2: number(r.withdrawal_base),
+                    },
+                );
+            }
             var periodElement = parameters.querySelector('[data-ym-period]');
             periodElement.classList.toggle('is-incomplete', coverage.days > 0 && !coverage.complete);
             var coveredDates = (coverage.dates || []).map(function (day) {

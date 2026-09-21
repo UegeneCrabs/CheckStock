@@ -182,6 +182,19 @@ def loaded_day_times(store: str, source: str, start: str, end: str) -> dict[str,
     return {row["day"]: row["updated_at"] for row in rows}
 
 
+def orders_subsidy_backfill_window(store: str, today: date) -> tuple[date, date] | None:
+    """Find old monetary data; counts and novelty classification remain unchanged."""
+    last = today - timedelta(days=7)
+    rows, _ = get_history(store, "orders", (today - timedelta(days=365)).isoformat(), last.isoformat())
+    legacy = [row["day"] for row in rows if row.get("amount_basis") != "with_subsidy"]
+    if not legacy:
+        return None
+    # Restore the displayed recent periods first, then work backwards.
+    last = date.fromisoformat(max(legacy))
+    first = max(date.fromisoformat(min(legacy)), last - timedelta(days=6))
+    return first, last
+
+
 def get_buyout_settings(store: str) -> dict:
     with get_connection() as conn:
         row = conn.execute(

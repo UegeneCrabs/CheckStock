@@ -11,11 +11,13 @@ from app.yandex.category_commissions import SOURCE as CATEGORY_COMMISSION_SOURCE
 from app.yandex.category_commissions import commission_value
 from app.yandex.economics_advertising import apply_calculator_drr, product_drr, weekly_history
 from app.yandex.economics_calculation import (
+    CABINET_DEFAULTS,
     REMOVED_FIELDS,
     VERSION,
     aggregate,
     break_even_prices,
     calculate,
+    daily_profit,
     resolve,
     sheet_logistics,
 )
@@ -70,6 +72,7 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
         ("API: каталог", catalog.get("values", {})),
         *price_layers,
         ("API: выкуп", {"buyout_percent": buyout}),
+        ("По умолчанию", CABINET_DEFAULTS),
         ("Настройки кабинета", cabinet["values"]),
         ("Изменено на сайте", product["values"]),
     ]
@@ -92,7 +95,13 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
     tariff_fresh = yandex_storefront.fresh(tariff.get("updated_at"))
     if tariff_valid or estimated_tariff:
         origin = "Последний загруженный тариф API" if estimated_tariff else "API: тариф"
-        components = tariff_data.get("components", {})
+        # PAYMENT_TRANSFER is a separate configurable payout fee now. A legacy
+        # API quote must not restore it as acquiring or overwrite cabinet rates.
+        components = {
+            key: value
+            for key, value in tariff_data.get("components", {}).items()
+            if key not in {"payment_transfer_percent", "acquiring_percent"}
+        }
         # A saved quote is a planning fallback, not a replacement for a current category rate.
         if estimated_tariff and reference_percent is not None:
             components = {key: value for key, value in components.items() if key != "commission_percent"}
@@ -246,7 +255,7 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
     state["tariff"]["valid"] = tariff_valid
     reference_percent = commission_value(state["category_commission"], values)
     state["category_commission"]["valid"] = reference_percent is not None
-    fields = ("commission_percent", "payment_acceptance", "payment_transfer_percent", "delivery_cost")
+    fields = ("commission_percent", "payment_acceptance", "delivery_cost")
     for field in fields:
         if origins.get(field) in {"Изменено на сайте", "Настройки кабинета", "Сценарий"}:
             continue
@@ -356,6 +365,7 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
             "commission_percent",
             "payment_acceptance",
             "payment_transfer_percent",
+            "acquiring_percent",
             "delivery_cost",
         )
         if state["values"].get(key) is not None
@@ -510,7 +520,7 @@ def close_days(stores, *, today=None):
                 "orders_count": count,
                 "expected_buyouts": bought,
                 "advertising_spend": spend,
-                "profit": round(unit["margin"] * bought - spend, 2) if unit["margin"] is not None else None,
+                "profit": daily_profit(values, count, spend, unit, state["version"]),
                 "purchase_value": round(values["purchase_price"] * bought, 2),
                 "calculation_version": state["version"],
             }

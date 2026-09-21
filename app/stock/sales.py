@@ -383,9 +383,10 @@ def _money_value(value) -> float:
 
 def _yandex_item_amount(item: dict) -> float:
     prices = item.get("prices") or {}
-    amount = _money_value(prices.get("payment")) + _money_value(prices.get("cashback"))
-    if amount:
-        return amount
+    # API amounts already cover all units in the line. Include compensation
+    # from Market in both orders and proportional cancellations/returns.
+    if any(prices.get(key) is not None for key in ("payment", "cashback", "subsidy")):
+        return sum(_money_value(prices.get(key)) for key in ("payment", "cashback", "subsidy"))
     quantity = max(_integer(item.get("count"), 1), 1)
     return _number(item.get("buyerPrice"), _number(item.get("price"))) * quantity
 

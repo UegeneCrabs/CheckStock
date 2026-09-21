@@ -4,6 +4,72 @@
     --app-header-line: rgba(183, 199, 227, 0.16);
 }
 
+/* Only unit-economics pages receive these classes from the server. */
+.app-shell > .app-header.sidebar.marketplace-ym {
+    background: #ffdc32;
+    color: #242424;
+    --marketplace-ink: #242424;
+    --marketplace-hover: rgba(0, 0, 0, 0.09);
+}
+.app-shell > .app-header.sidebar.marketplace-wb {
+    background: linear-gradient(105deg, #a616b6, #74119b);
+    --marketplace-ink: #fff;
+    --marketplace-hover: rgba(255, 255, 255, 0.16);
+}
+.app-shell > .app-header.sidebar.marketplace-ozon {
+    background: #005bdf;
+    --marketplace-ink: #fff;
+    --marketplace-hover: rgba(255, 255, 255, 0.16);
+}
+.app-header[class*="marketplace-"] .brand,
+.app-header[class*="marketplace-"] .side-nav .nav-item,
+.app-header[class*="marketplace-"] .nav-utility .nav-item {
+    color: var(--marketplace-ink);
+}
+.app-header[class*="marketplace-"] .nav-item:hover,
+.app-header[class*="marketplace-"] .nav-item.active {
+    background: var(--marketplace-hover);
+    border-color: transparent;
+}
+.app-header[class*="marketplace-"] .nav-item.active::before {
+    background: var(--marketplace-ink);
+    box-shadow: none;
+}
+.marketplace-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 16px;
+    color: var(--marketplace-ink);
+    white-space: nowrap;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.marketplace-badge-mark {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid currentColor;
+    border-radius: 9px;
+    font-size: 1rem;
+    letter-spacing: -0.04em;
+}
+.marketplace-ym .marketplace-badge-mark {
+    background: #242424;
+    color: #ffdc32;
+    border-color: #242424;
+    border-radius: 50%;
+    font-size: 1.25rem;
+}
+@media (max-width: 1450px) {
+    .marketplace-badge-label { display: none; }
+    .marketplace-badge { margin-left: 10px; }
+}
+@media (max-width: 420px) {
+    .app-header[class*="marketplace-"] .brand-label { display: none; }
+}
+
 .app-header .side-nav > .nav-item.agent-nav {
     flex: 0 0 auto;
 }

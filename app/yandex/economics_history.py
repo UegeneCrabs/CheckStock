@@ -9,7 +9,7 @@ from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.yandex import economics
 from app.yandex import economics_shared as shared
-from app.yandex.economics_calculation import calculate
+from app.yandex.economics_calculation import VERSION, calculate, daily_profit
 
 
 def product_history(store, article, scheme, *, today=None):
@@ -42,7 +42,11 @@ def product_history(store, article, scheme, *, today=None):
     )
     cache = economics.context(store)
     current = economics.current_inputs(store, article, scheme, today=today, state_cache=cache)
-    live = {"values": current["values"], "result": calculate(current["values"], without_advertising=True)}
+    live = {
+        "values": current["values"],
+        "result": calculate(current["values"], without_advertising=True),
+        "version": VERSION,
+    }
     chart = []
     for day in metrics.days_between(start, end):
         saved = closed.get(day, {})
@@ -76,7 +80,9 @@ def product_history(store, article, scheme, *, today=None):
             unit_margin = baseline.get("result", {}).get("margin")
             saved_buyout = baseline.get("values", {}).get("buyout_percent")
             if unit_margin is not None and saved_buyout is not None:
-                profit = round(unit_margin * count * saved_buyout / 100 - spend, 2)
+                profit = daily_profit(
+                    baseline["values"], count, spend, baseline["result"], baseline.get("version", 9)
+                )
             elif count == 0:
                 profit = round(-spend, 2)
 

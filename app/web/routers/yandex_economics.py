@@ -12,7 +12,7 @@ from app.repositories import yandex_economics as repository
 from app.yandex import categories, category_selection, economics, economics_api, economics_history
 from app.yandex import economics_shared as shared
 from app.yandex.economics_advertising import apply_calculator_drr
-from app.yandex.economics_calculation import DERIVED_FIELDS, REMOVED_FIELDS, calculate
+from app.yandex.economics_calculation import CABINET_DEFAULTS, DERIVED_FIELDS, REMOVED_FIELDS, calculate
 
 router = APIRouter(prefix="/api/unit-economics-1c/yandex-market")
 
@@ -25,6 +25,8 @@ CABINET_FIELDS = {
     "transit_cost",
     "frequency",
     "payment_delay_weeks",
+    "acquiring_percent",
+    "payment_transfer_percent",
 }
 SCENARIO_FIELDS = {
     "seller_price",
@@ -56,8 +58,11 @@ def settings_payload(store, article, scheme):
         economics.effective(store, article, scheme)
         if article
         else {
-            "values": saved_values,
-            "origins": {key: "Настройки кабинета" for key in saved_values},
+            "values": {**CABINET_DEFAULTS, **saved_values},
+            "origins": {
+                **{key: "По умолчанию" for key in CABINET_DEFAULTS},
+                **{key: "Настройки кабинета" for key in saved_values},
+            },
         }
     )
     return {

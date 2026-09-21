@@ -28,6 +28,7 @@
         }),
     );
     var groups = [
+        ['Платежи и вывод средств', ['acquiring_percent', 'payment_transfer_percent']],
         [
             'Закупка и собственные расходы',
             [
@@ -45,7 +46,6 @@
             [
                 'commission_percent',
                 'payment_acceptance',
-                'payment_transfer_percent',
                 'delivery_cost',
                 'buyout_percent',
                 'category_name',

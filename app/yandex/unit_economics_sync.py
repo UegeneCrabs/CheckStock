@@ -238,7 +238,10 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
             ("sold_count", "sold_quantity"),
         ):
             item[field] += line[source]
-    return [{"article": article, "day": day, **values} for (article, day), values in grouped.items()]
+    return [
+        {"article": article, "day": day, "amount_basis": "with_subsidy", **values}
+        for (article, day), values in grouped.items()
+    ]
 
 
 def load_buyout(api_key: str, business_id: int, start: date, end: date) -> list[dict]:
@@ -357,6 +360,22 @@ def _sync_store(
             store_slug, source, rows, start.isoformat(), end.isoformat(), datetime.now(UTC).isoformat()
         )
         result = {"ok": True, "source": source, "rows": len(rows)}
+        if source == "orders" and not previous_day:
+            # Repair one saved historical week per run. Normal polling stays at
+            # seven days; failed downloads never replace historical rows.
+            window = repository.orders_subsidy_backfill_window(store_slug, today)
+            if window:
+                first, last = window
+                historical = load_orders(store_slug, api_key, business_id, first, last)
+                repository.save_daily(
+                    store_slug,
+                    "orders",
+                    historical,
+                    first.isoformat(),
+                    last.isoformat(),
+                    datetime.now(UTC).isoformat(),
+                )
+                result["subsidy_backfill"] = [first.isoformat(), last.isoformat()]
         if source == "advertising":
             result.update(refreshed_days=refresh_days, cached_days=8 - len(refresh_days))
         return result
