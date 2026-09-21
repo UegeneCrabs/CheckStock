@@ -15,7 +15,12 @@ def sync_all(store_slugs=None):
     economics.bootstrap_1c(stores)
     for store in stores:
         try:
-            result[store] = {"ok": True, **economics_api.refresh_store(store)}
+            report = economics_api.refresh_store(store)
+            missing = report.get("missing") or {}
+            result[store] = {"ok": not missing, **report}
+            if missing:
+                examples = "; ".join(f"{article}: {error}" for article, error in list(missing.items())[:5])
+                result[store]["error"] = f"Тарифы не получены для {len(missing)} позиций. {examples}"
         except Exception as error:
             result[store] = {"ok": False, "error": f"{type(error).__name__}: {str(error)[:700]}"}
         result[store].update(economics.capture_today((store,)))

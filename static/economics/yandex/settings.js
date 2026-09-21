@@ -40,7 +40,6 @@
             'Налоги и потери',
             ['vat_percent', 'usn_percent', 'loss_percent', 'disposal_cost'],
         ],
-        ['Параметры выплат', ['frequency', 'payment_delay_weeks']],
         [
             'Ручная замена данных API',
             [
@@ -149,13 +148,13 @@
             ' · ' +
             (loadedTarget.article ? 'Артикул ' + loadedTarget.article : 'Общие параметры кабинета');
         root.querySelector('[data-ym-settings-fields]').innerHTML = groups
-            .map(function (group, index) {
+            .map(function (group) {
                 var keys = group[1].filter(function (key) {
                     if (loadedTarget.article && key === 'company_commission_percent') return false;
                     return loadedTarget.article || fields.cabinetFields.indexOf(key) >= 0;
                 });
                 if (!keys.length) return '';
-                var advanced = index === 3,
+                var advanced = group[0] === 'Ручная замена данных API',
                     tag = advanced ? 'details' : 'fieldset',
                     heading = advanced ? 'summary' : 'legend';
                 return window.CheckStockUI.render('economics/yandex/settings/draw-2', {

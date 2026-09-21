@@ -174,10 +174,9 @@ def tariff_signature(values, scheme):
         "height",
         "weight",
         "campaign_id",
-        "frequency",
-        "payment_delay_weeks",
     )
-    return {**{key: values.get(key) for key in keys}, "scheme": scheme}
+    # Invalidate legacy quotes that silently replaced missing acquiring with zero.
+    return {**{key: values.get(key) for key in keys}, "scheme": scheme, "quote_source": "campaign-v2"}
 
 
 def checked_today(timestamp, today):

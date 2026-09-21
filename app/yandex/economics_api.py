@@ -70,16 +70,16 @@ def refresh_seller_prices(store):
     return count
 
 
-def quote_request(store, values, scheme):
+def quote_request(store, values, scheme, *, campaigns=None):
+    from app.yandex.category_commissions import store_campaigns
+
     required = ("seller_price", "category_id", "length", "width", "height", "weight")
     missing = [key for key in required if not values.get(key)]
     if missing:
         raise ValueError("Для тарифа нужны цена, категория, размеры и вес: " + ", ".join(missing))
-    campaigns = [
-        row
-        for row in tokens.get_campaigns(store)
-        if row["scheme_key"] == ("fbo" if scheme == "FBY" else "fbs")
-    ]
+    if campaigns is None:
+        campaigns, _ = store_campaigns(store, tokens.get_api_key(store))
+    campaigns = [row for row in campaigns if row["scheme"] == scheme]
     campaign_id = values.get("campaign_id")
     if campaign_id is not None and campaign_id not in {row["id"] for row in campaigns}:
         raise ValueError("Выбранная кампания не принадлежит этому кабинету и схеме.")
@@ -87,14 +87,11 @@ def quote_request(store, values, scheme):
         campaign_id = campaigns[0]["id"]
     elif campaign_id is None and len(campaigns) > 1:
         raise ValueError("Для этой схемы несколько магазинов. Укажите кампанию для расчёта тарифа.")
-    parameters = {
-        "frequency": values.get("frequency", "WEEKLY"),
-        "paymentDelayWeeks": values.get("payment_delay_weeks", 0),
-        "currency": "RUR",
-    }
-    if parameters["frequency"] != "WEEKLY" and parameters["paymentDelayWeeks"]:
-        raise ValueError("Отсрочка выплат доступна только при еженедельном графике.")
-    parameters.update({"campaignId": campaign_id} if campaign_id else {"sellingProgram": scheme})
+    if campaign_id is None:
+        raise ValueError(f"У кабинета не найден доступный магазин по модели {scheme}.")
+    # The actual campaign supplies its payout schedule and currency. Invented
+    # WEEKLY/0 defaults omit PAYMENT_TRANSFER; currency with campaignId is rejected.
+    parameters = {"campaignId": campaign_id}
     offer = {
         "categoryId": values["category_id"],
         "price": values["seller_price"],
@@ -117,11 +114,26 @@ def parse_quote(values, scheme, parameters, row):
     unknown = set(amounts) - DELIVERY_TYPES - {"FEE", "AGENCY_COMMISSION", "PAYMENT_TRANSFER", "ITEM_BOOKING"}
     if unknown or "FEE" not in amounts:
         raise ValueError("Неизвестный или неполный набор услуг Маркета.")
+    if "PAYMENT_TRANSFER" not in amounts:
+        raise ValueError("ЯМ не вернул эквайринг (PAYMENT_TRANSFER); нулевая ставка не подтверждена.")
     price = values["seller_price"]
+    transfer_percent = 0.0
+    for service in tariffs:
+        if service["type"] != "PAYMENT_TRANSFER":
+            continue
+        details = {item["name"]: item["value"] for item in service.get("parameters") or []}
+        if (
+            details.get("valueType") == "relative"
+            and "value" in details
+            and not ({"minValue", "maxValue"} & details.keys())
+        ):
+            transfer_percent += float(details["value"])
+        else:
+            transfer_percent += float(service["amount"]) / price * 100
     components = {
         "commission_percent": amounts["FEE"] / price * 100,
         "payment_acceptance": amounts.get("AGENCY_COMMISSION", 0),
-        "payment_transfer_percent": amounts.get("PAYMENT_TRANSFER", 0) / price * 100,
+        "payment_transfer_percent": transfer_percent,
         "delivery_cost": sum(amounts.get(kind, 0) for kind in DELIVERY_TYPES),
         "tariff_extra": amounts.get("ITEM_BOOKING", 0),
     }
@@ -159,15 +171,17 @@ def quote(store, article, scheme, *, scenario=None, persist=True):
 def refresh_store(store):
     """Batch quotes (API preserves request order), updating only source values."""
     from app.repositories.yandex_assortment import active_articles
+    from app.yandex.category_commissions import store_campaigns
 
     refresh_catalog(store)
     refresh_seller_prices(store)
+    campaigns, _ = store_campaigns(store, tokens.get_api_key(store))
     cache, groups, errors = context(store), defaultdict(list), {}
     for article in sorted(active_articles(store)):
         for scheme in ("FBY", "FBS"):
             values = effective(store, article, scheme, state_cache=cache)["values"]
             try:
-                parameters, offer = quote_request(store, values, scheme)
+                parameters, offer = quote_request(store, values, scheme, campaigns=campaigns)
             except ValueError as error:
                 errors[article + ":" + scheme] = str(error)
                 continue
