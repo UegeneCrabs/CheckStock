@@ -10,6 +10,7 @@ from app.dto.yandex_economics import CalculationRequest, Scheme, SettingsChange
 from app.repositories import yandex_assortment
 from app.repositories import yandex_economics as repository
 from app.yandex import categories, category_selection, economics, economics_api, economics_history
+from app.yandex import economics_shared as shared
 from app.yandex.economics_advertising import apply_calculator_drr
 from app.yandex.economics_calculation import DERIVED_FIELDS, REMOVED_FIELDS, calculate
 
@@ -49,7 +50,7 @@ def authorize_settings(request, store, article, *, write=False):
 
 
 def settings_payload(store, article, scheme):
-    saved = repository.settings(store, article, scheme)
+    saved = repository.settings(store, article, shared.SCHEME)
     saved_values = {key: value for key, value in saved["values"].items() if key not in REMOVED_FIELDS}
     state = (
         economics.effective(store, article, scheme)
@@ -93,7 +94,7 @@ async def update_settings(request: Request, store: str, payload: SettingsChange,
             repository.save_settings,
             store,
             article,
-            payload.scheme,
+            shared.SCHEME,
             changes,
             payload.revision,
             str(request.state.user["full_name"]),
@@ -161,7 +162,7 @@ async def save_economics(request: Request, store: str, article: str, payload: Se
             repository.save_settings,
             store,
             article,
-            payload.scheme,
+            shared.SCHEME,
             changes,
             payload.revision,
             str(request.state.user["full_name"]),

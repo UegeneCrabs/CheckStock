@@ -6,6 +6,7 @@ from app.dto.yandex_economics import EconomicsValues
 from app.repositories import yandex_economics as repository
 from app.repositories import yandex_storefront
 from app.yandex import api, tokens
+from app.yandex import economics_shared as shared
 from app.yandex.economics import context, effective, tariff_signature
 from app.yandex.unit_economics_sync import resolve_business_id
 
@@ -79,16 +80,18 @@ def quote_request(store, values, scheme, *, campaigns=None):
         raise ValueError("Для тарифа нужны цена, категория, размеры и вес: " + ", ".join(missing))
     if campaigns is None:
         campaigns, _ = store_campaigns(store, tokens.get_api_key(store))
-    campaigns = [row for row in campaigns if row["scheme"] == scheme]
+    campaigns = [row for row in campaigns if row["scheme"] in shared.SOURCE_SCHEMES]
     campaign_id = values.get("campaign_id")
     if campaign_id is not None and campaign_id not in {row["id"] for row in campaigns}:
-        raise ValueError("Выбранная кампания не принадлежит этому кабинету и схеме.")
-    if campaign_id is None and len(campaigns) == 1:
-        campaign_id = campaigns[0]["id"]
-    elif campaign_id is None and len(campaigns) > 1:
-        raise ValueError("Для этой схемы несколько магазинов. Укажите кампанию для расчёта тарифа.")
+        raise ValueError("Выбранная кампания не принадлежит этому кабинету.")
     if campaign_id is None:
-        raise ValueError(f"У кабинета не найден доступный магазин по модели {scheme}.")
+        for model in shared.SOURCE_SCHEMES:
+            available = [row for row in campaigns if row["scheme"] == model]
+            if len(available) == 1:
+                campaign_id = available[0]["id"]
+                break
+    if campaign_id is None:
+        raise ValueError("Не удалось однозначно выбрать магазин. Укажите кампанию для общего расчёта тарифа.")
     # The actual campaign supplies its payout schedule and currency. Invented
     # WEEKLY/0 defaults omit PAYMENT_TRANSFER; currency with campaignId is rejected.
     parameters = {"campaignId": campaign_id}
@@ -148,10 +151,12 @@ def parse_quote(values, scheme, parameters, row):
 
 
 def quote(store, article, scheme, *, scenario=None, persist=True):
-    from app.yandex.category_commissions import parse_fee
+    from app.yandex.category_commissions import parse_fee, store_campaigns
 
     values = effective(store, article, scheme, scenario=scenario)["values"]
-    parameters, offer = quote_request(store, values, scheme)
+    campaigns, _ = store_campaigns(store, tokens.get_api_key(store))
+    parameters, offer = quote_request(store, values, scheme, campaigns=campaigns)
+    source_scheme = next(row["scheme"] for row in campaigns if row["id"] == parameters["campaignId"])
     data = api.request(
         "/v2/tariffs/calculate",
         tokens.get_api_key(store),
@@ -160,10 +165,10 @@ def quote(store, article, scheme, *, scenario=None, persist=True):
     rows = data.get("offers") or []
     if len(rows) != 1:
         raise ValueError("Маркет вернул неполный расчёт тарифа.")
-    result = parse_quote(values, scheme, parameters, rows[0])
+    result = parse_quote(values, source_scheme, parameters, rows[0])
     result["components"]["commission_percent"] = parse_fee(offer, rows[0])["commission_percent"]
     if persist:
-        repository.save_source(store, article, "tariff:" + scheme, result)
+        repository.save_source(store, article, "tariff:" + shared.SCHEME, result)
     return result
 
 
@@ -177,7 +182,7 @@ def refresh_store(store):
     campaigns, _ = store_campaigns(store, tokens.get_api_key(store))
     cache, groups, errors = context(store), defaultdict(list), {}
     for article in sorted(active_articles(store)):
-        for scheme in ("FBY", "FBS"):
+        for scheme in (shared.SCHEME,):
             values = effective(store, article, scheme, state_cache=cache)["values"]
             try:
                 parameters, offer = quote_request(store, values, scheme, campaigns=campaigns)
@@ -200,7 +205,10 @@ def refresh_store(store):
                 raise ValueError("Маркет вернул неполный пакет тарифов.")
             for (article, scheme, values, _offer), row in zip(batch, rows, strict=True):
                 try:
-                    result = parse_quote(values, scheme, parameters, row)
+                    source_scheme = next(
+                        item["scheme"] for item in campaigns if item["id"] == parameters["campaignId"]
+                    )
+                    result = parse_quote(values, source_scheme, parameters, row)
                     repository.save_source(store, article, "tariff:" + scheme, result)
                     count += 1
                 except ValueError as error:

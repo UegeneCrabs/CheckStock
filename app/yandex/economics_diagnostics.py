@@ -46,9 +46,8 @@ def current_issues(state, daily):
         issues.append("Выкуп равен 0%: прибыль на выкупленную единицу не определена.")
     if daily["spend"] is not None and daily["spend"] > 0 and daily["orders"] == 0:
         issues.append(
-            "За сегодня есть расходы на рекламу, но заказов по модели "
-            + state["scheme"]
-            + " нет: нельзя рассчитать рекламу на одну выкупленную штуку."
+            "За сегодня есть расходы на рекламу, но заказов нет: "
+            "нельзя рассчитать рекламу на одну выкупленную штуку."
         )
     issues = list(dict.fromkeys(issues))
     if result["margin"] is None and not issues:

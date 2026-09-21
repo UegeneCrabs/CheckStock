@@ -6,6 +6,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.repositories import yandex_source_values, yandex_storefront
+from app.yandex import economics_shared as shared
 from app.yandex.category_commissions import SOURCE as CATEGORY_COMMISSION_SOURCE
 from app.yandex.category_commissions import commission_value
 from app.yandex.economics_advertising import apply_calculator_drr, product_drr, weekly_history
@@ -37,13 +38,12 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
     """Current quotes must match; planning can keep the last compatible saved tariff."""
     cache = state_cache if state_cache is not None else context(store)
     saved_sources = cache["sources"]
-    seed = saved_sources.get((article, "initial:" + scheme), {})
+    seed = saved_sources.get((article, "initial:FBY"), {}) or saved_sources.get((article, "initial:FBS"), {})
     catalog = saved_sources.get((article, "catalog"), {})
     category = saved_sources.get((article, "category"), {})
     category_values = category.get("values", {})
-    commission = saved_sources.get((article, CATEGORY_COMMISSION_SOURCE + scheme), {}).get("values", {})
-    cabinet = cache["settings"].get(("", scheme), {"revision": 0, "values": {}})
-    product = cache["settings"].get((article, scheme), {"revision": 0, "values": {}})
+    cabinet = shared.settings(cache["settings"], "")
+    product = shared.settings(cache["settings"], article)
     source_1c = cache["source_1c"].get(article, {})
     base = {
         "purchase_price": source_1c.get("purchase_price"),
@@ -78,21 +78,18 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
             3, ("API: категория", {key: category_values.get(key) for key in ("category_id", "category_name")})
         )
     values, _ = resolve(*layers, ("Сценарий", scenario or {}))
+    tariff, tariff_valid, estimated_tariff = common_tariff(
+        saved_sources, article, values, estimate=estimate_tariff
+    )
+    tariff_data = tariff.get("values", {})
+    source_scheme = tariff_data.get("signature", {}).get("scheme", "FBY")
+    commission = saved_sources.get((article, CATEGORY_COMMISSION_SOURCE + source_scheme), {}).get(
+        "values", {}
+    )
     reference_percent = commission_value(commission, values)
     if reference_percent is not None:
         layers.insert(-2, ("API: комиссия категории за неделю", {"commission_percent": reference_percent}))
-    tariff = saved_sources.get((article, "tariff:" + scheme), {})
-    tariff_data = tariff.get("values", {})
-
     tariff_fresh = yandex_storefront.fresh(tariff.get("updated_at"))
-    tariff_valid = tariff_data.get("signature") == tariff_signature(values, scheme) and tariff_fresh
-    estimated_tariff = (
-        estimate_tariff
-        and not tariff_valid
-        and isinstance(tariff_data.get("signature"), dict)
-        and {key: value for key, value in tariff_data["signature"].items() if key != "seller_price"}
-        == {key: value for key, value in tariff_signature(values, scheme).items() if key != "seller_price"}
-    )
     if tariff_valid or estimated_tariff:
         origin = "Последний загруженный тариф API" if estimated_tariff else "API: тариф"
         components = tariff_data.get("components", {})
@@ -143,6 +140,7 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
         else {},
         "category_commission": {**commission, "valid": reference_percent is not None},
         "tariff": {
+            "source_scheme": source_scheme,
             "valid": tariff_valid,
             "approximate": bool(estimated_tariff),
             "stale": bool(estimated_tariff and not tariff_fresh),
@@ -188,6 +186,32 @@ def checked_today(timestamp, today):
         return False
 
 
+def common_tariff(sources, article, values, *, estimate=False, today=None):
+    """Reuse one compatible quote for both views, retaining its actual API model."""
+    candidates = [
+        sources.get((article, "tariff:" + scheme), {}) for scheme in (shared.SCHEME, *shared.SOURCE_SCHEMES)
+    ]
+    for approximate in (False, True) if estimate else (False,):
+        for record in candidates:
+            signature = record.get("values", {}).get("signature")
+            if not isinstance(signature, dict) or signature.get("scheme") not in shared.SOURCE_SCHEMES:
+                continue
+            expected = tariff_signature(values, signature["scheme"])
+            if approximate:
+                matches = {k: v for k, v in signature.items() if k != "seller_price"} == {
+                    k: v for k, v in expected.items() if k != "seller_price"
+                }
+            else:
+                matches = signature == expected and (
+                    checked_today(record.get("updated_at"), today)
+                    if today
+                    else yandex_storefront.fresh(record.get("updated_at"))
+                )
+            if matches:
+                return record, not approximate, approximate
+    return {}, False, False
+
+
 def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=None):
     """Today's metrics and standing costs, with explicit price estimates when needed.
 
@@ -217,11 +241,8 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
     values["advertising_mode"] = "actual"
     origins["advertising_mode"] = "Реклама и заказы за сегодня"
 
-    tariff = cache["sources"].get((article, "tariff:" + scheme), {})
+    tariff, tariff_valid, _ = common_tariff(cache["sources"], article, values, today=today)
     quote = tariff.get("values", {})
-    tariff_valid = checked_today(tariff.get("updated_at"), today) and quote.get(
-        "signature"
-    ) == tariff_signature(values, scheme)
     state["tariff"]["valid"] = tariff_valid
     reference_percent = commission_value(state["category_commission"], values)
     state["category_commission"]["valid"] = reference_percent is not None
@@ -240,12 +261,9 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
 
 def allocate_today(ads, orders, article, scheme):
     rows = [row for row in orders if row["article"] == article]
-    if any("schemes" not in row for row in rows):
-        return None, None
     spend = sum(float(row.get("spend") or 0) for row in ads if row["article"] == article)
     total = sum(int(row.get("orders_count") or 0) for row in rows)
-    quantity = sum(int(row.get("schemes", {}).get(scheme, {}).get("orders_count", 0)) for row in rows)
-    return (spend * quantity / total if total else spend if scheme == "FBY" else 0), quantity
+    return spend, total
 
 
 def current_metrics(store, article, today, scheme="FBY", *, history=None):
@@ -261,9 +279,6 @@ def current_metrics(store, article, today, scheme="FBY", *, history=None):
     orders_known = key in order_days
     if not orders_known:
         issues.append("Не загружены заказы за сегодня (" + key + ", МСК).")
-    elif any("schemes" not in row for row in orders if row["article"] == article):
-        issues.append("В заказах за сегодня нет разбивки по FBY/FBS.")
-        orders_known = False
     spend, count = allocate_today(ads, orders, article, scheme) if orders_known else (None, None)
     if key not in ads_days:
         spend = None
@@ -307,6 +322,7 @@ def detail(
     config.update(
         {
             "scheme": scheme,
+            "shared_schemes": True,
             "advertising_spend": spend,
             "orders_count": orders,
             "advertising_day": today.isoformat(),
@@ -323,7 +339,7 @@ def detail(
     if include_history:
         start, end = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
         rows = repository.history(store, start, end)
-        daily = [row["data"] for row in rows if row["article"] == article and row["scheme"] == scheme]
+        daily = shared.history(rows, article)
         config["period"] = aggregate(daily, metrics.days_between(start, end))
         config["history"] = daily
     return config
@@ -384,9 +400,7 @@ def attach(products, start, end, today, scheme="FBY"):
                 "issues": config["current_issues"],
             }
         )
-        daily = [
-            row["data"] for row in histories[store] if row["article"] == article and row["scheme"] == scheme
-        ]
+        daily = shared.history(histories[store], article)
         period = aggregate(daily, expected)
         product["economics_7d"].update(
             {
@@ -416,7 +430,7 @@ def capture_today(stores, *, today=None, only_article=None):
         for article in active:
             if only_article is not None and article != only_article:
                 continue
-            for scheme in ("FBY", "FBS"):
+            for scheme in (shared.SCHEME,):
                 state = current_inputs(store, article, scheme, today=today, state_cache=cache)
                 result = calculate(state["values"], without_advertising=True)
                 if result["margin"] is not None:
@@ -440,7 +454,8 @@ def capture_today(stores, *, today=None, only_article=None):
 def close_days(stores, *, today=None):
     """Finalize only days with saved historical inputs and complete daily metrics.
 
-    New daily records preserve model counts. Legacy mixed-model days are not guessed. SKU advertising is shared between models, allocated by ordered quantity."""
+    Common snapshots use total orders and ads once. Legacy snapshots retain
+    their original model allocation and closed rows remain immutable."""
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     completed = 0
     for store in stores:
@@ -470,7 +485,7 @@ def close_days(stores, *, today=None):
             values = state["values"]
             scheme_rows = [row for row in orders if row["article"] == article]
 
-            if any("schemes" not in row for row in scheme_rows):
+            if scheme != shared.SCHEME and any("schemes" not in row for row in scheme_rows):
                 continue
             count = sum(
                 int(row.get("schemes", {}).get(scheme, {}).get("orders_count", 0)) for row in scheme_rows
@@ -478,7 +493,9 @@ def close_days(stores, *, today=None):
             total = sum(int(row.get("orders_count") or 0) for row in scheme_rows)
             spend = sum(float(row.get("spend") or 0) for row in ads if row["article"] == article)
 
-            if total:
+            if scheme == shared.SCHEME:
+                count = total
+            elif total:
                 spend = spend * count / total
             elif scheme != "FBY":
                 spend = 0

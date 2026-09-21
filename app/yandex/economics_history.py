@@ -8,6 +8,7 @@ from app.repositories import catalog, stock_history
 from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.yandex import economics
+from app.yandex import economics_shared as shared
 from app.yandex.economics_calculation import calculate
 
 
@@ -15,13 +16,12 @@ def product_history(store, article, scheme, *, today=None):
     """Read local history only; opening the chart never loads APIs or saves snapshots."""
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     start, end = (today - timedelta(days=20)).isoformat(), today.isoformat()
-    history = [
-        row["data"]
-        for row in repository.history(
+    history = shared.history(
+        repository.history(
             store, (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat()
-        )
-        if row["article"] == article and row["scheme"] == scheme
-    ]
+        ),
+        article,
+    )
     closed = {row["day"]: row for row in history}
     ads, ads_days = metrics.get_history(store, "advertising", start, end)
     orders, order_days = metrics.get_history(store, "orders", start, end)
@@ -46,7 +46,9 @@ def product_history(store, article, scheme, *, today=None):
     chart = []
     for day in metrics.days_between(start, end):
         saved = closed.get(day, {})
-        snapshot = cache["sources"].get((article, "day-input:" + day + ":" + scheme), {}).get("values", {})
+        snapshot = (
+            cache["sources"].get((article, "day-input:" + day + ":" + shared.SCHEME), {}).get("values", {})
+        )
         if snapshot.get("basis") not in {"today_prices", "today_observations"}:
             snapshot = {}
         baseline = live if day == end else snapshot
@@ -56,25 +58,13 @@ def product_history(store, article, scheme, *, today=None):
             buyout = current["values"].get("buyout_percent")
 
         order = orders.get(day, {})
-        known_orders = day in order_days and (not order or "schemes" in order)
-        scheme_orders = order.get("schemes", {}).get(scheme, {})
-        count = int(scheme_orders.get("orders_count", 0)) if known_orders else None
-        amount = float(scheme_orders.get("orders_amount", 0)) if known_orders else None
+        known_orders = day in order_days
+        count = int(order.get("orders_count", 0)) if known_orders else None
+        amount = float(order.get("orders_amount", 0)) if known_orders else None
         spend = None
         if day in ads_days:
             total_spend = float(ads.get(day, {}).get("spend", 0))
-            if known_orders:
-                total_orders = int(order.get("orders_count", 0))
-                # The API reports ads per offer, so use the same model allocation as daily profit.
-                spend = (
-                    total_spend * count / total_orders
-                    if total_orders
-                    else total_spend
-                    if scheme == "FBY"
-                    else 0.0
-                )
-            elif total_spend == 0:
-                spend = 0.0
+            spend = total_spend
 
         profit = None
         if saved:

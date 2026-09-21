@@ -266,7 +266,7 @@
                                 parameter('Баркод', product.barcode, '', '', true) +
                                 parameter('Магазин', product.store_name) +
                                 parameter('Закупочная стоимость', values.purchase_price, ' ₽') +
-                                parameter('Модель работы', scheme),
+                                parameter('Модель работы', 'FBY / FBS — общий расчёт'),
                         ) +
                         parameterGroup(
                             'Комиссии и налоги',
@@ -358,7 +358,10 @@
                 container.querySelector('#ym-calculator-inputs').classList.toggle('is-expanded', expanded);
             };
             container.querySelector('[data-ym-scheme]').onchange = function (event) {
-                load(event.target.value);
+                scheme = event.target.value;
+                data.scheme = scheme;
+                renderParameters();
+                loadHistory();
             };
             container.querySelector('[data-ym-reset]').onclick = function () {
                 load(scheme);

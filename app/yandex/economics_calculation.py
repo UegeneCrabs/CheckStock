@@ -2,7 +2,7 @@
 
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
-VERSION = 8
+VERSION = 9
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
 REMOVED_FIELDS = {
     "tariff_extra",

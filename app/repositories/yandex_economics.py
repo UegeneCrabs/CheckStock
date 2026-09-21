@@ -14,6 +14,10 @@ def encode(value):
 
 
 def settings(store, article, scheme):
+    if scheme == "COMMON":
+        from app.yandex.economics_shared import settings as common_settings
+
+        return common_settings(all_settings(store), article)
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM yandex_economics_settings WHERE store_slug=? AND article=? AND scheme=?",
@@ -42,6 +46,18 @@ def save_settings(store, article, scheme, changes, revision, actor):
         if old_revision != revision:
             raise ValueError("Параметры уже изменены. Обновите карточку перед сохранением.")
         before = json.loads(row["payload_json"]) if row else {}
+        if row is None and scheme == "COMMON":
+            from app.yandex.economics_shared import settings as common_settings
+
+            legacy = conn.execute(
+                "SELECT * FROM yandex_economics_settings WHERE store_slug=? AND article=?",
+                (store, article),
+            ).fetchall()
+            records = {
+                (article, item["scheme"]): {**dict(item), "values": json.loads(item["payload_json"])}
+                for item in legacy
+            }
+            before = common_settings(records, article)["values"]
         after = {**before, **changes}
         after = {key: value for key, value in after.items() if value is not None}
         result = conn.execute(
@@ -74,7 +90,7 @@ def save_settings(store, article, scheme, changes, revision, actor):
             for key in ("company_commission_percent", "vat_percent", "usn_percent")
             if key in changes
         }
-        if not article and shared_changes:
+        if not article and shared_changes and scheme in {"FBY", "FBS"}:
             other_scheme = "FBS" if scheme == "FBY" else "FBY"
             other = conn.execute(
                 "SELECT revision,payload_json FROM yandex_economics_settings "
