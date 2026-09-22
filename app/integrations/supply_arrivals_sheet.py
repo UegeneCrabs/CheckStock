@@ -29,7 +29,9 @@ TEXT_COLUMNS = {
     "shipping": "Способ",
 }
 NUMBER_COLUMNS = {"volume": "Обьем", "weight": "Вес", "boxes": "Коробки"}
-ARRIVAL_COLUMN = "План даты прихода в МСК"
+# Both the displayed arrival date and its week use the actual Moscow arrival
+# date (column AL in the source register), without falling back to the plan.
+ARRIVAL_COLUMN = "Факт даты прихода в МСК"
 READ_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 
 
@@ -158,7 +160,7 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
             fields["arrival"] = parse_date(cell_value(cell(ARRIVAL_COLUMN)))
         except (ValueError, OverflowError):
             fields["arrival"] = None
-            warnings.append("План прихода: некорректная дата")
+            warnings.append(f"{ARRIVAL_COLUMN}: некорректная дата")
         for field, label in NUMBER_COLUMNS.items():
             # A literal zero is actual data. A broken carrier formula must not be
             # silently replaced by an estimate from the supplier.
