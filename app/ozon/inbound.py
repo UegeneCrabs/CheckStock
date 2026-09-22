@@ -52,11 +52,19 @@ def order_ids(client_id: str, key: str) -> list[str]:
             raise InboundSourceError("Ozon повторил страницу заявок. Предыдущие данные сохранены.")
         seen.update(ids)
         result.extend(ids)
-        if len(ids) < 100:
-            return result
-        next_cursor = str(data.get("last_id") or "")
-        if not next_cursor or next_cursor == cursor:
+        # A full final page can contain 100 IDs with an explicitly empty cursor.
+        # Conversely, a short page with a cursor must still be followed.
+        if "last_id" not in data:
+            if len(ids) < 100:
+                return result
             raise InboundSourceError("Ozon не вернул следующую страницу заявок.")
+        next_cursor = data["last_id"]
+        if not isinstance(next_cursor, str):
+            raise InboundSourceError("Ozon вернул некорректный указатель страницы заявок.")
+        if not next_cursor:
+            return result
+        if not ids or next_cursor == cursor:
+            raise InboundSourceError("Ozon повторил указатель страницы заявок. Предыдущие данные сохранены.")
         cursor = next_cursor
     raise InboundSourceError("Список заявок Ozon получен не полностью.")
 
