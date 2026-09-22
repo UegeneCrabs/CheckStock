@@ -42,13 +42,13 @@ def refresh_catalog(store):
     return len(parsed)
 
 
-def refresh_seller_prices(store):
+def refresh_seller_prices(store, *, articles=None):
     from app.repositories.yandex_assortment import active_articles
     from app.yandex.storefront_prices import number
 
     key = tokens.get_api_key(store)
     business = resolve_business_id(store, key)
-    articles = sorted(active_articles(store))
+    articles = sorted(active_articles(store) if articles is None else articles)
     known = yandex_storefront.get_prices(store)
     count = 0
     for start in range(0, len(articles), 200):
@@ -172,14 +172,19 @@ def quote(store, article, scheme, *, scenario=None, persist=True):
 
 def refresh_store(store):
     """Batch quotes (API preserves request order), updating only source values."""
-    from app.repositories.yandex_assortment import active_articles
+    from app.repositories.yandex_assortment import active_articles, storefront_products
     from app.yandex.category_commissions import store_campaigns
 
     refresh_catalog(store)
-    refresh_seller_prices(store)
+    active = active_articles(store)
+    articles = active & {article for _, article in storefront_products((store,))}
+    selection = {"selected": len(articles), "skipped_inactive": len(active - articles)}
+    if not articles:
+        return {"updated": 0, "missing": {}, **selection}
+    refresh_seller_prices(store, articles=articles)
     campaigns, _ = store_campaigns(store, tokens.get_api_key(store))
     cache, groups, errors = context(store), defaultdict(list), {}
-    for article in sorted(active_articles(store)):
+    for article in sorted(articles):
         for scheme in (shared.SCHEME,):
             values = effective(store, article, scheme, state_cache=cache)["values"]
             try:
@@ -211,4 +216,4 @@ def refresh_store(store):
                     count += 1
                 except ValueError as error:
                     errors[article + ":" + scheme] = str(error)
-    return {"updated": count, "missing": errors}
+    return {"updated": count, "missing": errors, **selection}
