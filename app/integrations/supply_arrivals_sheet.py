@@ -107,8 +107,12 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
             for source in ("поставщик", "перевозчик")
         ),
     }
+    best_keys = set()
+    required_keys = {header_key(label) for label in required}
     for header_index, row in enumerate(rows[:20]):
         keys = [header_key(str(cell.get("formattedValue", ""))) for cell in row.get("values", [])]
+        if len(required_keys & set(keys)) > len(required_keys & best_keys):
+            best_keys = set(keys)
         if all(header_key(label) in keys for label in required):
             if any(keys.count(header_key(label)) != 1 for label in required):
                 raise SupplySheetError("В реестре повторяются обязательные заголовки колонок")
@@ -116,6 +120,9 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
             first_data_row = header_index + 1
             break
     else:
+        if len(required_keys & best_keys) >= 2:
+            missing = ", ".join(sorted(label for label in required if header_key(label) not in best_keys))
+            raise SupplySheetError(f"В заголовке реестра поставок не найдены колонки: {missing}.")
         raise SupplySheetError(
             "В первых 20 строках не найдены заголовки реестра поставок. Проверьте структуру листа."
         )
