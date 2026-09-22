@@ -176,15 +176,15 @@ def _resolve_customer_price_with_spp(
     retail_price: object,
     reliable_price: dict | None,
 ) -> tuple[float | None, bool]:
-    """Protect the buyer price when cards/v4 returns the seller price instead."""
+    """Use the last SPP ratio if the storefront omits the price or returns the seller price."""
 
     storefront = _number(storefront_price)
     retail = _number(retail_price)
-    if storefront is None or retail is None or retail <= 0:
+    if retail is None or retail <= 0:
         return storefront, False
 
     same_price_tolerance = max(1.0, retail * 0.005)
-    if abs(storefront - retail) > same_price_tolerance:
+    if storefront is not None and abs(storefront - retail) > same_price_tolerance:
         return storefront, False
 
     reference_retail = _number((reliable_price or {}).get("retail_price"))
@@ -194,7 +194,8 @@ def _resolve_customer_price_with_spp(
         or reference_retail <= 0
         or reference_customer is None
         or reference_customer <= 0
-        or reference_customer > reference_retail * 0.995
+        or reference_customer > reference_retail
+        or (storefront is not None and reference_customer > reference_retail * 0.995)
     ):
         return storefront, False
 
@@ -961,6 +962,8 @@ def _sync_store(
         len(missing_targets),
     )
     if affected_nm_ids:
+        if storefront_report.get("errors"):
+            errors.append("Причина сбоя витрины WB: " + str(storefront_report["errors"][0])[:500])
         errors.append(
             f"витрина WB: нет актуальной цены для {len(affected_nm_ids)} товаров "
             f"(не возвращены: {len(omitted_nm_ids & affected_nm_ids)}, без цены: "
@@ -994,7 +997,7 @@ def _sync_store(
         storefront_price, spp_estimated = _resolve_customer_price_with_spp(
             target.get("customer_price_with_spp"),
             retail_price,
-            reliable_spp.get(article),
+            reliable_spp.get(article) or existing,
         )
         if storefront_price is None:
             unresolved_rows += 1
@@ -1052,7 +1055,7 @@ def _sync_store(
         )
 
     rows_saved = db.upsert_unit_economics_1c_daily_prices(snapshots)
-    if required_unresolved_rows or not retail_ok or (not load_retail_prices and affected_nm_ids):
+    if required_unresolved_rows or not retail_ok or affected_nm_ids:
         status = "partial" if rows_saved else "error"
     elif load_retail_prices and not seller_report.get("ok"):
         status = "fallback"

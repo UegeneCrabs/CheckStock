@@ -86,6 +86,17 @@ class WBApiError(Exception):
         return self.detail or self.title or "неизвестная ошибка соединения"
 
 
+class WBStorefrontError(WBApiError):
+    @property
+    def friendly(self) -> str:
+        if self.status in {401, 403}:
+            return (
+                f"витрина WB отклонила публичный запрос (HTTP {self.status}); "
+                "токен продавца в этом запросе не используется"
+            )
+        return super().friendly
+
+
 def _parse_error_body(raw: str) -> tuple[str, str]:
     try:
         payload = json.loads(raw)
@@ -253,7 +264,7 @@ def _public_request(url: str, params: dict | None = None):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"
         ),
     }
-    retryable_statuses = {403, 429, 498}
+    retryable_statuses = {429, 498}
     for attempt in range(1, REQUEST_ATTEMPTS + 1):
         req = urllib.request.Request(url, headers=headers, method="GET")
         try:
@@ -275,7 +286,7 @@ def _public_request(url: str, params: dict | None = None):
                 )
                 time.sleep(wait)
                 continue
-            raise WBApiError(error.code, title, detail) from error
+            raise WBStorefrontError(error.code, title, detail) from error
         except TimeoutError as error:
             raise WBApiError(
                 None, detail=f"витрина WB не ответила за {REQUEST_TIMEOUT}с (таймаут)"
@@ -896,6 +907,10 @@ def get_storefront_products(
                 time.monotonic() - started,
                 message,
             )
+            if isinstance(error, WBStorefrontError) and error.status in {401, 403}:
+                # Repeating every remaining batch cannot resolve a denied public endpoint.
+                failed_nm_ids.update(unique[start:])
+                break
             continue
 
         returned: set[str] = set()
