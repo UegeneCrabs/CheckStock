@@ -817,7 +817,7 @@ def _catalog_nm_ids(store_slugs: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(nm_ids, key=int))
 
 
-def _inactive_wallet_nm_ids(store_slug: str, snapshot_day: date, products: dict[str, dict]) -> set[str]:
+def _inactive_storefront_nm_ids(store_slug: str, snapshot_day: date, products: dict[str, dict]) -> set[str]:
     """Allow missing buyer prices only with a covered week and no WB stock/turnover."""
     start = snapshot_day - timedelta(days=7)
     history = db.get_unit_economics_1c_funnel_daily_order_rows(
@@ -939,8 +939,8 @@ def _sync_store(
     failed_nm_ids = {str(value) for value in storefront_report.get("failed_nm_ids") or []}
     affected_nm_ids = missing_nm_ids | (failed_nm_ids & {str(target["nm_id"]) for target in targets})
     ignored_inactive_nm_ids = set()
-    if not load_retail_prices and affected_nm_ids:
-        ignored_inactive_nm_ids = affected_nm_ids & _inactive_wallet_nm_ids(
+    if affected_nm_ids:
+        ignored_inactive_nm_ids = affected_nm_ids & _inactive_storefront_nm_ids(
             store_slug, snapshot_day, returned_products
         )
         # Missing cards in a successful response are normal; failed HTTP batches are not.
@@ -971,7 +971,13 @@ def _sync_store(
             f"{len(out_of_stock_nm_ids & affected_nm_ids)})"
         )
     if load_retail_prices and retail_missing_targets and seller_report.get("ok"):
-        errors.append(f"цена без СПП: нет значения для {len(retail_missing_targets)} товаров")
+        examples = ", ".join(str(target["article"]) for target in retail_missing_targets[:5])
+        if len(retail_missing_targets) > 5:
+            examples += ", …"
+        errors.append(
+            f"цена без СПП: нет значения для {len(retail_missing_targets)} товаров "
+            f"(артикулы: {examples})"
+        )
 
     orders_ok = storefront_ok
     if missing_targets:
