@@ -869,6 +869,7 @@ class _StorefrontSessionRecovery:
                     str(params["nm"]).split(";", 1)[0],
                     rejected_fingerprint=error.session_fingerprint,
                     force=False,
+                    verification_params=params,
                 )
             except storefront_session.StorefrontSessionError as refresh_error:
                 raise WBStorefrontSessionError(None, detail=str(refresh_error)) from None

@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from contextlib import contextmanager, suppress
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from app.config import BASE_DIR, settings
@@ -21,6 +22,10 @@ from app.wb import storefront_session
 logger = logging.getLogger(__name__)
 LOCK_WAIT_SECONDS = 150
 FAILURE_COOLDOWN_SECONDS = 120
+
+
+class _SessionRejectedError(RuntimeError):
+    """WB rejected the cookie, so reopening a cached page is not a renewal."""
 
 
 def browser_path(configured: Path | None) -> Path:
@@ -48,8 +53,8 @@ def browser_path(configured: Path | None) -> Path:
     )
 
 
-def verify_session(data: dict, article: str) -> None:
-    params = {
+def verify_session(data: dict, article: str, *, params: dict | None = None) -> None:
+    params = params or {
         "appType": 1,
         "curr": "rub",
         "dest": settings.wb_storefront_dest,
@@ -71,6 +76,8 @@ def verify_session(data: dict, article: str) -> None:
     except urllib.error.HTTPError as error:
         status = error.code
         error.close()
+        if status in {401, 403, 498}:
+            raise _SessionRejectedError(f"WB не принял подготовленный сеанс (HTTP {status}).") from None
         raise RuntimeError(f"WB не принял подготовленный сеанс (HTTP {status}).") from None
     except (OSError, ValueError):
         raise RuntimeError("Не удалось проверить ответ WB. Прежний сеанс сохранён.") from None
@@ -79,7 +86,75 @@ def verify_session(data: dict, article: str) -> None:
         raise RuntimeError("WB не вернул корректный ответ карточек; новый сеанс не сохранён.")
 
 
-def _prepare_browser(article: str, executable_path: Path | None, wait_seconds: int) -> Path:
+def _verified_browser_session(
+    context, page, article: str, wait_seconds: int, verification_params: dict | None = None
+) -> dict:
+    from playwright.sync_api import Error as BrowserError
+    from playwright.sync_api import TimeoutError as BrowserTimeoutError
+
+    deadline = time.monotonic() + wait_seconds
+    rejected_token = None
+    device_id = str(uuid4())
+    while time.monotonic() < deadline:
+        try:
+            body = page.locator("body").inner_text()
+            resources = page.evaluate("performance.getEntriesByType('resource').map(entry => entry.name)")
+        except BrowserError as error:
+            if not isinstance(error, BrowserTimeoutError) and "Execution context was destroyed" not in str(
+                error
+            ):
+                raise
+            # WB can navigate again while its automatic check finishes.
+            page.wait_for_timeout(1000)
+            continue
+        if "Возможно, нужно выключить VPN" in body:
+            raise RuntimeError("WB отклонил подключение браузера и предлагает отключить VPN.")
+        version = next(
+            (match[1] for url in resources if (match := re.search(r"/([\d.]+)-host-remoteEntry\.js", url))),
+            None,
+        )
+        cookie = next(
+            (
+                item
+                for item in context.cookies("https://www.wildberries.ru")
+                if item["name"] == "x_wbaas_token"
+            ),
+            None,
+        )
+        if (
+            version
+            and cookie
+            and cookie["value"] != rejected_token
+            and "Подозрительная активность" not in body
+        ):
+            data = {
+                "token": cookie["value"],
+                "expires_at": cookie["expires"],
+                "user_agent": page.evaluate("navigator.userAgent"),
+                "spa_version": version,
+                "device_id": device_id,
+                "prepared_at": time.time(),
+            }
+            try:
+                verify_session(data, article, params=verification_params)
+            except _SessionRejectedError:
+                if rejected_token is not None:
+                    raise
+                # A restored browser profile can load the SPA with a rejected cookie.
+                # Clear only that WB cookie and wait for a genuinely new, verified one.
+                rejected_token = cookie["value"]
+                logger.info("WB отклонил сохранённую cookie; запрашиваем новый анонимный сеанс")
+                context.clear_cookies(name="x_wbaas_token", domain=cookie["domain"], path=cookie["path"])
+                page.reload(wait_until="domcontentloaded", timeout=20000)
+                continue
+            return data
+        page.wait_for_timeout(1000)
+    raise RuntimeError("WB не завершил проверку нового сеанса браузера. Сеанс не обновлён.")
+
+
+def _prepare_browser(
+    article: str, executable_path: Path | None, wait_seconds: int, verification_params: dict | None = None
+) -> Path:
     try:
         import playwright.sync_api  # noqa: F401 - Check the optional dependency before starting Xvfb.
     except ImportError:
@@ -89,18 +164,42 @@ def _prepare_browser(article: str, executable_path: Path | None, wait_seconds: i
         from pyvirtualdisplay import Display
 
         with Display(visible=False, size=(1440, 1000), manage_global_env=False) as display:
-            return _prepare_browser_in_environment(article, executable_path, wait_seconds, display.env())
-    return _prepare_browser_in_environment(article, executable_path, wait_seconds, os.environ.copy())
+            return _prepare_browser_in_environment(
+                article, executable_path, wait_seconds, display.env(), verification_params
+            )
+    return _prepare_browser_in_environment(
+        article, executable_path, wait_seconds, os.environ.copy(), verification_params
+    )
 
 
 def _prepare_browser_in_environment(
-    article: str, executable_path: Path | None, wait_seconds: int, environment: dict[str, str]
+    article: str,
+    executable_path: Path | None,
+    wait_seconds: int,
+    environment: dict[str, str],
+    verification_params: dict | None = None,
+) -> Path:
+    directory = BASE_DIR / "data/wb-storefront"
+    directory.mkdir(parents=True, exist_ok=True)
+    # Persist only the verified API session. Restoring the browser's cached state
+    # can bring back the rejected cookie without performing a fresh WB check.
+    with TemporaryDirectory(prefix="session-", dir=directory, ignore_cleanup_errors=True) as profile:
+        return _prepare_browser_in_profile(
+            article, executable_path, wait_seconds, environment, Path(profile), verification_params
+        )
+
+
+def _prepare_browser_in_profile(
+    article: str,
+    executable_path: Path | None,
+    wait_seconds: int,
+    environment: dict[str, str],
+    profile: Path,
+    verification_params: dict | None = None,
 ) -> Path:
     from playwright.sync_api import sync_playwright
 
     executable = browser_path(executable_path)
-    profile = BASE_DIR / "data/wb-storefront/browser-profile"
-    profile.mkdir(parents=True, exist_ok=True)
     with socket.socket() as reserved:
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
@@ -133,53 +232,21 @@ def _prepare_browser_in_environment(
             try:
                 browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=15000)
                 context = browser.contexts[0]
-                page = next((tab for tab in context.pages if "wildberries.ru/catalog/" in tab.url), None)
+                page = next(
+                    (
+                        tab
+                        for tab in reversed(context.pages)
+                        if f"wildberries.ru/catalog/{article}/" in tab.url
+                    ),
+                    None,
+                )
                 if page is None:
                     raise RuntimeError("Карточка WB не открылась в тестовом браузере.")
+                for previous_page in context.pages:
+                    if previous_page != page:
+                        previous_page.close()
                 page.set_default_timeout(5000)
-                deadline = time.monotonic() + wait_seconds
-                while time.monotonic() < deadline:
-                    body = page.locator("body").inner_text()
-                    if "Возможно, нужно выключить VPN" in body:
-                        raise RuntimeError("WB отклонил подключение браузера и предлагает отключить VPN.")
-                    resources = page.evaluate(
-                        "performance.getEntriesByType('resource').map(entry => entry.name)"
-                    )
-                    if "Подозрительная активность" not in body and any(
-                        re.search(r"/([\d.]+)-host-remoteEntry\.js", url) for url in resources
-                    ):
-                        break
-                    page.wait_for_timeout(1000)
-                else:
-                    raise RuntimeError("WB не завершил проверку браузера. Сеанс не обновлён.")
-                resources = page.evaluate("performance.getEntriesByType('resource').map(entry => entry.name)")
-                version = next(
-                    (
-                        match[1]
-                        for url in resources
-                        if (match := re.search(r"/([\d.]+)-host-remoteEntry\.js", url))
-                    ),
-                    None,
-                )
-                cookie = next(
-                    (
-                        item
-                        for item in context.cookies("https://www.wildberries.ru")
-                        if item["name"] == "x_wbaas_token"
-                    ),
-                    None,
-                )
-                if not version or not cookie:
-                    raise RuntimeError("Не удалось получить версию витрины или служебный сеанс WB.")
-                data = {
-                    "token": cookie["value"],
-                    "expires_at": cookie["expires"],
-                    "user_agent": page.evaluate("navigator.userAgent"),
-                    "spa_version": version,
-                    "device_id": str(uuid4()),
-                    "prepared_at": time.time(),
-                }
-                verify_session(data, article)
+                data = _verified_browser_session(context, page, article, wait_seconds, verification_params)
                 return storefront_session.save_session(data)
             finally:
                 if browser:
@@ -222,6 +289,7 @@ def prepare(
     wait_seconds: int = 90,
     rejected_fingerprint: str | None = None,
     force: bool = True,
+    verification_params: dict | None = None,
 ) -> Path:
     """Serialize refreshes and reuse a session another worker has just prepared."""
     if not article.isascii() or not article.isdigit() or int(article) <= 0:
@@ -248,12 +316,13 @@ def prepare(
                 )
         logger.info("Обновляем анонимный сеанс WB")
         try:
-            path = _prepare_browser(article, executable_path, wait_seconds)
+            path = _prepare_browser(article, executable_path, wait_seconds, verification_params)
         except Exception as error:
             # Browser exceptions can include private request headers; don't expose them.
             message = (
                 str(error)
-                if type(error) in {RuntimeError, storefront_session.StorefrontSessionError}
+                if type(error)
+                in {RuntimeError, _SessionRejectedError, storefront_session.StorefrontSessionError}
                 else type(error).__name__
             )
             with suppress(OSError):
