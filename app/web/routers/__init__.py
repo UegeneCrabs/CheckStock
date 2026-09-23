@@ -13,6 +13,7 @@ from app.web.routers import (
     target_prices,
     unit_economics,
     yandex_economics,
+    yandex_prices,
 )
 
 agent_analytics.router.include_router(agent_full.router)
@@ -31,6 +32,7 @@ ROUTERS = (
     google_export.router,
     integrations.router,
     yandex_economics.router,
+    yandex_prices.router,
 )
 
 __all__ = ("ROUTERS",)
