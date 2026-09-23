@@ -8,13 +8,14 @@ from app.access.sections import (
     access_level,
     access_limit,
 )
-from app.dto.identity import AccessProfile, Role, SectionAccessLevel, User
+from app.dto.identity import AccessProfile, Role, SectionAccessLevel, SectionName, User
 
 LEVEL_LABELS = {
     SectionAccessLevel.NONE: "Нет доступа",
     SectionAccessLevel.READ: "Просмотр",
     SectionAccessLevel.WRITE: "Просмотр и изменение",
 }
+SCHEDULE_LEVEL_LABELS = {**LEVEL_LABELS, SectionAccessLevel.WRITE: "Просмотр и обновление"}
 PROFILE_DESCRIPTIONS = {
     None: "Вы сами задаёте права каждой вкладки ниже. Рабочую область ограничивают выбранные кабинеты и маркетплейсы.",
     AccessProfile.MARKETPLACE_MANAGER: "Одна или несколько площадок. Остатки, приёмка, перемещения и отгрузки. Юнит-экономика и финансовые отчёты закрыты.",
@@ -30,6 +31,7 @@ def render_section_fields(user: User, editable: bool) -> str:
     for title, sections in SECTION_GROUPS:
         rows = []
         for section in sections:
+            labels = SCHEDULE_LEVEL_LABELS if section is SectionName.STOCK_ARRIVALS else LEVEL_LABELS
             level = access_level(user, section)
             limit = access_limit(user, section)
             configured = user.section_access.get(section)
@@ -40,11 +42,11 @@ def render_section_fields(user: User, editable: bool) -> str:
                     }
                 }
             )
-            default_label = LEVEL_LABELS[access_level(defaults, section)]
+            default_label = labels[access_level(defaults, section)]
             options = [
                 f'<option value="" title="{default_label}"{" selected" if configured is None else ""}>По умолчанию</option>'
             ]
-            for value, label in LEVEL_LABELS.items():
+            for value, label in labels.items():
                 allowed = (
                     value is SectionAccessLevel.NONE
                     or value is limit
@@ -70,7 +72,7 @@ def render_section_fields(user: User, editable: bool) -> str:
             rows.append(
                 f'<div class="ad-permission-row" data-permission-row data-permission-level="{level.value}">'
                 f"<div><strong>{html.escape(SECTION_LABELS[section])}</strong><p>{html.escape(description)}</p></div>"
-                f'<div class="ad-permission-control">{control}<small class="ad-permission-current">Сейчас: {LEVEL_LABELS[level]}</small></div></div>'
+                f'<div class="ad-permission-control">{control}<small class="ad-permission-current">Сейчас: {labels[level]}</small></div></div>'
             )
         opened = sum(access_level(user, section) is not SectionAccessLevel.NONE for section in sections)
         groups.append(

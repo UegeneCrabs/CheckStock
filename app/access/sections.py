@@ -11,23 +11,24 @@ from app.dto.identity import Role, SectionAccessLevel, SectionName, User, coerce
 S = SectionName
 L = SectionAccessLevel
 
+STOCK_SECTIONS = (
+    S.STOCK_BALANCES,
+    S.STOCK_TOTAL,
+    S.STOCK_SUPPLIES,
+    S.STOCK_INBOUND,
+    S.STOCK_RANDOMIZER,
+    S.STOCK_COST_REPORT,
+    S.STOCK_OPERATIONS,
+)
+UNIT_ECONOMICS_SECTIONS = (S.UNIT_ECONOMICS_WB, S.UNIT_ECONOMICS_OZON, S.UNIT_ECONOMICS_YANDEX)
+REPORT_SECTIONS = (S.REPORT_UNIT_PROFIT, S.REPORT_TARGET_PRICE)
 SECTION_GROUPS = (
-    (
-        "Сток",
-        (
-            S.STOCK_BALANCES,
-            S.STOCK_TOTAL,
-            S.STOCK_SUPPLIES,
-            S.STOCK_INBOUND,
-            S.STOCK_ARRIVALS,
-            S.STOCK_RANDOMIZER,
-            S.STOCK_COST_REPORT,
-            S.STOCK_OPERATIONS,
-        ),
-    ),
-    ("Юнит-экономика 1С", (S.UNIT_ECONOMICS_WB, S.UNIT_ECONOMICS_OZON, S.UNIT_ECONOMICS_YANDEX)),
-    ("Отчёты", (S.REPORT_UNIT_PROFIT, S.REPORT_TARGET_PRICE)),
-    ("Система", (S.AI_AGENTS, S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
+    ("Сток", STOCK_SECTIONS),
+    ("Расписание поставок", (S.STOCK_ARRIVALS,)),
+    ("Юнит-экономика 1С", UNIT_ECONOMICS_SECTIONS),
+    ("Отчёты", REPORT_SECTIONS),
+    ("ИИ-агенты", (S.AI_AGENTS,)),
+    ("Администрирование", (S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
 )
 SECTION_LABELS = {
     S.STOCK_BALANCES: "Остатки и склады",
@@ -78,7 +79,7 @@ SECTION_DESCRIPTIONS = {
     S.STOCK_TOTAL: "Общий остаток по кабинетам и выгрузка в Excel.",
     S.STOCK_SUPPLIES: "План поставок: просмотр, добавление и изменение ручных записей.",
     S.STOCK_INBOUND: "Входящие поставки маркетплейсов; изменение разрешает ручное обновление.",
-    S.STOCK_ARRIVALS: "Прибытие грузов из Google Таблицы; изменение разрешает ручное обновление.",
+    S.STOCK_ARRIVALS: "Расписание грузов по доступным кабинетам. Просмотр и обновление разрешает ручную загрузку из Google Таблицы.",
     S.STOCK_RANDOMIZER: "Сверка остатков WB; изменение разрешает выбирать новый артикул.",
     S.STOCK_COST_REPORT: "Движение товаров, закупочная стоимость и отметки перевода на FBS.",
     S.STOCK_OPERATIONS: "История движений внутри кабинета и выгрузка операций.",
@@ -93,7 +94,9 @@ SECTION_DESCRIPTIONS = {
     S.ADMIN_INTEGRATIONS: "Только суперадминистратор: ключи маркетплейсов и фоновые задания.",
 }
 SECTION_PARENTS = {
-    **{section: S.STOCK for section in SECTION_GROUPS[0][1] if section is not S.STOCK},
+    **{section: S.STOCK for section in STOCK_SECTIONS},
+    # Keep existing defaults when moving the schedule to its own navigation group.
+    S.STOCK_ARRIVALS: S.STOCK,
     **{
         section: S.UNIT_ECONOMICS_1C
         for section in (
@@ -197,7 +200,7 @@ def access_limit(user: User | None, section: SectionName) -> SectionAccessLevel:
         if marketplace and marketplace not in accessible_marketplaces(user):
             return L.NONE
         if user.access_profile is not None and (
-            section in SECTION_GROUPS[1][1] or section in SECTION_GROUPS[2][1]
+            section in UNIT_ECONOMICS_SECTIONS or section in REPORT_SECTIONS
         ):
             if not profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW):
                 return L.NONE
@@ -212,7 +215,10 @@ def default_access_level(user: User, section: SectionName) -> SectionAccessLevel
     if section is S.AI_AGENTS:
         return (
             L.WRITE
-            if any(has_access(user, item) for _, group in SECTION_GROUPS[:3] for item in group)
+            if any(
+                has_access(user, item)
+                for item in (*STOCK_SECTIONS, S.STOCK_ARRIVALS, *UNIT_ECONOMICS_SECTIONS, *REPORT_SECTIONS)
+            )
             else L.NONE
         )
     if section is S.ADMIN_USERS or section in SUPERADMIN_SECTIONS:

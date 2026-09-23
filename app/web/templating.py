@@ -6,9 +6,11 @@ from app import db
 from app.access import auth
 from app.access.access_control import accessible_marketplaces
 from app.access.sections import (
-    SECTION_GROUPS,
+    REPORT_SECTIONS,
     SECTION_LABELS,
     SECTION_PARENTS,
+    STOCK_SECTIONS,
+    UNIT_ECONOMICS_SECTIONS,
     access_level,
     active_section,
     has_access,
@@ -237,13 +239,11 @@ def render_page(
         marketplace_badge=marketplace_badge,
         stock_open="",
         stock_expanded="false",
-        stock_group_hidden=hidden(
-            any(visible[item] for item in SECTION_GROUPS[0][1] if item is not SectionName.STOCK_ARRIVALS)
-        ),
+        stock_group_hidden=hidden(any(visible[item] for item in STOCK_SECTIONS)),
         stock_group_active="active" if stock_open else "",
         unit_1c_open="",
         unit_1c_expanded="false",
-        unit_1c_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[1][1])),
+        unit_1c_group_hidden=hidden(any(visible[item] for item in UNIT_ECONOMICS_SECTIONS)),
         unit_1c_group_active="active" if unit_1c_open else "",
         unit_1c_settings_active="active" if active == "unit_1c_settings" else "",
         unit_1c_wb_active="active" if active == "unit_1c_wb" else "",
@@ -251,7 +251,7 @@ def render_page(
         unit_1c_yandex_active="active" if active == "unit_1c_yandex" else "",
         reports_open="",
         reports_expanded="false",
-        reports_group_hidden=hidden(any(visible[item] for item in SECTION_GROUPS[2][1])),
+        reports_group_hidden=hidden(any(visible[item] for item in REPORT_SECTIONS)),
         reports_group_active="active" if reports_open else "",
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
         unit_1c_target_price_active="active" if active == "unit_1c_target_price" else "",
