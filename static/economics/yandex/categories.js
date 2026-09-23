@@ -30,6 +30,7 @@
         function statusText(text) { if (alive) status.textContent = text; }
         function drawSelection() {
             element('name').textContent = selected ? selected.name : 'Выберите категорию';
+            element('toggle').title = selected ? ancestry(selected.id).map(function (node) { return node.name; }).join(' → ') : 'Выберите категорию Яндекс Маркета';
             element('path').textContent = selected
                 ? ancestry(selected.id).slice(0, -1).map(function (node) { return node.name; }).join(' › ')
                 : 'Найдите по названию или откройте каталог';

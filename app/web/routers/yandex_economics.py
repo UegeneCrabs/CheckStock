@@ -28,12 +28,20 @@ CABINET_FIELDS = {
     "acquiring_percent",
 }
 SCENARIO_FIELDS = {
+    "fulfillment_cost",
     "seller_price",
     "buyer_price",
     "pay_price",
     "advertising_mode",
     "plan_drr",
     "advertising_spend",
+    "advertising_per_buyout",
+    "delivery_customer",
+    "middle_mile",
+    "delivery_other",
+    "logistics_total",
+    "logistics_returns",
+    "repeat_delivery",
 }
 
 

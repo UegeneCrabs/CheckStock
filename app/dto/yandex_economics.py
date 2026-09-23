@@ -14,6 +14,7 @@ class EconomicsValues(DtoModel):
     buyer_price: Amount | None = None
     pay_price: Amount | None = None
     purchase_price: Amount | None = None
+    fulfillment_cost: Amount | None = None
     category_id: int | None = Field(default=None, gt=0)
     category_name: str | None = Field(default=None, max_length=500)
     length: Amount | None = None
@@ -24,6 +25,12 @@ class EconomicsValues(DtoModel):
     payment_acceptance: Amount | None = None
     acquiring_percent: Percent | None = None
     delivery_cost: Amount | None = None
+    delivery_customer: Amount | None = None
+    middle_mile: Amount | None = None
+    delivery_other: Amount | None = None
+    logistics_total: Amount | None = None
+    logistics_returns: Amount | None = None
+    repeat_delivery: Amount | None = None
     # Explicit calculator scenarios may override the automatic logistics values.
     volume_l: Amount | None = None
     return_middle_mile: Amount | None = None
@@ -38,6 +45,7 @@ class EconomicsValues(DtoModel):
     # DRR may exceed 100% when advertising costs exceed the bought-out turnover.
     plan_drr: Amount | None = None
     advertising_spend: Amount | None = None
+    advertising_per_buyout: Amount | None = None
     advertising_mode: Literal["actual", "plan", "weekly"] | None = None
     campaign_id: int | None = Field(default=None, gt=0)
     frequency: Literal["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"] | None = None

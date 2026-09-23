@@ -10,8 +10,9 @@
         'pay_price',
         'plan_drr',
         'buyout_percent',
-        'advertising_spend',
+        'advertising_per_buyout',
         'purchase_price',
+        'fulfillment_cost',
     ];
     // Common fields follow the WB calculator; YM logistics stay beside delivery.
     var expandedOrder = [
@@ -21,21 +22,23 @@
         'category_name',
         'commission_percent',
         'commission_rub',
+        'logistics_total',
         'delivery_cost',
         'length',
         'width',
         'height',
         'weight',
         'volume_l',
-        'return_middle_mile',
+        'delivery_customer', 'middle_mile', 'delivery_other', 'logistics_returns', 'repeat_delivery',
         'return_cost',
         'transit_cost',
         'plan_drr',
         'buyout_percent',
-        'advertising_spend',
+        'advertising_per_buyout',
         'acquiring_percent',
         'payment_acceptance',
         'purchase_price',
+        'fulfillment_cost',
         'company_commission_percent',
         'vat_percent',
         'usn_percent',
@@ -47,23 +50,32 @@
         fields.groups.map(function (g) {
             return g[1];
         }),
-    ).concat([['commission_rub', 'Комиссия YM, руб', '₽']]).filter(function (spec) {
-        return !['campaign_id', 'frequency', 'payment_delay_weeks'].includes(spec[0]);
+    ).concat([['commission_rub', 'Комиссия YM, руб', '₽'],
+        ['logistics_total', 'Логистика на один выкуп', '₽'],
+        ['delivery_customer', 'Доставка покупателю', '₽'],
+        ['middle_mile', 'Средняя миля', '₽'],
+        ['delivery_other', 'Другие услуги доставки', '₽'],
+        ['logistics_returns', 'Невыкупы с учётом процента выкупа', '₽'],
+        ['repeat_delivery', 'Повторная доставка', '₽']]).filter(function (spec) {
+        return !['campaign_id', 'frequency', 'payment_delay_weeks', 'return_middle_mile'].includes(spec[0]);
     }).sort(function (a, b) {
         return expandedOrder.indexOf(a[0]) - expandedOrder.indexOf(b[0]);
     });
-    var tariffFields = ['commission_percent', 'payment_acceptance', 'delivery_cost'];
+    var tariffFields = ['commission_percent', 'payment_acceptance', 'delivery_cost', 'delivery_customer', 'middle_mile', 'delivery_other'];
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
-    var logisticsFields = ['length', 'width', 'height', 'weight', 'volume_l',
-        'return_middle_mile', 'return_cost', 'transit_cost'];
+    var logisticsFields = ['logistics_total', 'length', 'width', 'height', 'weight', 'volume_l',
+        'delivery_customer', 'middle_mile', 'delivery_other', 'logistics_returns', 'repeat_delivery', 'return_cost', 'transit_cost'];
     var costs = {
         commission: 'Комиссия YM',
         payment_acceptance: 'Приём платежа (Экваиринг 2)',
         acquiring: 'Перевод платежа (Экваринг1)',
         delivery: 'Доставка выкупленного товара',
+        logistics: 'Логистика на один выкуп (вручную)',
+        repeat_delivery: 'Повторная доставка',
         returns: 'Невыкупы и возвраты',
         transit: 'Транзит',
         purchase: 'Закупочная стоимость',
+        fulfillment: 'Затраты на ФФ',
         company_commission: 'Комиссия компании',
         vat: 'Налог НДС, руб',
         usn: 'Налог УСН, руб',
@@ -73,7 +85,7 @@
     };
     function inputValue(key, value) {
         if (value == null) return '';
-        return key === 'commission_percent' || key === 'commission_rub' || key === 'advertising_spend'
+        return key === 'commission_percent' || key === 'commission_rub' || key === 'advertising_per_buyout'
             ? Number(value).toFixed(2) : String(value);
     }
     function metric(label, value, unit) {
@@ -106,7 +118,7 @@
             alive = true,
             expanded = false;
         var picker, categoryEdited = false, tariffNeedsQuote = false, manualTariffs = {};
-        var logisticsOpen = false, tariffDetails = null;
+        var logisticsOpen = false;
         var historyCache = {},
             historySequence = 0,
             parameters = options.parameters;
@@ -136,11 +148,6 @@
                 '#yandex-economics-settings'
             );
         }
-        function computedRow(key, label, index, hint, className) {
-            return window.CheckStockUI.render('economics/yandex/calculator/computed-row', {
-                key: key, label: label, index: index, hint: hint || '', className: className || '',
-            });
-        }
         function logisticsBlock() {
             function input(key) {
                 return field(specs.find(function (spec) { return spec[0] === key; }), true);
@@ -149,14 +156,8 @@
                 index: expandedOrder.indexOf('delivery_cost'),
                 open: logisticsOpen ? ' open' : '',
                 content: input('length') + input('volume_l') + input('delivery_cost') +
-                    computedRow('delivery-customer', 'Доставка покупателю', 0, 'Входит в доставку выкупленного товара.', 'ym-tariff-part') +
-                    computedRow('delivery-middle', 'Средняя миля', 0, 'Входит в доставку выкупленного товара.', 'ym-tariff-part') +
-                    computedRow('delivery-other', 'Другие услуги доставки', 0, '', 'ym-tariff-part') +
-                    window.CheckStockUI.render('economics/yandex/calculator/delivery-note') +
-                    input('return_middle_mile') + input('return_cost') +
-                    computedRow('logistics-returns', 'Невыкупы с учётом процента выкупа', 0,
-                        'Расход на один невыкуп × (1 − процент выкупа / 100). Именно эта сумма входит в итог.') +
-                    input('transit_cost'),
+                    input('delivery_customer') + input('middle_mile') + input('delivery_other') +
+                    input('return_cost') + input('logistics_returns') + input('repeat_delivery') + input('transit_cost'),
             });
         }
         function field(spec, inLogistics) {
@@ -223,7 +224,7 @@
                 control: control,
             });
             return row + (key === 'buyout_percent' ? window.CheckStockUI.render('economics/yandex/calculator/advertising-spend', {
-                order: compact.indexOf('advertising_spend'), index: expandedOrder.indexOf('advertising_spend'),
+                order: compact.indexOf('advertising_per_buyout'), index: expandedOrder.indexOf('advertising_per_buyout'),
             }) : '');
         }
         function parameter(label, value, unit, origin, copy) {
@@ -261,12 +262,7 @@
                 .map(function (entry) { return entry.name; })
                 .join(' → ');
             var categoryCommission = data.category_commission || {};
-            var definitions = [].concat.apply(
-                [],
-                fields.groups.map(function (group) {
-                    return group[1];
-                }),
-            );
+            var definitions = specs;
             function parametersFor(keys) {
                 return keys
                     .map(function (key) {
@@ -296,6 +292,7 @@
                                 parameter('Баркод', product.barcode, '', '', true) +
                                 parameter('Магазин', product.store_name) +
                                 parameter('Закупочная стоимость', values.purchase_price, ' ₽') +
+                                parameter('Затраты на ФФ', values.fulfillment_cost, ' ₽', origins.fulfillment_cost) +
                                 parameter('Модель работы', 'FBY / FBS — общий расчёт'),
                         ) +
                         parameterGroup(
@@ -327,7 +324,7 @@
                             parametersFor([
                                 'delivery_cost',
                                 'volume_l',
-                                'return_middle_mile',
+                                'delivery_customer', 'middle_mile', 'delivery_other',
                                 'return_cost',
                                 'transit_cost',
                                 'length',
@@ -364,6 +361,7 @@
                 content_8: window.CheckStockUI.render('economics/yandex/calculator/draw-2'),
             });
             var logistics = container.querySelector('[data-ym-logistics]');
+            logistics.querySelector('input').onclick = function (event) { event.stopPropagation(); };
             logistics.ontoggle = function () { logisticsOpen = logistics.open; };
             arrangeMode();
             renderParameters();
@@ -422,13 +420,21 @@
                         container.querySelector('[data-ym-field="commission_rub"]').setCustomValidity('');
                     }
                     changed[key] = value;
+                    if (['delivery_customer', 'middle_mile', 'delivery_other'].includes(key)) {
+                        delete changed.delivery_cost;
+                        delete manualTariffs.delivery_cost;
+                    }
+                    if (key === 'middle_mile') delete changed.return_cost;
+                    if (['middle_mile', 'return_cost', 'buyout_percent'].includes(key)) delete changed.logistics_returns;
+                    if (['delivery_cost', 'delivery_customer', 'middle_mile', 'delivery_other', 'buyout_percent'].includes(key)) delete changed.repeat_delivery;
+                    if (key !== 'logistics_total' && (logisticsFields.includes(key) || ['delivery_cost', 'buyout_percent'].includes(key))) delete changed.logistics_total;
                     if (tariffFields.includes(key)) {
                         manualTariffs[key] = changed[key] != null;
                         if (changed[key] == null) tariffNeedsQuote = true;
                     }
                     if (quoteFields.includes(key)) tariffNeedsQuote = true;
-                    if (key === 'plan_drr' || key === 'advertising_spend') {
-                        delete changed[key === 'plan_drr' ? 'advertising_spend' : 'plan_drr'];
+                    if (key === 'plan_drr' || key === 'advertising_per_buyout') {
+                        delete changed[key === 'plan_drr' ? 'advertising_per_buyout' : 'plan_drr'];
                         changed.advertising_mode = changed[key] == null ? 'weekly' : 'plan';
                     }
                     clearTimeout(timer);
@@ -450,48 +456,21 @@
             inputs.classList.toggle('is-expanded', expanded);
             var buyout = container.querySelector('[data-ym-field="buyout_percent"]').closest('.ue1c-calculator-row');
             // Move the existing control so switching modes keeps unsent edits and focus state.
-            if (expanded) container.querySelector('[data-ym-logistics-fields]').prepend(buyout);
+            if (expanded) container.querySelector('.ym-dimensions').after(buyout);
             else inputs.appendChild(buyout);
         }
-        function showComputed(key, value) {
-            var node = container.querySelector('[data-ym-computed="' + key + '"]');
-            if (node) node.textContent = number(value) + (value == null ? '' : ' ₽');
-        }
         function showLogistics(state) {
-            var r = state.result, values = state.values, tariff = state.tariff || {};
-            var logistics = r.logistics || {};
-            showComputed('logistics-total', logistics.total);
-            showComputed('logistics-returns', logistics.returns);
+            var logistics = state.result.logistics || {};
+            ['logistics_total', 'logistics_returns', 'repeat_delivery'].forEach(function (key) {
+                var value = logistics[{logistics_total: 'total', logistics_returns: 'returns', repeat_delivery: 'repeat_delivery'}[key]];
+                container.querySelector('[data-ym-field="' + key + '"]').value = inputValue(key, value);
+            });
             container.querySelector('[data-ym-logistics]').classList.toggle('is-incomplete', logistics.total == null);
-            var basis = JSON.stringify(['seller_price', 'category_id', 'length', 'width', 'height', 'weight']
-                .map(function (key) { return values[key] == null ? null : values[key]; }));
-            if ((tariff.valid || tariff.approximate) && (tariff.services || []).length) {
-                tariffDetails = { basis: basis, services: tariff.services };
-            }
-            var amounts = { 'delivery-customer': 0, 'delivery-middle': 0, 'delivery-other': 0 };
-            var types = {
-                DELIVERY_TO_CUSTOMER: 'delivery-customer', MIDDLE_MILE: 'delivery-middle',
-                CROSSREGIONAL_DELIVERY: 'delivery-other', EXPRESS_DELIVERY: 'delivery-other', SORTING: 'delivery-other',
-            };
-            var count = 0;
-            if (tariffDetails && tariffDetails.basis === basis) tariffDetails.services.forEach(function (service) {
-                var key = types[service.type], amount = Number(service.amount);
-                if (key && service.amount != null && Number.isFinite(amount)) {
-                    amounts[key] += amount;
-                    count++;
-                }
-            });
-            var total = Object.keys(amounts).reduce(function (sum, key) { return sum + amounts[key]; }, 0);
-            var matched = count > 0 && values.delivery_cost != null && Math.abs(total - values.delivery_cost) < 0.005;
-            Object.keys(amounts).forEach(function (key) {
-                var node = container.querySelector('[data-ym-computed="' + key + '"]');
-                node.closest('.ue1c-calculator-row').hidden = !matched || (key === 'delivery-other' && !amounts[key]);
-                showComputed(key, matched ? amounts[key] : null);
-            });
-            container.querySelector('[data-ym-delivery-note]').textContent = matched
-                ? 'Состав доставки по тарифу ЯМ. Эти суммы уже входят в доставку выкупленного товара выше.'
-                : values.delivery_cost == null ? 'Не задана стоимость доставки выкупленного товара.'
-                : 'Сумма доставки задана без соответствующей детализации API. Разбивка на доставку покупателю и среднюю милю неизвестна.';
+            container.querySelector('[data-ym-logistics-note]').textContent = state.values.logistics_total != null
+                ? 'Итог задан вручную. Измените составляющие или очистите итог, чтобы вернуться к формуле.'
+                : 'Итого: доставка + невыкупы + повторная доставка + транзит. Повторная доставка учитывается один раз для доли невыкупов.';
+            if (state.values.delivery_cost != null && changed.delivery_cost != null)
+                container.querySelector('[data-ym-logistics-note]').textContent += ' Доставка задана вручную; её составляющие ниже сохранены из тарифа. Изменение составляющей возвращает доставку к их сумме.';
         }
         function pending() {
             container.querySelector('[data-ym-result]').innerHTML =
@@ -500,6 +479,64 @@
             parameters.querySelector('[data-ym-costs]').innerHTML = '';
             container.querySelectorAll('[data-ym-computed]').forEach(function (node) { node.textContent = '—'; });
             message('Пересчитываем…');
+        }
+        function updateHints(state) {
+            var v = state.values, r = state.result, c = r.costs || {}, l = r.logistics || {};
+            var weekly = state.calculator_advertising || {}, origins = state.origins || {};
+            var loss = v.loss_percent == null ? null : v.loss_percent / 100;
+            function n(key) { return number(v[key]); }
+            function rub(value) { return number(value) + ' ₽'; }
+            function charge(formula, amount) { return formula + ' = ' + rub(amount); }
+            var nonBuyout = v.buyout_percent == null ? null : 100 - v.buyout_percent;
+            var formulas = {
+                seller_price: 'Цена продавца до скидок площадки. Доход на единицу в расчёте: ' + rub(v.seller_price) + '.',
+                buyer_price: 'Цена покупателя без карты Пэй; база для НДС и УСН: ' + rub(v.buyer_price) + '.',
+                pay_price: 'Цена покупателя с картой Пэй. Показана для сравнения; напрямую из прибыли не вычитается.',
+                purchase_price: 'Себестоимость из данных 1С (Google-таблица YM), если не задана вручную. В расходах: ' + rub(c.purchase) + '.',
+                fulfillment_cost: 'Затраты на ФФ на единицу из колонки «Проч. затр., руб» листа YM. Вычитаются из чистой прибыли один раз: −' + rub(v.fulfillment_cost) + '. Без умножения на процент выкупа.',
+                commission_percent: charge(n('seller_price') + ' ₽ × ' + n('commission_percent') + '%', r.commission_rub),
+                commission_rub: charge(n('seller_price') + ' ₽ × ' + n('commission_percent') + '%', r.commission_rub) + '. Сумма и процент — одна комиссия.',
+                acquiring_percent: charge(n('seller_price') + ' ₽ × ' + n('acquiring_percent') + '%', c.acquiring),
+                payment_acceptance: 'Фиксированный расход на единицу из тарифа ЯМ: ' + rub(c.payment_acceptance) + '.',
+                company_commission_percent: charge(n('seller_price') + ' ₽ × ' + n('company_commission_percent') + '%', c.company_commission),
+                vat_percent: charge(n('buyer_price') + ' ₽ × ' + n('vat_percent') + ' / (100 + ' + n('vat_percent') + ')', c.vat),
+                usn_percent: charge('(' + n('buyer_price') + ' ₽ − ' + rub(c.vat) + ') × ' + n('usn_percent') + '%', c.usn),
+                loss_percent: charge(n('purchase_price') + ' ₽ × ' + n('loss_percent') + '%', c.loss),
+                disposal_cost: charge(n('disposal_cost') + ' ₽ × потери ' + n('loss_percent') + '%', c.disposal == null && v.disposal_cost != null && loss != null ? v.disposal_cost * loss : c.disposal),
+                volume_l: n('length') + ' × ' + n('width') + ' × ' + n('height') + ' см / 1000 = ' + n('volume_l') + ' л. Тариф доставки запрашивается по габаритам и весу.',
+                delivery_customer: 'Часть стоимости доставки по тарифу ЯМ: ' + rub(v.delivery_customer) + '. Уже включена в доставку выкупленного товара.',
+                middle_mile: 'Средняя миля из того же тарифа доставки ЯМ: ' + rub(v.middle_mile) + '. Также используется для расчёта невыкупа.',
+                delivery_other: 'Прочие составляющие именно доставки по тарифу ЯМ: ' + rub(v.delivery_other) + '. Уже включены в доставку выкупленного товара.',
+                delivery_cost: charge(n('delivery_customer') + ' ₽ + ' + n('middle_mile') + ' ₽ + ' + n('delivery_other') + ' ₽', v.delivery_cost),
+                return_cost: charge(n('middle_mile') + ' ₽ + 15 ₽', v.return_cost),
+                logistics_returns: charge(n('return_cost') + ' ₽ × (100 − ' + n('buyout_percent') + ') / 100', l.returns),
+                repeat_delivery: charge(n('delivery_cost') + ' ₽ × (100 − ' + n('buyout_percent') + ') / 100', l.repeat_delivery),
+                transit_cost: 'Транзит на единицу: ' + rub(l.transit) + '. Прибавляется к логистике один раз.',
+                logistics_total: charge(rub(l.delivery) + ' + ' + rub(l.returns) + ' + ' + rub(l.repeat_delivery) + ' + ' + rub(l.transit), l.total),
+                buyout_percent: 'Выкуп: ' + n('buyout_percent') + '%. Доля невыкупа: ' + number(nonBuyout) + '%. Расчётные выкупы = количество заказов × процент выкупа / 100.',
+                plan_drr: state.values.advertising_mode === 'weekly'
+                    ? number(weekly.spend) + ' ₽ / (' + number(weekly.orders_amount) + ' ₽ × ' + n('buyout_percent') + '%) × 100 = ' + n('plan_drr') + '%.'
+                    : charge(n('seller_price') + ' ₽ × ' + n('plan_drr') + '%', c.advertising),
+                advertising_per_buyout: state.values.advertising_mode === 'weekly'
+                    ? charge(number(weekly.spend) + ' ₽ / (' + number(weekly.orders_count) + ' заказов × ' + n('buyout_percent') + '%)', v.advertising_per_buyout) + '. За ' + (weekly.period_from || '—') + ' — ' + (weekly.period_to || '—') + ', только дни с заказами и рекламой.'
+                    : 'Расход на один выкуп в сценарии: ' + rub(c.advertising) + '. ' + (v.advertising_basis === 'drr' ? 'Цена продавца × ставка ДРР / 100.' : 'Задан вручную; вычитается из прибыли один раз.'),
+            };
+            container.querySelectorAll('[data-ym-field]').forEach(function (input) {
+                var key = input.dataset.ymField;
+                var origin = changed[key] != null ? 'Сценарий: введено вручную' : origins[key] || 'Расчёт из параметров товара';
+                var formula = formulas[key] || ('Значение: ' + n(key) + '. Используется при запросе тарифа доставки ЯМ.');
+                if (['logistics_total', 'logistics_returns', 'repeat_delivery', 'delivery_cost', 'return_cost'].includes(key) && changed[key] != null)
+                    formula = 'Ручное значение заменяет автоматический расчёт: ' + rub(Number(input.value)) + '.';
+                var hint = origin + '.\n' + formula;
+                input.title = hint;
+                var label = input.closest('label') || input.closest('summary');
+                if (label) label.title = hint;
+                var span = label && label.querySelector('span[title]');
+                if (span) span.title = hint;
+            });
+            var results = container.querySelectorAll('[data-ym-result] > div');
+            if (results[0]) results[0].title = charge(n('seller_price') + ' ₽ − расходы ' + rub(r.total_cost), r.margin);
+            if (results[1]) results[1].title = rub(r.margin) + ' / ' + n('purchase_price') + ' ₽ × 100 = ' + number(r.roi) + '%';
         }
         function showResult(state) {
             var r = state.result,
@@ -513,7 +550,10 @@
                 var key = spec[0];
                 var input = container.querySelector('[data-ym-field="' + key + '"]');
                 if (!input) return;
-                var value = inputValue(key, key === 'commission_rub' ? r.commission_rub : state.values[key]);
+                var value = inputValue(key, key === 'commission_rub' ? r.commission_rub :
+                    key === 'logistics_total' ? r.logistics.total :
+                    key === 'logistics_returns' ? r.logistics.returns :
+                    key === 'repeat_delivery' ? r.logistics.repeat_delivery : state.values[key]);
                 if (input.value !== value) input.value = value;
                 if (key === 'commission_rub') {
                     var sellerPrice = state.values.seller_price;
@@ -565,12 +605,13 @@
             );
             var weekly = state.calculator_advertising || {},
                 manual = state.values.advertising_mode === 'plan';
-            container.querySelector('[data-ym-field="advertising_spend"]').value =
-                inputValue('advertising_spend', state.values.advertising_spend);
+            container.querySelector('[data-ym-field="advertising_per_buyout"]').value =
+                inputValue('advertising_per_buyout', state.values.advertising_per_buyout);
             container.querySelector('.ym-drr-row').classList.toggle('is-incomplete',
                 !manual && (!weekly.complete || weekly.drr == null));
             container.querySelector('.ym-ad-row').classList.toggle('is-incomplete',
-                !manual && !weekly.advertising_complete);
+                !manual && (!weekly.complete || state.values.advertising_per_buyout == null));
+            updateHints(state);
             if (!manual && weekly.message) parameters.querySelector('[data-ym-diagnostics]').textContent =
                 r.messages.filter(function (text) { return text !== 'Не задано: ДРР с выкупом'; }).concat(weekly.message).join(' ');
         }

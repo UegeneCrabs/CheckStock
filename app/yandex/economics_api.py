@@ -105,6 +105,8 @@ def quote_request(store, values, scheme, *, campaigns=None):
 
 
 def parse_quote(values, scheme, parameters, row):
+    from app.yandex.economics_calculation import delivery_components
+
     if not isinstance(row.get("tariffs"), list):
         raise ValueError("Маркет вернул неполный расчёт тарифа.")
     tariffs = row["tariffs"]
@@ -132,6 +134,7 @@ def parse_quote(values, scheme, parameters, row):
         else:
             transfer_percent += float(service["amount"]) / price * 100
     components = {
+        **delivery_components(tariffs),
         "commission_percent": amounts["FEE"] / price * 100,
         "payment_acceptance": amounts.get("AGENCY_COMMISSION", 0),
         "delivery_cost": sum(amounts.get(kind, 0) for kind in DELIVERY_TYPES),

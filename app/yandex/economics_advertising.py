@@ -72,31 +72,42 @@ def product_drr(history, article, buyout_percent):
 
 
 def apply_calculator_drr(values, origins, weekly, scenario):
+    """The calculator distributes ads across bought units on matching days."""
     scenario = scenario or {}
+    per_unit = scenario.get("advertising_per_buyout")
     spend = scenario.get("advertising_spend")
-    manual_spend = spend is not None
-    manual_drr = scenario.get("advertising_mode") == "plan" or (
-        "advertising_mode" not in scenario and scenario.get("plan_drr") is not None
+    manual_drr = scenario.get("plan_drr") is not None and per_unit is None and spend is None
+    manual = per_unit is not None or spend is not None or manual_drr
+    price = values.get("seller_price")
+    bought = (weekly.get("orders_count") or 0) * (values.get("buyout_percent") or 0) / 100
+    if manual_drr:
+        per_unit = price * scenario["plan_drr"] / 100 if price is not None else None
+    elif per_unit is None:
+        if spend is None and weekly.get("days"):
+            spend = weekly.get("spend")
+        per_unit = spend / bought if spend is not None and bought > 0 else 0.0 if spend == 0 else None
+    drr = (
+        scenario["plan_drr"]
+        if manual_drr
+        else per_unit / price * 100
+        if per_unit is not None and price and price > 0
+        else 0.0
+        if per_unit == 0
+        else None
     )
-    manual = manual_spend or manual_drr
-    amount = weekly.get("orders_amount") or 0
-    buyout = values.get("buyout_percent") or 0
-    turnover = amount * buyout / 100
-    drr = scenario.get("plan_drr") if manual_drr else weekly["drr"]
-    if manual_spend:
-        # A zero budget is valid even without sales; positive spend needs a base.
-        drr = 0.0 if spend == 0 else round(spend / turnover * 100, 2) if turnover > 0 else None
-    elif manual_drr:
-        spend = round(turnover * drr / 100, 2) if drr is not None and turnover > 0 else None
-        if drr == 0:
-            spend = 0.0
-    else:
-        spend = weekly.get("advertising_spend")
-    values["advertising_mode"] = "plan" if manual else "weekly"
-    values["plan_drr"] = drr
-    values["advertising_spend"] = spend
-    origins["plan_drr"] = (
-        "Сценарий" if manual else f"Последние 7 завершённых дней: данные за {weekly['days']} из 7 дней"
+    if not manual:
+        drr = weekly["drr"]
+    values.update(
+        advertising_mode="plan" if manual else "weekly",
+        advertising_basis="drr" if manual_drr else "per_buyout",
+        plan_drr=drr,
+        advertising_per_buyout=per_unit,
+        advertising_spend=per_unit * bought if per_unit is not None else None,
     )
-    origins["advertising_spend"] = "Сценарий" if manual else "Реклама за последние 7 завершённых дней"
-    origins["advertising_mode"] = "Сценарий" if manual else "ДРР за последние 7 завершённых дней"
+    origin = (
+        "Сценарий"
+        if manual
+        else f"Последние 7 завершённых дней: совместные данные за {weekly['days']} из 7 дней"
+    )
+    for key in ("plan_drr", "advertising_per_buyout", "advertising_spend", "advertising_mode"):
+        origins[key] = origin

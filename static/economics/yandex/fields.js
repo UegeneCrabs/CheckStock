@@ -9,6 +9,7 @@
                 ['buyer_price', 'Цена с СПП', '₽'],
                 ['pay_price', 'Цена с картой Пэй', '₽'],
                 ['purchase_price', 'Закупочная стоимость', '₽'],
+                ['fulfillment_cost', 'Затраты на ФФ', '₽'],
             ],
         ],
         [
@@ -26,7 +27,6 @@
                 ['acquiring_percent', 'Перевод платежа (Экваринг1)', '%'],
                 ['delivery_cost', 'Доставка выкупленного товара', '₽'],
                 ['volume_l', 'Объём упаковки', 'л'],
-                ['return_middle_mile', 'Средняя миля для невыкупа', '₽'],
                 ['return_cost', 'Расход на один невыкуп', '₽'],
                 ['transit_cost', 'Транзит', '₽/шт.'],
             ],
@@ -38,7 +38,7 @@
                 ['usn_percent', 'УСН, %', '%'],
                 ['company_commission_percent', 'Комиссия компании, %', '%'],
                 ['loss_percent', 'Потери от закупочной цены', '%'],
-                ['disposal_cost', 'Утилизация одного невыкупленного товара', '₽'],
+                ['disposal_cost', 'Утилизация одного потерянного товара', '₽'],
             ],
         ],
         [
@@ -109,7 +109,7 @@
         'frequency',
         'payment_delay_weeks',
     ];
-    var scenarioOnly = ['seller_price', 'buyer_price', 'pay_price', 'advertising_mode', 'plan_drr', 'advertising_spend'];
+    var scenarioOnly = ['fulfillment_cost', 'seller_price', 'buyer_price', 'pay_price', 'advertising_mode', 'plan_drr', 'advertising_spend', 'advertising_per_buyout'];
     window.YandexEconomicsFields = {
         groups: groups,
         expandedLabels: {
@@ -124,8 +124,7 @@
             buyer_price: 'Цена покупателя без скидки по карте Пэй',
             plan_drr: 'ДРР с выкупом за последние 7 завершённых дней',
             delivery_cost: 'Сумма доставки покупателю, средней мили и других услуг доставки из тарифа. Невыкупы и транзит показаны отдельно ниже.',
-            return_middle_mile: 'Входит в расход на один невыкуп. Повторно к итогу логистики не прибавляется.',
-            return_cost: 'Средняя миля для невыкупа + 15 ₽. В итог входит с учётом доли невыкупов.',
+            return_cost: 'Средняя миля доставки ЯМ + 15 ₽. В итог входит с учётом доли невыкупов.',
             loss_percent: 'Потери = закупочная стоимость × процент / 100.',
             company_commission_percent: 'Рассчитывается от цены без СПП',
             vat_percent: 'НДС = цена с СПП × ставка НДС / (100 + ставка НДС)',

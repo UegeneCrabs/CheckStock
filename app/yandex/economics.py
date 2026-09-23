@@ -18,6 +18,7 @@ from app.yandex.economics_calculation import (
     break_even_prices,
     calculate,
     daily_profit,
+    delivery_components,
     resolve,
     sheet_logistics,
 )
@@ -102,11 +103,22 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
             for key, value in tariff_data.get("components", {}).items()
             if key not in {"payment_transfer_percent", "acquiring_percent"}
         }
+        components = {**delivery_components(tariff_data.get("services", [])), **components}
         # A saved quote is a planning fallback, not a replacement for a current category rate.
         if estimated_tariff and reference_percent is not None:
             components = {key: value for key, value in components.items() if key != "commission_percent"}
         layers.insert(-2, (origin, components))
     values, origins = resolve(*layers, ("Сценарий", scenario or {}))
+    # Use the latest 1C import, never an obsolete seed or saved legacy override.
+    fulfillment_override = (scenario or {}).get("fulfillment_cost")
+    values["fulfillment_cost"] = (
+        source_1c.get("fulfillment_cost") if fulfillment_override is None else fulfillment_override
+    )
+    origins["fulfillment_cost"] = (
+        "Google-таблица 1С · лист YM · колонка «Проч. затр., руб»"
+        if fulfillment_override is None
+        else "Сценарий"
+    )
     apply_sheet_logistics(values, origins, scenario=scenario)
     if (scenario or {}).get("seller_price") is not None and (scenario or {}).get("buyer_price") is None:
         values["buyer_price"] = discounted_price(values["seller_price"], pricing.get("spp_percent"))
@@ -141,7 +153,11 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
         "values": values,
         "origins": origins,
         "revision": product["revision"],
-        "overrides": {key: value for key, value in product["values"].items() if key not in REMOVED_FIELDS},
+        "overrides": {
+            key: value
+            for key, value in product["values"].items()
+            if key not in REMOVED_FIELDS and key != "fulfillment_cost"
+        },
         "cabinet_revision": cabinet["revision"],
         "pricing": pricing,
         "category": category_values
@@ -160,12 +176,21 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
 
 
 def apply_sheet_logistics(values, origins, *, scenario=None):
+    from app.yandex.economics_calculation import DELIVERY_FIELDS
+
+    if (
+        any((scenario or {}).get(key) is not None for key in DELIVERY_FIELDS)
+        and (scenario or {}).get("delivery_cost") is None
+    ):
+        parts = [values.get(key) for key in DELIVERY_FIELDS]
+        values["delivery_cost"] = sum(parts) if all(part is not None for part in parts) else None
+        origins["delivery_cost"] = "Сумма составляющих доставки в сценарии"
     derived = sheet_logistics(values, scenario=scenario)
     values.update(derived)
     origins.update(
         volume_l="Габариты упаковки: длина × ширина × высота / 1000",
-        return_middle_mile="По формуле таблицы: средняя миля от объёма",
-        return_cost="По формуле таблицы: средняя миля + 15 ₽",
+        return_middle_mile="Средняя миля из тарифа доставки ЯМ",
+        return_cost="Средняя миля из тарифа доставки ЯМ + 15 ₽",
     )
     for key in derived:
         if (scenario or {}).get(key) is not None:
@@ -238,6 +263,10 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
             "advertising_mode",
             "plan_drr",
             "advertising_spend",
+            "advertising_per_buyout",
+            "logistics_total",
+            "logistics_returns",
+            "repeat_delivery",
         }
     }
     state = effective(store, article, scheme, scenario=scenario, state_cache=cache)
@@ -255,7 +284,15 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
     state["tariff"]["valid"] = tariff_valid
     reference_percent = commission_value(state["category_commission"], values)
     state["category_commission"]["valid"] = reference_percent is not None
-    fields = ("commission_percent", "payment_acceptance", "delivery_cost")
+    fields = (
+        "commission_percent",
+        "payment_acceptance",
+        "delivery_cost",
+        "delivery_customer",
+        "middle_mile",
+        "delivery_other",
+    )
+    components = {**delivery_components(quote.get("services", [])), **quote.get("components", {})}
     for field in fields:
         if origins.get(field) in {"Изменено на сайте", "Настройки кабинета", "Сценарий"}:
             continue
@@ -263,8 +300,9 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
             values[field] = reference_percent
             origins[field] = "API: комиссия категории за неделю"
             continue
-        values[field] = quote.get("components", {}).get(field) if tariff_valid else None
+        values[field] = components.get(field) if tariff_valid else None
         origins[field] = "API: тариф за сегодня" if tariff_valid else "Нет тарифа за сегодня"
+    apply_sheet_logistics(values, origins, scenario=scenario)
     return state
 
 
@@ -367,6 +405,9 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
             "payment_acceptance",
             "acquiring_percent",
             "delivery_cost",
+            "delivery_customer",
+            "middle_mile",
+            "delivery_other",
         )
         if state["values"].get(key) is not None
     }
@@ -511,7 +552,9 @@ def close_days(stores, *, today=None):
                 spend = 0
             q = float(values["buyout_percent"]) / 100
             bought = count * q
-            unit = state.get("result") or calculate(values, without_advertising=True)
+            unit = state.get("result") or calculate(
+                values, without_advertising=True, version=state["version"]
+            )
             payload = {
                 "day": day,
                 "scheme": scheme,

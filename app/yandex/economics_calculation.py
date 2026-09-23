@@ -2,8 +2,9 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 
-VERSION = 12
+VERSION = 14
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
+DELIVERY_FIELDS = ("delivery_customer", "middle_mile", "delivery_other")
 REMOVED_FIELDS = {
     "payment_transfer_percent",
     "tariff_extra",
@@ -11,7 +12,6 @@ REMOVED_FIELDS = {
     "capital_percent",
     "turnover_days",
     "other_percent",
-    "fulfillment_cost",
     "storage_per_day",
     "storage_days",
     "other_cost",
@@ -28,6 +28,7 @@ LABELS = {
     "seller_price": "Цена без СПП",
     "buyer_price": "Цена с СПП",
     "purchase_price": "Закупочная стоимость",
+    "fulfillment_cost": "Затраты на ФФ",
     "commission_percent": "Комиссия YM, %",
     "payment_acceptance": "Приём платежа (Экваиринг 2)",
     "acquiring_percent": "Перевод платежа (Экваринг1)",
@@ -42,6 +43,7 @@ LABELS = {
     "disposal_cost": "Утилизация",
     "buyout_percent": "Процент выкупа",
     "plan_drr": "ДРР с выкупом",
+    "advertising_per_buyout": "Реклама на один выкуп",
 }
 
 
@@ -63,11 +65,27 @@ def resolve(*layers):
     return values, provenance
 
 
-def sheet_logistics(values, *, scenario=None):
-    """AO and AP + 15 from the sheet, independent of the successful-delivery API quote.
+def delivery_components(services):
+    """Also extract the breakdown from quotes saved before version 13."""
+    result = dict.fromkeys(DELIVERY_FIELDS, 0.0 if services else None)
+    types = {
+        "DELIVERY_TO_CUSTOMER": "delivery_customer",
+        "MIDDLE_MILE": "middle_mile",
+        "CROSSREGIONAL_DELIVERY": "delivery_other",
+        "EXPRESS_DELIVERY": "delivery_other",
+        "SORTING": "delivery_other",
+    }
+    for service in services:
+        key = types.get(service.get("type"))
+        if key:
+            result[key] += float(service["amount"])
+    return result
 
-    Dimensions are in cm; volume is in litres, without rounding up. Legacy
-    return settings are ignored.
+
+def sheet_logistics(values, *, scenario=None, version=VERSION):
+    """Volume in litres; return delivery uses the quote's middle mile plus 15 RUB.
+
+    The former volume-based return tariff is retained for historical versions.
     """
     result = dict.fromkeys(DERIVED_FIELDS)
     manual = {key: value for key, value in (scenario or {}).items() if value is not None}
@@ -92,6 +110,9 @@ def sheet_logistics(values, *, scenario=None):
         middle_mile = min(middle_mile, Decimal(5500))
     if "return_middle_mile" in manual:
         middle_mile = Decimal(str(manual["return_middle_mile"]))
+    if version >= 13:
+        middle_mile = values.get("middle_mile")
+        middle_mile = Decimal(str(middle_mile)) if middle_mile is not None else None
     result.update(
         volume_l=float(volume) if volume is not None else None,
         return_middle_mile=float(middle_mile) if middle_mile is not None else None,
@@ -100,25 +121,36 @@ def sheet_logistics(values, *, scenario=None):
     return result
 
 
-def logistics_costs(values):
-    """The same three expense lines used by profit and the logistics subtotal."""
+def logistics_costs(values, *, version=VERSION):
+    """The same expense lines used by profit and the logistics subtotal."""
 
     def amount(key):
         value = values.get(key)
         return Decimal(str(value)) if value is not None else None
 
     returns, buyout = amount("return_cost"), amount("buyout_percent")
-    return {
+    costs = {
         "delivery": amount("delivery_cost"),
         "returns": returns * (1 - buyout / 100) if returns is not None and buyout is not None else None,
         "transit": amount("transit_cost"),
     }
+    if version >= 13:
+        delivery = amount("delivery_cost")
+        costs["repeat_delivery"] = (
+            delivery * (1 - buyout / 100) if delivery is not None and buyout is not None else None
+        )
+        for field, cost in (("logistics_returns", "returns"), ("repeat_delivery", "repeat_delivery")):
+            if values.get(field) is not None:
+                costs[cost] = amount(field)
+    return costs
 
 
-def calculator_summary(values):
+def calculator_summary(values, *, version=VERSION):
     """Show known charges even when unrelated inputs prevent calculating profit."""
-    logistics = logistics_costs(values)
+    logistics = logistics_costs(values, version=version)
     total = sum(logistics.values()) if all(value is not None for value in logistics.values()) else None
+    if version >= 13 and values.get("logistics_total") is not None:
+        total = Decimal(str(values["logistics_total"]))
     price, percent = values.get("seller_price"), values.get("commission_percent")
     commission = (
         Decimal(str(price)) * Decimal(str(percent)) / 100
@@ -146,13 +178,14 @@ def calculate(
 ):
     """YM unit profit with WB-style VAT and USN, without the removed fixed costs.
 
-    AS returns and AX disposal multiply by the non-buyout fraction, without
-    dividing by buyout. Planned advertising is seller price times DRR; only
-    actual advertising is allocated over expected bought units. With precise=True,
+    Returns and one repeat delivery multiply by the non-buyout fraction.
+    Disposal multiplies by the loss fraction. Ads are allocated per expected
+    bought unit, or entered as a per-unit expense / planned DRR in a scenario.
+    Historical versions preserve their original formulas. With precise=True,
     margin stays a Decimal for finding a price without hiding fractional losses.
     """
-    values = {**values, **sheet_logistics(values, scenario=scenario)}
-    summary = calculator_summary(values)
+    values = {**values, **sheet_logistics(values, scenario=scenario, version=version)}
+    summary = calculator_summary(values, version=version)
     required = [
         "seller_price",
         "buyer_price",
@@ -170,8 +203,17 @@ def calculate(
         "disposal_cost",
         "buyout_percent",
     ]
+    if version >= 14:
+        required.append("fulfillment_cost")
+    if version >= 13:
+        if values.get("logistics_total") is not None:
+            required = [
+                key for key in required if key not in {"delivery_cost", "return_cost", "transit_cost"}
+            ]
+        elif values.get("logistics_returns") is not None:
+            required.remove("return_cost")
     if not without_advertising and values.get("advertising_mode", "actual") in {"plan", "weekly"}:
-        required.append("plan_drr")
+        required.append("advertising_per_buyout" if version >= 13 else "plan_drr")
     missing = [key for key in required if values.get(key) is None]
     if missing:
         return {
@@ -204,18 +246,27 @@ def calculate(
         "commission": price * d("commission_percent") / 100,
         "payment_acceptance": d("payment_acceptance"),
         "acquiring": price * d("acquiring_percent") / 100,
-        **logistics_costs(values),
+        **(
+            {"logistics": Decimal(str(values["logistics_total"]))}
+            if version >= 13 and values.get("logistics_total") is not None
+            else logistics_costs(values, version=version)
+        ),
         "purchase": purchase,
+        **({"fulfillment": d("fulfillment_cost")} if version >= 14 else {}),
         "company_commission": price * d("company_commission_percent") / 100,
         "vat": vat,
         "usn": usn,
         "loss": (price if version < 12 else purchase) * d("loss_percent") / 100,
-        "disposal": d("disposal_cost") * (1 - q),
+        "disposal": d("disposal_cost") * (d("loss_percent") / 100 if version >= 13 else 1 - q),
     }
     if without_advertising:
         advertising = Decimal(0)
     elif values.get("advertising_mode", "actual") in {"plan", "weekly"}:
-        advertising = price * d("plan_drr") / 100
+        advertising = (
+            d("advertising_per_buyout")
+            if version >= 13 and values.get("advertising_basis") != "drr"
+            else price * d("plan_drr") / 100
+        )
     elif advertising_spend is None or orders_count is None:
         return {
             **summary,

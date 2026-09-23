@@ -2,27 +2,28 @@
 .ym-economics .ue1c-calculator-inputs.is-expanded .ym-logistics {
     display: block;
     order: var(--expanded-order);
-    margin: 10px 8px;
-    border: 1px solid var(--ue-accent, #315efb);
-    border-radius: 10px;
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid var(--ue-line);
+    border-radius: 0;
     overflow: clip;
 }
 .ym-logistics > summary {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) 136px 16px;
+    gap: 6px;
     align-items: center;
-    padding: 12px;
+    padding: 8px 12px;
     cursor: pointer;
     list-style: none;
-    background: var(--ue-accent-soft, #edf1ff);
+    background: var(--ue-surface, #fff);
 }
-.ym-logistics > summary:hover { background: #e3eaff; }
+.ym-logistics > summary:hover { background: var(--ue-soft); }
 .ym-logistics > summary::-webkit-details-marker { display: none; }
-.ym-logistics-heading { font-size: 12px; font-weight: 700; line-height: 1.4; }
+.ym-logistics-heading { font-size: 11px; font-weight: 700; line-height: 1.4; }
 .ym-logistics-heading small { display: block; margin-top: 4px; font-size: 10px; font-weight: 400; color: var(--ue-muted); }
 .ym-logistics .ym-logistics-total { padding: 7px 9px; border-radius: 7px; background: var(--ue-surface, #fff); color: var(--ue-accent); font-size: 13px; white-space: nowrap; }
-.ym-logistics-toggle { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 1px solid #d1dcff; color: var(--ue-accent); font-size: 11px; font-weight: 600; }
+.ym-logistics-toggle { display: flex; align-items: center; color: var(--ue-muted); }
 .ym-logistics-toggle svg {
     flex-shrink: 0;
     transition: transform .15s;
@@ -484,3 +485,18 @@
         gap: 12px;
     }
 }
+
+.ym-economics .ue1c-calculator-inputs.is-expanded .ym-categories {
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) minmax(0, 1.2fr);
+    gap: 6px 10px;
+    align-items: center;
+    padding: 8px 12px;
+}
+.ym-economics .ym-category-heading { margin: 0; }
+.ym-economics .ym-category-current { padding: 5px 7px; gap: 5px; border-radius: 6px; min-height: 30px; }
+.ym-economics .ym-category-current-text strong { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ym-economics .ym-category-current-text > span { display: none; }
+.ym-economics .ym-category-edit { font-size: 9px; }
+.ym-economics .ym-category-editor, .ym-economics .ym-category-status, .ym-economics .ym-categories > .ym-category-more { grid-column: 1 / -1; }
+.ym-economics .ym-category-status:empty { display: none; }
