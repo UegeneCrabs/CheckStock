@@ -356,6 +356,26 @@ def get_own_warehouses(token: str) -> list[dict]:
     return data
 
 
+def _size_barcodes(size: dict) -> list[str]:
+    """Prefer nonzero-leading 13-digit codes, keeping every WB code for stock matching."""
+    codes = list(
+        dict.fromkeys(
+            str(code).strip()
+            for code in size.get("skus") or []
+            if code is not None and not isinstance(code, bool) and str(code).strip()
+        )
+    )
+    # WB may list a 14-digit GTIN before the barcode used on the other marketplaces.
+    # The API order is not a primary-barcode flag; keep it within each priority group.
+    return sorted(
+        codes,
+        key=lambda code: (
+            code.startswith("0"),
+            not (len(code) == 13 and code.isascii() and code.isdigit()),
+        ),
+    )
+
+
 def barcode_chrt_ids(cards: list[dict]) -> dict[str, int]:
     result = {}
     for card in cards:
@@ -363,8 +383,7 @@ def barcode_chrt_ids(cards: list[dict]) -> dict[str, int]:
             if not size.get("chrtID"):
                 continue
             chrt_id = int(size["chrtID"])
-            for code in size.get("skus") or []:
-                barcode = str(code).strip()
+            for barcode in _size_barcodes(size):
                 if barcode in result and result[barcode] != chrt_id:
                     raise WBApiError(None, detail=f"Штрихкод {barcode} связан с несколькими размерами WB")
                 result[barcode] = chrt_id
@@ -518,9 +537,9 @@ def _barcode_by_chrt_id(cards: list[dict]) -> dict[int, str]:
     try:
         for card in cards:
             for size in card.get("sizes") or []:
-                skus = size.get("skus") or []
+                skus = _size_barcodes(size)
                 if size.get("chrtID") and skus:
-                    result[int(size["chrtID"])] = str(skus[0]).strip()
+                    result[int(size["chrtID"])] = skus[0]
     except (AttributeError, TypeError, ValueError) as error:
         raise WBApiError(None, detail=f"неожиданный формат размеров карточек WB: {error}") from error
     return {chrt_id: barcode for chrt_id, barcode in result.items() if barcode}
@@ -615,14 +634,15 @@ def normalize_card(card: dict) -> dict:
 
     sizes = []
     for size in card.get("sizes") or []:
-        skus = [str(sku).strip() for sku in (size.get("skus") or []) if str(sku).strip()]
+        skus = _size_barcodes(size)
         if not skus:
             continue
+        barcode = next((code for code in skus if not code.startswith("0")), "")
         sizes.append(
             {
                 "tech_size": str(size.get("techSize") or "").strip(),
-                "barcode": skus[0],
-                "extra_barcodes": skus[1:],
+                "barcode": barcode,
+                "extra_barcodes": [code for code in skus if code != barcode],
             }
         )
 
