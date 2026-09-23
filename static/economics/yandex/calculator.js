@@ -7,7 +7,9 @@
     var compact = [
         'seller_price',
         'buyer_price',
+        'spp_percent',
         'pay_price',
+        'pay_discount_percent',
         'plan_drr',
         'buyout_percent',
         'advertising_per_buyout',
@@ -18,7 +20,9 @@
     var expandedOrder = [
         'seller_price',
         'buyer_price',
+        'spp_percent',
         'pay_price',
+        'pay_discount_percent',
         'category_name',
         'commission_percent',
         'commission_rub',
@@ -50,7 +54,9 @@
         fields.groups.map(function (g) {
             return g[1];
         }),
-    ).concat([['commission_rub', 'Комиссия YM, руб', '₽'],
+    ).concat([['spp_percent', 'СПП', '%'],
+        ['pay_discount_percent', 'Скидка Яндекс Пэй', '%'],
+        ['commission_rub', 'Комиссия YM, руб', '₽'],
         ['logistics_total', 'Логистика на один выкуп', '₽'],
         ['delivery_customer', 'Доставка покупателю', '₽'],
         ['middle_mile', 'Средняя миля', '₽'],
@@ -63,6 +69,7 @@
     });
     var tariffFields = ['commission_percent', 'payment_acceptance', 'delivery_cost', 'delivery_customer', 'middle_mile', 'delivery_other'];
     var quoteFields = ['seller_price', 'length', 'width', 'height', 'weight'];
+    var priceFields = ['seller_price', 'buyer_price', 'pay_price'];
     var logisticsFields = ['logistics_total', 'length', 'width', 'height', 'weight', 'volume_l',
         'delivery_customer', 'middle_mile', 'delivery_other', 'logistics_returns', 'repeat_delivery', 'return_cost', 'transit_cost'];
     var costs = {
@@ -87,6 +94,11 @@
         if (value == null) return '';
         return key === 'commission_percent' || key === 'commission_rub' || key === 'advertising_per_buyout'
             ? Number(value).toFixed(2) : String(value);
+    }
+    function priceFactor(base, discounted, percent) {
+        if (Number.isFinite(base) && base > 0 && Number.isFinite(discounted) && discounted > 0 && discounted <= base)
+            return discounted / base;
+        return Number.isFinite(percent) && percent >= 0 && percent < 100 ? 1 - percent / 100 : null;
     }
     function metric(label, value, unit) {
         return window.CheckStockUI.render('economics/yandex/calculator/metric', {
@@ -118,6 +130,7 @@
             alive = true,
             expanded = false;
         var picker, categoryEdited = false, tariffNeedsQuote = false, manualTariffs = {};
+        var priceFactors, linkedPrices = {};
         var logisticsOpen = false;
         var historyCache = {},
             historySequence = 0,
@@ -148,6 +161,32 @@
                 '#yandex-economics-settings'
             );
         }
+        function syncLinkedPrices(source, value) {
+            if (!priceFields.includes(source) || !Number.isFinite(value) || value < 0) return false;
+            delete linkedPrices[source];
+            var sellerChanged = false;
+            function setPrice(key, next) {
+                var input = container.querySelector('[data-ym-field="' + key + '"]');
+                next = next == null ? null : Math.round((next + Number.EPSILON) * 100) / 100;
+                if (key === 'seller_price' && input.value !== inputValue(key, next)) sellerChanged = true;
+                input.value = inputValue(key, next);
+                changed[key] = next;
+                linkedPrices[key] = true;
+                return next;
+            }
+            var buyer;
+            if (source === 'seller_price') {
+                buyer = setPrice('buyer_price', priceFactors.spp == null ? null : value * priceFactors.spp);
+                setPrice('pay_price', buyer == null || priceFactors.pay == null ? null : buyer * priceFactors.pay);
+            } else if (source === 'buyer_price') {
+                if (priceFactors.spp != null) setPrice('seller_price', value / priceFactors.spp);
+                setPrice('pay_price', priceFactors.pay == null ? null : value * priceFactors.pay);
+            } else if (priceFactors.pay != null) {
+                buyer = setPrice('buyer_price', value / priceFactors.pay);
+                if (priceFactors.spp != null) setPrice('seller_price', buyer / priceFactors.spp);
+            }
+            return sellerChanged;
+        }
         function logisticsBlock() {
             function input(key) {
                 return field(specs.find(function (spec) { return spec[0] === key; }), true);
@@ -166,6 +205,11 @@
                 value = data.values[key],
                 label = spec[1],
                 order = compact.indexOf(key);
+            if (key === 'spp_percent' || key === 'pay_discount_percent') {
+                return window.CheckStockUI.render('economics/yandex/calculator/discount-row', {
+                    key: key, label: label, order: order, index: index,
+                });
+            }
             if (!inLogistics && key === 'delivery_cost') return logisticsBlock();
             if (!inLogistics && logisticsFields.includes(key)) return '';
             if (key === 'category_name') return window.CheckStockUI.render('economics/yandex/categories/container', { index: index });
@@ -352,6 +396,13 @@
         }
         function draw() {
             if (picker) picker.dispose();
+            // Keep the same discounts throughout a scenario, including repeated and reverse edits.
+            var pricing = data.pricing || {};
+            priceFactors = {
+                spp: priceFactor(data.values.seller_price, data.values.buyer_price, pricing.spp_percent),
+                pay: priceFactor(data.values.buyer_price, data.values.pay_price, pricing.pay_discount_percent),
+            };
+            linkedPrices = {};
             container.innerHTML = window.CheckStockUI.render('economics/yandex/calculator/draw-6', {
                 content: expanded ? ' checked' : '',
                 content_3: scheme === 'FBY' ? ' selected' : '',
@@ -416,10 +467,11 @@
                         value = value == null || !(price > 0) ? null : value / price * 100;
                         key = 'commission_percent';
                         container.querySelector('[data-ym-field="commission_percent"]').value = inputValue(key, value);
-                    } else if (key === 'commission_percent' || key === 'seller_price') {
+                    } else if (key === 'commission_percent' || priceFields.includes(key)) {
                         container.querySelector('[data-ym-field="commission_rub"]').setCustomValidity('');
                     }
                     changed[key] = value;
+                    if (syncLinkedPrices(key, value)) tariffNeedsQuote = true;
                     if (['delivery_customer', 'middle_mile', 'delivery_other'].includes(key)) {
                         delete changed.delivery_cost;
                         delete manualTariffs.delivery_cost;
@@ -523,7 +575,9 @@
             };
             container.querySelectorAll('[data-ym-field]').forEach(function (input) {
                 var key = input.dataset.ymField;
-                var origin = changed[key] != null ? 'Сценарий: введено вручную' : origins[key] || 'Расчёт из параметров товара';
+                var origin = linkedPrices[key] && changed[key] != null
+                    ? 'Сценарий: пересчитано с сохранением СПП и скидки Пэй'
+                    : changed[key] != null ? 'Сценарий: введено вручную' : origins[key] || 'Расчёт из параметров товара';
                 var formula = formulas[key] || ('Значение: ' + n(key) + '. Используется при запросе тарифа доставки ЯМ.');
                 if (['logistics_total', 'logistics_returns', 'repeat_delivery', 'delivery_cost', 'return_cost'].includes(key) && changed[key] != null)
                     formula = 'Ручное значение заменяет автоматический расчёт: ' + rub(Number(input.value)) + '.';
@@ -538,6 +592,22 @@
             if (results[0]) results[0].title = charge(n('seller_price') + ' ₽ − расходы ' + rub(r.total_cost), r.margin);
             if (results[1]) results[1].title = rub(r.margin) + ' / ' + n('purchase_price') + ' ₽ × 100 = ' + number(r.roi) + '%';
         }
+        function showDiscounts(state) {
+            ['spp_percent', 'pay_discount_percent'].forEach(function (key) {
+                var pay = key === 'pay_discount_percent';
+                var base = state.values[pay ? 'buyer_price' : 'seller_price'];
+                var target = state.values[pay ? 'pay_price' : 'buyer_price'];
+                var percent = typeof base === 'number' && Number.isFinite(base) && base > 0 &&
+                    typeof target === 'number' && Number.isFinite(target) && target > 0 && target <= base
+                    ? (1 - target / base) * 100 : null;
+                var node = container.querySelector('[data-ym-computed="' + key + '"]');
+                node.textContent = number(percent) + (percent == null ? '' : '%');
+                node.closest('.ue1c-calculator-row').title = percent == null
+                    ? 'Нет сопоставимых цен для расчёта скидки.'
+                    : '(1 − ' + number(target) + ' / ' + number(base) + ') × 100 = ' + number(percent) + '%.' +
+                        (pay ? ' База — цена покупателя без Пэй.' : ' База — цена продавца.');
+            });
+        }
         function showResult(state) {
             var r = state.result,
                 period =
@@ -546,6 +616,7 @@
                         : data.period || {},
                 coverage = period.coverage || {};
             showLogistics(state);
+            showDiscounts(state);
             specs.forEach(function (spec) {
                 var key = spec[0];
                 var input = container.querySelector('[data-ym-field="' + key + '"]');

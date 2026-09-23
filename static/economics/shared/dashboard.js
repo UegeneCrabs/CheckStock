@@ -219,6 +219,8 @@
         return group.key;
     });
     if (config.yandexMetrics === true) {
+        var currentGroup = columnGroups.find(function (group) { return group.key === 'current'; });
+        currentGroup.columns = currentGroup.columns.filter(function (column) { return column.index !== 24; });
         columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
             index: 25, label: 'В пути на склады FBO', number: true, width: 125,
             help: 'Утверждённые заявки и ещё не принятые товары в отправленных поставках. Черновики, отменённые и завершённые заявки исключены. Знак ≥ означает, что часть количеств пока неизвестна.',
@@ -835,7 +837,8 @@
                 ? '\nROI не рассчитан:\n• ' + roiIssues.join('\n• ')
                 : '\nROI = маржа на 1 штуку ÷ закупочная цена × 100%.'),
             content_2: nullable(current.roi, decimal, '%'),
-            content_3: nullable(currentSpp, decimal, '%'),
+            discountCell: config.yandexMetrics === true ? '' : window.CheckStockUI.render(
+                'economics/shared/dashboard/current-discount-cell', { value: nullable(currentSpp, decimal, '%') }),
         });
         cells.actual = window.CheckStockUI.render('economics/shared/dashboard/render-product-7', {
             turnoverCoverage: coverageCellClass(turnoverCoverage),
