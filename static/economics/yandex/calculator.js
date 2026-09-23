@@ -130,7 +130,7 @@
             alive = true,
             expanded = false;
         var picker, categoryEdited = false, tariffNeedsQuote = false, manualTariffs = {};
-        var priceFactors, linkedPrices = {};
+        var priceFactors, linkedPrices = {}, priceSource = 'seller_price';
         var logisticsOpen = false;
         var historyCache = {},
             historySequence = 0,
@@ -162,6 +162,7 @@
             );
         }
         function syncLinkedPrices(source, value) {
+            if (priceFields.includes(source)) priceSource = source;
             if (!priceFields.includes(source) || !Number.isFinite(value) || value < 0) return false;
             delete linkedPrices[source];
             var sellerChanged = false;
@@ -403,14 +404,41 @@
                 pay: priceFactor(data.values.buyer_price, data.values.pay_price, pricing.pay_discount_percent),
             };
             linkedPrices = {};
+            priceSource = 'seller_price';
             container.innerHTML = window.CheckStockUI.render('economics/yandex/calculator/draw-6', {
                 content: expanded ? ' checked' : '',
                 content_3: scheme === 'FBY' ? ' selected' : '',
                 content_4: scheme === 'FBS' ? ' selected' : '',
                 content_6: expanded ? ' is-expanded' : '',
                 content_7: specs.map(function (spec) { return field(spec, false); }).join(''),
-                content_8: window.CheckStockUI.render('economics/yandex/calculator/draw-2'),
+                content_8: window.CheckStockUI.render('economics/yandex/calculator/draw-2') +
+                    (options.canEdit ? window.CheckStockUI.render('economics/yandex/calculator/save-price') : ''),
             });
+            var savePrice = container.querySelector('[data-ym-save-price]');
+            if (savePrice) savePrice.onclick = async function () {
+                var seller = container.querySelector('[data-ym-field="seller_price"]');
+                var source = container.querySelector('[data-ym-field="' + priceSource + '"]');
+                if (!source.checkValidity() || !(Number(source.value) > 0) ||
+                    !seller.checkValidity() || !(Number(seller.value) > 0)) {
+                    message('Укажите положительную цену товара.', true);
+                    return;
+                }
+                if ((priceSource !== 'seller_price' && priceFactors.spp == null) ||
+                    (priceSource === 'pay_price' && priceFactors.pay == null)) {
+                    message('Скидка площадки неизвестна. Для отправки задайте цену без СПП.', true);
+                    return;
+                }
+                savePrice.disabled = true;
+                savePrice.textContent = 'Проверяем…';
+                try {
+                    await options.onSavePrice(Number(seller.value));
+                } catch (error) {
+                    if (alive) message(error.message || 'Не удалось проверить цену ЯМ', true);
+                } finally {
+                    savePrice.disabled = false;
+                    savePrice.textContent = 'Сохранить цену';
+                }
+            };
             var logistics = container.querySelector('[data-ym-logistics]');
             logistics.querySelector('input').onclick = function (event) { event.stopPropagation(); };
             logistics.ontoggle = function () { logisticsOpen = logistics.open; };
@@ -772,7 +800,10 @@
                     break_even: breakEven,
                 });
                 if (alive && current === sequence) {
-                    if (breakEven) changed = result.economics.break_even_scenario;
+                    if (breakEven) {
+                        changed = result.economics.break_even_scenario;
+                        priceSource = 'seller_price';
+                    }
                     showResult(result.economics);
                     container.querySelector('[data-ym-break-even]').disabled = false;
                     if (breakEven) message('Цена без убытка подставлена.');

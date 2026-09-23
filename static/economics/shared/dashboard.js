@@ -24,6 +24,10 @@
     var productsRequestId = 0;
     var productsController = null;
     var canEdit = !placeholderMode && config.canEdit === true;
+    var priceApi = config.yandexEconomics
+        ? '/api/unit-economics-1c/yandex-market/prices'
+        : '/api/unit-economics-1c/prices';
+    var priceDestination = config.yandexEconomics ? 'Яндекс Маркете' : 'WB';
     var productsById = {};
     products.forEach(function (product) {
         product._detailLoaded = Boolean(product.details && Array.isArray(product.history));
@@ -2500,6 +2504,9 @@
                 canManageSettings: config.canManageYandexSettings === true,
                 parameters: nodes.parameters,
                 historyContainer: historyPanel,
+                onSavePrice: function (value) {
+                    return previewYandexPrice(product, value);
+                },
                 onHistory: function (rows, message) {
                     renderYandexHistory(product, rows, message);
                 },
@@ -2871,6 +2878,39 @@
         nodes.confirmModal.classList.remove('is-open');
         nodes.confirmModal.setAttribute('aria-hidden', 'true');
     }
+    async function previewYandexPrice(product, value) {
+        if (!config.canEditYandex || sendingPrice) return;
+        if (!Number.isFinite(value) || value <= 0) throw new Error('Укажите цену продавца больше нуля');
+        var result = await window.YandexEconomicsFields.request('prices/preview', 'POST', {
+            store_slug: product.store_slug,
+            article: product.article,
+            seller_price: value,
+        });
+        if (state.selected !== product.id || !nodes.detail.classList.contains('is-open')) return;
+        var plan = result.plan;
+        pendingPriceChange = {
+            productId: product.id,
+            payload: { preview_id: result.preview_id },
+            plan: plan,
+        };
+        nodes.confirmProduct.textContent = product.store_name + ' · ' + product.article + ' · ' + product.name;
+        nodes.confirmTarget.textContent = 'Цена продавца: ' + decimal.format(plan.price.value) + ' ₽';
+        nodes.confirmGrid.innerHTML = confirmationRow('Цена без СПП', plan.previous_price.value, plan.price.value, ' ₽');
+        if (plan.price.discountBase != null) {
+            nodes.confirmGrid.innerHTML += confirmationRow('Зачёркнутая цена', plan.previous_price.discountBase, plan.price.discountBase, ' ₽');
+        }
+        if (plan.price.minimumForBestseller != null) {
+            nodes.confirmGrid.innerHTML += confirmationRow('Минимум для «Бестселлеров»', plan.previous_price.minimumForBestseller, plan.price.minimumForBestseller, ' ₽');
+        }
+        nodes.confirmWarning.hidden = false;
+        nodes.confirmWarning.textContent = 'Изменится общая цена товара в кабинете Яндекс Маркета ' +
+            plan.business_id + ' для FBY и FBS. Индивидуальные цены магазинов и цены акций сохраняются. ' +
+            'Цены покупателя и с Пэй определяет Маркет: значения в калькуляторе — прогноз. ' +
+            'Применение занимает несколько минут; возможен карантин цены.';
+        nodes.confirmModal.classList.add('is-open');
+        nodes.confirmModal.setAttribute('aria-hidden', 'false');
+        nodes.confirmSend.focus();
+    }
     async function saveSelectedPrice() {
         var product = productsById[state.selected];
         if (!product || !canEdit) {
@@ -2926,16 +2966,16 @@
         nodes.confirmCancel.disabled = true;
         nodes.confirmClose.disabled = true;
         nodes.confirmSend.textContent = 'Ставим в очередь…';
-        if (product) updateSaveState(product);
+        if (product && !config.yandexEconomics) updateSaveState(product);
         try {
-            var response = await window.fetch('/api/unit-economics-1c/prices', {
+            var response = await window.fetch(priceApi, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
                 body: JSON.stringify(pending.payload),
             });
             var result = await response.json();
             if (!response.ok || !result.job_id)
-                throw new Error(result.error || 'Не удалось запустить отправку');
+                throw new Error(result.error || result.detail || 'Не удалось запустить отправку');
             pendingPriceChange = null;
             nodes.confirmModal.classList.remove('is-open');
             nodes.confirmModal.setAttribute('aria-hidden', 'true');
@@ -2944,14 +2984,14 @@
             showToast('Цена отправляется в фоне — можно продолжать работу');
             pollPriceJob(result.job_id);
         } catch (error) {
-            showToast(error.message || 'Не удалось передать цену в WB', 'error');
+            showToast(error.message || 'Не удалось передать цену', 'error');
         } finally {
             sendingPrice = false;
             nodes.confirmSend.disabled = false;
             nodes.confirmCancel.disabled = false;
             nodes.confirmClose.disabled = false;
             nodes.confirmSend.textContent = 'Подтвердить и отправить';
-            if (product) updateSaveState(product);
+            if (product && !config.yandexEconomics) updateSaveState(product);
         }
     }
     function finishPriceJob(jobId) {
@@ -2963,14 +3003,15 @@
     async function pollPriceJob(jobId) {
         try {
             var response = await window.fetch(
-                '/api/unit-economics-1c/prices/jobs/' + encodeURIComponent(jobId),
+                priceApi + '/jobs/' + encodeURIComponent(jobId),
                 {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
                 },
             );
             var job = await response.json();
-            if (response.status === 404) {
+            if (response.status === 404 || response.status === 403) {
                 finishPriceJob(jobId);
+                if (config.yandexEconomics) showToast('Проверка отправки недоступна. Проверьте цену в кабинете Маркета', 'error');
                 return;
             }
             if (!response.ok) throw new Error(job.error || 'Не удалось проверить отправку цены');
@@ -2983,14 +3024,29 @@
             finishPriceJob(jobId);
             var refreshed = await loadProducts({ silent: true, refreshDetail: true });
             if (job.status === 'success') {
+                if (config.yandexEconomics) {
+                    var selectedProduct = productsById[state.selected];
+                    var detailVersion = detailRequestId;
+                    if (selectedProduct && job.result &&
+                        selectedProduct.store_slug === job.result.store_slug &&
+                        selectedProduct.article === job.result.article && nodes.detail.classList.contains('is-open')) {
+                        try {
+                            var updated = await window.YandexEconomicsFields.request('economics/' +
+                                encodeURIComponent(selectedProduct.store_slug) + '/' + encodeURIComponent(selectedProduct.article));
+                            selectedProduct.ym_economics = updated.economics;
+                            if (state.selected === selectedProduct.id && detailRequestId === detailVersion)
+                                renderDetailProduct(selectedProduct);
+                        } catch (error) { refreshed = false; }
+                    }
+                }
                 showToast(
-                    refreshed
-                        ? 'Цена применена в WB, данные сайта обновлены'
-                        : 'Цена применена в WB. Обновите страницу, чтобы увидеть свежие данные',
+                    (job.result && job.result.warning) || (refreshed
+                        ? 'Цена применена в ' + priceDestination + ', данные сайта обновлены'
+                        : 'Цена применена в ' + priceDestination + '. Обновите страницу, чтобы увидеть свежие данные'),
                     refreshed ? undefined : 'error',
                 );
             } else {
-                showToast(job.error || 'WB не принял изменение цены', 'error');
+                showToast(job.error || 'Не удалось подтвердить изменение цены в ' + priceDestination, 'error');
             }
         } catch (error) {
             window.setTimeout(function () {
@@ -3485,6 +3541,6 @@
     };
     renderPage();
     loadProducts().then(function () {
-        if (!placeholderMode) pendingPriceJobs.slice().forEach(pollPriceJob);
+        if (!placeholderMode || config.yandexEconomics) pendingPriceJobs.slice().forEach(pollPriceJob);
     });
 })();
