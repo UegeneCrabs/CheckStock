@@ -71,6 +71,8 @@ services:
       CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR: ${CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR:-2}
       CHECKSTOCK_WB_STOREFRONT_DEST: ${CHECKSTOCK_WB_STOREFRONT_DEST:--1257786}
       CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE: ${CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE:-100}
+      CHECKSTOCK_WB_STOREFRONT_AUTO_REFRESH: ${CHECKSTOCK_WB_STOREFRONT_AUTO_REFRESH:-1}
+      CHECKSTOCK_WB_STOREFRONT_SESSION_PATH: /app/data/wb-storefront/session.json
       CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS: ${CHECKSTOCK_TOKEN_CHECK_INTERVAL_SECONDS:-21600}
       CHECKSTOCK_WB_ADVERTISING_SYNC_STARTUP_DELAY_SECONDS: ${CHECKSTOCK_WB_ADVERTISING_SYNC_STARTUP_DELAY_SECONDS:-10}
       CHECKSTOCK_AUTO_SYNC_INTERVAL_SECONDS: ${CHECKSTOCK_AUTO_SYNC_INTERVAL_SECONDS:-1800}
@@ -99,6 +101,7 @@ services:
     volumes:
       - ./secrets:/app/secrets:ro
       - yandex-parser-data:/app/data/yandex-storefront
+      - wb-storefront-data:/app/data/wb-storefront
     stop_grace_period: 60s
 
   watchdog:
@@ -124,5 +127,6 @@ services:
     stop_grace_period: 10s
 
 volumes:
+  wb-storefront-data:
   yandex-parser-data:
   postgres-data:

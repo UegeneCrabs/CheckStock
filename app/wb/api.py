@@ -9,6 +9,7 @@ import urllib.request
 from hashlib import sha256
 
 from app.config import settings
+from app.wb import storefront_session
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ ANALYTICS_BASE = "https://seller-analytics-api.wildberries.ru"
 CONTENT_BASE = "https://content-api.wildberries.ru"
 STATISTICS_BASE = "https://statistics-api.wildberries.ru"
 DISCOUNTS_PRICES_BASE = "https://discounts-prices-api.wildberries.ru"
-STOREFRONT_CARDS_BASE = "https://card.wb.ru/cards/v4/detail"
+STOREFRONT_CARDS_BASE = storefront_session.CARDS_URL
 STOREFRONT_DEFAULT_PAYMENT_URL = (
     "https://static-basket-01.wbbasket.ru/vol1/global-payment/default-payment.json"
 )
@@ -95,6 +96,18 @@ class WBStorefrontError(WBApiError):
                 "токен продавца в этом запросе не используется"
             )
         return super().friendly
+
+
+class WBStorefrontSessionError(WBStorefrontError):
+    def __init__(self, status: int | None, detail: str = "", *, session_fingerprint: str | None = None):
+        self.session_fingerprint = session_fingerprint
+        super().__init__(status, detail=detail)
+
+    @property
+    def friendly(self) -> str:
+        return self.detail or (
+            f"витрина WB требует обновить сеанс (HTTP {self.status}). " + storefront_session.SESSION_HELP
+        )
 
 
 def _parse_error_body(raw: str) -> tuple[str, str]:
@@ -255,6 +268,7 @@ def request(method: str, url: str, token: str, params: dict | None = None, json_
 
 
 def _public_request(url: str, params: dict | None = None):
+    is_cards = url == STOREFRONT_CARDS_BASE
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
     headers = {
@@ -264,6 +278,13 @@ def _public_request(url: str, params: dict | None = None):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"
         ),
     }
+    if is_cards:
+        try:
+            session_data = storefront_session.read_session()
+            session_fingerprint = storefront_session.fingerprint(session_data)
+            headers.update(storefront_session.request_headers(session_data))
+        except storefront_session.StorefrontSessionError as error:
+            raise WBStorefrontSessionError(None, detail=str(error)) from None
     retryable_statuses = {429, 498}
     for attempt in range(1, REQUEST_ATTEMPTS + 1):
         req = urllib.request.Request(url, headers=headers, method="GET")
@@ -271,6 +292,9 @@ def _public_request(url: str, params: dict | None = None):
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
                 raw_body = resp.read().decode("utf-8")
         except urllib.error.HTTPError as error:
+            if is_cards and error.code in {401, 403, 498}:
+                error.close()
+                raise WBStorefrontSessionError(error.code, session_fingerprint=session_fingerprint) from None
             raw = error.read().decode("utf-8", errors="replace")
             title, detail = _parse_error_body(raw)
             retryable = error.code in retryable_statuses or error.code >= 500
@@ -825,6 +849,33 @@ def get_price_upload_details(token: str, upload_id: int) -> list[dict]:
     return [row for row in rows if isinstance(row, dict)]
 
 
+class _StorefrontSessionRecovery:
+    """One retry per batch and at most two renewals across a complete collection."""
+
+    def __init__(self):
+        self.refreshes = 0
+
+    def request(self, params: dict):
+        try:
+            return _public_request(STOREFRONT_CARDS_BASE, params=params)
+        except WBStorefrontSessionError as error:
+            if not settings.wb_storefront_auto_refresh or self.refreshes >= 2:
+                raise
+            self.refreshes += 1
+            from app.wb import storefront_browser
+
+            try:
+                storefront_browser.prepare(
+                    str(params["nm"]).split(";", 1)[0],
+                    rejected_fingerprint=error.session_fingerprint,
+                    force=False,
+                )
+            except storefront_session.StorefrontSessionError as refresh_error:
+                raise WBStorefrontSessionError(None, detail=str(refresh_error)) from None
+            # If renewal didn't resolve the rejection, don't keep reopening browsers.
+            return _public_request(STOREFRONT_CARDS_BASE, params=params)
+
+
 def get_storefront_products(
     nm_ids: list[str] | tuple[str, ...] | set[str],
     *,
@@ -857,6 +908,7 @@ def get_storefront_products(
     products_by_nm: dict[str, dict] = {}
     failed_nm_ids: set[str] = set()
     errors: list[str] = []
+    session_recovery = _StorefrontSessionRecovery()
     for start in range(0, len(unique), limit):
         if start:
             logger.debug(
@@ -876,9 +928,8 @@ def get_storefront_products(
         )
         started = time.monotonic()
         try:
-            payload = _public_request(
-                STOREFRONT_CARDS_BASE,
-                params={
+            payload = session_recovery.request(
+                {
                     "appType": 1,
                     "curr": "rub",
                     "dest": settings.wb_storefront_dest,
@@ -907,7 +958,9 @@ def get_storefront_products(
                 time.monotonic() - started,
                 message,
             )
-            if isinstance(error, WBStorefrontError) and error.status in {401, 403}:
+            if isinstance(error, WBStorefrontSessionError) or (
+                isinstance(error, WBStorefrontError) and error.status in {401, 403}
+            ):
                 # Repeating every remaining batch cannot resolve a denied public endpoint.
                 failed_nm_ids.update(unique[start:])
                 break
