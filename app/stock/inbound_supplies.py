@@ -62,4 +62,5 @@ def sync_all() -> dict:
         for marketplace in MARKETPLACES
         for store in sync_settings.enabled_stores(JOB_NAME, marketplace)
     )
-    return build_service().sync(targets)
+    # The scheduler and integration controls call this under run_tracked's lock.
+    return build_service().sync(targets, recover_interrupted=True)

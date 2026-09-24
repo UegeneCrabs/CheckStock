@@ -2,7 +2,7 @@ import html
 import json
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -12,6 +12,9 @@ from app.config import settings
 from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.inbound_supplies import STAGE_LABELS, InboundSyncRequest
+from app.jobs.locks import SyncJobBusyError
+from app.jobs.tracking import queue_tracked
+from app.stock.inbound_supplies import JOB_NAME
 from app.web.dependencies import ContainerDependency
 from app.web.templating import fill_template, render_page
 
@@ -89,13 +92,22 @@ async def inbound_data(request: Request, container: ContainerDependency, store: 
 async def inbound_sync(
     request: Request,
     payload: InboundSyncRequest,
-    background_tasks: BackgroundTasks,
     container: ContainerDependency,
 ):
     targets = allowed_targets(request, payload.store, payload.marketplace)
-    claimed = await run_in_threadpool(container.inbound_supplies.claim, targets)
-    if claimed:
-        background_tasks.add_task(container.inbound_supplies.sync_claimed, claimed)
+    try:
+        run_id = await run_in_threadpool(
+            queue_tracked,
+            JOB_NAME,
+            lambda: container.inbound_supplies.sync(targets, recover_interrupted=True),
+        )
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Выгрузка поставок уже выполняется. Дождитесь завершения."},
+            status_code=409,
+        )
     return JSONResponse(
-        {"ok": True, "started": len(claimed)}, status_code=202, headers={"Cache-Control": "no-store"}
+        {"ok": True, "started": len(targets), "job_id": run_id},
+        status_code=202,
+        headers={"Cache-Control": "no-store"},
     )

@@ -14,6 +14,8 @@ class InboundRepository(Protocol):
 
     def claim(self, target: Target, token: str, now: datetime) -> bool: ...
 
+    def release_interrupted_claims(self, targets: Sequence[Target]) -> int: ...
+
     def finish(
         self,
         target: Target,
@@ -67,8 +69,19 @@ class InboundSupplyService:
             f"{target[0]} / {target[1]}": result for (target, _), result in zip(claimed, results, strict=True)
         }
 
-    def sync(self, targets: Sequence[Target]) -> dict:
-        return self.sync_claimed(self.claim(targets))
+    def sync(self, targets: Sequence[Target], *, recover_interrupted: bool = False) -> dict:
+        if recover_interrupted:
+            # Only callers holding the shared inbound job lock may recover claims:
+            # no other scheduled/manual loader can still own these leases.
+            self.repository.release_interrupted_claims(targets)
+        claimed = self.claim(targets)
+        if targets and not claimed:
+            return {
+                "ok": False,
+                "error": "Поставки не обновлены: все выбранные магазины уже обновляются "
+                "или запускались менее минуты назад. Повторите обновление позже.",
+            }
+        return self.sync_claimed(claimed)
 
     def _sync_one(self, target: Target, token: str) -> dict:
         try:

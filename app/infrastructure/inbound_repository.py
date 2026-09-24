@@ -52,6 +52,28 @@ class SqlAlchemyInboundRepository:
                 )
             return result
 
+    def release_interrupted_claims(self, targets: Sequence[Target]) -> int:
+        """Called under the shared job lock; keep the previous snapshot intact."""
+        if not targets:
+            return 0
+        with self.session_factory() as session:
+            result = session.execute(
+                update(SnapshotRecord)
+                .where(
+                    tuple_(SnapshotRecord.store_slug, SnapshotRecord.marketplace).in_(targets),
+                    SnapshotRecord.run_token.is_not(None),
+                )
+                .values(
+                    run_token=None,
+                    lease_until=None,
+                    last_attempt=None,
+                    status="error",
+                    error="Предыдущее обновление прервано. Повторяем выгрузку поставок.",
+                )
+            )
+            session.commit()
+            return result.rowcount
+
     def claim(self, target: Target, token: str, now: datetime) -> bool:
         with self.session_factory() as session:
             if session.get(SnapshotRecord, target) is None:
