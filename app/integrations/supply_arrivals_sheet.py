@@ -29,9 +29,9 @@ TEXT_COLUMNS = {
     "shipping": "Способ",
 }
 NUMBER_COLUMNS = {"volume": "Обьем", "weight": "Вес", "boxes": "Коробки"}
-# Both the displayed arrival date and its week use the actual Moscow arrival
-# date (column AL in the source register), without falling back to the plan.
-ARRIVAL_COLUMN = "Факт даты прихода в МСК"
+# The source renamed the actual arrival date from Moscow to the fulfillment
+# warehouse. Keep both headings compatible, without falling back to the plan.
+ARRIVAL_COLUMN = "Факт даты прихода на ФФ"
 READ_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 
 
@@ -41,6 +41,9 @@ class SupplySheetError(RuntimeError):
 
 def header_key(value: str) -> str:
     return " ".join(value.casefold().replace("ё", "е").replace("объем", "обьем").split())
+
+
+HEADER_ALIASES = {header_key("Факт даты прихода в МСК"): header_key(ARRIVAL_COLUMN)}
 
 
 STORE_ALIASES = {
@@ -113,6 +116,7 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
     required_keys = {header_key(label) for label in required}
     for header_index, row in enumerate(rows[:20]):
         keys = [header_key(str(cell.get("formattedValue", ""))) for cell in row.get("values", [])]
+        keys = [HEADER_ALIASES.get(key, key) for key in keys]
         if len(required_keys & set(keys)) > len(required_keys & best_keys):
             best_keys = set(keys)
         if all(header_key(label) in keys for label in required):
