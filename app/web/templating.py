@@ -210,7 +210,7 @@ def render_page(
         "unit_1c_ozon",
         "unit_1c_yandex",
     }
-    reports_open = active in {"unit_1c_reports", "unit_1c_target_price"}
+    reports_open = active in {"unit_1c_reports", "unit_1c_target_price", "unit_1c_reports_yandex", "unit_1c_target_price_yandex"}
     visible = {section: has_access(user, section) for section in SectionName}
     current_section = active_section(active)
     current_access = (
@@ -224,12 +224,17 @@ def render_page(
         "unit_1c_wb": ("wb", "WB", "Wildberries"),
         "unit_1c_ozon": ("ozon", "O", "Ozon"),
         "unit_1c_yandex": ("ym", "Я", "Яндекс Маркет"),
+        "unit_1c_reports": ("wb", "WB", "Wildberries"),
+        "unit_1c_target_price": ("wb", "WB", "Wildberries"),
+        "unit_1c_reports_yandex": ("ym", "Я", "Яндекс Маркет"),
+        "unit_1c_target_price_yandex": ("ym", "Я", "Яндекс Маркет"),
     }.get(active)
     marketplace_badge = ""
     if marketplace:
         color, mark, label = marketplace
+        marketplace_section = "Отчёты" if reports_open else "Юнит-экономика"
         marketplace_badge = (
-            f'<span class="marketplace-badge" aria-label="Юнит-экономика: {label}">'
+            f'<span class="marketplace-badge" aria-label="{marketplace_section}: {label}">'
             f'<span class="marketplace-badge-mark" aria-hidden="true">{mark}</span>'
             f'<span class="marketplace-badge-label">{label}</span></span>'
         )
@@ -279,6 +284,10 @@ def render_page(
         unit_1c_wb_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_WB]),
         unit_1c_ozon_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_OZON]),
         unit_1c_yandex_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_YANDEX]),
+        unit_1c_reports_yandex_active="active" if active == "unit_1c_reports_yandex" else "",
+        unit_1c_target_price_yandex_active="active" if active == "unit_1c_target_price_yandex" else "",
+        unit_1c_reports_yandex_hidden=hidden(visible[SectionName.REPORT_UNIT_PROFIT_YANDEX]),
+        unit_1c_target_price_yandex_hidden=hidden(visible[SectionName.REPORT_TARGET_PRICE_YANDEX]),
         unit_1c_reports_hidden=hidden(visible[SectionName.REPORT_UNIT_PROFIT]),
         unit_1c_target_price_hidden=hidden(visible[SectionName.REPORT_TARGET_PRICE]),
         admin_link=admin_link,

@@ -8,13 +8,14 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.economics.wb import calculations as unit_economics_1c
 from app.exports import stock_sheet_inbound
-from app.repositories import unit_economics_yandex as repository
 from app.repositories import (
+    unit_economics_data_errors,
     yandex_assortment,
     yandex_product_statuses,
     yandex_source_values,
     yandex_storefront,
 )
+from app.repositories import unit_economics_yandex as repository
 
 MARKETPLACE = "YANDEX MARKET"
 
@@ -158,31 +159,47 @@ def load_products(
     date_from: date | None = None,
     date_to: date | None = None,
     include_economics: bool = True,
+    include_inactive: bool = False,
+    allow_current_day: bool = False,
+    sources=None,
 ) -> list[dict]:
+    read = sources.read if sources is not None else lambda loader, *args: loader(*args)
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     end = date_to or today - timedelta(days=1)
     start = date_from or end - timedelta(days=6)
-    if start > end or end >= today or (end - start).days >= 366:
+    if start > end or end > today or (end == today and not allow_current_day) or (end - start).days >= 366:
         raise ValueError("Некорректный период юнит-экономики")
     period_days = (end - start).days + 1
     stock_start = today - timedelta(days=unit_economics_1c.STOCK_COVERAGE_PERIOD_DAYS - 1)
     history_start = min(start, stock_start)
+    source_health = unit_economics_data_errors.source_states(store_slugs, MARKETPLACE)
     products = []
     for slug in store_slugs:
-        active = yandex_assortment.active_articles(slug)
-        catalog = [row for row in db.get_catalog_items(slug, MARKETPLACE) if row["article"] in active]
+        active = read(yandex_assortment.active_articles, slug)
+        catalog = [row for row in read(db.get_catalog_items, slug, MARKETPLACE) if row["article"] in active]
         inbound = stock_sheet_inbound.load(slug, MARKETPLACE, catalog, include_yandex_approved=True)
         archived = yandex_assortment.archived_articles(slug)
         catalog = [row for row in inbound.catalog if row["article"] not in archived]
         stocks = {row["article"]: row for row in db.get_stock_items(slug, MARKETPLACE, ("fbs", "fbo"))}
-        snapshots = repository.get_snapshots(slug)
-        product_statuses = yandex_product_statuses.get_statuses(slug)
-        source_values = yandex_source_values.get_values(slug)
-        prices = yandex_storefront.get_prices(slug)
-        orders_snapshot = snapshots.get("orders") or {}
-        daily_orders, loaded_orders = repository.get_history(
-            slug, "orders", history_start.isoformat(), today.isoformat()
+        snapshots = read(repository.get_snapshots, slug)
+        snapshot_errors = [
+            f"Источник {source}: {snapshot['error']}"
+            for source, snapshot in snapshots.items()
+            if snapshot.get("error")
+        ]
+        snapshot_errors.extend(
+            f"Источник {scope}: {state.get('error') or 'ошибка обновления API'}"
+            for scope, state in source_health.get(slug, {}).items()
+            if not state.get("ok")
         )
+        product_statuses = yandex_product_statuses.get_statuses(slug)
+        source_values = read(yandex_source_values.get_values, slug)
+        prices = read(yandex_storefront.get_prices, slug)
+        orders_snapshot = snapshots.get("orders") or {}
+        daily_orders, loaded_orders = read(
+            repository.get_history, slug, "orders", history_start.isoformat(), today.isoformat()
+        )
+        loaded_orders = set(loaded_orders)
         legacy_orders = repository.get_daily_orders(
             slug, history_start.isoformat(), (today + timedelta(days=1)).isoformat()
         )
@@ -210,9 +227,7 @@ def load_products(
             for day in repository.days_between(history_start.isoformat(), today.isoformat())
             if _orders_cover(orders_snapshot, sync_states, date.fromisoformat(day), date.fromisoformat(day))
         }
-        orders_known = (
-            set(repository.days_between(stock_start.isoformat(), today.isoformat())) <= loaded_orders
-        )
+        stock_coverage = _coverage(loaded_orders, stock_start, today)
         turnover_coverage = _coverage(loaded_orders, start, end)
         by_article = defaultdict(list)
         for row in orders:
@@ -220,8 +235,8 @@ def load_products(
                 by_article[row["article"]].append(row)
         reputation = {str(row["sku"]): row for row in (snapshots.get("reputation") or {}).get("data") or []}
         ads_snapshot = snapshots.get("advertising") or {}
-        daily_ads, loaded_ads = repository.get_history(
-            slug, "advertising", start.isoformat(), end.isoformat()
+        daily_ads, loaded_ads = read(
+            repository.get_history, slug, "advertising", start.isoformat(), end.isoformat()
         )
         ads_coverage = _coverage(loaded_ads, start, end)
         legacy_ads = (
@@ -250,7 +265,7 @@ def load_products(
                 drr_spend[row["article"]] += float(row.get("spend") or 0)
             for key in ("spend", "impressions", "clicks"):
                 ads[row["article"]][key] += row.get(key) or 0
-        buyout_settings = repository.get_buyout_settings(slug)
+        buyout_settings = read(repository.get_buyout_settings, slug)
         buyout_snapshot = snapshots.get("buyout") or {}
         buyout_days = int(buyout_settings["buyout_period_days"])
         buyout_available = (
@@ -300,11 +315,14 @@ def load_products(
                 "inbound": inbound_quantity,
                 "inbound_partial": inbound_partial,
                 "inbound_message": inbound_message,
-                "days": unit_economics_1c.calculate_stock_coverage_days(total, stock_orders)
-                if orders_known
+                "days": unit_economics_1c.calculate_stock_coverage_days(
+                    total, stock_orders, period_days=stock_coverage["days"]
+                )
+                if stock_coverage["days"]
                 else None,
-                "orders_21d": stock_orders if orders_known else None,
-                "average_daily_orders": round(stock_orders / 21, 2) if orders_known else None,
+                "orders_21d": stock_orders if stock_coverage["days"] else None,
+                "average_daily_orders": round(stock_orders / stock_coverage["days"], 2) if stock_coverage["days"] else None,
+                "coverage": stock_coverage,
                 "period_days": 21,
                 "period_from": stock_start.isoformat(),
                 "period_to": today.isoformat(),
@@ -313,7 +331,7 @@ def load_products(
             closed_rows = [row for row in rows if start.isoformat() <= row["day"] <= end.isoformat()]
             order_amount = round(sum(float(row.get("orders_amount") or 0) for row in closed_rows), 2)
             cancel_amount = round(sum(float(row.get("cancel_amount") or 0) for row in closed_rows), 2)
-            if not article and not has_activity(stock, order_amount - cancel_amount):
+            if not include_inactive and not article and not has_activity(stock, order_amount - cancel_amount):
                 continue
             drr_amount = round(
                 sum(
@@ -379,6 +397,31 @@ def load_products(
             )
             products[-1]["details"]["buyout_percent"] = buyout_percent
             products[-1]["details"]["drr"] = ad["drr"]
+            errors = list(snapshot_errors)
+            if not source_stock:
+                errors.append("Не загружены остатки товара ЯМ")
+            if not source_values.get(sku):
+                errors.append("Не загружены данные 1С для товара ЯМ")
+            if not buyout_available:
+                errors.append("Не загружен процент выкупа ЯМ за выбранный период")
+            if products[-1].get("rating") is None:
+                errors.append("Не загружен рейтинг ЯМ")
+            if products[-1].get("reviews_count") is None:
+                errors.append("Не загружено количество отзывов ЯМ")
+            price_check = products[-1].get("price_check") or {}
+            if price_check.get("status") in {"error", "failed"}:
+                errors.append("Цена ЯМ: " + str(price_check.get("message") or "ошибка обновления API"))
+            for label, coverage in (("заказов", turnover_coverage), ("рекламы", ads_coverage)):
+                if not coverage["complete"]:
+                    errors.append(f"Не все дни {label} загружены: {', '.join(coverage['missing_dates'])}")
+            if inbound_partial:
+                errors.append(inbound_message)
+            if not stock_coverage["complete"]:
+                errors.append(
+                    "Не все дни заказов для запаса загружены: "
+                    + ", ".join(stock_coverage["missing_dates"])
+                )
+            products[-1]["data_errors"] = errors
     if not include_economics:
         return products
 

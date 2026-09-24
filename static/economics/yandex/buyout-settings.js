@@ -10,16 +10,34 @@
     var items = config.items || [];
     panel.querySelector('[data-ym-cabinet-count]').textContent = String(items.length);
     function selectCabinet(slug, notify) {
+        if (notify && panel.dataset.selectedStore === slug) return;
         if (notify && !panel.dispatchEvent(new CustomEvent('ym-cabinet-change', {
             detail: { store: slug }, cancelable: true,
         }))) return;
+        panel.dataset.selectedStore = slug;
+        var item = items.find(function (item) { return item.store_slug === slug; });
+        var card = panel.querySelector('[data-ym-cabinet-card]');
+        card.style.setProperty('--store-color', item.store_color || '#ffd633');
+        card.style.setProperty('--store-text', item.store_text || '#242424');
+        panel.querySelector('[data-ym-cabinet-name]').textContent = item.store_name;
+        panel.querySelector('[data-ym-cabinet-avatar]').textContent = item.store_initials || item.store_name.slice(0, 2);
+        panel.querySelector('[data-ym-cabinet-status]').hidden = true;
         grid.querySelectorAll('[data-store]').forEach(function (form) {
             form.hidden = form.dataset.store !== slug;
         });
         nav.querySelectorAll('button').forEach(function (button) {
             button.setAttribute('aria-pressed', String(button.dataset.cabinet === slug));
         });
+        if (notify) panel.dispatchEvent(new CustomEvent('ym-cabinet-selected', { detail: { store: slug } }));
     }
+    panel.addEventListener('ym-cabinet-change', function (event) {
+        var pending = grid.querySelector('[data-dirty="true"], [data-saving="true"]');
+        if (!pending) return;
+        event.preventDefault();
+        var status = panel.querySelector('[data-ym-cabinet-status]');
+        status.textContent = 'Сохраните или отмените изменения выкупа перед сменой кабинета.';
+        status.hidden = false;
+    });
     (config.items || []).forEach(function (item) {
         var cabinetButton = document.createElement('button');
         cabinetButton.type = 'button';
@@ -29,22 +47,22 @@
         cabinetButton.addEventListener('click', function () { selectCabinet(item.store_slug, true); });
         nav.appendChild(cabinetButton);
         var form = document.createElement('form');
-        form.className = 'ue1cs-card ym-buyout-card';
+        form.className = 'ue1cs-field-group ym-buyout-card';
         form.dataset.store = item.store_slug;
         form.style.setProperty('--store-color', '#ffd633');
         var head = document.createElement('div');
-        head.className = 'ue1cs-card-head';
-        var heading = document.createElement('h3');
+        head.className = 'ue1cs-field-group-head';
+        var heading = document.createElement('strong');
         heading.textContent = 'Процент выкупа';
         head.appendChild(heading);
-        var storeLabel = document.createElement('small');
-        storeLabel.textContent = item.store_name;
+        var storeLabel = document.createElement('span');
+        storeLabel.textContent = 'Период без сегодняшнего дня · обновление каждые 4 часа';
         head.appendChild(storeLabel);
         form.appendChild(head);
         var body = document.createElement('div');
-        body.className = 'ue1cs-card-body';
+        body.className = 'ym-buyout-body';
         var group = document.createElement('div');
-        group.className = 'ue1cs-field-group ue1cs-fields';
+        group.className = 'ue1cs-fields';
         body.appendChild(group);
         form.appendChild(body);
         [
@@ -76,7 +94,7 @@
             group.appendChild(label);
         });
         var foot = document.createElement('div');
-        foot.className = 'ue1cs-card-foot';
+        foot.className = 'ue1cs-card-foot ym-section-actions';
         var status = document.createElement('span');
         status.className = 'ym-settings-status';
         status.setAttribute('role', 'status');
@@ -87,11 +105,27 @@
         button.textContent = 'Сохранить выкуп';
         button.disabled = !config.canEdit;
         foot.appendChild(button);
+        var cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'Отменить изменения';
+        cancel.onclick = function () {
+            if (form.dataset.saving === 'true') return;
+            form.elements.buyout_period_days.value = item.buyout_period_days;
+            form.elements.default_buyout_percent.value = item.default_buyout_percent == null ? '' : item.default_buyout_percent;
+            form.dataset.dirty = 'false';
+            status.textContent = '';
+            panel.querySelector('[data-ym-cabinet-status]').hidden = true;
+        };
+        foot.appendChild(cancel);
+        form.addEventListener('input', function () { form.dataset.dirty = 'true'; });
         form.appendChild(foot);
         form.addEventListener('submit', async function (event) {
             event.preventDefault();
-            if (!form.reportValidity()) return;
+            if (!config.canEdit || form.dataset.saving === 'true' || !form.reportValidity()) return;
+            form.dataset.saving = 'true';
             button.disabled = true;
+            cancel.disabled = true;
+            form.querySelectorAll('input').forEach(function (input) { input.disabled = true; });
             status.classList.remove('is-error');
             status.textContent = 'Сохраняем…';
             try {
@@ -111,12 +145,19 @@
                 var result = await response.json();
                 if (!response.ok || !result.ok)
                     throw new Error(result.error || 'Не удалось сохранить параметры');
+                item.buyout_period_days = Number(form.elements.buyout_period_days.value);
+                item.default_buyout_percent = raw === '' ? null : Number(raw);
+                form.dataset.dirty = 'false';
+                panel.querySelector('[data-ym-cabinet-status]').hidden = true;
                 status.textContent = item.store_name + ': параметры сохранены';
             } catch (error) {
                 status.classList.add('is-error');
                 status.textContent = error.message;
             } finally {
+                form.dataset.saving = 'false';
                 button.disabled = !config.canEdit;
+                cancel.disabled = false;
+                form.querySelectorAll('input').forEach(function (input) { input.disabled = !config.canEdit; });
             }
         });
         grid.appendChild(form);
@@ -125,9 +166,10 @@
     if (items.length) {
         selectCabinet(items.some(function (item) { return item.store_slug === selected; }) ? selected : items[0].store_slug, false);
     } else {
+        panel.querySelector('[data-ym-cabinet-card]').hidden = true;
         var empty = document.createElement('div');
         empty.className = 'ue1cs-empty';
         empty.textContent = 'Для вашей учётной записи нет доступных кабинетов YM.';
-        grid.appendChild(empty);
+        panel.appendChild(empty);
     }
 })();

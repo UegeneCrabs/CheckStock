@@ -21,7 +21,7 @@ def _price_value(value: object) -> float | None:
     if value is None:
         return None
     try:
-        return round(float(value), 2)
+        return unit_economics_1c.money(float(value))
     except (TypeError, ValueError):
         return None
 
@@ -100,7 +100,7 @@ def unit_margin_without_advertising(
     legacy_advertising = _price_value(result.get("advertising"))
     if legacy_advertising is None:
         legacy_advertising = _price_value(inputs.get("advertising_per_unit")) or 0.0
-    return round(stored_margin + legacy_advertising, 2)
+    return unit_economics_1c.money(stored_margin + legacy_advertising)
 
 
 def snapshot_buyout_percent(snapshot: dict | None) -> float | None:
@@ -109,7 +109,7 @@ def snapshot_buyout_percent(snapshot: dict | None) -> float | None:
     if snapshot is None:
         return None
     value = _price_value(_json_object(snapshot.get("inputs_json")).get("buyout_percent"))
-    return round(min(max(value, 0.0), 100.0), 2) if value is not None else None
+    return unit_economics_1c.money(min(max(value, 0.0), 100.0)) if value is not None else None
 
 
 def calculate_snapshot_row(
@@ -130,7 +130,7 @@ def calculate_snapshot_row(
     retail_price = _price_value(price_snapshot.get("retail_price"))
     orders_count = max(_integer(product_metrics.get("orders_count")), 0)
     average_customer_price = (
-        round(float(product_metrics.get("orders_amount") or 0) / orders_count, 2) if orders_count else None
+        unit_economics_1c.money(float(product_metrics.get("orders_amount") or 0) / orders_count) if orders_count else None
     )
     customer_price = (
         spp_price
@@ -167,14 +167,13 @@ def calculate_snapshot_row(
     team_commission_percent = (
         source_team_commission
         if source_team_commission is not None
-        else round(float(getattr(cabinet, "team_commission_percent", 0) or 0), 2)
+        else unit_economics_1c.money(float(getattr(cabinet, "team_commission_percent", 0) or 0))
     )
     subject_commission_percent = _price_value(product_reference.get("subject_commission_percent")) or 0.0
-    wb_extra_tariff_percent = round(
-        max(float(getattr(cabinet, "wb_extra_tariff_percent", 0) or 0), 0.0),
-        2,
+    wb_extra_tariff_percent = unit_economics_1c.money(
+        max(float(getattr(cabinet, "wb_extra_tariff_percent", 0) or 0), 0.0)
     )
-    commission_percent = round(subject_commission_percent + wb_extra_tariff_percent, 2)
+    commission_percent = unit_economics_1c.money(subject_commission_percent + wb_extra_tariff_percent)
     advertising_per_unit = unit_economics_1c.calculate_advertising_per_unit(
         float(product_metrics.get("spend") or 0),
         orders_count,
@@ -225,7 +224,7 @@ def calculate_snapshot_row(
         "subject_commission_percent": subject_commission_percent,
         "wb_extra_tariff_percent": wb_extra_tariff_percent,
         "commission_percent": commission_percent,
-        "advertising_spend": round(float(product_metrics.get("spend") or 0), 2),
+        "advertising_spend": unit_economics_1c.money(float(product_metrics.get("spend") or 0)),
         "advertising_orders_count": orders_count,
         "advertising_per_unit": advertising_per_unit,
         "advertising_included_in_unit_margin": False,

@@ -1,6 +1,7 @@
 import math
 from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from app import db
 from app.config import settings
@@ -15,10 +16,16 @@ LOW_STOCK_COVERAGE_DAYS = 14
 OVERSTOCK_COVERAGE_DAYS = 90
 
 
+def money(value: object) -> float:
+    """Round displayed WB money and percentages the same way as YM."""
+    display = Decimal(format(Decimal(str(value)), ".15g"))
+    return float(display.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def resolve_buyout_percent(raw: object, default: float | None = None) -> float:
     """Resolve current WB buyout; historical snapshots must not use today's default."""
-    measured = round(min(max(_number(raw), 0.0), 100.0), 2)
-    return measured if measured > 0 else round(min(max(_number(default), 0.0), 100.0), 2)
+    measured = money(min(max(_number(raw), 0.0), 100.0))
+    return measured if measured > 0 else money(min(max(_number(default), 0.0), 100.0))
 
 
 def apply_buyout_default(metrics: dict, default: float | None) -> dict:
@@ -56,7 +63,7 @@ def calculate_paid_acceptance_cost(volume_l: float, acceptance_coefficient: floa
     coefficient = max(float(acceptance_coefficient or 0), 0.0)
     if volume < 1:
         return 0.0
-    return round((1.7 + math.ceil(volume - 1) * 1.7) * coefficient, 2)
+    return money((1.7 + math.ceil(volume - 1) * 1.7) * coefficient)
 
 
 def calculate_delivery_with_returns(
@@ -70,7 +77,7 @@ def calculate_delivery_with_returns(
     return_cost = max(float(return_cost_rub or 0), 0.0)
     acceptance = max(float(paid_acceptance_cost or 0), 0.0)
     result = delivery * buyout_ratio + (return_cost + delivery * 2) * (1 - buyout_ratio) + acceptance
-    return round(result, 2)
+    return money(result)
 
 
 def _effective_buyout_ratio(buyout_percent: float) -> float:
@@ -90,7 +97,7 @@ def calculate_drr_percent(
     spend = max(float(advertising_spend or 0), 0.0)
     amount = max(float(orders_amount or 0), 0.0)
     if amount > 0:
-        return round(spend / amount / _effective_buyout_ratio(buyout_percent) * 100, 2)
+        return money(spend / amount / _effective_buyout_ratio(buyout_percent) * 100)
     return 100.0 if spend > 0 else 0.0
 
 
@@ -109,7 +116,7 @@ def calculate_advertising_per_unit(
     orders = max(int(orders_count or 0), 0)
     if not orders:
         return 0.0
-    return round(spend / orders / _effective_buyout_ratio(buyout_percent), 2)
+    return money(spend / orders / _effective_buyout_ratio(buyout_percent))
 
 
 def calculate_tax_components(
@@ -154,6 +161,7 @@ def calculate_unit_profit(
     usn_percent: float | None,
     osno_percent: float | None,
     tax_system: str = "usn",
+    margin_only: bool = False,
 ) -> dict[str, float] | None:
     """Calculate the same per-unit net profit that is shown in the UI calculator."""
 
@@ -196,18 +204,21 @@ def calculate_unit_profit(
         - team_commission
         - taxes["total"]
     )
+    rounded_margin = money(margin)
+    if margin_only:
+        return {"margin": rounded_margin}
     return {
-        "margin": round(margin, 2),
-        "net_revenue": round(net_revenue, 2),
-        "acquiring": round(acquiring, 2),
-        "advertising": round(advertising, 2),
-        "wb_commission": round(wb_commission, 2),
-        "team_commission": round(team_commission, 2),
-        "vat": round(taxes["vat"], 2),
-        "usn": round(taxes["usn"], 2),
-        "osno": round(taxes["osno"], 2),
-        "tax": round(taxes["total"], 2),
-        "storage": round(storage, 2),
+        "margin": rounded_margin,
+        "net_revenue": money(net_revenue),
+        "acquiring": money(acquiring),
+        "advertising": money(advertising),
+        "wb_commission": money(wb_commission),
+        "team_commission": money(team_commission),
+        "vat": money(taxes["vat"]),
+        "usn": money(taxes["usn"]),
+        "osno": money(taxes["osno"]),
+        "tax": money(taxes["total"]),
+        "storage": money(storage),
     }
 
 
@@ -238,7 +249,7 @@ def calculate_stock_coverage_days(
     days = max(int(period_days or 0), 1)
     if stock <= 0 or orders <= 0:
         return 0.0
-    return round(stock * days / orders, 2)
+    return money(stock * days / orders)
 
 
 def classify_stock_state(
@@ -284,6 +295,7 @@ def load_product_average_daily_orders(
     days = max(int(period_days or 0), 1)
     date_from = today - timedelta(days=days - 1)
     order_counts: dict[tuple[str, str], int] = defaultdict(int)
+    loaded_days: dict[str, set[str]] = defaultdict(set)
     for row in db.get_unit_economics_1c_funnel_daily_order_rows(
         store_slugs,
         date_from.isoformat(),
@@ -291,6 +303,19 @@ def load_product_average_daily_orders(
     ):
         key = (str(row["store_slug"]), str(row["article"]))
         order_counts[key] += _integer(row.get("orders_count"))
+        loaded_days[key[0]].add(str(row["day"]))
+
+    expected = [(date_from + timedelta(days=offset)).isoformat() for offset in range(days)]
+
+    def coverage(store: str) -> dict:
+        present = [day for day in expected if day in loaded_days[store]]
+        return {
+            "dates": present,
+            "days": len(present),
+            "expected_days": days,
+            "complete": len(present) == days,
+            "missing_dates": [day for day in expected if day not in loaded_days[store]],
+        }
 
     return {
         key: {
@@ -298,7 +323,8 @@ def load_product_average_daily_orders(
             "period_to": today.isoformat(),
             "period_days": days,
             "orders_count": count,
-            "average_daily_orders": round(count / days, 4),
+            "average_daily_orders": round(count / max(len(loaded_days[key[0]]), 1), 4),
+            "coverage": coverage(key[0]),
         }
         for key, count in order_counts.items()
     }
@@ -356,18 +382,16 @@ def load_product_metrics(
         daily[key][ordered_day]["cancel_amount"] += _number(row.get("cancel_amount"))
         daily[key][ordered_day]["cancel_count"] += _integer(row.get("cancel_count"))
         if row.get("buyout_amount") is not None:
-            daily[key][ordered_day]["buyout_amount"] = round(
-                _number(daily[key][ordered_day].get("buyout_amount")) + _number(row.get("buyout_amount")),
-                2,
+            daily[key][ordered_day]["buyout_amount"] = money(
+                _number(daily[key][ordered_day].get("buyout_amount")) + _number(row.get("buyout_amount"))
             )
         if row.get("buyout_count") is not None:
             daily[key][ordered_day]["buyout_count"] = _integer(
                 daily[key][ordered_day].get("buyout_count")
             ) + _integer(row.get("buyout_count"))
         if row.get("buyout_percent") is not None:
-            daily[key][ordered_day]["buyout_percent"] = round(
-                min(max(_number(row.get("buyout_percent")), 0.0), 100.0),
-                2,
+            daily[key][ordered_day]["buyout_percent"] = money(
+                min(max(_number(row.get("buyout_percent")), 0.0), 100.0)
             )
         updated_at = str(row.get("updated_at") or "") or None
         current_updated_at = daily[key][ordered_day]["funnel_updated_at"]
@@ -393,23 +417,23 @@ def load_product_metrics(
     result: dict[tuple[str, str], dict] = {}
     for key, by_day in daily.items():
         funnel_metric = funnel_metrics.get(key) or {}
-        buyout_percent = round(_number(funnel_metric.get("buyout_percent")), 2)
+        buyout_percent = money(_number(funnel_metric.get("buyout_percent")))
         history = []
         for day_value in days:
             values = by_day[day_value.isoformat()]
-            advertising_spend = round(float(values["advertising_spend"]), 2)
+            advertising_spend = money(values["advertising_spend"])
             advertising_impressions = int(values["advertising_impressions"])
             advertising_clicks = int(values["advertising_clicks"])
-            orders_amount = round(float(values["orders_amount"]), 2)
+            orders_amount = money(values["orders_amount"])
             orders_count = int(values["orders_count"])
-            cancel_amount = round(float(values["cancel_amount"]), 2)
+            cancel_amount = money(values["cancel_amount"])
             cancel_count = int(values["cancel_count"])
             buyout_amount = (
-                round(float(values["buyout_amount"]), 2) if values["buyout_amount"] is not None else None
+                money(values["buyout_amount"]) if values["buyout_amount"] is not None else None
             )
             buyout_count = int(values["buyout_count"]) if values["buyout_count"] is not None else None
             daily_buyout_percent = (
-                round(float(values["buyout_percent"]), 2) if values["buyout_percent"] is not None else None
+                money(values["buyout_percent"]) if values["buyout_percent"] is not None else None
             )
             history.append(
                 {
@@ -424,7 +448,7 @@ def load_product_metrics(
                     "buyout_amount": buyout_amount,
                     "buyout_count": buyout_count,
                     "buyout_percent": daily_buyout_percent,
-                    "net_orders_amount": round(orders_amount - cancel_amount, 2),
+                    "net_orders_amount": money(orders_amount - cancel_amount),
                     "net_orders_count": orders_count - cancel_count,
                     "funnel_updated_at": values["funnel_updated_at"],
                     "funnel_source_version": values["funnel_source_version"],
@@ -437,12 +461,12 @@ def load_product_metrics(
                     ),
                 }
             )
-        spend = round(sum(item["advertising_spend"] for item in history), 2)
+        spend = money(sum(item["advertising_spend"] for item in history))
         impressions = sum(item["advertising_impressions"] for item in history)
         clicks = sum(item["advertising_clicks"] for item in history)
-        orders_amount = round(sum(item["orders_amount"] for item in history), 2)
+        orders_amount = money(sum(item["orders_amount"] for item in history))
         orders_count = sum(item["orders_count"] for item in history)
-        cancel_amount = round(sum(item["cancel_amount"] for item in history), 2)
+        cancel_amount = money(sum(item["cancel_amount"] for item in history))
         cancel_count = sum(item["cancel_count"] for item in history)
         known_buyout_amounts = [
             float(item["buyout_amount"]) for item in history if item["buyout_amount"] is not None
@@ -454,14 +478,13 @@ def load_product_metrics(
             int(item["orders_count"]) for item in history if item["buyout_percent"] is not None
         )
         range_buyout_percent = (
-            round(
+            money(
                 sum(
                     float(item["buyout_percent"]) * int(item["orders_count"])
                     for item in history
                     if item["buyout_percent"] is not None
                 )
-                / buyout_weight,
-                2,
+                / buyout_weight
             )
             if buyout_weight
             else None
@@ -488,9 +511,9 @@ def load_product_metrics(
             and str(funnel_metric.get("period_to") or "") == today.isoformat()
         )
         if matching_funnel_period:
-            orders_amount = round(_number(funnel_metric.get("orders_amount")), 2)
+            orders_amount = money(_number(funnel_metric.get("orders_amount")))
             orders_count = _integer(funnel_metric.get("orders_count"))
-            cancel_amount = round(_number(funnel_metric.get("cancel_amount")), 2)
+            cancel_amount = money(_number(funnel_metric.get("cancel_amount")))
             cancel_count = _integer(funnel_metric.get("cancel_count"))
             funnel_updated_at = str(funnel_metric.get("updated_at") or "") or funnel_updated_at
             if not funnel_source_versions:
@@ -502,7 +525,7 @@ def load_product_metrics(
             "period_to": today.isoformat(),
             "period_days": len(days),
             "spend": spend,
-            "average_daily_spend": round(spend / len(days), 2),
+            "average_daily_spend": money(spend / len(days)),
             "spend_per_order": calculate_advertising_per_unit(
                 spend,
                 orders_count,
@@ -510,17 +533,17 @@ def load_product_metrics(
             ),
             "impressions": impressions,
             "clicks": clicks,
-            "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
-            "cpc": round(spend / clicks, 2) if clicks else 0.0,
+            "ctr": money(clicks / impressions * 100) if impressions else 0.0,
+            "cpc": money(spend / clicks) if clicks else 0.0,
             "orders_amount": orders_amount,
             "orders_count": orders_count,
             "cancel_amount": cancel_amount,
             "cancel_count": cancel_count,
-            "buyout_amount": round(sum(known_buyout_amounts), 2) if known_buyout_amounts else None,
+            "buyout_amount": money(sum(known_buyout_amounts)) if known_buyout_amounts else None,
             "buyout_count": sum(known_buyout_counts) if known_buyout_counts else None,
             "range_buyout_percent": range_buyout_percent,
             "buyout_percent_weight": buyout_weight,
-            "net_orders_amount": round(orders_amount - cancel_amount, 2),
+            "net_orders_amount": money(orders_amount - cancel_amount),
             "net_orders_count": orders_count - cancel_count,
             "funnel_updated_at": funnel_updated_at,
             "funnel_source_version": min(funnel_source_versions, default=None),
@@ -530,15 +553,14 @@ def load_product_metrics(
             "average_retail_price": None,
             "buyout_percent": buyout_percent,
             "buyout_orders_count": _integer(funnel_metric.get("orders_count")),
-            "buyout_orders_amount": round(_number(funnel_metric.get("orders_amount")), 2),
+            "buyout_orders_amount": money(_number(funnel_metric.get("orders_amount"))),
             "buyout_cancel_count": _integer(funnel_metric.get("cancel_count")),
-            "buyout_cancel_amount": round(_number(funnel_metric.get("cancel_amount")), 2),
+            "buyout_cancel_amount": money(_number(funnel_metric.get("cancel_amount"))),
             "buyout_net_orders_count": (
                 _integer(funnel_metric.get("orders_count")) - _integer(funnel_metric.get("cancel_count"))
             ),
-            "buyout_net_orders_amount": round(
-                _number(funnel_metric.get("orders_amount")) - _number(funnel_metric.get("cancel_amount")),
-                2,
+            "buyout_net_orders_amount": money(
+                _number(funnel_metric.get("orders_amount")) - _number(funnel_metric.get("cancel_amount"))
             ),
             "buyout_period_from": funnel_metric.get("period_from"),
             "buyout_period_to": funnel_metric.get("period_to"),

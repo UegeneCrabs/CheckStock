@@ -234,7 +234,7 @@
                             row.current_price,
                             [],
                             below(row) ? 'is-below' : '',
-                            row.price_date ? 'Цена WB за ' + row.price_date : '',
+                            row.price_date ? 'Цена ' + (config.marketplace === 'YM' ? 'ЯМ' : 'WB') + ' за ' + row.price_date : '',
                         ),
                         content_5: cell(
                             row.current_drr,
@@ -294,7 +294,7 @@
         render();
         try {
             var response = await window.fetch(
-                '/api/unit-economics-1c/reports/target-price?store=' +
+                (config.dataEndpoint || '/api/unit-economics-1c/reports/target-price') + '?store=' +
                     encodeURIComponent(node('store').value),
                 {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
@@ -353,6 +353,12 @@
         if (button)
             applySort(button.dataset.sort, sort === button.dataset.sort && descending ? 'asc' : 'desc');
     });
+    var calculator = config.marketplace === 'YM'
+        ? window.YandexTargetReport.init({ root: root, node: node, config: config, load: load,
+            rows: function () { return rows; }, format: format })
+        : initializeWbCalculator();
+    function openCalculator(row) { calculator.open(row); }
+    function initializeWbCalculator() {
     function calcValue(key) {
         return numeric(root.querySelector('[data-calc="' + key + '"]').value);
     }
@@ -839,11 +845,13 @@
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && calculatorRow) closeCalculator();
     });
+        return { open: openCalculator };
+    }
     node('export').addEventListener('click', async function () {
         var button = node('export');
         button.disabled = true;
         try {
-            var response = await fetch('/api/unit-economics-1c/reports/target-price.xlsx', {
+            var response = await fetch(config.exportEndpoint || '/api/unit-economics-1c/reports/target-price.xlsx', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
                 body: JSON.stringify({
@@ -871,7 +879,7 @@
                 url = URL.createObjectURL(blob),
                 link = document.createElement('a');
             link.href = url;
-            link.download = 'target_price_' + periodFrom + '_' + periodTo + '.xlsx';
+            link.download = (config.marketplace === 'YM' ? 'ym_target_price_' : 'target_price_') + periodFrom + '_' + periodTo + '.xlsx';
             link.click();
             setTimeout(function () {
                 URL.revokeObjectURL(url);

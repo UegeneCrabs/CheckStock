@@ -109,7 +109,12 @@ def weekly_metrics(
     }
 
 
-def load_weekly_metrics(store_slugs: tuple[str, ...], today: date | None = None) -> dict:
+def load_weekly_metrics(
+    store_slugs: tuple[str, ...],
+    today: date | None = None,
+    *,
+    product_keys: set[tuple[str, str]] | None = None,
+) -> dict:
     start, end = closed_week(today)
     days = [(start + timedelta(days=offset)).isoformat() for offset in range(7)]
     orders = defaultdict(dict)
@@ -140,18 +145,22 @@ def load_weekly_metrics(store_slugs: tuple[str, ...], today: date | None = None)
     }
     cabinets = {item.store_slug: item for item in db.list_unit_economics_1c_cabinet_settings(store_slugs)}
     result = {}
-    for slug in store_slugs:
-        for product in db.get_stock_items(slug, "WB"):
-            article = str(product.get("article") or "").partition(" / ")[0].strip()
-            key = (slug, article)
-            result[key] = weekly_metrics(
-                days,
-                orders[key],
-                advertising[key],
-                complete[slug],
-                buyouts.get(key, {}),
-                cabinets[slug].default_buyout_percent,
-            )
+    if product_keys is None:
+        product_keys = {
+            (slug, str(product.get("article") or "").partition(" / ")[0].strip())
+            for slug in store_slugs
+            for product in db.get_stock_items(slug, "WB")
+        }
+    for key in product_keys:
+        slug, _ = key
+        result[key] = weekly_metrics(
+            days,
+            orders[key],
+            advertising[key],
+            complete[slug],
+            buyouts.get(key, {}),
+            cabinets[slug].default_buyout_percent,
+        )
     return result
 
 
@@ -350,7 +359,13 @@ def calculate_row(
         return result
     center_cents = max(round(required_retail * 100), 1)
     candidates = []
-    for retail_cents in range(max(center_cents - 150, 1), center_cents + 151):
+    # Keep the same candidate set and tie-breaks. An exact rounded ROI at the
+    # nearest price is already optimal; no more expensive candidates are needed.
+    price_candidates = sorted(
+        range(max(center_cents - 150, 1), center_cents + 151),
+        key=lambda cents: (abs(cents - required_retail * 100), cents),
+    )
+    for retail_cents in price_candidates:
         target_retail = retail_cents / 100
         target_client = max(math.floor(target_retail * spp_factor + 0.5), 1)
         advertising_rub = calculate_target_advertising_rub(
@@ -362,6 +377,7 @@ def calculate_row(
             retail_price=target_retail,
             customer_price=target_client,
             advertising_rub=advertising_rub,
+            margin_only=True,
             **inputs,
         )
         if target_profit is None:
@@ -377,6 +393,8 @@ def calculate_row(
                 actual_roi,
             )
         )
+        if actual_roi == target_roi:
+            break
     if not candidates:
         result["target_warnings"].append("Не удалось подобрать цену по целевым ДРР и ROI.")
         return result

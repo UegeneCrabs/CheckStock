@@ -14,6 +14,7 @@ from app.web.routers import (
     unit_economics,
     yandex_economics,
     yandex_prices,
+    yandex_reports,
 )
 
 agent_analytics.router.include_router(agent_full.router)
@@ -33,6 +34,7 @@ ROUTERS = (
     integrations.router,
     yandex_economics.router,
     yandex_prices.router,
+    yandex_reports.router,
 )
 
 __all__ = ("ROUTERS",)

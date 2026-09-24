@@ -82,8 +82,6 @@
         return loadedTarget && JSON.stringify(loadedTarget) === JSON.stringify(target());
     }
     function controls() {
-        if (!busy && !Object.keys(changed).length)
-            document.querySelector('[data-ym-cabinet-status]').hidden = true;
         save.disabled = busy || !sameTarget() || !config.canEdit || !Object.keys(changed).length;
         refresh.disabled = busy || !sameTarget() || !config.canEdit || !!Object.keys(changed).length;
         root.querySelector('[data-ym-settings-reload]').disabled = busy;
@@ -195,6 +193,7 @@
         controls();
     }
     async function load(t) {
+        document.querySelector('[data-ym-cabinet-status]').hidden = true;
         var current = ++sequence;
         busy = true;
         editor.hidden = true;
@@ -324,6 +323,8 @@
             message(note, !busy);
             return;
         }
+    });
+    document.getElementById('ym-cabinet-panel').addEventListener('ym-cabinet-selected', function (event) {
         store.value = event.detail.store;
         // A product article belongs to its cabinet; open cabinet defaults on a store change.
         scope.value = 'cabinet';

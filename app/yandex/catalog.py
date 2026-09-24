@@ -48,7 +48,7 @@ def sync_store(store_slug: str) -> dict:
                 "barcodes": product.get("barcodes", [product["barcode"]]),
                 "name": product["name"],
                 "mp_sku": product["market_sku"],
-                "mp_product_id": None,
+                "mp_product_id": product.get("market_model_id"),
                 "mp_updated_at": product["updated_at"],
                 "image_url": product["image_url"],
                 "is_service": False,

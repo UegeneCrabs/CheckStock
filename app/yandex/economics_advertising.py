@@ -6,10 +6,11 @@ from datetime import timedelta
 from app.repositories import unit_economics_yandex as metrics
 
 
-def weekly_history(store, today):
+def weekly_history(store, today, *, sources=None):
+    read = sources.read if sources is not None else lambda loader, *args: loader(*args)
     start, end = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
-    ads, ad_days = metrics.get_history(store, "advertising", start, end)
-    orders, order_days = metrics.get_history(store, "orders", start, end)
+    ads, ad_days = read(metrics.get_history, store, "advertising", start, end)
+    orders, order_days = read(metrics.get_history, store, "orders", start, end)
     expected = metrics.days_between(start, end)
     available = [day for day in expected if day in ad_days and day in order_days]
     advertising_days = [day for day in expected if day in ad_days]
@@ -81,7 +82,11 @@ def apply_calculator_drr(values, origins, weekly, scenario):
     price = values.get("seller_price")
     bought = (weekly.get("orders_count") or 0) * (values.get("buyout_percent") or 0) / 100
     if manual_drr:
-        per_unit = price * scenario["plan_drr"] / 100 if price is not None else None
+        per_unit = (
+            price * scenario["plan_drr"] / 100 * (values.get("buyout_percent") or 0) / 100
+            if price is not None
+            else None
+        )
     elif per_unit is None:
         if spend is None and weekly.get("days"):
             spend = weekly.get("spend")
@@ -89,8 +94,8 @@ def apply_calculator_drr(values, origins, weekly, scenario):
     drr = (
         scenario["plan_drr"]
         if manual_drr
-        else per_unit / price * 100
-        if per_unit is not None and price and price > 0
+        else per_unit / price / (values.get("buyout_percent") / 100) * 100
+        if per_unit is not None and price and price > 0 and (values.get("buyout_percent") or 0) > 0
         else 0.0
         if per_unit == 0
         else None

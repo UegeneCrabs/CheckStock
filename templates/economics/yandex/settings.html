@@ -4,7 +4,6 @@
         <div class="cabinet-store-nav" data-ym-cabinet-nav role="group" aria-label="Кабинеты YM"></div>
         <p class="ym-settings-status is-error" data-ym-cabinet-status role="status" aria-live="polite" hidden></p>
     </div>
-<section class="ue1cs-page" id="yandex-buyout-settings" aria-label="Параметры выкупа Яндекс Маркета">
     <details class="cabinet-help">
         <summary>Как рассчитывается выкуп Яндекс Маркета</summary>
         <div>
@@ -12,19 +11,33 @@
             <p>Если статистики нет или выкуп равен 0, используется процент по умолчанию. При пустом поле подстановка не применяется.</p>
         </div>
     </details>
+    <article class="ue1cs-card ym-cabinet-card" data-ym-cabinet-card>
+        <div class="ue1cs-card-head">
+            <span class="ue1cs-avatar" data-ym-cabinet-avatar></span>
+            <div><h3 data-ym-cabinet-name>Яндекс Маркет</h3><small>Параметры расчёта и цели отчёта</small></div>
+        </div>
+        <div class="ue1cs-card-body ym-cabinet-body">
+<section id="yandex-buyout-settings" aria-label="Параметры выкупа Яндекс Маркета">
     <div class="ue1cs-grid" data-yandex-buyout-grid></div>
 </section>
+<form class="ue1cs-field-group ym-cabinet-goals" data-ym-goals-form>
+    <div class="ue1cs-field-group-head"><strong>Целевая цена</strong><span>ДРР с учётом выкупа и целевой ROI для выбранного кабинета. Применяются в отчёте «Целевая цена» ЯМ.</span></div>
+    <div class="ue1cs-fields" data-ym-goals-general></div>
+    <fieldset class="ue1cs-roi-group"><legend>Целевой ROI по коду товара</legend><div class="ue1cs-roi-fields" data-ym-goals-codes></div></fieldset>
+    <p class="ym-settings-help">ROI по коду имеет приоритет над общим ROI. Индивидуальные цели товара имеют приоритет над настройками кабинета.</p>
+    <p class="ym-settings-status" data-ym-goals-status role="status" aria-live="polite"></p>
+    <div class="ue1cs-card-foot ym-section-actions"><button type="submit" disabled>Сохранить цели</button><button type="button" data-ym-goals-reload>Отменить изменения</button></div>
+</form>
 <script type="application/json" id="yandex-buyout-config">
     $yandex_settings_config
 </script>
-<script src="/static/economics/yandex/buyout-settings.js?v=20260916-logistics"></script>
 
-<link rel="stylesheet" href="/static/economics/yandex/settings.css?v=20260914" />
+<link rel="stylesheet" href="/static/economics/yandex/settings.css?v=20260923-cabinet-goals" />
 <section class="ue1cs-page" id="yandex-economics-settings" aria-labelledby="ym-settings-title">
     <div
         ><h3 id="ym-settings-title">Экономика и расходы</h3>
         <p class="ym-settings-help"
-            >FBY и FBS временно используют общие параметры и тарифы. Общие значения применяются ко всему кабинету. Комиссия компании единая для FBY и FBS и вычитается от цены продавца. Хранение задаётся отдельно в рублях за единицу в день; возвраты рассчитываются по габаритам и выкупу.</p
+            >FBY и FBS используют общие параметры и тарифы. Общие значения применяются ко всему кабинету. Для отдельного товара можно задать свои параметры. Комиссия компании единая для FBY и FBS и вычитается от цены продавца.</p
         ></div
     >
     <form data-ym-settings-selector class="ym-settings-selector">
@@ -57,7 +70,7 @@
         ></label>
         <button type="submit" class="btn-secondary">Открыть параметры</button>
     </form>
-    <form data-ym-settings-editor class="ue1cs-card" hidden>
+    <form data-ym-settings-editor class="ym-expenses-editor" hidden>
         <div class="ue1cs-card-head"><h3 data-ym-settings-heading></h3></div>
         <div class="ue1cs-card-body"
             ><p class="ym-settings-help"
@@ -82,7 +95,11 @@
     </form>
     <p class="ym-settings-status" data-ym-settings-message role="status" aria-live="polite"></p>
 </section>
+        </div>
+    </article>
+<script src="/static/economics/yandex/buyout-settings.js?v=20260923-cabinet-goals"></script>
 <script src="/static/economics/yandex/fields.js?v=20260921-payments-v11"></script>
-<script src="/static/economics/yandex/settings.js?v=20260921-payments-v11"></script>
+<script src="/static/economics/yandex/settings.js?v=20260923-cabinet-goals"></script>
+<script src="/static/economics/yandex/cabinet-goals.js?v=20260923-cabinet-goals"></script>
 
 </section>

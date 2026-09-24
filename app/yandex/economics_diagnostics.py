@@ -42,17 +42,12 @@ def current_issues(state, daily):
         issues.append(reason)
 
     issues.extend(daily["issues"])
-    if values.get("buyout_percent") is not None and values["buyout_percent"] <= 0:
-        issues.append("Выкуп равен 0%: прибыль на выкупленную единицу не определена.")
-    if daily["spend"] is not None and daily["spend"] > 0 and daily["orders"] == 0:
-        issues.append(
-            "За сегодня есть расходы на рекламу, но заказов нет: "
-            "нельзя рассчитать рекламу на одну выкупленную штуку."
-        )
     issues = list(dict.fromkeys(issues))
     if result["margin"] is None and not issues:
         issues = result["messages"] or ["Недостаточно данных для расчёта маржи на одну штуку."]
     roi_issues = list(issues)
+    if daily["orders"] == 0 and daily["spend"] is not None and daily["spend"] > 0:
+        roi_issues.append("Сегодня нет выкупленных товаров: ROI для расхода на рекламу не определяется.")
     if values.get("purchase_price") is not None and values["purchase_price"] <= 0:
         roi_issues.append("Закупочная стоимость равна 0 ₽: для ROI нужна положительная закупочная стоимость.")
     return {"margin": issues, "roi": roi_issues}

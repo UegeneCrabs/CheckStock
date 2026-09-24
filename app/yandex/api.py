@@ -333,6 +333,7 @@ def normalize_catalog_item(row: dict) -> dict:
         "image_url": image_url,
         "barcodes": barcodes,
         "market_sku": mapping.get("marketSku"),
+        "market_model_id": mapping.get("marketModelId"),
         "archived": bool(offer.get("archived")),
         "updated_at": str(offer.get("updatedAt") or "").strip(),
     }

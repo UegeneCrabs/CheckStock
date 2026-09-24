@@ -2,7 +2,7 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 
-VERSION = 14
+VERSION = 15
 DERIVED_FIELDS = ("volume_l", "return_middle_mile", "return_cost")
 DELIVERY_FIELDS = ("delivery_customer", "middle_mile", "delivery_other")
 REMOVED_FIELDS = {
@@ -186,6 +186,23 @@ def calculate(
     """
     values = {**values, **sheet_logistics(values, scenario=scenario, version=version)}
     summary = calculator_summary(values, version=version)
+    if (
+        not without_advertising
+        and values.get("advertising_mode", "actual") == "actual"
+        and orders_count == 0
+        and advertising_spend is not None
+        and advertising_spend > 0
+    ):
+        return {
+            **summary,
+            "margin": money(-Decimal(str(advertising_spend))),
+            "roi": None,
+            "missing": [],
+            "messages": ["Сегодня нет заказов; текущий результат равен расходам на рекламу со знаком минус."],
+            "costs": {"advertising": money(advertising_spend)},
+            "calculation_version": version,
+            "basis": "ym_daily_without_orders",
+        }
     required = [
         "seller_price",
         "buyer_price",
@@ -229,15 +246,7 @@ def calculate(
         return Decimal(str(values.get(key, 0)))
 
     price, purchase, q = d("seller_price"), d("purchase_price"), d("buyout_percent") / 100
-    if q <= 0 and values.get("advertising_mode", "actual") == "actual":
-        return {
-            **summary,
-            "margin": None,
-            "roi": None,
-            "missing": ["buyout_percent"],
-            "messages": ["При нулевом выкупе прибыль на выкупленную единицу не определена."],
-            "costs": {},
-        }
+    advertising_buyout = q if q > 0 else Decimal(1)
 
     buyer = d("buyer_price")
     vat = buyer * d("vat_percent") / (100 + d("vat_percent"))
@@ -265,7 +274,7 @@ def calculate(
         advertising = (
             d("advertising_per_buyout")
             if version >= 13 and values.get("advertising_basis") != "drr"
-            else price * d("plan_drr") / 100
+            else price * d("plan_drr") / 100 * (q if version >= 15 else 1)
         )
     elif advertising_spend is None or orders_count is None:
         return {
@@ -279,20 +288,9 @@ def calculate(
             "costs": {key: money(value) for key, value in costs.items()},
         }
     elif orders_count <= 0:
-        if advertising_spend > 0:
-            return {
-                **summary,
-                "margin": None,
-                "roi": None,
-                "missing": ["orders_count"],
-                "messages": [
-                    "Есть рекламные расходы, но нет заказов для распределения. Для планового расчёта задайте «ДРР с выкупом» в калькуляторе."
-                ],
-                "costs": {key: money(value) for key, value in costs.items()},
-            }
         advertising = Decimal(0)
     else:
-        advertising = Decimal(str(advertising_spend)) / Decimal(str(orders_count)) / q
+        advertising = Decimal(str(advertising_spend)) / Decimal(str(orders_count)) / advertising_buyout
     costs["advertising"] = advertising
     margin = price - sum(costs.values())
     buyer = values.get("buyer_price")

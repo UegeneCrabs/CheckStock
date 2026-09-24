@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, FiniteFloat, field_validator
 
 from app.dto.common import DtoModel
 
@@ -68,6 +68,15 @@ class UnitEconomics1CCabinetSettings(UnitEconomics1CCabinetValues):
     updated_at: str | None = None
     updated_by_user_id: int | None = None
     updated_by_name: str | None = None
+
+
+class UnitEconomics1CCalculatorVerification(DtoModel):
+    store_slug: str = Field(min_length=1, max_length=100)
+    values: dict[str, FiniteFloat | None]
+    tax_system: Literal["usn", "osno"] = "usn"
+    turnover_days: FiniteFloat | None = None
+    acquiring_percent: FiniteFloat | None = None
+    purchase_cost: FiniteFloat | None = None
 
 
 class UnitEconomics1CProductValues(DtoModel):

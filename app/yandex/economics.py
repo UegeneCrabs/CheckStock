@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 
 from app.core.domain import MOSCOW_TIMEZONE
+from app.economics.wb.calculations import resolve_buyout_percent
 from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.repositories import yandex_source_values, yandex_storefront
@@ -26,14 +27,15 @@ from app.yandex.economics_diagnostics import current_issues
 from app.yandex.price_calculation import discounted_price
 
 
-def context(store):
+def context(store, *, sources=None):
+    read = sources.read if sources is not None else lambda loader, *args: loader(*args)
     return {
-        "sources": repository.sources(store),
-        "settings": repository.all_settings(store),
-        "source_1c": yandex_source_values.get_values(store),
-        "prices": yandex_storefront.get_prices(store),
-        "snapshots": metrics.get_snapshots(store),
-        "buyout_settings": metrics.get_buyout_settings(store),
+        "sources": read(repository.sources, store),
+        "settings": read(repository.all_settings, store),
+        "source_1c": read(yandex_source_values.get_values, store),
+        "prices": read(yandex_storefront.get_prices, store),
+        "snapshots": read(metrics.get_snapshots, store),
+        "buyout_settings": read(metrics.get_buyout_settings, store),
     }
 
 
@@ -64,9 +66,10 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
         ).days + 1 != buyout_settings["buyout_period_days"]:
             snap = {}
     buyouts = {str(row["article"]): row for row in snap.get("data") or []}
-    buyout = buyouts.get(article, {}).get("buyout_percent")
-    if not buyout:
-        buyout = buyout_settings.get("default_buyout_percent")
+    buyout = resolve_buyout_percent(
+        buyouts.get(article, {}).get("buyout_percent"),
+        buyout_settings.get("default_buyout_percent"),
+    )
     layers = [
         ("Начальные данные 1С", base),
         ("Перенесено из листа", seed.get("values", {})),
@@ -440,6 +443,16 @@ def attach(products, start, end, today, scheme="FBY"):
             include_history=False,
         )
         product["ym_economics"] = config
+        required_inputs = calculate(config["values"], without_advertising=True)
+        product["data_errors"] = list(dict.fromkeys(
+            (product.get("data_errors") or [])
+            + config["current_issues"]["margin"]
+            + [
+                issue for issue in config["current_issues"]["roi"]
+                if not issue.startswith("Сегодня нет выкупленных товаров")
+            ]
+            + required_inputs["messages"]
+        ))
         product["current_economics"].update(
             {
                 "margin": config["result"]["margin"],

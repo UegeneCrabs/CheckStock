@@ -16,9 +16,11 @@ from app.dto.unit_economics_1c import (
     UnitEconomics1CProductTargetRequest,
     UnitEconomics1CTargetPriceExportRequest,
 )
+from app.economics.report_cache import reports_cache, user_key
 from app.economics.wb import calculations as economics
 from app.economics.wb import target_price_export as target_export
 from app.economics.wb import target_prices as pricing
+from app.exports import stock_sheet_inbound
 from app.web.downloads import _download_headers
 from app.web.routers.unit_economics import _manager_matches_user, _report_historical_economics
 from app.web.templating import fill_template, render_page
@@ -64,9 +66,36 @@ async def target_price_data(request: Request):
 
     def load():
         start, end = pricing.closed_week()
-        weekly = pricing.load_weekly_metrics(stores, today=end + timedelta(days=1))
         cabinets = {item.store_slug: item for item in db.list_unit_economics_1c_cabinet_settings(stores)}
         period_metrics = economics.load_product_metrics(stores, period_days=7, today=end)
+        catalogs = {}
+        for slug in stores:
+            inbound = stock_sheet_inbound.load(slug, "WB", db.get_stock_items(slug, "WB"))
+            catalogs[slug] = []
+            for product in inbound.catalog:
+                article = str(product.get("article") or "")
+                if selected_article and article != selected_article:
+                    continue
+                nm_id = article.partition(" / ")[0].strip()
+                in_transit = inbound.quantities.get(article)
+                if in_transit is None:
+                    in_transit = inbound.confirmed_quantities.get(article)
+                stocked = (
+                    any((product.get(key) or 0) > 0 for key in ("fbs_stock", "fbo_stock", "ff_available"))
+                    or (in_transit or 0) > 0
+                )
+                turnover = (period_metrics.get((slug, nm_id)) or {}).get("orders_amount") or 0
+                if stocked or turnover > 0:
+                    catalogs[slug].append(product)
+        weekly = pricing.load_weekly_metrics(
+            stores,
+            today=end + timedelta(days=1),
+            product_keys={
+                (slug, str(product["article"]).partition(" / ")[0].strip())
+                for slug, products in catalogs.items()
+                for product in products
+            },
+        )
         daily_orders = {}
         for item in db.get_unit_economics_1c_funnel_daily_order_rows(
             stores,
@@ -101,7 +130,7 @@ async def target_price_data(request: Request):
         }
         rows = []
         for slug in stores:
-            for product in db.get_stock_items(slug, "WB"):
+            for product in catalogs[slug]:
                 article = str(product.get("article") or "")
                 if selected_article and article != selected_article:
                     continue
@@ -194,7 +223,11 @@ async def target_price_data(request: Request):
         )
         return {"ok": True, "period_from": start.isoformat(), "period_to": end.isoformat(), "rows": rows}
 
-    return await run_in_threadpool(load)
+    return await run_in_threadpool(
+        reports_cache.get,
+        ("wb-target", stores, selected_article, pricing.closed_week(), user_key(user)),
+        load,
+    )
 
 
 async def _target_product_error(request: Request, store_slug: str, article: str):

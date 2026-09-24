@@ -137,6 +137,36 @@ def replace_fulfillment_stock_daily_history(day: str, captured_at: str) -> int:
             conn.close()
 
 
+def get_products_with_stock_history(
+    store_slugs: tuple[str, ...],
+    marketplace: str,
+    date_from: str,
+    date_to: str,
+) -> set[tuple[str, str]]:
+    """Products with a positive FBS, FBO or FF snapshot in the inclusive period."""
+    if not store_slugs:
+        return set()
+    placeholders = ", ".join("?" for _ in store_slugs)
+    params = (*store_slugs, marketplace, date_from, date_to)
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT store_slug, article FROM marketplace_stock_daily_history
+             WHERE store_slug IN ({placeholders}) AND marketplace=?
+               AND day>=? AND day<=? AND quantity>0
+            UNION
+            SELECT store_slug, article FROM fulfillment_stock_daily_history
+             WHERE store_slug IN ({placeholders}) AND marketplace=?
+               AND day>=? AND day<=? AND quantity>0
+            """,
+            (*params, *params),
+        ).fetchall()
+        return {(str(row["store_slug"]), str(row["article"])) for row in rows}
+    finally:
+        conn.close()
+
+
 def get_daily_stock_history(
     store_slugs: tuple[str, ...],
     marketplace: str,

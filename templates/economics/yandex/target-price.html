@@ -1,0 +1,127 @@
+<link rel="stylesheet" href="/static/economics/wb/target-price.css?v=20260912" />
+<link rel="stylesheet" href="/static/economics/yandex/target-price.css?v=20260923-reports" />
+<section class="uetp ym-target-report" id="uetp" aria-label="Отчёт Целевая цена">
+    <div class="uetp-heading"
+        ><h1>Целевая цена <small>Яндекс Маркет</small></h1>
+        <div class="uetp-heading-actions">
+            <button type="button" id="ym-target-settings">Настроить цели кабинета</button>
+            <details class="uetp-help" id="uetp-help"><summary aria-label="Как считаем целевую цену">?</summary>
+            <div class="uetp-help-content"><strong>Расчёт Яндекс Маркета</strong>
+            <p>Рассчитываются товары с текущим остатком FBS, FBY, ФФ или в пути на склады,
+            либо с ТО заказов за последние 7 завершённых дней по Москве.</p>
+            <p>Текущие ДРР и ROI — за 7 завершённых дней по Москве. ДРР использует совпадающие дни заказов и рекламы; ROI — сохранённые дневные расчёты.</p>
+            <p>Цена подбирается по действующему калькулятору ЯМ. Сохраняются СПП, скидка Пэй, тарифы, налоги и затраты на ФФ. Плановая реклама на выкуп = цена продавца × целевой ДРР / 100 × процент выкупа / 100.</p>
+            <p>Цели товара имеют приоритет над целями кабинета. По умолчанию ДРР 8%, ROI по коду: A — 20%, B — 30%, C — 50%, D — 0%, F — 50%, NEW — 50%, U — 20%; для остальных — 50%.</p>
+            <p>Сохранение целей не меняет цены на Маркете. Недостающие данные показаны прочерками с пояснением.</p></div></details>
+        </div>
+    </div>
+    <div class="uetp-controls">
+        <label
+            >Магазин<select id="uetp-store"
+                ><option value="">Все магазины</option></select
+            ></label
+        >
+        <label class="uetp-search"
+            >Поиск<input
+                type="search"
+                id="uetp-search"
+                placeholder="Поиск по всем столбцам"
+                aria-label="Поиск по всем столбцам таблицы"
+                autocomplete="off"
+        /></label>
+        <button class="uetp-export" type="button" id="uetp-export">Скачать XLSX</button>
+        <button type="button" id="uetp-reload">Обновить</button>
+    </div>
+    <div class="uetp-status" id="uetp-status" role="status" aria-live="polite" hidden></div>
+    <div class="uetp-table-wrap" id="uetp-table-wrap"
+        ><table
+            class="data-table uetp-table"
+            id="uetp-table"
+            aria-label="Текущие показатели и целевые цены товаров"
+        >
+            <colgroup
+                ><col class="uetp-product-col" /><col class="uetp-store-col" /><col
+                    class="uetp-code-col" /><col span="6"
+            /></colgroup>
+            <thead
+                ><tr
+                    ><th rowspan="2" scope="col" data-filter-column="0"
+                        ><button type="button" data-sort="product">Товар</button></th
+                    ><th rowspan="2" scope="col" data-filter-column="1"
+                        ><button type="button" data-sort="store_name">Магазин</button></th
+                    ><th rowspan="2" scope="col" data-filter-column="2"
+                        ><button type="button" data-sort="code">Код</button></th
+                    ><th colspan="3" scope="colgroup">Текущая цена · по калькулятору</th
+                    ><th class="uetp-target" colspan="3" scope="colgroup">Целевая цена</th></tr
+                >
+                <tr
+                    ><th scope="col" data-filter-column="3" data-filter-type="number"
+                        ><button type="button" data-sort="current_price"
+                            >Цена с СПП и Пэй, ₽</button
+                        ></th
+                    ><th scope="col" data-filter-column="4" data-filter-type="number"
+                        ><button type="button" data-sort="current_drr">ДРР с выкупом, %</button></th
+                    ><th scope="col" data-filter-column="5" data-filter-type="number"
+                        ><button type="button" data-sort="current_roi">ROI, %</button></th
+                    >
+                    <th class="uetp-target" scope="col" data-filter-column="6" data-filter-type="number"
+                        ><button type="button" data-sort="target_price">Цена с СПП и Пэй, ₽</button></th
+                    ><th class="uetp-target" scope="col" data-filter-column="7" data-filter-type="number"
+                        ><button type="button" data-sort="target_drr">Цель ДРР, %</button></th
+                    ><th class="uetp-target" scope="col" data-filter-column="8" data-filter-type="number"
+                        ><button type="button" data-sort="target_roi">Цель ROI, %</button></th
+                    ></tr
+                > </thead
+            ><tbody id="uetp-rows"
+                ><tr><td colspan="9">Загрузка…</td></tr></tbody
+            >
+        </table></div
+    >
+    <div class="uetp-footer" id="uetp-footer"
+        ><span id="uetp-count"></span
+        ><div class="uetp-pagination"
+            ><label class="uetp-page-size"
+                >Показывать<select id="uetp-page-size" aria-label="Товаров на странице"
+                    ><option value="20">20</option
+                    ><option value="50" selected>50</option
+                    ><option value="100">100</option></select
+                ></label
+            ><button type="button" id="uetp-prev" aria-label="Предыдущая страница">←</button
+            ><span id="uetp-page"></span
+            ><button type="button" id="uetp-next" aria-label="Следующая страница">→</button></div
+        ></div
+    >
+    <div class="uetp-overlay" id="uetp-overlay"></div>
+    <aside class="uetp-drawer" id="uetp-drawer" aria-hidden="true" aria-labelledby="uetp-drawer-title">
+        <header class="uetp-drawer-head"
+            ><div class="uetp-drawer-thumb" id="uetp-drawer-thumb" aria-hidden="true"></div
+            ><div class="uetp-drawer-copy"
+                ><h2 id="uetp-drawer-title">Калькулятор</h2><p id="uetp-drawer-meta"></p></div
+            ><button type="button" id="uetp-drawer-close" aria-label="Закрыть">×</button></header
+        >
+        <div class="uetp-drawer-body">
+            <section class="uetp-calculator">
+                <header><h3>Цели товара</h3></header>
+                <div class="uetp-calculator-inputs">
+                    <label><span>Целевой ДРР, %</span><input id="ym-goal-drr" type="number" min="0" max="100" step="any"></label>
+                    <label><span>Целевой ROI, %</span><input id="ym-goal-roi" type="number" min="0" max="1000000" step="any"></label>
+                </div>
+                <div id="ym-target-result" aria-live="polite"></div>
+                <p id="ym-target-message" role="status"></p>
+                <div class="uetp-calculator-actions"><button id="ym-goal-save" type="button">Сохранить цели</button><button id="ym-goal-reset" type="button">Сбросить цели</button></div>
+                <details><summary>Исходные данные сценария</summary><div class="uetp-calculator-inputs" id="ym-target-inputs"></div></details>
+                <details><summary>Расшифровка расходов</summary><dl id="ym-target-costs"></dl></details>
+            </section>
+        </div>
+    </aside>
+    <dialog id="ym-goal-dialog"><form id="ym-goal-form">
+        <h2>Цели кабинета · Яндекс Маркет</h2>
+        <label>Магазин<select id="ym-goal-store"></select></label>
+        <div class="uetp-calculator-inputs" id="ym-cabinet-goals"></div>
+        <p id="ym-goal-status" role="status"></p>
+        <button type="submit">Сохранить</button><button type="button" id="ym-goal-close">Закрыть</button>
+    </form></dialog>
+</section>
+<script type="application/json" id="uetp-config">$target_price_config</script>
+<script src="/static/economics/yandex/target-price.js?v=20260923-reports"></script>
+<script src="/static/economics/wb/target-price.js?v=20260923-marketplaces"></script>

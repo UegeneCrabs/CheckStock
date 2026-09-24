@@ -519,7 +519,7 @@
                     }
                     clearTimeout(timer);
                     sequence++;
-                    pending();
+                    previewInBrowser();
                     timer = setTimeout(function () {
                         preview(false);
                     }, 350);
@@ -560,6 +560,91 @@
             container.querySelectorAll('[data-ym-computed]').forEach(function (node) { node.textContent = '—'; });
             message('Пересчитываем…');
         }
+        function previewInBrowser() {
+            var values = Object.assign({}, data.values, changed);
+            function amount(key) {
+                var value = values[key];
+                return value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
+            }
+            var price = amount('seller_price'), buyer = amount('buyer_price');
+            var purchase = amount('purchase_price'), buyout = amount('buyout_percent');
+            var delivery = amount('delivery_cost');
+            if (['delivery_customer', 'middle_mile', 'delivery_other'].some(function (key) {
+                return Object.prototype.hasOwnProperty.call(changed, key);
+            })) {
+                var parts = ['delivery_customer', 'middle_mile', 'delivery_other'].map(amount);
+                delivery = parts.every(function (part) { return part != null; })
+                    ? parts.reduce(function (sum, part) { return sum + part; }, 0) : null;
+            }
+            var returns = amount('return_cost');
+            if (Object.prototype.hasOwnProperty.call(changed, 'middle_mile')) {
+                returns = amount('middle_mile') == null ? null : amount('middle_mile') + 15;
+            }
+            var ratio = buyout == null ? null : buyout / 100;
+            var logisticsChanged = logisticsFields.some(function (key) {
+                return Object.prototype.hasOwnProperty.call(changed, key);
+            }) || Object.prototype.hasOwnProperty.call(changed, 'buyout_percent');
+            var logistics = !logisticsChanged || changed.logistics_total != null
+                ? amount('logistics_total') : null;
+            if (logistics == null && changed.logistics_total == null) {
+                var returnCharge = amount('logistics_returns');
+                if (!Object.prototype.hasOwnProperty.call(changed, 'logistics_returns') &&
+                    (returnCharge == null || changed.buyout_percent != null ||
+                        changed.middle_mile != null || changed.return_cost != null)) {
+                    returnCharge = returns == null || ratio == null ? null : returns * (1 - ratio);
+                }
+                var repeat = amount('repeat_delivery');
+                if (!Object.prototype.hasOwnProperty.call(changed, 'repeat_delivery') &&
+                    (repeat == null || changed.buyout_percent != null || changed.delivery_cost != null ||
+                    changed.delivery_customer != null || changed.middle_mile != null || changed.delivery_other != null)) {
+                    repeat = delivery == null || ratio == null ? null : delivery * (1 - ratio);
+                }
+                var transit = amount('transit_cost');
+                logistics = [delivery, returnCharge, repeat, transit].every(function (item) {
+                    return item != null;
+                }) ? delivery + returnCharge + repeat + transit : null;
+            }
+            var advertising;
+            if (values.advertising_mode === 'plan' && values.plan_drr != null &&
+                changed.advertising_per_buyout == null && changed.advertising_spend == null &&
+                (changed.plan_drr != null || data.values.advertising_basis === 'drr')) {
+                advertising = price == null || ratio == null ? null : price * amount('plan_drr') / 100 * ratio;
+            } else if (values.advertising_mode === 'plan' && amount('advertising_per_buyout') != null) {
+                advertising = amount('advertising_per_buyout');
+            } else if (changed.advertising_spend != null) {
+                var bought = (data.calculator_advertising || {}).orders_count * ratio;
+                advertising = bought > 0 ? amount('advertising_spend') / bought : null;
+            } else {
+                var weekly = data.calculator_advertising || {};
+                var expected = weekly.orders_count * ratio;
+                advertising = weekly.spend == null || ratio == null ? amount('advertising_per_buyout')
+                    : expected > 0 ? weekly.spend / expected : weekly.spend === 0 ? 0 : null;
+            }
+            var vatRate = amount('vat_percent');
+            var vat = buyer == null || vatRate == null ? null : buyer * vatRate / (100 + vatRate);
+            var usnRate = amount('usn_percent');
+            var charges = [
+                price == null || amount('commission_percent') == null ? null : price * amount('commission_percent') / 100,
+                amount('payment_acceptance'),
+                price == null || amount('acquiring_percent') == null ? null : price * amount('acquiring_percent') / 100,
+                logistics,
+                purchase,
+                amount('fulfillment_cost'),
+                price == null || amount('company_commission_percent') == null ? null : price * amount('company_commission_percent') / 100,
+                vat,
+                buyer == null || vat == null || usnRate == null ? null : (buyer - vat) * usnRate / 100,
+                purchase == null || amount('loss_percent') == null ? null : purchase * amount('loss_percent') / 100,
+                amount('disposal_cost') == null || amount('loss_percent') == null
+                    ? null : amount('disposal_cost') * amount('loss_percent') / 100,
+                advertising,
+            ];
+            var margin = price != null && charges.every(function (item) { return item != null; })
+                ? price - charges.reduce(function (sum, item) { return sum + item; }, 0) : null;
+            container.querySelector('[data-ym-result]').innerHTML =
+                metric('Чистая прибыль · предварительно', margin, ' ₽') +
+                metric('ROI · предварительно', margin != null && purchase > 0 ? margin / purchase * 100 : null, '%');
+            message('Предварительный расчёт в браузере. Уточняем итог на сервере…');
+        }
         function updateHints(state) {
             var v = state.values, r = state.result, c = r.costs || {}, l = r.logistics || {};
             var weekly = state.calculator_advertising || {}, origins = state.origins || {};
@@ -596,10 +681,14 @@
                 buyout_percent: 'Выкуп: ' + n('buyout_percent') + '%. Доля невыкупа: ' + number(nonBuyout) + '%. Расчётные выкупы = количество заказов × процент выкупа / 100.',
                 plan_drr: state.values.advertising_mode === 'weekly'
                     ? number(weekly.spend) + ' ₽ / (' + number(weekly.orders_amount) + ' ₽ × ' + n('buyout_percent') + '%) × 100 = ' + n('plan_drr') + '%.'
-                    : charge(n('seller_price') + ' ₽ × ' + n('plan_drr') + '%', c.advertising),
+                    : v.advertising_basis === 'drr'
+                        ? charge(n('seller_price') + ' ₽ × ' + n('plan_drr') + '% × ' + n('buyout_percent') + '%', c.advertising)
+                        : v.plan_drr == null
+                            ? 'ДРР не определён при нулевом выкупе и положительном расходе.'
+                            : rub(c.advertising) + ' / (' + n('seller_price') + ' ₽ × ' + n('buyout_percent') + '%) × 100 = ' + n('plan_drr') + '%.',
                 advertising_per_buyout: state.values.advertising_mode === 'weekly'
                     ? charge(number(weekly.spend) + ' ₽ / (' + number(weekly.orders_count) + ' заказов × ' + n('buyout_percent') + '%)', v.advertising_per_buyout) + '. За ' + (weekly.period_from || '—') + ' — ' + (weekly.period_to || '—') + ', только дни с заказами и рекламой.'
-                    : 'Расход на один выкуп в сценарии: ' + rub(c.advertising) + '. ' + (v.advertising_basis === 'drr' ? 'Цена продавца × ставка ДРР / 100.' : 'Задан вручную; вычитается из прибыли один раз.'),
+                    : 'Расход на один выкуп в сценарии: ' + rub(c.advertising) + '. ' + (v.advertising_basis === 'drr' ? 'Цена продавца × ставка ДРР / 100 × процент выкупа / 100.' : 'Задан вручную; вычитается из прибыли один раз.'),
             };
             container.querySelectorAll('[data-ym-field]').forEach(function (input) {
                 var key = input.dataset.ymField;
@@ -747,7 +836,8 @@
         }
         async function preview(breakEven) {
             var current = ++sequence;
-            pending();
+            if (breakEven) pending();
+            else previewInBrowser();
             if (categoryEdited && !picker.complete()) {
                 container.querySelector('[data-ym-break-even]').disabled = true;
                 message('Выберите конечную категорию ЯМ для расчёта комиссии.');

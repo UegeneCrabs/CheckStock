@@ -21,7 +21,12 @@ STOCK_SECTIONS = (
     S.STOCK_OPERATIONS,
 )
 UNIT_ECONOMICS_SECTIONS = (S.UNIT_ECONOMICS_WB, S.UNIT_ECONOMICS_OZON, S.UNIT_ECONOMICS_YANDEX)
-REPORT_SECTIONS = (S.REPORT_UNIT_PROFIT, S.REPORT_TARGET_PRICE)
+REPORT_SECTIONS = (
+    S.REPORT_UNIT_PROFIT,
+    S.REPORT_TARGET_PRICE,
+    S.REPORT_UNIT_PROFIT_YANDEX,
+    S.REPORT_TARGET_PRICE_YANDEX,
+)
 SECTION_GROUPS = (
     ("Сток", STOCK_SECTIONS),
     ("Расписание поставок", (S.STOCK_ARRIVALS,)),
@@ -44,14 +49,18 @@ SECTION_LABELS = {
     S.UNIT_ECONOMICS_1C: "Юнит-экономика 1С · Wildberries",
     S.UNIT_ECONOMICS_OZON: "Юнит-экономика 1С · Ozon",
     S.UNIT_ECONOMICS_YANDEX: "Юнит-экономика 1С · Яндекс Маркет",
-    S.REPORT_UNIT_PROFIT: "Юниточная прибыль",
-    S.REPORT_TARGET_PRICE: "Целевая цена",
+    S.REPORT_UNIT_PROFIT: "Юниточная прибыль · WB",
+    S.REPORT_UNIT_PROFIT_YANDEX: "Юниточная прибыль · ЯМ",
+    S.REPORT_TARGET_PRICE: "Целевая цена · WB",
+    S.REPORT_TARGET_PRICE_YANDEX: "Целевая цена · ЯМ",
     S.AI_AGENTS: "ИИ-агенты",
     S.ADMIN_USERS: "Админ-панель · Сотрудники и журнал",
     S.ADMIN_GOOGLE_EXPORT: "Выгрузка в Google Таблицы",
     S.ADMIN_INTEGRATIONS: "API-ключи и фоновые выгрузки",
 }
 SECTION_PATHS = {
+    S.REPORT_UNIT_PROFIT_YANDEX: "/sales/unit-economics-1c/yandex-market/reports/unit-profit",
+    S.REPORT_TARGET_PRICE_YANDEX: "/sales/unit-economics-1c/yandex-market/reports/target-price",
     S.STOCK_BALANCES: "/stock",
     S.UNIT_ECONOMICS_WB: "/sales/unit-economics-1c",
     S.STOCK: "/stock",
@@ -73,6 +82,8 @@ SECTION_PATHS = {
     S.ADMIN_INTEGRATIONS: "/admin/integrations",
 }
 SECTION_DESCRIPTIONS = {
+    S.REPORT_UNIT_PROFIT_YANDEX: "Прибыль ЯМ за период, дневная история и Excel.",
+    S.REPORT_TARGET_PRICE_YANDEX: "Целевые цены ЯМ; изменение разрешает задавать цели товара.",
     S.STOCK_BALANCES: "Остатки по кабинетам, склады, приёмка, перемещения и отгрузки.",
     S.UNIT_ECONOMICS_WB: "Таблица WB, расчёты, цены и параметры товаров.",
     S.STOCK: "Остатки по кабинетам, склады, приёмка, перемещения и отгрузки.",
@@ -105,12 +116,22 @@ SECTION_PARENTS = {
             S.UNIT_ECONOMICS_YANDEX,
             S.REPORT_UNIT_PROFIT,
             S.REPORT_TARGET_PRICE,
+            S.REPORT_UNIT_PROFIT_YANDEX,
+            S.REPORT_TARGET_PRICE_YANDEX,
         )
     },
 }
-READ_ONLY_SECTIONS = {S.STOCK_TOTAL, S.STOCK_OPERATIONS, S.UNIT_ECONOMICS_OZON, S.REPORT_UNIT_PROFIT}
+READ_ONLY_SECTIONS = {
+    S.STOCK_TOTAL,
+    S.STOCK_OPERATIONS,
+    S.UNIT_ECONOMICS_OZON,
+    S.REPORT_UNIT_PROFIT,
+    S.REPORT_UNIT_PROFIT_YANDEX,
+}
 SUPERADMIN_SECTIONS = {S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS}
 SECTION_MARKETPLACES = {
+    S.REPORT_UNIT_PROFIT_YANDEX: "YANDEX MARKET",
+    S.REPORT_TARGET_PRICE_YANDEX: "YANDEX MARKET",
     S.STOCK_RANDOMIZER: "WB",
     S.UNIT_ECONOMICS_WB: "WB",
     S.UNIT_ECONOMICS_OZON: "OZON",
@@ -128,6 +149,10 @@ def _under(path: str, prefix: str) -> bool:
 def section_for_path(path: str) -> SectionName | None:
     path = path.rstrip("/") or "/"
     for prefix, section in (
+        ("/sales/unit-economics-1c/yandex-market/reports/unit-profit", S.REPORT_UNIT_PROFIT_YANDEX),
+        ("/api/unit-economics-1c/yandex-market/reports/unit-profit", S.REPORT_UNIT_PROFIT_YANDEX),
+        ("/sales/unit-economics-1c/yandex-market/reports/target-price", S.REPORT_TARGET_PRICE_YANDEX),
+        ("/api/unit-economics-1c/yandex-market/reports/target-price", S.REPORT_TARGET_PRICE_YANDEX),
         ("/stock/total", S.STOCK_TOTAL),
         ("/stock/supplies", S.STOCK_SUPPLIES),
         ("/stock/planning", S.STOCK_SUPPLIES),
@@ -264,6 +289,8 @@ def active_section(active: str) -> SectionName | None:
         "unit_1c_wb": S.UNIT_ECONOMICS_WB,
         "unit_1c_ozon": S.UNIT_ECONOMICS_OZON,
         "unit_1c_yandex": S.UNIT_ECONOMICS_YANDEX,
+        "unit_1c_reports_yandex": S.REPORT_UNIT_PROFIT_YANDEX,
+        "unit_1c_target_price_yandex": S.REPORT_TARGET_PRICE_YANDEX,
         "unit_1c_reports": S.REPORT_UNIT_PROFIT,
         "unit_1c_target_price": S.REPORT_TARGET_PRICE,
         "stock": S.STOCK_BALANCES,

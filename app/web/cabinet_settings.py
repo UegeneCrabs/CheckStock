@@ -44,6 +44,9 @@ def render_cabinet_settings(user) -> str:
         {
             "store_slug": slug,
             "store_name": STORES[slug]["name"],
+            "store_initials": STORES[slug]["initials"],
+            "store_color": STORES[slug]["color"],
+            "store_text": STORES[slug]["text"],
             **unit_economics_yandex.get_buyout_settings(slug),
         }
         for slug in accessible_stores(user, "YANDEX MARKET")
@@ -53,7 +56,7 @@ def render_cabinet_settings(user) -> str:
         yandex_settings_config=json.dumps(
             {
                 "items": yandex_items,
-                "canEdit": has_access(user, SectionName.UNIT_ECONOMICS_WB, SectionAccessLevel.WRITE),
+                "canEdit": has_access(user, SectionName.UNIT_ECONOMICS_YANDEX, SectionAccessLevel.WRITE),
             },
             ensure_ascii=False,
         ).replace("</", "<\\/"),

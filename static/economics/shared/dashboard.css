@@ -533,6 +533,12 @@ body:has(.content--unit-1c) {
 .ue1c-redesign-table tbody tr.is-selected td:first-child {
     box-shadow: inset 3px 0 var(--ue-accent);
 }
+.ue1c-redesign-table tbody tr.has-data-errors td:first-child,
+.ue1c-redesign-table tbody tr.has-data-errors:hover td:first-child,
+.ue1c-redesign-table tbody tr.has-data-errors.is-selected td:first-child {
+    background: #fff0ee;
+    box-shadow: inset 4px 0 #cf3838;
+}
 .ue1c-redesign-table tbody tr.is-located td {
     background: #fff0b8;
 }
@@ -915,6 +921,20 @@ body:has(.content--unit-1c) {
     margin-top: 5px;
     color: var(--ue-muted);
     font-size: 10px;
+}
+.ue1c-drawer-product-link {
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--ue-accent);
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.ue1c-drawer-product-link[hidden] {
+    display: none;
 }
 .ue1c-close {
     width: 34px;

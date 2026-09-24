@@ -49,7 +49,7 @@
         pagePrev: document.getElementById('ue1cr-page-prev'),
         pageNext: document.getElementById('ue1cr-page-next'),
     };
-    var preferenceKey = 'unit-profit-report-view-v1';
+    var preferenceKey = 'unit-profit-report-view-v1' + (config.marketplace === 'YM' ? '-ym' : '');
     var preferences = {};
     try {
         preferences = JSON.parse(window.localStorage.getItem(preferenceKey) || '{}');
@@ -233,6 +233,49 @@
             ],
         },
     ];
+    if (config.marketplace === 'YM') {
+        // Expenses are per expected buyout, using the saved calculation for this date.
+        dailyColumns = [
+            { key: 'orders_count', label: 'Заказы, шт.', format: 'number' },
+            { key: 'net_orders_count', label: 'Заказы − отмены, шт.', format: 'number' },
+            { key: 'buyout_percent', label: 'Выкуп, %', format: 'percent' },
+            { key: 'expected_buyouts', label: 'Расчётные выкупы, шт.', format: 'number' },
+            { key: 'retail_price', label: 'Цена без СПП, ₽', format: 'money' },
+            { key: 'customer_price', label: 'Цена с СПП, ₽', format: 'money' },
+            { key: 'pay_price', label: 'Цена с Пэй, ₽', format: 'money' },
+            { key: 'purchase_price', label: 'Закупка на выкуп, ₽', format: 'money' },
+            { key: 'fulfillment_expense', label: 'ФФ на выкуп, ₽', format: 'money' },
+            { key: 'commission_percent', label: 'Комиссия ЯМ, %', format: 'percent' },
+            { key: 'commission_value', label: 'Комиссия ЯМ на выкуп, ₽', format: 'money' },
+            { key: 'payment_acceptance', label: 'Приём платежа (Эквайринг 2) на выкуп, ₽', format: 'money' },
+            { key: 'acquiring_percent', label: 'Перевод платежа (Эквайринг 1), %', format: 'percent' },
+            { key: 'acquiring_value', label: 'Перевод платежа (Эквайринг 1) на выкуп, ₽', format: 'money' },
+            { key: 'logistics', label: 'Логистика на выкуп, ₽', format: 'money' },
+            { key: 'loss_percent', label: 'Потери от закупки, %', format: 'percent' },
+            { key: 'loss', label: 'Потери на выкуп, ₽', format: 'money' },
+            { key: 'disposal_cost', label: 'Тариф утилизации, ₽', format: 'money' },
+            { key: 'disposal', label: 'Утилизация на выкуп, ₽', format: 'money' },
+            { key: 'team_commission_percent', label: 'Комиссия компании, %', format: 'percent' },
+            { key: 'team_commission_value', label: 'Комиссия компании на выкуп, ₽', format: 'money' },
+            { key: 'vat_percent', label: 'НДС, %', format: 'percent' },
+            { key: 'vat_value', label: 'НДС на выкуп, ₽', format: 'money' },
+            { key: 'usn_percent', label: 'УСН, %', format: 'percent' },
+            { key: 'usn_value', label: 'УСН на выкуп, ₽', format: 'money' },
+            { key: 'advertising_spend', label: 'Реклама за день, ₽', format: 'money' },
+            { key: 'advertising_per_unit', label: 'Реклама на выкуп, ₽', format: 'money' },
+            { key: 'total_cost', label: 'Всего расходов на выкуп, ₽', format: 'money' },
+            { key: 'net_profit', label: 'Чистая прибыль на выкуп, ₽', format: 'money', tone: true },
+            { key: 'net_revenue', label: 'Чистая выручка на выкуп, ₽', format: 'money' },
+            { key: 'day_profit', label: 'Чистая прибыль за день, ₽', format: 'money', tone: true },
+        ];
+        reportColumnGroups.forEach(function (group) {
+            if (group.key === 'funnel') group.label = 'Заказы ЯМ';
+            group.columns.forEach(function (column) {
+                if (column.help) column.help = column.help.replace(/WB/g, 'ЯМ');
+                if (column.key === 'stock_fbo') column.label = 'FBY';
+            });
+        });
+    }
     var defaultColumnOrder = reportColumnGroups.map(function (group) {
         return group.key;
     });
@@ -905,7 +948,7 @@
     function updateExportLink() {
         if (!nodes.export) return;
         nodes.export.href =
-            '/sales/unit-economics-1c/reports/unit-profit.xlsx?' + reportQuery(true).toString();
+            (config.exportEndpoint || '/sales/unit-economics-1c/reports/unit-profit.xlsx') + '?' + reportQuery(true).toString();
     }
     async function loadFilterOptions() {
         var requestId = ++filterRequestId;
@@ -1008,7 +1051,7 @@
         updateExportLink();
         try {
             var response = await window.fetch(
-                '/api/unit-economics-1c/reports/unit-profit?' + query.toString(),
+                (config.dataEndpoint || '/api/unit-economics-1c/reports/unit-profit') + '?' + query.toString(),
                 {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
                 },
@@ -1048,10 +1091,19 @@
             var undercoveredDays = result.totals ? result.totals.margin_undercovered_days || [] : [];
             if (undercoveredDays.length) {
                 nodes.marginCoverageNote.textContent =
-                    'Снимки маржи есть менее чем у 70% товаров за ' +
+                    (config.marketplace === 'YM' ? 'Неполная история прибыли за ' : 'Снимки маржи есть менее чем у 70% товаров за ') +
                     undercoveredDays.map(dayLabel).join(', ') +
-                    '. Маржа рассчитана по остальным датам.';
+                    (config.marketplace === 'YM' ? '. Учтены доступные дневные расчёты каждого товара.' : '. Маржа рассчитана по остальным датам.');
                 nodes.marginCoverageNote.hidden = false;
+            }
+            if (config.marketplace === 'YM' && result.totals) {
+                var missing = [];
+                if ((result.totals.orders_missing_days || []).length) missing.push('Заказы: нет данных за ' + result.totals.orders_missing_days.map(dayLabel).join(', '));
+                if ((result.totals.ads_missing_days || []).length) missing.push('Реклама: нет данных за ' + result.totals.ads_missing_days.map(dayLabel).join(', '));
+                if (missing.length) {
+                    nodes.marginCoverageNote.textContent += ' ' + missing.join('. ') + '. Показаны доступные данные.';
+                    nodes.marginCoverageNote.hidden = false;
+                }
             }
             if (result.manager_scope && result.manager_scope.restricted && !result.manager_scope.matched) {
                 nodes.scopeNote.textContent =

@@ -9,7 +9,7 @@
     var placeholderMode = config.placeholderMode === true;
     var marketplaceLabel = String(config.marketplaceLabel || 'WB');
     root.classList.toggle('is-placeholder', placeholderMode);
-    root.classList.toggle('has-totals', config.yandexMetrics === true);
+    root.classList.add('has-totals');
     var products = Array.isArray(config.products) ? config.products : [];
     var productsEndpoint = String(config.productsEndpoint || '/sales/unit-economics-1c?data=1');
     var commissionsEndpoint = String(
@@ -39,7 +39,8 @@
     var money = new Intl.NumberFormat('ru-RU', {
         style: 'currency',
         currency: 'RUB',
-        maximumFractionDigits: 0,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
     });
     var preciseMoney = new Intl.NumberFormat('ru-RU', {
         style: 'currency',
@@ -70,6 +71,11 @@
     var targetCalculatorContext = null;
     var calculatorSessionProductId = null;
     var calculatorDraft = null;
+    var calculatorVerifyTimer = 0;
+    var calculatorVerifyController = null;
+    var calculatorVerifySequence = 0;
+    var calculatorVerifyPending = null;
+    var calculatorVerified = null;
     var targetPriceQuote = null;
     var targetPriceController = null;
     var detailRequestId = 0;
@@ -123,6 +129,7 @@
         detailLoading: id('ue1c-detail-loading'),
         drawerTitle: id('ue1c-drawer-title'),
         drawerMeta: id('ue1c-drawer-meta'),
+        drawerProductLink: id('ue1c-drawer-product-link'),
         priceInput: id('ue1c-price-input'),
         sppPriceInput: id('ue1c-spp-price-input'),
         walletPriceInput: id('ue1c-wallet-price-input'),
@@ -225,11 +232,11 @@
     if (config.yandexMetrics === true) {
         var currentGroup = columnGroups.find(function (group) { return group.key === 'current'; });
         currentGroup.columns = currentGroup.columns.filter(function (column) { return column.index !== 24; });
-        columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
-            index: 25, label: 'В пути на склады FBO', number: true, width: 125,
-            help: 'Утверждённые заявки и ещё не принятые товары в отправленных поставках. Черновики, отменённые и завершённые заявки исключены. Знак ≥ означает, что часть количеств пока неизвестна.',
-        });
     }
+    columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
+        index: 25, label: 'В пути на склады FBO', number: true, width: 125,
+        help: 'Утверждённые заявки и ещё не принятые товары в отправленных поставках. Черновики, отменённые и завершённые заявки исключены. Знак ≥ означает, что часть количеств пока неизвестна.',
+    });
     var savedColumns =
         config.columnPreferences && Array.isArray(config.columnPreferences.order)
             ? config.columnPreferences
@@ -384,7 +391,10 @@
             integer.format(finite(coverage.days, coverage.dates.length)) +
             ' из ' +
             integer.format(finite(coverage.expected_days, state.periodDays)) +
-            ' дней)'
+            ' дней)' +
+            (coverage.missing_dates && coverage.missing_dates.length
+                ? '. Нет данных за ' + coverage.missing_dates.map(coverageDate).join(', ')
+                : '')
         );
     }
     function isPartialCoverage(coverage) {
@@ -550,10 +560,8 @@
             'economics/shared/dashboard/render-table-header-5',
             { top: top, sub: sub },
         );
-        if (config.yandexMetrics === true) {
-            nodes.tableHead.insertAdjacentHTML('beforeend', '<tr class="ue1c-totals-row" id="ue1c-totals"></tr>');
-            renderTotals(state.productsLoading ? [] : filteredProducts());
-        }
+        nodes.tableHead.insertAdjacentHTML('beforeend', '<tr class="ue1c-totals-row" id="ue1c-totals"></tr>');
+        renderTotals(state.productsLoading ? [] : filteredProducts());
     }
     function renderTotals(items) {
         var row = id('ue1c-totals');
@@ -718,6 +726,7 @@
         var tag = tagData(product);
         var rowClasses = [];
         if (state.selected === product.id) rowClasses.push('is-selected');
+        if (product.data_errors && product.data_errors.length) rowClasses.push('has-data-errors');
         var status = tag.status ? String(tag.status).toLowerCase() : 'unknown';
         var drr = finite(product.advertising.drr, null);
         var drrClass = drr !== null && drr >= 18 ? ' is-high' : drr !== null && drr >= 12 ? ' is-medium' : '';
@@ -741,6 +750,7 @@
             ' · среднесуточно: ' +
             decimal.format(finite(stock.average_daily_orders, 0));
         var current = product.current_economics || {};
+        var noOrdersWithAds = Number(current.orders) === 0 && Number(current.advertising_spend) > 0;
         var currentTitle =
             'Сегодня, ' +
             nullText(current.period_to) +
@@ -752,7 +762,8 @@
                 : decimal.format(finite(current.buyout_percent, 0)) + '%') +
             (product.advertising.buyout_default_applied ? ' · выкуп по умолчанию' : '') +
             ' · реклама ' +
-            nullable(current.advertising_spend, preciseMoney);
+            nullable(current.advertising_spend, preciseMoney) +
+            (noOrdersWithAds ? '\nЗаказов нет: текущий результат равен расходам на рекламу со знаком минус.' : '');
         if (placeholderMode) {
             if (config.yandexEconomics && product.ym_economics) {
                 var ym = product.ym_economics;
@@ -833,7 +844,7 @@
             marginState: marginIssues.length ? ' ue1c-partial-cell' : '',
             currentTitle: currentTitle + (marginIssues.length
                 ? '\nМаржа на 1 штуку не рассчитана:\n• ' + marginIssues.join('\n• ')
-                : '\nЧистая прибыль на одну выкупленную штуку.'),
+                : noOrdersWithAds ? '' : '\nЧистая прибыль на одну выкупленную штуку.'),
             content: nullable(current.margin, money),
             roi: negativeValueClass(current.roi),
             roiState: roiIssues.length ? ' ue1c-partial-cell' : '',
@@ -855,14 +866,18 @@
         });
         cells.advertising = window.CheckStockUI.render('economics/shared/dashboard/render-product-8', {
             drrCoverage: coverageCellClass(product.advertising.drr_coverage),
+            adCoverage: coverageCellClass(product.advertising.coverage),
             drrClass: drrClass,
-            advertisingTitle: advertisingTitle + (config.yandexMetrics === true
-                ? '\n' + coverageTitle('ДРР: совпадающие дни заказов и рекламы', product.advertising.drr_coverage) : ''),
-            content: drr === null ? '—' : decimal.format(drr) + '%',
+            advertisingTitle: advertisingTitle + '\n' + coverageTitle('ДРР: совпадающие дни заказов и рекламы', product.advertising.drr_coverage),
+            content: drr === null ? '—' : coverageValue('ДРР', drr, decimal,
+                product.advertising.drr_coverage, '%'),
             advertisingTitle_2: advertisingTitle,
-            content_2: nullable(product.advertising.spend, money),
-            content_3: nullable(product.advertising.ctr, decimal, '%'),
-            content_4: nullable(product.advertising.cpc, preciseMoney),
+            content_2: coverageValue('Расходы на рекламу', product.advertising.spend, money,
+                product.advertising.coverage),
+            content_3: coverageValue('CTR', product.advertising.ctr, decimal,
+                product.advertising.coverage, '%'),
+            content_4: coverageValue('CPC', product.advertising.cpc, preciseMoney,
+                product.advertising.coverage),
         });
         cells.tag = window.CheckStockUI.render('economics/shared/dashboard/render-product-9', {
             goal_week: nullText(tag.goal_week),
@@ -880,9 +895,10 @@
             content_3: nullable(product.stock.fbo, integer),
             content_4: nullable(product.stock.fulfillment, integer),
             stockTitle: stockTitle,
-            content_5: nullable(product.stock.days, integer),
+            stockCoverage: coverageCellClass(stock.coverage),
+            content_5: coverageValue('Запас в днях · ' + stockTitle, stock.days, integer, stock.coverage),
         });
-        if (config.yandexMetrics === true) cells.stock += window.CheckStockUI.render(
+        cells.stock += window.CheckStockUI.render(
             'economics/shared/dashboard/inbound-cell', {
                 value: (stock.inbound_partial && stock.inbound != null ? '≥ ' : '') + nullable(stock.inbound, integer),
                 state: stock.inbound_partial || stock.inbound == null ? ' ue1c-partial-cell' : '',
@@ -1572,6 +1588,15 @@
         if (['retail', 'spp', 'client', 'walletPercent', 'wallet'].indexOf(source) !== -1) {
             syncDetailedPriceInputs(product, source);
         }
+        if (source === 'vat' || source === 'usn' || source === 'osno') {
+            syncPriceDependentAmounts(product);
+        }
+        if (source === 'storage') {
+            var storageRate = finite(calculatorValues().storage, null);
+            var storageDays = finite(product.details && product.details.storage_days, null);
+            setCalculatorValue('storageTotal', storageRate === null || storageDays === null
+                ? null : storageRate * storageDays);
+        }
         var values = calculatorValues();
         var retail = finite(values.retail, null);
         function syncPair(percentKey, rubKey, changedKey, base) {
@@ -1708,15 +1733,76 @@
             value: value,
         });
     }
-    function renderPriceCalculation(product) {
+    function verifyPriceCalculation(product, values, signature) {
+        if (calculatorVerifyPending && calculatorVerifyPending.productId === product.id &&
+            calculatorVerifyPending.signature === signature) return;
+        window.clearTimeout(calculatorVerifyTimer);
+        if (calculatorVerifyController) calculatorVerifyController.abort();
+        var sequence = ++calculatorVerifySequence;
+        calculatorVerifyPending = { productId: product.id, signature: signature };
+        calculatorVerifyTimer = window.setTimeout(async function () {
+            var controller = new AbortController();
+            calculatorVerifyController = controller;
+            try {
+                var details = product.details || {};
+                var response = await window.fetch('/api/unit-economics-1c/calculator/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+                    body: JSON.stringify({
+                        store_slug: product.store_slug,
+                        values: values,
+                        tax_system: productTaxSystem(product),
+                        turnover_days: finite(details.storage_days, null),
+                        acquiring_percent: finite(details.acquiring, null),
+                        purchase_cost: finite(details.purchase_cost, null),
+                    }),
+                    signal: controller.signal,
+                });
+                var result = await response.json();
+                if (!response.ok || !result.ok) throw new Error(result.error || 'Расчёт не подтверждён');
+                if (sequence !== calculatorVerifySequence || state.selected !== product.id) return;
+                calculatorVerified = {
+                    productId: product.id, signature: signature, margin: result.margin, roi: result.roi,
+                };
+                renderPriceCalculation(product, false);
+            } catch (error) {
+                if (error.name !== 'AbortError' && sequence === calculatorVerifySequence) {
+                    nodes.priceMetrics.title = 'Предварительный расчёт. Серверный расчёт недоступен: ' + error.message;
+                    var status = nodes.priceMetrics.querySelector('div:first-child span');
+                    if (status) status.textContent = 'Чистая прибыль · сервер недоступен';
+                }
+            } finally {
+                if (calculatorVerifyController === controller) calculatorVerifyController = null;
+                if (sequence === calculatorVerifySequence) calculatorVerifyPending = null;
+            }
+        }, 350);
+    }
+    function renderPriceCalculation(product, verify) {
         var values = calculatorValues();
         var metrics = calculatePrice(product, values);
+        var details = product.details || {};
+        var signature = JSON.stringify([
+            values, productTaxSystem(product), details.storage_days, details.acquiring, details.purchase_cost,
+        ]);
+        var confirmed = calculatorVerified && calculatorVerified.productId === product.id &&
+            calculatorVerified.signature === signature;
+        if (confirmed) {
+            metrics.margin = calculatorVerified.margin;
+            metrics.roi = calculatorVerified.roi;
+        } else if (metrics.margin === null && calculatorVerifyPending) {
+            window.clearTimeout(calculatorVerifyTimer);
+            calculatorVerifySequence += 1;
+            if (calculatorVerifyController) calculatorVerifyController.abort();
+            calculatorVerifyController = null;
+            calculatorVerifyPending = null;
+        }
         nodes.secondaryTaxLabel.textContent = 'Налог ' + metrics.secondaryTaxLabel + ', руб';
         var marginClass = metrics.margin === null ? '' : metrics.margin < 0 ? 'is-negative' : 'is-positive';
         nodes.priceMetrics.innerHTML =
-            metric('Чистая прибыль', nullable(metrics.margin, preciseMoney), marginClass) +
+            metric(confirmed ? 'Чистая прибыль' : 'Чистая прибыль · предварительно',
+                nullable(metrics.margin, preciseMoney), marginClass) +
             metric(
-                'ROI',
+                confirmed ? 'ROI' : 'ROI · предварительно',
                 nullable(metrics.roi, decimal, '%'),
                 metrics.roi === null ? '' : metrics.roi < 0 ? 'is-negative' : 'is-positive',
             ) +
@@ -1725,6 +1811,9 @@
                 nullable(targetPriceForProduct(product), preciseMoney),
                 'ue1c-target-price-value',
             );
+        nodes.priceMetrics.title = confirmed
+            ? 'Итог рассчитан на сервере с Decimal.'
+            : 'Предварительный расчёт в браузере. Уточняем итог на сервере.';
         var quote = targetPriceQuote && targetPriceQuote.productId === product.id ? targetPriceQuote : null;
         nodes.priceMetrics.querySelector('.ue1c-target-price-value').title = quote
             ? quote.message
@@ -1737,6 +1826,9 @@
                 : 0;
         nodes.walletPriceInput.classList.toggle('is-target-price-higher', priceDifference > 200);
         nodes.walletPriceInput.classList.toggle('is-target-price-lower', priceDifference < -200);
+        if (verify !== false && !confirmed && metrics.margin !== null) {
+            verifyPriceCalculation(product, values, signature);
+        }
     }
     function targetPriceForProduct(product) {
         return targetPriceQuote && targetPriceQuote.productId === product.id ? targetPriceQuote.price : null;
@@ -2580,6 +2672,33 @@
             },
         );
     }
+    function updateDrawerProductLink(product) {
+        var article = String(product.article || '').split(' / ')[0].trim();
+        var marketplace = String(product.marketplace || '').toUpperCase();
+        var sku = String(product.mp_sku || '').trim();
+        var modelId = String(product.mp_product_id || '').trim();
+        var url = '';
+        var label = '';
+        if (marketplace === 'YANDEX MARKET') {
+            if (/^[1-9]\d*$/.test(modelId)) {
+                url = 'https://market.yandex.ru/product/' + modelId +
+                    (/^[1-9]\d*$/.test(sku) ? '?sku=' + sku : '');
+                label = 'Открыть на ЯМ';
+            } else if (/^[1-9]\d*$/.test(sku)) {
+                url = 'https://market.yandex.ru/search?text=' + encodeURIComponent(sku);
+                label = 'Найти на ЯМ';
+            }
+        } else if ((marketplace === 'WB' || !marketplace) && /^[1-9]\d*$/.test(article)) {
+            url = 'https://www.wildberries.ru/catalog/' + article + '/detail.aspx';
+            label = 'Открыть на WB';
+        }
+        nodes.drawerProductLink.hidden = !url;
+        if (url) {
+            nodes.drawerProductLink.href = url;
+            nodes.drawerProductLink.innerHTML = escapeHtml(label) + ' <span aria-hidden="true">↗</span>';
+            nodes.drawerProductLink.setAttribute('aria-label', label + ' в новой вкладке');
+        } else nodes.drawerProductLink.removeAttribute('href');
+    }
     function renderDetailProduct(product) {
         clearTargetCalculator();
         root.classList.remove('is-detail-loading');
@@ -2587,6 +2706,7 @@
         state.selected = product.id;
         renderDrawerMedia(product);
         nodes.drawerTitle.textContent = product.name;
+        updateDrawerProductLink(product);
         nodes.drawerMeta.innerHTML =
             escapeHtml(product.store_name) +
             ' · ' +
@@ -2668,6 +2788,7 @@
         nodes.overlay.classList.add('is-open');
         renderDrawerMedia(product);
         nodes.drawerTitle.textContent = product.name;
+        updateDrawerProductLink(product);
         nodes.drawerMeta.innerHTML =
             escapeHtml(product.store_name) + ' · ' + copyValue('Арт.', product.article, 'Артикул');
         root.classList.add('is-detail-loading');
@@ -2739,6 +2860,12 @@
     }
     function closeDetail() {
         detailRequestId += 1;
+        window.clearTimeout(calculatorVerifyTimer);
+        calculatorVerifySequence += 1;
+        if (calculatorVerifyController) calculatorVerifyController.abort();
+        calculatorVerifyController = null;
+        calculatorVerifyPending = null;
+        calculatorVerified = null;
         if (targetPriceController) targetPriceController.abort();
         targetPriceController = null;
         targetPriceQuote = null;

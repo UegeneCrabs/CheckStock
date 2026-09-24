@@ -69,7 +69,10 @@ async def authentication_middleware(request: Request, call_next):
     )
     if request.method == "POST" and (
         path.startswith("/api/unit-economics-1c/yandex-market/calculate/")
+        or path == "/api/unit-economics-1c/calculator/verify"
         or path == "/api/unit-economics-1c/reports/target-price.xlsx"
+        or path == "/api/unit-economics-1c/yandex-market/reports/target-price.xlsx"
+        or (path.startswith("/api/unit-economics-1c/yandex-market/reports/target-price/") and path.endswith("/preview"))
     ):
         required_access = SectionAccessLevel.READ
     if section is not None and not has_section_access(user, section, required_access):
