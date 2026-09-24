@@ -1,3 +1,4 @@
+import http.client
 import json
 import logging
 import socket
@@ -177,18 +178,28 @@ def _request(
                     continue
             raise last_error from e
 
-        except TimeoutError as e:
-            last_error = YandexApiError(None, "Маркет не ответил за отведённое время", retryable=True)
+        except (TimeoutError, ConnectionError, urllib.error.URLError, http.client.IncompleteRead) as e:
+            reason = e.reason if isinstance(e, urllib.error.URLError) else e
+            if isinstance(reason, (socket.timeout, TimeoutError)):
+                detail = "Маркет не ответил за отведённое время"
+            elif isinstance(reason, (ConnectionError, http.client.IncompleteRead)):
+                detail = "Соединение с Яндекс Маркетом прервано при получении ответа"
+            else:
+                detail = f"Сетевая ошибка при обращении к Яндекс Маркету: {reason}"
+            last_error = YandexApiError(None, detail, retryable=True)
             if attempt < max_attempts:
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+                pause = RETRY_BACKOFF_SECONDS * attempt
+                logger.warning(
+                    "Яндекс %s: %s, повтор %s/%s через %s с",
+                    path,
+                    detail,
+                    attempt + 1,
+                    max_attempts,
+                    pause,
+                )
+                time.sleep(pause)
                 continue
             raise last_error from e
-
-        except urllib.error.URLError as e:
-            reason = e.reason
-            if isinstance(reason, (socket.timeout, TimeoutError)):
-                raise YandexApiError(None, "Маркет не ответил за отведённое время", retryable=True) from e
-            raise YandexApiError(None, f"сеть: {reason}", retryable=True) from e
 
     raise last_error or YandexApiError(None, "не удалось выполнить запрос к Маркету")
 
