@@ -56,6 +56,7 @@
     var priceJobsKey = storageNamespace + '.price-jobs.' + userKey;
     var comments = readJson(commentsKey, {});
     var pendingPriceJobs = readJson(priceJobsKey, []);
+    var sentPriceNotifications = Object.create(null);
     if (!Array.isArray(pendingPriceJobs)) pendingPriceJobs = [];
     var configuredPeriodDays =
         [7, 14, 30].indexOf(Number(config.periodDays)) !== -1 ? Number(config.periodDays) : 7;
@@ -3108,7 +3109,9 @@
             nodes.confirmModal.setAttribute('aria-hidden', 'true');
             if (pendingPriceJobs.indexOf(result.job_id) === -1) pendingPriceJobs.push(result.job_id);
             writeJson(priceJobsKey, pendingPriceJobs);
-            showToast('Цена отправляется в фоне — можно продолжать работу');
+            showToast(config.yandexEconomics
+                ? 'Цена передана на отправку в Яндекс Маркет. Ожидаем приёма запроса.'
+                : 'Цена отправляется в фоне — можно продолжать работу');
             pollPriceJob(result.job_id);
         } catch (error) {
             showToast(error.message || 'Не удалось передать цену', 'error');
@@ -3122,6 +3125,7 @@
         }
     }
     function finishPriceJob(jobId) {
+        delete sentPriceNotifications[jobId];
         pendingPriceJobs = pendingPriceJobs.filter(function (item) {
             return item !== jobId;
         });
@@ -3143,6 +3147,10 @@
             }
             if (!response.ok) throw new Error(job.error || 'Не удалось проверить отправку цены');
             if (job.status === 'queued' || job.status === 'running') {
+                if (config.yandexEconomics && job.sent && !sentPriceNotifications[jobId]) {
+                    sentPriceNotifications[jobId] = true;
+                    showToast('Цена отправлена в Яндекс Маркет. Ожидаем подтверждения применения.');
+                }
                 window.setTimeout(function () {
                     pollPriceJob(jobId);
                 }, 2500);
@@ -3166,10 +3174,15 @@
                         } catch (error) { refreshed = false; }
                     }
                 }
+                var appliedMessage = (config.yandexEconomics ? 'Цена отправлена и применена в ' : 'Цена применена в ') +
+                    priceDestination + (refreshed
+                        ? ', данные сайта обновлены'
+                        : '. Обновите страницу, чтобы увидеть свежие данные');
+                var priceWarning = job.result && job.result.warning;
                 showToast(
-                    (job.result && job.result.warning) || (refreshed
-                        ? 'Цена применена в ' + priceDestination + ', данные сайта обновлены'
-                        : 'Цена применена в ' + priceDestination + '. Обновите страницу, чтобы увидеть свежие данные'),
+                    config.yandexEconomics
+                        ? appliedMessage + (priceWarning ? '. ' + priceWarning : '')
+                        : priceWarning || appliedMessage,
                     refreshed ? undefined : 'error',
                 );
             } else {

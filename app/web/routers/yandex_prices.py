@@ -136,6 +136,7 @@ async def job(request: Request, job_id: str):
             "ok": True,
             "id": job_id,
             "status": entry["status"],
+            "sent": bool(entry.get("sent")),
             "result": entry.get("result"),
             "error": entry.get("error"),
         }
