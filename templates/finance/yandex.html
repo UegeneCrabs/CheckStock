@@ -1,0 +1,72 @@
+<link rel="stylesheet" href="/static/finance/yandex.css?v=20260924-range-picker-1" />
+
+<section class="finance-report" aria-label="Финансовый отчет Яндекс">
+    <header class="finance-report__header">
+        <div>
+            <p class="finance-report__eyebrow">Яндекс Маркет</p>
+            <h1>RBE</h1>
+        </div>
+        <div class="finance-report__controls" aria-label="Параметры отчета">
+            <div class="finance-date-range" aria-label="Период отчета">
+                <label>Магазин
+                    <select id="finance-store" aria-label="Магазин">
+                        <option value="">Все магазины</option>
+                    </select>
+                </label>
+                <div class="finance-range-picker">
+                    <span class="finance-range-picker__label">Период</span>
+                    <button class="finance-range-picker__trigger" id="finance-date-range-picker" type="button" aria-expanded="false" aria-haspopup="dialog">
+                        <span id="finance-date-range-label">Выберите период</span><span aria-hidden="true">▣</span>
+                    </button>
+                    <div class="finance-range-picker__panel" id="finance-date-range-panel" role="dialog" aria-label="Выбор периода" hidden>
+                        <div class="finance-range-picker__header">
+                            <button type="button" data-finance-calendar-prev aria-label="Предыдущий месяц">‹</button>
+                            <strong data-finance-calendar-title></strong>
+                            <button type="button" data-finance-calendar-next aria-label="Следующий месяц">›</button>
+                        </div>
+                        <div class="finance-range-picker__weekdays" aria-hidden="true"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+                        <div class="finance-range-picker__days" data-finance-calendar-days></div>
+                        <p class="finance-range-picker__hint">Выберите начало и конец периода</p>
+                    </div>
+                    <input id="finance-date-from" type="hidden" />
+                    <input id="finance-date-to" type="hidden" />
+                </div>
+                <button class="finance-apply" id="finance-apply" type="button">Применить</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="finance-table-wrap">
+        <table class="finance-table">
+            <thead>
+                <tr><th>Показатель</th><th id="finance-report-range">Факт</th></tr>
+            </thead>
+            <tbody>
+                <tr class="finance-row">
+                    <th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Сумма заказов, созданных покупателями в выбранном периоде. Не учитывает отмены, возвраты и то, будут ли товары выкуплены.">ТО заказы из воронки</span></th><td data-finance-key="orders_turnover">—</td>
+                </tr>
+                <tr class="finance-row">
+                    <th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Стоимость подтверждённых выкупов по вашей цене за вычетом финансовых возвратов. Невыкупы исключаются.">ТО выкупы-возвраты в цене селлера</span></th><td data-finance-key="buyout_seller_turnover">—</td>
+                </tr>
+                <tr class="finance-row">
+                    <th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Оплата покупателей по тем же подтверждённым выкупам, что и строка в цене селлера, за вычетом возвратов. Отличается из-за скидок, акций и субсидий Маркета.">ТО выкупы-возвраты в цене покупателя</span></th><td data-finance-key="buyout_buyer_turnover">—</td>
+                </tr>
+                <tr class="finance-row">
+                    <th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Количество товарных единиц, доставленных покупателю по данным API заказов, минус подтверждённые финансовые возвраты. Это не число заказов: в одном заказе может быть несколько товаров.">К-во выкупов</span></th><td data-finance-key="buyout_count" data-finance-format="integer">—</td>
+                </tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Комиссия Маркета за размещение проданных товаров до зачёта бонусов. В расчёт попадают только операции, связанные с выкупами выбранного периода.">Комиссия</span></th><td data-finance-key="commission">—</td></tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Плата за хранение на складах Маркета. Если в отчёте за период нет таких операций, отображается прочерк.">Хранение</span></th><td data-finance-key="storage">—</td></tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Доставка покупателю и межрегиональная доставка. Эквайринг и перечисление платежей сюда не входят.">Логистика</span></th><td data-finance-key="logistics">—</td></tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Сумма двух статей PiData: «Эквайринг» (перечисление и приём платежей) + «Другие» (корректировка Маркета за просроченное исполнение). «Другие» — зачисление от Маркета, поэтому для прогноза прихода оно не считается дополнительным удержанием.">Иное (эквайринг + другие)</span></th><td data-finance-key="other_direct_expenses">—</td></tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Все рекламные удержания Маркета за период: буст продаж, буст с оплатой за показы и товарные баннеры.">Реклама</span></th><td data-finance-key="advertising">—</td></tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Расчётная сумма к перечислению: ТО выкупов в цене селлера минус комиссия, логистика, иное и реклама. Это прогноз за период; фактическая выплата может отличаться из-за последующих корректировок Маркета.">Приход на РС</span></th><td data-finance-key="bank_receipt">—</td></tr>
+                <tr class="finance-row"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Закупочная стоимость тех же подтверждённых выкупов, что входят в строку «К-во выкупов», за вычетом ЗЦ финансовых возвратов. Прочерк означает, что цена есть не для всех позиций.">ЗЦ проданных товаров</span></th><td data-finance-key="sold_cost_of_goods">—</td></tr>
+                <tr class="finance-row finance-row--total finance-row--total-start"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Поступление от МП («Приход на РС») минус себестоимость проданных товаров.">Маржинальная прибыль</span></th><td data-finance-key="marginal_profit">—</td></tr>
+                <tr class="finance-row finance-row--total"><th scope="row"><span class="finance-help" tabindex="0" data-tooltip="Маржинальная прибыль, делённая на ТО выкупов-возвратов в цене покупателя.">Маржинальная прибыль, % от ТО выкупов в цене покупателя</span></th><td data-finance-key="marginal_profit_percent" data-finance-format="percent">—</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</section>
+
+<script src="/static/finance/yandex.js?v=20260924-auto-apply-1"></script>

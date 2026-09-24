@@ -166,16 +166,30 @@
             event.preventDefault();
             var submit = form.querySelector('[type="submit"]');
             var client = form.querySelector('[name="client_id"]');
+            var businessId = form.querySelector('[name="business_id"]');
             submit.disabled = true;
             show('Сохраняю…', false);
-            request('/api/admin/integrations/' + store + '/' + marketplace, {
+            var url = '/api/admin/integrations/' + store + '/' + marketplace;
+            var body = { api_key: keyInput.value, client_id: client ? client.value : '' };
+            if (marketplace === 'yandex') {
+                var parsedBusinessId = Number(businessId && businessId.value);
+                if (!Number.isInteger(parsedBusinessId) || parsedBusinessId < 1) {
+                    show('Укажите корректный Business ID', true);
+                    submit.disabled = false;
+                    return;
+                }
+                url = '/api/admin/integrations/' + store + '/yandex/businesses/' + parsedBusinessId;
+                body = { api_key: keyInput.value, campaign_ids: [] };
+            }
+            request(url, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
-                body: JSON.stringify({ api_key: keyInput.value, client_id: client ? client.value : '' }),
+                body: JSON.stringify(body),
             })
                 .then(function () {
                     keyInput.value = '';
                     if (client) client.value = '';
+                    if (businessId) businessId.value = '';
                     status.textContent = 'Подключён';
                     status.className = 'integration-key-status is-connected';
                     remove.disabled = false;

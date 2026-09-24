@@ -154,6 +154,34 @@
             </div>
         </div>
 
+        <div class="nav-group $finance_reports_open" data-nav-group$finance_reports_group_hidden>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger $finance_reports_group_active"
+                    type="button"
+                    title="Финансовые отчеты"
+                    aria-expanded="$finance_reports_expanded"
+                    aria-controls="nav-finance-reports-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 19V5"></path>
+                        <path d="M4 19h16"></path>
+                        <path d="M7 15v-3M12 15V8M17 15v-5"></path>
+                    </svg>
+                    <span>Финансовые отчеты</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-finance-reports-submenu" data-nav-submenu>
+                <a class="nav-subitem $finance_yandex_active" href="/finance-reports/yandex" $finance_yandex_hidden
+                    >Яндекс</a
+                >
+            </div>
+        </div>
+
         <div class="nav-group" data-nav-group $ai_agents_hidden>
             <div class="nav-group-head">
                 <button class="nav-item agent-nav nav-group-trigger $ai_agents_active"

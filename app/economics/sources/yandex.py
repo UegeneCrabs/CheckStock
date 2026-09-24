@@ -1,6 +1,9 @@
-"""Import the single YM sheet using explicit store and ARTICLE identifiers."""
+"""Import Yandex Market cost prices from the public 1C export sheet."""
 
+import csv
+from io import StringIO
 import logging
+from urllib.request import urlopen
 
 from app import db
 from app.core.stores import STORES
@@ -9,18 +12,15 @@ from app.repositories import yandex_source_values as repository
 
 logger = logging.getLogger(__name__)
 MARKETPLACE = "YANDEX MARKET"
-SHEET_TITLE = "YM"
+SHEET_TITLE = "Для выгрузки"
+SHEET_GID = "1943211031"
+PUBLIC_SHEET_EXPORT_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    f"{source.SOURCE_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid={SHEET_GID}"
+)
 SOURCE_COLUMNS = {
-    **{key: value for key, value in source.SOURCE_COLUMNS.items() if key != "team_commission"},
-    "article": "article",
-    "store": "магазин",
-}
-STORE_ALIASES = {
-    **{source._header_key(slug): slug for slug in STORES},
-    **{source._header_key(store["name"]): slug for slug, store in STORES.items()},
-    "хочушар": "rimili",
-    "bth": "trusthome",
-    "гоголь": "gogol",
+    "article": "артикул",
+    "purchase_price": "себестоимость",
 }
 
 
@@ -34,68 +34,109 @@ def _find_header(rows: list[list[object]]) -> tuple[int, dict[str, int]]:
         columns = {source._header_key(value): index for index, value in enumerate(row)}
         if set(SOURCE_COLUMNS.values()).issubset(columns):
             return header_index, columns
-    raise source.SourceDataError("В листе YM не найдены обязательные колонки: Магазин, ARTICLE и данные 1С")
+    raise source.SourceDataError(
+        "В листе «Для выгрузки» не найдены колонки «Артикул» и «Себестоимость»"
+    )
 
 
-def parse_source_values(sheets: list[dict]) -> dict:
-    if len(sheets) != 1 or source._text(sheets[0].get("title")).upper() != SHEET_TITLE:
-        raise source.SourceDataError("Для ЯМ нужен ровно один лист YM")
+def _public_export_sheet() -> list[dict]:
+    """Read the public two-column export when no service account is configured."""
+
+    try:
+        with urlopen(PUBLIC_SHEET_EXPORT_URL, timeout=30) as response:
+            rows = list(csv.reader(StringIO(response.read().decode("utf-8-sig"))))
+    except Exception as error:
+        raise source.SourceDataError(
+            "не удалось получить публичную вкладку «Для выгрузки» Google Sheets"
+        ) from error
+    return [{"sheet_id": int(SHEET_GID), "title": SHEET_TITLE, "rows": rows}]
+
+
+def fetch_source_sheet() -> list[dict]:
+    """Prefer the authenticated API, but keep the public export self-contained."""
+
+    if source.google_service_account.has_credentials():
+        return source.fetch_sheet_rows(SHEET_TITLE)
+    return _public_export_sheet()
+
+
+def parse_source_values(sheets: list[dict], existing_values: list[dict]) -> dict:
+    if len(sheets) != 1 or source._text(sheets[0].get("title")).casefold() != SHEET_TITLE.casefold():
+        raise source.SourceDataError("Для ЯМ нужен ровно один лист «Для выгрузки»")
     sheet = sheets[0]
     rows = list(sheet.get("rows") or [])
     header_index, columns = _find_header(rows)
-    parsed_by_item = {}
+    prices_by_article: dict[str, tuple[float, int]] = {}
     source_rows = duplicates = 0
     for source_row, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
-
-        def cell(name, current_row=row):
-            column = columns.get(SOURCE_COLUMNS.get(name, source.OPTIONAL_SOURCE_COLUMNS.get(name)))
-            return current_row[column] if column is not None and column < len(current_row) else None
-
-        article = source._identifier(cell("article"))
-        if not article:
+        article_column = columns[SOURCE_COLUMNS["article"]]
+        price_column = columns[SOURCE_COLUMNS["purchase_price"]]
+        article = source._identifier(row[article_column]) if article_column < len(row) else ""
+        price = _number(row[price_column]) if price_column < len(row) else None
+        if not article or price is None:
             continue
         source_rows += 1
-        store_slug = STORE_ALIASES.get(source._header_key(cell("store")))
-        if not store_slug:
-            raise source.SourceDataError(
-                f"YM, строка {source_row}: неизвестный магазин {source._text(cell('store'))!r}"
-            )
-        parsed = {
-            "store_slug": store_slug,
-            "article": article,
-            "manager": source._text(cell("manager")) or None,
-            "purchase_price": _number(cell("purchase_price")),
-            "fulfillment_cost": _number(cell("fulfillment_cost")),
-            **source._split_tag(cell("tag")),
-            **source._split_supplier_external(cell("supplier_external")),
-            "source_sheet_id": int(sheet["sheet_id"]),
-            "source_sheet_title": SHEET_TITLE,
-            "source_row": source_row,
-        }
-        key = (store_slug, article)
-        if key in parsed_by_item:
-            previous = parsed_by_item[key]
-            if any(previous[field] != value for field, value in parsed.items() if field != "source_row"):
+        previous = prices_by_article.get(article)
+        if previous is not None:
+            if previous[0] != price:
                 raise source.SourceDataError(
-                    f"YM: разные данные для {store_slug} / {article} в строках {previous['source_row']} и {source_row}"
+                    f"Для артикула {article} указана разная себестоимость "
+                    f"в строках {previous[1]} и {source_row}"
                 )
             duplicates += 1
             continue
-        parsed_by_item[key] = parsed
+        prices_by_article[article] = (price, source_row)
+
+    parsed_rows: list[dict] = []
+    missing_articles: list[str] = []
+    matched = 0
+    for existing in existing_values:
+        article = source._identifier(existing.get("article"))
+        price_data = prices_by_article.get(article)
+        if price_data is None:
+            missing_articles.append(article)
+            # Retain the product-to-store binding, but do not carry a price
+            # over from the old sheet after the source of truth has changed.
+            parsed_rows.append(
+                {
+                    **existing,
+                    "purchase_price": None,
+                    "source_sheet_id": int(sheet["sheet_id"]),
+                    "source_sheet_title": SHEET_TITLE,
+                    # The database records the source row as required data;
+                    # zero explicitly means that the article is absent from
+                    # the current export.
+                    "source_row": 0,
+                }
+            )
+            continue
+        price, source_row = price_data
+        matched += 1
+        parsed_rows.append(
+            {
+                **existing,
+                "purchase_price": price,
+                "source_sheet_id": int(sheet["sheet_id"]),
+                "source_sheet_title": SHEET_TITLE,
+                "source_row": source_row,
+            }
+        )
     return {
-        "rows": list(parsed_by_item.values()),
+        "rows": parsed_rows,
         "sheet_count": 1,
         "source_rows": source_rows,
-        "matched": len(parsed_by_item),
-        "unmatched": 0,
+        "matched": matched,
+        "unmatched": len(missing_articles),
         "duplicates": duplicates,
+        "missing_articles": missing_articles,
     }
 
 
 def sync_all(sheets: list[dict] | None = None) -> dict:
     now = source._now()
     try:
-        report = parse_source_values(sheets if sheets is not None else source.fetch_sheet_rows(SHEET_TITLE))
+        existing_values = repository.list_values()
+        report = parse_source_values(sheets if sheets is not None else fetch_source_sheet(), existing_values)
         saved = repository.replace_values(report.pop("rows"), now)
     except Exception as error:
         for slug in STORES:

@@ -34,8 +34,10 @@ from app.yandex import catalog as ya_catalog
 from app.yandex import categories as ya_categories
 from app.yandex import category_commissions as ya_category_commissions
 from app.yandex import economics_sync as ya_economics_sync
+from app.yandex import financial_reports as ya_financial_reports
 from app.yandex import product_novelty as ya_product_novelty
 from app.yandex import sync as ya_sync
+from app.yandex import tokens as ya_tokens
 from app.yandex import unit_economics_sync as ya_unit_sync
 
 logger = logging.getLogger(__name__)
@@ -342,6 +344,36 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
     )
 
 
+def _sync_yandex_financial_reports_configured() -> SyncGroupReport:
+    stores = sync_settings.enabled_stores("yandex_financial_reports_sync", "YANDEX MARKET")
+
+    def sync_store(store_slug: str) -> dict:
+        if not ya_tokens.has_credentials(store_slug):
+            raise ValueError("Не настроены API-ключ и Business ID Яндекс Маркета")
+        return ya_financial_reports.sync_financial_reports(store_slug)
+
+    return _run_sync_group(
+        "yandex_financial_reports",
+        (
+            (store_slug, lambda current_store=store_slug: sync_store(current_store))
+            for store_slug in stores
+        ),
+    )
+
+
+def _yandex_financial_report_jobs() -> tuple[BackgroundJob, ...]:
+    return (
+        BackgroundJob(
+            "yandex_financial_reports_sync",
+            lambda: _sync_yandex_financial_reports_configured(),
+            _moscow_daily_delay(5),
+            startup_delay_seconds=_seconds_until_next_moscow_run(5),
+            is_enabled=lambda: _job_enabled("yandex_financial_reports_sync"),
+            run_callback=_sync_yandex_financial_reports_configured,
+        ),
+    )
+
+
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -392,6 +424,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         ),
         *_funnel_jobs(),
         *_yandex_unit_economics_jobs(),
+        *_yandex_financial_report_jobs(),
         BackgroundJob(
             ya_category_commissions.JOB,
             ya_category_commissions.sync_all,
@@ -483,6 +516,8 @@ async def lifespan(application: FastAPI):
     jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
     if not settings.background_sync_enabled and settings.funnel_orders_sync_enabled:
         jobs += _funnel_jobs()
+    if not settings.background_sync_enabled and settings.yandex_financial_reports_sync_enabled:
+        jobs += _yandex_financial_report_jobs()
     if settings.unit_economics_1c_price_sync_enabled:
         jobs += _unit_economics_1c_price_jobs()
     tasks = [asyncio.create_task(run_background_job(job), name=f"checkstock:{job.name}") for job in jobs]

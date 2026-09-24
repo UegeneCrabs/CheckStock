@@ -169,6 +169,8 @@ def section_for_path(path: str) -> SectionName | None:
         ("/api/unit-economics-1c/ozon", S.UNIT_ECONOMICS_OZON),
         ("/sales/unit-economics-1c/yandex-market", S.UNIT_ECONOMICS_YANDEX),
         ("/api/unit-economics-1c/yandex-market", S.UNIT_ECONOMICS_YANDEX),
+        ("/finance-reports/yandex", S.UNIT_ECONOMICS_YANDEX),
+        ("/api/finance-reports/yandex", S.UNIT_ECONOMICS_YANDEX),
         ("/ai-agents", S.AI_AGENTS),
         ("/api/ai-agents", S.AI_AGENTS),
         ("/admin/google-export", S.ADMIN_GOOGLE_EXPORT),

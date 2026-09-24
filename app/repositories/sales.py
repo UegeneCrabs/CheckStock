@@ -71,6 +71,35 @@ def upsert_sales_order_lines(lines: list[dict], synced_at: str) -> int:
     return len(lines)
 
 
+def replace_sales_order_period(
+    store_slug: str,
+    marketplace: str,
+    date_from: str,
+    date_to: str,
+    lines: list[dict],
+    synced_at: str,
+) -> int:
+    """Replace an exact order-date interval after a full source refresh.
+
+    This removes orders from campaigns that have deliberately been taken out
+    of a store connection, so historical dashboard totals follow the current
+    selected campaign list as well.
+    """
+
+    with WRITE_LOCK:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "DELETE FROM sales_order_lines "
+                "WHERE store_slug=? AND marketplace=? AND ordered_at>=? AND ordered_at<?",
+                (store_slug, marketplace, date_from, date_to),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return upsert_sales_order_lines(lines, synced_at)
+
+
 def sales_has_history(store_slug: str, marketplace: str) -> bool:
     conn = get_connection()
     row = conn.execute(
@@ -269,6 +298,40 @@ def get_sales_daily(
         day = by_day.setdefault(row["day"], {"day": row["day"]})
         day.update(dict(row))
     return [by_day[day] for day in sorted(by_day)]
+
+
+def get_sold_items_daily(
+    date_from: str, date_to: str, marketplace: str, store_slug: str | None = None
+) -> list[dict]:
+    """Delivered quantities grouped by delivery day and offer/article.
+
+    This is deliberately the item-level counterpart of :func:`get_sales_daily`.
+    Financial reports describe money operations, whereas these records are the
+    source of truth for the quantities that reached a buyer.
+    """
+
+    store_sql = " AND store_slug = ?" if store_slug else ""
+    params: list[object] = [marketplace, date_from, date_to]
+    if store_slug:
+        params.append(store_slug)
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT substr(sold_at, 1, 10) AS day,
+                   article,
+                   SUM(sold_quantity) AS quantity
+              FROM sales_order_lines
+             WHERE marketplace=? AND sold_at>=? AND sold_at<?{store_sql}
+             GROUP BY substr(sold_at, 1, 10), article
+             HAVING SUM(sold_quantity) > 0
+             ORDER BY day, article
+            """,
+            params,
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
 
 
 def get_sales_available_range(marketplace: str, store_slug: str | None = None) -> dict:

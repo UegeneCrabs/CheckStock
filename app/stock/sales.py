@@ -404,7 +404,9 @@ def _yandex_status_counts(item: dict) -> dict[str, int]:
 def _normalize_yandex(store_slug: str, orders: list[dict]) -> list[dict]:
     lines: list[dict] = []
     for order_index, order in enumerate(orders):
-        order_key = str(order.get("orderId") or order.get("id") or f"ym-row-{order_index}")
+        external_order_id = str(order.get("orderId") or order.get("id") or f"ym-row-{order_index}")
+        business_id = _integer(order.get("_business_id"))
+        order_key = f"{business_id}:{external_order_id}" if business_id else external_order_id
         status = str(order.get("status") or "").upper()
         substatus = str(order.get("substatus") or "")
         program = str(order.get("programType") or "FBS").upper()
@@ -437,7 +439,7 @@ def _normalize_yandex(store_slug: str, orders: list[dict]) -> list[dict]:
                     "marketplace": "YANDEX MARKET",
                     "order_key": order_key,
                     "line_key": line_key,
-                    "external_order_id": order_key,
+                    "external_order_id": external_order_id,
                     "scheme": "fbo" if program in {"FBY", "FBO"} else "fbs",
                     "status": status,
                     "substatus": substatus,
@@ -531,10 +533,11 @@ def _sync_ozon(store_slug: str, start: date, end: date) -> tuple[list[dict], lis
     return lines, warnings
 
 
-def _resolve_yandex_business_id(store_slug: str, api_key: str) -> int:
-    business_id = yandex_tokens.get_business_id(store_slug)
-    if business_id:
-        return business_id
+def _resolve_yandex_accounts(store_slug: str) -> list[dict]:
+    accounts = yandex_tokens.get_accounts(store_slug)
+    if accounts:
+        return accounts
+    api_key = yandex_tokens.get_api_key(store_slug)
     campaigns = yandex_api.get_campaigns(api_key)
     ids = sorted(
         {
@@ -545,26 +548,37 @@ def _resolve_yandex_business_id(store_slug: str, api_key: str) -> int:
     )
     if not ids:
         raise RuntimeError("Яндекс Маркет не вернул businessId кабинета")
-    return ids[0]
+    return [{"business_id": business_id, "api_key": api_key} for business_id in ids]
 
 
 def _sync_yandex(store_slug: str, start: date, end: date) -> tuple[list[dict], list[str]]:
-    api_key = yandex_tokens.get_api_key(store_slug)
-    business_id = _resolve_yandex_business_id(store_slug, api_key)
+    accounts = _resolve_yandex_accounts(store_slug)
     orders: list[dict] = []
     warnings: list[str] = []
     for window_start, window_end in _windows(start, end, SOURCE_WINDOW_DAYS["YANDEX MARKET"]):
-        try:
-            orders.extend(
-                yandex_api.get_business_orders(
-                    api_key,
-                    business_id,
-                    window_start.isoformat(),
-                    window_end.isoformat(),
+        for account in accounts:
+            business_id = int(account["business_id"])
+            campaign_ids = {
+                _integer(value) for value in account.get("campaign_ids") or [] if _integer(value) > 0
+            }
+            try:
+                business_orders = yandex_api.get_business_orders(
+                    str(account["api_key"]), business_id, window_start.isoformat(), window_end.isoformat()
                 )
-            )
-        except Exception as exc:
-            warnings.append(f"{window_start:%d.%m}-{window_end:%d.%m}: {type(exc).__name__}: {exc}")
+                if campaign_ids:
+                    business_orders = [
+                        order
+                        for order in business_orders
+                        if _integer(order.get("campaignId")) in campaign_ids
+                    ]
+                for order in business_orders:
+                    order["_business_id"] = business_id
+                orders.extend(business_orders)
+            except Exception as exc:
+                warnings.append(
+                    f"кабинет {business_id}, {window_start:%d.%m}-{window_end:%d.%m}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
     if not orders and warnings:
         raise RuntimeError("; ".join(warnings[:3]))
     return _normalize_yandex(store_slug, orders), warnings
@@ -588,7 +602,17 @@ def _sync_store_range(
             start_key = start.isoformat()
             end_key = end.isoformat()
             lines = [line for line in lines if start_key <= str(line.get("ordered_at") or "")[:10] < end_key]
-        rows = db.upsert_sales_order_lines(lines, attempted_at)
+        if exact_order_period:
+            rows = db.replace_sales_order_period(
+                store_slug,
+                marketplace,
+                start.isoformat(),
+                end.isoformat(),
+                lines,
+                attempted_at,
+            )
+        else:
+            rows = db.upsert_sales_order_lines(lines, attempted_at)
         ok = not warnings
         error = "; ".join(warnings)[:1500] or None
         db.record_sales_sync(store_slug, marketplace, ok, error, rows, lookback_days, attempted_at)

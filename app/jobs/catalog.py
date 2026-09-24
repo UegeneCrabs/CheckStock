@@ -107,6 +107,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             ("YANDEX MARKET",),
         ),
         SyncJobDefinition(
+            "yandex_financial_reports_sync",
+            "Финансовый отчёт Яндекс Маркета",
+            "Ежедневно обновляет заказы, комиссии, логистику, рекламу и взаиморасчёты за последние 90 дней для финансового отчёта.",
+            "Ежедневно в 05:00 МСК",
+            settings.yandex_financial_reports_sync_enabled,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
             "yandex_reputation_sync",
             "Отзывы и рейтинг Яндекс Маркета",
             "Обновляет рейтинг товаров и количество отзывов ЯМ.",

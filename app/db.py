@@ -104,6 +104,7 @@ from app.repositories.sales import (
     get_sales_export_rows,
     get_sales_sync_states,
     record_sales_sync,
+    replace_sales_order_period,
     sales_has_history,
     upsert_sales_order_lines,
 )
@@ -395,6 +396,7 @@ __all__ = (
     "record_delivery",
     "record_operation",
     "record_sales_sync",
+    "replace_sales_order_period",
     "record_unit_economics_1c_advertising_sync_state",
     "record_unit_economics_1c_price_sync_state",
     "get_unit_economics_1c_latest_product_reputation",

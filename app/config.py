@@ -83,6 +83,7 @@ class Settings(BaseModel):
     log_level: str
     slow_request_threshold_ms: int = Field(ge=1)
     background_sync_enabled: bool
+    yandex_financial_reports_sync_enabled: bool
     funnel_orders_sync_enabled: bool
     unit_economics_1c_price_sync_enabled: bool
     unit_economics_1c_source_sync_hour: int = Field(ge=0, le=23)
@@ -194,6 +195,9 @@ class Settings(BaseModel):
             log_level=log_level,
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
+            yandex_financial_reports_sync_enabled=_env_bool(
+                "CHECKSTOCK_YANDEX_FINANCIAL_REPORTS_SYNC_ENABLED", True
+            ),
             inbound_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_INBOUND_SYNC_INTERVAL_SECONDS", 1800, minimum=300
             ),

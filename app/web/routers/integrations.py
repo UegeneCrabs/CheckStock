@@ -34,8 +34,14 @@ MARKETPLACE_LABELS = {
 
 
 class CredentialUpdate(BaseModel):
-    api_key: SecretStr = Field(min_length=1, max_length=16_384)
+    api_key: SecretStr = Field(default=SecretStr(""), max_length=16_384)
     client_id: str = Field(default="", max_length=1_024)
+    business_ids: list[int] = Field(default_factory=list)
+
+
+class YandexAccountUpdate(BaseModel):
+    api_key: SecretStr = Field(default=SecretStr(""), max_length=16_384)
+    campaign_ids: list[int] = Field(default_factory=list)
 
 
 class SyncSettingUpdate(BaseModel):
@@ -83,6 +89,13 @@ def _credential_card(store_slug: str, marketplace: str) -> str:
             '<input type="text" name="client_id" maxlength="1024" autocomplete="off" '
             'placeholder="Оставьте пустым, чтобы сохранить текущий"></label>'
         )
+    business_field = ""
+    if marketplace == "yandex":
+        business_field = (
+            '<label class="integration-field"><span>Business ID</span>'
+            '<input type="number" name="business_id" min="1" step="1" inputmode="numeric" '
+            'placeholder="Например, 216948789" required></label>'
+        )
     return (
         '<form class="integration-key-card" data-credential-form '
         f'data-store="{html.escape(store_slug)}" data-marketplace="{marketplace}">'
@@ -92,6 +105,7 @@ def _credential_card(store_slug: str, marketplace: str) -> str:
         f'<span class="integration-key-status {badge_class}" data-key-status>{badge_text}</span></div>'
         f'<p class="integration-key-detail">{html.escape(detail) if detail else "API-ключ не показывается после сохранения"}</p>'
         f"{client_field}"
+        f"{business_field}"
         '<label class="integration-field"><span>Новый API-ключ</span><div class="integration-secret-wrap">'
         '<input type="password" name="api_key" maxlength="16384" autocomplete="new-password" '
         'placeholder="Вставьте ключ для добавления или замены" required>'
@@ -571,6 +585,7 @@ async def update_credential(
             marketplace,
             api_key=payload.api_key.get_secret_value(),
             client_id=payload.client_id,
+            business_ids=payload.business_ids,
         )
         if marketplace == "wb":
             await run_in_threadpool(token_watch.refresh_token_info)
@@ -587,6 +602,46 @@ async def update_credential(
         datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
     )
     return {"ok": True, "status": marketplace_credentials.credential_status(store_slug, marketplace)}
+
+
+@router.put("/api/admin/integrations/{store_slug}/yandex/businesses/{business_id}")
+async def update_yandex_account(
+    request: Request,
+    store_slug: str,
+    business_id: int,
+    payload: YandexAccountUpdate,
+):
+    _require_superadmin(request)
+    _validate_target(store_slug, "yandex")
+    try:
+        await run_in_threadpool(
+            marketplace_credentials.save_yandex_account,
+            store_slug,
+            business_id,
+            payload.api_key.get_secret_value(),
+            payload.campaign_ids,
+        )
+    except (ValueError, marketplace_credentials.CredentialStorageError) as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return {"ok": True, "status": marketplace_credentials.credential_status(store_slug, "yandex")}
+
+
+@router.post("/api/admin/integrations/{store_slug}/yandex/businesses/{business_id}/check")
+async def check_yandex_business(request: Request, store_slug: str, business_id: int):
+    _require_superadmin(request)
+    _validate_target(store_slug, "yandex")
+    if business_id < 1:
+        raise HTTPException(status_code=400, detail="Business ID должен быть положительным числом")
+    result = await run_in_threadpool(marketplace_credentials.check_yandex_business, store_slug, business_id)
+    return {"ok": True, **result}
+
+
+@router.delete("/api/admin/integrations/{store_slug}/yandex/businesses/{business_id}")
+async def remove_yandex_account(request: Request, store_slug: str, business_id: int):
+    _require_superadmin(request)
+    _validate_target(store_slug, "yandex")
+    await run_in_threadpool(marketplace_credentials.delete_yandex_account, store_slug, business_id)
+    return {"ok": True, "status": marketplace_credentials.credential_status(store_slug, "yandex")}
 
 
 @router.delete("/api/admin/integrations/{store_slug}/{marketplace}")

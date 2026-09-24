@@ -36,6 +36,7 @@ def init_db() -> None:
     _migrate_unit_economics_1c_product_categories(database)
     _migrate_unit_economics_1c_daily_advertising(database)
     _migrate_wb_funnel_daily_orders(database)
+    _create_yandex_financial_report_storage(database)
     if target_table_was_rebuilt:
         _finish_stock_sheet_export_target_migration(database)
     _backfill_stock_sheet_export_marketplace_urls(database)
@@ -59,6 +60,56 @@ def init_db() -> None:
         connection.commit()
 
     _sync_yandex_assortment(database)
+
+
+def _create_yandex_financial_report_storage(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS yandex_financial_report_rows (
+                store_slug TEXT NOT NULL,
+                business_id INTEGER NOT NULL,
+                report_kind TEXT NOT NULL,
+                sheet TEXT NOT NULL,
+                row_key TEXT NOT NULL,
+                period_from TEXT NOT NULL,
+                period_to TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                PRIMARY KEY (store_slug, business_id, report_kind, sheet, row_key)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_yandex_financial_period "
+            "ON yandex_financial_report_rows(store_slug, period_from, period_to)"
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS yandex_financial_pnl (
+                store_slug TEXT NOT NULL,
+                business_id INTEGER NOT NULL,
+                period_from TEXT NOT NULL,
+                period_to TEXT NOT NULL,
+                values_json TEXT NOT NULL,
+                calculated_at TEXT NOT NULL,
+                PRIMARY KEY (store_slug, business_id, period_from, period_to)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS yandex_financial_daily_pnl (
+                store_slug TEXT NOT NULL,
+                business_id INTEGER NOT NULL,
+                report_date TEXT NOT NULL,
+                values_json TEXT NOT NULL,
+                calculated_at TEXT NOT NULL,
+                PRIMARY KEY (store_slug, business_id, report_date)
+            )
+            """
+        )
+        connection.commit()
 
 
 def _sync_yandex_assortment(database: Database) -> None:

@@ -210,7 +210,13 @@ def render_page(
         "unit_1c_ozon",
         "unit_1c_yandex",
     }
-    reports_open = active in {"unit_1c_reports", "unit_1c_target_price", "unit_1c_reports_yandex", "unit_1c_target_price_yandex"}
+    reports_open = active in {
+        "unit_1c_reports",
+        "unit_1c_target_price",
+        "unit_1c_reports_yandex",
+        "unit_1c_target_price_yandex",
+    }
+    finance_reports_open = active == "finance_yandex"
     visible = {section: has_access(user, section) for section in SectionName}
     current_section = active_section(active)
     current_access = (
@@ -260,6 +266,12 @@ def render_page(
         reports_group_active="active" if reports_open else "",
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
         unit_1c_target_price_active="active" if active == "unit_1c_target_price" else "",
+        finance_reports_open="",
+        finance_reports_expanded="false",
+        finance_reports_group_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_YANDEX]),
+        finance_reports_group_active="active" if finance_reports_open else "",
+        finance_yandex_active="active" if active == "finance_yandex" else "",
+        finance_yandex_hidden=hidden(visible[SectionName.UNIT_ECONOMICS_YANDEX]),
         ai_agents_active="active" if active == "ai_agents" else "",
         ai_agents_hidden=hidden(visible[SectionName.AI_AGENTS]),
         stock_active="active" if active == "stock" else "",
