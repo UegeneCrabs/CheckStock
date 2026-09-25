@@ -17,11 +17,13 @@
     }
     const saved = readPreferences();
     const stringList = (value) => Array.isArray(value) ? value.filter((v) => typeof v === 'string') : null;
+    const statusKey = (value) => (value || 'Без статуса').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU');
+    const defaultStatuses = () => [statusKey('В пути из Китая')];
     const state = {
         search: typeof saved.search === 'string' ? saved.search : '',
         project: typeof saved.project === 'string' ? saved.project : '',
         warehouse: typeof saved.warehouse === 'string' ? saved.warehouse : '',
-        statuses: stringList(saved.statuses) || ['В пути из китая'],
+        statuses: [...new Set((stringList(saved.statuses) || defaultStatuses()).map(statusKey))],
         weeks: stringList(saved.weeks) || [],
         defaultWeeks: saved.defaultWeeks !== false,
     };
@@ -49,10 +51,13 @@
         const short = (time) => dateLabel(isoDate(time)).slice(0, 5);
         return `W${week} ${year} · ${short(start)}–${short(start + 6 * dayMs)}`;
     }
-    function transit(row) { return row.status.trim().toLocaleLowerCase('ru-RU') === 'в пути из китая'; }
+    function transit(row) { return statusKey(row.status) === 'в пути из китая'; }
     function delayed(row) { return row.arrival && epoch(row.arrival) < epoch(today) && transit(row); }
     const unique = (items) => [...new Set(items.filter(Boolean))];
-    function matchesStatuses(row) { return !state.statuses.length || state.statuses.includes(row.status || 'Без статуса'); }
+    function matchesStatuses(row) { return !state.statuses.length || state.statuses.includes(statusKey(row.status)); }
+    function statusOptions() {
+        return [...new Map(rows.map((row) => [statusKey(row.status), row.status || 'Без статуса'])).values()].sort();
+    }
     function weekOptions() {
         return unique(rows.filter(matchesStatuses).map((row) => weekKey(row.arrival))).sort();
     }
@@ -74,17 +79,19 @@
     function renderOptions(field, options) {
         const selected = state[field];
         const all = selected.length === 0;
+        const key = (value) => field === 'statuses' ? statusKey(value) : value;
+        const label = (value) => field === 'weeks' ? weekLabel(value) : options.find((option) => key(option) === value) || value;
         q(`[data-arrivals-options="${field}"]`).innerHTML =
             `<label><input type="checkbox" data-pick="${field}" data-all="true" ${all ? 'checked' : ''}>Все ${field === 'weeks' ? 'недели' : 'статусы'}</label>` +
-            options.map((value) => `<label><input type="checkbox" data-pick="${field}" value="${esc(value)}" ${all || selected.includes(value) ? 'checked' : ''}>${esc(field === 'weeks' ? weekLabel(value) : value)}</label>`).join('');
+            options.map((value) => `<label><input type="checkbox" data-pick="${field}" value="${esc(key(value))}" ${all || selected.includes(key(value)) ? 'checked' : ''}>${esc(field === 'weeks' ? weekLabel(value) : value)}</label>`).join('');
         q(`[data-arrivals-summary="${field}"]`).textContent = all
             ? (field === 'weeks' ? 'Все недели' : 'Все статусы')
             : field === 'weeks' && state.defaultWeeks ? 'Текущая и следующая'
-            : selected.length === 1 ? (field === 'weeks' ? weekLabel(selected[0]) : selected[0])
+            : selected.length === 1 ? label(selected[0])
             : `Выбрано: ${selected.length}`;
     }
     function renderFilters() {
-        renderOptions('statuses', unique(rows.map((row) => row.status || 'Без статуса')).sort());
+        renderOptions('statuses', statusOptions());
         renderOptions('weeks', weekOptions());
     }
     function sum(items, field) {
@@ -226,7 +233,7 @@
         const input = event.target.closest('[data-pick]');
         if (!input) return;
         const field = input.dataset.pick;
-        const options = field === 'weeks' ? weekOptions() : unique(rows.map((row) => row.status || 'Без статуса')).sort();
+        const options = field === 'weeks' ? weekOptions() : statusOptions().map(statusKey);
         if (input.dataset.all) state[field] = [];
         else {
             const values = new Set(state[field].length ? state[field] : options);
@@ -251,7 +258,7 @@
         if (event.key === 'Escape') root.querySelectorAll('[data-arrivals-filter][open]').forEach((details) => { details.open = false; details.querySelector('summary').focus(); });
     });
     q('[data-arrivals-reset]').addEventListener('click', () => {
-        Object.assign(state, { search: '', project: '', warehouse: '', statuses: ['В пути из китая'], defaultWeeks: true });
+        Object.assign(state, { search: '', project: '', warehouse: '', statuses: defaultStatuses(), defaultWeeks: true });
         q('[data-arrivals-search]').value = '';
         q('[data-arrivals-project]').value = '';
         q('[data-arrivals-warehouse]').value = '';
