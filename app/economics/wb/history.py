@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.unit_economics_1c import UnitEconomics1CProductSettings
+from app.economics.daily_calculation import calculate as calculate_daily
 from app.economics.wb import calculations as unit_economics_1c
+from app.repositories import daily_economics
 
 logger = logging.getLogger(__name__)
 
@@ -54,53 +56,32 @@ def unit_margin_without_advertising(
 ) -> float | None:
     """Resolve historical per-unit margin before advertising for a report day."""
 
-    stored_margin = _price_value(snapshot.get("unit_margin"))
-    if stored_margin is None:
-        return None
     inputs = _json_object(snapshot.get("inputs_json"))
-    effective_buyout_percent = (
-        buyout_percent if buyout_percent is not None else _price_value(inputs.get("buyout_percent"))
-    )
-    if inputs:
-        try:
-            delivery_with_returns = unit_economics_1c.calculate_delivery_with_returns(
-                inputs.get("delivery_wb_rub"),
-                effective_buyout_percent or 0,
-                inputs.get("return_cost_rub"),
-                inputs.get("paid_acceptance_cost"),
-            )
-            recalculated = unit_economics_1c.calculate_unit_profit(
-                retail_price=inputs.get("retail_price"),
-                customer_price=inputs.get("customer_price"),
-                acquiring_percent=inputs.get("acquiring_percent"),
-                delivery_with_returns=delivery_with_returns,
-                storage_wb_rub=inputs.get("storage_wb_rub"),
-                turnover_days=inputs.get("turnover_days"),
-                wb_commission_percent=inputs.get("commission_percent"),
-                advertising_rub=0,
-                purchase_price=inputs.get("purchase_price"),
-                fulfillment_cost=inputs.get("fulfillment_cost"),
-                team_commission_percent=inputs.get("team_commission_percent"),
-                vat_percent=inputs.get("vat_percent"),
-                usn_percent=inputs.get("usn_percent"),
-                osno_percent=inputs.get("osno_percent"),
-                tax_system=str(inputs.get("tax_system") or "usn"),
-            )
-        except (TypeError, ValueError):
-            recalculated = None
-        if recalculated is not None:
-            return _price_value(recalculated.get("margin"))
-    try:
-        calculation_version = int(snapshot.get("calculation_version") or CALCULATION_VERSION)
-    except (TypeError, ValueError):
-        calculation_version = CALCULATION_VERSION
-    if calculation_version >= 2:
-        return stored_margin
-    result = _json_object(snapshot.get("result_json"))
-    legacy_advertising = _price_value(result.get("advertising"))
-    if legacy_advertising is None:
-        legacy_advertising = _price_value(inputs.get("advertising_per_unit")) or 0.0
-    return unit_economics_1c.money(stored_margin + legacy_advertising)
+    if not inputs:
+        return None
+    # Only the captured day's inputs; no current buyout/default fallback.
+    return calculate_daily("WB", inputs, snapshot.get("calculation_version"))[1].get("margin")
+
+
+def report_day(day, snapshot, order, advertising, *, orders_known=False, ads_known=False):
+    """One resolved day for the screen, report and export, with dated overlays."""
+    inputs = _json_object((snapshot or {}).get("inputs_json"))
+    overrides = (snapshot or {}).get("overrides") or {}
+    count = overrides.get("orders_count", int(order.get("orders_count") or 0) if orders_known else None)
+    spend = overrides.get("advertising_spend", advertising if ads_known else None)
+    # Successful empty source days carry a real zero.
+    if ads_known and spend is None:
+        spend = 0.0
+    values, result = calculate_daily("WB", {**inputs, "orders_count": count, "advertising_spend": spend}, (snapshot or {}).get("calculation_version"))
+    missing = result["daily_missing"]
+    from app.economics.completeness import describe
+
+    return {"day": day, "inputs": values, "result": result, "profit": result["day_profit"],
+            "purchase_value": result["purchase_value"], "orders_count": count,
+            "advertising_spend": spend, "expected_buyouts": result["expected_buyouts"],
+            "missing": missing, "complete": result["daily_complete"],
+            "messages": ["Не учтены / неизвестны: " + ", ".join(describe(missing, day))] if missing else [],
+            "snapshot_available": bool(snapshot)}
 
 
 def snapshot_buyout_percent(snapshot: dict | None) -> float | None:
@@ -132,18 +113,8 @@ def calculate_snapshot_row(
     average_customer_price = (
         unit_economics_1c.money(float(product_metrics.get("orders_amount") or 0) / orders_count) if orders_count else None
     )
-    customer_price = (
-        spp_price
-        if spp_price is not None
-        else retail_price
-        if retail_price is not None
-        else average_customer_price
-    )
-    economics_retail_price = retail_price or _price_value(product_metrics.get("average_retail_price"))
-    if economics_retail_price is None:
-        economics_retail_price = customer_price
-    if economics_retail_price is None:
-        return None
+    customer_price = spp_price if spp_price is not None else average_customer_price
+    economics_retail_price = retail_price if retail_price is not None else _price_value(product_metrics.get("average_retail_price"))
 
     product_metrics = unit_economics_1c.apply_buyout_default(
         product_metrics,
@@ -160,20 +131,20 @@ def calculate_snapshot_row(
         product_settings.return_cost_rub,
         paid_acceptance_cost,
     )
-    turnover_days = _integer(product_reference.get("turnover_days"), 21)
-    purchase_price = _price_value(product_reference.get("purchase_price")) or 0.0
-    fulfillment_cost = _price_value(product_reference.get("fulfillment_cost")) or 0.0
+    turnover_days = _integer(product_reference["turnover_days"]) if product_reference.get("turnover_days") is not None else None
+    purchase_price = _price_value(product_reference.get("purchase_price"))
+    fulfillment_cost = _price_value(product_reference.get("fulfillment_cost"))
     source_team_commission = _price_value(product_reference.get("team_commission_percent"))
     team_commission_percent = (
         source_team_commission
         if source_team_commission is not None
         else unit_economics_1c.money(float(getattr(cabinet, "team_commission_percent", 0) or 0))
     )
-    subject_commission_percent = _price_value(product_reference.get("subject_commission_percent")) or 0.0
+    subject_commission_percent = _price_value(product_reference.get("subject_commission_percent"))
     wb_extra_tariff_percent = unit_economics_1c.money(
         max(float(getattr(cabinet, "wb_extra_tariff_percent", 0) or 0), 0.0)
     )
-    commission_percent = unit_economics_1c.money(subject_commission_percent + wb_extra_tariff_percent)
+    commission_percent = unit_economics_1c.money(subject_commission_percent + wb_extra_tariff_percent) if subject_commission_percent is not None else None
     advertising_per_unit = unit_economics_1c.calculate_advertising_per_unit(
         float(product_metrics.get("spend") or 0),
         orders_count,
@@ -184,26 +155,6 @@ def calculate_snapshot_row(
     vat_percent = max(float(getattr(cabinet, "vat_percent", 0) or 0), 0.0)
     usn_percent = max(float(getattr(cabinet, "usn_percent", 0) or 0), 0.0)
     osno_percent = max(float(getattr(cabinet, "osno_percent", 0) or 0), 0.0)
-
-    result = unit_economics_1c.calculate_unit_profit(
-        retail_price=economics_retail_price,
-        customer_price=customer_price,
-        acquiring_percent=float(getattr(cabinet, "acquiring_percent", 0) or 0),
-        delivery_with_returns=delivery_with_returns,
-        storage_wb_rub=product_settings.storage_wb_rub,
-        turnover_days=turnover_days,
-        wb_commission_percent=commission_percent,
-        advertising_rub=0,
-        purchase_price=purchase_price,
-        fulfillment_cost=fulfillment_cost,
-        team_commission_percent=team_commission_percent,
-        vat_percent=vat_percent,
-        usn_percent=usn_percent,
-        osno_percent=osno_percent,
-        tax_system=effective_tax_system,
-    )
-    if result is None:
-        return None
 
     inputs = {
         "retail_price": economics_retail_price,
@@ -246,6 +197,25 @@ def calculate_snapshot_row(
         "product_settings_updated_at": product_settings.updated_at,
         "cabinet_settings_updated_at": getattr(cabinet, "updated_at", None),
     }
+    # A DTO default is not evidence of a saved product setting. Keep real zeros.
+    if product_settings.updated_at is None:
+        for field in ("delivery_wb_rub", "return_cost_rub", "volume_l", "storage_wb_rub"):
+            inputs[field] = None
+    if getattr(cabinet, "updated_at", None) is None:
+        for field in ("acquiring_percent", "acceptance_coefficient", "wb_extra_tariff_percent", "vat_percent", "usn_percent", "osno_percent", "tax_system"):
+            inputs[field] = None
+        if source_team_commission is None:
+            inputs["team_commission_percent"] = None
+    if product_metrics.get("raw_buyout_percent") is None and not product_metrics.get("buyout_default_applied"):
+        inputs["buyout_percent"] = None
+    if price_snapshot.get("day") and price_snapshot["day"] != snapshot_day.isoformat():
+        # An old observation is not evidence of today's sale price.
+        inputs["retail_price"] = None
+        inputs["customer_price"] = None
+        inputs["price_missing_reason"] = "Цена за день не загружена; последняя запись за " + str(price_snapshot["day"])
+    inputs["orders_count"] = orders_count if product_metrics.get("snapshot_orders_known") else None
+    inputs["advertising_spend"] = product_metrics.get("snapshot_advertising_spend")
+    inputs, result = calculate_daily("WB", inputs, CALCULATION_VERSION)
     return {
         "store_slug": store_slug,
         "article": article,
@@ -258,6 +228,11 @@ def calculate_snapshot_row(
         "inputs_json": json.dumps(inputs, ensure_ascii=False, sort_keys=True),
         "result_json": json.dumps(result, ensure_ascii=False, sort_keys=True),
         "captured_at": captured_at,
+        "raw_sources": {
+            "prices": price_snapshot, "metrics": product_metrics, "reference": product_reference,
+            "product_settings": product_settings.model_dump(mode="json"),
+            "cabinet": cabinet.model_dump(mode="json") if hasattr(cabinet, "model_dump") else vars(cabinet),
+        },
     }
 
 
@@ -267,9 +242,12 @@ def save_daily_margin_snapshots(
     store_slugs: tuple[str, ...] | None = None,
     overwrite: bool = False,
 ) -> dict:
-    """Close one business day using values effective no later than that day."""
+    """Observe the current business day; never backdate current configuration."""
 
-    day = snapshot_day or (datetime.now(MOSCOW_TIMEZONE).date() - timedelta(days=1))
+    today = datetime.now(MOSCOW_TIMEZONE).date()
+    day = snapshot_day or today
+    if day != today:
+        raise ValueError("Прошлые дни доступны только из сохранённых снимков. Используйте корректировку даты.")
     stores = tuple(
         store for store in (tuple(STORES) if store_slugs is None else store_slugs) if store in STORES
     )
@@ -291,11 +269,15 @@ def save_daily_margin_snapshots(
         (str(row["store_slug"]), str(row["article"])): row
         for row in db.get_unit_economics_1c_product_reference_rows(stores)
     }
+    from app.repositories.economics_coverage import wb_days
+
+    coverage = wb_days(stores, day.isoformat(), day.isoformat())
+    ads = {(str(r["store_slug"]), str(r["nm_id"])): r for r in db.get_unit_economics_1c_daily_advertising(stores, day.isoformat(), day.isoformat())}
     rows: list[dict] = []
     skipped = 0
     for store_slug in stores:
         cabinet = cabinets[store_slug]
-        for product in db.get_stock_items(store_slug, "WB"):
+        for product in db.get_catalog_items(store_slug, "WB"):
             article = str(product.get("article") or "").strip()
             if not article:
                 continue
@@ -309,8 +291,10 @@ def save_daily_margin_snapshots(
                 article=article,
                 price_snapshot=prices.get((store_slug, article)) or {},
                 product_metrics=(
-                    metrics.get((store_slug, _nm_id(article)))
-                    or unit_economics_1c.empty_product_metrics(today=day)
+                    {**(metrics.get((store_slug, _nm_id(article)))
+                    or unit_economics_1c.empty_product_metrics(today=day)),
+                    "snapshot_orders_known": day.isoformat() in coverage[store_slug]["orders"],
+                    "snapshot_advertising_spend": (ads.get((store_slug, _nm_id(article)), {}).get("spend", 0.0) if day.isoformat() in coverage[store_slug]["advertising"] else None)}
                 ),
                 product_settings=settings,
                 product_reference=references.get((store_slug, article)) or {},
@@ -321,7 +305,22 @@ def save_daily_margin_snapshots(
                 skipped += 1
                 continue
             rows.append(row)
-    saved = db.save_unit_economics_1c_daily_margin_snapshots(rows, overwrite=overwrite)
+    saved = 0
+    for row in rows:
+        source = daily_economics.observation(
+            json.loads(row["inputs_json"]), raw=row["raw_sources"], captured_at=captured_at,
+            version=CALCULATION_VERSION,
+            origins={
+                key: "Настройки кабинета WB" if key == "team_commission_percent" and row["raw_sources"]["reference"].get(key) is None
+                else "Google Sheets" if key in {"purchase_price", "fulfillment_cost", "team_commission_percent"}
+                else "WB: дневная цена" if key in {"retail_price", "customer_price"}
+                else "WB: дневные метрики" if key in {"orders_count", "advertising_spend"}
+                else "Справочник комиссий WB" if key == "subject_commission_percent"
+                else "Сохранённые настройки / справочник"
+                for key in json.loads(row["inputs_json"])
+            },
+        )
+        saved += int(daily_economics.capture(("WB", row["store_slug"], row["article"], row["day"]), source))
     report = {
         "ok": True,
         "day": day.isoformat(),

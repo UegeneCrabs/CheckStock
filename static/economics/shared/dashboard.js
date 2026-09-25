@@ -380,7 +380,13 @@
         var parts = String(value || '').split('-');
         return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : String(value || '');
     }
+    function calculationNote(value, messages) {
+        if (!messages || !messages.length) return value === null || value === undefined ? 'Недостаточно данных' : '';
+        var label = value === null || value === undefined ? 'Недостаточно данных' : 'Неполный расчёт';
+        return '<small class="ue1c-calculation-note" title="' + escapeHtml(messages.join('\n')) + '">' + label + '</small>';
+    }
     function coverageTitle(label, coverage) {
+        if (coverage && coverage.messages && coverage.messages.length) return label + ': ' + coverage.messages.join('\n');
         if (!coverage || !Array.isArray(coverage.dates) || !coverage.dates.length) {
             return label + ': данных для расчёта нет';
         }
@@ -405,14 +411,14 @@
         return isPartialCoverage(coverage) ? ' ue1c-partial-cell' : '';
     }
     function coverageValue(label, value, formatter, coverage, suffix) {
-        if (value === null || value === undefined || value === '') return '—';
+        if (value === null || value === undefined || value === '') return (label === 'Маржа' || label === 'ROI') ? calculationNote(null, (coverage || {}).messages || [coverageTitle(label, coverage)]) : '—';
         var partial = isPartialCoverage(coverage);
         return window.CheckStockUI.render('economics/shared/dashboard/coverage-value-2', {
             content: partial ? ' is-partial' : '',
             content_2: coverageTitle(label, coverage),
             value: formatter.format(value),
             content_3: suffix || '',
-            content_4: partial ? window.CheckStockUI.render('economics/shared/dashboard/coverage-value') : '',
+            content_4: partial ? ((label === 'Маржа' || label === 'ROI') ? calculationNote(value, coverage.messages || [coverageTitle(label, coverage)]) : window.CheckStockUI.render('economics/shared/dashboard/coverage-value')) : '',
         });
     }
     function moneyOrNull(value) {
@@ -574,6 +580,7 @@
                 var value = column.index === 0 ? 'Итого · ' + items.length : nullable(total.value,
                     total.unit === 'money' ? money : decimal, total.unit === 'percent' ? '%' : '');
                 if (total.lowerBound && total.value != null) value = '≥ ' + value;
+                if ([2, 3, 5, 6].indexOf(column.index) !== -1 && (total.partial || total.value == null)) value += calculationNote(total.value, total.messages && total.messages.length ? total.messages : [total.title]);
                 return window.CheckStockUI.render('economics/shared/dashboard/total-cell', {
                     index: column.index, value: value, key: group.key,
                     state: total.partial ? ' ue1c-partial-cell' : '',
@@ -844,15 +851,15 @@
         cells.current = window.CheckStockUI.render('economics/shared/dashboard/render-product-6', {
             marginState: marginIssues.length ? ' ue1c-partial-cell' : '',
             currentTitle: currentTitle + (marginIssues.length
-                ? '\nМаржа на 1 штуку не рассчитана:\n• ' + marginIssues.join('\n• ')
+                ? '\n' + (current.margin === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + marginIssues.join('\n• ')
                 : noOrdersWithAds ? '' : '\nЧистая прибыль на одну выкупленную штуку.'),
-            content: nullable(current.margin, money),
+            content: nullable(current.margin, money) + calculationNote(current.margin, marginIssues),
             roi: negativeValueClass(current.roi),
             roiState: roiIssues.length ? ' ue1c-partial-cell' : '',
             currentTitle_2: currentTitle + (roiIssues.length
-                ? '\nROI не рассчитан:\n• ' + roiIssues.join('\n• ')
+                ? '\n' + (current.roi === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + roiIssues.join('\n• ')
                 : '\nROI = маржа на 1 штуку ÷ закупочная цена × 100%.'),
-            content_2: nullable(current.roi, decimal, '%'),
+            content_2: nullable(current.roi, decimal, '%') + calculationNote(current.roi, roiIssues),
             discountCell: config.yandexMetrics === true ? '' : window.CheckStockUI.render(
                 'economics/shared/dashboard/current-discount-cell', { value: nullable(currentSpp, decimal, '%') }),
         });
@@ -2411,7 +2418,7 @@
             {
                 label: item.label,
                 label_2: definition.label,
-                content: definition.formatter.format(value) + definition.suffix,
+                content: definition.formatter.format(value) + definition.suffix + (seriesKey === 'margin' && item.margin_complete === false ? ' · Неполный расчёт. ' + (item.messages || []).join(' ') : ''),
             },
         );
         nodes.chartSeriesTooltip.style.left =
@@ -2451,7 +2458,7 @@
                 content_2: nullable(item.orders_count, decimal, ' шт.'),
                 content_3: nullable(item.advertising_rub, preciseMoney),
                 content_4: nullable(item.drr_percent, decimal, '%'),
-                content_5: nullable(item.margin_rub, preciseMoney),
+                content_5: nullable(item.margin_rub, preciseMoney) + calculationNote(item.margin_rub, item.messages),
                 content_6: nullable(item.stock_units, integer, ' шт.'),
                 content_7: previous
                     ? window.CheckStockUI.render('economics/shared/dashboard/show-chart-tooltip', {

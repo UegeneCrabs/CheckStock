@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from sqlalchemy import inspect, select
 
 from app.core.stores import STORES
+from app.infrastructure import daily_economics_orm as daily_economics_orm
+from app.infrastructure import economics_coverage_orm as economics_coverage_orm
 from app.infrastructure import yandex_economics_orm as yandex_economics_orm
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord

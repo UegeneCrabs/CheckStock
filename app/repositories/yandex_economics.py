@@ -205,7 +205,12 @@ def history(store, start, end):
             "SELECT * FROM yandex_economics_daily WHERE store_slug=? AND day>=? AND day<=? ORDER BY day",
             (store, start, end),
         ).fetchall()
-    return [{**dict(row), "data": json.loads(row["payload_json"])} for row in rows]
+    from app.repositories import daily_economics
+
+    result = {(row["article"], row["scheme"], row["day"]): {**dict(row), "data": json.loads(row["payload_json"])} for row in rows}
+    for row in daily_economics.records("YANDEX MARKET", (store,), start, end):
+        result[(row["article"], "COMMON", row["day"])] = daily_economics.yandex_report_row(row)
+    return list(result.values())
 
 
 def audit(store, article):

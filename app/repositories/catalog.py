@@ -1,4 +1,4 @@
-from app.infrastructure.database import DatabaseConnection
+from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories import yandex_assortment
 from app.repositories.catalog_reconciliation import reconcile_renames
 from app.repositories.core import get_connection
@@ -9,22 +9,23 @@ def get_catalog_items(
     store_slug: str,
     marketplace: str = "WB",
     include_service: bool = False,
+    *,
+    connection: DatabaseConnection | None = None,
 ) -> list[dict]:
 
-    conn = get_connection()
-    sql = """
-        SELECT article, barcode, name, mp_sku, mp_product_id, mp_updated_at, image_url
-        FROM stock_items
-        WHERE store_slug = ? AND marketplace = ?
-    """
-    if not include_service:
-        sql += " AND is_service = 0"
-    sql += " ORDER BY id"
-    rows = conn.execute(sql, (store_slug, marketplace)).fetchall()
-    result = [dict(row) for row in rows]
-    attach_barcodes(conn, store_slug, marketplace, result)
-    conn.close()
-    return result
+    with repository_connection(connection) as conn:
+        sql = """
+            SELECT article, barcode, name, mp_sku, mp_product_id, mp_updated_at, image_url
+            FROM stock_items
+            WHERE store_slug = ? AND marketplace = ?
+        """
+        if not include_service:
+            sql += " AND is_service = 0"
+        sql += " ORDER BY id"
+        rows = conn.execute(sql, (store_slug, marketplace)).fetchall()
+        result = [dict(row) for row in rows]
+        attach_barcodes(conn, store_slug, marketplace, result)
+        return result
 
 
 def attach_barcodes(conn, store_slug: str, marketplace: str, items: list[dict]) -> None:

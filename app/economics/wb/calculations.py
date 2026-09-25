@@ -165,61 +165,64 @@ def calculate_unit_profit(
 ) -> dict[str, float] | None:
     """Calculate the same per-unit net profit that is shown in the UI calculator."""
 
-    required = (
-        retail_price,
-        acquiring_percent,
-        delivery_with_returns,
-        storage_wb_rub,
-        turnover_days,
-        wb_commission_percent,
-        advertising_rub,
-        purchase_price,
-        fulfillment_cost,
-        team_commission_percent,
-        vat_percent,
-    )
-    active_secondary_rate = osno_percent if str(tax_system).lower() == "osno" else usn_percent
-    if any(value is None for value in required) or active_secondary_rate is None:
+    from app.economics.completeness import annotate
+
+    inputs = locals()
+    names = {"wb_commission_percent": "commission_percent"}
+    missing = []
+
+    def get(key):
+        value = inputs[key]
+        if value is None:
+            missing.append(names.get(key, key))
+        return max(float(value), 0.0) if value is not None else None
+
+    def percent(base, rate):
+        return base * rate / 100 if base is not None and rate is not None else None
+
+    retail = get("retail_price")
+    if retail is None or retail <= 0:
         return None
-    retail = max(float(retail_price), 0.0)
-    customer = max(float(customer_price if customer_price is not None else retail), 0.0)
-    acquiring = retail * max(float(acquiring_percent), 0.0) / 100
-    logistics = max(float(delivery_with_returns), 0.0)
-    storage = max(float(storage_wb_rub), 0.0) * max(int(turnover_days), 0)
-    wb_commission = retail * max(float(wb_commission_percent), 0.0) / 100
-    advertising = max(float(advertising_rub), 0.0)
-    team_commission = retail * max(float(team_commission_percent), 0.0) / 100
-    taxes = calculate_tax_components(
-        customer,
-        float(vat_percent),
-        float(usn_percent or 0),
-        float(osno_percent or 0),
-        tax_system,
-    )
-    net_revenue = retail - acquiring - logistics - storage - wb_commission - advertising
-    margin = (
-        net_revenue
-        - max(float(purchase_price), 0.0)
-        - max(float(fulfillment_cost), 0.0)
-        - team_commission
-        - taxes["total"]
-    )
-    rounded_margin = money(margin)
-    if margin_only:
-        return {"margin": rounded_margin}
-    return {
-        "margin": rounded_margin,
-        "net_revenue": money(net_revenue),
-        "acquiring": money(acquiring),
-        "advertising": money(advertising),
-        "wb_commission": money(wb_commission),
-        "team_commission": money(team_commission),
-        "vat": money(taxes["vat"]),
-        "usn": money(taxes["usn"]),
-        "osno": money(taxes["osno"]),
-        "tax": money(taxes["total"]),
-        "storage": money(storage),
+    customer = customer_price
+    acquiring = percent(retail, get("acquiring_percent"))
+    logistics = get("delivery_with_returns")
+    storage_rate = get("storage_wb_rub")
+    storage_days = get("turnover_days") if storage_rate != 0 else 0
+    storage = storage_rate * storage_days if storage_rate is not None and storage_days is not None else None
+    commission = percent(retail, get("wb_commission_percent"))
+    advertising = get("advertising_rub")
+    purchase = get("purchase_price")
+    fulfillment = get("fulfillment_cost")
+    team = percent(retail, get("team_commission_percent"))
+    vat_rate = get("vat_percent")
+    if customer is None and (vat_rate != 0 or (osno_percent if tax_system == "osno" else usn_percent) != 0):
+        missing.append("customer_price")
+    vat = 0.0 if vat_rate == 0 else customer * vat_rate / (100 + vat_rate) if customer is not None and vat_rate is not None else None
+    usn, osno = None, None
+    if tax_system == "osno":
+        rate = get("osno_percent")
+        osno = 0.0 if rate == 0 else percent(customer, rate)
+        usn = 0.0
+    elif tax_system == "usn":
+        rate = get("usn_percent")
+        usn = 0.0 if rate == 0 else percent(customer - vat, rate) if customer is not None and vat is not None else None
+        osno = 0.0
+    else:
+        missing.append("tax_system")
+    def known(values):
+        return sum(value for value in values if value is not None)
+
+    net_revenue = retail - known((acquiring, logistics, storage, commission, advertising))
+    margin = net_revenue - known((purchase, fulfillment, team, vat, usn, osno))
+    result = {
+        "margin": money(margin), "net_revenue": money(net_revenue),
+        **{key: money(value) if value is not None else None for key, value in {
+            "acquiring": acquiring, "advertising": advertising, "wb_commission": commission,
+            "team_commission": team, "vat": vat, "usn": usn, "osno": osno, "storage": storage,
+            "tax": sum((vat, usn, osno)) if all(v is not None for v in (vat, usn, osno)) else None,
+        }.items()},
     }
+    return annotate(result, missing)
 
 
 def _number(value: object) -> float:
@@ -552,6 +555,7 @@ def load_product_metrics(
             "sold_count": 0,
             "average_retail_price": None,
             "buyout_percent": buyout_percent,
+            "raw_buyout_percent": funnel_metric.get("buyout_percent"),
             "buyout_orders_count": _integer(funnel_metric.get("orders_count")),
             "buyout_orders_amount": money(_number(funnel_metric.get("orders_amount"))),
             "buyout_cancel_count": _integer(funnel_metric.get("cancel_count")),
@@ -604,6 +608,7 @@ def empty_product_metrics(*, period_days: int = DEFAULT_PERIOD_DAYS, today: date
         "sold_count": 0,
         "average_retail_price": None,
         "buyout_percent": 0.0,
+        "raw_buyout_percent": None,
         "buyout_orders_count": 0,
         "buyout_orders_amount": 0.0,
         "buyout_cancel_count": 0,

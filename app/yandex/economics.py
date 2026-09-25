@@ -18,11 +18,11 @@ from app.yandex.economics_calculation import (
     aggregate,
     break_even_prices,
     calculate,
-    daily_profit,
     delivery_components,
     resolve,
     sheet_logistics,
 )
+from app.yandex.economics_days import resolve_period
 from app.yandex.economics_diagnostics import current_issues
 from app.yandex.price_calculation import discounted_price
 
@@ -329,7 +329,9 @@ def current_metrics(store, article, today, scheme="FBY", *, history=None):
     orders_known = key in order_days
     if not orders_known:
         issues.append("Не загружены заказы за сегодня (" + key + ", МСК).")
-    spend, count = allocate_today(ads, orders, article, scheme) if orders_known else (None, None)
+    spend, count = allocate_today(ads, orders, article, scheme)
+    if not orders_known:
+        count = None
     if key not in ads_days:
         spend = None
     return {"spend": spend, "orders": count, "issues": issues}
@@ -360,6 +362,19 @@ def detail(
         else calculator
     )
     daily = daily_metrics if daily_metrics is not None else current_metrics(store, article, today, scheme)
+    if mode == "current":
+        from app.repositories import daily_economics
+
+        ledger = daily_economics.get(("YANDEX MARKET", store, article, today.isoformat()))
+        if ledger:
+            config["values"] = dict(ledger["values"])
+            daily = dict(daily)
+            for field, name in (("orders_count", "orders"), ("advertising_spend", "spend")):
+                if field in ledger["overrides"]:
+                    daily[name] = ledger["overrides"][field]
+            daily["issues"] = [message for message in daily["issues"]
+                               if not ("расходы на рекламу" in message and daily["spend"] is not None)
+                               and not ("заказы за сегодня" in message and daily["orders"] is not None)]
     spend, orders = daily["spend"], daily["orders"]
     config["result"] = calculate(
         config["values"], advertising_spend=spend, orders_count=orders, scenario=scenario
@@ -386,11 +401,14 @@ def detail(
         }
     )
     if mode == "current":
+        from app.economics.daily_calculation import calculate as calculate_daily
+
+        config["day_result"] = calculate_daily("YANDEX MARKET", {**config["values"], "orders_count": orders, "advertising_spend": spend})[1]
         config["current_issues"] = current_issues(config, daily)
     if include_history:
         start, end = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
         rows = repository.history(store, start, end)
-        daily = shared.history(rows, article)
+        daily = resolved_history(store, article, rows, metrics.days_between(start, end))
         config["period"] = aggregate(daily, metrics.days_between(start, end))
         config["history"] = daily
     return config
@@ -421,7 +439,7 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
 
 
 def attach(products, start, end, today, scheme="FBY"):
-    histories, contexts, current = {}, {}, {}
+    histories, contexts, current, period_sources = {}, {}, {}, {}
     for store in {product["store_slug"] for product in products}:
         histories[store] = repository.history(store, start.isoformat(), end.isoformat())
         contexts[store] = context(store)
@@ -429,6 +447,10 @@ def attach(products, start, end, today, scheme="FBY"):
         ads, ad_days = metrics.get_history(store, "advertising", key, key)
         orders, order_days = metrics.get_history(store, "orders", key, key)
         current[store] = (ads, ad_days, orders, order_days)
+        period_sources[store] = (
+            metrics.get_history(store, "orders", start.isoformat(), end.isoformat()),
+            metrics.get_history(store, "advertising", start.isoformat(), end.isoformat()),
+        )
     expected = metrics.days_between(start.isoformat(), end.isoformat())
     for product in products:
         store, article = product["store_slug"], product["article"]
@@ -456,24 +478,33 @@ def attach(products, start, end, today, scheme="FBY"):
         product["current_economics"].update(
             {
                 "margin": config["result"]["margin"],
+                "day_profit": config["day_result"]["day_profit"], "expected_buyouts": config["day_result"]["expected_buyouts"],
+                "daily_complete": config["day_result"]["daily_complete"],
+                "daily_messages": config["day_result"]["daily_messages"],
+                "day_purchase_value": config["day_result"]["purchase_value"],
+                "purchase_value": config["values"].get("purchase_price"),
                 "roi": config["result"]["roi"],
                 "orders": config["orders_count"],
                 "buyout_percent": config["values"].get("buyout_percent"),
                 "advertising_spend": config["advertising_spend"],
                 "period_to": today.isoformat(),
                 "issues": config["current_issues"],
+                "complete": config["result"]["complete"], "status": config["result"]["status"],
+                "messages": config["result"]["messages"], "missing": config["result"]["missing"],
             }
         )
-        daily = shared.history(histories[store], article)
+        daily = resolved_history(store, article, histories[store], expected, sources=period_sources[store])
         period = aggregate(daily, expected)
         product["economics_7d"].update(
             {
                 "margin": period["margin"],
                 "roi": period["roi"],
                 "purchase_value": period["purchase_value"],
+                "roi_purchase_value": period["roi_purchase_value"],
                 "margin_coverage": period["coverage"],
                 "roi_coverage": period["coverage"],
                 "complete": period["complete"],
+                "messages": period["messages"],
                 "unallocated_advertising": period["unallocated_advertising"],
             }
         )
@@ -482,105 +513,101 @@ def attach(products, start, end, today, scheme="FBY"):
     return products
 
 
+def resolved_history(store, article, rows, days, *, sources=None):
+    (orders, order_days), (ads, ad_days) = sources or (
+        metrics.get_history(store, "orders", days[0], days[-1]),
+        metrics.get_history(store, "advertising", days[0], days[-1]),
+    )
+    saved = {r["day"]: r for r in shared.history(rows, article)}
+    return list(resolve_period(days, saved,
+        {r["day"]: r for r in orders if r["article"] == article},
+        {r["day"]: r for r in ads if r["article"] == article}, order_days, ad_days).values())
+
+
 def capture_today(stores, *, today=None, only_article=None):
-    """Capture today's input baseline without manufacturing past inputs."""
+    """Save all observed inputs, including incomplete products, for today only."""
+    from app.repositories import daily_economics
     from app.repositories.yandex_assortment import active_articles
 
-    today = today or datetime.now(MOSCOW_TIMEZONE).date()
+    actual_today = datetime.now(MOSCOW_TIMEZONE).date()
+    today = today or actual_today
+    if today != actual_today:
+        raise ValueError("Нельзя сохранять сегодняшние настройки задним числом.")
     count = 0
     for store in stores:
         cache = context(store)
-        active = active_articles(store)
-        for article in active:
+        day = today.isoformat()
+        ads, ad_days = metrics.get_history(store, "advertising", day, day)
+        orders, order_days = metrics.get_history(store, "orders", day, day)
+        for article in active_articles(store):
             if only_article is not None and article != only_article:
                 continue
-            for scheme in (shared.SCHEME,):
-                state = current_inputs(store, article, scheme, today=today, state_cache=cache)
-                result = calculate(state["values"], without_advertising=True)
-                if result["margin"] is not None:
-                    repository.save_source(
-                        store,
-                        article,
-                        "day-input:" + today.isoformat() + ":" + scheme,
-                        {
-                            "values": state["values"],
-                            "origins": state["origins"],
-                            "result": result,
-                            "version": VERSION,
-                            "basis": "today_prices",
-                            "pricing": state["pricing"],
-                        },
-                    )
-                    count += 1
+            state = current_inputs(store, article, shared.SCHEME, today=today, state_cache=cache)
+            daily = current_metrics(store, article, today, history=(ads, ad_days, orders, order_days))
+            values = {**state["values"], "orders_count": daily["orders"], "advertising_spend": daily["spend"]}
+            source = daily_economics.observation(
+                values, version=VERSION,
+                origins={**state["origins"], "orders_count": "ЯМ: заказы за день", "advertising_spend": "ЯМ: реклама за день"},
+                raw={
+                    "sources": {name: record for (sku, name), record in cache["sources"].items() if sku == article and not name.startswith("day-input:")},
+                    "settings": {str(key): value for key, value in cache["settings"].items() if key[0] in {"", article}},
+                    "source_1c": cache["source_1c"].get(article), "prices": cache["prices"].get(article),
+                    "orders": [r for r in orders if r["article"] == article],
+                    "advertising": [r for r in ads if r["article"] == article],
+                },
+            )
+            daily_economics.capture(("YANDEX MARKET", store, article, day), source)
+            # Compatibility baseline, independent of whether margin is calculable.
+            repository.save_source(store, article, "day-input:" + day + ":" + shared.SCHEME, {
+                "values": values, "origins": source["origins"],
+                "result": calculate(values, without_advertising=True), "version": VERSION,
+                "basis": "today_prices", "pricing": state["pricing"],
+            })
+            count += 1
     return {"captured": count}
 
 
 def close_days(stores, *, today=None):
-    """Finalize only days with saved historical inputs and complete daily metrics.
+    """Refresh daily orders/ads on saved inputs; never borrow today's costs.
 
-    Common snapshots use total orders and ads once. Legacy snapshots retain
-    their original model allocation and closed rows remain immutable."""
+    Incomplete days remain visible and can become complete after a source refresh
+    or a dated manual correction. Overlays survive both operations.
+    """
+    from app.repositories import daily_economics
+
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     completed = 0
     for store in stores:
-        sources = repository.sources(store)
+        candidates = {(r["article"], r["day"]): r for r in daily_economics.records(
+            "YANDEX MARKET", (store,), "0001-01-01", (today - timedelta(days=1)).isoformat()
+        )}
+        for (article, name), snapshot in repository.sources(store).items():
+            if not name.startswith("day-input:"):
+                continue
+            _, day, scheme = name.split(":")
+            if day >= today.isoformat() or scheme != shared.SCHEME or (article, day) in candidates:
+                continue
+            if snapshot["values"].get("basis") not in {"today_prices", "today_observations"}:
+                continue
+            saved = daily_economics.get(("YANDEX MARKET", store, article, day))
+            if saved:
+                candidates[article, day] = saved
         loaded = {}
-        closed = {
-            (row["article"], row["scheme"], row["day"])
-            for row in repository.history(store, "0001-01-01", today.isoformat())
-        }
-        for (article, source), snapshot in sources.items():
-            if not source.startswith("day-input:"):
-                continue
-            _, day, scheme = source.split(":")
-            if day >= today.isoformat() or (article, scheme, day) in closed:
-                continue
+        for (article, day), saved in candidates.items():
             if day not in loaded:
-                loaded[day] = (
-                    metrics.get_history(store, "advertising", day, day),
-                    metrics.get_history(store, "orders", day, day),
-                )
-            (ads, ads_days), (orders, order_days) = loaded[day]
-            if day not in ads_days or day not in order_days:
+                loaded[day] = (metrics.get_history(store, "advertising", day, day), metrics.get_history(store, "orders", day, day))
+            (ads, ad_days), (orders, order_days) = loaded[day]
+            source = saved["source"]
+            v = dict(source["values"])
+            count = sum(int(r.get("orders_count") or 0) for r in orders if r["article"] == article) if day in order_days else v.get("orders_count")
+            spend = sum(float(r.get("spend") or 0) for r in ads if r["article"] == article) if day in ad_days else v.get("advertising_spend")
+            if count == v.get("orders_count") and spend == v.get("advertising_spend") and saved["revision"]:
                 continue
-            state = snapshot["values"]
-            if state.get("basis") not in {"today_observations", "today_prices"}:
-                continue
-            values = state["values"]
-            scheme_rows = [row for row in orders if row["article"] == article]
-
-            if scheme != shared.SCHEME and any("schemes" not in row for row in scheme_rows):
-                continue
-            count = sum(
-                int(row.get("schemes", {}).get(scheme, {}).get("orders_count", 0)) for row in scheme_rows
+            daily_economics.refresh_metrics(
+                ("YANDEX MARKET", store, article, day),
+                {"orders_count": count, "advertising_spend": spend},
+                {"received_at": daily_economics.now(), "orders": [r for r in orders if r["article"] == article], "advertising": [r for r in ads if r["article"] == article]},
             )
-            total = sum(int(row.get("orders_count") or 0) for row in scheme_rows)
-            spend = sum(float(row.get("spend") or 0) for row in ads if row["article"] == article)
-
-            if scheme == shared.SCHEME:
-                count = total
-            elif total:
-                spend = spend * count / total
-            elif scheme != "FBY":
-                spend = 0
-            q = float(values["buyout_percent"]) / 100
-            bought = count * q
-            unit = state.get("result") or calculate(
-                values, without_advertising=True, version=state["version"]
-            )
-            payload = {
-                "day": day,
-                "scheme": scheme,
-                "inputs": values,
-                "origins": state["origins"],
-                "orders_count": count,
-                "expected_buyouts": bought,
-                "advertising_spend": spend,
-                "profit": daily_profit(values, count, spend, unit, state["version"]),
-                "purchase_value": round(values["purchase_price"] * bought, 2),
-                "calculation_version": state["version"],
-            }
-            repository.save_day(store, article, scheme, day, payload)
             completed += 1
     return {"closed": completed}
 

@@ -1,16 +1,16 @@
+from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.core import get_connection
 
 ACTIVE_TRANSIT_STATUSES = ("in_transit", "partial")
 
 
-def _attach_items(batches: list[dict]) -> list[dict]:
+def _attach_items(batches: list[dict], *, connection: DatabaseConnection | None = None) -> list[dict]:
     if not batches:
         return []
     batch_ids = tuple(int(batch["id"]) for batch in batches)
     placeholders = ", ".join("?" for _ in batch_ids)
-    connection = get_connection()
-    try:
-        rows = connection.execute(
+    with repository_connection(connection) as conn:
+        rows = conn.execute(
             f"""
             SELECT id, batch_id, from_article, to_article, barcode, name,
                    sent_quantity, received_quantity, cancelled_quantity, purchase_price
@@ -20,7 +20,7 @@ def _attach_items(batches: list[dict]) -> list[dict]:
             """,
             batch_ids,
         ).fetchall()
-        receipt_rows = connection.execute(
+        receipt_rows = conn.execute(
             f"""
             SELECT id, batch_id, user_id, user_name, note, received_at
               FROM ff_transit_receipts
@@ -33,7 +33,7 @@ def _attach_items(batches: list[dict]) -> list[dict]:
         receipt_item_rows = []
         if receipt_ids:
             receipt_placeholders = ", ".join("?" for _ in receipt_ids)
-            receipt_item_rows = connection.execute(
+            receipt_item_rows = conn.execute(
                 f"""
                 SELECT receipt_item.receipt_id,
                        receipt_item.transit_item_id,
@@ -49,42 +49,40 @@ def _attach_items(batches: list[dict]) -> list[dict]:
                 """,
                 receipt_ids,
             ).fetchall()
-    finally:
-        connection.close()
 
-    by_batch: dict[int, list[dict]] = {}
-    for row in rows:
-        item = dict(row)
-        item["remaining_quantity"] = max(
-            int(item["sent_quantity"] or 0)
-            - int(item["received_quantity"] or 0)
-            - int(item["cancelled_quantity"] or 0),
-            0,
-        )
-        by_batch.setdefault(int(item["batch_id"]), []).append(item)
+        by_batch: dict[int, list[dict]] = {}
+        for row in rows:
+            item = dict(row)
+            item["remaining_quantity"] = max(
+                int(item["sent_quantity"] or 0)
+                - int(item["received_quantity"] or 0)
+                - int(item["cancelled_quantity"] or 0),
+                0,
+            )
+            by_batch.setdefault(int(item["batch_id"]), []).append(item)
 
-    receipt_items: dict[int, list[dict]] = {}
-    for row in receipt_item_rows:
-        item = dict(row)
-        receipt_items.setdefault(int(item["receipt_id"]), []).append(item)
+        receipt_items: dict[int, list[dict]] = {}
+        for row in receipt_item_rows:
+            item = dict(row)
+            receipt_items.setdefault(int(item["receipt_id"]), []).append(item)
 
-    receipts_by_batch: dict[int, list[dict]] = {}
-    for row in receipt_rows:
-        receipt = dict(row)
-        receipt["items"] = receipt_items.get(int(receipt["id"]), [])
-        receipt["received_units"] = sum(int(item["quantity"] or 0) for item in receipt["items"])
-        receipts_by_batch.setdefault(int(receipt["batch_id"]), []).append(receipt)
+        receipts_by_batch: dict[int, list[dict]] = {}
+        for row in receipt_rows:
+            receipt = dict(row)
+            receipt["items"] = receipt_items.get(int(receipt["id"]), [])
+            receipt["received_units"] = sum(int(item["quantity"] or 0) for item in receipt["items"])
+            receipts_by_batch.setdefault(int(receipt["batch_id"]), []).append(receipt)
 
-    for batch in batches:
-        items = by_batch.get(int(batch["id"]), [])
-        batch["items"] = items
-        batch["sent_units"] = sum(int(item["sent_quantity"] or 0) for item in items)
-        batch["received_units"] = sum(int(item["received_quantity"] or 0) for item in items)
-        batch["cancelled_units"] = sum(int(item["cancelled_quantity"] or 0) for item in items)
-        batch["remaining_units"] = sum(int(item["remaining_quantity"] or 0) for item in items)
-        batch["positions"] = len(items)
-        batch["receipts"] = receipts_by_batch.get(int(batch["id"]), [])
-    return batches
+        for batch in batches:
+            items = by_batch.get(int(batch["id"]), [])
+            batch["items"] = items
+            batch["sent_units"] = sum(int(item["sent_quantity"] or 0) for item in items)
+            batch["received_units"] = sum(int(item["received_quantity"] or 0) for item in items)
+            batch["cancelled_units"] = sum(int(item["cancelled_quantity"] or 0) for item in items)
+            batch["remaining_units"] = sum(int(item["remaining_quantity"] or 0) for item in items)
+            batch["positions"] = len(items)
+            batch["receipts"] = receipts_by_batch.get(int(batch["id"]), [])
+        return batches
 
 
 def get_ff_transit_batches(
@@ -123,18 +121,15 @@ def get_ff_transit_batches(
     return _attach_items([dict(row) for row in rows])
 
 
-def get_ff_transit_batch(transfer_id: int) -> dict | None:
-    connection = get_connection()
-    try:
-        row = connection.execute(
+def get_ff_transit_batch(transfer_id: int, *, connection: DatabaseConnection | None = None) -> dict | None:
+    with repository_connection(connection) as conn:
+        row = conn.execute(
             "SELECT * FROM ff_transit_batches WHERE id = ?",
             (transfer_id,),
         ).fetchone()
-    finally:
-        connection.close()
-    if row is None:
-        return None
-    return _attach_items([dict(row)])[0]
+        if row is None:
+            return None
+        return _attach_items([dict(row)], connection=conn)[0]
 
 
 def get_ff_transit_totals(

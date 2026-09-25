@@ -19,7 +19,7 @@ from app.repositories.core import (
     get_connection,
 )
 from app.repositories.fulfillment_stock import (
-    apply_ff_import_snapshot,
+    apply_ff_import,
     apply_ff_shipment,
     apply_ff_surplus,
     apply_ff_transfer,
@@ -27,7 +27,6 @@ from app.repositories.fulfillment_stock import (
     find_existing_delivery,
     find_used_source,
     get_ff_available_totals,
-    get_ff_import_snapshot,
     get_ff_stock_one,
     get_ff_transfers,
     get_ff_warehouse_details_by_mp,
@@ -288,7 +287,7 @@ __all__ = (
     "SOURCE_LABELS",
     "WRITE_LOCK",
     "delete_mp_stock_scheme_variants",
-    "apply_ff_import_snapshot",
+    "apply_ff_import",
     "apply_ff_shipment",
     "apply_ff_surplus",
     "apply_ff_transfer",
@@ -315,7 +314,6 @@ __all__ = (
     "get_daily_stock_history",
     "get_connection",
     "get_ff_available_totals",
-    "get_ff_import_snapshot",
     "get_ff_transit_batch",
     "get_ff_transit_batches",
     "get_ff_transit_totals",

@@ -17,6 +17,20 @@ class OrmBase(DeclarativeBase):
     pass
 
 
+class StockMutationRequestRecord(OrmBase):
+    """Request identity is independent of source fingerprints and preview tokens."""
+
+    __tablename__ = "stock_mutation_requests"
+
+    store_slug: Mapped[str] = mapped_column(String(200), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_json: Mapped[str | None] = mapped_column(Text)
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class SupplyArrivalsSnapshotRecord(OrmBase):
     __tablename__ = "supply_arrivals_snapshots"
 

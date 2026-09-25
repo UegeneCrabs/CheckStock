@@ -8,7 +8,7 @@ def current_issues(state, daily):
     issues = []
     for key in result["missing"]:
         # Daily source availability is reported separately, even when prices/costs are missing too.
-        if key in {"advertising", "orders_count"}:
+        if key in {"advertising", "advertising_spend", "orders_count"}:
             continue
         label = LABELS.get(key, key)
         if key == "buyout_percent" and values.get(key) == 0:

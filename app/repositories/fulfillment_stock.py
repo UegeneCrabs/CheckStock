@@ -1,6 +1,8 @@
 import hashlib
 
 from app.core.domain import DEFAULT_MARKETPLACE
+from app.core.errors import StockValidationError
+from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.catalog import get_catalog_items
 from app.repositories.core import get_connection
 
@@ -139,17 +141,18 @@ def source_fingerprint(source_type: str, sheet_url: str | None, file_bytes: byte
     return None
 
 
-def find_used_source(store_slug: str, kind: str, fingerprint: str | None) -> dict | None:
+def find_used_source(
+    store_slug: str, kind: str, fingerprint: str | None, *, connection: DatabaseConnection | None = None
+) -> dict | None:
 
     if not fingerprint:
         return None
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM used_sources WHERE store_slug = ? AND kind = ? AND fingerprint = ?",
-        (store_slug, kind, fingerprint),
-    ).fetchone()
-    conn.close()
-    return dict(row) if row is not None else None
+    with repository_connection(connection) as conn:
+        row = conn.execute(
+            "SELECT * FROM used_sources WHERE store_slug = ? AND kind = ? AND fingerprint = ?",
+            (store_slug, kind, fingerprint),
+        ).fetchone()
+        return dict(row) if row is not None else None
 
 
 def record_used_source(
@@ -161,23 +164,25 @@ def record_used_source(
     operation_id: int | None,
     user_name: str,
     created_at: str,
+    *,
+    connection: DatabaseConnection | None = None,
 ) -> None:
 
     if not fingerprint:
         return
-    conn = get_connection()
-    conn.execute(
-        """
-        INSERT INTO used_sources
-            (store_slug, kind, fingerprint, label, source_type,
-             operation_id, user_name, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT DO NOTHING
-        """,
-        (store_slug, kind, fingerprint, label, source_type, operation_id, user_name, created_at),
-    )
-    conn.commit()
-    conn.close()
+    with repository_connection(connection) as conn:
+        inserted = conn.execute(
+            """
+            INSERT INTO used_sources
+                (store_slug, kind, fingerprint, label, source_type,
+                 operation_id, user_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
+            """,
+            (store_slug, kind, fingerprint, label, source_type, operation_id, user_name, created_at),
+        )
+        if connection is not None and inserted.rowcount == 0:
+            raise StockValidationError("Этот источник уже проведён другим запросом")
 
 
 def record_delivery(
@@ -218,12 +223,11 @@ def record_delivery(
     conn.close()
 
 
-def apply_ff_import_snapshot(
+def apply_ff_import(
     store_slug: str,
     fulfillment: str,
     marketplace: str,
     source_type: str,
-    source_key: str,
     quantities: dict[str, int],
     updated_at: str,
     *,
@@ -231,24 +235,12 @@ def apply_ff_import_snapshot(
     table_title: str,
     total_rows: int,
     unmatched: int,
-) -> dict[str, int]:
-    conn = get_connection()
-    scope = (store_slug, fulfillment, marketplace, source_type, source_key)
-    try:
-        previous = _ff_import_snapshot(
-            conn,
-            store_slug,
-            fulfillment,
-            marketplace,
-            source_type,
-            source_key,
-            sheet_url,
-            table_title,
-        )
-
+    connection: DatabaseConnection | None = None,
+) -> None:
+    """Add the full delivery quantities on every import, including repeated sources."""
+    with repository_connection(connection) as conn:
         for article, quantity in quantities.items():
-            delta = quantity - previous.get(article, 0)
-            if delta <= 0:
+            if quantity <= 0:
                 continue
             conn.execute(
                 """
@@ -259,26 +251,8 @@ def apply_ff_import_snapshot(
                 DO UPDATE SET quantity = ff_stock.quantity + excluded.quantity,
                               updated_at = excluded.updated_at
                 """,
-                (store_slug, article, fulfillment, marketplace, delta, updated_at),
+                (store_slug, article, fulfillment, marketplace, quantity, updated_at),
             )
-
-        conn.execute(
-            """
-            DELETE FROM ff_import_snapshots
-            WHERE store_slug = ? AND fulfillment = ? AND marketplace = ?
-              AND source_type = ? AND source_key = ?
-            """,
-            scope,
-        )
-        conn.executemany(
-            """
-            INSERT INTO ff_import_snapshots
-                (store_slug, fulfillment, marketplace, source_type, source_key,
-                 article, quantity, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ((*scope, article, quantity, updated_at) for article, quantity in quantities.items()),
-        )
         conn.execute(
             """
             INSERT INTO ff_stock_deliveries
@@ -299,112 +273,6 @@ def apply_ff_import_snapshot(
                 updated_at,
             ),
         )
-        conn.commit()
-        return previous
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
-def get_ff_import_snapshot(
-    store_slug: str,
-    fulfillment: str,
-    marketplace: str,
-    source_type: str,
-    source_key: str,
-    *,
-    sheet_url: str | None,
-    table_title: str,
-) -> dict[str, int]:
-    """Read the import baseline without changing FF stock or import history."""
-
-    conn = get_connection()
-    try:
-        return _ff_import_snapshot(
-            conn,
-            store_slug,
-            fulfillment,
-            marketplace,
-            source_type,
-            source_key,
-            sheet_url,
-            table_title,
-        )
-    finally:
-        conn.close()
-
-
-def _ff_import_snapshot(
-    conn,
-    store_slug: str,
-    fulfillment: str,
-    marketplace: str,
-    source_type: str,
-    source_key: str,
-    sheet_url: str | None,
-    table_title: str,
-) -> dict[str, int]:
-    rows = conn.execute(
-        """
-        SELECT article, quantity
-        FROM ff_import_snapshots
-        WHERE store_slug = ? AND fulfillment = ? AND marketplace = ?
-          AND source_type = ? AND source_key = ?
-        """,
-        (store_slug, fulfillment, marketplace, source_type, source_key),
-    ).fetchall()
-    previous = {str(row["article"]): int(row["quantity"] or 0) for row in rows}
-    if previous:
-        return previous
-    return _legacy_delivery_snapshot(
-        conn,
-        store_slug,
-        fulfillment,
-        marketplace,
-        source_type,
-        sheet_url,
-        table_title,
-    )
-
-
-def _legacy_delivery_snapshot(
-    conn,
-    store_slug: str,
-    fulfillment: str,
-    marketplace: str,
-    source_type: str,
-    sheet_url: str | None,
-    table_title: str,
-) -> dict[str, int]:
-    source_column = "sheet_url" if source_type == "sheet" else "source_name"
-    source_value = sheet_url if source_type == "sheet" else table_title
-    if not source_value:
-        return {}
-    operation = conn.execute(
-        f"""
-        SELECT id
-        FROM stock_operations
-        WHERE store_slug = ? AND kind = 'delivery' AND source_type = ?
-          AND to_fulfillment = ? AND to_marketplace = ? AND {source_column} = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (store_slug, source_type, fulfillment, marketplace, source_value),
-    ).fetchone()
-    if operation is None:
-        return {}
-    rows = conn.execute(
-        """
-        SELECT article, SUM(quantity) AS quantity
-        FROM stock_operation_items
-        WHERE operation_id = ?
-        GROUP BY article
-        """,
-        (operation["id"],),
-    ).fetchall()
-    return {str(row["article"]): int(row["quantity"] or 0) for row in rows}
 
 
 def get_ff_available_totals(

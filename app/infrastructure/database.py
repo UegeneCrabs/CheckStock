@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from threading import Lock
 from types import TracebackType
@@ -152,6 +152,19 @@ class DatabaseConnection(AbstractContextManager["DatabaseConnection"]):
             self.rollback()
         self.close()
         return None
+
+
+@contextmanager
+def repository_connection(connection: DatabaseConnection | None = None):
+    """A supplied connection belongs to its UoW; only standalone calls commit/close."""
+    if connection is not None:
+        yield connection
+        return
+    from app.repositories.core import get_connection
+
+    with get_connection() as owned:
+        yield owned
+        owned.commit()
 
 
 class UnitOfWork(AbstractContextManager["UnitOfWork"]):

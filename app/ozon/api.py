@@ -551,6 +551,7 @@ def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> li
     rows: list[dict] = []
     cursor = ""
     seen_cursors: set[str] = set()
+    seen_postings: set[str] = set()
 
     while True:
         payload = {
@@ -572,12 +573,24 @@ def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> li
         page = result.get("postings") if isinstance(result, dict) else None
         if page is None and isinstance(result, dict):
             page = result.get("items")
-        if not isinstance(page, list):
-            raise OzonApiError(None, f"неожиданный формат отправлений Ozon v4: {result!r}"[:300])
+        if not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
+            raise OzonApiError(None, "Ozon v4 не вернул список отправлений")
+        has_next = result.get("has_next")
+        if not isinstance(has_next, bool):
+            raise OzonApiError(None, "Ozon v4 не подтвердил завершённость списка отправлений")
+        for row in page:
+            posting_number = str(row.get("posting_number") or "")
+            if not posting_number or posting_number in seen_postings:
+                raise OzonApiError(None, "Ozon v4 вернул отправление без номера или повторил отправление")
+            seen_postings.add(posting_number)
 
         rows.extend(page)
-        if not page or result.get("has_next") is False:
+        if not has_next:
             return rows
+        if not page:
+            raise OzonApiError(None, "Ozon v4 вернул пустую промежуточную страницу отправлений")
+        if len(rows) > 500_000:
+            raise OzonApiError(None, "Превышен предел обхода отправлений Ozon v4; выгрузка неполна")
 
         next_cursor = str(result.get("cursor") or "").strip()
         if not next_cursor or next_cursor == cursor or next_cursor in seen_cursors:

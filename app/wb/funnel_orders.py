@@ -273,9 +273,16 @@ def _replace_day(store_slug: str, day: date, products: list[tuple]) -> None:
                 """,
                 normalized,
             )
+            from app.repositories.economics_coverage import mark_loaded
+
+            mark_loaded(conn, store_slug, "orders", day.isoformat(), day.isoformat())
             conn.commit()
         finally:
             conn.close()
+
+    from app.economics.daily_metrics import refresh_wb
+
+    refresh_wb((store_slug,), day.isoformat(), day.isoformat())
 
 
 def _replace_product_metrics(

@@ -105,7 +105,7 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
               ? 'Фиксирую перемещение на FBS...'
               : 'Отгружаю...';
 
-        fetch('/stock/' + storeSlug + '/shipment', {
+        window.CheckStockMutation.fetch('/stock/' + storeSlug + '/shipment', {
             method: 'POST',
             body: fd,
             headers: { 'X-Requested-With': 'fetch' },

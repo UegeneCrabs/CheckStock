@@ -21,6 +21,7 @@ from app.dto.stock import (
     StockQuantityQuery,
     TransitActionResult,
 )
+from app.infrastructure.database import DatabaseConnection
 from app.infrastructure.orm import (
     CatalogArticleAliasRecord,
     CatalogBarcodeRecord,
@@ -550,6 +551,15 @@ class SqlAlchemyStockUnitOfWork:
         if self._session is None:
             raise RuntimeError("UnitOfWork is not active")
         self._session.commit()
+
+    @property
+    def connection(self) -> DatabaseConnection:
+        """Borrow the session's transaction for SQL repositories; never commit it there."""
+        if self._session is None:
+            raise RuntimeError("UnitOfWork is not active")
+        self._session.flush()
+        connection = self._session.connection()
+        return DatabaseConnection(connection, connection.dialect.name)
 
     def rollback(self) -> None:
         if self._session is not None:

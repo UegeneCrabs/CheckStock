@@ -363,16 +363,15 @@
         if (item < 0) return ' metric--negative';
         return '';
     }
+    function calculationMessages(row) {
+        return (row.messages || []).join('\n') || 'Нет полного набора параметров за ' + (row.margin_missing_days || []).map(dayLabel).join(', ');
+    }
+    function calculationNote(row, raw) {
+        var label = raw === null || raw === undefined ? 'Недостаточно данных' : 'Неполный расчёт';
+        return '<small class="ue1cr-calculation-note" title="' + escapeHtml(calculationMessages(row)) + '">' + label + '</small>';
+    }
     function marginCoverageTitle(row) {
-        if (row.margin_complete !== false) return '';
-        var days = Array.isArray(row.margin_missing_days)
-            ? row.margin_missing_days.map(dayLabel).join(', ')
-            : '';
-        return (
-            ' title="Маржа рассчитана только по датам с доступными снимками.' +
-            (days ? ' Нет снимка маржи за: ' + escapeHtml(days) : '') +
-            '"'
-        );
+        return row.margin_complete === false ? ' title="' + escapeHtml(calculationMessages(row)) + '"' : '';
     }
     function summary(kind) {
         var count = state[kind].size;
@@ -464,21 +463,17 @@
             .map(function (day, dayIndex) {
                 var item = dailyCalculation(row, day);
                 var incomplete = item && (item.available === false || item.complete === false);
-                var title = incomplete
-                    ? ' title="Нет сохранённых параметров маржи для части данных за ' +
-                      escapeHtml(dayLabel(day)) +
-                      '"'
-                    : '';
+                var title = incomplete ? ' title="' + escapeHtml(calculationMessages(item)) + '"' : '';
                 return dailyColumns
                     .map(function (column) {
                         var raw = item ? item[column.key] : null;
                         var classes = 'num ue1cr-daily-cell ue1cr-daily-day-' + (dayIndex % 2);
                         if (column.tone) classes += tone(raw);
-                        if (incomplete) classes += ' ue1cr-daily-cell--incomplete';
+                        if (incomplete && (raw === null || ['net_profit', 'net_revenue', 'day_profit'].indexOf(column.key) !== -1)) classes += ' ue1cr-daily-cell--incomplete';
                         return window.CheckStockUI.render('economics/wb/unit-profit/daily-cells-html', {
                             classes: classes,
                             title: title,
-                            content: dailyValue(item, column),
+                            content: dailyValue(item, column) + (incomplete && ['net_profit', 'day_profit'].indexOf(column.key) !== -1 ? calculationNote(item, raw) : ''),
                         });
                     })
                     .join('');
@@ -624,8 +619,9 @@
         else content = escapeHtml(raw === null || raw === undefined || raw === '' ? '—' : raw);
         var classes = column.format === 'text' ? '' : 'num';
         if (column.tone) classes += tone(raw);
-        if (column.key === 'margin' && row.margin_complete === false) {
+        if (['margin', 'roi'].indexOf(column.key) !== -1 && (row.margin_complete === false || raw === null)) {
             classes += ' ue1cr-margin-cell--partial';
+            content += calculationNote(row, raw);
         }
         var title = column.coverage ? marginCoverageTitle(row) : '';
         var parsed = Number(raw);
@@ -701,6 +697,13 @@
         setHeaderTotal('margin', value(total.margin), total.margin);
         setHeaderTotal('purchase_value', rub(total.purchase_value));
         setHeaderTotal('roi', value(total.roi, '%'), total.roi);
+        ['margin', 'roi'].forEach(function (key) {
+            var node = root.querySelector('[data-report-total="' + key + '"]');
+            if (node && (total.margin_complete === false || total[key] === null)) {
+                node.textContent += ' · ' + (total[key] === null ? 'Недостаточно данных' : 'Неполный расчёт');
+                node.title = calculationMessages(total);
+            }
+        });
     }
     function numeric(item) {
         var parsed = Number(item);
@@ -735,7 +738,13 @@
                     result.purchase_value += numeric(row.purchase_value);
                     result.purchase_available = true;
                 }
-                if (row.margin_complete === false) result.margin_complete = false;
+                if (row.margin_complete === false || row.margin === null) result.margin_complete = false;
+                result.messages = result.messages.concat(row.messages || []);
+                if (row.margin !== null && row.margin !== undefined) {
+                    var basis = row.roi_purchase_value !== undefined ? row.roi_purchase_value : row.purchase_value;
+                    if (basis === null || basis === undefined) result.roi_basis_known = false;
+                    else result.roi_basis += numeric(basis);
+                } else result.unavailable_products.push(row.article || row.name);
                 return result;
             },
             {
@@ -760,6 +769,7 @@
                 margin: 0,
                 purchase_value: 0,
                 margin_complete: true,
+                messages: [], unavailable_products: [], roi_basis: 0, roi_basis_known: true,
                 margin_available: rows.length === 0,
                 purchase_available: rows.length === 0,
             },
@@ -786,12 +796,8 @@
               : 0;
         if (!total.margin_available) total.margin = null;
         if (!total.purchase_available) total.purchase_value = null;
-        total.roi =
-            total.margin !== null && total.purchase_value
-                ? Math.round((total.margin / total.purchase_value) * 10000) / 100
-                : total.margin !== null
-                  ? 0
-                  : null;
+        total.roi = total.margin !== null && total.roi_basis_known && total.roi_basis > 0 ? Math.round(total.margin / total.roi_basis * 10000) / 100 : null;
+        if (total.unavailable_products.length) total.messages.push('В сумму не вошли товары без основы расчёта: ' + total.unavailable_products.join(', '));
         return total;
     }
     function visibleReportRows() {
@@ -1088,22 +1094,9 @@
             setFilterOptions('manager', result.filters.managers);
             setFilterOptions('article', result.filters.articles);
             renderRows();
-            var undercoveredDays = result.totals ? result.totals.margin_undercovered_days || [] : [];
-            if (undercoveredDays.length) {
-                nodes.marginCoverageNote.textContent =
-                    (config.marketplace === 'YM' ? 'Неполная история прибыли за ' : 'Снимки маржи есть менее чем у 70% товаров за ') +
-                    undercoveredDays.map(dayLabel).join(', ') +
-                    (config.marketplace === 'YM' ? '. Учтены доступные дневные расчёты каждого товара.' : '. Маржа рассчитана по остальным датам.');
+            if (result.totals && result.totals.margin_complete === false) {
+                nodes.marginCoverageNote.textContent = (result.totals.margin === null ? 'Недостаточно данных. ' : 'Неполный расчёт. ') + calculationMessages(result.totals).replace(/\n/g, '; ');
                 nodes.marginCoverageNote.hidden = false;
-            }
-            if (config.marketplace === 'YM' && result.totals) {
-                var missing = [];
-                if ((result.totals.orders_missing_days || []).length) missing.push('Заказы: нет данных за ' + result.totals.orders_missing_days.map(dayLabel).join(', '));
-                if ((result.totals.ads_missing_days || []).length) missing.push('Реклама: нет данных за ' + result.totals.ads_missing_days.map(dayLabel).join(', '));
-                if (missing.length) {
-                    nodes.marginCoverageNote.textContent += ' ' + missing.join('. ') + '. Показаны доступные данные.';
-                    nodes.marginCoverageNote.hidden = false;
-                }
             }
             if (result.manager_scope && result.manager_scope.restricted && !result.manager_scope.matched) {
                 nodes.scopeNote.textContent =

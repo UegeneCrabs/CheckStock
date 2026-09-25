@@ -54,7 +54,7 @@
     }
 
     function request(url, options) {
-        return fetch(url, options).then(function (response) {
+        return window.CheckStockMutation.fetch(url, options).then(function (response) {
             return response
                 .json()
                 .catch(function () {

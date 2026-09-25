@@ -1,5 +1,6 @@
 """Shared report aggregation for marketplace-specific source rows."""
 
+from app.economics.completeness import status
 from app.economics.wb import calculations as unit_economics_1c
 
 
@@ -43,7 +44,9 @@ def _aggregate_report_daily_calculations(rows: list[dict]) -> list[dict]:
         aggregate = {
             "date": day_key,
             "available": bool(available_items),
-            "complete": len(available_items) == len(items),
+            "complete": all(item.get("complete", item.get("available", False)) for item in items),
+            "messages": list(dict.fromkeys(message for item in items for message in item.get("messages", []))),
+            "missing": list(dict.fromkeys(key for item in items for key in item.get("missing", []))),
             "covered_products": len(available_items),
             "product_count": len(items),
             "snapshot_available": all(bool(item.get("snapshot_available")) for item in items),
@@ -81,8 +84,9 @@ def _aggregate_report_daily_calculations(rows: list[dict]) -> list[dict]:
                     float(item[field]),
                     float(item.get("expected_buyouts") or 0) or 1.0,
                 )
-                for item in available_items
+                for item in items
                 if item.get(field) is not None
+                and (field not in {"net_profit", "net_revenue"} or (item.get("expected_buyouts") or 0) > 0)
             ]
             aggregate[field] = (
                 round(
@@ -92,12 +96,24 @@ def _aggregate_report_daily_calculations(rows: list[dict]) -> list[dict]:
                 if weighted
                 else None
             )
+        for field in ("orders_count", "advertising_spend", "expected_buyouts", "net_orders_count", "day_profit", "day_purchase_value"):
+            values = [item[field] for item in items if item.get(field) is not None]
+            aggregate[field] = round(sum(values), 2) if values else None
+        weights = [(item["buyout_percent"], item["orders_count"]) for item in items
+                   if item.get("buyout_percent") is not None and item.get("orders_count") is not None]
+        weight = sum(count for _, count in weights)
+        aggregate["buyout_percent"] = round(sum(percent * count for percent, count in weights) / weight, 2) if weight else None
+        spend, bought = aggregate["advertising_spend"], aggregate["expected_buyouts"]
+        aggregate["advertising_per_unit"] = round(spend / bought, 2) if spend is not None and bought else 0.0 if spend == 0 else None
+        aggregate["status"] = status(aggregate.get("day_profit"), not aggregate["complete"])
+        if len(available_items) != len(items):
+            aggregate["messages"].append(f"В сумму дня вошло товаров: {len(available_items)} из {len(items)}")
         result.append(aggregate)
     return result
 
 
 def _unit_profit_report_totals(rows: list[dict]) -> dict:
-    margin_complete = all(bool(row.get("margin_complete")) for row in rows)
+    margin_complete = all(bool(row.get("margin_complete")) and row.get("margin") is not None for row in rows)
     margin_rows = [row for row in rows if row.get("margin") is not None]
     purchase_rows = [row for row in rows if row.get("purchase_value") is not None]
     margin_available = bool(margin_rows) or not rows
@@ -146,7 +162,11 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
             else None
         ),
         "margin_complete": margin_complete,
+        "covered_products": len(margin_rows), "product_count": len(rows),
+        "messages": list(dict.fromkeys(message for row in rows for message in row.get("messages", []))),
+        "unavailable_products": [str(row.get("store_name") or row.get("store_slug") or "") + " / " + str(row.get("article") or row.get("name") or "") for row in rows if row.get("margin") is None],
         "margin_missing_days": sorted({day for row in rows for day in row.get("margin_missing_days") or []}),
+        "unavailable_days": sorted({day for row in rows for day in row.get("unavailable_days") or []}),
     }
     totals["stock_days"] = unit_economics_1c.calculate_stock_coverage_days(
         totals["stock"],
@@ -175,13 +195,23 @@ def _unit_profit_report_totals(rows: list[dict]) -> dict:
         if totals["advertising_spend"]
         else 0.0
     )
-    totals["roi"] = (
-        round(float(totals["margin"]) / float(totals["purchase_value"]) * 100, 2)
-        if totals["margin"] is not None and totals["purchase_value"]
-        else 0.0
-        if totals["margin"] is not None
-        else None
-    )
+    bases = [row.get("roi_purchase_value", row.get("purchase_value")) for row in margin_rows]
+    basis = sum(bases) if bases and all(v is not None for v in bases) else None
+    totals["roi_purchase_value"] = basis
+    totals["roi"] = round(totals["margin"] / basis * 100, 2) if totals["margin"] is not None and basis else None
+    totals["status"] = status(totals["margin"], not margin_complete)
+    totals["purchase_complete"] = all(row.get("purchase_complete", row.get("purchase_value") is not None) for row in rows)
+    if totals["unavailable_products"]:
+        totals["messages"].append(f"В сумму вошло товаров: {len(margin_rows)} из {len(rows)}. Не рассчитаны: " + ", ".join(totals["unavailable_products"]))
+    for field in ("orders_count", "orders_amount", "cancel_count", "cancel_amount", "net_orders_count", "net_orders_amount", "advertising_spend", "expected_buyout_amount", "clicks", "impressions"):
+        if rows and all(row.get(field) is None for row in rows):
+            totals[field] = None
+    if totals["advertising_spend"] is None or totals["expected_buyout_amount"] is None:
+        totals["drr"] = None
+    if totals["advertising_spend"] is None or totals["clicks"] is None:
+        totals["cpc"] = None
+    if totals["clicks"] is None or totals["impressions"] is None:
+        totals["ctr"] = None
     return totals
 
 

@@ -78,7 +78,7 @@ window.CheckStockOperations.initBlock('перемещение', 'mv-status', fun
         btn.disabled = true;
         status.textContent = 'Перемещаю...';
 
-        fetch('/stock/' + storeSlug + '/transfer', {
+        window.CheckStockMutation.fetch('/stock/' + storeSlug + '/transfer', {
             method: 'POST',
             body: fd,
             headers: { 'X-Requested-With': 'fetch' },

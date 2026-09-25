@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from app.infrastructure.database import DatabaseConnection
 
 from app.dto.identity import (
     AccessDecision,
@@ -142,6 +145,9 @@ class StockRepository(Protocol):
 
 class StockUnitOfWork(Protocol):
     repository: StockRepository
+
+    @property
+    def connection(self) -> DatabaseConnection: ...
 
     def __enter__(self) -> StockUnitOfWork: ...
 

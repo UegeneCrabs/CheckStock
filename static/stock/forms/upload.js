@@ -85,7 +85,7 @@
         }
 
         function postImport(formData) {
-            return fetch('/stock/' + storeSlug + '/upload-ff-stock', {
+            return window.CheckStockMutation.fetch('/stock/' + storeSlug + '/upload-ff-stock', {
                 method: 'POST',
                 body: formData,
             }).then(function (r) {
@@ -95,13 +95,15 @@
             });
         }
 
-        var escapeHtml = window.CheckStockUI.escapeHtml;
-
         btn.disabled = true;
         status.textContent = 'Проверяю количество...';
 
-        postImport(buildFormData(true, ''))
-            .then(function (result) {
+        var submission;
+        if (window.CheckStockMutation.hasPending('/stock/' + storeSlug + '/upload-ff-stock')) {
+            status.textContent = 'Уточняю результат предыдущей попытки...';
+            submission = postImport(buildFormData(false, ''));
+        } else {
+            submission = postImport(buildFormData(true, '')).then(function (result) {
                 var data = result.data;
                 if (!result.ok || !data.ok) {
                     status.textContent = 'Ошибка: ' + (data.error || 'не удалось проверить файл');
@@ -139,6 +141,7 @@
                                       'Будет внесено: ' +
                                       preview.added_quantity +
                                       ' шт.\n\n' +
+                                      'Каждая загрузка прибавляет всё количество. Повторная загрузка добавит его ещё раз.\n\n' +
                                       'Внести в ФФ для распределения ' +
                                       marketplace +
                                       '?',
@@ -153,7 +156,9 @@
                     status.textContent = 'Вношу сток...';
                     return postImport(buildFormData(false, preview.confirmation_token));
                 });
-            })
+            });
+        }
+        submission
             .then(function (result) {
                 if (!result) return;
                 var data = result.data;
@@ -163,9 +168,6 @@
                 }
                 var r = data.report;
                 var skipped = r.negative_skipped || [];
-                var unchanged = r.unchanged || [];
-                var decreased = r.decreased || [];
-                var removed = r.removed || [];
                 var safe = window.CheckStockUI.escapeHtml;
                 var detail = function (title, items, tone, describe) {
                     if (!items.length) return '';
@@ -197,58 +199,18 @@
                 };
                 status.textContent = r.added_quantity
                     ? 'Готово: добавлено ' + r.added_quantity + ' шт. в ' + r.applied + ' позициях.'
-                    : 'Готово: изменений для добавления нет, остатки не начислены повторно.';
+                    : 'Готово: в источнике нет распознанных товаров с положительным количеством.';
                 if (window.Modal) {
                     Modal.alert({
-                        title: 'Результат сравнения выгрузки',
+                        title: 'Результат загрузки поставки',
                         okText: 'Готово',
                         bodyHtml: window.CheckStockUI.render('stock/forms/upload/body-html-2', {
                             added_quantity: r.added_quantity,
                             applied: r.applied,
-                            length: unchanged.length,
-                            content: detail('Новые товары', r.new_items || [], 'success', function (item) {
+                            content: detail('Добавлено на ФФ', r.items || [], 'success', function (item) {
                                 return '+' + item.quantity + ' шт.';
                             }),
                             content_2: detail(
-                                'Количество увеличилось',
-                                r.increased || [],
-                                'success',
-                                function (item) {
-                                    return (
-                                        item.previous_quantity +
-                                        ' → ' +
-                                        item.source_quantity +
-                                        ' (добавлено ' +
-                                        item.quantity +
-                                        ')'
-                                    );
-                                },
-                            ),
-                            content_3: detail(
-                                'Не добавлены — количество не изменилось',
-                                unchanged,
-                                'muted',
-                                function (item) {
-                                    return item.source_quantity + ' шт. в обеих выгрузках';
-                                },
-                            ),
-                            content_4: detail(
-                                'Количество уменьшилось — сток не списан',
-                                decreased,
-                                'warning',
-                                function (item) {
-                                    return item.previous_quantity + ' → ' + item.source_quantity;
-                                },
-                            ),
-                            content_5: detail(
-                                'Исчезли из новой выгрузки — сток не списан',
-                                removed,
-                                'warning',
-                                function (item) {
-                                    return 'было ' + item.previous_quantity + ' шт.';
-                                },
-                            ),
-                            content_6: detail(
                                 'Отрицательные значения пропущены',
                                 skipped,
                                 'warning',
@@ -256,7 +218,7 @@
                                     return item.quantity + ' шт.';
                                 },
                             ),
-                            content_7: r.unmatched
+                            content_3: r.unmatched
                                 ? window.CheckStockUI.render('stock/forms/upload/body-html', {
                                       unmatched: r.unmatched,
                                   })
@@ -425,7 +387,7 @@
                 btn.disabled = true;
                 manualStatus.textContent = 'Добавляю...';
 
-                fetch('/stock/' + storeSlug + '/add-ff-items', {
+                window.CheckStockMutation.fetch('/stock/' + storeSlug + '/add-ff-items', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
                     body: JSON.stringify({

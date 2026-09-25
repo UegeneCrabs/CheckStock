@@ -1,6 +1,13 @@
 from app.repositories.core import WRITE_LOCK, get_connection
 
 
+def _lock_sales_scopes(conn, scopes) -> None:
+    """Serialize reconciliation with other registry writers across PG workers."""
+    if conn.dialect_name == "postgresql":
+        for store_slug, marketplace in sorted(set(scopes)):
+            conn.execute("SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))", (store_slug, marketplace))
+
+
 def upsert_sales_order_lines(lines: list[dict], synced_at: str) -> int:
 
     if not lines:
@@ -45,6 +52,7 @@ def upsert_sales_order_lines(lines: list[dict], synced_at: str) -> int:
     with WRITE_LOCK:
         conn = get_connection()
         try:
+            _lock_sales_scopes(conn, ((line["store_slug"], line["marketplace"]) for line in lines))
             conn.executemany(
                 f"""
                 INSERT INTO sales_order_lines ({", ".join(columns)})
@@ -69,6 +77,90 @@ def upsert_sales_order_lines(lines: list[dict], synced_at: str) -> int:
         finally:
             conn.close()
     return len(lines)
+
+
+def replace_fbs_order_period(
+    store_slug: str,
+    marketplace: str,
+    date_from: str,
+    date_to: str,
+    lines: list[dict],
+    synced_at: str,
+    statuses: tuple[str, ...],
+) -> dict[str, int]:
+    """Reconcile a fully loaded FBS slice and return its totals in one transaction.
+
+    Missing lines are removed only inside this store/platform/FBS/date scope.
+    Sparse inserts use schema defaults; updates leave unprovided accounting,
+    returns and enrichment fields intact. A full empty response clears the slice.
+    """
+    allowed = {
+        "store_slug",
+        "marketplace",
+        "order_key",
+        "line_key",
+        "external_order_id",
+        "scheme",
+        "status",
+        "substatus",
+        "article",
+        "barcode",
+        "name",
+        "ordered_at",
+        "source_updated_at",
+        "quantity",
+        "cancelled_quantity",
+        "sold_quantity",
+    }
+    keys = {"store_slug", "marketplace", "order_key", "line_key"}
+    by_key: dict[tuple[str, str], dict] = {}
+    for line in lines:
+        if (
+            line["store_slug"] != store_slug
+            or line["marketplace"] != marketplace
+            or line["scheme"] != "fbs"
+            or not date_from <= line["ordered_at"] < date_to
+            or not set(line) <= allowed
+        ):
+            raise ValueError("Строка за пределами обновляемого FBS-среза")
+        key = (line["order_key"], line["line_key"])
+        if key in by_key:
+            raise ValueError("Повтор строки в FBS-срезе")
+        by_key[key] = line
+    with WRITE_LOCK, get_connection() as conn:
+        if conn.dialect_name == "sqlite":
+            conn.execute("BEGIN IMMEDIATE")
+        _lock_sales_scopes(conn, [(store_slug, marketplace)])
+        existing = conn.execute(
+            "SELECT order_key, line_key FROM sales_order_lines "
+            "WHERE store_slug = ? AND marketplace = ? AND scheme = 'fbs' "
+            "AND ordered_at >= ? AND ordered_at < ?",
+            (store_slug, marketplace, date_from, date_to),
+        ).fetchall()
+        conn.executemany(
+            "DELETE FROM sales_order_lines WHERE store_slug = ? AND marketplace = ? "
+            "AND order_key = ? AND line_key = ?",
+            [
+                (store_slug, marketplace, row["order_key"], row["line_key"])
+                for row in existing
+                if (row["order_key"], row["line_key"]) not in by_key
+            ],
+        )
+        groups: dict[tuple[str, ...], list[tuple]] = {}
+        for line in lines:
+            columns = (*sorted(line), "synced_at")
+            groups.setdefault(columns, []).append((*[line[column] for column in columns[:-1]], synced_at))
+        for columns, values in groups.items():
+            updates = ", ".join(f"{column} = excluded.{column}" for column in columns if column not in keys)
+            conn.executemany(
+                f"INSERT INTO sales_order_lines ({', '.join(columns)}) "
+                f"VALUES ({', '.join('?' for _ in columns)}) "
+                f"ON CONFLICT(store_slug, marketplace, order_key, line_key) DO UPDATE SET {updates}",
+                values,
+            )
+        totals = _fbs_order_totals(conn, store_slug, marketplace, date_from, date_to, statuses)
+        conn.commit()
+        return totals
 
 
 def sales_has_history(store_slug: str, marketplace: str) -> bool:
@@ -126,6 +218,11 @@ def get_fbs_order_totals_for_period(
     statuses: tuple[str, ...],
 ) -> dict[str, int]:
     """Return FBS units grouped by article for the exact order period and statuses."""
+    with get_connection() as conn:
+        return _fbs_order_totals(conn, store_slug, marketplace, date_from, date_to, statuses)
+
+
+def _fbs_order_totals(conn, store_slug, marketplace, date_from, date_to, statuses) -> dict[str, int]:
     normalized_statuses = tuple(
         dict.fromkeys(
             str(status or "").strip().casefold() for status in statuses if str(status or "").strip()
@@ -134,7 +231,6 @@ def get_fbs_order_totals_for_period(
     if not normalized_statuses:
         return {}
     placeholders = ", ".join("?" for _ in normalized_statuses)
-    conn = get_connection()
     rows = conn.execute(
         f"""
         SELECT article, SUM(quantity) AS total
@@ -151,7 +247,6 @@ def get_fbs_order_totals_for_period(
         """,
         (store_slug, marketplace, date_from, date_to, *normalized_statuses),
     ).fetchall()
-    conn.close()
     return {str(row["article"]): int(row["total"] or 0) for row in rows}
 
 

@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -9,6 +11,12 @@ from app import db
 from app.access import auth
 from app.access import notifications as access_notifications
 from app.access.access_control import ActionPermission, has_action_permission
+from app.application.stock_requests import (
+    InvalidStockRequest,
+    StockRequestConflict,
+    StockRequestResult,
+    execute_stock_request,
+)
 from app.core.errors import StockValidationError
 from app.core.formatting import format_dt
 from app.core.stores import STORES
@@ -35,6 +43,42 @@ from app.web.dependencies import StockMovementServiceDependency
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _run_stock_mutation(request, slug, stock, payload, action):
+    # Authorization remains in each handler and runs before replay as well as before mutation.
+    def execute():
+        def apply(uow):
+            response = action(uow)
+            return StockRequestResult(json.loads(response.body), response.status_code)
+
+        return execute_stock_request(
+            stock.unit_of_work,
+            store_slug=slug.lower(),
+            user_id=request.state.user["id"],
+            request_key=request.headers.get("Idempotency-Key", ""),
+            payload=payload,
+            action=apply,
+        )
+
+    try:
+        result = await run_in_threadpool(execute)
+        return JSONResponse(result.body, status_code=result.status_code)
+    except StockRequestConflict as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
+    except InvalidStockRequest as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    except StockValidationError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    except Exception:
+        logger.exception("Stock request failed (%s)", slug)
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Не удалось получить результат. Повторите запрос с тем же идентификатором операции.",
+            },
+            status_code=500,
+        )
 
 
 def _required_note(value: str) -> tuple[str, JSONResponse | None]:
@@ -98,6 +142,7 @@ def _guard_stock_action(
 async def upload_ff_stock(
     request: Request,
     slug: str,
+    stock: StockMovementServiceDependency,
     fulfillment: str = Form(...),
     marketplace: Marketplace = Form(Marketplace.WB),
     note: str = Form("", max_length=200),
@@ -141,50 +186,50 @@ async def upload_ff_stock(
     file_bytes = await file.read() if (file is not None and file.filename) else None
     source_type, _ = _source_of(file, file_bytes, sheet_url)
 
-    try:
-        if file_bytes is not None:
-            report = await run_in_threadpool(
-                ff_stock_import.import_ff_stock_from_xlsx,
-                slug.lower(),
-                fulfillment,
-                file_bytes,
-                file.filename,
-                marketplace.value,
-                preview=preview_requested,
-                confirmation_token=confirmation_token.strip() or None,
-            )
-        elif sheet_url.strip():
-            report = await run_in_threadpool(
-                ff_stock_import.import_ff_stock_from_sheet,
-                slug.lower(),
-                fulfillment,
-                sheet_url.strip(),
-                marketplace.value,
-                preview=preview_requested,
-                confirmation_token=confirmation_token.strip() or None,
-            )
-        else:
+    def _mutate(uow):
+        try:
+            if file_bytes is not None:
+                report = ff_stock_import.import_ff_stock_from_xlsx(
+                    slug.lower(),
+                    fulfillment,
+                    file_bytes,
+                    file.filename,
+                    marketplace.value,
+                    preview=preview_requested,
+                    confirmation_token=confirmation_token.strip() or None,
+                    connection=uow.connection if uow is not None else None,
+                )
+            elif sheet_url.strip():
+                report = ff_stock_import.import_ff_stock_from_sheet(
+                    slug.lower(),
+                    fulfillment,
+                    sheet_url.strip(),
+                    marketplace.value,
+                    preview=preview_requested,
+                    confirmation_token=confirmation_token.strip() or None,
+                    connection=uow.connection if uow is not None else None,
+                )
+            else:
+                return JSONResponse(
+                    {"ok": False, "error": "Прикрепите файл .xlsx или вставьте ссылку на Google Таблицу"},
+                    status_code=400,
+                )
+        except ff_stock_import.FFImportConfirmationError as e:
             return JSONResponse(
-                {"ok": False, "error": "Прикрепите файл .xlsx или вставьте ссылку на Google Таблицу"},
-                status_code=400,
+                {"ok": False, "error": str(e), "code": "confirmation_changed"}, status_code=409
             )
-    except ff_stock_import.FFImportConfirmationError as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=409)
-    except ff_stock_import.FFImportError as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-    except Exception:
-        logger.exception("Загрузка остатков ФФ (%s, %s) упала с ошибкой", slug, fulfillment)
-        return JSONResponse(
-            {"ok": False, "error": "непредвиденная ошибка при обработке файла/таблицы — см. лог сервера"},
-            status_code=500,
-        )
+        except ff_stock_import.FFImportError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        except Exception:
+            logger.exception("Загрузка остатков ФФ (%s, %s) упала с ошибкой", slug, fulfillment)
+            return JSONResponse(
+                {"ok": False, "error": "непредвиденная ошибка при обработке файла/таблицы — см. лог сервера"},
+                status_code=500,
+            )
+        if preview_requested:
+            return JSONResponse({"ok": True, "preview": report})
+        actor = request.state.user
 
-    if preview_requested:
-        return JSONResponse({"ok": True, "preview": report})
-
-    actor = request.state.user
-
-    def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
             store_slug=slug.lower(),
@@ -199,21 +244,39 @@ async def upload_ff_stock(
             to_fulfillment=fulfillment,
             to_marketplace=marketplace.value,
             note=note_text,
+            connection=uow.connection,
         )
         db.log_action_for_operation(
             actor["id"],
             actor["full_name"],
             "Загружена поставка на ФФ",
-            f"{store.name} · {marketplace.value} · {fulfillment} · «{report['table_title']}» — "
-            f"добавлено {report.get('added_quantity', 0)} шт. в "
-            f"{report.get('applied', len(report.get('items', [])))} позициях; "
-            f"без изменений {len(report.get('unchanged', []))}" + (f" · {note_text}" if note_text else ""),
+            f"{store.name} · {marketplace.value} · {fulfillment} · «{report['table_title']}» — добавлено {report.get('added_quantity', 0)} шт. в {report.get('applied', len(report.get('items', [])))} позициях"
+            + (f" · {note_text}" if note_text else ""),
             now,
             operation_id,
+            connection=uow.connection,
         )
+        return JSONResponse({"ok": True, "report": report})
 
-    await run_in_threadpool(_record)
-    return JSONResponse({"ok": True, "report": report})
+    if preview_requested:
+        return await run_in_threadpool(_mutate, None)
+
+    return await _run_stock_mutation(
+        request,
+        slug,
+        stock,
+        {
+            "action": "upload_ff_stock",
+            "fulfillment": fulfillment,
+            "marketplace": marketplace,
+            "note": note,
+            "confirmation_token": confirmation_token,
+            "sheet_url": sheet_url,
+            "file_name": file.filename if file else None,
+            "file_hash": hashlib.sha256(file_bytes).hexdigest() if file_bytes is not None else None,
+        },
+        _mutate,
+    )
 
 
 @router.get("/stock/{slug}/catalog-search")
@@ -276,23 +339,21 @@ async def add_ff_items(
     if denied is not None:
         return denied
 
-    try:
-        results = await run_in_threadpool(
-            stock.add_items,
-            AddFulfillmentItemsCommand(store_slug=slug.lower(), request=payload),
-        )
-    except (ff_stock_import.FFImportError, StockValidationError) as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-    except Exception:
-        logger.exception("Ручная докладка на ФФ (%s, %s) упала", slug, payload.fulfillment)
-        return JSONResponse(
-            {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
-        )
+    def _mutate(uow):
+        try:
+            results = stock.add_items(
+                AddFulfillmentItemsCommand(store_slug=slug.lower(), request=payload), unit_of_work=uow
+            )
+        except (ff_stock_import.FFImportError, StockValidationError) as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        except Exception:
+            logger.exception("Ручная докладка на ФФ (%s, %s) упала", slug, payload.fulfillment)
+            return JSONResponse(
+                {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
+            )
+        actor = request.state.user
+        details = ", ".join(f"{item.article} +{item.added}" for item in results.root)
 
-    actor = request.state.user
-    details = ", ".join(f"{item.article} +{item.added}" for item in results.root)
-
-    def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
             store_slug=slug.lower(),
@@ -313,6 +374,7 @@ async def add_ff_items(
             to_fulfillment=payload.fulfillment,
             to_marketplace=payload.marketplace.value,
             note=note_text,
+            connection=uow.connection,
         )
         db.log_action_for_operation(
             actor["id"],
@@ -321,11 +383,13 @@ async def add_ff_items(
             f"{store.name} · {payload.fulfillment} · {details}" + (f" · {note_text}" if note_text else ""),
             now,
             operation_id,
+            connection=uow.connection,
         )
+        return JSONResponse({"ok": True, "results": results.model_dump(mode="json")})
 
-    await run_in_threadpool(_record)
-
-    return JSONResponse({"ok": True, "results": results.model_dump(mode="json")})
+    return await _run_stock_mutation(
+        request, slug, stock, {"action": "add_ff_items", "payload": payload.model_dump(mode="json")}, _mutate
+    )
 
 
 @router.get("/stock/{slug}/ff-cell")
@@ -364,11 +428,18 @@ def _source_of(file: UploadFile | None, file_bytes: bytes | None, sheet_url: str
 
 
 def _guard_used_source(
-    store_slug: str, kind: str, source_type: str, sheet_url: str, file_bytes: bytes | None, label: str
+    store_slug: str,
+    kind: str,
+    source_type: str,
+    sheet_url: str,
+    file_bytes: bytes | None,
+    label: str,
+    *,
+    connection=None,
 ) -> tuple[str | None, str | None]:
 
     fingerprint = db.source_fingerprint(source_type, sheet_url.strip() or None, file_bytes)
-    used = db.find_used_source(store_slug, kind, fingerprint)
+    used = db.find_used_source(store_slug, kind, fingerprint, connection=connection)
     if used is None:
         return fingerprint, None
 
@@ -444,72 +515,67 @@ async def transfer_ff_stock(
     source_type, source_name = _source_of(file, file_bytes, sheet_url)
     label = source_name or sheet_url.strip() or "ручной ввод"
 
-    source_kind = f"transfer:{from_marketplace.value}"
-    fingerprint, used_error = await run_in_threadpool(
-        _guard_used_source,
-        slug.lower(),
-        source_kind,
-        source_type,
-        sheet_url,
-        file_bytes,
-        label,
-    )
-    if used_error:
-        return JSONResponse({"ok": False, "error": used_error}, status_code=400)
-
-    try:
-        if file_bytes is not None:
-            raw_entries = await run_in_threadpool(ff_transfer.entries_from_xlsx, file_bytes)
-        elif sheet_url.strip():
-            raw_entries = await run_in_threadpool(ff_transfer.entries_from_sheet, sheet_url.strip())
-        else:
-            try:
-                raw_entries = SignedStockEntries.model_validate_json(items or "[]")
-            except ValidationError:
-                return JSONResponse({"ok": False, "error": "неверный формат позиций"}, status_code=400)
-
-        transfer_result = await run_in_threadpool(
-            stock.transfer,
-            TransferStockCommand(
-                store_slug=slug.lower(),
-                entries=raw_entries,
-                from_fulfillment=from_fulfillment,
-                from_marketplace=from_marketplace,
-                to_fulfillment=to_fulfillment,
-                to_marketplace=to_marketplace,
-                user_id=actor.id,
-                user_name=actor.full_name,
-                note=note_text,
-            ),
+    def _mutate(uow):
+        source_kind = f"transfer:{from_marketplace.value}"
+        fingerprint, used_error = _guard_used_source(
+            slug.lower(),
+            source_kind,
+            source_type,
+            sheet_url,
+            file_bytes,
+            label,
+            connection=uow.connection,
         )
-    except (ff_stock_import.FFImportError, StockValidationError) as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-    except Exception:
-        logger.exception("Перемещение остатков (%s) упало", slug)
-        return JSONResponse(
-            {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
+        if used_error:
+            return JSONResponse({"ok": False, "error": used_error}, status_code=400)
+        try:
+            if file_bytes is not None:
+                raw_entries = ff_transfer.entries_from_xlsx(file_bytes)
+            elif sheet_url.strip():
+                raw_entries = ff_transfer.entries_from_sheet(sheet_url.strip())
+            else:
+                try:
+                    raw_entries = SignedStockEntries.model_validate_json(items or "[]")
+                except ValidationError:
+                    return JSONResponse({"ok": False, "error": "неверный формат позиций"}, status_code=400)
+            transfer_result = stock.transfer(
+                TransferStockCommand(
+                    store_slug=slug.lower(),
+                    entries=raw_entries,
+                    from_fulfillment=from_fulfillment,
+                    from_marketplace=from_marketplace,
+                    to_fulfillment=to_fulfillment,
+                    to_marketplace=to_marketplace,
+                    user_id=actor.id,
+                    user_name=actor.full_name,
+                    note=note_text,
+                ),
+                unit_of_work=uow,
+            )
+        except (ff_stock_import.FFImportError, StockValidationError) as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        except Exception:
+            logger.exception("Перемещение остатков (%s) упало", slug)
+            return JSONResponse(
+                {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
+            )
+        results = transfer_result.moved
+        skipped = transfer_result.skipped
+        if transfer_result.transfer_id is None:
+            return JSONResponse(
+                {"ok": False, "error": "перемещение создано без номера партии"}, status_code=500
+            )
+        transit_batch = db.get_ff_transit_batch(transfer_result.transfer_id, connection=uow.connection)
+        if transit_batch is None:
+            return JSONResponse(
+                {"ok": False, "error": "не удалось прочитать созданную партию перемещения"}, status_code=500
+            )
+        moved = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
+        skipped_note = "; ".join(f"{item.article} x{item.quantity}: {item.reason}" for item in skipped.root)
+        operation_note = " · ".join(
+            part for part in (note_text, f"Не переведено: {skipped_note}" if skipped_note else "") if part
         )
 
-    results = transfer_result.moved
-    skipped = transfer_result.skipped
-    if transfer_result.transfer_id is None:
-        return JSONResponse(
-            {"ok": False, "error": "перемещение создано без номера партии"},
-            status_code=500,
-        )
-    transit_batch = await run_in_threadpool(db.get_ff_transit_batch, transfer_result.transfer_id)
-    if transit_batch is None:
-        return JSONResponse(
-            {"ok": False, "error": "не удалось прочитать созданную партию перемещения"},
-            status_code=500,
-        )
-    moved = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
-    skipped_note = "; ".join(f"{item.article} x{item.quantity}: {item.reason}" for item in skipped.root)
-    operation_note = " · ".join(
-        part for part in (note_text, f"Не переведено: {skipped_note}" if skipped_note else "") if part
-    )
-
-    def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
             store_slug=slug.lower(),
@@ -536,19 +602,19 @@ async def transfer_ff_stock(
             to_marketplace=to_marketplace.value,
             note=operation_note or None,
             transit_batch_id=transfer_result.transfer_id,
+            connection=uow.connection,
         )
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
             "Отправлено перемещение между фулфилментами",
-            f"{store.name} · {from_fulfillment}/{from_marketplace.value} -> "
-            f"{to_fulfillment}/{to_marketplace.value} · {moved}"
+            f"{store.name} · {from_fulfillment}/{from_marketplace.value} -> {to_fulfillment}/{to_marketplace.value} · {moved}"
             + (f" · {note_text}" if note_text else "")
             + (f" · не переведено: {skipped_note}" if skipped_note else ""),
             now,
             operation_id,
+            connection=uow.connection,
         )
-
         db.record_used_source(
             slug.lower(),
             source_kind,
@@ -558,18 +624,35 @@ async def transfer_ff_stock(
             operation_id,
             actor.full_name,
             now,
+            connection=uow.connection,
+        )
+        return JSONResponse(
+            {
+                "ok": True,
+                "transfer_id": transfer_result.transfer_id,
+                "status": "in_transit",
+                "results": results.model_dump(mode="json"),
+                "skipped": skipped.model_dump(mode="json"),
+            }
         )
 
-    await run_in_threadpool(_record)
-
-    return JSONResponse(
+    return await _run_stock_mutation(
+        request,
+        slug,
+        stock,
         {
-            "ok": True,
-            "transfer_id": transfer_result.transfer_id,
-            "status": "in_transit",
-            "results": results.model_dump(mode="json"),
-            "skipped": skipped.model_dump(mode="json"),
-        }
+            "action": "transfer_ff_stock",
+            "from_fulfillment": from_fulfillment,
+            "from_marketplace": from_marketplace,
+            "to_fulfillment": to_fulfillment,
+            "to_marketplace": to_marketplace,
+            "note": note,
+            "items": items,
+            "sheet_url": sheet_url,
+            "file_name": file.filename if file else None,
+            "file_hash": hashlib.sha256(file_bytes).hexdigest() if file_bytes is not None else None,
+        },
+        _mutate,
     )
 
 
@@ -654,54 +737,58 @@ async def receive_in_transit_transfer(
             status_code=403,
         )
 
-    try:
-        result = await run_in_threadpool(
-            stock.receive_transfer,
-            ReceiveTransitCommand(
-                transfer_id=transfer_id,
-                request=payload,
-                user_id=actor.id,
-                user_name=actor.full_name,
-            ),
+    def _mutate(uow):
+        try:
+            result = stock.receive_transfer(
+                ReceiveTransitCommand(
+                    transfer_id=transfer_id, request=payload, user_id=actor.id, user_name=actor.full_name
+                ),
+                unit_of_work=uow,
+            )
+        except StockValidationError as error:
+            return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        now = _now_iso()
+        items = result.moved.model_dump(mode="json")
+        operation_id = db.record_operation(
+            store_slug,
+            "transfer_receive",
+            "manual",
+            items,
+            actor.id,
+            actor.full_name,
+            now,
+            from_fulfillment=f"В пути №{transfer_id}",
+            from_marketplace=batch["from_marketplace"],
+            to_fulfillment=batch["to_fulfillment"],
+            to_marketplace=batch["to_marketplace"],
+            note=payload.note.strip() or None,
+            transit_batch_id=transfer_id,
+            connection=uow.connection,
         )
-    except StockValidationError as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        moved = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
+        db.log_action_for_operation(
+            actor.id,
+            actor.full_name,
+            "Принято перемещение между фулфилментами",
+            f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved}",
+            now,
+            operation_id,
+            connection=uow.connection,
+        )
+        return JSONResponse(
+            {"ok": True, "transfer_id": transfer_id, "status": result.status, "results": items}
+        )
 
-    now = _now_iso()
-    items = result.moved.model_dump(mode="json")
-    operation_id = await run_in_threadpool(
-        db.record_operation,
-        store_slug,
-        "transfer_receive",
-        "manual",
-        items,
-        actor.id,
-        actor.full_name,
-        now,
-        from_fulfillment=f"В пути №{transfer_id}",
-        from_marketplace=batch["from_marketplace"],
-        to_fulfillment=batch["to_fulfillment"],
-        to_marketplace=batch["to_marketplace"],
-        note=payload.note.strip() or None,
-        transit_batch_id=transfer_id,
-    )
-    moved = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
-    await run_in_threadpool(
-        db.log_action_for_operation,
-        actor.id,
-        actor.full_name,
-        "Принято перемещение между фулфилментами",
-        f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved}",
-        now,
-        operation_id,
-    )
-    return JSONResponse(
+    return await _run_stock_mutation(
+        request,
+        slug,
+        stock,
         {
-            "ok": True,
+            "action": "receive_in_transit_transfer",
             "transfer_id": transfer_id,
-            "status": result.status,
-            "results": items,
-        }
+            "payload": payload.model_dump(mode="json"),
+        },
+        _mutate,
     )
 
 
@@ -732,55 +819,59 @@ async def reopen_received_transfer(
             status_code=403,
         )
 
-    try:
-        result = await run_in_threadpool(
-            stock.reopen_transfer,
-            ReopenTransitCommand(
-                transfer_id=transfer_id,
-                request=payload,
-                user_id=actor.id,
-                user_name=actor.full_name,
-            ),
+    def _mutate(uow):
+        try:
+            result = stock.reopen_transfer(
+                ReopenTransitCommand(
+                    transfer_id=transfer_id, request=payload, user_id=actor.id, user_name=actor.full_name
+                ),
+                unit_of_work=uow,
+            )
+        except StockValidationError as error:
+            return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        now = _now_iso()
+        moved_items = result.moved.model_dump(mode="json")
+        operation_items = [item | {"quantity": -abs(int(item["quantity"]))} for item in moved_items]
+        operation_id = db.record_operation(
+            store_slug,
+            "transfer_receive_revert",
+            "manual",
+            operation_items,
+            actor.id,
+            actor.full_name,
+            now,
+            from_fulfillment=batch["to_fulfillment"],
+            from_marketplace=batch["to_marketplace"],
+            to_fulfillment=f"В пути №{transfer_id}",
+            to_marketplace=batch["to_marketplace"],
+            note=payload.reason,
+            transit_batch_id=transfer_id,
+            connection=uow.connection,
         )
-    except StockValidationError as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        moved = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
+        db.log_action_for_operation(
+            actor.id,
+            actor.full_name,
+            "Приёмка перемещения возвращена в путь",
+            f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved} · {payload.reason}",
+            now,
+            operation_id,
+            connection=uow.connection,
+        )
+        return JSONResponse(
+            {"ok": True, "transfer_id": transfer_id, "status": result.status, "results": moved_items}
+        )
 
-    now = _now_iso()
-    moved_items = result.moved.model_dump(mode="json")
-    operation_items = [item | {"quantity": -abs(int(item["quantity"]))} for item in moved_items]
-    operation_id = await run_in_threadpool(
-        db.record_operation,
-        store_slug,
-        "transfer_receive_revert",
-        "manual",
-        operation_items,
-        actor.id,
-        actor.full_name,
-        now,
-        from_fulfillment=batch["to_fulfillment"],
-        from_marketplace=batch["to_marketplace"],
-        to_fulfillment=f"В пути №{transfer_id}",
-        to_marketplace=batch["to_marketplace"],
-        note=payload.reason,
-        transit_batch_id=transfer_id,
-    )
-    moved = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
-    await run_in_threadpool(
-        db.log_action_for_operation,
-        actor.id,
-        actor.full_name,
-        "Приёмка перемещения возвращена в путь",
-        f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved} · {payload.reason}",
-        now,
-        operation_id,
-    )
-    return JSONResponse(
+    return await _run_stock_mutation(
+        request,
+        slug,
+        stock,
         {
-            "ok": True,
+            "action": "reopen_received_transfer",
             "transfer_id": transfer_id,
-            "status": result.status,
-            "results": moved_items,
-        }
+            "payload": payload.model_dump(mode="json"),
+        },
+        _mutate,
     )
 
 
@@ -808,54 +899,58 @@ async def cancel_in_transit_transfer(
             status_code=403,
         )
 
-    try:
-        result = await run_in_threadpool(
-            stock.cancel_transfer,
-            CancelTransitCommand(
-                transfer_id=transfer_id,
-                request=payload,
-                user_id=actor.id,
-                user_name=actor.full_name,
-            ),
+    def _mutate(uow):
+        try:
+            result = stock.cancel_transfer(
+                CancelTransitCommand(
+                    transfer_id=transfer_id, request=payload, user_id=actor.id, user_name=actor.full_name
+                ),
+                unit_of_work=uow,
+            )
+        except StockValidationError as error:
+            return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        now = _now_iso()
+        items = result.moved.model_dump(mode="json")
+        operation_id = db.record_operation(
+            store_slug,
+            "transfer_cancel",
+            "manual",
+            items,
+            actor.id,
+            actor.full_name,
+            now,
+            from_fulfillment=f"В пути №{transfer_id}",
+            from_marketplace=batch["to_marketplace"],
+            to_fulfillment=batch["from_fulfillment"],
+            to_marketplace=batch["from_marketplace"],
+            note=payload.reason,
+            transit_batch_id=transfer_id,
+            connection=uow.connection,
         )
-    except StockValidationError as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        returned = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
+        db.log_action_for_operation(
+            actor.id,
+            actor.full_name,
+            "Отменено перемещение между фулфилментами",
+            f"{STORES[store_slug]['name']} · партия №{transfer_id} · возвращено: {returned}",
+            now,
+            operation_id,
+            connection=uow.connection,
+        )
+        return JSONResponse(
+            {"ok": True, "transfer_id": transfer_id, "status": result.status, "results": items}
+        )
 
-    now = _now_iso()
-    items = result.moved.model_dump(mode="json")
-    operation_id = await run_in_threadpool(
-        db.record_operation,
-        store_slug,
-        "transfer_cancel",
-        "manual",
-        items,
-        actor.id,
-        actor.full_name,
-        now,
-        from_fulfillment=f"В пути №{transfer_id}",
-        from_marketplace=batch["to_marketplace"],
-        to_fulfillment=batch["from_fulfillment"],
-        to_marketplace=batch["from_marketplace"],
-        note=payload.reason,
-        transit_batch_id=transfer_id,
-    )
-    returned = ", ".join(f"{item.article} x{item.quantity}" for item in result.moved.root)
-    await run_in_threadpool(
-        db.log_action_for_operation,
-        actor.id,
-        actor.full_name,
-        "Отменено перемещение между фулфилментами",
-        f"{STORES[store_slug]['name']} · партия №{transfer_id} · возвращено: {returned}",
-        now,
-        operation_id,
-    )
-    return JSONResponse(
+    return await _run_stock_mutation(
+        request,
+        slug,
+        stock,
         {
-            "ok": True,
+            "action": "cancel_in_transit_transfer",
             "transfer_id": transfer_id,
-            "status": result.status,
-            "results": items,
-        }
+            "payload": payload.model_dump(mode="json"),
+        },
+        _mutate,
     )
 
 
@@ -910,51 +1005,45 @@ async def ship_ff_stock(
     source_type, source_name = _source_of(file, file_bytes, sheet_url)
     label = source_name or sheet_url.strip() or "ручной ввод"
 
-    fingerprint, used_error = await run_in_threadpool(
-        _guard_used_source,
-        slug.lower(),
-        source_kind,
-        source_type,
-        sheet_url,
-        file_bytes,
-        label,
-    )
-    if used_error:
-        return JSONResponse({"ok": False, "error": used_error}, status_code=400)
-
-    try:
-        if file_bytes is not None:
-            raw_entries = await run_in_threadpool(ff_shipment.entries_from_xlsx, file_bytes)
-        elif sheet_url.strip():
-            raw_entries = await run_in_threadpool(ff_shipment.entries_from_sheet, sheet_url.strip())
-        else:
-            try:
-                raw_entries = SignedStockEntries.model_validate_json(items or "[]")
-            except ValidationError:
-                return JSONResponse({"ok": False, "error": "неверный формат позиций"}, status_code=400)
-
-        command = ShipmentCommand(
-            store_slug=slug.lower(),
-            entries=raw_entries,
-            fulfillment=fulfillment,
-            marketplace=marketplace,
-            to_trash=trash,
+    def _mutate(uow):
+        fingerprint, used_error = _guard_used_source(
+            slug.lower(),
+            source_kind,
+            source_type,
+            sheet_url,
+            file_bytes,
+            label,
+            connection=uow.connection,
         )
-        results = await run_in_threadpool(
-            stock.register_fbs_transfer if fbs_transfer else stock.ship,
-            command,
-        )
-    except (ff_stock_import.FFImportError, StockValidationError) as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-    except Exception:
-        logger.exception("Отгрузка стока (%s) упала", slug)
-        return JSONResponse(
-            {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
-        )
+        if used_error:
+            return JSONResponse({"ok": False, "error": used_error}, status_code=400)
+        try:
+            if file_bytes is not None:
+                raw_entries = ff_shipment.entries_from_xlsx(file_bytes)
+            elif sheet_url.strip():
+                raw_entries = ff_shipment.entries_from_sheet(sheet_url.strip())
+            else:
+                try:
+                    raw_entries = SignedStockEntries.model_validate_json(items or "[]")
+                except ValidationError:
+                    return JSONResponse({"ok": False, "error": "неверный формат позиций"}, status_code=400)
+            command = ShipmentCommand(
+                store_slug=slug.lower(),
+                entries=raw_entries,
+                fulfillment=fulfillment,
+                marketplace=marketplace,
+                to_trash=trash,
+            )
+            results = (stock.register_fbs_transfer if fbs_transfer else stock.ship)(command, unit_of_work=uow)
+        except (ff_stock_import.FFImportError, StockValidationError) as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        except Exception:
+            logger.exception("Отгрузка стока (%s) упала", slug)
+            return JSONResponse(
+                {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
+            )
+        shipped = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
 
-    shipped = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
-
-    def _record() -> None:
         now = _now_iso()
         operation_id = db.record_operation(
             store_slug=slug.lower(),
@@ -968,18 +1057,20 @@ async def ship_ff_stock(
             sheet_url=sheet_url.strip() or None,
             from_fulfillment=fulfillment.strip(),
             from_marketplace=marketplace.value,
-            to_fulfillment="Мусорка" if trash else ("FBS" if fbs_transfer else None),
-            to_marketplace=marketplace.value if (trash or fbs_transfer) else None,
+            to_fulfillment="Мусорка" if trash else "FBS" if fbs_transfer else None,
+            to_marketplace=marketplace.value if trash or fbs_transfer else None,
             note=note_text,
+            connection=uow.connection,
         )
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            ("Списание в мусорку" if trash else ("Перемещение на FBS" if fbs_transfer else "Отгрузка стока")),
+            "Списание в мусорку" if trash else "Перемещение на FBS" if fbs_transfer else "Отгрузка стока",
             f"{store.name} · {fulfillment}/{marketplace.value} · {shipped}"
             + (f" · {note_text}" if note_text else ""),
             now,
             operation_id,
+            connection=uow.connection,
         )
         db.record_used_source(
             slug.lower(),
@@ -990,8 +1081,25 @@ async def ship_ff_stock(
             operation_id,
             actor.full_name,
             now,
+            connection=uow.connection,
         )
+        return JSONResponse({"ok": True, "results": results.model_dump(mode="json")})
 
-    await run_in_threadpool(_record)
-
-    return JSONResponse({"ok": True, "results": results.model_dump(mode="json")})
+    return await _run_stock_mutation(
+        request,
+        slug,
+        stock,
+        {
+            "action": "ship_ff_stock",
+            "fulfillment": fulfillment,
+            "marketplace": marketplace,
+            "note": note,
+            "to_fbs": to_fbs,
+            "to_trash": to_trash,
+            "items": items,
+            "sheet_url": sheet_url,
+            "file_name": file.filename if file else None,
+            "file_hash": hashlib.sha256(file_bytes).hexdigest() if file_bytes is not None else None,
+        },
+        _mutate,
+    )

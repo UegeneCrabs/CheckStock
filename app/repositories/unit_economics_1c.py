@@ -899,7 +899,12 @@ def get_daily_margin_snapshots(
         (*store_slugs, date_from, date_to),
     ).fetchall()
     conn.close()
-    return [dict(row) for row in rows]
+    from app.repositories import daily_economics
+
+    result = {(row["store_slug"], row["article"], row["day"]): dict(row) for row in rows}
+    for row in daily_economics.records("WB", store_slugs, date_from, date_to):
+        result[(row["store_slug"], row["article"], row["day"])] = daily_economics.wb_report_row(row)
+    return list(result.values())
 
 
 def get_latest_reliable_spp_prices(store_slug: str) -> list[dict]:
@@ -1068,12 +1073,18 @@ def replace_daily_advertising(
                         for row in rows
                     ),
                 )
+            from app.repositories.economics_coverage import mark_loaded
+
+            mark_loaded(conn, store_slug, "advertising", date_from, date_to)
             conn.commit()
         except Exception:
             conn.rollback()
             raise
         finally:
             conn.close()
+    from app.economics.daily_metrics import refresh_wb
+
+    refresh_wb((store_slug,), date_from, date_to)
     return len(rows)
 
 

@@ -3,7 +3,7 @@
 <!-- endtemplate -->
 
 <!-- template: body -->
-<div class="import-report-summary"><span><strong>{{source_quantity}}</strong>шт. {{content}}</span><span><strong>{{added_quantity}}</strong>шт. будет внесено</span></div><p><strong>Колонка:</strong> ФФ для распределения {{marketplace}}</p>{{{unmatchedNote}}}<p>Убедитесь, что количество в источнике и количество к внесению верны. Если цифры не совпадают с ожидаемыми, нажмите «ОТМЕНА».</p>
+<div class="import-report-summary"><span><strong>{{source_quantity}}</strong>шт. {{content}}</span><span><strong>{{added_quantity}}</strong>шт. будет внесено</span></div><p><strong>Колонка:</strong> ФФ для распределения {{marketplace}}</p>{{{unmatchedNote}}}<p>Всё количество к внесению прибавится к текущим остаткам. Повторная загрузка того же файла или таблицы добавит его ещё раз.</p><p>Проверьте количество и состав поставки. Если цифры неверны или поставка уже внесена, нажмите «ОТМЕНА».</p>
 <!-- endtemplate -->
 
 <!-- template: visible -->
@@ -19,7 +19,7 @@
 <!-- endtemplate -->
 
 <!-- template: body-html-2 -->
-<div class="import-report-summary"><span><strong>{{{added_quantity}}}</strong>шт. добавлено</span><span><strong>{{{applied}}}</strong>поз. изменено</span><span><strong>{{{length}}}</strong>без изменений</span></div>{{{content}}}{{{content_2}}}{{{content_3}}}{{{content_4}}}{{{content_5}}}{{{content_6}}}{{{content_7}}}
+<div class="import-report-summary"><span><strong>{{{added_quantity}}}</strong>шт. добавлено</span><span><strong>{{{applied}}}</strong>поз. пополнено</span></div>{{{content}}}{{{content_2}}}{{{content_3}}}
 <!-- endtemplate -->
 
 <!-- template: body-html -->

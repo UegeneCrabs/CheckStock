@@ -11,6 +11,7 @@ from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.ozon import api as ozon_api
 from app.ozon import tokens as ozon_tokens
+from app.repositories import sales as sales_repository
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 from app.yandex import api as yandex_api
@@ -508,21 +509,34 @@ def _sync_wb(store_slug: str, start: date, end: date) -> tuple[list[dict], list[
     return _merge_wb_lines(statistics_lines, fbs_lines), warnings
 
 
-def _sync_ozon(store_slug: str, start: date, end: date) -> tuple[list[dict], list[str]]:
+def _sync_ozon(
+    store_slug: str, start: date, end: date, *, strict_fbs: bool = False
+) -> tuple[list[dict], list[str]]:
     client_id, api_key = ozon_tokens.get_credentials(store_slug)
     lines: list[dict] = []
     warnings: list[str] = []
     for window_start, window_end in _windows(start, end, SOURCE_WINDOW_DAYS["OZON"]):
-        since = datetime.combine(window_start, time.min, tzinfo=UTC).isoformat().replace("+00:00", "Z")
-        to = datetime.combine(window_end, time.min, tzinfo=UTC).isoformat().replace("+00:00", "Z")
-        for scheme, loader in (
+        since = datetime.combine(window_start, time.min, tzinfo=MOSCOW).astimezone(UTC).isoformat()
+        to = (
+            datetime.combine(window_end, time.min, tzinfo=MOSCOW).astimezone(UTC) - timedelta(microseconds=1)
+        ).isoformat()
+        loaders = (
             ("fbo", ozon_api.get_fbo_postings),
             ("fbs", ozon_api.get_fbs_postings_v4),
-        ):
+        )
+        for scheme, loader in loaders:
+            if strict_fbs and scheme != "fbs":
+                continue
             try:
                 postings = loader(client_id, api_key, since, to)
-                lines.extend(_normalize_ozon(store_slug, postings, scheme))
+                lines.extend(
+                    _fbs_snapshot_lines(store_slug, "OZON", postings)
+                    if strict_fbs
+                    else _normalize_ozon(store_slug, postings, scheme)
+                )
             except Exception as exc:
+                if strict_fbs:
+                    raise
                 warnings.append(
                     f"{scheme.upper()} {window_start:%d.%m}-{window_end:%d.%m}: {type(exc).__name__}: {exc}"
                 )
@@ -531,7 +545,7 @@ def _sync_ozon(store_slug: str, start: date, end: date) -> tuple[list[dict], lis
     return lines, warnings
 
 
-def _resolve_yandex_business_id(store_slug: str, api_key: str) -> int:
+def _resolve_yandex_business_id(store_slug: str, api_key: str, *, require_unique: bool = False) -> int:
     business_id = yandex_tokens.get_business_id(store_slug)
     if business_id:
         return business_id
@@ -545,12 +559,16 @@ def _resolve_yandex_business_id(store_slug: str, api_key: str) -> int:
     )
     if not ids:
         raise RuntimeError("Яндекс Маркет не вернул businessId кабинета")
+    if require_unique and len(ids) != 1:
+        raise FbsOrderRefreshError("Укажите business_id магазина: ключ ЯМ открывает несколько кабинетов")
     return ids[0]
 
 
-def _sync_yandex(store_slug: str, start: date, end: date) -> tuple[list[dict], list[str]]:
+def _sync_yandex(
+    store_slug: str, start: date, end: date, *, strict_fbs: bool = False
+) -> tuple[list[dict], list[str]]:
     api_key = yandex_tokens.get_api_key(store_slug)
-    business_id = _resolve_yandex_business_id(store_slug, api_key)
+    business_id = _resolve_yandex_business_id(store_slug, api_key, require_unique=strict_fbs)
     orders: list[dict] = []
     warnings: list[str] = []
     for window_start, window_end in _windows(start, end, SOURCE_WINDOW_DAYS["YANDEX MARKET"]):
@@ -564,10 +582,148 @@ def _sync_yandex(store_slug: str, start: date, end: date) -> tuple[list[dict], l
                 )
             )
         except Exception as exc:
+            if strict_fbs:
+                raise
             warnings.append(f"{window_start:%d.%m}-{window_end:%d.%m}: {type(exc).__name__}: {exc}")
     if not orders and warnings:
         raise RuntimeError("; ".join(warnings[:3]))
-    return _normalize_yandex(store_slug, orders), warnings
+    return (
+        _fbs_snapshot_lines(store_slug, "YANDEX MARKET", orders)
+        if strict_fbs
+        else _normalize_yandex(store_slug, orders)
+    ), warnings
+
+
+class FbsOrderRefreshError(RuntimeError):
+    """The requested order window cannot safely be published."""
+
+
+def _fbs_snapshot_lines(store_slug: str, marketplace: str, orders: list[dict]) -> list[dict]:
+    """Reuse sales identities/status rules, but only update fields supplied by the order API.
+
+    This refresh is for quantities/statuses, not an accounting or returns sync.
+    In particular v4 postings requested without financial data must not erase it.
+    """
+    yandex = marketplace == "YANDEX MARKET"
+    result: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for order in orders:
+        if not isinstance(order, dict):
+            raise ValueError("Некорректный заказ")
+        order_id = order.get("orderId") or order.get("id") if yandex else order.get("posting_number")
+        created = (
+            (order.get("creationDate") or order.get("createdAt"))
+            if yandex
+            else (order.get("created_at") or order.get("in_process_at"))
+        )
+        if not order_id or not str(order.get("status") or "").strip() or not created:
+            raise ValueError("В заказе отсутствуют обязательные поля")
+        # Do not let the permissive historical normalizers invent today's date.
+        datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+        if yandex and not order.get("programType"):
+            raise ValueError("В заказе отсутствует схема работы")
+        items = order.get("items" if yandex else "products")
+        if not isinstance(items, list) or not items:
+            raise ValueError("В заказе отсутствует состав товаров")
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("Некорректный товар заказа")
+            identity = (
+                (item.get("id") or item.get("marketSku") or item.get("offerId"))
+                if yandex
+                else (item.get("sku") or item.get("product_id") or item.get("offer_id"))
+            )
+            article = (
+                (item.get("offerId") or item.get("shopSku"))
+                if yandex
+                else (item.get("offer_id") or item.get("product_id"))
+            )
+            quantity = item.get("count" if yandex else "quantity")
+            if not identity or not str(article or "").strip() or isinstance(quantity, bool):
+                raise ValueError("В товаре отсутствуют обязательные поля")
+            if int(str(quantity)) < 0:
+                raise ValueError("Отрицательное количество товара")
+        normalized = (
+            _normalize_yandex(store_slug, [order])
+            if yandex
+            else (_normalize_ozon(store_slug, [order], "fbs"))
+        )
+        for line, item in zip(normalized, items, strict=True):
+            key = (line["order_key"], line["line_key"])
+            if key in seen:
+                raise ValueError("Повтор строки заказа в выгрузке")
+            seen.add(key)
+            fields = {
+                "store_slug",
+                "marketplace",
+                "order_key",
+                "line_key",
+                "external_order_id",
+                "scheme",
+                "status",
+                "article",
+                "ordered_at",
+                "quantity",
+                "cancelled_quantity",
+                "sold_quantity",
+            }
+            for target, source in (
+                ("substatus", order.get("substatus")),
+                (
+                    "source_updated_at",
+                    (order.get("updateDate") or order.get("updatedAt"))
+                    if yandex
+                    else (order.get("updated_at") or order.get("status_updated_at")),
+                ),
+                ("barcode", item.get("barcode")),
+                ("name", item.get("offerName") or item.get("name")),
+            ):
+                if source is not None:
+                    fields.add(target)
+            line = {field: line[field] for field in fields}
+            line["quantity"] = int(str(item["count" if yandex else "quantity"]))
+            for field in ("cancelled_quantity", "sold_quantity"):
+                line[field] = min(line[field], line["quantity"])
+            result.append(line)
+    return result
+
+
+def refresh_fbs_order_totals(
+    store_slug: str, marketplace: str, start: date, end: date, statuses: tuple[str, ...]
+) -> dict[str, int]:
+    """Fetch every page before reconciling the exact Moscow window and reading totals.
+
+    Returned totals belong to this validated snapshot: another job cannot change
+    them between the registry transaction and a Google publication.
+    """
+    if end <= start or marketplace not in {"OZON", "YANDEX MARKET"}:
+        raise ValueError("Некорректный период или маркетплейс FBS")
+    attempted_at = _now_iso()
+    try:
+        loader = _sync_ozon if marketplace == "OZON" else _sync_yandex
+        lines, warnings = loader(store_slug, start, end, strict_fbs=True)
+        if warnings:
+            raise ValueError("Загрузка завершилась с предупреждениями")
+        lines = [
+            line
+            for line in lines
+            if line["scheme"] == "fbs" and start.isoformat() <= line["ordered_at"][:10] < end.isoformat()
+        ]
+        return sales_repository.replace_fbs_order_period(
+            store_slug, marketplace, start.isoformat(), end.isoformat(), lines, attempted_at, statuses
+        )
+    except Exception as error:
+        # API errors can include credentials/response bodies. Never propagate them
+        # to export reports, Google, sync state or the exception logging chain.
+        status = getattr(error, "status", None)
+        detail = f"; HTTP {status}" if isinstance(status, int) else ""
+        if isinstance(error, FbsOrderRefreshError):
+            detail = f"; {error}"
+        raise FbsOrderRefreshError(
+            f"{store_slug} / {marketplace} / FBS [{start}, {end}) МСК: "
+            f"не удалось подтвердить полную загрузку заказов и актуальных статусов "
+            f"({type(error).__name__}{detail}). Выгрузка не опубликована; повторите обновление."
+        ) from None
 
 
 def _sync_store_range(

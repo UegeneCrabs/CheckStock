@@ -436,8 +436,8 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         BackgroundJob(
             "unit_economics_1c_daily_margin_snapshot_00_msk",
             unit_margin_history.save_daily_margin_snapshots,
-            _moscow_daily_delay(0),
-            startup_delay_seconds=_seconds_until_next_moscow_run(0),
+            _fixed_delay(30 * 60),
+            startup_delay_seconds=180,
             ready_event=catalog_ready,
             is_enabled=lambda: _job_enabled("unit_economics_1c_daily_margin_snapshot_00_msk"),
             run_callback=_save_daily_margin_configured,

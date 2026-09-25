@@ -131,13 +131,13 @@ def logistics_costs(values, *, version=VERSION):
     returns, buyout = amount("return_cost"), amount("buyout_percent")
     costs = {
         "delivery": amount("delivery_cost"),
-        "returns": returns * (1 - buyout / 100) if returns is not None and buyout is not None else None,
+        "returns": Decimal(0) if buyout == 100 or returns == 0 else returns * (1 - buyout / 100) if returns is not None and buyout is not None else None,
         "transit": amount("transit_cost"),
     }
     if version >= 13:
         delivery = amount("delivery_cost")
         costs["repeat_delivery"] = (
-            delivery * (1 - buyout / 100) if delivery is not None and buyout is not None else None
+            Decimal(0) if buyout == 100 or delivery == 0 else delivery * (1 - buyout / 100) if delivery is not None and buyout is not None else None
         )
         for field, cost in (("logistics_returns", "returns"), ("repeat_delivery", "repeat_delivery")):
             if values.get(field) is not None:
@@ -184,155 +184,112 @@ def calculate(
     Historical versions preserve their original formulas. With precise=True,
     margin stays a Decimal for finding a price without hiding fractional losses.
     """
+    from app.economics.completeness import annotate
+
     values = {**values, **sheet_logistics(values, scenario=scenario, version=version)}
     summary = calculator_summary(values, version=version)
-    if (
-        not without_advertising
-        and values.get("advertising_mode", "actual") == "actual"
-        and orders_count == 0
-        and advertising_spend is not None
-        and advertising_spend > 0
-    ):
-        return {
-            **summary,
-            "margin": money(-Decimal(str(advertising_spend))),
-            "roi": None,
-            "missing": [],
-            "messages": ["Сегодня нет заказов; текущий результат равен расходам на рекламу со знаком минус."],
-            "costs": {"advertising": money(advertising_spend)},
-            "calculation_version": version,
-            "basis": "ym_daily_without_orders",
-        }
-    required = [
-        "seller_price",
-        "buyer_price",
-        "purchase_price",
-        "commission_percent",
-        "payment_acceptance",
-        "acquiring_percent",
-        "delivery_cost",
-        "return_cost",
-        "transit_cost",
-        "company_commission_percent",
-        "vat_percent",
-        "usn_percent",
-        "loss_percent",
-        "disposal_cost",
-        "buyout_percent",
-    ]
-    if version >= 14:
-        required.append("fulfillment_cost")
-    if version >= 13:
-        if values.get("logistics_total") is not None:
-            required = [
-                key for key in required if key not in {"delivery_cost", "return_cost", "transit_cost"}
-            ]
-        elif values.get("logistics_returns") is not None:
-            required.remove("return_cost")
-    if not without_advertising and values.get("advertising_mode", "actual") in {"plan", "weekly"}:
-        required.append("advertising_per_buyout" if version >= 13 else "plan_drr")
-    missing = [key for key in required if values.get(key) is None]
-    if missing:
-        return {
-            **summary,
-            "margin": None,
-            "roi": None,
-            "missing": missing,
-            "messages": ["Не задано: " + LABELS.get(key, key) for key in missing],
-            "costs": {},
-        }
+    missing = []
 
     def d(key):
-        return Decimal(str(values.get(key, 0)))
+        value = values.get(key)
+        if value is None:
+            missing.append(key)
+        return Decimal(str(value)) if value is not None else None
 
-    price, purchase, q = d("seller_price"), d("purchase_price"), d("buyout_percent") / 100
-    advertising_buyout = q if q > 0 else Decimal(1)
+    def mul(left, right):
+        # A confirmed zero coefficient does not require an unrelated base.
+        if left == 0 or right == 0:
+            return Decimal(0)
+        return left * right if left is not None and right is not None else None
 
-    buyer = d("buyer_price")
-    vat = buyer * d("vat_percent") / (100 + d("vat_percent"))
-    usn = (buyer - vat) * d("usn_percent") / 100
+    def rate(key):
+        value = d(key)
+        return value / 100 if value is not None else None
+
+    price, purchase = d("seller_price"), d("purchase_price")
+    q = rate("buyout_percent")
+    vat_rate = d("vat_percent")
+    usn_rate = rate("usn_percent")
+    buyer = d("buyer_price") if vat_rate != 0 or usn_rate != 0 else values.get("buyer_price")
+    buyer = Decimal(str(buyer)) if buyer is not None else None
+    vat = Decimal(0) if vat_rate == 0 else buyer * vat_rate / (100 + vat_rate) if buyer is not None and vat_rate is not None else None
+    usn = mul(buyer - vat if buyer is not None and vat is not None else None, usn_rate)
+    loss_rate = rate("loss_percent")
     costs = {
-        "commission": price * d("commission_percent") / 100,
+        "commission": mul(price, rate("commission_percent")),
         "payment_acceptance": d("payment_acceptance"),
-        "acquiring": price * d("acquiring_percent") / 100,
-        **(
-            {"logistics": Decimal(str(values["logistics_total"]))}
-            if version >= 13 and values.get("logistics_total") is not None
-            else logistics_costs(values, version=version)
-        ),
+        "acquiring": mul(price, rate("acquiring_percent")),
         "purchase": purchase,
         **({"fulfillment": d("fulfillment_cost")} if version >= 14 else {}),
-        "company_commission": price * d("company_commission_percent") / 100,
-        "vat": vat,
-        "usn": usn,
-        "loss": (price if version < 12 else purchase) * d("loss_percent") / 100,
-        "disposal": d("disposal_cost") * (d("loss_percent") / 100 if version >= 13 else 1 - q),
+        "company_commission": mul(price, rate("company_commission_percent")),
+        "vat": vat, "usn": usn,
+        "loss": mul(price if version < 12 else purchase, loss_rate),
     }
+    disposal_factor = loss_rate if version >= 13 else (1 - q if q is not None else None)
+    costs["disposal"] = Decimal(0) if disposal_factor == 0 else mul(d("disposal_cost"), disposal_factor)
+    if version >= 13 and values.get("logistics_total") is not None:
+        costs["logistics"] = d("logistics_total")
+    else:
+        delivery = d("delivery_cost")
+        costs.update(delivery=delivery, transit=d("transit_cost"))
+        non_buyout = 1 - q if q is not None else None
+        costs["returns"] = d("logistics_returns") if version >= 13 and values.get("logistics_returns") is not None else Decimal(0) if non_buyout == 0 else mul(d("return_cost"), non_buyout)
+        if version >= 13:
+            costs["repeat_delivery"] = d("repeat_delivery") if values.get("repeat_delivery") is not None else mul(delivery, non_buyout)
     if without_advertising:
         advertising = Decimal(0)
     elif values.get("advertising_mode", "actual") in {"plan", "weekly"}:
-        advertising = (
-            d("advertising_per_buyout")
-            if version >= 13 and values.get("advertising_basis") != "drr"
-            else price * d("plan_drr") / 100 * (q if version >= 15 else 1)
-        )
-    elif advertising_spend is None or orders_count is None:
-        return {
-            **summary,
-            "margin": None,
-            "roi": None,
-            "missing": ["advertising"],
-            "messages": [
-                "Нет полной рекламы и заказов за сегодня. Для планового расчёта задайте «ДРР с выкупом» в калькуляторе."
-            ],
-            "costs": {key: money(value) for key, value in costs.items()},
-        }
-    elif orders_count <= 0:
+        if version >= 13 and values.get("advertising_basis") != "drr":
+            advertising = d("advertising_per_buyout")
+        else:
+            advertising = mul(mul(price, rate("plan_drr")), q if version >= 15 else Decimal(1))
+    elif advertising_spend == 0:
         advertising = Decimal(0)
     else:
-        advertising = Decimal(str(advertising_spend)) / Decimal(str(orders_count)) / advertising_buyout
+        if advertising_spend is None:
+            missing.append("advertising_spend")
+        if orders_count is None:
+            missing.append("orders_count")
+        advertising = Decimal(str(advertising_spend)) / Decimal(str(orders_count)) / q if advertising_spend is not None and orders_count and q else None
     costs["advertising"] = advertising
-    margin = price - sum(costs.values())
-    buyer = values.get("buyer_price")
-    return {
-        **summary,
-        "margin": margin if precise else money(margin),
-        "roi": money(margin / purchase * 100) if purchase > 0 else None,
-        "margin_percent": (
-            money(margin / Decimal(str(buyer)) * 100) if buyer and buyer > 0 else 0.0 if buyer == 0 else None
-        ),
-        "costs": {key: money(value) for key, value in costs.items()},
-        "total_cost": money(sum(costs.values())),
-        "missing": [],
-        "messages": [],
-        "calculation_version": version,
-        "basis": "ym_sheet_unit",
-    }
+    total = sum((value for value in costs.values() if value is not None), Decimal(0))
+    margin = price - total if price is not None and price > 0 else None
+    if margin is None and "seller_price" not in missing:
+        missing.append("seller_price")
+    # Retain the established current-day display for actual spend with no orders.
+    basis = "ym_sheet_unit"
+    if not without_advertising and values.get("advertising_mode", "actual") == "actual" and orders_count == 0 and advertising_spend is not None and advertising_spend > 0:
+        margin = -Decimal(str(advertising_spend))
+        missing = []
+        basis = "ym_daily_without_orders"
+    return annotate({
+        **summary, "margin": margin if precise else money(margin) if margin is not None else None,
+        "roi": money(margin / purchase * 100) if margin is not None and purchase and purchase > 0 and basis == "ym_sheet_unit" else None,
+        "margin_percent": money(margin / buyer * 100) if margin is not None and buyer and buyer > 0 and basis == "ym_sheet_unit" else None,
+        "costs": {key: money(value) if value is not None else None for key, value in costs.items()},
+        "total_cost": money(total), "calculation_version": version, "basis": basis,
+    }, missing)
 
 
 def daily_profit(values, orders_count, advertising_spend, baseline, version):
     """Calculate daily profit without the removed withdrawal fee."""
-    if baseline.get("margin") is None:
+    if orders_count is None:
+        return None
+    if orders_count == 0 or values.get("buyout_percent") == 0:
+        return money(-Decimal(str(advertising_spend))) if advertising_spend is not None else None
+    if baseline.get("margin") is None or values.get("buyout_percent") is None:
         return None
     bought = Decimal(str(orders_count)) * Decimal(str(values["buyout_percent"])) / 100
     if version < 10:
-        return round(baseline["margin"] * float(bought) - advertising_spend, 2)
-    if not bought:
-        return money(-Decimal(str(advertising_spend)))
-    result = calculate(
-        {**values, "advertising_mode": "actual"},
-        advertising_spend=advertising_spend,
-        orders_count=orders_count,
-        precise=True,
-        version=version,
-    )
-    return money(result["margin"] * bought) if result["margin"] is not None else None
+        return round(baseline["margin"] * float(bought) - (advertising_spend or 0), 2)
+    result = calculate(values, without_advertising=True, precise=True, version=version)
+    return money(result["margin"] * bought - Decimal(str(advertising_spend or 0)))
 
 
 def break_even_prices(values, *, scenario=None):
     """Keep current costs and price ratios; find a non-loss price in steps of 10 RUB."""
     initial = calculate(values, scenario=scenario, precise=True)
-    if initial["margin"] is None:
+    if initial["margin"] is None or initial.get("missing"):
         raise ValueError("Для цены без убытка не хватает данных. " + " ".join(initial["messages"]))
     seller = Decimal(str(values["seller_price"]))
     if seller <= 0:
@@ -370,31 +327,6 @@ def break_even_prices(values, *, scenario=None):
 
 
 def aggregate(days, expected_dates):
-    """Use the same saved days for profit and invested purchase cost, including partial periods."""
-    expected_dates = sorted(set(expected_dates))
-    present = {row["day"]: row for row in days}
-    known = [present[day] for day in expected_dates if day in present]
-    covered = [
-        row for row in known if row.get("profit") is not None and row.get("purchase_value") is not None
-    ]
-    dates = [row["day"] for row in covered]
-    missing = sorted(set(expected_dates).difference(dates))
-    profit = sum(Decimal(str(row["profit"])) for row in covered)
-    basis = sum(Decimal(str(row["purchase_value"])) for row in covered)
-    unallocated_ads = sum(float(row.get("advertising_spend") or 0) for row in known if row["day"] in missing)
-    return {
-        "margin": money(profit) if covered else None,
-        "roi": money(profit / basis * 100) if covered and basis > 0 else None,
-        "purchase_value": money(basis) if covered else None,
-        "coverage": {
-            "dates": dates,
-            "days": len(covered),
-            "expected_days": len(expected_dates),
-            "complete": not missing,
-            "period_from": dates[0] if dates else None,
-            "period_to": dates[-1] if dates else None,
-            "missing_dates": missing,
-        },
-        "unallocated_advertising": money(unallocated_ads),
-        "complete": not missing,
-    }
+    from app.economics.completeness import aggregate_days
+
+    return aggregate_days(days, expected_dates, money)

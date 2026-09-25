@@ -257,6 +257,8 @@ def get_business_orders(api_key: str, business_id: int, date_from: str, date_to:
 
     orders: list[dict] = []
     page_token = ""
+    seen_page_tokens: set[str] = set()
+    seen_orders: set[str] = set()
 
     while True:
         data = _request(
@@ -272,21 +274,27 @@ def get_business_orders(api_key: str, business_id: int, date_from: str, date_to:
             },
             params={"limit": 50, "pageToken": page_token},
         )
-        page = data.get("orders") or []
-        if not isinstance(page, list):
-            raise YandexApiError(None, f"неожиданный формат заказов Яндекса: {data!r}"[:300])
+        page = data.get("orders")
+        if not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
+            raise YandexApiError(None, "Яндекс не вернул список заказов")
+        for row in page:
+            order_id = str(row.get("orderId") or row.get("id") or "")
+            if not order_id or order_id in seen_orders:
+                raise YandexApiError(None, "Яндекс вернул заказ без идентификатора или повторил заказ")
+            seen_orders.add(order_id)
         orders.extend(page)
 
         paging = data.get("paging") or {}
-        page_token = str(paging.get("nextPageToken") or data.get("nextPageToken") or "")
-        if not page_token or not page:
+        if not isinstance(paging, dict):
+            raise YandexApiError(None, "Яндекс вернул некорректную пагинацию заказов")
+        page_token = _next_page_token({"paging": paging}, seen_page_tokens)
+        if not page_token:
             return orders
+        if not page:
+            raise YandexApiError(None, "Яндекс вернул пустую промежуточную страницу заказов")
 
         if len(orders) > 500_000:
-            logger.warning(
-                "Яндекс: прервали обход заказов кабинета %s на %s строках", business_id, len(orders)
-            )
-            return orders
+            raise YandexApiError(None, "Превышен предел обхода заказов Яндекса; выгрузка неполна")
 
 
 def get_fulfillment_warehouses(api_key: str) -> list[dict]:

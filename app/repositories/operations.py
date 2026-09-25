@@ -1,3 +1,4 @@
+from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.core import get_connection
 
 OPERATION_LABELS = {
@@ -37,10 +38,11 @@ def record_operation(
     to_marketplace: str | None = None,
     note: str | None = None,
     transit_batch_id: int | None = None,
+    *,
+    connection: DatabaseConnection | None = None,
 ) -> int:
 
-    conn = get_connection()
-    try:
+    with repository_connection(connection) as conn:
         price_rows = conn.execute(
             """
             SELECT items.article, items.barcode, source.purchase_price
@@ -104,21 +106,22 @@ def record_operation(
                     i.get("name"),
                     int(i.get("quantity") or 0),
                     (
-                        float(i["purchase_price"])
-                        if i.get("purchase_price") is not None
-                        else price_by_article.get(
-                            str(i.get("article") or ""),
-                            price_by_barcode.get(str(i.get("barcode") or "")),
+                        None
+                        if transit_batch_id is not None and i.get("purchase_price") is None
+                        else (
+                            float(i["purchase_price"])
+                            if i.get("purchase_price") is not None
+                            else price_by_article.get(
+                                str(i.get("article") or ""),
+                                price_by_barcode.get(str(i.get("barcode") or "")),
+                            )
                         )
                     ),
                 )
                 for i in items
             ],
         )
-        conn.commit()
         return operation_id
-    finally:
-        conn.close()
 
 
 def get_operation(operation_id: int) -> dict | None:
@@ -201,13 +204,13 @@ def log_action_for_operation(
     details: str,
     created_at: str,
     operation_id: int | None = None,
+    *,
+    connection: DatabaseConnection | None = None,
 ) -> None:
 
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO activity_log (user_id, user_name, action, details, created_at, operation_id) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, user_name, action, details, created_at, operation_id),
-    )
-    conn.commit()
-    conn.close()
+    with repository_connection(connection) as conn:
+        conn.execute(
+            "INSERT INTO activity_log (user_id, user_name, action, details, created_at, operation_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, user_name, action, details, created_at, operation_id),
+        )

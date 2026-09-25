@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
 from datetime import date, datetime, time, timedelta
 
 from app import db
@@ -12,6 +13,7 @@ from app.core.stores import STORES
 from app.exports import stock_sheet_inbound
 from app.ff_import import google_service_account
 from app.repositories import stock_sheet_export as repository
+from app.stock import sales
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
@@ -81,6 +83,14 @@ StockSheetExportSettings = repository.StockSheetExportSettings
 
 class StockSheetExportError(RuntimeError):
     pass
+
+
+@dataclass
+class _FbsExportRun:
+    now: datetime
+    totals: dict[tuple[str, str, date, date], dict[str, int] | Exception] = dataclass_field(
+        default_factory=dict
+    )
 
 
 def _default_targets() -> tuple[ExportTarget, ...]:
@@ -348,25 +358,25 @@ def _wb_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[s
 
 
 def _ozon_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
-    """Get persisted Ozon FBS units in the configured export statuses."""
+    """Refresh and read Ozon FBS units in the configured export statuses."""
     start, end = fbs_completed_period(now)
-    return db.get_fbs_order_totals_for_period(
+    return sales.refresh_fbs_order_totals(
         store_slug,
         "OZON",
-        start.isoformat(),
-        end.isoformat(),
+        start,
+        end,
         tuple(sorted(OZON_FBS_EXPORT_STATUSES)),
     )
 
 
 def _yandex_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
-    """Get persisted Yandex Market FBS units in the configured export statuses."""
+    """Refresh and read Yandex Market FBS units in the configured export statuses."""
     start, end = fbs_completed_period(now)
-    return db.get_fbs_order_totals_for_period(
+    return sales.refresh_fbs_order_totals(
         store_slug,
         "YANDEX MARKET",
-        start.isoformat(),
-        end.isoformat(),
+        start,
+        end,
         tuple(sorted(YANDEX_FBS_EXPORT_STATUSES)),
     )
 
@@ -735,7 +745,10 @@ def _combined_fbs_order_totals(
     marketplace: str,
     *,
     now: datetime | None = None,
+    run: _FbsExportRun | None = None,
 ) -> dict[str, int]:
+    run = run or _FbsExportRun(now or datetime.now(MOSCOW_TIMEZONE))
+    start, end = fbs_completed_period(run.now)
     combined: dict[str, int] = {}
     article_by_key: dict[str, str] = {}
     loader = {
@@ -744,7 +757,16 @@ def _combined_fbs_order_totals(
         "YANDEX MARKET": _yandex_fbs_order_totals,
     }[marketplace]
     for store_slug in store_slugs:
-        for raw_article, raw_quantity in loader(store_slug, now).items():
+        cache_key = (store_slug, marketplace, start, end)
+        if cache_key not in run.totals:
+            try:
+                run.totals[cache_key] = loader(store_slug, run.now)
+            except Exception as error:
+                run.totals[cache_key] = error
+        totals = run.totals[cache_key]
+        if isinstance(totals, Exception):
+            raise StockSheetExportError(str(totals)) from None
+        for raw_article, raw_quantity in totals.items():
             article = str(raw_article or "").strip()
             quantity = int(raw_quantity or 0)
             if not article or quantity <= 0:
@@ -935,7 +957,10 @@ def export_store(
     *,
     marketplace: str | None = None,
     export_kind: str | None = None,
+    _fbs_run: _FbsExportRun | None = None,
 ) -> dict:
+    _fbs_run = _fbs_run or _FbsExportRun(now or datetime.now(MOSCOW_TIMEZONE))
+    now = _fbs_run.now
     if marketplace is not None and marketplace not in repository.MARKETPLACES:
         raise ValueError("Неизвестный маркетплейс")
     if export_kind is not None and export_kind not in EXPORT_KINDS:
@@ -978,6 +1003,13 @@ def export_store(
 
         spreadsheet_id = _spreadsheet_id(settings.spreadsheet_url_for(current_marketplace))
         spreadsheet_ids[current_marketplace] = spreadsheet_id
+        # Validate every store (including companions) before any Google writes
+        # for this publication, including the adjacent stock/timestamp updates.
+        if include_orders:
+            order_store_slugs = _stores_for_destination(
+                settings, current_marketplace, known_settings, "fbs_orders"
+            )
+            order_totals = _combined_fbs_order_totals(order_store_slugs, current_marketplace, run=_fbs_run)
         if include_stocks:
             combined_store_slugs = _stores_for_destination(
                 settings,
@@ -1012,17 +1044,6 @@ def export_store(
             }
 
         if include_orders:
-            order_store_slugs = _stores_for_destination(
-                settings,
-                current_marketplace,
-                known_settings,
-                "fbs_orders",
-            )
-            order_totals = _combined_fbs_order_totals(
-                order_store_slugs,
-                current_marketplace,
-                now=now,
-            )
             try:
                 orders_report = _write_fbs_orders(
                     google_service(),
@@ -1062,7 +1083,10 @@ def run_store(
     *,
     marketplace: str | None = None,
     export_kind: str | None = None,
+    _fbs_run: _FbsExportRun | None = None,
 ) -> dict:
+    _fbs_run = _fbs_run or _FbsExportRun(now or datetime.now(MOSCOW_TIMEZONE))
+    now = _fbs_run.now
     if marketplace is not None or export_kind is not None:
         logger.info(
             "stock_sheet_export_scoped_started store=%s marketplace=%s export_kind=%s",
@@ -1075,6 +1099,7 @@ def run_store(
             now,
             marketplace=marketplace,
             export_kind=export_kind,
+            _fbs_run=_fbs_run,
         )
         exported_times = [
             str(part["exported_at"])
@@ -1101,6 +1126,7 @@ def run_store(
             now,
             marketplace=marketplace,
             export_kind=export_kind,
+            _fbs_run=_fbs_run,
         )
     except Exception as error:
         message = f"{type(error).__name__}: {error}"[:2000]
@@ -1131,6 +1157,7 @@ def run_due(
     store_slugs: tuple[str, ...] | None = None,
 ) -> dict[str, dict]:
     current = now or datetime.now(MOSCOW_TIMEZONE)
+    fbs_run = _FbsExportRun(current)
     allowed_stores = set(STORES if store_slugs is None else store_slugs)
     report: dict[str, dict] = {}
     for settings in list_settings():
@@ -1139,7 +1166,10 @@ def run_due(
         if not is_due(settings, current):
             continue
         try:
-            report[settings.store_slug] = {"ok": True, "report": run_store(settings.store_slug, current)}
+            report[settings.store_slug] = {
+                "ok": True,
+                "report": run_store(settings.store_slug, current, _fbs_run=fbs_run),
+            }
         except Exception as error:
             report[settings.store_slug] = {
                 "ok": False,
@@ -1147,5 +1177,6 @@ def run_due(
             }
     failed_stores = [store_slug for store_slug, item in report.items() if not item["ok"]]
     if failed_stores:
-        raise StockSheetExportError("Не выполнена выгрузка магазинов: " + ", ".join(failed_stores))
+        details = "; ".join(f"{slug}: {report[slug]['error']}" for slug in failed_stores)
+        raise StockSheetExportError("Не выполнена выгрузка магазинов: " + details)
     return report

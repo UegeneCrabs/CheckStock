@@ -9,7 +9,8 @@ from app.repositories import unit_economics_yandex as metrics
 from app.repositories import yandex_economics as repository
 from app.yandex import economics
 from app.yandex import economics_shared as shared
-from app.yandex.economics_calculation import VERSION, calculate, daily_profit
+from app.yandex.economics_calculation import VERSION
+from app.yandex.economics_days import resolve_day
 
 
 def product_history(store, article, scheme, *, today=None):
@@ -18,7 +19,7 @@ def product_history(store, article, scheme, *, today=None):
     start, end = (today - timedelta(days=20)).isoformat(), today.isoformat()
     history = shared.history(
         repository.history(
-            store, (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat()
+            store, (today - timedelta(days=30)).isoformat(), today.isoformat()
         ),
         article,
     )
@@ -42,11 +43,7 @@ def product_history(store, article, scheme, *, today=None):
     )
     cache = economics.context(store)
     current = economics.current_inputs(store, article, scheme, today=today, state_cache=cache)
-    live = {
-        "values": current["values"],
-        "result": calculate(current["values"], without_advertising=True),
-        "version": VERSION,
-    }
+    live = {"inputs": current["values"], "calculation_version": VERSION}
     chart = []
     for day in metrics.days_between(start, end):
         saved = closed.get(day, {})
@@ -55,36 +52,12 @@ def product_history(store, article, scheme, *, today=None):
         )
         if snapshot.get("basis") not in {"today_prices", "today_observations"}:
             snapshot = {}
-        baseline = live if day == end else snapshot
-        inputs = saved.get("inputs") or baseline.get("values") or {}
+        baseline = live if day == end else {"inputs": snapshot.get("values") or {}, "calculation_version": snapshot.get("version") or VERSION}
+        resolved = resolve_day(day, saved or baseline, orders.get(day, {}), ads.get(day, {}), day in order_days, day in ads_days)
+        inputs = resolved["inputs"]
         buyout = inputs.get("buyout_percent")
-        if buyout is None:
-            buyout = current["values"].get("buyout_percent")
-
-        order = orders.get(day, {})
-        known_orders = day in order_days
-        count = int(order.get("orders_count", 0)) if known_orders else None
-        amount = float(order.get("orders_amount", 0)) if known_orders else None
-        spend = None
-        if day in ads_days:
-            total_spend = float(ads.get(day, {}).get("spend", 0))
-            spend = total_spend
-
-        profit = None
-        if saved:
-            # Closed daily economics are immutable, including their order/ad allocation.
-            profit = saved.get("profit")
-            count = saved.get("orders_count")
-            spend = saved.get("advertising_spend")
-        elif count is not None and spend is not None:
-            unit_margin = baseline.get("result", {}).get("margin")
-            saved_buyout = baseline.get("values", {}).get("buyout_percent")
-            if unit_margin is not None and saved_buyout is not None:
-                profit = daily_profit(
-                    baseline["values"], count, spend, baseline["result"], baseline.get("version", 9)
-                )
-            elif count == 0:
-                profit = round(-spend, 2)
+        count, spend, profit = resolved["orders_count"], resolved["advertising_spend"], resolved["profit"]
+        amount = float(orders.get(day, {}).get("orders_amount") or 0) if day in order_days else None
 
         stock = stocks.get(day, {})
         quantities = {}
@@ -106,6 +79,7 @@ def product_history(store, article, scheme, *, today=None):
                 if spend is not None and amount is not None and (buyout is not None or amount == 0)
                 else None,
                 "margin_rub": profit,
+                "margin_complete": resolved["complete"], "messages": resolved["messages"],
                 **quantities,
                 "stock_units": sum(available_stock) if available_stock else None,
             }

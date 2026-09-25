@@ -73,6 +73,10 @@ _SUMMARY_COLUMNS = (
     ("margin", "Маржа периода, ₽", 18, "money"),
     ("purchase_value", "Закупка периода, ₽", 18, "money"),
     ("roi", "ROI", 13, "percent"),
+    ("status", "Полнота расчёта", 24, "text"),
+    ("messages", "Не учтены / неизвестны (параметры и даты)", 65, "text"),
+    ("unavailable_days", "Дни без основы расчёта", 30, "text"),
+    ("roi_purchase_value", "Закупка в базе ROI, ₽", 24, "money"),
 )
 
 _SUMMARY_GROUPS = (
@@ -85,7 +89,7 @@ _SUMMARY_GROUPS = (
     (39, 45, "Логистика"),
     (46, 56, "Комиссии и хранение"),
     (57, 67, "Себестоимость и налоги"),
-    (68, 71, "Результат"),
+    (68, len(_SUMMARY_COLUMNS), "Результат"),
 )
 
 _DAILY_COLUMNS = (
@@ -144,6 +148,10 @@ _DAILY_CALCULATION_COLUMNS = (
     ("advertising_per_unit", "Реклама за 1 шт., ₽", 19, "money"),
     ("vat_value", "НДС, ₽", 14, "money"),
     ("usn_value", "УСН, ₽", 14, "money"),
+    ("day_profit", "Прибыль дня, ₽", 18, "money"),
+    ("day_purchase_value", "Закупка дня, ₽", 18, "money"),
+    ("status", "Полнота расчёта", 24, "text"),
+    ("messages", "Не учтены / неизвестны", 60, "text"),
 )
 
 
@@ -181,13 +189,13 @@ def _cell_value(row: dict, key: str, kind: str) -> object:
         value = daily_row.get(daily_key)
         return _cell_value({daily_key: value}, daily_key, kind)
     if key == "expected_buyouts":
-        return round(
-            float(row.get("orders_count") or 0) * float(row.get("buyout_percent") or 0) / 100,
-            2,
-        )
+        if key in row:
+            return _number(row[key])
+        count, percent = _number(row.get("orders_count")), _number(row.get("buyout_percent"))
+        return 0.0 if count == 0 else round(count * percent / 100, 2) if count is not None and percent is not None else None
     value = row.get(key)
     if kind == "text":
-        return str(value or "")
+        return "; ".join(str(item) for item in value) if isinstance(value, (list, tuple)) else str(value or "")
     if kind == "integer":
         number = _number(value)
         return int(number) if number is not None else None
@@ -283,7 +291,7 @@ def _build_summary(workbook, report: dict) -> None:
     sheet["A1"] = (
         "Отчёт по юниточной прибыли — по категориям"
         if report.get("group_by") == "subject"
-        else "Отчёт по юниточной прибыли — полный расчёт"
+        else "Отчёт по юниточной прибыли"
     )
     sheet["A1"].font = Font(name="Arial", size=16, bold=True, color="FFFFFF")
     sheet["A1"].fill = PatternFill("solid", fgColor="18233F")
@@ -304,11 +312,11 @@ def _build_summary(workbook, report: dict) -> None:
     sheet["A3"] = (
         "Источники: воронка продаж WB, рекламная статистика WB, текущие остатки и параметры "
         "юнит-экономики 1С. Маржа периода = сумма дневных произведений маржи на штуку "
-        "и заказов соответствующего дня; отмены показаны отдельно."
+        "и ожидаемых выкупов соответствующего дня минус реклама; отмены показаны отдельно."
     )
     if not bool((report.get("totals") or {}).get("margin_complete", True)):
         missing = ", ".join((report.get("totals") or {}).get("margin_missing_days") or [])
-        sheet["A3"] = f"{sheet['A3'].value} История маржи неполная{': ' + missing if missing else ''}."
+        sheet["A3"] = f"{sheet['A3'].value} Неполный расчёт{': ' + missing if missing else ''}. Параметры и охват — в отдельных колонках."
     sheet["A3"].font = Font(name="Arial", size=9, italic=True, color="6F7788")
     sheet["A3"].alignment = Alignment(vertical="center", horizontal="left", wrap_text=True)
     sheet.row_dimensions[3].height = 28
@@ -342,6 +350,7 @@ def _build_summary(workbook, report: dict) -> None:
     total_fill = PatternFill("solid", fgColor="E3DFFA")
     total_border = Border(top=Side(style="medium", color="6750D8"))
     total_values = {
+        "status": totals.get("status"), "messages": totals.get("messages"), "unavailable_days": totals.get("unavailable_days"),
         "name": "ИТОГО",
         "article": f"{len(rows)} {'кат.' if report.get('group_by') == 'subject' else 'поз.'}",
         "orders_count": totals.get("orders_count"),
@@ -367,6 +376,7 @@ def _build_summary(workbook, report: dict) -> None:
         "margin_orders_count": totals.get("margin_orders_count"),
         "margin": totals.get("margin"),
         "purchase_value": totals.get("purchase_value"),
+        "roi_purchase_value": totals.get("roi_purchase_value"),
         "roi": totals.get("roi"),
     }
     seen_keys: set[str] = set()

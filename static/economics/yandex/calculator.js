@@ -787,7 +787,7 @@
             parameters.querySelector('[data-ym-diagnostics]').textContent = r.messages.join(' ');
             message(
                 r.messages.length
-                    ? 'Не хватает данных для расчёта. Подробности — во вкладке «Параметры».'
+                    ? (r.margin === null ? 'Недостаточно данных. ' : 'Неполный расчёт. ') + r.messages.join(' ')
                     : '',
                 !!r.messages.length,
             );

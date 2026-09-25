@@ -374,6 +374,7 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
     marketplace = mp if mp in allowed_marketplaces else allowed_marketplaces[0]
     content = fill_template(
         "stock/store.html",
+        mutation_user_id=str(request.state.user.id),
         store_name=store["name"],
         slug=slug.lower(),
         ff_options=render_ff_options(),

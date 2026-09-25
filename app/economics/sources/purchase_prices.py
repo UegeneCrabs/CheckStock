@@ -360,7 +360,10 @@ def _sync_all(sheets: list[dict] | None = None) -> dict:
     loaded_sheets = sheets if sheets is not None else fetch_wb_sheet_rows()
     catalog = db.list_purchase_price_stock_items()
     report = parse_source_values(loaded_sheets, [item for item in catalog if item["marketplace"] == "WB"])
-    prices = parse_purchase_prices(loaded_sheets, catalog)
+    prices = parse_purchase_prices(
+        loaded_sheets,
+        [item for item in catalog if item["marketplace"] in {"WB", "YANDEX MARKET"}],
+    )
     rows_by_id = {row["stock_item_id"]: row for row in report.pop("rows")}
     for price in prices["rows"]:
         row = rows_by_id.get(price["stock_item_id"])

@@ -31,7 +31,10 @@ SUMMARY = (
     ("purchase_value", "Закупка периода, ₽"),
     ("roi", "ROI, %"),
     ("margin_complete", "Полная история прибыли"),
-    ("margin_missing_days", "Нет расчёта за даты"),
+    ("margin_missing_days", "Даты неполного расчёта"),
+    ("status", "Полнота расчёта"), ("messages", "Не учтены / неизвестны: параметры и даты"),
+    ("unavailable_days", "Дни без основы расчёта"),
+    ("roi_purchase_value", "Закупка в базе ROI, ₽"),
 )
 DAILY = (
     ("date", "Дата"),
@@ -68,6 +71,7 @@ DAILY = (
     ("day_profit", "Прибыль дня, ₽"),
     ("day_purchase_value", "Закупка дня, ₽"),
     ("available", "Расчёт доступен"),
+    ("status", "Полнота расчёта"), ("messages", "Не учтены / неизвестны: параметры и даты"),
     ("calculation_version", "Версия расчёта"),
 )
 TARGET = (

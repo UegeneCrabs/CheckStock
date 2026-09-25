@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from app.application.ports import StockRepository, StockUnitOfWorkFactory
+from app.application.ports import StockRepository, StockUnitOfWork, StockUnitOfWorkFactory
 from app.core.errors import StockValidationError
 from app.dto.stock import (
     AddedFulfillmentItem,
@@ -44,224 +44,223 @@ class StockMovementService:
         self._unit_of_work_factory = unit_of_work_factory
         self._clock = clock
 
-    def add_items(self, command: AddFulfillmentItemsCommand) -> AddedFulfillmentItems:
-        with self._unit_of_work_factory() as unit_of_work:
-            catalog = unit_of_work.repository.catalog(
-                CatalogQuery(
-                    store_slug=command.store_slug,
-                    marketplace=command.request.marketplace,
-                )
-            )
-            by_code = self._catalog_by_code(catalog.root)
-            additions: dict[str, AddedFulfillmentItem] = {}
-            missing: list[str] = []
-            for entry in command.request.items:
-                item = by_code.get(entry.code)
-                if item is None:
-                    missing.append(entry.code)
-                    continue
-                previous = additions.get(item.article)
-                quantity = entry.quantity + (previous.added if previous else 0)
-                additions[item.article] = AddedFulfillmentItem(
-                    article=item.article,
-                    barcode=item.barcode,
-                    name=item.name,
-                    added=quantity,
-                )
-            if missing:
-                raise StockValidationError("Товары не найдены в каталоге: " + ", ".join(sorted(set(missing))))
-            now = self._clock()
-            for item in additions.values():
-                unit_of_work.repository.increment(
-                    StockIncrement(
-                        store_slug=command.store_slug,
-                        article=item.article,
-                        fulfillment=command.request.fulfillment,
-                        marketplace=command.request.marketplace,
-                        quantity=item.added,
-                        updated_at=now,
-                    )
-                )
-            unit_of_work.commit()
-            return AddedFulfillmentItems(tuple(additions.values()))
+    def unit_of_work(self) -> StockUnitOfWork:
+        return self._unit_of_work_factory()
 
-    def transfer(self, command: TransferStockCommand) -> TransferResult:
-        self._validate_transfer_route(command)
-        with self._unit_of_work_factory() as unit_of_work:
-            entries = self._resolve_entries(
-                unit_of_work.repository,
-                ResolveStockEntriesCommand(
-                    store_slug=command.store_slug,
-                    entries=command.entries,
-                    marketplace=command.from_marketplace,
-                ),
+    def add_items(
+        self, command: AddFulfillmentItemsCommand, *, unit_of_work: StockUnitOfWork
+    ) -> AddedFulfillmentItems:
+        catalog = unit_of_work.repository.catalog(
+            CatalogQuery(
+                store_slug=command.store_slug,
+                marketplace=command.request.marketplace,
             )
-            resolution = self._resolve_target_entries(
-                unit_of_work.repository,
-                TargetResolutionQuery(
-                    store_slug=command.store_slug,
-                    entries=entries,
-                    marketplace=command.to_marketplace,
-                ),
+        )
+        by_code = self._catalog_by_code(catalog.root)
+        additions: dict[str, AddedFulfillmentItem] = {}
+        missing: list[str] = []
+        for entry in command.request.items:
+            item = by_code.get(entry.code)
+            if item is None:
+                missing.append(entry.code)
+                continue
+            previous = additions.get(item.article)
+            quantity = entry.quantity + (previous.added if previous else 0)
+            additions[item.article] = AddedFulfillmentItem(
+                article=item.article,
+                barcode=item.barcode,
+                name=item.name,
+                added=quantity,
             )
-            if not resolution.movable.root:
-                raise StockValidationError("Ни один товар не может быть перемещён")
-            self._check_availability(
-                unit_of_work.repository,
-                StockAvailabilityQuery(
+        if missing:
+            raise StockValidationError("Товары не найдены в каталоге: " + ", ".join(sorted(set(missing))))
+        now = self._clock()
+        for item in additions.values():
+            unit_of_work.repository.increment(
+                StockIncrement(
                     store_slug=command.store_slug,
-                    entries=ResolvedStockEntries(
-                        tuple(
-                            ResolvedStockEntry(
-                                article=item.from_article,
-                                quantity=item.quantity,
-                                name=item.name,
-                                barcode=item.barcode,
-                            )
-                            for item in resolution.movable.root
-                        )
-                    ),
-                    fulfillment=command.from_fulfillment,
-                    marketplace=command.from_marketplace,
-                ),
-            )
-            transfer_id = unit_of_work.repository.apply_transfer(
-                ApplyTransferCommand(
-                    transfer=command,
-                    items=resolution.movable,
-                    created_at=self._clock(),
+                    article=item.article,
+                    fulfillment=command.request.fulfillment,
+                    marketplace=command.request.marketplace,
+                    quantity=item.added,
+                    updated_at=now,
                 )
             )
-            unit_of_work.commit()
-            return TransferResult(
-                moved=StockMovementItems(
+        return AddedFulfillmentItems(tuple(additions.values()))
+
+    def transfer(self, command: TransferStockCommand, *, unit_of_work: StockUnitOfWork) -> TransferResult:
+        self._validate_transfer_route(command)
+        entries = self._resolve_entries(
+            unit_of_work.repository,
+            ResolveStockEntriesCommand(
+                store_slug=command.store_slug,
+                entries=command.entries,
+                marketplace=command.from_marketplace,
+            ),
+        )
+        resolution = self._resolve_target_entries(
+            unit_of_work.repository,
+            TargetResolutionQuery(
+                store_slug=command.store_slug,
+                entries=entries,
+                marketplace=command.to_marketplace,
+            ),
+        )
+        if not resolution.movable.root:
+            raise StockValidationError("Ни один товар не может быть перемещён")
+        self._check_availability(
+            unit_of_work.repository,
+            StockAvailabilityQuery(
+                store_slug=command.store_slug,
+                entries=ResolvedStockEntries(
                     tuple(
-                        StockMovementItem(
-                            article=item.to_article,
+                        ResolvedStockEntry(
+                            article=item.from_article,
+                            quantity=item.quantity,
                             name=item.name,
                             barcode=item.barcode,
-                            quantity=item.quantity,
                         )
                         for item in resolution.movable.root
                     )
                 ),
-                skipped=resolution.skipped,
-                transfer_id=transfer_id,
+                fulfillment=command.from_fulfillment,
+                marketplace=command.from_marketplace,
+            ),
+        )
+        transfer_id = unit_of_work.repository.apply_transfer(
+            ApplyTransferCommand(
+                transfer=command,
+                items=resolution.movable,
+                created_at=self._clock(),
             )
-
-    def receive_transfer(self, command: ReceiveTransitCommand) -> TransitActionResult:
-        with self._unit_of_work_factory() as unit_of_work:
-            result = unit_of_work.repository.receive_transfer(
-                command.model_copy(update={"created_at": self._clock()})
-            )
-            unit_of_work.commit()
-            return result
-
-    def reopen_transfer(self, command: ReopenTransitCommand) -> TransitActionResult:
-        with self._unit_of_work_factory() as unit_of_work:
-            result = unit_of_work.repository.reopen_transfer(
-                command.model_copy(update={"created_at": self._clock()})
-            )
-            unit_of_work.commit()
-            return result
-
-    def cancel_transfer(self, command: CancelTransitCommand) -> TransitActionResult:
-        with self._unit_of_work_factory() as unit_of_work:
-            result = unit_of_work.repository.cancel_transfer(
-                command.model_copy(update={"created_at": self._clock()})
-            )
-            unit_of_work.commit()
-            return result
-
-    def ship(self, command: ShipmentCommand) -> StockMovementItems:
-        with self._unit_of_work_factory() as unit_of_work:
-            entries = self._resolve_entries(
-                unit_of_work.repository,
-                ResolveStockEntriesCommand(
-                    store_slug=command.store_slug,
-                    entries=command.entries,
-                    marketplace=command.marketplace,
-                    allow_negative=command.to_trash,
-                ),
-            )
-            split = self._split_by_sign(entries)
-            if split.surplus.root and not command.to_trash:
-                raise StockValidationError("Отрицательное количество допустимо только при списании в мусорку")
-            if split.write_off.root:
-                self._check_availability(
-                    unit_of_work.repository,
-                    StockAvailabilityQuery(
-                        store_slug=command.store_slug,
-                        entries=split.write_off,
-                        fulfillment=command.fulfillment,
-                        marketplace=command.marketplace,
-                    ),
-                )
-            unit_of_work.repository.apply_shipment(
-                ApplyShipmentCommand(
-                    shipment=command,
-                    write_off=split.write_off,
-                    surplus=split.surplus,
-                    created_at=self._clock(),
-                )
-            )
-            unit_of_work.commit()
-            return StockMovementItems(
+        )
+        return TransferResult(
+            moved=StockMovementItems(
                 tuple(
                     StockMovementItem(
-                        article=entry.article,
-                        name=entry.name,
-                        barcode=entry.barcode,
-                        quantity=entry.quantity,
+                        article=item.to_article,
+                        name=item.name,
+                        barcode=item.barcode,
+                        quantity=item.quantity,
                     )
-                    for entry in entries.root
+                    for item in resolution.movable.root
                 )
-            )
+            ),
+            skipped=resolution.skipped,
+            transfer_id=transfer_id,
+        )
 
-    def register_fbs_transfer(self, command: ShipmentCommand) -> StockMovementItems:
+    def receive_transfer(
+        self, command: ReceiveTransitCommand, *, unit_of_work: StockUnitOfWork
+    ) -> TransitActionResult:
+        result = unit_of_work.repository.receive_transfer(
+            command.model_copy(update={"created_at": self._clock()})
+        )
+        return result
+
+    def reopen_transfer(
+        self, command: ReopenTransitCommand, *, unit_of_work: StockUnitOfWork
+    ) -> TransitActionResult:
+        result = unit_of_work.repository.reopen_transfer(
+            command.model_copy(update={"created_at": self._clock()})
+        )
+        return result
+
+    def cancel_transfer(
+        self, command: CancelTransitCommand, *, unit_of_work: StockUnitOfWork
+    ) -> TransitActionResult:
+        result = unit_of_work.repository.cancel_transfer(
+            command.model_copy(update={"created_at": self._clock()})
+        )
+        return result
+
+    def ship(self, command: ShipmentCommand, *, unit_of_work: StockUnitOfWork) -> StockMovementItems:
+        entries = self._resolve_entries(
+            unit_of_work.repository,
+            ResolveStockEntriesCommand(
+                store_slug=command.store_slug,
+                entries=command.entries,
+                marketplace=command.marketplace,
+                allow_negative=command.to_trash,
+            ),
+        )
+        split = self._split_by_sign(entries)
+        if split.surplus.root and not command.to_trash:
+            raise StockValidationError("Отрицательное количество допустимо только при списании в мусорку")
+        if split.write_off.root:
+            self._check_availability(
+                unit_of_work.repository,
+                StockAvailabilityQuery(
+                    store_slug=command.store_slug,
+                    entries=split.write_off,
+                    fulfillment=command.fulfillment,
+                    marketplace=command.marketplace,
+                ),
+            )
+        unit_of_work.repository.apply_shipment(
+            ApplyShipmentCommand(
+                shipment=command,
+                write_off=split.write_off,
+                surplus=split.surplus,
+                created_at=self._clock(),
+            )
+        )
+        return StockMovementItems(
+            tuple(
+                StockMovementItem(
+                    article=entry.article,
+                    name=entry.name,
+                    barcode=entry.barcode,
+                    quantity=entry.quantity,
+                )
+                for entry in entries.root
+            )
+        )
+
+    def register_fbs_transfer(
+        self, command: ShipmentCommand, *, unit_of_work: StockUnitOfWork
+    ) -> StockMovementItems:
         """Allocate free FF units to FBS; the warehouse's physical location is unchanged."""
 
         if command.to_trash:
             raise StockValidationError("Перемещение на FBS не может быть списанием в мусорку")
 
-        with self._unit_of_work_factory() as unit_of_work:
-            entries = self._resolve_entries(
-                unit_of_work.repository,
-                ResolveStockEntriesCommand(
-                    store_slug=command.store_slug,
-                    entries=command.entries,
-                    marketplace=command.marketplace,
-                ),
+        entries = self._resolve_entries(
+            unit_of_work.repository,
+            ResolveStockEntriesCommand(
+                store_slug=command.store_slug,
+                entries=command.entries,
+                marketplace=command.marketplace,
+            ),
+        )
+        self._check_availability(
+            unit_of_work.repository,
+            StockAvailabilityQuery(
+                store_slug=command.store_slug,
+                entries=entries,
+                fulfillment=command.fulfillment,
+                marketplace=command.marketplace,
+            ),
+        )
+        unit_of_work.repository.apply_shipment(
+            ApplyShipmentCommand(
+                shipment=command,
+                write_off=entries,
+                surplus=ResolvedStockEntries(()),
+                created_at=self._clock(),
             )
-            self._check_availability(
-                unit_of_work.repository,
-                StockAvailabilityQuery(
-                    store_slug=command.store_slug,
-                    entries=entries,
-                    fulfillment=command.fulfillment,
-                    marketplace=command.marketplace,
-                ),
-            )
-            unit_of_work.repository.apply_shipment(
-                ApplyShipmentCommand(
-                    shipment=command,
-                    write_off=entries,
-                    surplus=ResolvedStockEntries(()),
-                    created_at=self._clock(),
+        )
+        return StockMovementItems(
+            tuple(
+                StockMovementItem(
+                    article=entry.article,
+                    name=entry.name,
+                    barcode=entry.barcode,
+                    quantity=entry.quantity,
                 )
+                for entry in entries.root
             )
-            unit_of_work.commit()
-            return StockMovementItems(
-                tuple(
-                    StockMovementItem(
-                        article=entry.article,
-                        name=entry.name,
-                        barcode=entry.barcode,
-                        quantity=entry.quantity,
-                    )
-                    for entry in entries.root
-                )
-            )
+        )
 
     @staticmethod
     def _catalog_by_code(items: tuple[CatalogItem, ...]):
