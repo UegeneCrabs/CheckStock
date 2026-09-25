@@ -75,12 +75,19 @@ def sync_store(store_slug: str) -> dict:
     )
 
     from app.repositories import yandex_economics
-    from app.yandex.economics_api import catalog_values
+    from app.yandex.economics_api import catalog_group_values, catalog_values
 
+    sources = []
     for row in raw:
         article = str((row.get("offer") or {}).get("offerId") or "")
         if article:
-            yandex_economics.save_source(store_slug, article, "catalog", catalog_values(row))
+            sources.extend(
+                (
+                    (article, "catalog", catalog_values(row)),
+                    (article, "catalog_group", catalog_group_values(row)),
+                )
+            )
+    yandex_economics.save_sources(store_slug, sources, updated_at=now)
 
     report = {"total": len(items), "archived": len(archived), "no_barcode": no_barcode, **result}
     logger.debug("Каталог Яндекса %s: %s", _store_label(store_slug), report)

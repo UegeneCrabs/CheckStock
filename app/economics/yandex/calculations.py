@@ -11,6 +11,7 @@ from app.exports import stock_sheet_inbound
 from app.repositories import (
     unit_economics_data_errors,
     yandex_assortment,
+    yandex_economics,
     yandex_product_statuses,
     yandex_source_values,
     yandex_storefront,
@@ -180,6 +181,14 @@ def load_products(
         inbound = stock_sheet_inbound.load(slug, MARKETPLACE, catalog, include_yandex_approved=True)
         archived = yandex_assortment.archived_articles(slug)
         catalog = [row for row in inbound.catalog if row["article"] not in archived]
+        group_ids = read(yandex_economics.catalog_group_ids, slug)
+        glue_groups = defaultdict(list)
+        for item in catalog:
+            group_id = group_ids.get(str(item["article"]))
+            if group_id:
+                glue_groups[group_id].append(
+                    {"article": str(item["article"]), "name": str(item.get("name") or item["article"])}
+                )
         stocks = {row["article"]: row for row in db.get_stock_items(slug, MARKETPLACE, ("fbs", "fbo"))}
         snapshots = read(repository.get_snapshots, slug)
         snapshot_errors = [
@@ -395,6 +404,10 @@ def load_products(
                     prices=prices.get(sku),
                 )
             )
+            group_id = group_ids.get(sku)
+            products[-1]["glued_products"] = [
+                item for item in glue_groups.get(group_id, []) if item["article"] != sku
+            ] if group_id else []
             products[-1]["details"]["buyout_percent"] = buyout_percent
             products[-1]["details"]["drr"] = ad["drr"]
             errors = list(snapshot_errors)

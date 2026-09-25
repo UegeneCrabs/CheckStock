@@ -80,6 +80,24 @@ def filter_options(rows, user):
     }
 
 
+def logistics_breakdown(result):
+    logistics = result.get("logistics", {})
+    components = {
+        "logistics_delivery": logistics.get("delivery"),
+        "logistics_returns": logistics.get("returns"),
+        "logistics_repeat_delivery": logistics.get("repeat_delivery", 0.0),
+        "logistics_transit": logistics.get("transit"),
+    }
+    total = logistics.get("total")
+    return {
+        **components,
+        "logistics_adjustment": round(total - sum(components.values()), 2)
+        if total is not None and all(value is not None for value in components.values())
+        else None,
+        "logistics": total,
+    }
+
+
 def daily_row(day, saved, order, ad, orders_known, ads_known, fallback_buyout):
     """Expose original inputs and the version of each closed day's calculation."""
     saved = resolve_day(day, saved, order, ad, orders_known, ads_known)
@@ -121,7 +139,7 @@ def daily_row(day, saved, order, ad, orders_known, ads_known, fallback_buyout):
         "net_revenue": None
         if result.get("margin") is None or values.get("purchase_price") is None
         else round(result["margin"] + values["purchase_price"], 2),
-        "logistics": result.get("logistics", {}).get("total"),
+        **logistics_breakdown(result),
         "vat_value": costs.get("vat"),
         "usn_value": costs.get("usn"),
         "calculation_version": saved.get("calculation_version"),

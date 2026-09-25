@@ -289,6 +289,27 @@ html.sidebar-collapsed .app-header .nav-group.is-open .nav-submenu {
     background: rgba(105, 132, 255, 0.18);
 }
 
+.app-header #nav-reports-submenu .marketplace-report-wb {
+    color: #fff;
+    background: #7d168f;
+}
+
+.app-header #nav-reports-submenu .marketplace-report-wb:hover,
+.app-header #nav-reports-submenu .marketplace-report-wb.active {
+    background: #ab28bd;
+}
+
+.app-header #nav-reports-submenu .marketplace-report-ym {
+    color: #242424;
+    background: #ffdc32;
+}
+
+.app-header #nav-reports-submenu .marketplace-report-ym:hover,
+.app-header #nav-reports-submenu .marketplace-report-ym.active {
+    color: #242424;
+    background: #ffe765;
+}
+
 .app-header .sidebar-bottom {
     min-width: 0;
     margin: 0;

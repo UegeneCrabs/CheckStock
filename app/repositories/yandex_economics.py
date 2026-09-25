@@ -159,6 +159,20 @@ def sources(store):
     }
 
 
+def catalog_group_ids(store):
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT article,payload_json FROM yandex_economics_sources "
+            "WHERE store_slug=? AND source='catalog_group'",
+            (store,),
+        ).fetchall()
+    return {
+        row["article"]: group_id
+        for row in rows
+        if (group_id := str(json.loads(row["payload_json"]).get("group_id") or "").strip())
+    }
+
+
 def save_source(store, article, source, values, *, updated_at=None, initial_only=False):
     timestamp = updated_at or now()
     conflict = (

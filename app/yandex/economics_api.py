@@ -31,14 +31,27 @@ def catalog_values(row):
     ).model_dump(exclude_none=True)
 
 
+def catalog_group_values(row):
+    return {"group_id": str((row.get("offer") or {}).get("groupId") or "").strip()}
+
+
 def refresh_catalog(store):
     key = tokens.get_api_key(store)
     business = resolve_business_id(store, key)
     rows = api.get_catalog(key, business)
-    parsed = [(str((row.get("offer") or {}).get("offerId") or ""), catalog_values(row)) for row in rows]
-    for article, values in parsed:
-        if article:
-            repository.save_source(store, article, "catalog", values)
+    parsed = [
+        (str((row.get("offer") or {}).get("offerId") or ""), catalog_values(row), catalog_group_values(row))
+        for row in rows
+    ]
+    repository.save_sources(
+        store,
+        [
+            entry
+            for article, values, group in parsed
+            if article
+            for entry in ((article, "catalog", values), (article, "catalog_group", group))
+        ],
+    )
     return len(parsed)
 
 

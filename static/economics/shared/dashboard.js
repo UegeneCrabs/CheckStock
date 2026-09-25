@@ -2012,7 +2012,8 @@
         nodes.gluedSection.hidden = !items.length;
         nodes.gluedProducts.innerHTML = items
             .map(function (item) {
-                var targetId = product.store_slug + ':' + item.article;
+                var targetId = (product.marketplace === 'YANDEX MARKET' ? 'yandex:' : '') +
+                    product.store_slug + ':' + item.article;
                 return window.CheckStockUI.render('economics/shared/dashboard/render-glued-products', {
                     targetId: targetId,
                     name: item.name,

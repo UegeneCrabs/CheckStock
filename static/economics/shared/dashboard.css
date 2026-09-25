@@ -27,6 +27,9 @@ body:has(.content--unit-1c) {
 .ue1c-page.is-placeholder .ue1c-calculator:not(.ue1c-placeholder-calculator) {
     display: none;
 }
+.ue1c-page.is-placeholder.is-yandex-economics #ue1c-glued-section:not([hidden]) {
+    display: block;
+}
 .ue1c-page.is-placeholder button:disabled,
 .ue1c-page.is-placeholder select:disabled,
 .ue1c-page.is-placeholder input:disabled {
