@@ -75,13 +75,14 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
     checked = " checked" if settings.enabled else ""
     daily_selected = " selected" if settings.schedule_kind == "daily" else ""
     weekly_selected = " selected" if settings.schedule_kind == "weekly" else ""
-    status_class = "export-status--error" if settings.last_error else "export-status--ok"
+    last_error = stock_sheet_export.current_error(settings)
+    status_class = "export-status--error" if last_error else "export-status--ok"
     status_parts = []
     if settings.last_success_at:
         status_parts.append(f"Последняя успешная выгрузка: {format_dt(settings.last_success_at)}.")
-    if settings.last_error:
+    if last_error:
         status_parts.append(
-            f"Ошибка последней полной выгрузки {format_dt(settings.last_attempt_at)}: {settings.last_error}"
+            f"Ошибка последней полной выгрузки {format_dt(settings.last_attempt_at)}: {last_error}"
         )
     status_text = " ".join(status_parts) or "Выгрузка ещё не запускалась"
     marketplace_sections = []
@@ -109,8 +110,8 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
             '<p class="panel-desc">Необязательно. Шапка выгружается в строку 2, товары — с строки 3. '
             "A:I содержат общие показатели; начиная с J — нераспределённые остатки отдельно по каждому ФФ. "
-            "E содержит их сумму, ТОТАЛ равен сумме E:I. Диапазон выгрузки полностью заменяется при каждом запуске. "
-            "Если дополнительные колонки заняты чужими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>"
+            "E содержит их сумму, ТОТАЛ равен сумме E:I. Перед записью диапазон A2:Z полностью очищается, "
+            "включая старые данные и формулы. Затем записываются текущая шапка и остатки.</p>"
             '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
             f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace, "fbs_orders"))}" maxlength="200" '

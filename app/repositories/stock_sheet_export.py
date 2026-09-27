@@ -234,8 +234,16 @@ def record_success(store_slug: str, exported_at: str) -> None:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE stock_sheet_export_settings SET last_success_at = ? WHERE store_slug = ?",
-                (exported_at, store_slug),
+                """
+                UPDATE stock_sheet_export_settings
+                SET last_success_at = ?,
+                    last_error = CASE
+                        WHEN last_attempt_at IS NULL OR last_attempt_at <= ? THEN NULL
+                        ELSE last_error
+                    END
+                WHERE store_slug = ?
+                """,
+                (exported_at, exported_at, store_slug),
             )
             conn.commit()
         except Exception:

@@ -68,6 +68,7 @@ EXPORT_HEADERS = (
 STOCK_EXPORT_METRICS = (*repository.STOCK_METRICS, "ff_transit", "mp_inbound")
 FF_STOCK_METRIC_PREFIX = "ff_stock:"
 FF_STOCK_HEADER_PREFIX = f"{EXPORT_HEADERS[4]} — "
+STOCK_CLEAR_COLUMN_COUNT = 26
 EXPORT_METRIC_HEADERS = {
     "ff_stock": EXPORT_HEADERS[4],
     "fbs_stock": EXPORT_HEADERS[5],
@@ -294,6 +295,15 @@ def scheduled_at(settings: StockSheetExportSettings, now: datetime) -> datetime:
     if target > local_now:
         target -= timedelta(days=1 if settings.schedule_kind == "daily" else 7)
     return target
+
+
+def current_error(settings: StockSheetExportSettings) -> str | None:
+    """Hide legacy failures that have already been followed by a successful write."""
+    success = _parse_timestamp(settings.last_success_at)
+    attempt = _parse_timestamp(settings.last_attempt_at)
+    if success is not None and attempt is not None and success >= attempt:
+        return None
+    return settings.last_error
 
 
 def is_due(settings: StockSheetExportSettings, now: datetime | None = None) -> bool:
@@ -786,33 +796,12 @@ def _combined_fbs_order_totals(
     return combined
 
 
-def _check_transit_columns(service, spreadsheet_id: str, sheet_names: list[str]) -> None:
-    for sheet_name in sheet_names:
-        response = (
-            service.spreadsheets()
-            .values()
-            .get(
-                spreadsheetId=spreadsheet_id,
-                range=f"{_quote_sheet(sheet_name)}!H2:I",
-                valueRenderOption="FORMULA",
-            )
-            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
-        )
-        rows = response.get("values", [])
-        occupied = any(value not in (None, "") for row in rows for value in row)
-        if occupied and (not rows or rows[0] != list(EXPORT_HEADERS[7:])):
-            raise StockSheetExportError(
-                f"Лист «{sheet_name}»: H2:I уже содержат данные или формулы. "
-                "Перенесите их за столбец I или выберите отдельный лист стоков. Данные листа не изменены."
-            )
-
-
-def _ff_stock_clear_ranges(
+def _stock_clear_columns(
     service, spreadsheet_id: str, sheets: dict[str, dict], column_count: int
-) -> list[str]:
-    """Check the detail columns and include obsolete export columns in cleanup."""
-    ranges = []
-    first_column = len(EXPORT_HEADERS)
+) -> dict[str, int]:
+    """Replace all of A2:Z; protect unrelated data only beyond that owned area."""
+    columns = {}
+    first_column = STOCK_CLEAR_COLUMN_COUNT
     for sheet_name, sheet in sheets.items():
         quoted_sheet = _quote_sheet(sheet_name)
         header_rows = (
@@ -830,16 +819,11 @@ def _ff_stock_clear_ranges(
             previous_count += 1
         clear_count = max(column_count, previous_count)
         last_column = _column_letter(clear_count - 1)
-        ranges.append(f"{quoted_sheet}!A2:{last_column}")
+        columns[sheet_name] = clear_count
         if clear_count == first_column:
             continue
 
-        conflict = any(
-            merged.get("endRowIndex", 0) > 1
-            and merged.get("startColumnIndex", 0) < clear_count
-            and merged.get("endColumnIndex", 0) > first_column
-            for merged in sheet.get("merges", ())
-        )
+        conflict = False
         # Columns beyond the current grid are empty and will be added after preflight.
         grid_count = sheet["properties"].get("gridProperties", {}).get("columnCount", clear_count)
         check_count = min(clear_count, grid_count)
@@ -849,7 +833,7 @@ def _ff_stock_clear_ranges(
                 .values()
                 .get(
                     spreadsheetId=spreadsheet_id,
-                    range=f"{quoted_sheet}!J2:{_column_letter(check_count - 1)}",
+                    range=f"{quoted_sheet}!AA2:{_column_letter(check_count - 1)}",
                     valueRenderOption="FORMULA",
                 )
                 .execute(num_retries=GOOGLE_REQUEST_RETRIES)
@@ -862,11 +846,11 @@ def _ff_stock_clear_ranges(
                     conflict = True
         if conflict:
             raise StockSheetExportError(
-                f"Лист «{sheet_name}»: J2:{last_column} содержат чужие данные, формулы или объединённые ячейки. "
+                f"Лист «{sheet_name}»: AA2:{last_column} за пределами A2:Z содержат чужие данные или формулы. "
                 f"Освободите этот диапазон для остатков по ФФ или выберите отдельный лист стоков. "
                 "Данные листа не изменены."
             )
-    return ranges
+    return columns
 
 
 def _write_marketplace(
@@ -889,7 +873,6 @@ def _write_marketplace(
     missing = sorted(set(sheet_names) - existing_sheets.keys())
     if missing:
         raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
-    _check_transit_columns(service, spreadsheet_id, sheet_names)
     destination_sheets = {name: existing_sheets[name] for name in sheet_names}
     _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
     ff_metrics = sorted(
@@ -901,7 +884,35 @@ def _write_marketplace(
         *(f"{FF_STOCK_HEADER_PREFIX}{metric.removeprefix(FF_STOCK_METRIC_PREFIX)}" for metric in ff_metrics),
     ]
     last_column = _column_letter(len(headers) - 1)
-    clear_ranges = _ff_stock_clear_ranges(service, spreadsheet_id, destination_sheets, len(headers))
+    clear_columns = _stock_clear_columns(service, spreadsheet_id, destination_sheets, len(headers))
+    clear_ranges = [
+        f"{_quote_sheet(name)}!A2:{_column_letter(count - 1)}" for name, count in clear_columns.items()
+    ]
+    prepare_requests = []
+    for name, sheet in destination_sheets.items():
+        properties = sheet["properties"]
+        column_count = clear_columns[name]
+        if properties.get("gridProperties", {}).get("columnCount", column_count) < column_count:
+            prepare_requests.append(
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": properties["sheetId"],
+                            "gridProperties": {"columnCount": column_count},
+                        },
+                        "fields": "gridProperties.columnCount",
+                    }
+                }
+            )
+        for merged in sheet.get("merges", ()):
+            if merged.get("endRowIndex", 0) <= 1 or merged.get("startColumnIndex", 0) >= column_count:
+                continue
+            if merged.get("startRowIndex", 0) < 1 or merged.get("endColumnIndex", 0) > column_count:
+                raise StockSheetExportError(
+                    f"Лист «{name}»: объединённые ячейки выходят за диапазон выгрузки. "
+                    "Разделите их, чтобы сохранить данные за его пределами. Данные листа не изменены."
+                )
+            prepare_requests.append({"unmergeCells": {"range": {**merged, "sheetId": properties["sheetId"]}}})
 
     data_rows: list[list[object]] = []
     for item in catalog:
@@ -929,23 +940,10 @@ def _write_marketplace(
         )
 
     values = [headers, *data_rows]
-    expand_requests = [
-        {
-            "updateSheetProperties": {
-                "properties": {
-                    "sheetId": sheet["properties"]["sheetId"],
-                    "gridProperties": {"columnCount": len(headers)},
-                },
-                "fields": "gridProperties.columnCount",
-            }
-        }
-        for sheet in destination_sheets.values()
-        if sheet["properties"].get("gridProperties", {}).get("columnCount", len(headers)) < len(headers)
-    ]
-    if expand_requests:
+    if prepare_requests:
         (
             service.spreadsheets()
-            .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": expand_requests})
+            .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": prepare_requests})
             .execute(num_retries=GOOGLE_REQUEST_RETRIES)
         )
     (
