@@ -304,6 +304,25 @@ def get_ff_available_totals(
     return {row["article"]: row["total"] for row in rows}
 
 
+def get_ff_available_by_fulfillment(store_slug: str, marketplace: str) -> dict[str, dict[str, int]]:
+    """Read unallocated stock for all fulfillment centers in one snapshot."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT fulfillment, article, SUM(quantity) AS total
+            FROM ff_stock
+            WHERE store_slug = ? AND marketplace = ?
+            GROUP BY fulfillment, article
+            ORDER BY fulfillment, article
+            """,
+            (store_slug, marketplace),
+        ).fetchall()
+    result: dict[str, dict[str, int]] = {}
+    for row in rows:
+        result.setdefault(row["fulfillment"], {})[row["article"]] = int(row["total"] or 0)
+    return result
+
+
 def search_catalog(
     store_slug: str,
     query: str,

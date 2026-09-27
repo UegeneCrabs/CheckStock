@@ -107,9 +107,10 @@ def _render_store_card(settings: StockSheetExportSettings, *, active: bool) -> s
             f'<input class="input-control" name="{prefix}_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace))}" maxlength="200" '
             'placeholder="Оставьте пустым, чтобы не выгружать"></label>'
-            '<p class="panel-desc">Необязательно. Если заполнено, диапазон A2:I будет полностью заменён: шапка в строке 2, товары — с строки 3. '
-            "A:G сохраняют прежний порядок; H — «В пути между ФФ», I — «В пути на склады МП». "
-            "Если H2:I заняты другими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>"
+            '<p class="panel-desc">Необязательно. Шапка выгружается в строку 2, товары — с строки 3. '
+            "A:I содержат общие показатели; начиная с J — нераспределённые остатки отдельно по каждому ФФ. "
+            "E содержит их сумму, ТОТАЛ равен сумме E:I. Диапазон выгрузки полностью заменяется при каждом запуске. "
+            "Если дополнительные колонки заняты чужими данными или формулами, выгрузка остановится без перезаписи этого листа.</p>"
             '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
             f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
             f'value="{_input(_sheet_name(settings, marketplace, "fbs_orders"))}" maxlength="200" '

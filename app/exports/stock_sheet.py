@@ -66,6 +66,8 @@ EXPORT_HEADERS = (
     "В ПУТИ НА СКЛАДЫ МП",
 )
 STOCK_EXPORT_METRICS = (*repository.STOCK_METRICS, "ff_transit", "mp_inbound")
+FF_STOCK_METRIC_PREFIX = "ff_stock:"
+FF_STOCK_HEADER_PREFIX = f"{EXPORT_HEADERS[4]} — "
 EXPORT_METRIC_HEADERS = {
     "ff_stock": EXPORT_HEADERS[4],
     "fbs_stock": EXPORT_HEADERS[5],
@@ -507,7 +509,13 @@ def _metric_values(
 
     values: dict[str, dict[str, int]] = {}
     if "ff_stock" in metrics:
-        values["ff_stock"] = with_zeroes(db.get_ff_available_totals(store_slug, marketplace=marketplace))
+        totals = dict(articles)
+        for fulfillment, quantities in db.get_ff_available_by_fulfillment(store_slug, marketplace).items():
+            mapped = with_zeroes(quantities)
+            values[f"{FF_STOCK_METRIC_PREFIX}{fulfillment}"] = mapped
+            for article, quantity in mapped.items():
+                totals[article] = totals.get(article, 0) + quantity
+        values["ff_stock"] = totals
     if "fbs_stock" in metrics:
         values["fbs_stock"] = with_zeroes(db.get_mp_stock_totals(store_slug, marketplace, "fbs"))
     if "fbo_stock" in metrics:
@@ -532,7 +540,7 @@ def _sheet_metadata(service, spreadsheet_id: str) -> dict[str, dict]:
         service.spreadsheets()
         .get(
             spreadsheetId=spreadsheet_id,
-            fields="sheets(properties(sheetId,title),merges)",
+            fields="sheets(properties(sheetId,title,gridProperties(columnCount)),merges)",
             includeGridData=False,
         )
         .execute(num_retries=GOOGLE_REQUEST_RETRIES)
@@ -690,6 +698,7 @@ def _combined_stock_snapshot(
 ) -> tuple[list[dict], dict[str, dict[str, int | None]], list[str]]:
     catalog_by_key: dict[str, dict] = {}
     values_by_metric: dict[str, dict[str, int | None]] = {metric: {} for metric in STOCK_EXPORT_METRICS}
+    values_by_metric.update({f"{FF_STOCK_METRIC_PREFIX}{name}": {} for name in db.get_fulfillments()})
     warnings: list[str] = []
     inbound_available = True
     for store_slug in store_slugs:
@@ -728,9 +737,9 @@ def _combined_stock_snapshot(
                     if not combined_item.get(field) and item.get(field):
                         combined_item[field] = item[field]
             combined_article = str(combined_item["article"])
-            for metric in STOCK_EXPORT_METRICS:
-                quantity = store_values.get(metric, {}).get(article, 0)
-                metric_values = values_by_metric[metric]
+            for metric, quantities in store_values.items():
+                quantity = quantities.get(article, 0)
+                metric_values = values_by_metric.setdefault(metric, {})
                 previous = metric_values.get(combined_article, 0)
                 metric_values[combined_article] = (
                     int(previous) + int(quantity) if previous is not None and quantity is not None else None
@@ -798,6 +807,68 @@ def _check_transit_columns(service, spreadsheet_id: str, sheet_names: list[str])
             )
 
 
+def _ff_stock_clear_ranges(
+    service, spreadsheet_id: str, sheets: dict[str, dict], column_count: int
+) -> list[str]:
+    """Check the detail columns and include obsolete export columns in cleanup."""
+    ranges = []
+    first_column = len(EXPORT_HEADERS)
+    for sheet_name, sheet in sheets.items():
+        quoted_sheet = _quote_sheet(sheet_name)
+        header_rows = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=f"{quoted_sheet}!2:2", valueRenderOption="FORMULA")
+            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
+            .get("values", [])
+        )
+        previous_headers = header_rows[0] if header_rows else []
+        previous_count = first_column
+        for header in previous_headers[first_column:]:
+            if not str(header).startswith(FF_STOCK_HEADER_PREFIX):
+                break
+            previous_count += 1
+        clear_count = max(column_count, previous_count)
+        last_column = _column_letter(clear_count - 1)
+        ranges.append(f"{quoted_sheet}!A2:{last_column}")
+        if clear_count == first_column:
+            continue
+
+        conflict = any(
+            merged.get("endRowIndex", 0) > 1
+            and merged.get("startColumnIndex", 0) < clear_count
+            and merged.get("endColumnIndex", 0) > first_column
+            for merged in sheet.get("merges", ())
+        )
+        # Columns beyond the current grid are empty and will be added after preflight.
+        grid_count = sheet["properties"].get("gridProperties", {}).get("columnCount", clear_count)
+        check_count = min(clear_count, grid_count)
+        if check_count > first_column:
+            rows = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{quoted_sheet}!J2:{_column_letter(check_count - 1)}",
+                    valueRenderOption="FORMULA",
+                )
+                .execute(num_retries=GOOGLE_REQUEST_RETRIES)
+                .get("values", [])
+            )
+            for index in range(check_count - first_column):
+                occupied = any(index < len(row) and row[index] not in (None, "") for row in rows)
+                header = str(rows[0][index]) if rows and index < len(rows[0]) else ""
+                if occupied and not header.startswith(FF_STOCK_HEADER_PREFIX):
+                    conflict = True
+        if conflict:
+            raise StockSheetExportError(
+                f"Лист «{sheet_name}»: J2:{last_column} содержат чужие данные, формулы или объединённые ячейки. "
+                f"Освободите этот диапазон для остатков по ФФ или выберите отдельный лист стоков. "
+                "Данные листа не изменены."
+            )
+    return ranges
+
+
 def _write_marketplace(
     service,
     spreadsheet_id: str,
@@ -821,6 +892,16 @@ def _write_marketplace(
     _check_transit_columns(service, spreadsheet_id, sheet_names)
     destination_sheets = {name: existing_sheets[name] for name in sheet_names}
     _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
+    ff_metrics = sorted(
+        (metric for metric in values_by_metric if metric.startswith(FF_STOCK_METRIC_PREFIX)),
+        key=str.casefold,
+    )
+    headers = [
+        *EXPORT_HEADERS,
+        *(f"{FF_STOCK_HEADER_PREFIX}{metric.removeprefix(FF_STOCK_METRIC_PREFIX)}" for metric in ff_metrics),
+    ]
+    last_column = _column_letter(len(headers) - 1)
+    clear_ranges = _ff_stock_clear_ranges(service, spreadsheet_id, destination_sheets, len(headers))
 
     data_rows: list[list[object]] = []
     for item in catalog:
@@ -843,11 +924,30 @@ def _write_marketplace(
                 fbo_stock,
                 ff_transit,
                 mp_inbound if mp_inbound is not None else "",
+                *(int(values_by_metric[metric].get(article, 0) or 0) for metric in ff_metrics),
             ]
         )
 
-    values = [list(EXPORT_HEADERS), *data_rows]
-    clear_ranges = [f"{_quote_sheet(sheet_name)}!A2:I" for sheet_name in sheet_names]
+    values = [headers, *data_rows]
+    expand_requests = [
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet["properties"]["sheetId"],
+                    "gridProperties": {"columnCount": len(headers)},
+                },
+                "fields": "gridProperties.columnCount",
+            }
+        }
+        for sheet in destination_sheets.values()
+        if sheet["properties"].get("gridProperties", {}).get("columnCount", len(headers)) < len(headers)
+    ]
+    if expand_requests:
+        (
+            service.spreadsheets()
+            .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": expand_requests})
+            .execute(num_retries=GOOGLE_REQUEST_RETRIES)
+        )
     (
         service.spreadsheets()
         .values()
@@ -859,7 +959,7 @@ def _write_marketplace(
     )
     updates = [
         {
-            "range": f"{_quote_sheet(sheet_name)}!A2:I{len(values) + 1}",
+            "range": f"{_quote_sheet(sheet_name)}!A2:{last_column}{len(values) + 1}",
             "values": values,
         }
         for sheet_name in sheet_names
@@ -881,7 +981,7 @@ def _write_marketplace(
         "sheets": sheet_names,
         "rows": row_count,
         "metrics": {metric: {"rows": row_count} for metric in STOCK_EXPORT_METRICS},
-        "updated_cells": (len(values) * len(EXPORT_HEADERS) + 2) * len(sheet_names),
+        "updated_cells": (len(values) * len(headers) + 2) * len(sheet_names),
         "exported_at": exported_at,
     }
 
