@@ -144,6 +144,7 @@ def _report_historical_economics(
     orders_days: set[str] | None = None,
     advertising_days: set[str] | None = None,
     live_snapshot: dict | None = None,
+    ignore_deferred_cost_warnings: bool = False,
 ) -> dict:
     """All surfaces share daily inputs and explicit source coverage."""
     daily_advertising = daily_advertising or {}
@@ -158,6 +159,7 @@ def _report_historical_economics(
             key, snapshot, daily_orders.get(key) or {}, daily_advertising.get(key),
             orders_known=key in (orders_days if orders_days is not None else available_days or set()),
             ads_known=key in (advertising_days if advertising_days is not None else available_days or set()),
+            ignore_deferred_cost_warnings=ignore_deferred_cost_warnings,
         ))
         current += timedelta(days=1)
     period = aggregate_days(rows, [r["day"] for r in rows], unit_economics_1c.money)
@@ -1658,6 +1660,7 @@ def _report_daily_calculations(
         date_from=date_from, date_to=date_to, daily_orders=daily_orders, margin_snapshots=margin_snapshots,
         live_day=live_day, live_snapshot=live_snapshot, live_unit_margin=None, live_purchase_price=None,
         daily_advertising=daily_advertising, orders_days=orders_days, advertising_days=advertising_days,
+        ignore_deferred_cost_warnings=True,
     )
     result = []
     for row in period["daily"]:
@@ -2135,6 +2138,7 @@ async def _unit_economics_1c_unit_profit_report_data(
                     fallback_buyout_percent=period_product_metrics.get("buyout_percent"),
                     allow_partial=True,
                     include_uncovered_advertising=True,
+                    ignore_deferred_cost_warnings=True,
                 )
                 report_advertising_per_unit = (
                     round(

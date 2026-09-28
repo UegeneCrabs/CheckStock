@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 
 CALCULATION_VERSION = 3
 
+# These costs still participate in formulas; only report warnings are deferred.
+DEFERRED_REPORT_COST_WARNINGS = frozenset({
+    "delivery_wb_rub", "return_cost_rub", "delivery_with_returns",
+    "storage_wb_rub", "turnover_days",
+})
+
 
 def _price_value(value: object) -> float | None:
     if value is None:
@@ -63,7 +69,8 @@ def unit_margin_without_advertising(
     return calculate_daily("WB", inputs, snapshot.get("calculation_version"))[1].get("margin")
 
 
-def report_day(day, snapshot, order, advertising, *, orders_known=False, ads_known=False):
+def report_day(day, snapshot, order, advertising, *, orders_known=False, ads_known=False,
+               ignore_deferred_cost_warnings=False):
     """One resolved day for the screen, report and export, with dated overlays."""
     inputs = _json_object((snapshot or {}).get("inputs_json"))
     overrides = (snapshot or {}).get("overrides") or {}
@@ -73,8 +80,17 @@ def report_day(day, snapshot, order, advertising, *, orders_known=False, ads_kno
     if ads_known and spend is None:
         spend = 0.0
     values, result = calculate_daily("WB", {**inputs, "orders_count": count, "advertising_spend": spend}, (snapshot or {}).get("calculation_version"))
+    from app.economics.completeness import annotate, describe, status
+
+    if ignore_deferred_cost_warnings:
+        annotate(result, [key for key in result.get("missing", []) if key not in DEFERRED_REPORT_COST_WARNINGS])
+        missing = [key for key in result["daily_missing"] if key not in DEFERRED_REPORT_COST_WARNINGS]
+        result.update(
+            daily_missing=missing, daily_complete=not missing,
+            daily_status=status(result["day_profit"], missing),
+            daily_messages=["Не учтены / неизвестны: " + ", ".join(describe(missing))] if missing else [],
+        )
     missing = result["daily_missing"]
-    from app.economics.completeness import describe
 
     return {"day": day, "inputs": values, "result": result, "profit": result["day_profit"],
             "purchase_value": result["purchase_value"], "orders_count": count,
