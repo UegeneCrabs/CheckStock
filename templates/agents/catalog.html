@@ -1,0 +1,18 @@
+<link rel="stylesheet" href="/static/agents/index.css?v=20260925" />
+<link rel="stylesheet" href="/static/agents/catalog.css?v=4" />
+<section class="agent-page">
+  <div class="agent-heading"><h1>Каталог API</h1><span class="agent-badge">Только чтение данных</span></div>
+  <nav class="agent-provider-nav" aria-label="API и интеграции"><a href="/ai-agents/keys">API-ключи</a><a href="/ai-agents/catalog" aria-current="page">Каталог API</a><a href="/ai-agents/gpt">ChatGPT</a><a href="/ai-agents/claude">Claude / MCP</a></nav>
+  <p>Выберите метод и изучите, какие данные он возвращает. Показаны методы для доступных вам магазинов и разделов. Отдельные сценарии могут требовать дополнительных прав.</p>
+  <p><a href="/ai-agents/keys">Создать API-ключ</a></p>
+  <div id="catalog-message" role="status" aria-live="polite">Загрузка методов…</div>
+  <label for="catalog-search">Найти данные или метод</label>
+  <input id="catalog-search" type="search" placeholder="Например: остатки, заказы, profit" />
+  <div class="catalog-layout">
+    <nav id="catalog-list" aria-label="Методы API"></nav>
+    <section class="agent-card" id="catalog-detail" aria-label="Описание метода"><p>Выберите метод из списка.</p></section>
+  </div>
+  <section class="agent-card"><h2>Как читать ответы</h2><p><code>rows</code> — строки отчёта; <code>total_rows</code> — число найденных строк; <code>next_offset</code> — значение offset для следующей страницы, null означает конец. Некоторые служебные методы имеют другой формат ответа.</p><p><code>null</code> означает неизвестное значение, а не ноль. Проверяйте <code>warnings</code>, <code>sources</code> и <code>context</code>. Даты периода включают обе границы; время — МСК, если источник не указал другое смещение. Обычно допустимо до 90 дней.</p><p>401 — ключ не принят; 403 — недостаточно прав; 422 — некорректные параметры; 503 — источник временно недоступен. Наличие метода не означает, что данные уже загружены.</p></section>
+</section>
+<script src="/static/agents/catalog-comparison.js?v=1" defer></script>
+<script src="/static/agents/catalog.js?v=8" defer></script>

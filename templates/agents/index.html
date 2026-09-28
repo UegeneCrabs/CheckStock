@@ -1,46 +1,6 @@
-<link rel="stylesheet" href="/static/agents/index.css?v=20260916-pages" />
-<section class="agent-page">
-    <div class="agent-heading"
-        ><div><h1>ИИ-агенты · GPT</h1></div
-        ><span class="agent-badge">Только чтение данных</span></div
-    >
-    <div id="agent-message" role="status" aria-live="polite"></div>
-<nav class="agent-provider-nav" aria-label="Выбор ИИ-агента"><a href="/ai-agents/gpt" aria-current="page">GPT</a><a href="/ai-agents/claude">Claude</a></nav>
-    <div class="agent-grid">
-        <section class="agent-card"
-            ><h2>Создать подключение</h2
-            ><p>Каждому личному GPT — отдельный ключ. Его права совпадают с вашими правами на сайте.</p>
-            <form id="agent-create"
-                ><label for="agent-name">Название агента</label
-                ><input
-                    id="agent-name"
-                    name="name"
-                    required
-                    maxlength="80"
-                    placeholder="Например, мой аналитик WB"
-                    autocomplete="off"
-                />
-                <label for="agent-days">Срок действия ключа</label
-                ><select id="agent-days" name="days"
-                    ><option value="7">7 дней</option
-                    ><option value="30" selected>30 дней</option
-                    ><option value="90">90 дней</option
-                    ><option value="180">180 дней</option></select
-                >
-                <button class="agent-primary" type="submit">Создать API-ключ</button></form
-            >
-            <div class="agent-secret" id="agent-secret" hidden
-                ><h3>Ключ готов</h3
-                ><p
-                    >Скопируйте его сейчас: повторно показать ключ нельзя. Вставьте его в настройках Action,
-                    не в переписке с GPT.</p
-                ><label for="agent-token">Ваш API-ключ</label
-                ><textarea id="agent-token" readonly spellcheck="false" rows="3"></textarea
-                ><button type="button" id="agent-copy-key">Скопировать ключ</button
-                ><button type="button" id="agent-hide-key">Скрыть</button></div
-            >
-        </section>
-        <section class="agent-card"
+<link rel="stylesheet" href="/static/agents/index.css?v=20260925" />
+<section class="agent-page"><div class="agent-heading"><h1>Подключение ChatGPT</h1><span class="agent-badge">Только чтение данных</span></div><div id="agent-message" role="status" aria-live="polite"></div><nav class="agent-provider-nav" aria-label="API и интеграции"><a href="/ai-agents/keys">API-ключи</a><a href="/ai-agents/catalog">Каталог API</a><a href="/ai-agents/gpt" aria-current="page">ChatGPT</a><a href="/ai-agents/claude">Claude / MCP</a></nav>
+<p>Создайте ключ на вкладке <a href="/ai-agents/keys">«API-ключи»</a> и используйте его в своём GPT.</p>        <section class="agent-card"
             ><h2>Подключить к ChatGPT</h2
             ><ol
                 ><li
@@ -62,6 +22,7 @@
                     <a href="/static/agents/agent-instructions.txt" target="_blank" rel="noopener"
                         >Открыть инструкцию</a
                     ></li
+                ><li>Добавьте <a href="/static/agents/conversation-starters.txt" target="_blank" rel="noopener">5 готовых фраз для начала разговора</a> в поле «Фразы для начала разговора» вашего GPT — каждую отдельной строкой.<br /><button type="button" id="agent-copy-starters">Скопировать фразы</button></li
                 ><li>Нажмите <strong>«Создать новое действие»</strong>.</li
                 ><li>В Authentication выберите <strong>API Key → Bearer</strong> и вставьте свой ключ.</li
                 ><li
@@ -75,20 +36,6 @@
                 общего GPT компании нужен отдельный вход каждого сотрудника.</p
             ></section
         >
-    </div>
-    <section class="agent-card"
-        ><div class="agent-section-heading"
-            ><div
-                ><h2>Мои API-ключи</h2
-                ><p>Отзыв сразу отключает подключение. Для продолжения работы создайте новый ключ.</p></div
-            ><button type="button" id="agent-refresh">Обновить</button></div
-        ><div class="agent-table-wrap"
-            ><table
-                ><thead
-                    ><tr><th>Агент</th><th>Ключ</th><th>Действует до</th><th>Статус</th><th></th></tr></thead
-                ><tbody id="agent-keys"></tbody></table></div
-        ><p id="agent-empty" hidden>Подключений пока нет. Создайте первый ключ выше.</p></section
-    >
     <section class="agent-card agent-video" aria-labelledby="agent-video-title">
         <h2 id="agent-video-title">Видеоинструкция</h2>
         <p>Как подключить ИИ-аналитика к данным сайта и настроить GPT.</p>
@@ -120,4 +67,4 @@
         alt="В меню ChatGPT выделены Больше, GPT и кнопка Создать в правом верхнем углу."
     />
 </dialog>
-<script src="/static/agents/index.js?v=20260912" defer></script>
+<script src="/static/agents/index.js?v=20260928-starters" defer></script>

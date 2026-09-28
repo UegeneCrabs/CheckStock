@@ -1,0 +1,49 @@
+<link rel="stylesheet" href="/static/agents/index.css?v=20260925" />
+<section class="agent-page"><div class="agent-heading"><h1>API и интеграции</h1><span class="agent-badge">Только чтение данных</span></div><div id="agent-message" role="status" aria-live="polite"></div><nav class="agent-provider-nav" aria-label="API и интеграции"><a href="/ai-agents/keys" aria-current="page">API-ключи</a><a href="/ai-agents/catalog">Каталог API</a><a href="/ai-agents/gpt">ChatGPT</a><a href="/ai-agents/claude">Claude / MCP</a></nav>
+<p>Управляйте доступом к данным сайта для ChatGPT, Google Таблиц и других сервисов.</p>
+<div class="agent-grid">        <section class="agent-card"
+            ><h2>Создать API-ключ</h2
+            ><p>Ключ подходит для любого сервиса. Его права совпадают с вашими правами на сайте.</p>
+            <form id="agent-create"
+                ><label for="agent-name">Название подключения</label
+                ><input
+                    id="agent-name"
+                    name="name"
+                    required
+                    maxlength="80"
+                    placeholder="Например, Google Таблицы — остатки"
+                    autocomplete="off"
+                />
+                <label for="agent-days">Срок действия ключа</label
+                ><select id="agent-days" name="days"
+                    ><option value="7">7 дней</option
+                    ><option value="30" selected>30 дней</option
+                    ><option value="90">90 дней</option
+                    ><option value="180">180 дней</option></select
+                >
+                <button class="agent-primary" type="submit">Создать API-ключ</button></form
+            >
+            <div class="agent-secret" id="agent-secret" hidden
+                ><h3>Ключ готов</h3
+                ><p
+                    >Скопируйте его сейчас: повторно показать ключ нельзя. Сохраните его в настройках выбранного подключения.</p
+                ><label for="agent-token">Ваш API-ключ</label
+                ><textarea id="agent-token" readonly spellcheck="false" rows="3"></textarea
+                ><button type="button" id="agent-copy-key">Скопировать ключ</button
+                ><button type="button" id="agent-hide-key">Скрыть</button></div
+            >
+        </section>
+<section class="agent-card"><h2>Права доступа</h2><p>Ключ действует от вашего имени. Доступные магазины, площадки и отчёты определяются вашими правами на сайте.</p><p>Для каждого подключения создавайте отдельный ключ с понятным названием. Так его можно отозвать независимо от остальных.</p><p>Ранее созданные ключи продолжают работать.</p><p><a href="/docs">Проверить API</a> · <a href="/api/agent/v1/openapi.json">Схема API</a></p><p>Claude подключается отдельно через OAuth на вкладке «Claude / MCP».</p></section></div>    <section class="agent-card"
+        ><div class="agent-section-heading"
+            ><div
+                ><h2>Мои API-ключи</h2
+                ><p>Отзыв сразу отключает подключение. Для продолжения работы создайте новый ключ.</p></div
+            ><button type="button" id="agent-refresh">Обновить</button></div
+        ><div class="agent-table-wrap"
+            ><table
+                ><thead
+                    ><tr><th>Подключение</th><th>Ключ</th><th>Действует до</th><th>Статус</th><th></th></tr></thead
+                ><tbody id="agent-keys"></tbody></table></div
+        ><p id="agent-empty" hidden>Подключений пока нет. Создайте первый ключ выше.</p></section
+    >
+</section><script src="/static/agents/index.js?v=20260925" defer></script>

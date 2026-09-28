@@ -17,6 +17,8 @@ from app import db
 from app.access.access_control import ActionPermission, has_action_permission, scope_pairs
 from app.access.sections import has_access
 from app.agents import reports as reports
+from app.agents import yandex_reports
+from app.agents.extended_reports import EXTRA_SPECS
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.identity import SectionName
@@ -57,6 +59,12 @@ class ReportQuery(BaseModel):
     order: Literal["asc", "desc"] = "desc"
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=100000)
+    order_id: str | None = Field(default=None, min_length=1, max_length=100)
+    supply_id: str | None = Field(default=None, min_length=1, max_length=100)
+    status: str | None = Field(default=None, min_length=1, max_length=100)
+    cost_view: Literal[
+        "summary", "deliveries", "transfers", "shipments", "fbs_transfers", "fbs_sales", "fbs_actual_sales"
+    ] = "summary"
     is_new: bool | None = None
     active_only: bool = True
     ctr_below: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
@@ -208,6 +216,8 @@ SPECS = {
     ),
 }
 PERIOD_REPORTS = {"advertising-campaigns", "advertising", "stock-operations", "supplies", "profit"}
+SPECS.update(EXTRA_SPECS)
+PERIOD_REPORTS.update({"stock-history", "orders", "stock-cost-report"})
 ECONOMIC = {
     name
     for name, spec in SPECS.items()
@@ -224,6 +234,9 @@ def permitted(user, section, store, marketplace, operation=None):
         S.UNIT_ECONOMICS_WB: ActionPermission.UNIT_ECONOMICS_VIEW,
         S.REPORT_UNIT_PROFIT: ActionPermission.UNIT_ECONOMICS_VIEW,
         S.REPORT_TARGET_PRICE: ActionPermission.UNIT_ECONOMICS_VIEW,
+        S.UNIT_ECONOMICS_YANDEX: ActionPermission.UNIT_ECONOMICS_VIEW,
+        S.REPORT_UNIT_PROFIT_YANDEX: ActionPermission.UNIT_ECONOMICS_VIEW,
+        S.REPORT_TARGET_PRICE_YANDEX: ActionPermission.UNIT_ECONOMICS_VIEW,
     }
     action = operation or actions.get(section)
     return action is None or has_action_permission(user, action, store_slug=store, marketplace=marketplace)
@@ -242,7 +255,15 @@ def allowed_fields(name):
 
 def report_permitted(user, name, store, mp):
     section, wb_only, _, _ = SPECS[name]
-    if (wb_only and mp != "WB") or not permitted(user, section, store, mp):
+    section = yandex_reports.section_for(section, mp)
+    supported = not wb_only or mp == "WB" or (mp == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED)
+    if not supported or not permitted(user, section, store, mp):
+        return False
+    if name == "supply-arrivals" and not all((store, p) in scope_pairs(user) for p in MARKETPLACES):
+        return False
+    if name == "stock-cost-report" and not permitted(
+        user, section, store, mp, ActionPermission.STOCK_OPERATIONS_VIEW
+    ):
         return False
     if name == "stock-value" and not permitted(user, S.STOCK_BALANCES, store, mp):
         return False
@@ -262,8 +283,12 @@ def validate(name, query, supplied):
         raise HTTPException(
             422, "summary поддерживает fulfillment; warehouse и scheme используйте с view=details"
         )
-    if wb_only and query.marketplace != "WB":
+    if wb_only and query.marketplace != "WB" and not (
+        query.marketplace == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED
+    ):
         raise HTTPException(422, "Этот отчёт пока реализован только для WB")
+    if name == "prices" and query.marketplace == yandex_reports.MARKETPLACE and (query.date_from or query.date_to):
+        raise HTTPException(422, "Для Яндекс Маркета доступны текущие цены; история цен этим методом не предоставляется")
     if set(supplied) - allowed_fields(name):
         raise HTTPException(422, "Фильтр не поддерживается этим отчётом; см. capabilities")
     if bool(query.date_from) != bool(query.date_to):
@@ -275,11 +300,14 @@ def validate(name, query, supplied):
 
         if query.date_to < query.date_from or (query.date_to - query.date_from).days >= 90:
             raise HTTPException(422, "Допустим период от 1 до 90 дней")
-        if name != "supplies" and query.date_to > datetime.now(MOSCOW_TIMEZONE).date():
+        if (
+            name not in {"supplies", "supply-arrivals"}
+            and query.date_to > datetime.now(MOSCOW_TIMEZONE).date()
+        ):
             raise HTTPException(422, "Будущие даты недоступны")
-    if name in {"product-details", "profit-calculator"} and not query.article:
+    if name in {"product-details", "profit-calculator", "economics-history"} and not query.article:
         raise HTTPException(422, "Укажите article")
-    return section
+    return yandex_reports.section_for(section, query.marketplace)
 
 
 @router.get("/article-stores", operation_id="findArticleStores", response_model=ArticleLookupResponse)
@@ -290,12 +318,15 @@ async def article_stores(user: Employee, query: Annotated[ArticleLookupQuery, Qu
         if query.marketplace is not None and query.marketplace != mp:
             continue
         catalog_access = any(permitted(user, section, store, mp) for section in (S.STOCK_BALANCES, S.SALES))
-        economic_access = mp == "WB" and permitted(user, S.UNIT_ECONOMICS_WB, store, mp)
+        economic_access = mp in {"WB", yandex_reports.MARKETPLACE} and permitted(
+            user, yandex_reports.section_for(S.UNIT_ECONOMICS_WB, mp), store, mp
+        )
         if not catalog_access and not economic_access:
             continue
         if not catalog_access:
             allowed = await run_in_threadpool(
-                reports.economic_filter, [{"article": query.article}], user, store
+                yandex_reports.economic_filter if mp == yandex_reports.MARKETPLACE else reports.economic_filter,
+                [{"article": query.article}], user, store
             )
             if not allowed:
                 continue
@@ -324,9 +355,10 @@ async def capabilities(user: Employee):
     from app.web.routers.agent_analytics import LossQuery, accessible_stores
 
     loss_scopes = [
-        {"store": store, "marketplace": "WB"}
-        for store in accessible_stores(user, "WB")
-        if permitted(user, S.UNIT_ECONOMICS_WB, store, "WB")
+        {"store": store, "marketplace": mp}
+        for mp in ("WB", yandex_reports.MARKETPLACE)
+        for store in accessible_stores(user, mp)
+        if permitted(user, yandex_reports.section_for(S.UNIT_ECONOMICS_WB, mp), store, mp)
     ]
     return {
         "read_only": True,
@@ -334,7 +366,10 @@ async def capabilities(user: Employee):
             {
                 "report": name,
                 "path": "/api/agent/v1/" + name,
-                "description": description,
+                "description": description + (
+                    " Yandex Market is also supported with marketplace=YANDEX MARKET; see x-marketplace-guides for its field contract."
+                    if name in yandex_reports.SUPPORTED else ""
+                ),
                 "filters": sorted(allowed_fields(name)),
                 "scopes": [
                     {"store": store, "marketplace": mp}
@@ -343,7 +378,7 @@ async def capabilities(user: Employee):
                 ],
             }
             for name, (section, wb_only, fields, description) in SPECS.items()
-            if has_access(user, section)
+            if any(report_permitted(user, name, store, mp) for store, mp in scope_pairs(user))
         ]
         + [
             {
@@ -376,7 +411,7 @@ async def capabilities(user: Employee):
                 {
                     "report": "loss-products",
                     "path": "/api/agent/v1/loss-products",
-                    "description": "Rank WB products by estimated period loss. Incomplete calculations are excluded; empty rows do not prove no losses.",
+                    "description": "Rank WB or Yandex Market products by estimated period loss. Incomplete calculations are excluded; empty rows do not prove no losses.",
                     "filters": sorted(LossQuery.model_fields),
                     "scopes": loss_scopes,
                 }
@@ -384,7 +419,10 @@ async def capabilities(user: Employee):
             if loss_scopes
             else []
         ),
-        "unavailable": ["Расчёты юнит-экономики Ozon и Яндекс Маркета"],
+        "unavailable": [
+            "Расчёты юнит-экономики Ozon",
+            "Для Яндекс Маркета: advertising-campaigns, supplies, profit-summary, product-analysis; история цен",
+        ],
         "notes": [
             "Права не означают наличие загруженных данных. Проверяйте data-status.",
             "Объединяйте магазины только из разрешённых scopes, запросив каждый отдельно.",
@@ -402,14 +440,20 @@ async def data_status(request: Request, user: Employee, query: Annotated[ReportQ
     if (query.store, query.marketplace) not in scope_pairs(user):
         raise HTTPException(403, "Нет доступа к магазину или площадке")
     sections = [
-        s
+        yandex_reports.section_for(s, query.marketplace)
         for s in (S.STOCK_BALANCES, S.UNIT_ECONOMICS_WB)
-        if permitted(user, s, query.store, query.marketplace)
+        if permitted(user, yandex_reports.section_for(s, query.marketplace), query.store, query.marketplace)
     ]
     if not sections:
         raise HTTPException(403, "Нет доступа к данным")
     rows = []
     for section in sections:
+        if section is S.UNIT_ECONOMICS_YANDEX:
+            from app.access.access_control import restricts_unit_economics_to_manager
+
+            if not restricts_unit_economics_to_manager(user):
+                rows.extend(await run_in_threadpool(yandex_reports.source_status, query.store))
+            continue
         if section is S.UNIT_ECONOMICS_WB and query.marketplace != "WB":
             continue
         if section is S.UNIT_ECONOMICS_WB and user.role.value == "user":
@@ -475,6 +519,18 @@ async def execute(name, request, user, query, *, paginate=True):
         match = lookup.matches[0]
         query = query.model_copy(update={"store": match.store, "marketplace": match.marketplace})
     guard(user, section, query)
+    if query.marketplace == yandex_reports.MARKETPLACE and name in yandex_reports.ECONOMIC:
+        if not report_permitted(user, name, query.store, query.marketplace):
+            raise HTTPException(403, "Нет доступа к данным отчёта")
+        return await yandex_reports.execute(name, query, user, paginate=paginate)
+    if name in EXTRA_SPECS:
+        from app.agents.extended_reports import execute_extra
+
+        if not report_permitted(user, name, query.store, query.marketplace):
+            raise HTTPException(
+                403, "Нет доступа к данным отчёта; расписание требует доступа ко всем площадкам магазина"
+            )
+        return await execute_extra(name, request, user, query, paginate=paginate)
     if name in {"stock-value", "product-details"}:
         guard(user, S.STOCK_BALANCES, query)
     if name == "stock-operations":
@@ -874,7 +930,10 @@ for report_name, spec in SPECS.items():
         endpoint(report_name),
         methods=["GET"],
         operation_id="getAnalytics" + "".join(part.title() for part in report_name.split("-")),
-        description=spec[3],
+        description=spec[3] + (
+            " Also supports Yandex Market with marketplace=YANDEX MARKET. Yandex fields and limitations are documented in x-marketplace-guides; prices supports current values only."
+            if report_name in yandex_reports.SUPPORTED else ""
+        ),
         response_model=ReportResponse,
     )
 

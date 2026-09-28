@@ -32,7 +32,7 @@ SECTION_GROUPS = (
     ("Расписание поставок", (S.STOCK_ARRIVALS,)),
     ("Юнит-экономика 1С", UNIT_ECONOMICS_SECTIONS),
     ("Отчёты", REPORT_SECTIONS),
-    ("ИИ-агенты", (S.AI_AGENTS,)),
+    ("API и интеграции", (S.AI_AGENTS,)),
     ("Администрирование", (S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
 )
 SECTION_LABELS = {
@@ -53,7 +53,7 @@ SECTION_LABELS = {
     S.REPORT_UNIT_PROFIT_YANDEX: "Юниточная прибыль · ЯМ",
     S.REPORT_TARGET_PRICE: "Целевая цена · WB",
     S.REPORT_TARGET_PRICE_YANDEX: "Целевая цена · ЯМ",
-    S.AI_AGENTS: "ИИ-агенты",
+    S.AI_AGENTS: "API и интеграции",
     S.ADMIN_USERS: "Админ-панель · Сотрудники и журнал",
     S.ADMIN_GOOGLE_EXPORT: "Выгрузка в Google Таблицы",
     S.ADMIN_INTEGRATIONS: "API-ключи и фоновые выгрузки",
