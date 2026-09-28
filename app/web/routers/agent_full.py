@@ -256,7 +256,9 @@ def allowed_fields(name):
 def report_permitted(user, name, store, mp):
     section, wb_only, _, _ = SPECS[name]
     section = yandex_reports.section_for(section, mp)
-    supported = not wb_only or mp == "WB" or (mp == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED)
+    supported = (
+        not wb_only or mp == "WB" or (mp == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED)
+    )
     if not supported or not permitted(user, section, store, mp):
         return False
     if name == "supply-arrivals" and not all((store, p) in scope_pairs(user) for p in MARKETPLACES):
@@ -283,12 +285,20 @@ def validate(name, query, supplied):
         raise HTTPException(
             422, "summary поддерживает fulfillment; warehouse и scheme используйте с view=details"
         )
-    if wb_only and query.marketplace != "WB" and not (
-        query.marketplace == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED
+    if (
+        wb_only
+        and query.marketplace != "WB"
+        and not (query.marketplace == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED)
     ):
         raise HTTPException(422, "Этот отчёт пока реализован только для WB")
-    if name == "prices" and query.marketplace == yandex_reports.MARKETPLACE and (query.date_from or query.date_to):
-        raise HTTPException(422, "Для Яндекс Маркета доступны текущие цены; история цен этим методом не предоставляется")
+    if (
+        name == "prices"
+        and query.marketplace == yandex_reports.MARKETPLACE
+        and (query.date_from or query.date_to)
+    ):
+        raise HTTPException(
+            422, "Для Яндекс Маркета доступны текущие цены; история цен этим методом не предоставляется"
+        )
     if set(supplied) - allowed_fields(name):
         raise HTTPException(422, "Фильтр не поддерживается этим отчётом; см. capabilities")
     if bool(query.date_from) != bool(query.date_to):
@@ -325,8 +335,12 @@ async def article_stores(user: Employee, query: Annotated[ArticleLookupQuery, Qu
             continue
         if not catalog_access:
             allowed = await run_in_threadpool(
-                yandex_reports.economic_filter if mp == yandex_reports.MARKETPLACE else reports.economic_filter,
-                [{"article": query.article}], user, store
+                yandex_reports.economic_filter
+                if mp == yandex_reports.MARKETPLACE
+                else reports.economic_filter,
+                [{"article": query.article}],
+                user,
+                store,
             )
             if not allowed:
                 continue
@@ -366,9 +380,11 @@ async def capabilities(user: Employee):
             {
                 "report": name,
                 "path": "/api/agent/v1/" + name,
-                "description": description + (
+                "description": description
+                + (
                     " Yandex Market is also supported with marketplace=YANDEX MARKET; see x-marketplace-guides for its field contract."
-                    if name in yandex_reports.SUPPORTED else ""
+                    if name in yandex_reports.SUPPORTED
+                    else ""
                 ),
                 "filters": sorted(allowed_fields(name)),
                 "scopes": [
@@ -930,10 +946,8 @@ for report_name, spec in SPECS.items():
         endpoint(report_name),
         methods=["GET"],
         operation_id="getAnalytics" + "".join(part.title() for part in report_name.split("-")),
-        description=spec[3] + (
-            " Also supports Yandex Market with marketplace=YANDEX MARKET. Yandex fields and limitations are documented in x-marketplace-guides; prices supports current values only."
-            if report_name in yandex_reports.SUPPORTED else ""
-        ),
+        description=spec[3]
+        + (" Yandex: see x-marketplace-guides." if report_name in yandex_reports.SUPPORTED else ""),
         response_model=ReportResponse,
     )
 

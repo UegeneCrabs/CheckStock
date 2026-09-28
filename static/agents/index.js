@@ -148,24 +148,21 @@
         field.select();
     }
     if (document.getElementById('agent-copy-key')) document.getElementById('agent-copy-key').onclick = () => copy(token.value);
-    if (document.getElementById('agent-copy-instructions')) document.getElementById('agent-copy-instructions').onclick = async () => {
-        try {
-            const response = await fetch('/static/agents/agent-instructions.txt', { cache: 'no-store' });
-            if (!response.ok) throw new Error('Не удалось загрузить инструкцию.');
-            await copy(await response.text());
-        } catch (error) {
-            tell(error.message);
-        }
-    };
-    if (document.getElementById('agent-copy-starters')) document.getElementById('agent-copy-starters').onclick = async () => {
-        try {
-            const response = await fetch('/static/agents/conversation-starters.txt', { cache: 'no-store' });
-            if (!response.ok) throw new Error('Не удалось загрузить фразы.');
-            await copy(await response.text());
-        } catch (error) {
-            tell(error.message);
-        }
-    };
+    function bindTextCopy(id, path, errorMessage) {
+        const button = document.getElementById(id);
+        if (!button) return;
+        button.onclick = async () => {
+            try {
+                const response = await fetch(path, { cache: 'no-store' });
+                if (!response.ok) throw new Error(errorMessage);
+                await copy(await response.text());
+            } catch (error) {
+                tell(error.message);
+            }
+        };
+    }
+    bindTextCopy('agent-copy-instructions', '/static/agents/agent-instructions.txt', 'Не удалось загрузить инструкцию.');
+    bindTextCopy('agent-copy-starters', '/static/agents/conversation-starters.txt', 'Не удалось загрузить фразы.');
     if (document.getElementById('agent-hide-key')) document.getElementById('agent-hide-key').onclick = () => {
         token.value = '';
         secret.hidden = true;
@@ -173,10 +170,11 @@
     };
     if (document.getElementById('agent-copy-schema')) document.getElementById('agent-copy-schema').onclick = async () => {
         try {
-            const response = await fetch('/api/agent/v1/openapi.json');
+            const response = await fetch('/api/agent/v1/openapi.json', { cache: 'no-store' });
             if (!response.ok) throw new Error('Не удалось загрузить схему API.');
             const schema = await response.json();
             if (location.protocol === 'https:') schema.servers = [{ url: location.origin }];
+            if (!schema.servers?.length) throw new Error('Администратор должен настроить внешний HTTPS-адрес API (CHECKSTOCK_AGENT_PUBLIC_URL).');
             await copy(JSON.stringify(schema, null, 2));
         } catch (error) {
             tell(error.message);

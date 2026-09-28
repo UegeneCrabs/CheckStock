@@ -14,12 +14,22 @@ from app.web.routers import agent_analytics, agent_full
 
 class YandexApiTests(unittest.TestCase):
     def test_current_spp_matches_dashboard_prices_without_pay_discount(self):
-        for seller, buyer, expected in [(1000, 800, 20), (1000, 1000, 0),
-                                        (None, 800, None), (1000, None, None), (0, 800, None)]:
+        for seller, buyer, expected in [
+            (1000, 800, 20),
+            (1000, 1000, 0),
+            (None, 800, None),
+            (1000, None, None),
+            (0, 800, None),
+        ]:
             with self.subTest(seller=seller, buyer=buyer):
-                product = {"article": "a", "price": {"current": seller, "with_spp": buyer, "with_wallet": 500}}
-                with (patch.object(ym.ym, "catalog", return_value=[{"article": "a"}]),
-                      patch.object(ym.calculations, "load_products", return_value=[product])):
+                product = {
+                    "article": "a",
+                    "price": {"current": seller, "with_spp": buyer, "with_wallet": 500},
+                }
+                with (
+                    patch.object(ym.ym, "catalog", return_value=[{"article": "a"}]),
+                    patch.object(ym.calculations, "load_products", return_value=[product]),
+                ):
                     result = asyncio.run(ym.execute("current-economics", self.query(), object()))
                 self.assertEqual(result["rows"][0]["spp_percent"], expected)
         fields = documentation("current-economics")["marketplace_guides"][ym.MARKETPLACE]["fields"]

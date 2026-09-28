@@ -127,7 +127,11 @@ def guide(name, base):
     if name == "loss-products":
         return {
             "description": "Убыточные товары по отчёту Яндекс Маркета: только полная отрицательная маржа за период. Неполные расчёты исключаются. Даты обновления заказов и выкупов не предоставляются (null).",
-            "fields": [dict(f) for f in base["fields"] if f["name"] not in {"orders_updated_at", "buyouts_updated_at"}],
+            "fields": [
+                dict(f)
+                for f in base["fields"]
+                if f["name"] not in {"orders_updated_at", "buyouts_updated_at"}
+            ],
         }
     if name not in ECONOMIC | SHARED:
         return None

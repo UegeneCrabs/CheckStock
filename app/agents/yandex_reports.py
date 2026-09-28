@@ -189,7 +189,11 @@ def load(name, query, user):
                 price = product.get("price") or {}
                 seller, buyer = price.get("current"), price.get("with_spp")
                 # Same price pair and formula as dashboard.calculateSppPercent; Pay is separate.
-                spp = (seller - buyer) / seller * 100 if seller is not None and seller > 0 and buyer is not None else None
+                spp = (
+                    (seller - buyer) / seller * 100
+                    if seller is not None and seller > 0 and buyer is not None
+                    else None
+                )
                 row.update(
                     margin_per_unit_rub=current.get("margin"),
                     roi_percent=current.get("roi"),
