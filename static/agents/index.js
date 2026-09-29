@@ -9,8 +9,8 @@
         message.textContent = text;
     };
     const editorHelp = document.getElementById('agent-editor-help');
-    document.getElementById('agent-open-editor-help').onclick = () => editorHelp.showModal();
-    document.getElementById('agent-close-editor-help').onclick = () => editorHelp.close();
+    if (document.getElementById('agent-open-editor-help')) document.getElementById('agent-open-editor-help').onclick = () => editorHelp.showModal();
+    if (document.getElementById('agent-close-editor-help')) document.getElementById('agent-close-editor-help').onclick = () => editorHelp.close();
     async function api(path, options = {}) {
         const response = await fetch('/api/ai-agents/keys' + path, {
             ...options,
@@ -54,7 +54,7 @@
             button.textContent = 'Отозвать';
             button.setAttribute('aria-label', 'Отозвать ключ ' + key.name);
             button.onclick = async () => {
-                if (!window.confirm('Отозвать ключ «' + key.name + '»? Агент потеряет доступ.')) return;
+                if (!window.confirm('Отозвать ключ «' + key.name + '»? Подключение потеряет доступ.')) return;
                 button.disabled = true;
                 try {
                     await api('/' + encodeURIComponent(key.id), { method: 'DELETE' });
@@ -72,7 +72,7 @@
             body.append(row);
         }
     }
-    form.onsubmit = async (event) => {
+    if (form) form.onsubmit = async (event) => {
         event.preventDefault();
         const submit = form.querySelector('button');
         submit.disabled = true;
@@ -147,37 +147,44 @@
         field.focus();
         field.select();
     }
-    document.getElementById('agent-copy-key').onclick = () => copy(token.value);
-    document.getElementById('agent-copy-instructions').onclick = async () => {
-        try {
-            const response = await fetch('/static/agents/agent-instructions.txt', { cache: 'no-store' });
-            if (!response.ok) throw new Error('Не удалось загрузить инструкцию.');
-            await copy(await response.text());
-        } catch (error) {
-            tell(error.message);
-        }
-    };
-    document.getElementById('agent-hide-key').onclick = () => {
+    if (document.getElementById('agent-copy-key')) document.getElementById('agent-copy-key').onclick = () => copy(token.value);
+    function bindTextCopy(id, path, errorMessage) {
+        const button = document.getElementById(id);
+        if (!button) return;
+        button.onclick = async () => {
+            try {
+                const response = await fetch(path, { cache: 'no-store' });
+                if (!response.ok) throw new Error(errorMessage);
+                await copy(await response.text());
+            } catch (error) {
+                tell(error.message);
+            }
+        };
+    }
+    bindTextCopy('agent-copy-instructions', '/static/agents/agent-instructions.txt', 'Не удалось загрузить инструкцию.');
+    bindTextCopy('agent-copy-starters', '/static/agents/conversation-starters.txt', 'Не удалось загрузить фразы.');
+    if (document.getElementById('agent-hide-key')) document.getElementById('agent-hide-key').onclick = () => {
         token.value = '';
         secret.hidden = true;
         tell('');
     };
-    document.getElementById('agent-copy-schema').onclick = async () => {
+    if (document.getElementById('agent-copy-schema')) document.getElementById('agent-copy-schema').onclick = async () => {
         try {
-            const response = await fetch('/api/agent/v1/openapi.json');
+            const response = await fetch('/api/agent/v1/openapi.json', { cache: 'no-store' });
             if (!response.ok) throw new Error('Не удалось загрузить схему API.');
             const schema = await response.json();
             if (location.protocol === 'https:') schema.servers = [{ url: location.origin }];
+            if (!schema.servers?.length) throw new Error('Администратор должен настроить внешний HTTPS-адрес API (CHECKSTOCK_AGENT_PUBLIC_URL).');
             await copy(JSON.stringify(schema, null, 2));
         } catch (error) {
             tell(error.message);
         }
     };
-    document.getElementById('agent-refresh').onclick = () => load().catch((error) => tell(error.message));
-    window.addEventListener('pagehide', () => {
+    if (document.getElementById('agent-refresh')) document.getElementById('agent-refresh').onclick = () => load().catch((error) => tell(error.message));
+    if (form) window.addEventListener('pagehide', () => {
         token.value = '';
         secret.hidden = true;
         tell('');
     });
-    load().catch((error) => tell(error.message));
+    if (form) load().catch((error) => tell(error.message));
 })();

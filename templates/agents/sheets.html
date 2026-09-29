@@ -1,0 +1,25 @@
+  <section class="agent-card">
+    <h2>Выгрузка данных в таблицу</h2>
+    <p>Загружайте остатки, заказы и отчёты через меню таблицы или по расписанию. Скрипт получает все страницы выбранного отчёта и обновляет отдельный лист.</p>
+    <ol>
+      <li>Создайте ключ на вкладке <a href="/ai-agents/keys">«API-ключи»</a>, например «Google Таблицы — остатки».</li>
+      <li>В Google Таблице откройте <strong>Расширения → Apps Script</strong>.</li>
+      <li><a href="/static/agents/google-sheets.gs" download>Скачайте скрипт выгрузки</a>, вставьте его в редактор Apps Script и сохраните.</li>
+      <li>Откройте <strong>Настройки проекта → Свойства скрипта</strong> и добавьте параметры из таблицы ниже.</li>
+      <li>Перезагрузите Google Таблицу. Выберите <strong>Данные сайта → Обновить отчёт</strong> и разрешите выполнение скрипта.</li>
+    </ol>
+    <div class="agent-table-wrap"><table><thead><tr><th>Свойство</th><th>Значение</th></tr></thead><tbody>
+      <tr><td>API_BASE_URL</td><td>Публичный HTTPS-адрес сайта, без пути. Адрес localhost или 127.0.0.1 из Google недоступен.</td></tr>
+      <tr><td>API_TOKEN</td><td>Персональный API-ключ, без слова Bearer.</td></tr>
+      <tr><td>API_STORE</td><td>Код магазина из метода <code>/api/agent/v1/stores</code>.</td></tr>
+      <tr><td>API_REPORT</td><td>Например <code>stocks</code>, <code>orders</code> или <code>profit</code>. По умолчанию stocks.</td></tr>
+      <tr><td>API_PARAMS</td><td>Необязательно: фильтры в JSON. Например <code>{"date_from":"2026-09-24","date_to":"2026-09-24"}</code> для заказов. Для остатков можно <code>{"view":"summary"}</code>.</td></tr>
+    </tbody></table></div>
+    <p>Результат появится на листе <code>API_название-отчёта</code>. При обновлении содержимое этого листа заменяется. В первых строках указаны время загрузки и предупреждения источников.</p>
+    <p>Настраивайте скрипт в таблице с доверенными редакторами: они имеют доступ к связанному проекту Apps Script и его свойствам. Для отдельной таблицы используйте отдельный ключ.</p>
+  </section>
+  <section class="agent-card"><h2>Обновление по расписанию</h2>
+    <p>В Apps Script откройте «Триггеры», добавьте триггер для функции <code>refreshCheckStock</code>, выберите источник «По времени» и нужный интервал. Даты в API_PARAMS остаются фиксированными, пока вы их не измените.</p>
+    <p>При истечении срока ключа создайте новый и замените API_TOKEN. Если загрузка не завершилась, прежние данные останутся на листе. Для больших отчётов сузьте период или добавьте фильтр товара.</p>
+    <p><a href="/docs">Проверить параметры API</a> · <a href="https://developers.google.com/apps-script/reference/url-fetch/url-fetch-app" target="_blank" rel="noopener">Документация Google Apps Script</a></p>
+  </section>

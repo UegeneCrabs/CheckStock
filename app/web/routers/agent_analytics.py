@@ -2,15 +2,12 @@
 
 import logging
 import math
-import os
 from datetime import UTC, date, datetime
-from types import SimpleNamespace
 from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -68,6 +65,7 @@ class StoreInfo(BaseModel):
 class LossQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    marketplace: Literal["WB", "YANDEX MARKET"] = "WB"
     date_from: date
     date_to: date
     store: str = Field(min_length=1, max_length=100, description="Store slug from listAnalyticsStores")
@@ -94,7 +92,7 @@ class LossRow(BaseModel):
 
 
 class LossReport(BaseModel):
-    marketplace: Literal["WB"] = "WB"
+    marketplace: Literal["WB", "YANDEX MARKET"] = "WB"
     currency: Literal["RUB"] = "RUB"
     metric: Literal["estimated_period_profit"] = "estimated_period_profit"
     date_from: date
@@ -169,7 +167,12 @@ def summarize_losses(report: dict, query: LossQuery) -> LossReport:
     ]
     if excluded:
         warnings.append(f"Исключено товаров с неполным расчётом или неизвестной прибылью: {excluded}.")
+    if query.marketplace == "YANDEX MARKET":
+        warnings.append(
+            "Используется расчёт Яндекс Маркета. Даты обновления заказов и выкупов этим источником не предоставляются: соответствующие поля равны null."
+        )
     return LossReport(
+        marketplace=query.marketplace,
         date_from=query.date_from,
         date_to=query.date_to,
         generated_at=datetime.now(UTC),
@@ -183,20 +186,37 @@ def summarize_losses(report: dict, query: LossQuery) -> LossReport:
 
 @router.get("/loss-products", operation_id="getLossMakingProducts", response_model=LossReport)
 async def losses(request: Request, user: Employee, query: Annotated[LossQuery, Query()]):
-    """Rank WB products by lowest estimated total period profit in RUB.
+    """Rank WB or Yandex Market products by lowest estimated total period profit in RUB.
 
     Requires store and dates. Excludes incomplete margin calculations. Optional article filter.
     Disclose warnings: this is estimated profit, not confirmed financial loss.
     """
+    from app.agents.yandex_reports import section_for
     from app.web.routers.agent_full import guard
 
-    guard(user, SectionName.UNIT_ECONOMICS_WB, SimpleNamespace(store=query.store, marketplace="WB"))
+    guard(user, section_for(SectionName.UNIT_ECONOMICS_WB, query.marketplace), query)
     if query.date_from > query.date_to or (query.date_to - query.date_from).days >= 90:
         raise HTTPException(422, "Choose an ordered period of 1 to 90 days")
     if query.date_to > datetime.now(MOSCOW_TIMEZONE).date():
         raise HTTPException(422, "Future dates are not supported")
-    if query.store not in accessible_stores(user, "WB"):
-        raise HTTPException(403, "No access to this WB store")
+    if query.store not in accessible_stores(user, query.marketplace):
+        raise HTTPException(403, "No access to this marketplace store")
+    if query.marketplace == "YANDEX MARKET":
+        from app.economics.yandex.reports import load_rows
+
+        try:
+            rows = await run_in_threadpool(
+                load_rows,
+                (query.store,),
+                user,
+                query.date_from,
+                query.date_to,
+                article=query.article or "",
+            )
+        except Exception as error:
+            logger.error("agent_loss_report_failed marketplace=yandex type=%s", type(error).__name__)
+            raise HTTPException(503, "Источник отчёта временно недоступен") from error
+        return summarize_losses({"rows": rows}, query)
     params = {
         "date_from": query.date_from.isoformat(),
         "date_to": query.date_to.isoformat(),
@@ -213,59 +233,6 @@ async def losses(request: Request, user: Employee, query: Annotated[LossQuery, Q
 
 @router.get("/openapi.json", include_in_schema=False)
 async def action_schema():
-    from app.web.routers.agent_full import PERIOD_REPORTS, SPECS, allowed_fields
+    from app.agents.schema import build_action_schema
 
-    schema = get_openapi(title="CheckStock employee analytics", version="2.0.0", routes=router.routes)
-    for path, item in schema["paths"].items():
-        name = path.rsplit("/", 1)[-1]
-        fields = (
-            allowed_fields(name)
-            if name in SPECS
-            else {"store", "marketplace"}
-            if name == "data-status"
-            else None
-        )
-        if fields is not None:
-            item["get"]["parameters"] = [p for p in item["get"].get("parameters", []) if p["name"] in fields]
-        for parameter in item["get"].get("parameters", []):
-            query_schema = parameter.get("schema", {})
-            variants = query_schema.get("anyOf", [])
-            non_null = [variant for variant in variants if variant.get("type") != "null"]
-            if len(non_null) == 1 and len(variants) == 2:
-                parameter["schema"] = {
-                    **{key: value for key, value in query_schema.items() if key != "anyOf"},
-                    **non_null[0],
-                }
-                if parameter["schema"].get("default") is None:
-                    parameter["schema"].pop("default", None)
-            if name in PERIOD_REPORTS and parameter["name"] in {"date_from", "date_to"}:
-                parameter["required"] = True
-                parameter["description"] = (
-                    "Required inclusive date in YYYY-MM-DD format. Supply both dates; at most 90 days."
-                )
-            if name == "product-details" and parameter["name"] == "article":
-                parameter["required"] = True
-            if parameter["name"] == "store" and (name in SPECS or name == "data-status"):
-                parameter["required"] = name == "data-status"
-                parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 100}
-                parameter["description"] = (
-                    "Optional with exact article: server resolves store automatically. Omit unknown store; never guess."
-                    if name in SPECS
-                    else "Store slug"
-                )
-        if name in SPECS:
-            item["get"]["description"] = (
-                item["get"].get("description", "")
-                + " With article, omit unknown store for automatic resolution; see context.store_resolution if ambiguous."
-            )
-        if name == "profit-calculator":
-            for parameter in item["get"]["parameters"]:
-                if parameter["name"] == "article":
-                    parameter["required"] = True
-                    parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 100}
-                    parameter["description"] = (
-                        "Exact product article, e.g. 856546716. Ask the user if missing."
-                    )
-    public_url = os.getenv("CHECKSTOCK_AGENT_PUBLIC_URL", "").strip().rstrip("/")
-    schema["servers"] = [{"url": public_url}] if public_url else []
-    return schema
+    return build_action_schema(router.routes)

@@ -49,7 +49,41 @@ async def storage_call(function):
 
 @router.get("/ai-agents", response_class=HTMLResponse)
 async def agent_page(request: Request, user: Owner):
-    return RedirectResponse("/ai-agents/gpt", status_code=303, headers={"Cache-Control": "no-store"})
+    return RedirectResponse("/ai-agents/keys", status_code=303, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/ai-agents/keys", response_class=HTMLResponse)
+async def keys_page(request: Request, user: Owner):
+    return HTMLResponse(
+        render_page("CheckStock — API и интеграции", "ai_agents", fill_template("agents/keys.html"), user),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/ai-agents/sheets", response_class=HTMLResponse)
+async def sheets_page(request: Request, user: Owner):
+    return RedirectResponse("/ai-agents/catalog", status_code=303)
+
+
+@router.get("/ai-agents/catalog", response_class=HTMLResponse)
+async def catalog_page(request: Request, user: Owner):
+    return HTMLResponse(
+        render_page(
+            "CheckStock — Каталог API",
+            "ai_agents",
+            fill_template("agents/catalog.html"),
+            user,
+        ),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/api/ai-agents/catalog")
+async def catalog_data(response: Response, user: Owner):
+    from app.agents.catalog import employee_catalog
+
+    response.headers["Cache-Control"] = "no-store"
+    return await employee_catalog(user)
 
 
 @router.get("/ai-agents/gpt", response_class=HTMLResponse)
