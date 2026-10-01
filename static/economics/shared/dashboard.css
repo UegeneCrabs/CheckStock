@@ -30,6 +30,12 @@ body:has(.content--unit-1c) {
 .ue1c-page.is-placeholder.is-yandex-economics #ue1c-glued-section:not([hidden]) {
     display: block;
 }
+.ue1c-page.is-placeholder.is-ozon-preview .ue1c-calculator:not(.ue1c-placeholder-calculator) {
+    display: block;
+}
+.ue1c-page.is-ozon-preview #ue1c-glued-section {
+    display: none !important;
+}
 .ue1c-page.is-placeholder button:disabled,
 .ue1c-page.is-placeholder select:disabled,
 .ue1c-page.is-placeholder input:disabled {
@@ -286,6 +292,15 @@ body:has(.content--unit-1c) {
 .ue1c-ghost-button:hover {
     border-color: #aeb9cb;
     background: var(--ue-surface-2);
+}
+#ue1c-calendar-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+#ue1c-calendar-link[data-marketplace="Ozon"] {
+    display: none;
 }
 .ue1c-segments {
     height: 42px;

@@ -12,6 +12,8 @@ from app.access import auth
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
+from app.economics import ozon_advertising, ozon_turnover
+from app.economics.sources import ozon as ozon_source_sync
 from app.economics.sources import purchase_prices as unit_source_sync
 from app.economics.wb import advertising as advertising_sync
 from app.economics.wb import calculations as unit_economics_1c
@@ -23,6 +25,7 @@ from app.exports import stock_sheet as stock_sheet_export
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, run_background_job
 from app.ozon import catalog as ozon_catalog
+from app.ozon import reputation as ozon_reputation
 from app.ozon import sync as ozon_sync
 from app.stock import history as stock_history
 from app.stock import inbound_supplies, supply_arrivals
@@ -393,6 +396,36 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         *_funnel_jobs(),
         *_yandex_unit_economics_jobs(),
         BackgroundJob(
+            "ozon_reputation_sync",
+            ozon_reputation.sync_all,
+            _fixed_delay(24 * 60 * 60),
+            startup_delay_seconds=150,
+            is_enabled=lambda: _job_enabled("ozon_reputation_sync"),
+            run_callback=lambda: ozon_reputation.sync_all(
+                sync_settings.enabled_stores("ozon_reputation_sync", "OZON")
+            ),
+        ),
+        BackgroundJob(
+            ozon_turnover.JOB_NAME,
+            ozon_turnover.sync_all,
+            _moscow_daily_delay(3),
+            ready_event=catalog_ready,
+            is_enabled=lambda: _job_enabled(ozon_turnover.JOB_NAME),
+            run_callback=lambda: ozon_turnover.sync_all(
+                sync_settings.enabled_stores(ozon_turnover.JOB_NAME, "OZON")
+            ),
+        ),
+        BackgroundJob(
+            ozon_advertising.JOB_NAME,
+            ozon_advertising.sync_all,
+            _moscow_daily_delay(4),
+            ready_event=catalog_ready,
+            is_enabled=lambda: _job_enabled(ozon_advertising.JOB_NAME),
+            run_callback=lambda: ozon_advertising.sync_all(
+                sync_settings.enabled_stores(ozon_advertising.JOB_NAME, "OZON")
+            ),
+        ),
+        BackgroundJob(
             ya_category_commissions.JOB,
             ya_category_commissions.sync_all,
             ya_categories.next_delay,
@@ -452,10 +485,17 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
         ),
         BackgroundJob(
             "unit_economics_1c_source_sync",
-            unit_source_sync.sync_all_marketplaces,
+            lambda: unit_source_sync.sync_all_marketplaces(include_ozon=False),
             _moscow_daily_delay(settings.unit_economics_1c_source_sync_hour),
             ready_event=catalog_ready,
             is_enabled=lambda: _job_enabled("unit_economics_1c_source_sync"),
+        ),
+        BackgroundJob(
+            "ozon_unit_economics_1c_source_sync",
+            ozon_source_sync.sync_all,
+            _moscow_daily_delay(settings.unit_economics_1c_source_sync_hour),
+            ready_event=catalog_ready,
+            is_enabled=lambda: _job_enabled("ozon_unit_economics_1c_source_sync"),
         ),
         BackgroundJob(
             "unit_economics_1c_reference_sync",

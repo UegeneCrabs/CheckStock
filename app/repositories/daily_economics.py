@@ -284,8 +284,8 @@ def first_day(marketplace, store, articles):
             )
             rows += list(
                 conn.execute(
-                    "SELECT article,MIN(SUBSTR(source,11,10)) AS day FROM yandex_economics_sources WHERE store_slug=? AND source LIKE 'day-input:%:COMMON' GROUP BY article",
-                    (store,),
+                    "SELECT article,MIN(SUBSTR(source,11,10)) AS day FROM yandex_economics_sources WHERE store_slug=? AND source LIKE ? GROUP BY article",
+                    (store, "day-input:%:COMMON"),
                 )
             )
     dates = [r["day"] for r in rows if r["article"] in articles]

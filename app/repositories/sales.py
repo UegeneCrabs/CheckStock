@@ -305,6 +305,54 @@ def get_sales_sync_states(marketplace: str, store_slug: str | None = None) -> li
     return [dict(row) for row in rows]
 
 
+def get_net_order_amounts_by_article(
+    marketplace: str, store_slugs: tuple[str, ...], date_from: str, date_to: str
+) -> dict[tuple[str, str], float]:
+    if not store_slugs:
+        return {}
+    placeholders = ", ".join("?" for _ in store_slugs)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT store_slug, article,
+                   SUM(order_amount - cancelled_amount) AS amount
+              FROM sales_order_lines
+             WHERE marketplace = ? AND store_slug IN ({placeholders})
+               AND substr(ordered_at, 1, 10) BETWEEN ? AND ?
+             GROUP BY store_slug, article
+            """,
+            (marketplace, *store_slugs, date_from, date_to),
+        ).fetchall()
+    return {
+        (str(row["store_slug"]), str(row["article"])): round(float(row["amount"] or 0), 2)
+        for row in rows
+    }
+
+
+def get_order_counts_by_article(
+    marketplace: str, store_slugs: tuple[str, ...], date_from: str, date_to: str
+) -> dict[tuple[str, str], int]:
+    if not store_slugs:
+        return {}
+    placeholders = ", ".join("?" for _ in store_slugs)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT store_slug, article,
+                   SUM(quantity) AS orders_count
+              FROM sales_order_lines
+             WHERE marketplace = ? AND store_slug IN ({placeholders})
+               AND substr(ordered_at, 1, 10) BETWEEN ? AND ?
+             GROUP BY store_slug, article
+            """,
+            (marketplace, *store_slugs, date_from, date_to),
+        ).fetchall()
+    return {
+        (str(row["store_slug"]), str(row["article"])): max(int(row["orders_count"] or 0), 0)
+        for row in rows
+    }
+
+
 def get_sales_daily(
     date_from: str, date_to: str, marketplace: str, store_slug: str | None = None
 ) -> list[dict]:

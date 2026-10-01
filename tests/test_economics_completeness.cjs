@@ -45,4 +45,8 @@ assert.equal(result[3].partial, false);
 assert.equal(result[6].value, 25);
 assert.equal(totals([noOrders])[3].value, null);
 
-console.log('Economics totals: partial costs, ROI scope and zero orders passed.');
+// Ozon keeps its existing aggregation filters.
+result = totals([complete, unknownPurchase], true);
+assert.equal(result[2].value, 100 / 8);
+assert.equal(result[6].value, 50);
+console.log('Economics totals: partial costs, ROI scope, zero orders and Ozon compatibility passed.');
