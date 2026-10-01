@@ -1,0 +1,38 @@
+.week-update {
+    display: grid;
+    gap: 18px;
+    margin-bottom: 28px;
+    padding: 24px;
+    border-top: 3px solid var(--blue, #315efb);
+}
+.week-update-head, .week-update-actions, .week-update-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.week-update-head h2 { margin: 0; font-size: 20px; }
+.week-update-head p, .week-update-preview p { margin: 6px 0 0; color: var(--text-muted); }
+.week-update-switch { display: flex; align-items: center; gap: 8px; }
+.week-update-switch input { width: 18px; height: 18px; }
+.week-update-grid { display: grid; grid-template-columns: 2fr 1fr 1.4fr 1fr; gap: 16px; }
+.week-update-grid label, .week-update-url { display: grid; gap: 8px; min-width: 0; }
+.week-update-grid label > span, .week-update-url > span { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.week-update-grid input, .week-update-grid select, .week-update-url input { width: 100%; min-width: 0; }
+.week-update-preview { padding: 16px; border-radius: 10px; background: color-mix(in srgb, var(--blue, #315efb) 6%, var(--paper, #fff)); }
+.week-update-preview span { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 4px; }
+.week-update-preview strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.week-update-hint { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.week-update-actions { justify-content: flex-end; }
+.week-update-actions a { margin-right: auto; }
+.week-update-actions button { width: auto; }
+.week-update-actions [data-week-unsaved] { color: var(--text-muted); font-size: 12px; }
+.week-update button:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 1000px) { .week-update-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) {
+    .week-update { padding: 16px; }
+    .week-update-grid { grid-template-columns: 1fr; }
+    .week-update-actions { align-items: stretch; flex-direction: column; }
+    .week-update-actions button { width: 100%; }
+}

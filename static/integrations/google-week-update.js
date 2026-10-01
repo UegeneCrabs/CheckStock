@@ -1,0 +1,71 @@
+(function () {
+    var form = document.querySelector('[data-week-update-form]');
+    if (!form) return;
+    var status = form.querySelector('[data-week-status]');
+    var run = form.querySelector('[data-week-run]');
+    var submit = form.querySelector('[type="submit"]');
+    var unsaved = form.querySelector('[data-week-unsaved]');
+    var saved = !run.disabled;
+    var dirty = false;
+    var busy = false;
+
+    function controls() {
+        run.disabled = busy || dirty || !saved;
+        submit.disabled = busy;
+        unsaved.hidden = !dirty;
+    }
+    function show(message, error) {
+        status.textContent = message;
+        status.classList.toggle('export-status--error', Boolean(error));
+    }
+    function apply(data) {
+        form.querySelector('[data-week-value]').textContent = data.value;
+        form.querySelector('[data-week-schedule]').textContent = data.schedule_text;
+        show(data.status_text, data.has_error);
+    }
+    ['input', 'change'].forEach(function (event) {
+        form.addEventListener(event, function () { dirty = true; controls(); });
+    });
+    async function request(url, body) {
+        var response = await fetch(url, {
+            method: 'POST', body: body,
+            headers: { 'X-Requested-With': 'fetch', Accept: 'application/json' },
+        });
+        var data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось выполнить запрос');
+        return data;
+    }
+    async function perform(action) {
+        busy = true;
+        controls();
+        // Freeze fields as well: a successful save must correspond to the visible values.
+        var inputs = form.querySelectorAll('input, select');
+        inputs.forEach(function (input) { input.disabled = true; });
+        try { await action(); }
+        catch (error) { show(error.message, true); }
+        finally {
+            inputs.forEach(function (input) { input.disabled = false; });
+            busy = false; controls();
+        }
+    }
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (busy) return;
+        var body = new FormData(form);
+        perform(async function () {
+            show('Сохраняю настройки недели…', false);
+            var data = await request('/admin/google-week-update', body);
+            saved = true; dirty = false;
+            apply(data);
+            show('Настройки сохранены. ' + data.status_text, data.has_error);
+            form.querySelector('[data-week-sheet-link]').href = body.get('spreadsheet_url');
+        });
+    });
+    run.addEventListener('click', function () {
+        if (busy || dirty || !saved) return;
+        perform(async function () {
+            show('Обновляю неделю в Google Таблице…', false);
+            apply(await request('/admin/google-week-update/run', new FormData()));
+        });
+    });
+})();

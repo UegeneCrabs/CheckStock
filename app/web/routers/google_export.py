@@ -10,11 +10,15 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app import db
 from app.access import auth
+from app.config import settings as app_settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
 from app.exports import stock_sheet as stock_sheet_export
+from app.integrations import google_week_update
+from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import run_tracked
+from app.repositories import google_week_update as week_repository
 from app.repositories.stock_sheet_export import (
     ExportTarget,
     MarketplaceSpreadsheet,
@@ -230,6 +234,7 @@ async def render_google_export() -> str:
             _render_store_card(item, active=index == 0) for index, item in enumerate(settings)
         ),
         service_account_email=html.escape(google_service_account_email()),
+        week_update=await run_in_threadpool(_render_week_update),
     )
 
 
@@ -237,6 +242,111 @@ def google_service_account_email() -> str:
     from app.ff_import import google_service_account
 
     return google_service_account.get_service_account_email()
+
+
+def _week_payload() -> dict:
+    settings = week_repository.get_settings()
+    now = datetime.now(MOSCOW_TIMEZONE)
+    next_run = google_week_update.next_run_at(settings, now)
+    if not settings.enabled:
+        schedule_text = "Автообновление выключено"
+    elif not app_settings.background_sync_enabled:
+        schedule_text = "Фоновые задачи приложения отключены. Доступен ручной запуск"
+    else:
+        schedule_text = f"Ближайший запуск: {format_dt(next_run.isoformat())}"
+    status = "Обновление ещё не запускалось"
+    if settings.last_success_at:
+        status = f"Последнее обновление: {format_dt(settings.last_success_at)} — {settings.last_value}"
+    if settings.last_error:
+        status += f". Ошибка {format_dt(settings.last_attempt_at)}: {settings.last_error}"
+    return {
+        "ok": True,
+        "value": google_week_update.last_completed_week(now),
+        "schedule_text": schedule_text,
+        "status_text": status,
+        "has_error": bool(settings.last_error),
+        "saved": bool(settings.updated_at),
+    }
+
+
+def _render_week_update() -> str:
+    settings = week_repository.get_settings()
+    state = _week_payload()
+    return fill_template(
+        "integrations/google-week-update.html",
+        spreadsheet_url=_input(settings.spreadsheet_url),
+        sheet_name=_input(settings.sheet_name),
+        cells=_input(", ".join(settings.cells)),
+        enabled_checked=" checked" if settings.enabled else "",
+        weekdays=_render_weekdays(settings.weekday),
+        run_time=_input(settings.run_time),
+        value=html.escape(state["value"]),
+        schedule_text=html.escape(state["schedule_text"]),
+        status_text=html.escape(state["status_text"]),
+        status_class="export-status--error" if state["has_error"] else "",
+        run_disabled="" if state["saved"] else " disabled",
+    )
+
+
+@router.get("/admin/google-week-update")
+async def google_week_update_status(request: Request):
+    _require_superadmin(request)
+    return JSONResponse(await run_in_threadpool(_week_payload), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/admin/google-week-update")
+async def save_google_week_update(request: Request):
+    _require_superadmin(request)
+    form = await request.form()
+    try:
+        try:
+            weekday = int(_value(form, "weekday"))
+        except ValueError as error:
+            raise ValueError("Выберите день недели") from error
+        settings = week_repository.WeekUpdateSettings(
+            enabled=_value(form, "enabled") == "1",
+            spreadsheet_url=_value(form, "spreadsheet_url"),
+            sheet_name=_value(form, "sheet_name"),
+            cells=google_week_update.parse_cells(_value(form, "cells")),
+            weekday=weekday,
+            run_time=_value(form, "run_time"),
+        )
+        await run_in_threadpool(google_week_update.save_settings, settings)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Обновление уже выполняется. Сохраните настройки после его завершения"},
+            status_code=409,
+        )
+    actor = request.state.user
+    await run_in_threadpool(
+        db.log_action,
+        actor.id,
+        actor.full_name,
+        "Изменены настройки обновления недели",
+        f"{settings.sheet_name}: {', '.join(settings.cells)}; день {settings.weekday + 1}, {settings.run_time} МСК",
+        datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
+    )
+    return JSONResponse(await run_in_threadpool(_week_payload))
+
+
+@router.post("/admin/google-week-update/run")
+async def run_google_week_update(request: Request):
+    _require_superadmin(request)
+    try:
+        report = await run_in_threadpool(
+            run_tracked,
+            google_week_update.JOB_NAME,
+            "manual",
+            google_week_update.run_now,
+        )
+    except SyncJobBusyError:
+        return JSONResponse({"ok": False, "error": "Обновление уже выполняется"}, status_code=409)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    state = await run_in_threadpool(_week_payload)
+    return JSONResponse({**state, "report": report})
 
 
 @router.post("/admin/google-export/{store_slug}")

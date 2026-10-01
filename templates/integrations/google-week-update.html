@@ -1,0 +1,44 @@
+<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261001" />
+<form class="panel week-update" data-week-update-form>
+    <div class="week-update-head">
+        <div>
+            <h2>Автообновление недели</h2>
+            <p>Записывает последнюю завершённую неделю в выбранные ячейки.</p>
+        </div>
+        <label class="week-update-switch">
+            <input type="checkbox" name="enabled" value="1"$enabled_checked />
+            <span>Включить по расписанию</span>
+        </label>
+    </div>
+    <label class="week-update-url"><span>Ссылка на Google Таблицу</span>
+        <input class="input-control" type="url" name="spreadsheet_url" value="$spreadsheet_url" required maxlength="2048" />
+    </label>
+    <div class="week-update-grid">
+        <label><span>Название листа</span>
+            <input class="input-control" name="sheet_name" value="$sheet_name" required maxlength="100" />
+        </label>
+        <label><span>Ячейки через запятую</span>
+            <input class="input-control" name="cells" value="$cells" placeholder="F4, AI10" required maxlength="300" spellcheck="false" />
+        </label>
+        <label><span>Каждую неделю в</span>
+            <select class="integration-select" name="weekday">$weekdays</select>
+        </label>
+        <label><span>Время (Москва)</span>
+            <input class="input-control" type="time" name="run_time" value="$run_time" required />
+        </label>
+    </div>
+    <div class="week-update-preview">
+        <div><span>Если запустить сейчас</span><strong data-week-value>$value</strong></div>
+        <p data-week-schedule>$schedule_text</p>
+    </div>
+    <p class="week-update-hint">Неделя считается с понедельника по воскресенье по Москве. Формат — W39 2026, год соответствует ISO-неделе. Новое расписание действует со следующего запуска; пропущенный запуск выполняется после включения приложения.</p>
+    <p class="week-update-hint">Сначала сохраните настройки. Кнопка «Обновить сейчас» записывает значение в указанные ячейки, даже когда расписание выключено.</p>
+    <p class="export-status $status_class" data-week-status role="status" aria-live="polite">$status_text</p>
+    <div class="week-update-actions">
+        <a href="$spreadsheet_url" target="_blank" rel="noopener noreferrer" data-week-sheet-link>Открыть таблицу</a>
+        <span data-week-unsaved hidden>Есть несохранённые изменения</span>
+        <button class="btn-secondary" type="button" data-week-run$run_disabled>Обновить сейчас</button>
+        <button class="btn-primary" type="submit">Сохранить настройки недели</button>
+    </div>
+</form>
+<script src="/static/integrations/google-week-update.js?v=20261001"></script>

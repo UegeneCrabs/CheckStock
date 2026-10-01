@@ -22,6 +22,7 @@ from app.economics.wb import reference_data as unit_reference_sync
 from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import stock_sheet as stock_sheet_export
+from app.integrations import google_week_update
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, run_background_job
 from app.ozon import catalog as ozon_catalog
@@ -347,6 +348,13 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
 
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
+        BackgroundJob(
+            google_week_update.JOB_NAME,
+            google_week_update.run_due,
+            _fixed_delay(60),
+            startup_delay_seconds=10,
+            is_enabled=google_week_update.is_due,
+        ),
         BackgroundJob(
             "catalog_sync",
             _sync_catalogs,
