@@ -147,9 +147,16 @@ def source(store, article, name):
     return {"values": json.loads(row["payload_json"]), "updated_at": row["updated_at"]} if row else {}
 
 
-def sources(store):
+def sources(store, articles=None):
+    if articles is not None and not articles:
+        return {}
+    article_filter = ""
+    parameters = (store,)
+    if articles is not None:
+        article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
+        parameters += tuple(articles)
     with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM yandex_economics_sources WHERE store_slug=?", (store,)).fetchall()
+        rows = conn.execute("SELECT * FROM yandex_economics_sources WHERE store_slug=?" + article_filter, parameters).fetchall()
     return {
         (row["article"], row["source"]): {
             "values": json.loads(row["payload_json"]),
@@ -213,16 +220,23 @@ def save_day(store, article, scheme, day, payload):
         conn.commit()
 
 
-def history(store, start, end):
+def history(store, start, end, *, articles=None):
+    if articles is not None and not articles:
+        return []
+    article_filter = ""
+    parameters = (store, start, end)
+    if articles is not None:
+        article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
+        parameters += tuple(articles)
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM yandex_economics_daily WHERE store_slug=? AND day>=? AND day<=? ORDER BY day",
-            (store, start, end),
+            "SELECT * FROM yandex_economics_daily WHERE store_slug=? AND day>=? AND day<=?" + article_filter + " ORDER BY day",
+            parameters,
         ).fetchall()
     from app.repositories import daily_economics
 
     result = {(row["article"], row["scheme"], row["day"]): {**dict(row), "data": json.loads(row["payload_json"])} for row in rows}
-    for row in daily_economics.records("YANDEX MARKET", (store,), start, end):
+    for row in daily_economics.records("YANDEX MARKET", (store,), start, end, articles=articles, compact=True):
         result[(row["article"], "COMMON", row["day"])] = daily_economics.yandex_report_row(row)
     return list(result.values())
 

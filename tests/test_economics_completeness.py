@@ -89,6 +89,34 @@ class CompletenessTests(unittest.TestCase):
         self.assertTrue(wb["daily_complete"])
         self.assertTrue(ym["daily_complete"])
 
+    def test_compact_history_preserves_report_values_and_manual_overrides(self):
+        for market, values, version, convert in (
+            ("WB", WB, 3, self.repo.wb_report_row),
+            ("YANDEX MARKET", YM, 14, self.repo.yandex_report_row),
+        ):
+            source = self.repo.observation(values, raw={"large_api_response": ["audit"] * 1000},
+                                           origins={"purchase_price": "saved"}, version=version)
+            payload = self.repo.resolved(market, source, {"purchase_price": 0, "orders_count": 0})
+            with self.core.get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO economics_daily (marketplace,store_slug,article,day,payload_json,revision,updated_at) VALUES (?,?,?,?,?,?,?)",
+                    (market, "gogol", "a", DAY, self.repo.encode(payload), 2, DAY),
+                )
+                conn.commit()
+            full = self.repo.records(market, ("gogol",), DAY, DAY)
+            compact = self.repo.records(market, ("gogol",), DAY, DAY, articles=("a",), compact=True)
+            self.assertEqual([convert(row) for row in compact], [convert(row) for row in full])
+            self.assertEqual(compact[0]["token"], full[0]["token"])
+            self.assertNotIn("raw", compact[0]["source"])
+            self.assertIn("raw", full[0]["source"])
+            self.assertEqual(self.repo.records(market, ("gogol",), DAY, DAY, articles=()), [])
+            self.assertEqual(self.repo.records(market, ("gogol",), DAY, DAY, articles=("other",)), [])
+            if market == "WB":
+                inputs = self.repo.records(market, ("gogol",), DAY, DAY, compact=True, inputs_only=True)
+                full_day = self.wb_history.report_day(DAY, convert(full[0]), {}, None)
+                inputs_day = self.wb_history.report_day(DAY, convert(inputs[0]), {}, None)
+                self.assertEqual(inputs_day, full_day)
+
     def test_unknown_advertising_is_partial_real_zero_is_complete(self):
         for market, fixture in (("WB", WB), ("YANDEX MARKET", YM)):
             with self.subTest(market=market):

@@ -880,10 +880,18 @@ def get_daily_margin_snapshots(
     store_slugs: tuple[str, ...],
     date_from: str,
     date_to: str,
+    *,
+    articles: tuple[str, ...] | None = None,
+    inputs_only: bool = False,
 ) -> list[dict]:
-    if not store_slugs:
+    if not store_slugs or articles is not None and not articles:
         return []
     placeholders = ", ".join("?" for _ in store_slugs)
+    article_filter = ""
+    parameters = (*store_slugs, date_from, date_to)
+    if articles is not None:
+        article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
+        parameters += articles
     conn = get_connection()
     rows = conn.execute(
         f"""
@@ -894,15 +902,16 @@ def get_daily_margin_snapshots(
          WHERE store_slug IN ({placeholders})
            AND marketplace='WB'
            AND day>=? AND day<=?
+           {article_filter}
          ORDER BY store_slug, article, day
         """,
-        (*store_slugs, date_from, date_to),
+        parameters,
     ).fetchall()
     conn.close()
     from app.repositories import daily_economics
 
     result = {(row["store_slug"], row["article"], row["day"]): dict(row) for row in rows}
-    for row in daily_economics.records("WB", store_slugs, date_from, date_to):
+    for row in daily_economics.records("WB", store_slugs, date_from, date_to, articles=articles, compact=True, inputs_only=inputs_only):
         result[(row["store_slug"], row["article"], row["day"])] = daily_economics.wb_report_row(row)
     return list(result.values())
 

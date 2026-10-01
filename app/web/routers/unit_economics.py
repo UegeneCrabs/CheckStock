@@ -357,7 +357,7 @@ def _unit_economics_1c_mock_product(
     period_days = max(int(product_metrics.get("period_days") or 7), 1)
     history_period_days = max(int(history_product_metrics.get("period_days") or period_days), 1)
     visible_history_start = max(history_period_days - max(int(history_days), 0), 0)
-    for offset_from_start in range(history_period_days):
+    for offset_from_start in range(visible_history_start, history_period_days):
         offset = history_period_days - offset_from_start - 1
         day = history_end - timedelta(days=offset)
         day_metrics = metric_history.get(day.isoformat()) or {}
@@ -887,21 +887,10 @@ async def sales_unit_economics_1c(request: Request):
         )
         source_coverage = wb_days(store_slugs, history_from.isoformat(), today.isoformat())
         advertising_days_by_store = {store: days["advertising"] for store, days in source_coverage.items()}
-        saved_margin_snapshots = db.get_unit_economics_1c_daily_margin_snapshots(
-            store_slugs,
-            history_from.isoformat(),
-            today.isoformat(),
-        )
         daily_orders_by_product: dict[tuple[str, str], dict[str, dict]] = {}
         funnel_days_by_store = {store: days["orders"] for store, days in source_coverage.items()}
         for row in saved_funnel_daily_rows:
             daily_orders_by_product.setdefault(
-                (str(row["store_slug"]), str(row["article"])),
-                {},
-            )[str(row["day"])] = row
-        margin_snapshots_by_product: dict[tuple[str, str], dict[str, dict]] = {}
-        for row in saved_margin_snapshots:
-            margin_snapshots_by_product.setdefault(
                 (str(row["store_slug"]), str(row["article"])),
                 {},
             )[str(row["day"])] = row
@@ -932,6 +921,31 @@ async def sales_unit_economics_1c(request: Request):
             for store_slug, catalog in catalogs.items()
         }
         catalogs = {store_slug: inbound.catalog for store_slug, inbound in inbound_by_store.items()}
+        # Skip only products guaranteed to be hidden by the final activity
+        # filter. Keep the full catalog for glue groups and direct detail views.
+        report_catalogs = {}
+        for store_slug, catalog in catalogs.items():
+            inbound = inbound_by_store[store_slug]
+            report_catalogs[store_slug] = [
+                item for item in catalog
+                if (str(item["article"]) == detail_article if detail_article else (
+                    any((_optional_integer(item.get(field)) or 0) > 0
+                        for field in ("fbs_stock", "fbo_stock", "ff_available"))
+                    or (inbound.quantities.get(str(item["article"])) or 0) > 0
+                    or (inbound.confirmed_quantities.get(str(item["article"])) or 0) > 0
+                    or any((metrics.get((store_slug, _nm_id(item["article"]))) or {}).get(field)
+                           for field in ("orders_amount", "cancel_amount"))
+                ))
+            ]
+        report_articles = tuple(sorted({str(item["article"]) for catalog in report_catalogs.values() for item in catalog}))
+        saved_margin_snapshots = db.get_unit_economics_1c_daily_margin_snapshots(
+            store_slugs, history_from.isoformat(), today.isoformat(), articles=report_articles, inputs_only=True,
+        )
+        margin_snapshots_by_product: dict[tuple[str, str], dict[str, dict]] = {}
+        for row in saved_margin_snapshots:
+            margin_snapshots_by_product.setdefault(
+                (str(row["store_slug"]), str(row["article"])), {},
+            )[str(row["day"])] = row
         glue_groups: dict[tuple[str, int], list[dict]] = {}
         for store_slug, catalog in catalogs.items():
             for item in catalog:
@@ -965,7 +979,7 @@ async def sales_unit_economics_1c(request: Request):
         products: list[dict] = []
         for store_slug in store_slugs:
             cabinet = settings[store_slug]
-            catalog = catalogs[store_slug]
+            catalog = report_catalogs[store_slug]
             inbound = inbound_by_store[store_slug]
             for product in catalog:
                 article = str(product.get("article") or "")

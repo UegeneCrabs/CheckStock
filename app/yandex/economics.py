@@ -27,10 +27,10 @@ from app.yandex.economics_diagnostics import current_issues
 from app.yandex.price_calculation import discounted_price
 
 
-def context(store, *, sources=None):
+def context(store, *, sources=None, articles=None):
     read = sources.read if sources is not None else lambda loader, *args: loader(*args)
     return {
-        "sources": read(repository.sources, store),
+        "sources": read(repository.sources, store, articles) if articles is not None else read(repository.sources, store),
         "settings": read(repository.all_settings, store),
         "source_1c": read(yandex_source_values.get_values, store),
         "prices": read(yandex_storefront.get_prices, store),
@@ -407,7 +407,7 @@ def detail(
         config["current_issues"] = current_issues(config, daily)
     if include_history:
         start, end = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
-        rows = repository.history(store, start, end)
+        rows = repository.history(store, start, end, articles=(article,))
         daily = resolved_history(store, article, rows, metrics.days_between(start, end))
         config["period"] = aggregate(daily, metrics.days_between(start, end))
         config["history"] = daily
@@ -441,8 +441,9 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
 def attach(products, start, end, today, scheme="FBY"):
     histories, contexts, current, period_sources = {}, {}, {}, {}
     for store in {product["store_slug"] for product in products}:
-        histories[store] = repository.history(store, start.isoformat(), end.isoformat())
-        contexts[store] = context(store)
+        articles = tuple(product["article"] for product in products if product["store_slug"] == store)
+        histories[store] = repository.history(store, start.isoformat(), end.isoformat(), articles=articles)
+        contexts[store] = context(store, articles=articles)
         key = today.isoformat()
         ads, ad_days = metrics.get_history(store, "advertising", key, key)
         orders, order_days = metrics.get_history(store, "orders", key, key)

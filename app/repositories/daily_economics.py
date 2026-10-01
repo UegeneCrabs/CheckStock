@@ -29,11 +29,18 @@ def now():
     return datetime.now(UTC).isoformat()
 
 
-def _decode(row):
+def _decode(row, *, inputs_only=False):
     saved = json.loads(row["payload_json"])
     # Read only the recorded inputs with their formula version; current settings
     # and remote sources are never consulted by a read/recalculation.
-    payload = resolved(row["marketplace"], saved["source"], saved.get("overrides"), saved["original"])
+    if inputs_only:
+        source, overrides = saved["source"], saved.get("overrides") or {}
+        # The report applies today's loaded order/ad coverage before calculating
+        # this day. Avoid calculating the same inputs once more just to load it.
+        payload = {"source": source, "overrides": overrides, "version": source.get("version"),
+                   "values": {**source["values"], **overrides}, "result": {}}
+    else:
+        payload = resolved(row["marketplace"], saved["source"], saved.get("overrides"), saved.get("original"))
     return {**payload, "revision": row["revision"], "token": str(row["revision"])}
 
 
@@ -196,17 +203,32 @@ def source_times(marketplace, source):
     return result
 
 
-def records(marketplace, stores, start, end):
-    if not stores:
+def records(marketplace, stores, start, end, *, articles=None, compact=False, inputs_only=False):
+    """Reports need calculated inputs, not the original/raw source audit payloads."""
+    if not stores or articles is not None and not articles:
         return []
     marks = ",".join("?" for _ in stores)
+    article_filter = ""
+    parameters = (marketplace, *stores, start, end)
+    if articles is not None:
+        article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
+        parameters += tuple(articles)
     with get_connection() as conn:
+        columns = "*"
+        if compact:
+            # Strip audit-only data before transferring/decoding thousands of
+            # snapshots. Keep the recorded formula version and every overlay.
+            if conn.dialect_name == "postgresql":
+                payload = "((payload_json::jsonb - 'original') #- '{source,raw}')::text"
+            else:
+                payload = "json_remove(payload_json, '$.original', '$.source.raw')"
+            columns = f"marketplace,store_slug,article,day,revision,{payload} AS payload_json"
         rows = conn.execute(
-            f"SELECT * FROM economics_daily WHERE marketplace=? AND store_slug IN ({marks}) AND day>=? AND day<=?",
-            (marketplace, *stores, start, end),
+            f"SELECT {columns} FROM economics_daily WHERE marketplace=? AND store_slug IN ({marks}) AND day>=? AND day<=?{article_filter}",
+            parameters,
         ).fetchall()
     return [
-        {"store_slug": row["store_slug"], "article": row["article"], "day": row["day"], **_decode(row)}
+        {"store_slug": row["store_slug"], "article": row["article"], "day": row["day"], **_decode(row, inputs_only=inputs_only)}
         for row in rows
     ]
 
