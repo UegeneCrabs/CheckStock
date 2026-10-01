@@ -787,6 +787,24 @@ class WbFunnelOrdersSyncStateRecord(OrmBase):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class GoogleWeekUpdateSettingRecord(OrmBase):
+    __tablename__ = "google_week_update_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False)
+    spreadsheet_url: Mapped[str] = mapped_column(Text, nullable=False)
+    sheet_name: Mapped[str] = mapped_column(String, nullable=False)
+    cells: Mapped[str] = mapped_column(Text, nullable=False)
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_time: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_success_slot: Mapped[str | None] = mapped_column(String)
+    last_value: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
 class StockSheetExportSettingRecord(OrmBase):
     __tablename__ = "stock_sheet_export_settings"
 
