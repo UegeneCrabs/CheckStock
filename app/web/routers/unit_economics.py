@@ -1120,6 +1120,7 @@ async def sales_unit_economics_1c(request: Request):
                             )
                         },
                         fallback_buyout_percent=history_product_metrics.get("buyout_percent"),
+                        ignore_deferred_cost_warnings=True,
                     )
                 period_daily_advertising = {
                     str(item.get("date")): max(float(item.get("advertising_spend") or 0), 0.0)
@@ -1139,6 +1140,7 @@ async def sales_unit_economics_1c(request: Request):
                     advertising_days=source_coverage[store_slug]["advertising"],
                     fallback_buyout_percent=period_product_metrics.get("buyout_percent"),
                     allow_partial=True,
+                    ignore_deferred_cost_warnings=True,
                 )
                 inbound_quantity = inbound.quantities.get(article)
                 inbound_partial = inbound_quantity is None or not inbound.available
@@ -1195,6 +1197,7 @@ async def sales_unit_economics_1c(request: Request):
                     today_key, current_snapshot, product_daily_orders.get(today_key) or {}, current_product_metrics.get("spend"),
                     orders_known=today_key in source_coverage[store_slug]["orders"],
                     ads_known=today_key in source_coverage[store_slug]["advertising"],
+                    ignore_deferred_cost_warnings=True,
                 )
                 current_values, current_result = current_day["inputs"], dict(current_day["result"])
                 count, spend, bought = current_day["orders_count"], current_day["advertising_spend"], current_day["expected_buyouts"]

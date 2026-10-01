@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -127,6 +127,48 @@ class CompletenessTests(unittest.TestCase):
                 self.assertTrue(zero["daily_complete"])
                 self.assertIn("advertising_spend", unknown["daily_missing"])
                 self.assertEqual(unknown["purchase_value"], 1600)
+
+    def test_wb_dashboard_defers_delivery_storage_return_warnings_only(self):
+        from app.dto.identity import User
+        from app.exports.stock_sheet_inbound import InboundExport
+
+        today = date(2026, 9, 24)
+        with self.core.get_connection() as conn:
+            conn.execute("INSERT INTO stock_items (store_slug,marketplace,article,barcode,name) VALUES ('rimili','WB','123','111','Cost warnings')")
+            conn.commit()
+        for day in (date.fromisoformat(DAY), today):
+            self.wb_funnel._replace_day("rimili", day, [("123", "sku", "Cost warnings", 10, 9000, 0, 0, 8, 7200, 80)])
+            self.wb_repo.replace_daily_advertising("rimili", day.isoformat(), day.isoformat(), [])
+
+        for purchase in (200, None):
+            values = {**WB, "purchase_price": purchase, "delivery_wb_rub": None,
+                      "storage_wb_rub": None, "return_cost_rub": None, "advertising_spend": 0}
+            for day in (DAY, today.isoformat()):
+                self.repo.capture(("WB", "rimili", "123", day), self.repo.observation(values, version=3))
+            request = Request({"type": "http", "method": "GET", "path": "/sales/unit-economics-1c",
+                               "headers": [], "query_string": f"data=1&store=rimili&article=123&date_from={DAY}&date_to={DAY}".encode(),
+                               "state": {"user": User(id=1, login="test", full_name="Test", role="superadmin", created_at=DAY)}})
+            with (
+                patch.object(self.routes, "datetime") as clock,
+                patch.object(self.routes.stock_sheet_inbound, "load", side_effect=lambda store, market, catalog: InboundExport(catalog, {"123": 0}, True)),
+            ):
+                clock.now.return_value = datetime(2026, 9, 24, 12)
+                response = asyncio.run(self.routes.sales_unit_economics_1c(request))
+            self.assertEqual(response.status_code, 200)
+            product = json.loads(response.body)["product"]
+            current = product["current_economics"]
+            deferred = self.wb_history.DEFERRED_REPORT_COST_WARNINGS
+            self.assertFalse(deferred.intersection(current["missing"]))
+            self.assertEqual(current["complete"], purchase is not None)
+            coverage = product["economics_7d"]["margin_coverage"]
+            self.assertEqual(coverage["complete"], purchase is not None)
+            for missing in coverage["missing_parameters"].values():
+                self.assertFalse(deferred.intersection(missing))
+            if purchase is None:
+                self.assertIn("purchase_price", current["missing"])
+            expected = self.daily.calculate("WB", values)[1]
+            self.assertEqual(current["margin"], expected["margin"])
+            self.assertEqual(product["economics_7d"]["margin"], expected["day_profit"])
 
     def test_missing_purchase_and_multiple_costs_keep_partial_margin(self):
         for market, fixture in (("WB", WB), ("YANDEX MARKET", YM)):
