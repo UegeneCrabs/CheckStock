@@ -8,15 +8,14 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.economics.wb import calculations as unit_economics_1c
 from app.exports import stock_sheet_inbound
+from app.repositories import unit_economics_yandex as repository
 from app.repositories import (
-    unit_economics_data_errors,
     yandex_assortment,
     yandex_economics,
     yandex_product_statuses,
     yandex_source_values,
     yandex_storefront,
 )
-from app.repositories import unit_economics_yandex as repository
 
 MARKETPLACE = "YANDEX MARKET"
 
@@ -173,7 +172,6 @@ def load_products(
     period_days = (end - start).days + 1
     stock_start = today - timedelta(days=unit_economics_1c.STOCK_COVERAGE_PERIOD_DAYS - 1)
     history_start = min(start, stock_start)
-    source_health = unit_economics_data_errors.source_states(store_slugs, MARKETPLACE)
     products = []
     for slug in store_slugs:
         active = read(yandex_assortment.active_articles, slug)
@@ -191,16 +189,6 @@ def load_products(
                 )
         stocks = {row["article"]: row for row in db.get_stock_items(slug, MARKETPLACE, ("fbs", "fbo"))}
         snapshots = read(repository.get_snapshots, slug)
-        snapshot_errors = [
-            f"Источник {source}: {snapshot['error']}"
-            for source, snapshot in snapshots.items()
-            if snapshot.get("error")
-        ]
-        snapshot_errors.extend(
-            f"Источник {scope}: {state.get('error') or 'ошибка обновления API'}"
-            for scope, state in source_health.get(slug, {}).items()
-            if not state.get("ok")
-        )
         product_statuses = yandex_product_statuses.get_statuses(slug)
         source_values = read(yandex_source_values.get_values, slug)
         prices = read(yandex_storefront.get_prices, slug)
@@ -410,7 +398,9 @@ def load_products(
             ] if group_id else []
             products[-1]["details"]["buyout_percent"] = buyout_percent
             products[-1]["details"]["drr"] = ad["drr"]
-            errors = list(snapshot_errors)
+            # Snapshot errors describe the whole refresh, not this article. Report
+            # the product's own missing values, price check and period coverage.
+            errors = []
             if not source_stock:
                 errors.append("Не загружены остатки товара ЯМ")
             if not source_values.get(sku):

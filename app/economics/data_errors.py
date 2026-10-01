@@ -139,7 +139,12 @@ def product_errors(
         if advertising is None:
             errors.append("Не загружены данные рекламы WB")
         for scope, state in source_states.items():
-            if scope in SOURCE_LABELS and not state.get("ok"):
-                reason = str(state.get("error") or "ошибка обновления, данные могут быть устаревшими")
-                errors.append(f"{SOURCE_LABELS[scope]}: {reason}")
+            if (
+                scope in SOURCE_LABELS
+                and not state.get("ok")
+                and _failed_source_affects_product(scope, product, prices, reference, metrics)
+            ):
+                # Batch errors can list other articles. Keep their details in sync health;
+                # a product row only describes its own missing source values.
+                errors.append(f"{SOURCE_LABELS[scope]}: данные товара неполные, источник не обновлён")
     return list(dict.fromkeys(errors))
