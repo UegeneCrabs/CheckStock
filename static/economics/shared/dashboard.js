@@ -381,7 +381,8 @@
         return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : String(value || '');
     }
     function calculationNote(value, messages) {
-        if (!messages || !messages.length) return value === null || value === undefined ? 'Недостаточно данных' : '';
+        messages = messages || [];
+        if (!messages.length && value !== null && value !== undefined) return '';
         var label = value === null || value === undefined ? 'Недостаточно данных' : 'Неполный расчёт';
         return '<small class="ue1c-calculation-note" title="' + escapeHtml(messages.join('\n')) + '">' + label + '</small>';
     }
