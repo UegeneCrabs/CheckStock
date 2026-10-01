@@ -1,0 +1,49 @@
+<link rel="stylesheet" href="/static/economics/shared/dashboard.css?v=20260925" />
+<link rel="stylesheet" href="/static/economics/shared/calendar.css?v=20260925" />
+<section class="ue1c-page uec-page" id="economics-calendar" aria-label="Календарь параметров юнит-экономики">
+    <div class="uec-heading">
+        <div><a href="$economics_url" class="uec-back">← Юнит-экономика</a><h1>Параметры по дням</h1></div>
+        <span class="uec-badge">Просмотр</span>
+    </div>
+    <div class="ue1c-toolbar">
+        <label class="uec-control">Магазин<select class="ue1c-select" id="uec-store"></select></label>
+        <label class="uec-control">Дата снимка<input id="uec-day" type="date" /></label>
+        <button class="ue1c-ghost-button" id="uec-today" type="button">Сегодня</button>
+        <label class="ue1c-field ue1c-search-field"><span aria-hidden="true">⌕</span><input id="uec-search" type="search" placeholder="Название, артикул или баркод" aria-label="Поиск товара" /></label>
+        <span id="uec-status" role="status" aria-live="polite"></span>
+    </div>
+    <p class="uec-note" id="uec-note">Нажмите на значение, чтобы открыть источник и историю.</p>
+    <p class="uec-summary" id="uec-summary"></p>
+    <details id="uec-incomplete" hidden><summary>Что не учтено в итоге выбранного дня</summary><ul></ul></details>
+    <section class="ue1c-table-card">
+        <div class="uec-scroll" tabindex="0" aria-label="Таблица дневных параметров с горизонтальной прокруткой">
+            <table class="uec-table"><thead id="uec-head"></thead><tbody id="uec-rows"></tbody></table>
+        </div>
+        <footer class="ue1c-table-footer">
+            <span id="uec-page-summary"></span>
+            <div class="ue1c-footer-actions">
+                <label>На странице <select id="uec-size" class="ue1c-select"><option>20</option><option selected>50</option><option>100</option></select></label>
+                <button class="ue1c-page-button" id="uec-prev" aria-label="Предыдущая страница">‹</button>
+                <button class="ue1c-page-button" id="uec-next" aria-label="Следующая страница">›</button>
+            </div>
+        </footer>
+    </section>
+    <dialog id="uec-cell" class="uec-dialog" aria-labelledby="uec-cell-title">
+        <header class="ue1c-modal-head"><div><h2 id="uec-cell-title"></h2><p id="uec-cell-product"></p></div><button id="uec-close" class="ue1c-close" aria-label="Закрыть">×</button></header>
+        <div class="uec-dialog-body">
+            <div id="uec-cell-content"></div>
+            <form id="uec-edit" hidden>
+                <h3>Корректировка только на <span id="uec-effective-day"></span></h3>
+                <p class="uec-note">Изменяется расчёт сохранённого дня. Цена в кабинете маркетплейса и настройки других дат не меняются.</p>
+                <label>Новое значение <input id="uec-value" type="text" inputmode="decimal" autocomplete="off" /></label>
+                <label>Причина <textarea id="uec-reason" rows="2" minlength="3" maxlength="2000" required placeholder="Например: уточнение закупки по документу поставщика"></textarea></label>
+                <div class="uec-actions"><button class="ue1c-primary-button" type="submit">Проверить влияние</button><button class="ue1c-ghost-button" type="button" id="uec-undo" hidden>Отменить корректировку</button></div>
+            </form>
+            <div id="uec-preview" hidden></div>
+            <p id="uec-error" class="uec-error" role="alert"></p>
+            <details id="uec-raw"><summary>Сохранённые данные источника</summary><pre></pre></details>
+        </div>
+    </dialog>
+</section>
+<script type="application/json" id="uec-config">$calendar_config</script>
+<script src="/static/economics/shared/calendar.js?v=20260925"></script>

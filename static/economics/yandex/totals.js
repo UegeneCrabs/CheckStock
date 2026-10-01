@@ -1,7 +1,7 @@
 (function () {
     'use strict';
     function known(value) { return value != null && value !== '' && Number.isFinite(Number(value)); }
-    window.CheckStockYandexTotals = function (products) {
+    window.CheckStockYandexTotals = function (products, legacy) {
         var result = {0: {title: 'Количество товаров'}};
         function articleCount(rows) {
             return new Set(rows.map(function (p) {
@@ -30,6 +30,7 @@
         }
         var current = products.filter(function (p) {
             var c = p.current_economics || {};
+            if (legacy) return known(c.margin) && known(c.orders) && known(c.buyout_percent) && known(currentPurchase(p));
             return known(c.day_profit) || (known(c.margin) && known(c.orders) && known(c.buyout_percent));
         });
         function currentPurchase(p) {
@@ -39,13 +40,13 @@
         function bought(p) { var c = p.current_economics; return known(c.expected_buyouts) ? Number(c.expected_buyouts) : c.orders * c.buyout_percent / 100; }
         function dayPurchase(p) {
             var c = p.current_economics;
-            if (c.day_purchase_value !== undefined) return c.day_purchase_value;
+            if (!legacy && c.day_purchase_value !== undefined) return c.day_purchase_value;
             if (bought(p) === 0) return 0;
             return known(currentPurchase(p)) ? currentPurchase(p) * bought(p) : null;
         }
         function currentPartial(p) {
             var c = p.current_economics;
-            return (c.daily_complete === undefined ? c.complete : c.daily_complete) === false;
+            return (legacy || c.daily_complete === undefined ? c.complete : c.daily_complete) === false;
         }
         function currentProfit(p) {
             var c = p.current_economics;
@@ -60,7 +61,7 @@
         sum(4, function (p) { return p.economics_7d.turnover; }, 'money', 'Сумма ТО после отмен.', function (p) { return p.economics_7d.turnover_coverage; });
         sum(5, function (p) { return p.economics_7d.margin; }, 'money', 'Сумма сохранённой прибыли за выбранный период.', function (p) { return p.economics_7d.margin_coverage; });
         function periodPurchase(p) { var e = p.economics_7d; return e.roi_purchase_value !== undefined ? e.roi_purchase_value : e.purchase_value; }
-        var period = products.filter(function (p) { return known(p.economics_7d.margin); });
+        var period = products.filter(function (p) { return known(p.economics_7d.margin) && (!legacy || known(p.economics_7d.purchase_value)); });
         ratio(6, period, function (p) { return p.economics_7d.margin; }, function (p) { return periodPurchase(p); },
             100, 'percent', 'ROI: суммарная прибыль / закупочная стоимость по тем же сохранённым дням.',
             function (p) { return !p.economics_7d.complete || !known(periodPurchase(p)); });

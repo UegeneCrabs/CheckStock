@@ -75,3 +75,20 @@ def get_credentials(store_slug: str) -> tuple[str, str]:
 def has_credentials(store_slug: str) -> bool:
     entry = _load_tokens().get(store_slug) or {}
     return bool(entry.get("client_id") and entry.get("api_key"))
+
+
+def get_performance_credentials(store_slug: str) -> tuple[str, str]:
+    entry = _load_tokens().get(store_slug) or {}
+    client_id = str(entry.get("performance_client_id") or "").strip()
+    client_secret = str(entry.get("performance_client_secret") or "").strip()
+    if not client_id or not client_secret:
+        raise OzonCredentialsNotFoundError(
+            f"Нет ключей Performance API для магазина '{store_slug}'. "
+            "Добавьте performance_client_id и performance_client_secret в файл доступов Ozon"
+        )
+    return client_id, client_secret
+
+
+def has_performance_credentials(store_slug: str) -> bool:
+    entry = _load_tokens().get(store_slug) or {}
+    return bool(entry.get("performance_client_id") and entry.get("performance_client_secret"))

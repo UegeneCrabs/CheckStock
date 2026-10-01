@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import db
-from app.access import auth
+from app.access import auth, economics_preview
 from app.access.access_control import accessible_stores, has_scope, restricts_unit_economics_to_manager
 from app.access.sections import has_access as has_section_access
 from app.core import health
@@ -28,6 +28,7 @@ from app.dto.unit_economics_1c import (
     YandexBuyoutSettingsRequest,
 )
 from app.economics import data_errors as unit_economics_data_errors
+from app.economics import ozon as unit_economics_ozon
 from app.economics.completeness import aggregate_days, annotate, describe
 from app.economics.report_cache import reports_cache, user_key
 from app.economics.reporting import (
@@ -841,6 +842,9 @@ def _unit_economics_period(request: Request, last_complete_day: date):
 
 @router.get("/sales/unit-economics-1c", response_class=HTMLResponse)
 async def sales_unit_economics_1c(request: Request):
+    if request.query_params.get("calendar") == "1":
+        from app.web.routers.economics_calendar import page
+        return page(request)
     accessible_store_slugs = accessible_stores(request.state.user, "WB")
     data_request = request.query_params.get("data") == "1"
     request_today = datetime.now(MOSCOW_TIMEZONE).date()
@@ -1337,6 +1341,7 @@ async def sales_unit_economics_1c(request: Request):
         "economics/shared/dashboard.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
         marketplace_name="Wildberries",
+        calendar_link=economics_preview.calendar_link(request.state.user),
         marketplace_label="WB",
         loading_description="Таблица появится сразу после подготовки расчётов.",
         unit_1c_notice="",
@@ -2542,7 +2547,7 @@ async def unit_economics_1c_source_data_sync(request: Request):
         report = run_tracked(
             "unit_economics_1c_source_sync",
             "manual",
-            unit_economics_1c_source.sync_all_marketplaces,
+            lambda: unit_economics_1c_source.sync_all_marketplaces(include_ozon=False),
         )
         db.log_action(
             int(user["id"]),
@@ -2644,13 +2649,82 @@ def _render_unit_economics_1c_placeholder(
 
 @router.get("/sales/unit-economics-1c/ozon", response_class=HTMLResponse)
 async def sales_unit_economics_1c_ozon(request: Request):
-    return _render_unit_economics_1c_placeholder(
-        request,
-        title="CheckStock — Юнит-экономика 1С — Ozon",
-        active="unit_1c_ozon",
-        logo="OZON",
-        logo_class="ozon",
-        heading="Раздел Ozon в разработке",
+    if not economics_preview.can_preview(request.state.user):
+        if request.query_params.get("data") == "1":
+            economics_preview.require_preview(request.state.user)
+        return _render_unit_economics_1c_placeholder(
+            request,
+            title="CheckStock — Юнит-экономика 1С — Ozon",
+            active="unit_1c_ozon",
+            logo="OZON",
+            logo_class="ozon",
+            heading="Раздел Ozon в разработке",
+        )
+    store_slugs = accessible_stores(request.state.user, unit_economics_ozon.MARKETPLACE)
+    today = datetime.now(MOSCOW_TIMEZONE).date()
+    last_complete_day = today - timedelta(days=1)
+    period_days, period_start, period_end, custom_period, period_error = _unit_economics_period(
+        request, last_complete_day
+    )
+    if period_error and request.query_params.get("data") == "1":
+        return JSONResponse({"ok": False, "error": period_error}, status_code=400)
+    if request.query_params.get("data") == "1":
+        detail_article = str(request.query_params.get("article") or "").strip()
+        detail_store = str(request.query_params.get("store") or "").strip().lower()
+        if detail_article and detail_store not in store_slugs:
+            return JSONResponse({"ok": False, "error": "Нет доступа к магазину"}, status_code=403)
+        products = await run_in_threadpool(
+            unit_economics_ozon.load_products,
+            (detail_store,) if detail_article else store_slugs,
+            detail_article,
+            period_start,
+            period_end,
+        )
+        if detail_article:
+            if not products:
+                return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)
+            return JSONResponse({"ok": True, "product": products[0]})
+        return JSONResponse({
+            "ok": True,
+            "products": products,
+            "period_days": period_days,
+            "period_from": period_start.isoformat(),
+            "period_to": period_end.isoformat(),
+            "period_mode": "custom" if custom_period else "preset",
+            "last_complete_day": last_complete_day.isoformat(),
+        })
+
+    unit_config = {
+        "userKey": str(request.state.user["id"]),
+        "storageNamespace": "checkstock.unit-economics-ozon",
+        "marketplaceLabel": "Ozon",
+        "placeholderMode": True,
+        "ozonPreview": True,
+        "periodSelection": False,
+        "periodDays": period_days,
+        "periodFrom": period_start.isoformat(),
+        "periodTo": period_end.isoformat(),
+        "lastCompleteDay": last_complete_day.isoformat(),
+        "canEdit": False,
+        "stores": [{"slug": slug, "name": STORES[slug]["name"]} for slug in store_slugs],
+        "products": [],
+        "productsEndpoint": "/sales/unit-economics-1c/ozon?data=1",
+    }
+    content = fill_template(
+        "economics/shared/dashboard.html",
+        unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
+        marketplace_name="Ozon",
+        calendar_link="",
+        marketplace_label="Ozon",
+        loading_description="Загружаем товары, отзывы и остатки из базы данных.",
+        unit_1c_notice="",
+    )
+    return render_page(
+        "CheckStock — Юнит-экономика 1С — Ozon",
+        "unit_1c_ozon",
+        content,
+        request.state.user,
+        content_class="content--unit-1c",
     )
 
 
@@ -2682,6 +2756,9 @@ async def yandex_buyout_settings_save(
 
 @router.get("/sales/unit-economics-1c/yandex-market", response_class=HTMLResponse)
 async def sales_unit_economics_1c_yandex(request: Request):
+    if request.query_params.get("calendar") == "1":
+        from app.web.routers.economics_calendar import page
+        return page(request)
     store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
     today = datetime.now(MOSCOW_TIMEZONE).date()
     last_complete_day = today - timedelta(days=1)
@@ -2750,6 +2827,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
         "economics/shared/dashboard.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
         marketplace_name="Яндекс Маркет",
+        calendar_link=economics_preview.calendar_link(request.state.user, yandex=True),
         marketplace_label="Яндекс Маркета",
         loading_description="Загружаем товары из каталога.",
         unit_1c_notice="",

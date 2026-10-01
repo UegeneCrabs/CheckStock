@@ -939,6 +939,26 @@ class UnitEconomics1CProductReputationRecord(OrmBase):
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class OzonProductReputationRecord(OrmBase):
+    __tablename__ = "ozon_product_reputation"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    sku: Mapped[str] = mapped_column(String, primary_key=True)
+    rating: Mapped[float | None] = mapped_column(Float)
+    reviews_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class OzonAdvertisingSnapshotRecord(OrmBase):
+    __tablename__ = "ozon_advertising_snapshots"
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    period_from: Mapped[str] = mapped_column(String, primary_key=True)
+    period_to: Mapped[str] = mapped_column(String, primary_key=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    synced_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class UnitEconomics1CWBCommissionRecord(OrmBase):
     __tablename__ = "unit_economics_1c_wb_commissions"
 

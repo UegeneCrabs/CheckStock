@@ -86,7 +86,7 @@ def main():
                   "periodFrom": DAY, "periodTo": DAY, "lastCompleteDay": DAY, "periodDays": 1, "products": []}
         content = templating.fill_template("economics/shared/dashboard.html", unit_1c_config=json.dumps(config),
                   marketplace_name="Wildberries · Синтетические данные", marketplace_label="WB",
-                  loading_description="", unit_1c_notice="")
+                  loading_description="", unit_1c_notice="", calendar_link="")
         with patch.object(templating, "render_system_alerts", return_value=""):
             return templating.render_page("F05 · Синтетические данные", "unit_1c", content, user)
 

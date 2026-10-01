@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from app import db
 from app.access import auth
+from app.access.economics_preview import PRIVATE_JOB_NAMES, can_preview, require_preview
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
@@ -47,6 +48,18 @@ class SyncSettingUpdate(BaseModel):
 def _require_superadmin(request: Request) -> None:
     if not auth.has_role(request.state.user, "superadmin"):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+
+def _visible_jobs(user):
+    return tuple(
+        job for job in job_definitions()
+        if job.name not in PRIVATE_JOB_NAMES or can_preview(user)
+    )
+
+
+def _require_job_access(request: Request, job_name: str) -> None:
+    if job_name in PRIVATE_JOB_NAMES:
+        require_preview(request.state.user)
 
 
 def _validate_target(store_slug: str, marketplace: str) -> None:
@@ -324,8 +337,8 @@ def _sync_groups(definitions, states: dict, configurations: dict) -> str:
 @router.get("/admin/integrations", response_class=HTMLResponse)
 async def integrations_page(request: Request):
     _require_superadmin(request)
-    states = {state["name"]: state for state in await run_in_threadpool(_sync_states)}
-    definitions = job_definitions()
+    states = {state["name"]: state for state in await run_in_threadpool(_sync_states, request.state.user)}
+    definitions = _visible_jobs(request.state.user)
     configurations = {
         definition.name: await run_in_threadpool(sync_settings.configuration, definition.name)
         for definition in definitions
@@ -413,6 +426,7 @@ def _sync_history(job_name: str, limit: int) -> list[dict]:
 @router.get("/api/admin/integrations/sync-jobs/{job_name}/history")
 async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     _require_superadmin(request)
+    _require_job_access(request, job_name)
     definitions = {definition.name: definition for definition in job_definitions()}
     definition = definitions.get(job_name)
     if definition is None:
@@ -456,10 +470,10 @@ def _storefront_state(state: dict) -> None:
         ).isoformat()
 
 
-def _sync_states() -> list[dict]:
+def _sync_states(user=None) -> list[dict]:
     stored = {state["name"]: state for state in db.list_sync_job_states()}
     states = []
-    for definition in job_definitions():
+    for definition in _visible_jobs(user):
         state = {"name": definition.name, **stored.get(definition.name, {})}
         state["running"] = manual_sync.is_running(definition.name)
         if state["running"]:
@@ -475,12 +489,13 @@ def _sync_states() -> list[dict]:
 @router.get("/api/admin/integrations/sync-jobs")
 async def sync_job_states(request: Request):
     _require_superadmin(request)
-    return {"ok": True, "states": await run_in_threadpool(_sync_states)}
+    return {"ok": True, "states": await run_in_threadpool(_sync_states, request.state.user)}
 
 
 @router.post("/api/admin/integrations/sync-jobs/{job_name}/run")
 async def run_sync_job(request: Request, job_name: str):
     _require_superadmin(request)
+    _require_job_access(request, job_name)
     definition = next((item for item in job_definitions() if item.name == job_name and item.manual_run), None)
     if definition is None:
         return JSONResponse({"ok": False, "error": "Выгрузка не найдена"}, status_code=404)
@@ -524,6 +539,7 @@ async def update_sync_job_setting(
     payload: SyncSettingUpdate,
 ):
     _require_superadmin(request)
+    _require_job_access(request, job_name)
     try:
         config = await run_in_threadpool(
             sync_settings.save_setting,

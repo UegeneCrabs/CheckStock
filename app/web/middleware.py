@@ -114,7 +114,10 @@ async def authentication_middleware(request: Request, call_next):
                 status_code=403,
             )
 
-    return await call_next(request)
+    response = await call_next(request)
+    if path.startswith(("/sales/unit-economics-1c", "/api/unit-economics-1c", "/admin/integrations", "/api/admin/integrations")):
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def request_logging_middleware(request: Request, call_next):

@@ -45,6 +45,7 @@ PATH_MAX_ATTEMPTS = {
 
 THROTTLED_PATHS = {
     "/v1/analytics/stocks": 1.5,
+    "/v2/review/list": 1.0,
     "supply-orders": 0.55,
     # Successful list/bundle requests must not relax backoff learned from act failures.
     "/v1/supply-order/act/product/get": 0.55,
@@ -494,6 +495,31 @@ def get_product_info(client_id: str, api_key: str, product_ids: list[int]) -> li
         items.extend(page)
 
     return items
+
+
+def get_reviews(client_id: str, api_key: str) -> list[dict]:
+    """Load all buyer reviews using the current cursor-based Seller API."""
+    rows: list[dict] = []
+    cursor = ""
+    seen: set[str] = set()
+    while True:
+        data = _request(
+            "/v2/review/list",
+            client_id,
+            api_key,
+            {"last_id": cursor, "limit": 100, "sort_dir": "DESC"},
+        )
+        page = data.get("reviews")
+        if not isinstance(page, list):
+            raise OzonApiError(None, "неожиданный ответ Ozon на список отзывов")
+        rows.extend(page)
+        if not data.get("has_next"):
+            return rows
+        next_cursor = str(data.get("last_id") or "")
+        if not next_cursor or next_cursor == cursor or next_cursor in seen:
+            raise OzonApiError(None, "Ozon не вернул новый курсор списка отзывов")
+        seen.add(next_cursor)
+        cursor = next_cursor
 
 
 def _get_postings(path: str, client_id: str, api_key: str, since: str, to: str) -> list[dict]:

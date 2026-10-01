@@ -114,8 +114,8 @@ def fetch_wb_sheet_rows() -> list[dict]:
     return fetch_sheet_rows()
 
 
-def fetch_sheet_rows(sheet_title: str | None = None) -> list[dict]:
-    """Read WB tabs by default, or one explicitly named source tab."""
+def fetch_sheet_rows(sheet_title: str | None = None, *, sheet_suffix: str = "WB") -> list[dict]:
+    """Read tabs by marketplace suffix, or one explicitly named source tab."""
 
     if not google_service_account.has_credentials():
         raise SourceDataError(
@@ -148,13 +148,15 @@ def fetch_sheet_rows(sheet_title: str | None = None) -> list[dict]:
             if (
                 _text(sheet.get("properties", {}).get("title")).casefold() == sheet_title.casefold()
                 if sheet_title is not None
-                else _text(sheet.get("properties", {}).get("title")).upper().endswith("WB")
+                else _text(sheet.get("properties", {}).get("title")).upper().endswith(sheet_suffix.upper())
             )
         ]
         if not sheets:
             if sheet_title is not None:
                 raise SourceDataError(f"в Google-таблице нет листа {sheet_title}")
-            raise SourceDataError("в Google-таблице нет листов, название которых оканчивается на WB")
+            raise SourceDataError(
+                f"в Google-таблице нет листов, название которых оканчивается на {sheet_suffix.upper()}"
+            )
         ranges = [
             _quoted_sheet_range(
                 str(sheet["title"]),
@@ -399,15 +401,19 @@ def _sync_all(sheets: list[dict] | None = None) -> dict:
     }
 
 
-def sync_all_marketplaces() -> dict:
+def sync_all_marketplaces(*, include_ozon: bool = True) -> dict:
     """Shared nightly/manual trigger; failure of one source must not skip the other."""
+    from app.economics.sources import ozon as unit_economics_ozon_source_data
     from app.economics.sources import yandex as unit_economics_yandex_source_data
 
     reports = {}
-    for marketplace, loader in (
+    loaders = [
         ("WB", sync_all),
         ("YANDEX MARKET", unit_economics_yandex_source_data.sync_all),
-    ):
+    ]
+    if include_ozon:
+        loaders.append(("OZON", unit_economics_ozon_source_data.sync_all))
+    for marketplace, loader in loaders:
         try:
             reports[marketplace] = loader()
         except Exception as error:

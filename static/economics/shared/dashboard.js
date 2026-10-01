@@ -9,6 +9,7 @@
     var placeholderMode = config.placeholderMode === true;
     var marketplaceLabel = String(config.marketplaceLabel || 'WB');
     root.classList.toggle('is-placeholder', placeholderMode);
+    root.classList.toggle('is-ozon-preview', config.ozonPreview === true);
     root.classList.add('has-totals');
     var products = Array.isArray(config.products) ? config.products : [];
     var productsEndpoint = String(config.productsEndpoint || '/sales/unit-economics-1c?data=1');
@@ -230,9 +231,12 @@
     var defaultColumnOrder = columnGroups.map(function (group) {
         return group.key;
     });
-    if (config.yandexMetrics === true) {
+    if (config.yandexMetrics === true || config.ozonPreview === true) {
         var currentGroup = columnGroups.find(function (group) { return group.key === 'current'; });
         currentGroup.columns = currentGroup.columns.filter(function (column) { return column.index !== 24; });
+    }
+    if (config.ozonPreview === true) {
+        columnGroups.find(function (group) { return group.key === 'advertising'; }).columns[0].label = 'ДРР после отмен, %';
     }
     columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
         index: 25, label: 'В пути на склады FBO', number: true, width: 125,
@@ -574,19 +578,19 @@
     function renderTotals(items) {
         var row = id('ue1c-totals');
         if (!row || !window.CheckStockYandexTotals) return;
-        var totals = window.CheckStockYandexTotals(items);
+        var totals = window.CheckStockYandexTotals(items, config.ozonPreview === true);
         row.innerHTML = visibleColumnGroups().map(function (group) {
             return group.columns.map(function (column) {
                 var total = totals[column.index] || {};
                 var value = column.index === 0 ? 'Итого · ' + items.length : nullable(total.value,
                     total.unit === 'money' ? money : decimal, total.unit === 'percent' ? '%' : '');
                 if (total.lowerBound && total.value != null) value = '≥ ' + value;
-                if (total.problemCount > 0) {
+                if (!config.ozonPreview && total.problemCount > 0) {
                     value += '<small class="ue1c-calculation-note">Проблемных: ' + integer.format(total.problemCount) + '</small>';
-                } else if (items.length && [2, 3, 5, 6].indexOf(column.index) !== -1 && total.value == null) {
+                } else if (!config.ozonPreview && items.length && [2, 3, 5, 6].indexOf(column.index) !== -1 && total.value == null) {
                     value += calculationNote(total.value, total.messages && total.messages.length ? total.messages : [total.title]);
                 }
-                if (total.missingPurchaseCount > 0) {
+                if (!config.ozonPreview && total.missingPurchaseCount > 0) {
                     value += '<small class="ue1c-calculation-note">Без закупа: ' + integer.format(total.missingPurchaseCount) + '</small>';
                 }
                 return window.CheckStockUI.render('economics/shared/dashboard/total-cell', {
@@ -812,6 +816,18 @@
                     stock.orders_21d === null
                         ? 'Данных о заказах пока нет'
                         : stockTitle.replace('Заказы воронки', 'Заказы ЯМ');
+            } else if (config.ozonPreview === true) {
+                advertisingTitle =
+                    product.advertising.spend === null
+                        ? 'Показатели рекламы Ozon пока не загружены из Performance API'
+                        : 'Реклама Ozon за ' + nullText(product.advertising.period_from) +
+                          ' — ' + nullText(product.advertising.period_to) +
+                          ' · расход ' + nullable(product.advertising.spend, preciseMoney) +
+                          ' · ТО после отмен ' + nullable(economics.turnover, preciseMoney);
+                stockTitle =
+                    stock.orders_21d === null
+                        ? 'Данных о заказах Ozon пока нет'
+                        : stockTitle.replace('Заказы воронки', 'Заказы Ozon');
             } else {
                 advertisingTitle = stockTitle = currentTitle;
             }
@@ -831,7 +847,7 @@
         cells.comments = window.CheckStockUI.render('economics/shared/dashboard/render-product-2', {
             id: product.id,
             content:
-                placeholderMode && config.yandexMetrics !== true
+                placeholderMode && config.yandexMetrics !== true && config.ozonPreview !== true
                     ? ' placeholder="—" disabled'
                     : ' placeholder="Добавить комментарий…"',
             name: product.name,
@@ -861,14 +877,14 @@
             currentTitle: currentTitle + (marginIssues.length
                 ? '\n' + (current.margin === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + marginIssues.join('\n• ')
                 : noOrdersWithAds ? '' : '\nЧистая прибыль на одну выкупленную штуку.'),
-            content: nullable(current.margin, money) + calculationNote(current.margin, marginIssues),
+            content: nullable(current.margin, money) + (config.ozonPreview ? '' : calculationNote(current.margin, marginIssues)),
             roi: negativeValueClass(current.roi),
             roiState: roiIssues.length ? ' ue1c-partial-cell' : '',
             currentTitle_2: currentTitle + (roiIssues.length
                 ? '\n' + (current.roi === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + roiIssues.join('\n• ')
                 : '\nROI = маржа на 1 штуку ÷ закупочная цена × 100%.'),
-            content_2: nullable(current.roi, decimal, '%') + calculationNote(current.roi, roiIssues),
-            discountCell: config.yandexMetrics === true ? '' : window.CheckStockUI.render(
+            content_2: nullable(current.roi, decimal, '%') + (config.ozonPreview ? '' : calculationNote(current.roi, roiIssues)),
+            discountCell: config.yandexMetrics === true || config.ozonPreview === true ? '' : window.CheckStockUI.render(
                 'economics/shared/dashboard/current-discount-cell', { value: nullable(currentSpp, decimal, '%') }),
         });
         cells.actual = window.CheckStockUI.render('economics/shared/dashboard/render-product-7', {
@@ -2595,6 +2611,63 @@
             section.className = 'ue1c-calculator ue1c-placeholder-calculator';
             id('ue1c-panel-economics').prepend(section);
         }
+        if (config.ozonPreview === true) {
+            section.hidden = true;
+            root.querySelectorAll('[data-detail-tab]').forEach(function (button) {
+                button.hidden = false;
+            });
+            nodes.calculatorInputs.forEach(function (input) {
+                input.value = '';
+                input.disabled = true;
+            });
+            var ozonDetails = product.details || {};
+            [
+                ['purchase', ozonDetails.purchase_cost],
+                ['fulfillment', ozonDetails.fulfillment_cost],
+                ['team', ozonDetails.team_commission_percent],
+            ].forEach(function (field) {
+                var input = root.querySelector('[data-calculator-input="' + field[0] + '"]');
+                var value = finite(field[1], null);
+                if (input) input.value = value === null ? '' : String(value);
+            });
+            nodes.subjectSelect.value = '';
+            nodes.subjectSelect.disabled = true;
+            nodes.calculatorReset.disabled = true;
+            nodes.breakEven.disabled = true;
+            nodes.savePrice.disabled = true;
+            var formula = root.querySelector('.ue1c-formula-popover > div');
+            if (formula) formula.innerHTML = '<p>Формула расчёта Ozon пока не подключена.</p>';
+            nodes.priceMetrics.textContent = 'Расчёт Ozon пока не подключён.';
+            nodes.calculatorSource.hidden = false;
+            nodes.calculatorSource.textContent = ozonDetails.source_sheet_title
+                ? 'Себестоимость, ФФ и комиссия компании из листа «' +
+                    ozonDetails.source_sheet_title + '», строка ' + ozonDetails.source_row +
+                    '. Расчёт Ozon пока не подключён.'
+                : 'Для товара нет параметров из листов OZON. Расчёт Ozon пока не подключён.';
+            nodes.parameters.innerHTML =
+                identifierParameter('Артикул', product.article) +
+                identifierParameter('Баркод', product.barcode) +
+                identifierParameter('SKU Ozon', product.mp_sku) +
+                identifierParameter('Артикул Ozon', product.mp_product_id) +
+                parameter('Себестоимость', nullable(ozonDetails.purchase_cost, preciseMoney)) +
+                parameter('Затраты на ФФ', nullable(ozonDetails.fulfillment_cost, preciseMoney)) +
+                parameter('Комиссия компании · ДРР %',
+                    nullable(ozonDetails.team_commission_percent, decimal, '%')) +
+                parameter('Тег', nullText(product.tag));
+            id('ue1c-panel-params').querySelector('.ue1c-section-head span').textContent = 'Ozon';
+            nodes.chart.style.display = 'none';
+            nodes.chartDailySales.hidden = true;
+            nodes.chartWrap.querySelectorAll('input').forEach(function (input) { input.disabled = true; });
+            var emptyChart = id('ue1c-ozon-chart-empty');
+            if (!emptyChart) {
+                emptyChart = document.createElement('p');
+                emptyChart.id = 'ue1c-ozon-chart-empty';
+                emptyChart.className = 'ue1c-placeholder-chart';
+                nodes.chart.before(emptyChart);
+            }
+            emptyChart.textContent = 'История заказов и расчётов Ozon пока не подключена.';
+            return;
+        }
         if (config.yandexEconomics && window.YandexEconomics) {
             root.classList.add('is-yandex-economics');
             nodes.chartWrap.closest('.ue1c-drawer-section').classList.add('ue1c-ym-chart');
@@ -2696,7 +2769,10 @@
         var modelId = String(product.mp_product_id || '').trim();
         var url = '';
         var label = '';
-        if (marketplace === 'YANDEX MARKET') {
+        if (marketplace === 'OZON' && /^[1-9]\d*$/.test(sku)) {
+            url = 'https://www.ozon.ru/product/' + sku + '/';
+            label = 'Открыть на Ozon';
+        } else if (marketplace === 'YANDEX MARKET') {
             if (/^[1-9]\d*$/.test(modelId)) {
                 url = 'https://market.yandex.ru/product/' + modelId +
                     (/^[1-9]\d*$/.test(sku) ? '?sku=' + sku : '');

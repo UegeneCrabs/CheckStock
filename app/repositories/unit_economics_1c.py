@@ -91,6 +91,39 @@ def list_purchase_price_stock_items() -> list[dict]:
         conn.close()
 
 
+def list_ozon_source_items() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, store_slug, article, mp_product_id FROM stock_items "
+            "WHERE marketplace='OZON' AND is_service=0 AND mp_product_id IS NOT NULL"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_ozon_source_values(store_slugs: tuple[str, ...]) -> dict[tuple[str, str], dict]:
+    if not store_slugs:
+        return {}
+    placeholders = ", ".join("?" for _ in store_slugs)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""SELECT items.store_slug, items.article,
+                       source.purchase_price, source.fulfillment_cost,
+                       source.team_commission_percent, source.manager,
+                       source.tag_raw, source.goal_week, source.goal_day,
+                       source.stock_status, source.stock_end_week,
+                       source.abc_code, source.fact_sales, source.plan_sales,
+                       source.source_sheet_id, source.source_sheet_title,
+                       source.source_row, source.synced_at
+                  FROM stock_items items
+                  LEFT JOIN unit_economics_1c_source_values source
+                    ON source.stock_item_id=items.id
+                 WHERE items.store_slug IN ({placeholders})
+                   AND items.marketplace='OZON' AND items.is_service=0""",
+            store_slugs,
+        ).fetchall()
+    return {(row["store_slug"], row["article"]): dict(row) for row in rows}
+
+
 def replace_product_classifications(rows: list[dict], synced_at: str) -> int:
     with WRITE_LOCK:
         conn = get_connection()
@@ -517,6 +550,8 @@ def replace_source_values(
     rows: list[dict],
     team_commissions: dict[str, float],
     synced_at: str,
+    *,
+    marketplace: str = "WB",
 ) -> int:
     """Atomically replace the current Google Sheets snapshot without keeping history."""
 
@@ -543,7 +578,13 @@ def replace_source_values(
     with WRITE_LOCK:
         conn = get_connection()
         try:
-            conn.execute("DELETE FROM unit_economics_1c_source_values")
+            source_marketplaces = ("WB", "YANDEX MARKET") if marketplace == "WB" else (marketplace,)
+            placeholders = ", ".join("?" for _ in source_marketplaces)
+            conn.execute(
+                "DELETE FROM unit_economics_1c_source_values "
+                f"WHERE stock_item_id IN (SELECT id FROM stock_items WHERE marketplace IN ({placeholders}))",
+                source_marketplaces,
+            )
             conn.executemany(
                 f"""
                 INSERT INTO unit_economics_1c_source_values ({", ".join(columns)})
@@ -559,14 +600,17 @@ def replace_source_values(
                 INSERT INTO unit_economics_1c_cabinet_settings
                     (store_slug, marketplace, team_commission_percent,
                      updated_at, updated_by_user_id, updated_by_name)
-                VALUES (?, 'WB', ?, ?, 0, 'Google Sheets')
+                VALUES (?, ?, ?, ?, 0, 'Google Sheets')
                 ON CONFLICT(store_slug, marketplace) DO UPDATE SET
                     team_commission_percent=excluded.team_commission_percent,
                     updated_at=excluded.updated_at,
                     updated_by_user_id=excluded.updated_by_user_id,
                     updated_by_name=excluded.updated_by_name
                 """,
-                ((store_slug, commission, synced_at) for store_slug, commission in team_commissions.items()),
+                (
+                    (store_slug, marketplace, commission, synced_at)
+                    for store_slug, commission in team_commissions.items()
+                ),
             )
             conn.commit()
         except Exception:
