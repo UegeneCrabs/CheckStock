@@ -805,6 +805,30 @@ class GoogleWeekUpdateSettingRecord(OrmBase):
     last_error: Mapped[str | None] = mapped_column(Text)
 
 
+class GoogleWeekSearchStateRecord(OrmBase):
+    __tablename__ = "google_week_search_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_success_slot: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
+
+
+class GoogleWeekSalesStateRecord(OrmBase):
+    __tablename__ = "google_week_sales_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_success_slot: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
+
+
 class StockSheetExportSettingRecord(OrmBase):
     __tablename__ = "stock_sheet_export_settings"
 

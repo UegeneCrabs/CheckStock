@@ -62,10 +62,20 @@ def validate(settings: WeekUpdateSettings) -> WeekUpdateSettings:
     )
 
 
-def save_settings(settings: WeekUpdateSettings, now: datetime | None = None) -> None:
+def save_settings(
+    settings: WeekUpdateSettings,
+    now: datetime | None = None,
+    *,
+    search_enabled: bool | None = None,
+    sales_enabled: bool | None = None,
+) -> None:
     normalized = validate(settings)
     with locks.hold(JOB_NAME):
-        repository.save_settings(replace(normalized, updated_at=_now(now).isoformat()))
+        repository.save_settings(
+            replace(normalized, updated_at=_now(now).isoformat()),
+            search_enabled=search_enabled,
+            sales_enabled=sales_enabled,
+        )
 
 
 def scheduled_at(settings: WeekUpdateSettings, now: datetime) -> datetime:
@@ -82,19 +92,32 @@ def _timestamp(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value).astimezone(MOSCOW_TIMEZONE) if value else None
 
 
-def is_due(settings: WeekUpdateSettings | None = None, now: datetime | None = None) -> bool:
-    settings = settings or repository.get_settings()
+def pending_run(settings: WeekUpdateSettings, now: datetime) -> bool:
     if not settings.enabled or not settings.updated_at:
         return False
-    current = _now(now)
-    slot = scheduled_at(settings, current)
+    slot = scheduled_at(settings, now)
     if slot <= _timestamp(settings.updated_at):
         return False
     success = _timestamp(settings.last_success_slot)
-    if success is not None and success >= slot:
+    return success is None or success < slot
+
+
+def update_is_due(settings: WeekUpdateSettings, now: datetime) -> bool:
+    if not pending_run(settings, now):
         return False
     attempt = _timestamp(settings.last_attempt_at)
-    return attempt is None or current - attempt >= RETRY_DELAY
+    return attempt is None or _now(now) - attempt >= RETRY_DELAY
+
+
+def is_due(settings: WeekUpdateSettings | None = None, now: datetime | None = None) -> bool:
+    from app.integrations import google_week_sales, google_week_search
+
+    settings = settings or repository.get_settings()
+    current = _now(now)
+    if pending_run(settings, current):
+        # A failed write must finish before a scheduled search reads the source week.
+        return update_is_due(settings, current)
+    return google_week_sales.is_due(settings, now=current) or google_week_search.is_due(settings, now=current)
 
 
 def next_run_at(settings: WeekUpdateSettings, now: datetime | None = None) -> datetime | None:
@@ -109,18 +132,21 @@ def next_run_at(settings: WeekUpdateSettings, now: datetime | None = None) -> da
     return slot + timedelta(days=7)
 
 
-def _google_service():
+def _google_service(*, read_only: bool = False):
     import httplib2
     from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
 
     if not google_service_account.has_credentials():
         raise ValueError("Не настроен сервисный аккаунт Google Таблиц")
+    credentials = google_service_account.get_credentials()
+    if read_only:
+        credentials = credentials.with_scopes(["https://www.googleapis.com/auth/spreadsheets.readonly"])
     return build(
         "sheets",
         "v4",
         cache_discovery=False,
-        http=AuthorizedHttp(google_service_account.get_credentials(), http=httplib2.Http(timeout=30)),
+        http=AuthorizedHttp(credentials, http=httplib2.Http(timeout=30)),
     )
 
 
@@ -168,7 +194,7 @@ def _run(*, manual: bool, now: datetime | None = None) -> dict:
     """Caller holds JOB_NAME through run_tracked, shared with settings saves."""
     settings = repository.get_settings()
     current = _now(now)
-    if not manual and not is_due(settings, current):
+    if not manual and not update_is_due(settings, current):
         return {"skipped": True}
     if not settings.updated_at:
         raise ValueError("Сначала сохраните настройки обновления недели")
@@ -196,7 +222,20 @@ def _run(*, manual: bool, now: datetime | None = None) -> dict:
 
 
 def run_due(now: datetime | None = None) -> dict:
-    return _run(manual=False, now=now)
+    from app.integrations import google_week_sales, google_week_search
+
+    current = _now(now)
+    settings = repository.get_settings()
+    if pending_run(settings, current) and not update_is_due(settings, current):
+        return {"skipped": True}
+    report = _run(manual=False, now=current)
+    sales = google_week_sales.run_due(current)
+    if not sales.get("skipped"):
+        report = {**({} if report.get("skipped") else report), "sales": sales}
+    search = google_week_search.run_due(current)
+    if search.get("skipped"):
+        return report
+    return {**({} if report.get("skipped") else report), "search": search}
 
 
 def run_now(now: datetime | None = None) -> dict:

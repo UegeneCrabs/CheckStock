@@ -1,13 +1,13 @@
-<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261001" />
+<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261002-sales" />
 <form class="panel week-update" data-week-update-form>
     <div class="week-update-head">
         <div>
             <h2>Автообновление недели</h2>
-            <p>Записывает последнюю завершённую неделю в выбранные ячейки.</p>
+            <p>Обновляет номер недели и находит недельные заголовки на листе.</p>
         </div>
         <label class="week-update-switch">
             <input type="checkbox" name="enabled" value="1"$enabled_checked />
-            <span>Включить по расписанию</span>
+            <span>Обновлять неделю по расписанию</span>
         </label>
     </div>
     <label class="week-update-url"><span>Ссылка на Google Таблицу</span>
@@ -28,7 +28,7 @@
         </label>
     </div>
     <div class="week-update-preview">
-        <div><span>Если запустить сейчас</span><strong data-week-value>$value</strong></div>
+        <div><span>Если обновить неделю сейчас</span><strong data-week-value>$value</strong></div>
         <p data-week-schedule>$schedule_text</p>
     </div>
     <p class="week-update-hint">Неделя считается с понедельника по воскресенье по Москве. Формат — W39 2026, год соответствует ISO-неделе. Новое расписание действует со следующего запуска; пропущенный запуск выполняется после включения приложения.</p>
@@ -40,5 +40,40 @@
         <button class="btn-secondary" type="button" data-week-run$run_disabled>Обновить сейчас</button>
         <button class="btn-primary" type="submit">Сохранить настройки недели</button>
     </div>
+    <section class="week-search" aria-labelledby="week-search-title">
+        <div class="week-update-head">
+            <div><h3 id="week-search-title">Поиск недельного диапазона</h3>
+                <p>Читает значение сохранённой ячейки, находит совпадения на листе и собирает недели влево до другого заголовка. В строке найденных недель также ищет ARTICLE и BARCODE.</p>
+            </div>
+        </div>
+        <label class="week-update-switch">
+            <input type="checkbox" name="search_enabled" value="1"$search_enabled_checked />
+            <span>Искать по тому же расписанию</span>
+        </label>
+        <p class="week-update-hint">Поиск использует текущие значения в Google Таблице и исключает исходную ячейку. Кнопка поиска только читает данные. Если включены оба действия, по расписанию сначала обновляется неделя, затем выполняется поиск.</p>
+        <p class="week-update-hint" data-week-search-schedule>$search_schedule_text</p>
+        <div class="week-search-actions">
+            <button class="btn-secondary" type="button" data-week-search$run_disabled>Найти недели</button>
+            <span class="week-update-hint">Для запуска используйте сохранённые настройки выше.</span>
+        </div>
+        <p class="export-status $search_status_class" data-week-search-status role="status" aria-live="polite">$search_status_text</p>
+        <div data-week-search-results>$search_results</div>
+    </section>
+    <section class="week-search" aria-labelledby="week-sales-title">
+        <h3 id="week-sales-title">Заказы по неделям из воронки WB</h3>
+        <p class="week-update-hint">Использует таблицу, лист и исходную ячейку из настроек выше. Находит недели и товары по ARTICLE и BARCODE, затем записывает количество заказов за вычетом отмен в ячейки на пересечении товара и недели.</p>
+        <label class="week-update-switch">
+            <input type="checkbox" name="sales_enabled" value="1"$sales_enabled_checked />
+            <span>Выгружать заказы по тому же расписанию</span>
+        </label>
+        <p class="week-update-hint">Суммируются дни с понедельника по воскресенье включительно. Магазин определяется по каталогу WB. При неполных данных или неоднозначном товаре ячейки сохраняют прежние значения. Перед записью создаётся резервная копия. Если включено обновление недели, по расписанию оно выполняется первым.</p>
+        <p class="week-update-hint" data-week-sales-schedule>$sales_schedule_text</p>
+        <div class="week-search-actions">
+            <button class="btn-primary" type="button" data-week-sales$run_disabled>Выгрузить заказы</button>
+            <span class="week-update-hint">Записывает данные в Google Таблицу по сохранённым настройкам.</span>
+        </div>
+        <p class="export-status $sales_status_class" data-week-sales-status role="status" aria-live="polite">$sales_status_text</p>
+        <div data-week-sales-results>$sales_results</div>
+    </section>
 </form>
-<script src="/static/integrations/google-week-update.js?v=20261001"></script>
+<script src="/static/integrations/google-week-update.js?v=20261002-sales"></script>
