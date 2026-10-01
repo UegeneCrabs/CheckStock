@@ -15,7 +15,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
 from app.exports import stock_sheet as stock_sheet_export
-from app.integrations import google_week_update
+from app.integrations import google_week_sales, google_week_search, google_week_update
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import run_tracked
 from app.repositories import google_week_update as week_repository
@@ -24,6 +24,8 @@ from app.repositories.stock_sheet_export import (
     MarketplaceSpreadsheet,
     StockSheetExportSettings,
 )
+from app.web.google_week_sales import render_result as render_week_sales_result
+from app.web.google_week_search import render_result as render_week_search_result
 from app.web.templating import fill_template
 
 router = APIRouter()
@@ -259,6 +261,52 @@ def _week_payload() -> dict:
         status = f"Последнее обновление: {format_dt(settings.last_success_at)} — {settings.last_value}"
     if settings.last_error:
         status += f". Ошибка {format_dt(settings.last_attempt_at)}: {settings.last_error}"
+    search = week_repository.get_search_state()
+    search_next = google_week_update.next_run_at(google_week_search.schedule_settings(settings, search), now)
+    if not search.enabled:
+        search_schedule = "Поиск по расписанию выключен"
+    elif not app_settings.background_sync_enabled:
+        search_schedule = "Фоновые задачи отключены. Поиск доступен по кнопке"
+    else:
+        if google_week_update.pending_run(settings, now) and next_run:
+            search_next = max(search_next, next_run)
+        search_schedule = f"Ближайший поиск: {format_dt(search_next.isoformat())}"
+        if settings.enabled:
+            search_schedule += ". После успешного обновления недели"
+    result = search.result
+    stale = bool(result and not google_week_search.result_matches_settings(result, settings))
+    search_status = "Поиск ещё не запускался"
+    if search.last_success_at:
+        search_status = f"Последний успешный поиск: {format_dt(search.last_success_at)}"
+    if stale:
+        search_status += ". Таблица, лист или ячейки изменены — выполните новый поиск"
+    if search.last_error:
+        search_status += f". Ошибка {format_dt(search.last_attempt_at)}: {search.last_error}"
+    sales = week_repository.get_sales_state()
+    sales_next = google_week_update.next_run_at(google_week_search.schedule_settings(settings, sales), now)
+    if not sales.enabled:
+        sales_schedule = "Выгрузка заказов по расписанию выключена"
+    elif not app_settings.background_sync_enabled:
+        sales_schedule = "Фоновые задачи отключены. Выгрузка доступна по кнопке"
+    else:
+        if google_week_update.pending_run(settings, now) and next_run:
+            sales_next = max(sales_next, next_run)
+        sales_schedule = f"Ближайшая выгрузка: {format_dt(sales_next.isoformat())}"
+        if settings.enabled:
+            sales_schedule += ". После успешного обновления недели"
+    sales_result = sales.result
+    sales_stale = bool(
+        sales_result and not google_week_search.result_matches_settings(sales_result, settings)
+    )
+    sales_status = "Выгрузка заказов ещё не запускалась"
+    if sales_result:
+        sales_status = f"Последняя выгрузка: {format_dt(sales_result['processed_at'])}"
+        if not sales_result["complete"]:
+            sales_status += ". Выполнена с пропусками"
+    if sales_stale:
+        sales_status += ". Настройки назначения изменены — выполните новую выгрузку"
+    if sales.last_error:
+        sales_status += f". Ошибка {format_dt(sales.last_attempt_at)}: {sales.last_error}"
     return {
         "ok": True,
         "value": google_week_update.last_completed_week(now),
@@ -266,6 +314,16 @@ def _week_payload() -> dict:
         "status_text": status,
         "has_error": bool(settings.last_error),
         "saved": bool(settings.updated_at),
+        "search_enabled": search.enabled,
+        "search_schedule_text": search_schedule,
+        "search_status_text": search_status,
+        "search_has_error": bool(search.last_error),
+        "search_html": render_week_search_result(None if stale else result),
+        "sales_enabled": sales.enabled,
+        "sales_schedule_text": sales_schedule,
+        "sales_status_text": sales_status,
+        "sales_has_error": bool(sales.last_error or (sales_result and not sales_result["complete"])),
+        "sales_html": render_week_sales_result(None if sales_stale else sales_result),
     }
 
 
@@ -285,6 +343,16 @@ def _render_week_update() -> str:
         status_text=html.escape(state["status_text"]),
         status_class="export-status--error" if state["has_error"] else "",
         run_disabled="" if state["saved"] else " disabled",
+        search_enabled_checked=" checked" if state["search_enabled"] else "",
+        search_schedule_text=html.escape(state["search_schedule_text"]),
+        search_status_text=html.escape(state["search_status_text"]),
+        search_status_class="export-status--error" if state["search_has_error"] else "",
+        search_results=state["search_html"],
+        sales_enabled_checked=" checked" if state["sales_enabled"] else "",
+        sales_schedule_text=html.escape(state["sales_schedule_text"]),
+        sales_status_text=html.escape(state["sales_status_text"]),
+        sales_status_class="export-status--error" if state["sales_has_error"] else "",
+        sales_results=state["sales_html"],
     )
 
 
@@ -311,7 +379,12 @@ async def save_google_week_update(request: Request):
             weekday=weekday,
             run_time=_value(form, "run_time"),
         )
-        await run_in_threadpool(google_week_update.save_settings, settings)
+        await run_in_threadpool(
+            google_week_update.save_settings,
+            settings,
+            search_enabled=_value(form, "search_enabled") == "1",
+            sales_enabled=_value(form, "sales_enabled") == "1",
+        )
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     except SyncJobBusyError:
@@ -347,6 +420,46 @@ async def run_google_week_update(request: Request):
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     state = await run_in_threadpool(_week_payload)
     return JSONResponse({**state, "report": report})
+
+
+@router.post("/admin/google-week-update/search")
+async def search_google_week_headers(request: Request):
+    _require_superadmin(request)
+    try:
+        result = await run_in_threadpool(
+            run_tracked,
+            google_week_update.JOB_NAME,
+            "manual",
+            google_week_search.run_now,
+        )
+    except SyncJobBusyError:
+        return JSONResponse({"ok": False, "error": "Обновление или поиск уже выполняется"}, status_code=409)
+    except ValueError as error:
+        state = await run_in_threadpool(_week_payload)
+        return JSONResponse({**state, "ok": False, "error": str(error)}, status_code=400)
+    state = await run_in_threadpool(_week_payload)
+    return JSONResponse({**state, "search_result": result})
+
+
+@router.post("/admin/google-week-update/sales")
+async def export_google_week_sales(request: Request):
+    _require_superadmin(request)
+    try:
+        result = await run_in_threadpool(
+            run_tracked,
+            google_week_update.JOB_NAME,
+            "manual",
+            google_week_sales.run_now,
+        )
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Обновление, поиск или выгрузка уже выполняется"}, status_code=409
+        )
+    except ValueError as error:
+        state = await run_in_threadpool(_week_payload)
+        return JSONResponse({**state, "ok": False, "error": str(error)}, status_code=400)
+    state = await run_in_threadpool(_week_payload)
+    return JSONResponse({**state, "sales_result": result})
 
 
 @router.post("/admin/google-export/{store_slug}")

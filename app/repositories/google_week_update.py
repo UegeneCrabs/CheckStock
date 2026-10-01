@@ -36,7 +36,9 @@ def get_settings() -> WeekUpdateSettings:
     return WeekUpdateSettings(**values)
 
 
-def save_settings(settings: WeekUpdateSettings) -> None:
+def save_settings(
+    settings: WeekUpdateSettings, *, search_enabled: bool | None = None, sales_enabled: bool | None = None
+) -> None:
     with WRITE_LOCK, get_connection() as conn:
         conn.execute(
             """
@@ -59,6 +61,18 @@ def save_settings(settings: WeekUpdateSettings) -> None:
                 settings.updated_at,
             ),
         )
+        if search_enabled is not None:
+            conn.execute(
+                """INSERT INTO google_week_search_state (id, enabled) VALUES (1, ?)
+                   ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled""",
+                (int(search_enabled),),
+            )
+        if sales_enabled is not None:
+            conn.execute(
+                """INSERT INTO google_week_sales_state (id, enabled) VALUES (1, ?)
+                   ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled""",
+                (int(sales_enabled),),
+            )
         conn.commit()
 
 
@@ -80,5 +94,92 @@ def record_result(attempted_at: str, *, slot: str, value: str, error: str | None
                    SET last_success_at = ?, last_success_slot = ?, last_value = ?, last_error = NULL
                    WHERE id = 1""",
                 (attempted_at, slot, value),
+            )
+        conn.commit()
+
+
+@dataclass(frozen=True, slots=True)
+class WeekSearchState:
+    enabled: bool = False
+    last_attempt_at: str | None = None
+    last_success_at: str | None = None
+    last_success_slot: str | None = None
+    last_error: str | None = None
+    result: dict | None = None
+
+
+def get_search_state() -> WeekSearchState:
+    return _get_state("google_week_search_state")
+
+
+def get_sales_state() -> WeekSearchState:
+    return _get_state("google_week_sales_state")
+
+
+def _get_state(table: str) -> WeekSearchState:
+    with get_connection() as conn:
+        row = conn.execute(f"SELECT * FROM {table} WHERE id = 1").fetchone()
+    if row is None:
+        return WeekSearchState()
+    values = dict(row)
+    values.pop("id")
+    values["enabled"] = bool(values["enabled"])
+    result = values.pop("result_json")
+    values["result"] = json.loads(result) if result else None
+    return WeekSearchState(**values)
+
+
+def record_search_attempt(attempted_at: str) -> None:
+    with WRITE_LOCK, get_connection() as conn:
+        conn.execute(
+            """INSERT INTO google_week_search_state (id, enabled, last_attempt_at) VALUES (1, 0, ?)
+               ON CONFLICT(id) DO UPDATE SET last_attempt_at = excluded.last_attempt_at""",
+            (attempted_at,),
+        )
+        conn.commit()
+
+
+def record_sales_attempt(attempted_at: str) -> None:
+    with WRITE_LOCK, get_connection() as conn:
+        conn.execute(
+            """INSERT INTO google_week_sales_state (id, enabled, last_attempt_at) VALUES (1, 0, ?)
+               ON CONFLICT(id) DO UPDATE SET last_attempt_at = excluded.last_attempt_at""",
+            (attempted_at,),
+        )
+        conn.commit()
+
+
+def record_sales_result(
+    attempted_at: str, *, slot: str, result: dict | None = None, error: str | None = None
+) -> None:
+    with WRITE_LOCK, get_connection() as conn:
+        if error:
+            conn.execute("UPDATE google_week_sales_state SET last_error = ? WHERE id = 1", (error,))
+        else:
+            # Incomplete source data can become available later in the same scheduled week.
+            complete = bool(result and result["complete"])
+            conn.execute(
+                """UPDATE google_week_sales_state SET result_json = ?, last_error = NULL,
+                   last_success_at = CASE WHEN ? = 1 THEN ? ELSE last_success_at END,
+                   last_success_slot = CASE WHEN ? = 1 THEN ? ELSE last_success_slot END
+                   WHERE id = 1""",
+                (json.dumps(result, ensure_ascii=False), int(complete), attempted_at, int(complete), slot),
+            )
+        conn.commit()
+
+
+def record_search_result(
+    attempted_at: str, *, slot: str, result: dict | None = None, error: str | None = None
+) -> None:
+    with WRITE_LOCK, get_connection() as conn:
+        if error:
+            # Keep the last successful result, clearly timestamped, when the new read fails.
+            conn.execute("UPDATE google_week_search_state SET last_error = ? WHERE id = 1", (error,))
+        else:
+            conn.execute(
+                """UPDATE google_week_search_state
+                   SET last_success_at = ?, last_success_slot = ?, result_json = ?, last_error = NULL
+                   WHERE id = 1""",
+                (attempted_at, slot, json.dumps(result, ensure_ascii=False)),
             )
         conn.commit()
