@@ -3,16 +3,25 @@
     function known(value) { return value != null && value !== '' && Number.isFinite(Number(value)); }
     window.CheckStockYandexTotals = function (products) {
         var result = {0: {title: 'Количество товаров'}};
-        function metric(index, rows, value, unit, title, partial) {
+        function articleCount(rows) {
+            return new Set(rows.map(function (p) {
+                return JSON.stringify([p.marketplace || '', p.store_slug || '', p.article || p.id || products.indexOf(p)]);
+            })).size;
+        }
+        function metric(index, rows, value, unit, title, incomplete) {
+            var included = new Set(rows);
+            var problemCount = articleCount(products.filter(function (p) {
+                return !included.has(p) || !!(incomplete && incomplete(p));
+            }));
             result[index] = {
                 value: rows.length ? value : null, unit: unit, title: title,
-                partial: rows.length < products.length || !!partial,
+                partial: problemCount > 0, problemCount: problemCount,
             };
         }
         function sum(index, get, unit, title, coverage) {
             var rows = products.filter(function (p) { return known(get(p)); });
             metric(index, rows, rows.reduce(function (s, p) { return s + Number(get(p)); }, 0), unit, title,
-                coverage && rows.some(function (p) { return !coverage(p) || !coverage(p).complete; }));
+                coverage && function (p) { return !coverage(p) || !coverage(p).complete; });
         }
         function ratio(index, rows, top, bottom, factor, unit, title, partial) {
             var numerator = 0, denominator = 0;
@@ -44,9 +53,9 @@
             return c.orders === 0 && Number(c.advertising_spend) > 0
                 ? Number(c.margin) : Number(c.margin) * bought(p);
         }
-        ratio(2, current, currentProfit, bought, 1, 'money', 'Маржа на штуку: прибыль / ожидаемые выкупы за сегодня.', current.some(currentPartial));
+        ratio(2, current, currentProfit, bought, 1, 'money', 'Маржа на штуку: прибыль / ожидаемые выкупы за сегодня.', currentPartial);
         ratio(3, current, currentProfit, dayPurchase,
-            100, 'percent', 'ROI за сегодня: прибыль / закупочная стоимость ожидаемых выкупов.', current.some(currentPartial));
+            100, 'percent', 'ROI за сегодня: прибыль / закупочная стоимость ожидаемых выкупов.', function (p) { return currentPartial(p) || !known(dayPurchase(p)); });
         if (current.some(function (p) { return !known(dayPurchase(p)); })) result[3].value = null;
         sum(4, function (p) { return p.economics_7d.turnover; }, 'money', 'Сумма ТО после отмен.', function (p) { return p.economics_7d.turnover_coverage; });
         sum(5, function (p) { return p.economics_7d.margin; }, 'money', 'Сумма сохранённой прибыли за выбранный период.', function (p) { return p.economics_7d.margin_coverage; });
@@ -54,7 +63,7 @@
         var period = products.filter(function (p) { return known(p.economics_7d.margin); });
         ratio(6, period, function (p) { return p.economics_7d.margin; }, function (p) { return periodPurchase(p); },
             100, 'percent', 'ROI: суммарная прибыль / закупочная стоимость по тем же сохранённым дням.',
-            period.some(function (p) { return !p.economics_7d.complete; }));
+            function (p) { return !p.economics_7d.complete || !known(periodPurchase(p)); });
         if (period.some(function (p) { return !known(periodPurchase(p)); })) result[6].value = null;
         [2, 3, 5, 6].forEach(function (index) {
             var currentMetric = index < 4;
@@ -64,6 +73,17 @@
                 (currentMetric ? e.daily_messages || e.messages || [] : e.messages || []).forEach(function (message) { if (messages.indexOf(message) < 0) messages.push(message); });
                 if (currentMetric ? current.indexOf(p) < 0 : e.margin == null) messages.push('Не рассчитан товар: ' + (p.article || p.name));
             });
+            // Count articles, not missing dates or repeated diagnostic messages.
+            result[index].missingPurchaseCount = articleCount(products.filter(function (p) {
+                if (currentMetric) return !known(currentPurchase(p));
+                var e = p.economics_7d;
+                var coverage = (index === 6 ? e.roi_coverage : e.margin_coverage) || {};
+                var missing = coverage.missing_parameters || e.missing_parameters;
+                if (missing) return Object.keys(missing).some(function (day) {
+                    return missing[day].indexOf('purchase_price') !== -1;
+                });
+                return known(e.margin) && !known(periodPurchase(p));
+            }));
             result[index].messages = messages;
             result[index].title += messages.length ? '\n' + messages.join('\n') : '';
         });
@@ -82,10 +102,10 @@
         }, 0);
         metric(7, drrRows, boughtTurnover > 0 ? totalSpend / boughtTurnover * 100 : null,
             'percent', 'ДРР: расходы на рекламу / Σ(сумма заказов × процент выкупа / 100) × 100%. Учитываются только дни, за которые есть и заказы, и реклама.',
-            drrRows.some(function (p) { return !p.advertising.drr_coverage || !p.advertising.drr_coverage.complete; }));
+            function (p) { return !p.advertising.drr_coverage || !p.advertising.drr_coverage.complete; });
         sum(8, function (p) { return p.advertising.spend; }, 'money', 'Общие расходы на рекламу.', function (p) { return p.advertising.coverage; });
         var clicks = products.filter(function (p) { return known(p.advertising.clicks) && known(p.advertising.impressions) && known(p.advertising.spend); });
-        var adsPartial = clicks.some(function (p) { return !p.advertising.coverage || !p.advertising.coverage.complete; });
+        var adsPartial = function (p) { return !p.advertising.coverage || !p.advertising.coverage.complete; };
         ratio(9, clicks, function (p) { return p.advertising.clicks; }, function (p) { return p.advertising.impressions; }, 100, 'percent', 'CTR: всего кликов / всего показов.', adsPartial);
         ratio(10, clicks, function (p) { return p.advertising.spend; }, function (p) { return p.advertising.clicks; }, 1, 'money', 'CPC: расходы / клики.', adsPartial);
         [[11, 'goal_week'], [12, 'goal_day'], [16, 'fact'], [17, 'plan']].forEach(function (pair) {
@@ -102,7 +122,12 @@
         ratio(22, stock, function (p) { return p.stock.total; }, function (p) {
             return Number(p.stock.average_daily_orders || 0);
         }, 1, '', 'Запас в днях: общие остатки / сумма среднесуточных заказов по доступным дням.',
-        stock.some(function (p) { return !p.stock.coverage || !p.stock.coverage.complete; }));
+        function (p) { return !p.stock.coverage || !p.stock.coverage.complete; });
+        Object.keys(result).forEach(function (index) {
+            var total = result[index];
+            if (total.problemCount !== undefined) total.title += '\nПроблемных артикулов: ' + total.problemCount;
+            if (total.missingPurchaseCount !== undefined) total.title += '\nБез закупа: ' + total.missingPurchaseCount;
+        });
         return result;
     };
 })();

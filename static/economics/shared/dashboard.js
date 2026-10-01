@@ -581,7 +581,14 @@
                 var value = column.index === 0 ? 'Итого · ' + items.length : nullable(total.value,
                     total.unit === 'money' ? money : decimal, total.unit === 'percent' ? '%' : '');
                 if (total.lowerBound && total.value != null) value = '≥ ' + value;
-                if ([2, 3, 5, 6].indexOf(column.index) !== -1 && (total.partial || total.value == null)) value += calculationNote(total.value, total.messages && total.messages.length ? total.messages : [total.title]);
+                if (total.problemCount > 0) {
+                    value += '<small class="ue1c-calculation-note">Проблемных: ' + integer.format(total.problemCount) + '</small>';
+                } else if (items.length && [2, 3, 5, 6].indexOf(column.index) !== -1 && total.value == null) {
+                    value += calculationNote(total.value, total.messages && total.messages.length ? total.messages : [total.title]);
+                }
+                if (total.missingPurchaseCount > 0) {
+                    value += '<small class="ue1c-calculation-note">Без закупа: ' + integer.format(total.missingPurchaseCount) + '</small>';
+                }
                 return window.CheckStockUI.render('economics/shared/dashboard/total-cell', {
                     index: column.index, value: value, key: group.key,
                     state: total.partial ? ' ue1c-partial-cell' : '',
