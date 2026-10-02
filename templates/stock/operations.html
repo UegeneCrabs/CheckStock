@@ -1,3 +1,5 @@
+<link rel="stylesheet" href="/static/stock/operations.css?v=20261002-1" />
+
 <a class="back-link" href="/stock/$slug">&larr; К остаткам $store_name</a>
 
 $summary
@@ -5,8 +7,13 @@ $summary
 <section class="panel ops-panel">
     <div class="panel-header-row ops-toolbar">
         <div class="ops-filters"> $kind_tabs </div>
-        <a class="btn-secondary" href="/stock/$slug/operations/xlsx?kind=$kind">Выгрузить в Excel</a>
+        <a class="btn-secondary ops-export" href="/stock/$slug/operations/xlsx?kind=$kind">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4" /></svg>
+            Выгрузить в Excel
+        </a>
     </div>
+
+    $pagination
 
     <div class="table-wrap">
         <table class="data-table data-table--ops" data-table-filter>
@@ -23,4 +30,5 @@ $summary
             <tbody> $rows </tbody>
         </table>
     </div>
+    $pagination
 </section>

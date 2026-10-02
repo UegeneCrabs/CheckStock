@@ -16,6 +16,7 @@ from app.repositories import (
     yandex_source_values,
     yandex_storefront,
 )
+from app.stock.catalog_identity import display_barcode
 
 MARKETPLACE = "YANDEX MARKET"
 
@@ -44,7 +45,7 @@ def catalog_product(
         "store_slug": store_slug,
         "store_name": store["name"],
         "article": article,
-        "barcode": product.get("barcode") or None,
+        "barcode": display_barcode(product, MARKETPLACE) or None,
         "name": product.get("name") or article,
         "image_url": product.get("image_url") or None,
         "mp_sku": product.get("mp_sku") or None,
@@ -318,7 +319,9 @@ def load_products(
                 if stock_coverage["days"]
                 else None,
                 "orders_21d": stock_orders if stock_coverage["days"] else None,
-                "average_daily_orders": round(stock_orders / stock_coverage["days"], 2) if stock_coverage["days"] else None,
+                "average_daily_orders": round(stock_orders / stock_coverage["days"], 2)
+                if stock_coverage["days"]
+                else None,
                 "coverage": stock_coverage,
                 "period_days": 21,
                 "period_from": stock_start.isoformat(),
@@ -393,9 +396,9 @@ def load_products(
                 )
             )
             group_id = group_ids.get(sku)
-            products[-1]["glued_products"] = [
-                item for item in glue_groups.get(group_id, []) if item["article"] != sku
-            ] if group_id else []
+            products[-1]["glued_products"] = (
+                [item for item in glue_groups.get(group_id, []) if item["article"] != sku] if group_id else []
+            )
             products[-1]["details"]["buyout_percent"] = buyout_percent
             products[-1]["details"]["drr"] = ad["drr"]
             # Snapshot errors describe the whole refresh, not this article. Report
@@ -421,8 +424,7 @@ def load_products(
                 errors.append(inbound_message)
             if not stock_coverage["complete"]:
                 errors.append(
-                    "Не все дни заказов для запаса загружены: "
-                    + ", ".join(stock_coverage["missing_dates"])
+                    "Не все дни заказов для запаса загружены: " + ", ".join(stock_coverage["missing_dates"])
                 )
             products[-1]["data_errors"] = errors
     if not include_economics:

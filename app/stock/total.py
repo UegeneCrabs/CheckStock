@@ -4,10 +4,11 @@ import io
 from collections import defaultdict
 from datetime import datetime
 
+from app.core.barcodes import preferred_barcode
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.repositories import stock_total as repository
-from app.stock.catalog_identity import barcodes
+from app.stock.catalog_identity import barcodes, display_barcode
 
 MARKETPLACES = (
     ("WB", "wb", "ВБ"),
@@ -82,7 +83,10 @@ def build_rows(
     marketplace_keys = {marketplace: key for marketplace, key, _label in MARKETPLACES}
 
     def item_codes(item: dict) -> list[str]:
-        return sorted({_normalized(code) for code in barcodes(item)} - {"", "—", "-"})
+        codes = {_normalized(code) for code in barcodes(item)} - {"", "—", "-"}
+        if item["marketplace"] == "YANDEX MARKET":
+            codes = {code for code in codes if not code.startswith("0")}
+        return sorted(codes)
 
     def identity_for(store_slug: str, marketplace: str, article: str) -> tuple[str, ...]:
         article_key = _normalized(article)
@@ -136,9 +140,14 @@ def build_rows(
         representative = next(iter(active_matches or matches), {})
         row["article"] = str(representative.get("article") or fallback_articles[identity])
         codes = sorted({code for item in matches for code in item_codes(item)})
-        row["barcode"] = str(representative.get("barcode") or (codes[0] if codes else ""))
+        fallback_barcode = codes[0] if codes else ""
+        if representative.get("marketplace") == "YANDEX MARKET":
+            fallback_barcode = preferred_barcode(codes)
+        row["barcode"] = (
+            display_barcode(representative, representative.get("marketplace", "")) or fallback_barcode
+        )
         if row["barcode"] in {"—", "-"}:
-            row["barcode"] = codes[0] if codes else ""
+            row["barcode"] = fallback_barcode
         row["barcodes"] = codes
         row["articles"] = sorted({str(item["article"]) for item in matches} | {row["article"]})
         row["name"] = str(representative.get("name") or row["article"])

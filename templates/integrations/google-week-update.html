@@ -1,98 +1,118 @@
-<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261002-project" />
-<form class="panel week-update" data-week-update-form>
+<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261002-design" />
+<form class="panel week-update" data-week-update-form aria-labelledby="week-update-title">
     <div class="week-update-head">
         <div>
-            <h2>Автообновление недели</h2>
-            <p>Обновляет номер недели и находит недельные заголовки на листе.</p>
+            <h2 id="week-update-title">Автообновление недели</h2>
+            <p>Номер недели, заказы и остатки WB в Google Таблице.</p>
         </div>
-        <label class="week-update-switch">
-            <input type="checkbox" name="enabled" value="1"$enabled_checked />
-            <span>Обновлять неделю по расписанию</span>
-        </label>
+        <a class="week-sheet-link" href="$spreadsheet_url" target="_blank" rel="noopener noreferrer" data-week-sheet-link>Открыть таблицу <span aria-hidden="true">↗</span></a>
     </div>
-    <label class="week-update-url"><span>Ссылка на Google Таблицу</span>
-        <input class="input-control" type="url" name="spreadsheet_url" value="$spreadsheet_url" required maxlength="2048" />
-    </label>
-    <div class="week-update-grid">
-        <label><span>Название листа</span>
-            <input class="input-control" name="sheet_name" value="$sheet_name" required maxlength="100" />
-        </label>
-        <label><span>Ячейки через запятую</span>
-            <input class="input-control" name="cells" value="$cells" placeholder="F4, AI10" required maxlength="300" spellcheck="false" />
-        </label>
-        <label><span>Каждую неделю в</span>
-            <select class="integration-select" name="weekday">$weekdays</select>
-        </label>
-        <label><span>Время (Москва)</span>
-            <input class="input-control" type="time" name="run_time" value="$run_time" required />
-        </label>
-    </div>
-    <div class="week-update-preview">
-        <div><span>Если обновить неделю сейчас</span><strong data-week-value>$value</strong></div>
-        <p data-week-schedule>$schedule_text</p>
-    </div>
-    <p class="week-update-hint">Неделя считается с понедельника по воскресенье по Москве. Формат — W39 2026, год соответствует ISO-неделе. Новое расписание действует со следующего запуска; пропущенный запуск выполняется после включения приложения.</p>
-    <p class="week-update-hint">Сначала сохраните настройки. Кнопка «Обновить сейчас» записывает значение в указанные ячейки, даже когда расписание выключено.</p>
-    <p class="export-status $status_class" data-week-status role="status" aria-live="polite">$status_text</p>
-    <div class="week-update-actions">
-        <a href="$spreadsheet_url" target="_blank" rel="noopener noreferrer" data-week-sheet-link>Открыть таблицу</a>
-        <span data-week-unsaved hidden>Есть несохранённые изменения</span>
-        <button class="btn-secondary" type="button" data-week-run$run_disabled>Обновить сейчас</button>
-        <button class="btn-primary" type="submit">Сохранить настройки недели</button>
-    </div>
-    <section class="week-search" aria-labelledby="week-search-title">
-        <div class="week-update-head">
-            <div><h3 id="week-search-title">Поиск недельного диапазона</h3>
-                <p>Читает значение сохранённой ячейки, находит совпадения на листе и собирает недели влево до другого заголовка. В строке найденных недель также ищет ARTICLE и «Проект».</p>
+    <div class="week-settings">
+        <section class="week-destination" aria-labelledby="week-destination-title">
+            <h3 id="week-destination-title">Куда выгружать</h3>
+            <label class="week-field"><span>Ссылка на Google Таблицу</span>
+                <input class="input-control" type="url" name="spreadsheet_url" value="$spreadsheet_url" required maxlength="2048" spellcheck="false" />
+            </label>
+            <div class="week-fields">
+                <label class="week-field"><span>Лист с неделями и заказами</span>
+                    <input class="input-control" name="sheet_name" value="$sheet_name" required maxlength="100" />
+                </label>
+                <label class="week-field"><span>Ячейки с номером недели</span>
+                    <input class="input-control" name="cells" value="$cells" placeholder="F4, AI10" required maxlength="300" spellcheck="false" aria-describedby="week-cells-hint" />
+                    <small id="week-cells-hint">Несколько ячеек — через запятую</small>
+                </label>
+                <label class="week-field"><span>Лист с остатками WB</span>
+                    <input class="input-control" name="stock_sheet_name" value="$stock_sheet_name" required maxlength="100" />
+                </label>
             </div>
+        </section>
+        <section class="week-timing" aria-labelledby="week-timing-title">
+            <div><h3 id="week-timing-title">Общее расписание</h3><p>Для включённых действий ниже</p></div>
+            <div class="week-time-fields">
+                <label class="week-field"><span>День недели</span>
+                    <select class="integration-select" name="weekday">$weekdays</select>
+                </label>
+                <label class="week-field"><span>Время · МСК</span>
+                    <input class="input-control" type="time" name="run_time" value="$run_time" required />
+                </label>
+            </div>
+            <p class="week-update-hint">При совместном запуске сначала обновляется номер недели, затем выгружаются данные.</p>
+        </section>
+    </div>
+    <div class="week-settings-footer">
+        <div class="week-save-feedback" role="status" aria-live="polite">
+            <span data-week-save-status>Настройки общие для всех действий.</span>
+            <span data-week-unsaved hidden>Сохраните изменения, чтобы запустить действия.</span>
         </div>
-        <label class="week-update-switch">
-            <input type="checkbox" name="search_enabled" value="1"$search_enabled_checked />
-            <span>Искать по тому же расписанию</span>
-        </label>
-        <p class="week-update-hint">Поиск использует текущие значения в Google Таблице и исключает исходную ячейку. Кнопка поиска только читает данные. Если включены оба действия, по расписанию сначала обновляется неделя, затем выполняется поиск.</p>
-        <p class="week-update-hint" data-week-search-schedule>$search_schedule_text</p>
-        <div class="week-search-actions">
-            <button class="btn-secondary" type="button" data-week-search$run_disabled>Найти недели</button>
-            <span class="week-update-hint">Для запуска используйте сохранённые настройки выше.</span>
+        <button class="btn-primary" type="submit">Сохранить настройки</button>
+    </div>
+    <div class="week-actions-heading"><h3>Действия</h3><span>Можно запускать вручную</span></div>
+    <div class="week-action-grid">
+        <section class="week-action" aria-labelledby="week-number-title">
+            <div class="week-action-title"><span class="week-action-icon" aria-hidden="true">W</span><h3 id="week-number-title">Номер недели</h3></div>
+            <p class="week-action-description">Записывает последнюю завершённую неделю в выбранные ячейки.</p>
+            <div class="week-value"><strong data-week-value>$value</strong><span>если обновить сейчас</span></div>
+            <label class="week-update-switch">
+                <input type="checkbox" name="enabled" value="1"$enabled_checked aria-label="Обновлять номер недели по расписанию" />
+                <span class="week-switch-track" aria-hidden="true"></span><span>По расписанию</span>
+            </label>
+            <p class="week-next-run" data-week-schedule>$schedule_text</p>
+            <button class="btn-secondary week-run-button" type="button" data-week-run$run_disabled>Обновить неделю</button>
+            <p class="week-action-status $status_class" data-week-status role="status" aria-live="polite">$status_text</p>
+        </section>
+        <section class="week-action" aria-labelledby="week-sales-title">
+            <div class="week-action-title"><span class="week-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 19V12m7 7V5m7 14V9" stroke-linecap="round" /></svg></span><h3 id="week-sales-title">Заказы WB</h3></div>
+            <p class="week-action-description">Заказы за вычетом отмен по всем найденным неделям.</p>
+            <p class="week-action-note">Сопоставление: ARTICLE + Проект</p>
+            <label class="week-update-switch">
+                <input type="checkbox" name="sales_enabled" value="1"$sales_enabled_checked aria-label="Выгружать заказы по расписанию" />
+                <span class="week-switch-track" aria-hidden="true"></span><span>По расписанию</span>
+            </label>
+            <p class="week-next-run" data-week-sales-schedule>$sales_schedule_text</p>
+            <button class="btn-secondary week-run-button" type="button" data-week-sales$run_disabled>Выгрузить заказы</button>
+            <p class="week-action-status $sales_status_class" data-week-sales-status role="status" aria-live="polite">$sales_status_text</p>
+            <details class="week-report" data-week-sales-report><summary>Результат выгрузки</summary><div class="week-report-body" data-week-sales-results>$sales_results</div></details>
+        </section>
+        <section class="week-action" aria-labelledby="week-stock-title">
+            <div class="week-action-title"><span class="week-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4M12 11v10M7 5l9 4" /></svg></span><h3 id="week-stock-title">Остатки WB · FBO</h3></div>
+            <p class="week-action-description">Остатки за воскресенье выбранной недели на отдельный лист.</p>
+            <p class="week-action-note">Сопоставление: ARTICLE + Проект</p>
+            <label class="week-update-switch">
+                <input type="checkbox" name="stock_enabled" value="1"$stock_enabled_checked aria-label="Выгружать остатки FBO по расписанию" />
+                <span class="week-switch-track" aria-hidden="true"></span><span>По расписанию</span>
+            </label>
+            <p class="week-next-run" data-week-stock-schedule>$stock_schedule_text</p>
+            <button class="btn-secondary week-run-button" type="button" data-week-stock$run_disabled>Выгрузить остатки FBO</button>
+            <p class="week-action-status $stock_status_class" data-week-stock-status role="status" aria-live="polite">$stock_status_text</p>
+            <details class="week-report" data-week-stock-report><summary>Результат выгрузки</summary><div class="week-report-body" data-week-stock-results>$stock_results</div></details>
+        </section>
+    </div>
+    <details class="week-check" data-week-search-panel>
+        <summary><span>Проверить недели и ячейки</span><small>Без записи в таблицу</small></summary>
+        <div class="week-check-body">
+            <p class="week-update-hint">Покажет недельные заголовки и столбцы ARTICLE и «Проект» на листе с заказами.</p>
+            <div class="week-check-actions">
+                <button class="btn-secondary" type="button" data-week-search$run_disabled>Найти недели</button>
+                <label class="week-update-switch">
+                    <input type="checkbox" name="search_enabled" value="1"$search_enabled_checked aria-label="Искать недели по расписанию" />
+                    <span class="week-switch-track" aria-hidden="true"></span><span>По расписанию</span>
+                </label>
+            </div>
+            <p class="week-next-run" data-week-search-schedule>$search_schedule_text</p>
+            <p class="week-action-status $search_status_class" data-week-search-status role="status" aria-live="polite">$search_status_text</p>
+            <div data-week-search-results>$search_results</div>
         </div>
-        <p class="export-status $search_status_class" data-week-search-status role="status" aria-live="polite">$search_status_text</p>
-        <div data-week-search-results>$search_results</div>
-    </section>
-    <section class="week-search" aria-labelledby="week-sales-title">
-        <h3 id="week-sales-title">Заказы по неделям из воронки WB</h3>
-        <p class="week-update-hint">Использует таблицу, лист и исходную ячейку из настроек выше. Находит недели и товары по связке ARTICLE + «Проект», затем записывает количество заказов за вычетом отмен в ячейки на пересечении товара и недели.</p>
-        <label class="week-update-switch">
-            <input type="checkbox" name="sales_enabled" value="1"$sales_enabled_checked />
-            <span>Выгружать заказы по тому же расписанию</span>
-        </label>
-        <p class="week-update-hint">Суммируются дни с понедельника по воскресенье включительно. Дни без данных в БД считаются нулём; если за неделю нет данных, в ячейку записывается 0, включая пустые ячейки и ячейки со старыми значениями. Магазин определяется по столбцу «Проект». Несопоставленные товары и незавершённые недели пропускаются. Перед записью создаётся резервная копия. Если включено обновление недели, по расписанию оно выполняется первым.</p>
-        <p class="week-update-hint" data-week-sales-schedule>$sales_schedule_text</p>
-        <div class="week-search-actions">
-            <button class="btn-primary" type="button" data-week-sales$run_disabled>Выгрузить заказы</button>
-            <span class="week-update-hint">Записывает данные в Google Таблицу по сохранённым настройкам.</span>
-        </div>
-        <p class="export-status $sales_status_class" data-week-sales-status role="status" aria-live="polite">$sales_status_text</p>
-        <div data-week-sales-results>$sales_results</div>
-    </section>
-    <section class="week-search" aria-labelledby="week-stock-title">
-        <h3 id="week-stock-title">Остатки на складах ВБ на конец недели</h3>
-        <label class="week-update-url"><span>Лист остатков ВБ</span>
-            <input class="input-control" name="stock_sheet_name" value="$stock_sheet_name" required maxlength="100" />
-        </label>
-        <p class="week-update-hint">Таблица и исходная ячейка недели берутся из настроек выше. В выбранном листе находятся эта неделя, ARTICLE и «Проект». Для каждого товара в указанном проекте записывается только остаток WB FBO за воскресенье этой недели.</p>
-        <label class="week-update-switch">
-            <input type="checkbox" name="stock_enabled" value="1"$stock_enabled_checked />
-            <span>Выгружать остатки FBO по тому же расписанию</span>
-        </label>
-        <p class="week-update-hint">Используется сохранённый дневной снимок: сбор истории настроен на 23:59 МСК. Если снимка за нужное воскресенье нет, в ячейку записывается 0, включая пустые ячейки и ячейки со старыми значениями. Несопоставленные товары и незавершённые недели пропускаются. Перед записью сохраняется резервная копия. По расписанию включённое обновление недели выполняется первым.</p>
-        <p class="week-update-hint" data-week-stock-schedule>$stock_schedule_text</p>
-        <div class="week-search-actions">
-            <button class="btn-primary" type="button" data-week-stock$run_disabled>Выгрузить остатки FBO</button>
-            <button class="btn-secondary" type="submit">Сохранить настройки недели</button>
-        </div>
-        <p class="export-status $stock_status_class" data-week-stock-status role="status" aria-live="polite">$stock_status_text</p>
-        <div data-week-stock-results>$stock_results</div>
-    </section>
+    </details>
+    <details class="week-help">
+        <summary>Как это работает</summary>
+        <ul>
+            <li>Неделя — с понедельника по воскресенье. Номер записывается в формате W39 2026.</li>
+            <li>Выгрузки берут номер недели из сохранённых ячеек. Заказы включают найденные недели слева, остатки — только выбранную неделю.</li>
+            <li>Нет данных — в ячейку записывается 0. Несопоставленные товары и незавершённые недели пропускаются.</li>
+            <li>Дневные остатки собираются в 23:59 МСК. Для FBO используется снимок за воскресенье.</li>
+            <li>Перед выгрузкой сохраняется резервная копия. Подробности доступны в результате действия.</li>
+            <li>Ручной запуск работает и при выключенном расписании. После изменения настроек сначала нажмите «Сохранить настройки».</li>
+        </ul>
+    </details>
 </form>
-<script src="/static/integrations/google-week-update.js?v=20261002-project"></script>
+<script src="/static/integrations/google-week-update.js?v=20261002-design"></script>

@@ -14,6 +14,7 @@ from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.inbound_supplies import STAGE_LABELS, InboundSyncRequest
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import queue_tracked
+from app.stock.catalog_identity import display_barcode
 from app.stock.inbound_supplies import JOB_NAME
 from app.web.dependencies import ContainerDependency
 from app.web.templating import fill_template, render_page
@@ -75,9 +76,14 @@ async def inbound_data(request: Request, container: ContainerDependency, store: 
     result = []
     for snapshot in snapshots:
         stale = not snapshot.last_success or datetime.fromisoformat(snapshot.last_success) < cutoff
+        data = snapshot.model_dump(mode="json")
+        if snapshot.marketplace == "YANDEX MARKET":
+            for supply in data["supplies"]:
+                for item in supply["items"]:
+                    item["barcode"] = display_barcode(item, snapshot.marketplace)
         result.append(
             {
-                **snapshot.model_dump(mode="json"),
+                **data,
                 "store_name": STORES[snapshot.store_slug].name,
                 "marketplace_name": MARKETPLACE_LABELS[snapshot.marketplace],
                 "stale": stale,

@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 
 from app.config import settings
+from app.core.barcodes import ordered_barcodes, preferred_barcode
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +333,7 @@ def normalize_catalog_item(row: dict) -> dict:
     offer = row.get("offer") or {}
     mapping = row.get("mapping") or {}
 
-    barcodes = [str(b).strip() for b in (offer.get("barcodes") or []) if str(b or "").strip()]
+    barcodes = ordered_barcodes(offer.get("barcodes") or [])
     image_url = ""
     for picture in offer.get("pictures") or []:
         candidate = (
@@ -348,7 +349,7 @@ def normalize_catalog_item(row: dict) -> dict:
     return {
         "article": str(offer.get("offerId") or "").strip(),
         "name": str(offer.get("name") or "").strip(),
-        "barcode": barcodes[0] if barcodes else "",
+        "barcode": preferred_barcode(barcodes),
         "image_url": image_url,
         "barcodes": barcodes,
         "market_sku": mapping.get("marketSku"),

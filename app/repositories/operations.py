@@ -131,55 +131,128 @@ def get_operation(operation_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def _operation_where(
+    store_slug: str, kinds: tuple[str, ...] | None, marketplaces: tuple[str, ...] | None
+) -> tuple[str, list]:
+    clauses = ["o.store_slug = ?"]
+    params: list = [store_slug]
+    if kinds:
+        clauses.append(f"o.kind IN ({','.join('?' for _ in kinds)})")
+        params.extend(kinds)
+    if marketplaces is not None:
+        if not marketplaces:
+            clauses.append("1 = 0")
+        else:
+            placeholders = ",".join("?" for _ in marketplaces)
+            clauses.append(
+                f"(o.from_marketplace IN ({placeholders}) OR o.to_marketplace IN ({placeholders}) "
+                "OR (COALESCE(o.from_marketplace, '') = '' AND COALESCE(o.to_marketplace, '') = ''))"
+            )
+            params.extend(marketplaces)
+            params.extend(marketplaces)
+    return " AND ".join(clauses), params
+
+
+def get_store_operation_stats(
+    store_slug: str, kinds: tuple[str, ...] | None = None, *, marketplaces: tuple[str, ...] | None = None
+) -> dict:
+    """Count the complete accessible history, independent of the displayed page."""
+    conn = get_connection()
+    try:
+        where, params = _operation_where(store_slug, None, marketplaces)
+        counts = {
+            row["kind"]: int(row["total"])
+            for row in conn.execute(
+                f"SELECT o.kind, COUNT(*) AS total FROM stock_operations o WHERE {where} GROUP BY o.kind",
+                params,
+            ).fetchall()
+        }
+        where, params = _operation_where(store_slug, kinds, marketplaces)
+        summary = conn.execute(
+            f"""
+            WITH selected_operations AS (
+                SELECT o.id, o.user_name FROM stock_operations o WHERE {where}
+            ), item_totals AS (
+                SELECT i.operation_id, COUNT(*) AS positions, SUM(i.quantity) AS units
+                  FROM stock_operation_items i
+                  JOIN selected_operations o ON o.id = i.operation_id
+                 GROUP BY i.operation_id
+            )
+            SELECT COUNT(*) AS total, COALESCE(SUM(items.positions), 0) AS positions,
+                   COALESCE(SUM(ABS(items.units)), 0) AS units,
+                   COUNT(DISTINCT NULLIF(o.user_name, '')) AS employees
+              FROM selected_operations o
+              LEFT JOIN item_totals items ON items.operation_id = o.id
+            """,
+            params,
+        ).fetchone()
+        return {"counts": counts, "summary": dict(summary)}
+    finally:
+        conn.close()
+
+
 def get_store_operations(
-    store_slug: str, kinds: tuple[str, ...] | None = None, limit: int = 500
+    store_slug: str,
+    kinds: tuple[str, ...] | None = None,
+    limit: int | None = 500,
+    *,
+    offset: int = 0,
+    marketplaces: tuple[str, ...] | None = None,
 ) -> list[dict]:
 
     conn = get_connection()
 
-    sql = """
-        SELECT o.*,
-               (SELECT COUNT(*) FROM stock_operation_items i
-                 WHERE i.operation_id = o.id) AS positions,
-               (SELECT COALESCE(SUM(i.quantity), 0) FROM stock_operation_items i
-                 WHERE i.operation_id = o.id) AS units
-        FROM stock_operations o
-        WHERE o.store_slug = ?
+    where, params = _operation_where(store_slug, kinds, marketplaces)
+    selection = f"SELECT o.* FROM stock_operations o WHERE {where} ORDER BY o.id DESC"
+    if limit is not None:
+        selection += " LIMIT ? OFFSET ?"
+        params.extend((limit, offset))
+    sql = f"""
+        WITH selected_operations AS ({selection}), item_totals AS (
+            SELECT i.operation_id, COUNT(*) AS positions, SUM(i.quantity) AS units
+              FROM stock_operation_items i
+              JOIN selected_operations o ON o.id = i.operation_id
+             GROUP BY i.operation_id
+        )
+        SELECT o.*, COALESCE(items.positions, 0) AS positions, COALESCE(items.units, 0) AS units
+          FROM selected_operations o
+          LEFT JOIN item_totals items ON items.operation_id = o.id
+         ORDER BY o.id DESC
     """
-    params: list = [store_slug]
-
-    if kinds:
-        sql += f" AND o.kind IN ({','.join('?' for _ in kinds)})"
-        params.extend(kinds)
-
-    sql += " ORDER BY o.id DESC LIMIT ?"
-    params.append(limit)
-
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    try:
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 def get_operations_with_items(
-    store_slug: str, kinds: tuple[str, ...] | None = None, limit: int = 500
+    store_slug: str,
+    kinds: tuple[str, ...] | None = None,
+    limit: int | None = 500,
+    *,
+    marketplaces: tuple[str, ...] | None = None,
 ) -> list[dict]:
 
-    operations = get_store_operations(store_slug, kinds, limit)
+    operations = get_store_operations(store_slug, kinds, limit, marketplaces=marketplaces)
     if not operations:
         return []
 
     ids = [op["id"] for op in operations]
     conn = get_connection()
-    placeholders = ",".join("?" for _ in ids)
-    rows = conn.execute(
-        f"SELECT * FROM stock_operation_items WHERE operation_id IN ({placeholders}) ORDER BY id",
-        ids,
-    ).fetchall()
-    conn.close()
-
     by_operation: dict[int, list[dict]] = {}
-    for row in rows:
-        by_operation.setdefault(row["operation_id"], []).append(dict(row))
+    try:
+        for start in range(0, len(ids), 500):
+            batch = ids[start : start + 500]
+            placeholders = ",".join("?" for _ in batch)
+            rows = conn.execute(
+                f"SELECT * FROM stock_operation_items WHERE operation_id IN ({placeholders}) ORDER BY id",
+                batch,
+            ).fetchall()
+            for row in rows:
+                by_operation.setdefault(row["operation_id"], []).append(dict(row))
+    finally:
+        conn.close()
 
     for op in operations:
         op["items"] = by_operation.get(op["id"], [])

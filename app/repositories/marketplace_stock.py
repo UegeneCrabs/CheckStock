@@ -1,3 +1,4 @@
+from app.repositories.catalog import attach_barcodes
 from app.repositories.core import get_connection
 
 
@@ -143,8 +144,11 @@ def get_mp_warehouse_details(
         """,
         (store_slug, marketplace, marketplace, scheme),
     ).fetchall()
+    data = [dict(row) for row in rows]
+    if marketplace == "YANDEX MARKET":
+        attach_barcodes(conn, store_slug, marketplace, data)
     conn.close()
-    return [dict(row) for row in rows]
+    return data
 
 
 def get_mp_fbs_warehouse_details(
@@ -174,9 +178,11 @@ def get_mp_fbs_warehouse_details(
         """,
         params,
     ).fetchall()
+    data = [dict(row) for row in rows]
+    if marketplace == "YANDEX MARKET":
+        attach_barcodes(conn, store_slug, marketplace, data)
     conn.close()
 
-    data = [dict(row) for row in rows]
     canonical_articles = {str(row["article"]) for row in data if row["scheme"] == "fbs"}
     merged: dict[tuple[str, str], dict] = {}
     for row in data:
