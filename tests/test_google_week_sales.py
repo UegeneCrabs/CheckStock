@@ -27,7 +27,7 @@ class GoogleWeekSalesTests(unittest.TestCase):
         search_tests.GoogleWeekSearchTests.setUp(self)
         self.configure()
         self.now = self.now - timedelta(days=3)  # Friday 2 October; W39 is complete.
-        self.rows.append(["123", "", "001234"] + [""] * 32)
+        self.rows.append(["123", "", "RIMILI"] + [""] * 32)
         self.formulas = None
 
         def read(**kwargs):
@@ -210,22 +210,97 @@ class GoogleWeekSalesTests(unittest.TestCase):
         self.assertEqual(self.writes()["AI11"], 48)
         self.assertEqual(len(report["zero_filled"]), 12)
 
-    def test_barcode_aliases_and_multiple_stores_are_resolved_without_combining_totals(self):
+    def test_article_and_project_isolate_stores_and_ignore_conflicting_barcodes(self):
         with self.database.connect() as conn:
             conn.execute(
                 "INSERT INTO stock_items (store_slug,marketplace,article,barcode,name) VALUES ('tris','WB','123','other','Other store')"
             )
             conn.execute(
-                "INSERT INTO catalog_barcodes (stock_item_id,barcode) SELECT id,'alternate' FROM stock_items WHERE store_slug='rimili'"
+                "INSERT INTO catalog_article_aliases (store_slug,marketplace,article,target_article,identity,updated_at) VALUES ('rimili','WB','999','123','alias',?)",
+                (self.now.isoformat(),),
+            )
+            conn.execute(
+                "INSERT INTO wb_funnel_daily_orders (store_slug,article,day,orders_count,cancel_count,source_version,updated_at) SELECT 'tris',article,day,3,0,4,updated_at FROM wb_funnel_daily_orders WHERE store_slug='rimili'"
             )
             conn.commit()
-        self.rows[10][2] = "alternate"
+        self.rows[9][1] = self.rows[9][3] = "BARCODE"
+        self.rows[10][0:4] = ["999", "other", " ХоЧуШар ", "invalid barcode"]
+        self.rows.append(["123", "001234", " tris ", ""])  # Same ARTICLE, different project.
         self.export()
         self.assertEqual(self.writes()["AI11"], 56)
-        self.rows[10][2] = ""
+        self.assertEqual(self.writes()["AI12"], 21)
+
+    def test_project_aliases_match_existing_store_labels(self):
+        products = [
+            {"store_slug": slug, "article": "123"}
+            for slug in ("rimili", "tris", "trusthome", "gogol", "sokoloff", "rockkiddo", "toyka")
+        ]
+        self.mock(self.sales.source, "products", return_value=products)
+        for project, store in (
+            (" ХОЧУШАР ", "rimili"),
+            ("RIMILI", "rimili"),
+            ("TRIS", "tris"),
+            (" bth ", "trusthome"),
+            ("Гоголь", "gogol"),
+            ("Ракета", "gogol"),
+            ("Sokoloff", "sokoloff"),
+            ("rockkiddo", "rockkiddo"),
+            ("TOYKA", "toyka"),
+        ):
+            with self.subTest(project=project):
+                matched, issues = self.sales.match_products(
+                    [["ARTICLE", "Проект"], ["123", project]], 0, 0, 1
+                )
+                self.assertEqual(issues, [])
+                self.assertEqual(matched[0]["store_slug"], store)
+
+    def test_missing_unknown_or_wrong_project_never_guesses_store_from_article(self):
+        for project in ("", "unknown", "TRIS"):
+            with self.subTest(project=project):
+                self.rows[10][2] = project
+                report = self.export()
+                self.assertEqual(report["written_cells"], 0)
+                self.assertEqual(len(report["issues"]), 1)
+                self.assert_no_sheet_writes()
+        self.rows[10][0:3] = ["", "", "RIMILI"]
+        self.assertIn("Нужно заполнить", self.export()["issues"][0]["reason"])
+
+    def test_ambiguous_article_alias_in_one_project_is_not_written(self):
+        self.mock(
+            self.sales.source,
+            "products",
+            return_value=[
+                {"store_slug": "rimili", "article": "123"},
+                {"store_slug": "rimili", "article": "456", "article_aliases": ["123"]},
+            ],
+        )
         report = self.export()
-        self.assertEqual(report["written_cells"], 0)
         self.assertIn("несколькими", report["issues"][0]["reason"])
+        self.assert_no_sheet_writes()
+
+    def test_project_change_during_calculation_stops_write(self):
+        original = self.google.spreadsheets().values().get.side_effect
+        reads = []
+
+        def mutate(**kwargs):
+            if kwargs["valueRenderOption"] == "FORMATTED_VALUE":
+                reads.append(1)
+                if len(reads) == 2:
+                    self.rows[10][2] = "TRIS"
+            return original(**kwargs)
+
+        self.google.spreadsheets().values().get.side_effect = mutate
+        with self.assertRaisesRegex(ValueError, "изменилась"):
+            self.export()
+        self.assert_no_sheet_writes()
+
+    def test_old_identity_report_is_hidden_until_export_is_repeated(self):
+        report = self.export()
+        report.pop("matching_key")
+        self.repo.record_sales_result(self.now.isoformat(), slot=self.now.isoformat(), result=report)
+        payload = self.client().get("/admin/google-week-update").json()
+        self.assertIn("Ключ сопоставления изменён", payload["sales_status_text"])
+        self.assertNotIn("Записано ячеек", payload["sales_html"])
 
     def test_unknown_and_duplicate_product_rows_remain_untouched(self):
         self.rows.append(copy.deepcopy(self.rows[10]))
@@ -237,9 +312,9 @@ class GoogleWeekSalesTests(unittest.TestCase):
 
     def test_ambiguous_header_rows_and_missing_columns_block_all_writes(self):
         self.rows[9][2] = "OTHER"
-        with self.assertRaisesRegex(ValueError, "ARTICLE.*BARCODE"):
+        with self.assertRaisesRegex(ValueError, "ARTICLE.*Проект"):
             self.export()
-        self.rows[9][2] = "BARCODE"
+        self.rows[9][2] = "Проект"
         self.rows.append(["W39 2026"])
         with self.assertRaisesRegex(ValueError, "одной строке"):
             self.export()

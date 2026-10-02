@@ -32,9 +32,9 @@ class GoogleWeekStockTests(unittest.TestCase):
         )
         self.target_rows = [[] for _ in range(9)]
         self.target_rows[7] = [""] * 48
-        self.target_rows[7][3:5] = ["BARCODE", "ARTICLE"]
+        self.target_rows[7][3:5] = ["Проект", "ARTICLE"]
         self.target_rows[7][45:47] = ["W38 2026", "W39 2026"]
-        self.target_rows[8] = ["", "", "", "001234", "123"] + [""] * 43
+        self.target_rows[8] = ["", "", "", "RIMILI", "123"] + [""] * 43
         self.target_sheet = {
             "properties": {
                 "sheetId": 223987387,
@@ -84,6 +84,37 @@ class GoogleWeekStockTests(unittest.TestCase):
         self.assertIn("2026-09-27T20:04:00", result["snapshot_times"][0]["captured_at"])
         self.google.spreadsheets().values().batchClear.assert_not_called()
         self.assertIsNone(self.repo.get_sales_state().last_success_at)
+
+    def test_same_article_in_different_projects_uses_each_projects_snapshot(self):
+        with self.database.connect() as conn:
+            conn.execute(
+                "INSERT INTO stock_items (store_slug,marketplace,article,barcode,name) VALUES ('tris','WB','123','other','Tris product')"
+            )
+            conn.execute(
+                "INSERT INTO marketplace_stock_daily_history (store_slug,marketplace,article,scheme,day,quantity,captured_at) VALUES ('tris','WB','123','fbo','2026-09-27',80,'2026-09-27T20:00:00+00:00')"
+            )
+            conn.commit()
+        self.target_rows[7][1:3] = ["BARCODE", "BARCODE"]
+        self.target_rows[8][1:4] = ["other", "wrong", "ХОЧУШАР"]
+        self.target_rows.append(["", "001234", "", " TrIs ", "123"])
+        self.export()
+        self.assertEqual(self.writes(), {"AU9": 25, "AU10": 80})
+
+    def test_project_change_during_stock_calculation_blocks_write(self):
+        original = self.google.spreadsheets().values().get.side_effect
+        reads = []
+
+        def read(**kwargs):
+            if kwargs["range"] == "'" + self.title + "'" and kwargs["valueRenderOption"] == "FORMATTED_VALUE":
+                reads.append(1)
+                if len(reads) == 2:
+                    self.target_rows[8][3] = "TRIS"
+            return original(**kwargs)
+
+        self.google.spreadsheets().values().get.side_effect = read
+        with self.assertRaisesRegex(ValueError, "изменилась"):
+            self.export()
+        self.assert_no_sheet_writes()
 
     def test_missing_sunday_writes_zero_without_neighbor_day_or_current_stock(self):
         with self.database.connect() as conn:
@@ -146,8 +177,8 @@ class GoogleWeekStockTests(unittest.TestCase):
         self.assertEqual(self.writes(), {"AU9": 25})
         # A week header at the same A1 address on a different sheet is valid.
         self.target_rows = [[] for _ in range(5)]
-        self.target_rows[3] = ["ARTICLE", "", "BARCODE", "", "", "W39 2026"]
-        self.target_rows[4] = ["123", "", "001234", "", "", ""]
+        self.target_rows[3] = ["ARTICLE", "", "Проект", "", "", "W39 2026"]
+        self.target_rows[4] = ["123", "", "RIMILI", "", "", ""]
         self.export()
         self.assertEqual(self.writes(), {"F5": 25})
 
@@ -175,7 +206,7 @@ class GoogleWeekStockTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "найден"):
             self.export()
         self.rows[3][5] = "W39 2026"
-        self.target_rows[7][2] = "BARCODE"
+        self.target_rows[7][2] = "Проект"
         with self.assertRaisesRegex(ValueError, "ровно один"):
             self.export()
         self.assert_no_sheet_writes()
@@ -185,7 +216,7 @@ class GoogleWeekStockTests(unittest.TestCase):
         result = self.export()
         self.assertEqual(len(result["issues"]), 1)
         self.assert_no_sheet_writes()
-        self.target_rows[8][3] = "001234"
+        self.target_rows[8][3] = "RIMILI"
         self.target_sheet["merges"] = [
             {"startRowIndex": 8, "endRowIndex": 9, "startColumnIndex": 46, "endColumnIndex": 48}
         ]

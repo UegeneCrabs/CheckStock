@@ -77,7 +77,7 @@ def render_result(
     if result["issues"]:
         parts.append(f"<details><summary>Не сопоставлены товары: {len(result['issues'])}</summary><ul>")
         for item in result["issues"]:
-            text = f"Строка {item['row']}, ARTICLE {item['article']}, BARCODE {item['barcode']}: {item['reason']}"
+            text = f"Строка {item['row']}, ARTICLE {item['article']}, Проект {item.get('project', '—')}: {item['reason']}"
             parts.append(f"<li>{html.escape(text)}</li>")
         parts.append("</ul></details>")
     if result.get("backup"):

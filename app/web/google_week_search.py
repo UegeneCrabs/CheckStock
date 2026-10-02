@@ -3,6 +3,7 @@
 import html
 from urllib.parse import urlencode
 
+from app.integrations.google_week_search import IDENTITY_COLUMNS
 from app.integrations.google_week_update import spreadsheet_id
 
 
@@ -35,9 +36,9 @@ def render_result(result: dict | None) -> str:
                 f'<div class="week-search-match"><p>Найдено в {link(match["cell"])}. '
                 f"Диапазон {link(match['range'])} — ячеек: {len(match['headers'])}.</p>"
             )
-            if "columns" in match:
+            if all(name in match.get("columns", {}) for name in IDENTITY_COLUMNS):
                 columns = []
-                for name in ("ARTICLE", "BARCODE"):
+                for name in IDENTITY_COLUMNS:
                     cells = match["columns"].get(name, [])
                     addresses = ", ".join(link(cell["cell"]) for cell in cells) if cells else "не найден"
                     columns.append(f"<strong>{name}</strong> — {addresses}")
@@ -46,7 +47,7 @@ def render_result(result: dict | None) -> str:
                 )
             else:
                 parts.append(
-                    '<p class="week-update-hint">Чтобы найти ARTICLE и BARCODE, повторите поиск.</p>'
+                    '<p class="week-update-hint">Чтобы найти ARTICLE и «Проект», повторите поиск.</p>'
                 )
             parts.append(
                 '<div class="week-search-table-wrap"><table><thead><tr>'

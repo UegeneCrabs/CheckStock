@@ -16,7 +16,7 @@ def sample_rows():
     rows[3] = ["", "", "", "", "", "W39 2026"]
     rows[9] = [""] * 22 + ["Общий сток"] + [f"W{week} 2026" for week in range(28, 40)]
     rows[9][0] = "ARTICLE"
-    rows[9][2] = "BARCODE"
+    rows[9][2] = "Проект"
     return rows
 
 
@@ -115,7 +115,7 @@ class GoogleWeekSearchTests(unittest.TestCase):
             match["columns"],
             {
                 "ARTICLE": [{"cell": "A10", "value": "ARTICLE"}],
-                "BARCODE": [{"cell": "C10", "value": "BARCODE"}],
+                "Проект": [{"cell": "C10", "value": "Проект"}],
             },
         )
         self.assertEqual(self.repo.get_search_state().result, result)
@@ -131,9 +131,9 @@ class GoogleWeekSearchTests(unittest.TestCase):
 
     def test_columns_use_entire_week_row_not_source_or_neighboring_rows(self):
         rows = [
-            ["W39 2026", "ARTICLE", "BARCODE"],
-            ["ARTICLE", "BARCODE"],
-            [" article ", "Общий сток", "W38 2026", "W39 2026", " Barcode "],
+            ["W39 2026", "ARTICLE", "Проект"],
+            ["ARTICLE", "Проект"],
+            [" article ", "Общий сток", "W38 2026", "W39 2026", " пРоЕкТ ", "BARCODE"],
         ]
         match = self.search.find_headers(rows, ("A1",))[0]["matches"][0]
         self.assertEqual(match["row"], 3)
@@ -143,32 +143,35 @@ class GoogleWeekSearchTests(unittest.TestCase):
             match["columns"],
             {
                 "ARTICLE": [{"cell": "A3", "value": " article "}],
-                "BARCODE": [{"cell": "E3", "value": " Barcode "}],
+                "Проект": [{"cell": "E3", "value": " пРоЕкТ "}],
             },
         )
 
     def test_columns_keep_duplicates_and_do_not_accept_partial_names_or_other_rows(self):
         rows = [
-            ["W39 2026", "BARCODE"],
-            ["ARTICLE", "W39 2026", "ARTICLE", "BARCODE_OLD", "MY ARTICLE"],
-            ["BARCODE", "W39 2026"],
+            ["W39 2026", "Проект"],
+            ["ARTICLE", "W39 2026", "ARTICLE", "Проект_OLD", "MY ARTICLE", "BARCODE"],
+            ["Проект", "W39 2026"],
         ]
         matches = self.search.find_headers(rows, ("A1",))[0]["matches"]
         self.assertEqual([cell["cell"] for cell in matches[0]["columns"]["ARTICLE"]], ["A2", "C2"])
-        self.assertEqual(matches[0]["columns"]["BARCODE"], [])
+        self.assertEqual(matches[0]["columns"]["Проект"], [])
         self.assertEqual(matches[1]["columns"]["ARTICLE"], [])
-        self.assertEqual(matches[1]["columns"]["BARCODE"], [{"cell": "A3", "value": "BARCODE"}])
+        self.assertEqual(matches[1]["columns"]["Проект"], [{"cell": "A3", "value": "Проект"}])
 
     def test_column_output_handles_missing_headers_and_older_saved_results(self):
         from app.web.google_week_search import render_result
 
         self.configure()
-        self.rows[9][2] = "BARCODE_OLD"
+        self.rows[9][2] = "Проект_OLD"
         result = self.run_search()
         content = render_result(result)
         self.assertIn("Столбцы в строке 10", content)
         self.assertIn("range=A10", content)
-        self.assertIn("<strong>BARCODE</strong> — не найден", content)
+        self.assertIn("<strong>Проект</strong> — не найден", content)
+        self.assertNotIn("BARCODE", content)
+        result["sources"][0]["matches"][0]["columns"] = {"ARTICLE": [], "BARCODE": []}
+        self.assertIn("повторите поиск", render_result(result))
         del result["sources"][0]["matches"][0]["columns"]
         self.assertIn("повторите поиск", render_result(result))
 

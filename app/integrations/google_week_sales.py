@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 from app.config import settings as app_settings
+from app.core.stores import PROJECT_STORE_ALIASES
 from app.integrations import google_week_search as search
 from app.integrations import google_week_update as week
 from app.repositories import google_week_sales as source
@@ -40,47 +41,49 @@ def layout(result: dict) -> tuple[int, int, int, list[dict]]:
     if not matches or len({item["row"] for item in matches}) != 1:
         raise ValueError("Недельные заголовки должны находиться в одной строке")
     columns = matches[0]["columns"]
-    if any(len(columns.get(name, [])) != 1 for name in ("ARTICLE", "BARCODE")):
-        raise ValueError("В строке недель нужен ровно один столбец ARTICLE и один BARCODE")
+    if any(len(columns.get(name, [])) != 1 for name in search.IDENTITY_COLUMNS):
+        raise ValueError("В строке недель нужен ровно один столбец ARTICLE и один «Проект»")
     header_row = matches[0]["row"] - 1
     article_col = search._position(columns["ARTICLE"][0]["cell"])[1]
-    barcode_col = search._position(columns["BARCODE"][0]["cell"])[1]
+    project_col = search._position(columns["Проект"][0]["cell"])[1]
     headers = {cell["cell"]: cell for match in matches for cell in match["headers"]}
-    return header_row, article_col, barcode_col, list(headers.values())
+    return header_row, article_col, project_col, list(headers.values())
 
 
-def _identities(products: list[dict]) -> tuple[dict, dict]:
-    articles, barcodes = defaultdict(set), defaultdict(set)
+def _identities(products: list[dict]) -> dict:
+    articles = defaultdict(set)
     for item in products:
         key = (item["store_slug"], item["article"])
         for value in (item["article"], *item.get("article_aliases", [])):
-            articles[str(value).strip()].add(key)
-        for value in (item.get("barcode", ""), *item.get("barcodes", [])):
-            if str(value).strip():
-                barcodes[str(value).strip()].add(key)
-    return articles, barcodes
+            articles[(item["store_slug"], str(value).strip())].add(key)
+    return articles
 
 
 def match_products(
-    rows: list[list], header_row: int, article_col: int, barcode_col: int
+    rows: list[list], header_row: int, article_col: int, project_col: int
 ) -> tuple[list, list]:
     """Resolve one WB product/store per row; retain actionable identity issues."""
-    articles, barcodes = _identities(source.products())
+    articles = _identities(source.products())
     matched, issues, seen = [], [], defaultdict(list)
     for row in range(header_row + 1, len(rows)):
         article = str(cell_value(rows, row, article_col)).strip()
-        barcode = str(cell_value(rows, row, barcode_col)).strip()
-        if not article and not barcode:
+        project = search._normalized(cell_value(rows, row, project_col))
+        if not article and not project:
             continue
-        item = {"row": row + 1, "article": article, "barcode": barcode}
-        candidates = articles.get(article, set()) if article else barcodes.get(barcode, set())
-        if barcode:
-            candidates = candidates & barcodes.get(barcode, set())
+        item = {"row": row + 1, "article": article, "project": project}
+        if not article or not project:
+            issues.append({**item, "reason": "Нужно заполнить ARTICLE и «Проект»"})
+            continue
+        store = PROJECT_STORE_ALIASES.get(project.casefold())
+        if store is None:
+            issues.append({**item, "reason": "Неизвестный проект"})
+            continue
+        candidates = articles.get((store, article), set())
         if len(candidates) != 1:
             issues.append(
                 {
                     **item,
-                    "reason": "Товар не найден по ARTICLE/BARCODE"
+                    "reason": "Товар не найден по ARTICLE и проекту"
                     if not candidates
                     else "Товар совпал с несколькими записями каталога",
                 }
@@ -104,7 +107,7 @@ def match_products(
 
 def build_plan(settings: WeekUpdateSettings, sheet: dict, rows: list[list], *, now: datetime) -> dict:
     result = search.describe_headers(settings, sheet, rows)
-    header_row, article_col, barcode_col, headers = layout(result)
+    header_row, article_col, project_col, headers = layout(result)
     periods = []
     for cell in headers:
         start, end = week_dates(cell["value"])
@@ -116,7 +119,7 @@ def build_plan(settings: WeekUpdateSettings, sheet: dict, rows: list[list], *, n
                 "days": [(start + timedelta(days=i)).isoformat() for i in range(7)],
             }
         )
-    unique, issues = match_products(rows, header_row, article_col, barcode_col)
+    unique, issues = match_products(rows, header_row, article_col, project_col)
     stores = tuple(sorted({item["store_slug"] for item in unique}))
     facts, coverage = source.daily_facts(
         stores, min(p["date_from"] for p in periods), max(p["date_to"] for p in periods)
@@ -255,10 +258,10 @@ def write_plan(
     )
     # Recheck the source, product identities, headers and destination values immediately before writing.
     current_sheet, current_rows = search.read_sheet(settings, reader)
-    header_row, article_col, barcode_col, _ = layout(plan)
+    header_row, article_col, project_col, _ = layout(plan)
     watched = set(settings.cells) | {p["cell"] for p in plan["periods"]} | {item["cell"] for item in writes}
     for r in range(header_row, max(len(rows), len(current_rows))):
-        watched.update((search._address(r, article_col), search._address(r, barcode_col)))
+        watched.update((search._address(r, article_col), search._address(r, project_col)))
     if current_sheet != sheet or any(
         cell_value(rows, *search._position(cell)) != cell_value(current_rows, *search._position(cell))
         for cell in watched

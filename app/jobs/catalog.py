@@ -263,7 +263,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "marketplace_stock_sync_and_history_23_msk",
             "История остатков маркетплейсов",
             "Сохраняет дневной снимок остатков на маркетплейсах.",
-            "Ежедневно в 23:00 МСК",
+            "Ежедневно в 23:59 МСК",
             base,
             "store_marketplaces",
             ("WB", "OZON", "YANDEX MARKET"),

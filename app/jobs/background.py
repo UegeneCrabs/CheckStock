@@ -55,9 +55,9 @@ def _seconds_until_next_run(hour: int) -> float:
     return (target - now).total_seconds()
 
 
-def _seconds_until_next_moscow_run(hour: int) -> float:
+def _seconds_until_next_moscow_run(hour: int, minute: int = 0) -> float:
     now = datetime.now(MOSCOW_TIMEZONE)
-    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
     return (target - now).total_seconds()
@@ -217,8 +217,8 @@ def _daily_delay(hour: int) -> Callable[[], float]:
     return lambda: _seconds_until_next_run(hour)
 
 
-def _moscow_daily_delay(hour: int) -> Callable[[], float]:
-    return lambda: _seconds_until_next_moscow_run(hour)
+def _moscow_daily_delay(hour: int, minute: int = 0) -> Callable[[], float]:
+    return lambda: _seconds_until_next_moscow_run(hour, minute)
 
 
 def _fixed_delay(seconds: int) -> Callable[[], float]:
@@ -288,10 +288,11 @@ def _unit_economics_1c_price_jobs() -> tuple[BackgroundJob, ...]:
 def _wb_stock_history_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
+            # Preserve the stored job ID and enabled targets when changing its schedule.
             "marketplace_stock_sync_and_history_23_msk",
             stock_history.sync_marketplaces_and_save_daily_history,
-            _moscow_daily_delay(23),
-            startup_delay_seconds=_seconds_until_next_moscow_run(23),
+            _moscow_daily_delay(23, 59),
+            startup_delay_seconds=_seconds_until_next_moscow_run(23, 59),
             ready_event=catalog_ready,
             is_enabled=lambda: _job_enabled("marketplace_stock_sync_and_history_23_msk"),
             run_callback=_sync_stock_history_configured,

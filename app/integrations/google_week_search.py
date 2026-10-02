@@ -10,6 +10,9 @@ from app.integrations import google_week_update as week
 from app.repositories import google_week_update as repository
 from app.repositories.google_week_update import WeekSearchState, WeekUpdateSettings
 
+IDENTITY_COLUMNS = ("ARTICLE", "Проект")
+MATCHING_KEY = "article_project"
+
 
 def _normalized(value: object) -> str:
     return " ".join(str(value).split())
@@ -43,8 +46,19 @@ def _address(row: int, column: int) -> str:
     return f"{letters}{row + 1}"
 
 
+def identity_columns(row: list, row_index: int) -> dict:
+    return {
+        name: [
+            {"cell": _address(row_index, col), "value": str(value)}
+            for col, value in enumerate(row)
+            if _normalized(value).casefold() == name.casefold()
+        ]
+        for name in IDENTITY_COLUMNS
+    }
+
+
 def find_headers(rows: list[list], source_cells: tuple[str, ...]) -> list[dict]:
-    """Find week ranges and ARTICLE/BARCODE headers on each matching row, excluding the source."""
+    """Find week ranges and ARTICLE/project headers on each matching row, excluding the source."""
     sources = []
     wanted: dict[str, list[tuple[int, int]]] = {}
     columns_by_row: dict[int, dict[str, list[dict]]] = {}
@@ -69,12 +83,7 @@ def find_headers(rows: list[list], source_cells: tuple[str, ...]) -> list[dict]:
             if (r, c) == origin:
                 continue
             if r not in columns_by_row:
-                columns = {"ARTICLE": [], "BARCODE": []}
-                for col, value in enumerate(rows[r]):
-                    name = _normalized(value).upper()
-                    if name in columns:
-                        columns[name].append({"cell": _address(r, col), "value": str(value)})
-                columns_by_row[r] = columns
+                columns_by_row[r] = identity_columns(rows[r], r)
             headers = []
             stop = None
             for col in range(c, -1, -1):
@@ -116,6 +125,7 @@ def result_matches_settings(result: dict, settings: WeekUpdateSettings) -> bool:
         result.get("spreadsheet_url") == settings.spreadsheet_url
         and result.get("sheet_name") == settings.sheet_name
         and result.get("source_cells") == list(settings.cells)
+        and result.get("matching_key") == MATCHING_KEY
     )
 
 
@@ -150,6 +160,7 @@ def describe_headers(settings: WeekUpdateSettings, sheet: dict, rows: list[list]
         cell["cell"] for source in sources for match in source["matches"] for cell in match["headers"]
     }
     return {
+        "matching_key": MATCHING_KEY,
         "spreadsheet_url": settings.spreadsheet_url,
         "sheet_name": settings.sheet_name,
         "sheet_id": sheet["properties"]["sheetId"],
