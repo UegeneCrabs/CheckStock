@@ -2,7 +2,7 @@ from app.infrastructure.database import DatabaseConnection, repository_connectio
 from app.repositories import yandex_assortment
 from app.repositories.catalog_reconciliation import reconcile_renames
 from app.repositories.core import get_connection
-from app.stock.catalog_identity import barcodes
+from app.stock.catalog_identity import barcodes, display_barcode
 
 
 def get_catalog_items(
@@ -39,6 +39,7 @@ def attach_barcodes(conn, store_slug: str, marketplace: str, items: list[dict]) 
         aliases.setdefault(row["article"], []).append(row["barcode"])
     for item in items:
         item["barcodes"] = sorted(set(aliases.get(item["article"], [])) | barcodes(item))
+        item["barcode"] = display_barcode(item, marketplace)
     article_aliases: dict[str, list[str]] = {}
     for row in conn.execute(
         "SELECT article,target_article FROM catalog_article_aliases WHERE store_slug=? AND marketplace=?",

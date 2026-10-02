@@ -18,6 +18,7 @@ from app.economics.daily_calculation import fields
 from app.economics.yandex.reports import catalog as yandex_catalog
 from app.economics.yandex.reports import permitted
 from app.repositories import daily_economics as repository
+from app.stock.catalog_identity import display_barcode
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -65,7 +66,16 @@ def authorize(request, store, *, write=False):
 def products(marketplace, store, user):
     user = coerce_user(user)
     if marketplace == "YANDEX MARKET":
-        return yandex_catalog((store,), user)
+        return [
+            {
+                **product,
+                "barcode": display_barcode(product, marketplace),
+                "barcodes": [
+                    code for code in product.get("barcodes", []) if not str(code).strip().startswith("0")
+                ],
+            }
+            for product in yandex_catalog((store,), user)
+        ]
     refs = {r["article"]: r for r in db.get_unit_economics_1c_product_reference_rows((store,))}
     return [
         p

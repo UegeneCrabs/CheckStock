@@ -3,7 +3,7 @@ import hashlib
 from app.core.domain import DEFAULT_MARKETPLACE
 from app.core.errors import StockValidationError
 from app.infrastructure.database import DatabaseConnection, repository_connection
-from app.repositories.catalog import get_catalog_items
+from app.repositories.catalog import attach_barcodes, get_catalog_items
 from app.repositories.core import get_connection
 
 
@@ -624,8 +624,11 @@ def get_trash_details(store_slug: str, marketplace: str) -> list[dict]:
         """,
         (store_slug, marketplace),
     ).fetchall()
+    data = [dict(row) for row in rows]
+    if marketplace == "YANDEX MARKET":
+        attach_barcodes(conn, store_slug, marketplace, data)
     conn.close()
-    return [dict(row) for row in rows]
+    return data
 
 
 def get_ff_transfers(store_slug: str | None = None, limit: int = 200) -> list[dict]:
@@ -659,5 +662,8 @@ def get_ff_warehouse_details_by_mp(store_slug: str, marketplace: str) -> list[di
         """,
         (store_slug, marketplace, marketplace),
     ).fetchall()
+    data = [dict(row) for row in rows]
+    if marketplace == "YANDEX MARKET":
+        attach_barcodes(conn, store_slug, marketplace, data)
     conn.close()
-    return [dict(row) for row in rows]
+    return data

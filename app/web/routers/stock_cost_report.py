@@ -19,6 +19,7 @@ from app.core.stores import STORES
 from app.dto.identity import SectionAccessLevel, SectionName
 from app.stock import cost_report as stock_cost_report
 from app.stock import cost_report_export as stock_cost_report_export
+from app.stock.catalog_identity import display_barcode
 from app.web.access import accessible_store_slugs
 from app.web.common import _fmt_num, _now_iso
 from app.web.downloads import _download_headers
@@ -203,7 +204,7 @@ def _fbs_sales_table(report: dict) -> str:
             "Артикул",
             f"Арт. {item['article']}",
         )
-        barcode_copy = copy_identifier(item.get("barcode"), "Баркод")
+        barcode_copy = copy_identifier(display_barcode(item, item["marketplace"]), "Баркод")
         rows.append(
             "<tr>"
             f"<td>{html.escape(STORES[item['store_slug']]['name'])}</td>"

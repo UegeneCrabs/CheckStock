@@ -1,5 +1,14 @@
 """Resolve seller articles and barcode aliases without choosing arbitrary duplicates."""
 
+from app.core.barcodes import preferred_barcode
+
+
+def display_barcode(item: dict, marketplace: str) -> str:
+    """Hide zero-leading YM codes, including catalogs saved before this rule."""
+    if marketplace == "YANDEX MARKET":
+        return preferred_barcode([item.get("barcode"), *(item.get("barcodes") or [])])
+    return str(item.get("barcode") or "")
+
 
 def barcodes(item: dict) -> set[str]:
     return {str(code).strip() for code in [item.get("barcode"), *(item.get("barcodes") or [])] if code}

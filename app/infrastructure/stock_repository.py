@@ -3,6 +3,7 @@ from types import TracebackType
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.barcodes import ordered_barcodes
 from app.core.errors import StockValidationError
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
@@ -35,6 +36,7 @@ from app.infrastructure.orm import (
     TrashStockRecord,
     UnitEconomics1CSourceValueRecord,
 )
+from app.stock.catalog_identity import display_barcode
 
 
 class SqlAlchemyStockRepository:
@@ -73,13 +75,18 @@ class SqlAlchemyStockRepository:
             tuple(
                 CatalogItem(
                     article=record.article,
-                    barcode=record.barcode,
+                    barcode=display_barcode(
+                        {"barcode": record.barcode, "barcodes": aliases.get(record.id, [])},
+                        query.marketplace.value,
+                    ),
                     name=record.name,
                     marketplace=query.marketplace,
                     mp_sku=record.mp_sku,
                     mp_product_id=record.mp_product_id,
                     image_url=record.image_url,
-                    barcodes=tuple(aliases.get(record.id, [])),
+                    barcodes=tuple(ordered_barcodes([record.barcode, *aliases.get(record.id, [])]))
+                    if query.marketplace.value == "YANDEX MARKET"
+                    else tuple(aliases.get(record.id, [])),
                     article_aliases=tuple(article_aliases.get(record.article, [])),
                 )
                 for record in records

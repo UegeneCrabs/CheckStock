@@ -9,6 +9,7 @@ import urllib.request
 from hashlib import sha256
 
 from app.config import settings
+from app.core.barcodes import ordered_barcodes
 from app.wb import storefront_session
 
 logger = logging.getLogger(__name__)
@@ -358,22 +359,7 @@ def get_own_warehouses(token: str) -> list[dict]:
 
 def _size_barcodes(size: dict) -> list[str]:
     """Prefer nonzero-leading 13-digit codes, keeping every WB code for stock matching."""
-    codes = list(
-        dict.fromkeys(
-            str(code).strip()
-            for code in size.get("skus") or []
-            if code is not None and not isinstance(code, bool) and str(code).strip()
-        )
-    )
-    # WB may list a 14-digit GTIN before the barcode used on the other marketplaces.
-    # The API order is not a primary-barcode flag; keep it within each priority group.
-    return sorted(
-        codes,
-        key=lambda code: (
-            code.startswith("0"),
-            not (len(code) == 13 and code.isascii() and code.isdigit()),
-        ),
-    )
+    return ordered_barcodes(size.get("skus") or [])
 
 
 def barcode_chrt_ids(cards: list[dict]) -> dict[str, int]:
