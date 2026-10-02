@@ -9,3 +9,13 @@ STORES: dict[str, Store] = {
     "gogol": Store(name="GOGOL", color="#06D6A0", initials="GO", text="#fff"),
     "toyka": Store(name="TOYKA", color="#FF6D00", initials="TO", text="#fff"),
 }
+
+# Project labels used in Google Sheets (also used by the arrivals register).
+PROJECT_STORE_ALIASES = {
+    **{slug.casefold(): slug for slug in STORES},
+    **{store.name.casefold(): slug for slug, store in STORES.items()},
+    "хочушар": "rimili",
+    "bth": "trusthome",
+    "гоголь": "gogol",
+    "ракета": "gogol",
+}

@@ -1,6 +1,5 @@
 """Read WB product identities and daily funnel facts without changing source data."""
 
-from app.repositories.catalog import attach_barcodes
 from app.repositories.core import get_connection
 
 
@@ -9,11 +8,16 @@ def products() -> list[dict]:
         items = [
             dict(row)
             for row in conn.execute(
-                "SELECT store_slug, article, barcode FROM stock_items WHERE marketplace='WB' AND is_service=0"
+                "SELECT store_slug, article FROM stock_items WHERE marketplace='WB' AND is_service=0"
             )
         ]
-        for store in {item["store_slug"] for item in items}:
-            attach_barcodes(conn, store, "WB", [item for item in items if item["store_slug"] == store])
+        by_key = {(item["store_slug"], item["article"]): item for item in items}
+        for alias in conn.execute(
+            "SELECT store_slug, article, target_article FROM catalog_article_aliases WHERE marketplace='WB'"
+        ):
+            item = by_key.get((alias["store_slug"], alias["target_article"]))
+            if item is not None:
+                item.setdefault("article_aliases", []).append(alias["article"])
     return items
 
 

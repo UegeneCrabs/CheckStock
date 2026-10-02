@@ -23,6 +23,7 @@ def result_matches_settings(result: dict, settings: WeekUpdateSettings, state: W
         and result.get("source_sheet_name") == settings.sheet_name
         and result.get("source_cells") == list(settings.cells)
         and result.get("sheet_name") == state.sheet_name
+        and result.get("matching_key") == search.MATCHING_KEY
     )
 
 
@@ -49,14 +50,7 @@ def find_columns(
                 address = search._address(r, c)
                 if address in protected or search._normalized(value) != search._normalized(origin["value"]):
                     continue
-                columns = {
-                    name: [
-                        {"cell": search._address(r, col), "value": str(item)}
-                        for col, item in enumerate(row)
-                        if search._normalized(item).upper() == name
-                    ]
-                    for name in ("ARTICLE", "BARCODE")
-                }
+                columns = search.identity_columns(row, r)
                 matches.append(
                     {
                         "cell": address,
@@ -69,6 +63,7 @@ def find_columns(
                 )
         sources.append({**origin, "matches": matches})
     return {
+        "matching_key": search.MATCHING_KEY,
         "spreadsheet_url": settings.spreadsheet_url,
         "source_sheet_name": settings.sheet_name,
         "sheet_name": target.sheet_name,
@@ -88,8 +83,8 @@ def build_plan(
     now: datetime,
 ) -> dict:
     result = find_columns(settings, target, sheet, rows, weeks)
-    header_row, article_col, barcode_col, headers = sales.layout(result)
-    products, issues = sales.match_products(rows, header_row, article_col, barcode_col)
+    header_row, article_col, project_col, headers = sales.layout(result)
+    products, issues = sales.match_products(rows, header_row, article_col, project_col)
     periods = []
     for header in headers:
         start, end = sales.week_dates(header["value"])

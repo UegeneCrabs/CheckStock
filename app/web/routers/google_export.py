@@ -279,7 +279,10 @@ def _week_payload() -> dict:
     if search.last_success_at:
         search_status = f"Последний успешный поиск: {format_dt(search.last_success_at)}"
     if stale:
-        search_status += ". Таблица, лист или ячейки изменены — выполните новый поиск"
+        if result.get("matching_key") != google_week_search.MATCHING_KEY:
+            search_status += ". Ключ сопоставления изменён на ARTICLE + Проект — выполните новый поиск"
+        else:
+            search_status += ". Таблица, лист или ячейки изменены — выполните новый поиск"
     if search.last_error:
         search_status += f". Ошибка {format_dt(search.last_attempt_at)}: {search.last_error}"
     sales = week_repository.get_sales_state()
@@ -304,7 +307,10 @@ def _week_payload() -> dict:
         if not sales_result["complete"]:
             sales_status += ". Выполнена с замечаниями"
     if sales_stale:
-        sales_status += ". Настройки назначения изменены — выполните новую выгрузку"
+        if sales_result.get("matching_key") != google_week_search.MATCHING_KEY:
+            sales_status += ". Ключ сопоставления изменён на ARTICLE + Проект — выполните новую выгрузку"
+        else:
+            sales_status += ". Настройки назначения изменены — выполните новую выгрузку"
     if sales.last_error:
         sales_status += f". Ошибка {format_dt(sales.last_attempt_at)}: {sales.last_error}"
     stock = week_repository.get_stock_state()
@@ -329,7 +335,10 @@ def _week_payload() -> dict:
         if not stock_result["complete"]:
             stock_status += ". Выполнена с замечаниями"
     if stock_stale:
-        stock_status += ". Настройки назначения изменены — выполните новую выгрузку"
+        if stock_result.get("matching_key") != google_week_search.MATCHING_KEY:
+            stock_status += ". Ключ сопоставления изменён на ARTICLE + Проект — выполните новую выгрузку"
+        else:
+            stock_status += ". Настройки назначения изменены — выполните новую выгрузку"
     if stock.last_error:
         stock_status += f". Ошибка {format_dt(stock.last_attempt_at)}: {stock.last_error}"
     return {
