@@ -7,7 +7,9 @@
     var searchStatus = form.querySelector('[data-week-search-status]');
     var sales = form.querySelector('[data-week-sales]');
     var salesStatus = form.querySelector('[data-week-sales-status]');
-    var submit = form.querySelector('[type="submit"]');
+    var stock = form.querySelector('[data-week-stock]');
+    var stockStatus = form.querySelector('[data-week-stock-status]');
+    var submit = form.querySelectorAll('[type="submit"]');
     var unsaved = form.querySelector('[data-week-unsaved]');
     var saved = !run.disabled;
     var dirty = false;
@@ -17,7 +19,8 @@
         run.disabled = busy || dirty || !saved;
         search.disabled = busy || dirty || !saved;
         sales.disabled = busy || dirty || !saved;
-        submit.disabled = busy;
+        stock.disabled = busy || dirty || !saved;
+        submit.forEach(function (button) { button.disabled = busy; });
         unsaved.hidden = !dirty;
     }
     function show(message, error) {
@@ -37,6 +40,10 @@
         salesStatus.textContent = data.sales_status_text;
         salesStatus.classList.toggle('export-status--error', Boolean(data.sales_has_error));
         form.querySelector('[data-week-sales-results]').innerHTML = data.sales_html;
+        form.querySelector('[data-week-stock-schedule]').textContent = data.stock_schedule_text;
+        stockStatus.textContent = data.stock_status_text;
+        stockStatus.classList.toggle('export-status--error', Boolean(data.stock_has_error));
+        form.querySelector('[data-week-stock-results]').innerHTML = data.stock_html;
     }
     ['input', 'change'].forEach(function (event) {
         form.addEventListener(event, function () { dirty = true; controls(); });
@@ -106,6 +113,14 @@
             salesStatus.classList.remove('export-status--error');
             apply(await request('/admin/google-week-update/sales', new FormData()));
         }, salesStatus);
+    });
+    stock.addEventListener('click', function () {
+        if (busy || dirty || !saved) return;
+        perform(async function () {
+            stockStatus.textContent = 'Читаю снимок FBO на конец недели и записываю в Google Таблицу…';
+            stockStatus.classList.remove('export-status--error');
+            apply(await request('/admin/google-week-update/stock', new FormData()));
+        }, stockStatus);
     });
     // Refresh persisted scheduled results while the card is visible, without touching a dirty form.
     window.setInterval(async function () {

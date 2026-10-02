@@ -37,7 +37,12 @@ def get_settings() -> WeekUpdateSettings:
 
 
 def save_settings(
-    settings: WeekUpdateSettings, *, search_enabled: bool | None = None, sales_enabled: bool | None = None
+    settings: WeekUpdateSettings,
+    *,
+    search_enabled: bool | None = None,
+    sales_enabled: bool | None = None,
+    stock_enabled: bool | None = None,
+    stock_sheet_name: str | None = None,
 ) -> None:
     with WRITE_LOCK, get_connection() as conn:
         conn.execute(
@@ -73,6 +78,14 @@ def save_settings(
                    ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled""",
                 (int(sales_enabled),),
             )
+        if stock_enabled is not None or stock_sheet_name is not None:
+            conn.execute("""INSERT INTO google_week_stock_state (id) VALUES (1) ON CONFLICT(id) DO NOTHING""")
+            if stock_enabled is not None:
+                conn.execute("UPDATE google_week_stock_state SET enabled=? WHERE id=1", (int(stock_enabled),))
+            if stock_sheet_name is not None:
+                conn.execute(
+                    "UPDATE google_week_stock_state SET sheet_name=? WHERE id=1", (stock_sheet_name,)
+                )
         conn.commit()
 
 
@@ -108,6 +121,11 @@ class WeekSearchState:
     result: dict | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class WeekStockState(WeekSearchState):
+    sheet_name: str = "Сток на складах ВБ"
+
+
 def get_search_state() -> WeekSearchState:
     return _get_state("google_week_search_state")
 
@@ -116,17 +134,21 @@ def get_sales_state() -> WeekSearchState:
     return _get_state("google_week_sales_state")
 
 
-def _get_state(table: str) -> WeekSearchState:
+def get_stock_state() -> WeekStockState:
+    return _get_state("google_week_stock_state", WeekStockState)
+
+
+def _get_state(table: str, state_type=WeekSearchState) -> WeekSearchState:
     with get_connection() as conn:
         row = conn.execute(f"SELECT * FROM {table} WHERE id = 1").fetchone()
     if row is None:
-        return WeekSearchState()
+        return state_type()
     values = dict(row)
     values.pop("id")
     values["enabled"] = bool(values["enabled"])
     result = values.pop("result_json")
     values["result"] = json.loads(result) if result else None
-    return WeekSearchState(**values)
+    return state_type(**values)
 
 
 def record_search_attempt(attempted_at: str) -> None:
@@ -152,14 +174,36 @@ def record_sales_attempt(attempted_at: str) -> None:
 def record_sales_result(
     attempted_at: str, *, slot: str, result: dict | None = None, error: str | None = None
 ) -> None:
+    _record_export_result("google_week_sales_state", attempted_at, slot=slot, result=result, error=error)
+
+
+def record_stock_attempt(attempted_at: str) -> None:
+    with WRITE_LOCK, get_connection() as conn:
+        conn.execute(
+            """INSERT INTO google_week_stock_state (id, last_attempt_at) VALUES (1, ?)
+               ON CONFLICT(id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at""",
+            (attempted_at,),
+        )
+        conn.commit()
+
+
+def record_stock_result(
+    attempted_at: str, *, slot: str, result: dict | None = None, error: str | None = None
+) -> None:
+    _record_export_result("google_week_stock_state", attempted_at, slot=slot, result=result, error=error)
+
+
+def _record_export_result(
+    table: str, attempted_at: str, *, slot: str, result: dict | None, error: str | None
+) -> None:
     with WRITE_LOCK, get_connection() as conn:
         if error:
-            conn.execute("UPDATE google_week_sales_state SET last_error = ? WHERE id = 1", (error,))
+            conn.execute(f"UPDATE {table} SET last_error = ? WHERE id = 1", (error,))
         else:
             # Incomplete source data can become available later in the same scheduled week.
             complete = bool(result and result["complete"])
             conn.execute(
-                """UPDATE google_week_sales_state SET result_json = ?, last_error = NULL,
+                f"""UPDATE {table} SET result_json = ?, last_error = NULL,
                    last_success_at = CASE WHEN ? = 1 THEN ? ELSE last_success_at END,
                    last_success_slot = CASE WHEN ? = 1 THEN ? ELSE last_success_slot END
                    WHERE id = 1""",

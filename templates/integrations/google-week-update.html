@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261002-sales" />
+<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261002-stock" />
 <form class="panel week-update" data-week-update-form>
     <div class="week-update-head">
         <div>
@@ -66,7 +66,7 @@
             <input type="checkbox" name="sales_enabled" value="1"$sales_enabled_checked />
             <span>Выгружать заказы по тому же расписанию</span>
         </label>
-        <p class="week-update-hint">Суммируются дни с понедельника по воскресенье включительно. Магазин определяется по каталогу WB. При неполных данных или неоднозначном товаре ячейки сохраняют прежние значения. Перед записью создаётся резервная копия. Если включено обновление недели, по расписанию оно выполняется первым.</p>
+        <p class="week-update-hint">Суммируются дни с понедельника по воскресенье включительно. Дни без данных в БД считаются нулём; если за неделю нет данных, в ячейку записывается 0, включая пустые ячейки и ячейки со старыми значениями. Магазин определяется по каталогу WB. Несопоставленные товары и незавершённые недели пропускаются. Перед записью создаётся резервная копия. Если включено обновление недели, по расписанию оно выполняется первым.</p>
         <p class="week-update-hint" data-week-sales-schedule>$sales_schedule_text</p>
         <div class="week-search-actions">
             <button class="btn-primary" type="button" data-week-sales$run_disabled>Выгрузить заказы</button>
@@ -75,5 +75,24 @@
         <p class="export-status $sales_status_class" data-week-sales-status role="status" aria-live="polite">$sales_status_text</p>
         <div data-week-sales-results>$sales_results</div>
     </section>
+    <section class="week-search" aria-labelledby="week-stock-title">
+        <h3 id="week-stock-title">Остатки на складах ВБ на конец недели</h3>
+        <label class="week-update-url"><span>Лист остатков ВБ</span>
+            <input class="input-control" name="stock_sheet_name" value="$stock_sheet_name" required maxlength="100" />
+        </label>
+        <p class="week-update-hint">Таблица и исходная ячейка недели берутся из настроек выше. В выбранном листе находятся эта неделя, ARTICLE и BARCODE. Для каждого товара записывается только остаток WB FBO за воскресенье этой недели.</p>
+        <label class="week-update-switch">
+            <input type="checkbox" name="stock_enabled" value="1"$stock_enabled_checked />
+            <span>Выгружать остатки FBO по тому же расписанию</span>
+        </label>
+        <p class="week-update-hint">Используется сохранённый дневной снимок: сбор истории настроен на 23:00 МСК. Если снимка за нужное воскресенье нет, в ячейку записывается 0, включая пустые ячейки и ячейки со старыми значениями. Несопоставленные товары и незавершённые недели пропускаются. Перед записью сохраняется резервная копия. По расписанию включённое обновление недели выполняется первым.</p>
+        <p class="week-update-hint" data-week-stock-schedule>$stock_schedule_text</p>
+        <div class="week-search-actions">
+            <button class="btn-primary" type="button" data-week-stock$run_disabled>Выгрузить остатки FBO</button>
+            <button class="btn-secondary" type="submit">Сохранить настройки недели</button>
+        </div>
+        <p class="export-status $stock_status_class" data-week-stock-status role="status" aria-live="polite">$stock_status_text</p>
+        <div data-week-stock-results>$stock_results</div>
+    </section>
 </form>
-<script src="/static/integrations/google-week-update.js?v=20261002-sales"></script>
+<script src="/static/integrations/google-week-update.js?v=20261002-stock"></script>

@@ -15,7 +15,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
 from app.exports import stock_sheet as stock_sheet_export
-from app.integrations import google_week_sales, google_week_search, google_week_update
+from app.integrations import google_week_sales, google_week_search, google_week_stock, google_week_update
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import run_tracked
 from app.repositories import google_week_update as week_repository
@@ -302,11 +302,36 @@ def _week_payload() -> dict:
     if sales_result:
         sales_status = f"Последняя выгрузка: {format_dt(sales_result['processed_at'])}"
         if not sales_result["complete"]:
-            sales_status += ". Выполнена с пропусками"
+            sales_status += ". Выполнена с замечаниями"
     if sales_stale:
         sales_status += ". Настройки назначения изменены — выполните новую выгрузку"
     if sales.last_error:
         sales_status += f". Ошибка {format_dt(sales.last_attempt_at)}: {sales.last_error}"
+    stock = week_repository.get_stock_state()
+    stock_next = google_week_update.next_run_at(google_week_search.schedule_settings(settings, stock), now)
+    if not stock.enabled:
+        stock_schedule = "Выгрузка остатков FBO по расписанию выключена"
+    elif not app_settings.background_sync_enabled:
+        stock_schedule = "Фоновые задачи отключены. Выгрузка доступна по кнопке"
+    else:
+        if google_week_update.pending_run(settings, now) and next_run:
+            stock_next = max(stock_next, next_run)
+        stock_schedule = f"Ближайшая выгрузка FBO: {format_dt(stock_next.isoformat())}"
+        if settings.enabled:
+            stock_schedule += ". После успешного обновления недели"
+    stock_result = stock.result
+    stock_stale = bool(
+        stock_result and not google_week_stock.result_matches_settings(stock_result, settings, stock)
+    )
+    stock_status = "Выгрузка остатков FBO ещё не запускалась"
+    if stock_result:
+        stock_status = f"Последняя выгрузка FBO: {format_dt(stock_result['processed_at'])}"
+        if not stock_result["complete"]:
+            stock_status += ". Выполнена с замечаниями"
+    if stock_stale:
+        stock_status += ". Настройки назначения изменены — выполните новую выгрузку"
+    if stock.last_error:
+        stock_status += f". Ошибка {format_dt(stock.last_attempt_at)}: {stock.last_error}"
     return {
         "ok": True,
         "value": google_week_update.last_completed_week(now),
@@ -324,6 +349,17 @@ def _week_payload() -> dict:
         "sales_status_text": sales_status,
         "sales_has_error": bool(sales.last_error or (sales_result and not sales_result["complete"])),
         "sales_html": render_week_sales_result(None if sales_stale else sales_result),
+        "stock_enabled": stock.enabled,
+        "stock_sheet_name": stock.sheet_name,
+        "stock_schedule_text": stock_schedule,
+        "stock_status_text": stock_status,
+        "stock_has_error": bool(stock.last_error or (stock_result and not stock_result["complete"])),
+        "stock_html": render_week_sales_result(
+            None if stock_stale else stock_result,
+            button_label="Выгрузить остатки FBO",
+            data_label="истории FBO",
+            backup_folder="google-week-stock",
+        ),
     }
 
 
@@ -353,6 +389,12 @@ def _render_week_update() -> str:
         sales_status_text=html.escape(state["sales_status_text"]),
         sales_status_class="export-status--error" if state["sales_has_error"] else "",
         sales_results=state["sales_html"],
+        stock_enabled_checked=" checked" if state["stock_enabled"] else "",
+        stock_sheet_name=_input(state["stock_sheet_name"]),
+        stock_schedule_text=html.escape(state["stock_schedule_text"]),
+        stock_status_text=html.escape(state["stock_status_text"]),
+        stock_status_class="export-status--error" if state["stock_has_error"] else "",
+        stock_results=state["stock_html"],
     )
 
 
@@ -384,6 +426,8 @@ async def save_google_week_update(request: Request):
             settings,
             search_enabled=_value(form, "search_enabled") == "1",
             sales_enabled=_value(form, "sales_enabled") == "1",
+            stock_enabled=_value(form, "stock_enabled") == "1" if "stock_sheet_name" in form else None,
+            stock_sheet_name=_value(form, "stock_sheet_name") if "stock_sheet_name" in form else None,
         )
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
@@ -460,6 +504,27 @@ async def export_google_week_sales(request: Request):
         return JSONResponse({**state, "ok": False, "error": str(error)}, status_code=400)
     state = await run_in_threadpool(_week_payload)
     return JSONResponse({**state, "sales_result": result})
+
+
+@router.post("/admin/google-week-update/stock")
+async def export_google_week_stock(request: Request):
+    _require_superadmin(request)
+    try:
+        result = await run_in_threadpool(
+            run_tracked,
+            google_week_update.JOB_NAME,
+            "manual",
+            google_week_stock.run_now,
+        )
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Обновление, поиск или выгрузка уже выполняется"}, status_code=409
+        )
+    except ValueError as error:
+        state = await run_in_threadpool(_week_payload)
+        return JSONResponse({**state, "ok": False, "error": str(error)}, status_code=400)
+    state = await run_in_threadpool(_week_payload)
+    return JSONResponse({**state, "stock_result": result})
 
 
 @router.post("/admin/google-export/{store_slug}")
