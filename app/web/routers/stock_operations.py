@@ -1,7 +1,9 @@
 import html
 import logging
+from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
@@ -42,21 +44,6 @@ TRANSFER_KINDS = (
 )
 
 
-def _operations_in_scope(operations: list[dict], allowed_pairs: tuple[tuple[str, str], ...]) -> list[dict]:
-    allowed = set(allowed_pairs)
-    result = []
-    for operation in operations:
-        store_slug = str(operation.get("store_slug") or "")
-        marketplaces = {
-            str(value)
-            for value in (operation.get("from_marketplace"), operation.get("to_marketplace"))
-            if value
-        }
-        if not marketplaces or any((store_slug, marketplace) in allowed for marketplace in marketplaces):
-            result.append(operation)
-    return result
-
-
 def render_kind_tabs(slug: str, active: str, counts: dict[str, int]) -> str:
     parts = []
     for kind, label in OPERATION_FILTERS:
@@ -79,17 +66,67 @@ def _plural_positions(value: int) -> str:
     return "позиций"
 
 
-def render_operation_summary(operations: list[dict]) -> str:
-    positions = sum(int(op.get("positions") or 0) for op in operations)
-    units = sum(abs(int(op.get("units") or 0)) for op in operations)
-    employees = len({op.get("user_name") for op in operations if op.get("user_name")})
+def render_operation_summary(summary: dict) -> str:
     return (
         '<div class="ops-summary" role="list">'
-        f'<div role="listitem"><span>Операций</span><strong>{_fmt_num(len(operations))}</strong></div>'
-        f'<div role="listitem"><span>Товарных позиций</span><strong>{_fmt_num(positions)}</strong></div>'
-        f'<div role="listitem"><span>Движение, ед.</span><strong>{_fmt_num(units)}</strong></div>'
-        f'<div role="listitem"><span>Сотрудников</span><strong>{_fmt_num(employees)}</strong></div>'
+        f'<div role="listitem"><span>Операций</span><strong>{_fmt_num(summary["total"])}</strong></div>'
+        f'<div role="listitem"><span>Товарных позиций</span><strong>{_fmt_num(summary["positions"])}</strong></div>'
+        f'<div role="listitem"><span>Движение, ед.</span><strong>{_fmt_num(summary["units"])}</strong></div>'
+        f'<div role="listitem"><span>Сотрудников</span><strong>{_fmt_num(summary["employees"])}</strong></div>'
         "</div>"
+    )
+
+
+def render_operation_pagination(slug: str, kind: str, page: int, page_size: int, total: int) -> str:
+    pages = max(1, (total + page_size - 1) // page_size)
+    first = (page - 1) * page_size + 1 if total else 0
+    last = min(page * page_size, total)
+
+    def link(target: int, label: str, title: str) -> str:
+        query = urlencode({"kind": kind, "page": target})
+        href = html.escape(f"/stock/{slug}/operations?{query}", quote=True)
+        return f'<a class="ops-page-link" href="{href}" aria-label="{title}" title="{title}">{label}</a>'
+
+    def arrow(target: int, title: str, direction: str, disabled: bool) -> str:
+        path = "m14 6-6 6 6 6" if direction == "previous" else "m10 6 6 6-6 6"
+        icon = f'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="{path}"/></svg>'
+        if disabled:
+            return (
+                f'<button class="ops-page-link" type="button" disabled aria-label="{title}">{icon}</button>'
+            )
+        return link(target, icon, title)
+
+    controls = []
+    if pages > 1:
+        controls.append(arrow(page - 1, "Предыдущая страница", "previous", page == 1))
+        visible_pages = set(range(1, pages + 1)) if pages <= 7 else {1, pages, page - 1, page, page + 1}
+        if pages > 7 and page <= 3:
+            visible_pages.update(range(1, 6))
+        if pages > 7 and page >= pages - 2:
+            visible_pages.update(range(pages - 4, pages + 1))
+        previous = 0
+        for number in sorted(number for number in visible_pages if 1 <= number <= pages):
+            if previous and number > previous + 1:
+                controls.append('<span class="ops-page-gap" aria-hidden="true">…</span>')
+            if number == page:
+                controls.append(
+                    f'<span class="ops-page-link" aria-current="page" aria-label="Страница {number}">{number}</span>'
+                )
+            else:
+                controls.append(link(number, str(number), f"Страница {number}"))
+            previous = number
+        controls.append(arrow(page + 1, "Следующая страница", "next", page == pages))
+    range_label = (
+        f"Записи <strong>{_fmt_num(first)}–{_fmt_num(last)}</strong> из <strong>{_fmt_num(total)}</strong>"
+        if total
+        else "Пока нет операций"
+    )
+    return (
+        '<nav class="ops-pagination" aria-label="Страницы истории операций">'
+        f'<span class="ops-pagination-range">{range_label}</span>'
+        '<div class="ops-pagination-navigation">'
+        f'<span class="ops-pagination-position">Страница {page} из {pages}</span>'
+        f'<div class="ops-pagination-controls">{"".join(controls)}</div></div></nav>'
     )
 
 
@@ -163,7 +200,9 @@ def _history_kinds(kind: str) -> tuple[str, ...] | None:
 
 
 @router.get("/stock/{slug}/operations", response_class=HTMLResponse)
-async def stock_store_operations(request: Request, slug: str, kind: str = ""):
+async def stock_store_operations(
+    request: Request, slug: str, kind: str = "", page: Annotated[int, Query(ge=1)] = 1
+):
 
     store = STORES.get(slug.lower())
     if store is None:
@@ -171,25 +210,27 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
 
     kinds = _history_kinds(kind)
     active = kind if kinds else ""
-    all_operations = await run_in_threadpool(
-        db.get_store_operations, slug.lower(), None, settings.operation_history_limit
+    marketplaces = tuple(
+        marketplace
+        for store_slug, marketplace in scope_pairs(request.state.user)
+        if store_slug == slug.lower()
     )
-    allowed_pairs = scope_pairs(request.state.user)
-    all_operations = _operations_in_scope(all_operations, allowed_pairs)
-    operations = (
-        _operations_in_scope(
-            await run_in_threadpool(
-                db.get_store_operations, slug.lower(), kinds, settings.operation_history_limit
-            ),
-            allowed_pairs,
-        )
-        if kinds
-        else all_operations
+    stats = await run_in_threadpool(
+        db.get_store_operation_stats, slug.lower(), kinds, marketplaces=marketplaces
     )
-    counts = {"": len(all_operations)}
-    for operation in all_operations:
-        op_kind = operation.get("kind") or ""
-        counts[op_kind] = counts.get(op_kind, 0) + 1
+    page_size = settings.operation_history_limit
+    total = stats["summary"]["total"]
+    page = min(page, max(1, (total + page_size - 1) // page_size))
+    operations = await run_in_threadpool(
+        db.get_store_operations,
+        slug.lower(),
+        kinds,
+        page_size,
+        offset=(page - 1) * page_size,
+        marketplaces=marketplaces,
+    )
+    counts = stats["counts"]
+    counts[""] = sum(counts.values())
     counts["transfer"] = sum(counts.get(item, 0) for item in TRANSFER_KINDS)
 
     content = fill_template(
@@ -198,8 +239,9 @@ async def stock_store_operations(request: Request, slug: str, kind: str = ""):
         store_name=store["name"],
         kind=active,
         kind_tabs=render_kind_tabs(slug.lower(), active, counts),
-        summary=render_operation_summary(operations),
+        summary=render_operation_summary(stats["summary"]),
         rows=render_operation_rows(operations),
+        pagination=render_operation_pagination(slug.lower(), active, page, page_size, total),
     )
     return render_page(
         f"CheckStock — Перемещение стока — {store['name']}",
@@ -229,11 +271,14 @@ async def stock_store_operations_xlsx(request: Request, slug: str, kind: str = "
         for store_slug, marketplace in scope_pairs(request.state.user)
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке операций")
-    allowed_pairs = scope_pairs(request.state.user)
+    marketplaces = tuple(
+        marketplace
+        for store_slug, marketplace in scope_pairs(request.state.user)
+        if store_slug == slug.lower()
+    )
 
     def _build():
-        operations = db.get_operations_with_items(slug.lower(), kinds, settings.operation_history_limit)
-        operations = _operations_in_scope(operations, allowed_pairs)
+        operations = db.get_operations_with_items(slug.lower(), kinds, None, marketplaces=marketplaces)
         return ff_export.build_history_xlsx(slug.lower(), store["name"], operations)
 
     try:
