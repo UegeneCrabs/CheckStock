@@ -119,16 +119,51 @@ class GoogleWeekSalesTests(unittest.TestCase):
         self.export()
         self.assertEqual(self.writes()["AI11"], 44)  # -4 + six days at 8; no clamping or second subtraction.
 
-    def test_missing_day_preserves_week_and_partial_run_can_retry(self):
+    def test_missing_day_counts_as_zero_and_partial_run_can_retry(self):
         with self.database.connect() as conn:
             conn.execute("DELETE FROM wb_funnel_daily_orders WHERE day='2026-09-23'")
             conn.execute("DELETE FROM economics_source_days WHERE day='2026-09-23'")
             conn.commit()
         report = self.export()
-        self.assertNotIn("AI11", self.writes())
-        self.assertEqual(report["missing_data"][0]["missing_days"], ["2026-09-23"])
+        self.assertEqual(self.writes()["AI11"], 48)
+        self.assertEqual(report["zero_filled"][0]["missing_days"], ["2026-09-23"])
+        self.assertEqual(report["missing_data"], [])
         self.assertFalse(report["complete"])
         self.assertIsNone(self.repo.get_sales_state().last_success_slot)
+
+    def test_missing_week_zeroes_stale_blank_formula_text_and_boolean_cells(self):
+        with self.database.connect() as conn:
+            conn.execute("DELETE FROM wb_funnel_daily_orders")
+            conn.execute("DELETE FROM economics_source_days")
+            conn.commit()
+        self.rows[10][23:35] = [999, "", 11, "0", False, 0] + [0] * 6
+        self.formulas = copy.deepcopy(self.rows)
+        self.formulas[10][25] = "=5+6"
+        report = self.export()
+        self.assertEqual(self.writes(), {"X11": 0, "Y11": 0, "Z11": 0, "AA11": 0, "AB11": 0})
+        self.assertTrue(all(type(value) is int for value in self.writes().values()))
+        self.assertEqual(report["checked_cells"], 12)
+        self.assertEqual(report["written_cells"], 5)
+        self.assertEqual(report["zeroed_cells"], 5)
+        self.assertEqual(report["unchanged_cells"], 7)
+        self.assertEqual(len(report["zero_filled"]), 12)
+        backup = self.core.DB_PATH.parent / "backups/google-week-sales" / report["backup"]
+        previous = {
+            item["cell"]: item["previous"] for item in json.loads(backup.read_text(encoding="utf-8"))["cells"]
+        }
+        self.assertEqual(previous, {"X11": 999, "Y11": "", "Z11": "=5+6", "AA11": "0", "AB11": False})
+        html = self.client().get("/admin/google-week-update").json()["sales_html"]
+        self.assertIn("Проверено ячеек: <strong>12</strong>", html)
+        self.assertIn("обнулено: <strong>5</strong>", html)
+        self.assertIn("Ноль вместо отсутствующих данных", html)
+        self.assertNotIn("Соответствующие ячейки не изменены", html)
+
+    def test_unfinished_week_is_not_zeroed(self):
+        self.now -= timedelta(days=5)  # Sunday 27 September: W39 is not complete yet.
+        report = self.export()
+        self.assertNotIn("AI11", self.writes())
+        self.assertEqual(report["missing_data"][0]["cell"], "AI11")
+        self.assertEqual(report["zero_filled"], [])
 
     def test_already_current_numbers_do_not_trigger_another_write_or_backup(self):
         self.rows[10][23:35] = [0] * 11 + [56]
@@ -164,15 +199,16 @@ class GoogleWeekSalesTests(unittest.TestCase):
             conn.execute("UPDATE wb_funnel_daily_orders SET source_version=3")
             conn.commit()
         report = self.export()
-        self.assertEqual(self.writes(), {"AI11": 56})
-        self.assertEqual(len(report["missing_data"]), 11)
+        self.assertEqual(self.writes()["AI11"], 56)
+        self.assertEqual(len(self.writes()), 12)
+        self.assertEqual(len(report["zero_filled"]), 11)
         with self.database.connect() as conn:
             conn.execute("UPDATE wb_funnel_daily_orders SET source_version=2 WHERE day='2026-09-21'")
             conn.commit()
         self.google.spreadsheets().values().batchUpdate.reset_mock()
         report = self.export()
-        self.assertEqual(report["written_cells"], 0)
-        self.assert_no_sheet_writes()
+        self.assertEqual(self.writes()["AI11"], 48)
+        self.assertEqual(len(report["zero_filled"]), 12)
 
     def test_barcode_aliases_and_multiple_stores_are_resolved_without_combining_totals(self):
         with self.database.connect() as conn:

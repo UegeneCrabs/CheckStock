@@ -61,20 +61,10 @@ def _identities(products: list[dict]) -> tuple[dict, dict]:
     return articles, barcodes
 
 
-def build_plan(settings: WeekUpdateSettings, sheet: dict, rows: list[list], *, now: datetime) -> dict:
-    result = search.describe_headers(settings, sheet, rows)
-    header_row, article_col, barcode_col, headers = layout(result)
-    periods = []
-    for cell in headers:
-        start, end = week_dates(cell["value"])
-        periods.append(
-            {
-                **cell,
-                "date_from": start.isoformat(),
-                "date_to": end.isoformat(),
-                "days": [(start + timedelta(days=i)).isoformat() for i in range(7)],
-            }
-        )
+def match_products(
+    rows: list[list], header_row: int, article_col: int, barcode_col: int
+) -> tuple[list, list]:
+    """Resolve one WB product/store per row; retain actionable identity issues."""
     articles, barcodes = _identities(source.products())
     matched, issues, seen = [], [], defaultdict(list)
     for row in range(header_row + 1, len(rows)):
@@ -109,30 +99,59 @@ def build_plan(settings: WeekUpdateSettings, sheet: dict, rows: list[list], *, n
             )
         else:
             unique.append(item)
+    return unique, issues
+
+
+def build_plan(settings: WeekUpdateSettings, sheet: dict, rows: list[list], *, now: datetime) -> dict:
+    result = search.describe_headers(settings, sheet, rows)
+    header_row, article_col, barcode_col, headers = layout(result)
+    periods = []
+    for cell in headers:
+        start, end = week_dates(cell["value"])
+        periods.append(
+            {
+                **cell,
+                "date_from": start.isoformat(),
+                "date_to": end.isoformat(),
+                "days": [(start + timedelta(days=i)).isoformat() for i in range(7)],
+            }
+        )
+    unique, issues = match_products(rows, header_row, article_col, barcode_col)
     stores = tuple(sorted({item["store_slug"] for item in unique}))
     facts, coverage = source.daily_facts(
         stores, min(p["date_from"] for p in periods), max(p["date_to"] for p in periods)
     )
-    writes, gaps = [], []
+    writes, gaps, zero_filled = [], [], []
+    today = week._now(now).date().isoformat()
     for item in unique:
         for period in periods:
             col = search._position(period["cell"])[1]
             address = search._address(item["row"] - 1, col)
+            if period["date_to"] >= today:
+                gaps.append(
+                    {
+                        **item,
+                        "cell": address,
+                        "week": period["value"],
+                        "missing_days": [day for day in period["days"] if day >= today],
+                    }
+                )
+                continue
             missing, values = [], []
             for day in period["days"]:
                 key = (item["store_slug"], item["nm_id"], day)
-                if day >= now.date().isoformat() or (key in facts and facts[key] is None):
-                    missing.append(day)
-                elif key in facts:
+                if key in facts and facts[key] is not None:
                     values.append(facts[key])
-                elif day in coverage.get(item["store_slug"], set()):
-                    values.append(0)
                 else:
-                    missing.append(day)
+                    # Clear stale sheet values even when the database has no usable fact.
+                    values.append(0)
+                    if key in facts or day not in coverage.get(item["store_slug"], set()):
+                        missing.append(day)
             if missing:
-                gaps.append({**item, "cell": address, "week": period["value"], "missing_days": missing})
-            else:
-                writes.append({"cell": address, "value": sum(values)})
+                zero_filled.append(
+                    {**item, "cell": address, "week": period["value"], "missing_days": missing}
+                )
+            writes.append({"cell": address, "value": sum(values)})
     return {
         **result,
         "periods": [{k: v for k, v in p.items() if k != "days"} for p in periods],
@@ -140,8 +159,9 @@ def build_plan(settings: WeekUpdateSettings, sheet: dict, rows: list[list], *, n
         "matched_products": len(unique),
         "issues": issues,
         "missing_data": gaps,
+        "zero_filled": zero_filled,
         "writes": writes,
-        "complete": bool(unique) and not issues and not gaps,
+        "complete": bool(unique) and not issues and not gaps and not zero_filled,
         "processed_at": now.isoformat(),
     }
 
@@ -161,8 +181,15 @@ def _check_targets(settings: WeekUpdateSettings, sheet: dict, plan: dict) -> Non
                 raise ValueError(f"Ячейка {entry['cell']} объединена. Выгрузка остановлена")
 
 
-def save_backup(settings: WeekUpdateSettings, sheet: dict, writes: list[dict], formulas: list[list]) -> str:
-    folder = app_settings.database_path.parent / "backups" / "google-week-sales"
+def save_backup(
+    settings: WeekUpdateSettings,
+    sheet: dict,
+    writes: list[dict],
+    formulas: list[list],
+    *,
+    kind: str = "google-week-sales",
+) -> str:
+    folder = app_settings.database_path.parent / "backups" / kind
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex}.json"
     cells = [
@@ -190,8 +217,31 @@ def export_orders(settings: WeekUpdateSettings, *, now: datetime, dry_run: bool 
     _check_targets(settings, sheet, plan)
     if dry_run:
         return plan
+    return write_plan(settings, sheet, rows, plan, reader)
+
+
+def write_plan(
+    settings: WeekUpdateSettings,
+    sheet: dict,
+    rows: list[list],
+    plan: dict,
+    reader,
+    *,
+    backup_kind: str = "google-week-sales",
+    before_write=None,
+) -> dict:
+    """Write only validated changed cells, after a fresh read and a durable local backup."""
+    _check_targets(settings, sheet, plan)
+    plan = dict(plan)
     writes = plan.pop("writes")
-    report = {**plan, "written_cells": 0, "unchanged_cells": 0, "backup": None}
+    report = {
+        **plan,
+        "checked_cells": len(writes),
+        "written_cells": 0,
+        "zeroed_cells": 0,
+        "unchanged_cells": 0,
+        "backup": None,
+    }
     if not writes:
         return report
     doc_id = week.spreadsheet_id(settings.spreadsheet_url)
@@ -215,9 +265,12 @@ def export_orders(settings: WeekUpdateSettings, *, now: datetime, dry_run: bool 
     ):
         raise ValueError("Таблица изменилась во время расчёта. Повторите выгрузку")
     _check_targets(settings, current_sheet, plan | {"writes": writes})
-    changed = [
-        entry for entry in writes if cell_value(formulas, *search._position(entry["cell"])) != entry["value"]
-    ]
+    changed = []
+    for entry in writes:
+        previous = cell_value(formulas, *search._position(entry["cell"]))
+        # Empty cells, formulas, text "0" and boolean FALSE must become numeric zero.
+        if type(previous) not in (int, float) or previous != entry["value"]:
+            changed.append(entry)
     report["unchanged_cells"] = len(writes) - len(changed)
     writes = changed
     if not writes:
@@ -226,10 +279,16 @@ def export_orders(settings: WeekUpdateSettings, *, now: datetime, dry_run: bool 
     body = {"valueInputOption": "RAW", "data": data}
     if len(json.dumps(body).encode("utf-8")) > 1_800_000:
         raise ValueError("Слишком много ячеек для одной выгрузки. Уменьшите диапазон товаров или недель")
-    report["backup"] = save_backup(settings, sheet, writes, formulas)
+    if before_write is not None:
+        before_write()
+    if backup_kind == "google-week-sales":
+        report["backup"] = save_backup(settings, sheet, writes, formulas)
+    else:
+        report["backup"] = save_backup(settings, sheet, writes, formulas, kind=backup_kind)
     writer = week._google_service()
     writer.spreadsheets().values().batchUpdate(spreadsheetId=doc_id, body=body).execute(num_retries=2)
     report["written_cells"] = len(writes)
+    report["zeroed_cells"] = sum(entry["value"] == 0 for entry in writes)
     return report
 
 

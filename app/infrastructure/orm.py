@@ -829,6 +829,21 @@ class GoogleWeekSalesStateRecord(OrmBase):
     result_json: Mapped[str | None] = mapped_column(Text)
 
 
+class GoogleWeekStockStateRecord(OrmBase):
+    __tablename__ = "google_week_stock_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    sheet_name: Mapped[str] = mapped_column(
+        String, nullable=False, default="Сток на складах ВБ", server_default="Сток на складах ВБ"
+    )
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_success_slot: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
+
+
 class StockSheetExportSettingRecord(OrmBase):
     __tablename__ = "stock_sheet_export_settings"
 

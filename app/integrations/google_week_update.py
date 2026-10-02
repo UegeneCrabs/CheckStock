@@ -68,13 +68,19 @@ def save_settings(
     *,
     search_enabled: bool | None = None,
     sales_enabled: bool | None = None,
+    stock_enabled: bool | None = None,
+    stock_sheet_name: str | None = None,
 ) -> None:
     normalized = validate(settings)
+    if stock_sheet_name is not None:
+        stock_sheet_name = validate(replace(normalized, sheet_name=stock_sheet_name)).sheet_name
     with locks.hold(JOB_NAME):
         repository.save_settings(
             replace(normalized, updated_at=_now(now).isoformat()),
             search_enabled=search_enabled,
             sales_enabled=sales_enabled,
+            stock_enabled=stock_enabled,
+            stock_sheet_name=stock_sheet_name,
         )
 
 
@@ -110,14 +116,18 @@ def update_is_due(settings: WeekUpdateSettings, now: datetime) -> bool:
 
 
 def is_due(settings: WeekUpdateSettings | None = None, now: datetime | None = None) -> bool:
-    from app.integrations import google_week_sales, google_week_search
+    from app.integrations import google_week_sales, google_week_search, google_week_stock
 
     settings = settings or repository.get_settings()
     current = _now(now)
     if pending_run(settings, current):
         # A failed write must finish before a scheduled search reads the source week.
         return update_is_due(settings, current)
-    return google_week_sales.is_due(settings, now=current) or google_week_search.is_due(settings, now=current)
+    return (
+        google_week_stock.is_due(settings, now=current)
+        or google_week_sales.is_due(settings, now=current)
+        or google_week_search.is_due(settings, now=current)
+    )
 
 
 def next_run_at(settings: WeekUpdateSettings, now: datetime | None = None) -> datetime | None:
@@ -222,20 +232,30 @@ def _run(*, manual: bool, now: datetime | None = None) -> dict:
 
 
 def run_due(now: datetime | None = None) -> dict:
-    from app.integrations import google_week_sales, google_week_search
+    from app.integrations import google_week_sales, google_week_search, google_week_stock
 
     current = _now(now)
     settings = repository.get_settings()
     if pending_run(settings, current) and not update_is_due(settings, current):
         return {"skipped": True}
     report = _run(manual=False, now=current)
-    sales = google_week_sales.run_due(current)
-    if not sales.get("skipped"):
-        report = {**({} if report.get("skipped") else report), "sales": sales}
-    search = google_week_search.run_due(current)
-    if search.get("skipped"):
-        return report
-    return {**({} if report.get("skipped") else report), "search": search}
+    errors = []
+    for name, action in (
+        ("sales", google_week_sales.run_due),
+        ("stock", google_week_stock.run_due),
+        ("search", google_week_search.run_due),
+    ):
+        try:
+            result = action(current)
+        except ValueError as error:
+            # Export states hold their own failures; an independent export can still run.
+            errors.append(str(error))
+            continue
+        if not result.get("skipped"):
+            report = {**({} if report.get("skipped") else report), name: result}
+    if errors:
+        raise ValueError("; ".join(errors))
+    return report
 
 
 def run_now(now: datetime | None = None) -> dict:
