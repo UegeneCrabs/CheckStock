@@ -19,6 +19,7 @@ def init_db() -> None:
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
+    _migrate_project_sheet_export_urls(database)
     _migrate_stock_operation_item_purchase_price(database)
     _migrate_stock_operation_transit_batch(database)
     _migrate_manual_supply_note(database)
@@ -61,6 +62,23 @@ def init_db() -> None:
         connection.commit()
 
     _sync_yandex_assortment(database)
+
+
+def _migrate_project_sheet_export_urls(database: Database) -> None:
+    """Preserve a previously saved common URL when upgrading to marketplace destinations."""
+    with core.WRITE_LOCK, database.connect() as connection:
+        if "spreadsheet_url" in connection.column_names("project_sheet_export_targets"):
+            return
+        connection.execute(
+            "ALTER TABLE project_sheet_export_targets ADD COLUMN spreadsheet_url TEXT NOT NULL DEFAULT ''"
+        )
+        connection.execute(
+            """UPDATE project_sheet_export_targets
+               SET spreadsheet_url = COALESCE(
+                   (SELECT spreadsheet_url FROM project_sheet_export_settings WHERE id = 1), ''
+               )"""
+        )
+        connection.commit()
 
 
 def _sync_yandex_assortment(database: Database) -> None:

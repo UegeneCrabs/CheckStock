@@ -21,7 +21,7 @@ from app.economics.wb import history as unit_margin_history
 from app.economics.wb import reference_data as unit_reference_sync
 from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
-from app.exports import stock_sheet as stock_sheet_export
+from app.exports import project_sheet as stock_sheet_export
 from app.integrations import google_week_update
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, run_background_job
@@ -205,8 +205,8 @@ def _sync_stock_history_configured() -> dict:
     )
 
 
-def _run_stock_sheet_export_configured() -> dict[str, dict]:
-    return stock_sheet_export.run_due(store_slugs=sync_settings.enabled_stores("stock_sheet_export"))
+def _run_stock_sheet_export_configured() -> dict:
+    return stock_sheet_export.run_due()
 
 
 def _job_enabled(name: str) -> bool:

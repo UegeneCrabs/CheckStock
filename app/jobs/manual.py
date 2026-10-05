@@ -32,13 +32,7 @@ def is_running(name: str) -> bool:
 
 
 def _sheets_now() -> dict:
-    reports = {}
-    for store in sync_settings.enabled_stores("stock_sheet_export"):
-        try:
-            reports[store] = {"ok": True, "report": background.stock_sheet_export.run_store(store)}
-        except Exception as error:
-            reports[store] = {"ok": False, "error": str(error)}
-    return reports
+    return background.stock_sheet_export.run_export()
 
 
 def _marketplaces_now(name: str, loaders: tuple) -> dict:

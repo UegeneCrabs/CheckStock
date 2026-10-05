@@ -278,10 +278,9 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         SyncJobDefinition(
             "stock_sheet_export",
             "Google Таблицы",
-            "Проверяет расписания магазинов и выгружает остатки и заказы в Google Таблицы.",
-            "Проверка каждую минуту; время задаётся для магазина",
+            "Выгружает остатки и FBS-заказы всех семи проектов в отдельные файлы по площадкам.",
+            "Проверка каждую минуту; общее расписание на вкладке Google",
             base,
-            "stores",
         ),
         SyncJobDefinition(
             "ftp_wb_export",

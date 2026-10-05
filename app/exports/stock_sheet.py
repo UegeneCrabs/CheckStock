@@ -550,7 +550,7 @@ def _sheet_metadata(service, spreadsheet_id: str) -> dict[str, dict]:
         service.spreadsheets()
         .get(
             spreadsheetId=spreadsheet_id,
-            fields="sheets(properties(sheetId,title,gridProperties(columnCount)),merges)",
+            fields="sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)),merges)",
             includeGridData=False,
         )
         .execute(num_retries=GOOGLE_REQUEST_RETRIES)
@@ -705,6 +705,7 @@ def _combined_stock_snapshot(
     marketplace: str,
     *,
     now: datetime | None = None,
+    allow_saved_snapshot: bool = False,
 ) -> tuple[list[dict], dict[str, dict[str, int | None]], list[str]]:
     catalog_by_key: dict[str, dict] = {}
     values_by_metric: dict[str, dict[str, int | None]] = {metric: {} for metric in STOCK_EXPORT_METRICS}
@@ -720,7 +721,9 @@ def _combined_stock_snapshot(
             (*repository.STOCK_METRICS, "ff_transit"),
             now=now,
         )
-        inbound = stock_sheet_inbound.load(store_slug, marketplace, catalog, now=now)
+        inbound = stock_sheet_inbound.load(
+            store_slug, marketplace, catalog, now=now, allow_saved_snapshot=allow_saved_snapshot
+        )
         catalog = inbound.catalog
         store_values["mp_inbound"] = inbound.quantities
         inbound_available = inbound_available and inbound.available
@@ -853,67 +856,11 @@ def _stock_clear_columns(
     return columns
 
 
-def _write_marketplace(
-    service,
-    spreadsheet_id: str,
-    settings: StockSheetExportSettings,
-    marketplace: str,
+def _stock_export_rows(
     catalog: list[dict],
     values_by_metric: dict[str, dict[str, int | None]],
-) -> dict:
-    targets = [
-        target
-        for target in settings.targets
-        if target.marketplace == marketplace and target.metric in repository.STOCK_METRICS
-    ]
-    if not targets:
-        return {"marketplace": marketplace, "metrics": {}, "updated_cells": 0}
-    existing_sheets = _sheet_metadata(service, spreadsheet_id)
-    sheet_names = list(dict.fromkeys(target.sheet_name for target in targets))
-    missing = sorted(set(sheet_names) - existing_sheets.keys())
-    if missing:
-        raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
-    destination_sheets = {name: existing_sheets[name] for name in sheet_names}
-    _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
-    ff_metrics = sorted(
-        (metric for metric in values_by_metric if metric.startswith(FF_STOCK_METRIC_PREFIX)),
-        key=str.casefold,
-    )
-    headers = [
-        *EXPORT_HEADERS,
-        *(f"{FF_STOCK_HEADER_PREFIX}{metric.removeprefix(FF_STOCK_METRIC_PREFIX)}" for metric in ff_metrics),
-    ]
-    last_column = _column_letter(len(headers) - 1)
-    clear_columns = _stock_clear_columns(service, spreadsheet_id, destination_sheets, len(headers))
-    clear_ranges = [
-        f"{_quote_sheet(name)}!A2:{_column_letter(count - 1)}" for name, count in clear_columns.items()
-    ]
-    prepare_requests = []
-    for name, sheet in destination_sheets.items():
-        properties = sheet["properties"]
-        column_count = clear_columns[name]
-        if properties.get("gridProperties", {}).get("columnCount", column_count) < column_count:
-            prepare_requests.append(
-                {
-                    "updateSheetProperties": {
-                        "properties": {
-                            "sheetId": properties["sheetId"],
-                            "gridProperties": {"columnCount": column_count},
-                        },
-                        "fields": "gridProperties.columnCount",
-                    }
-                }
-            )
-        for merged in sheet.get("merges", ()):
-            if merged.get("endRowIndex", 0) <= 1 or merged.get("startColumnIndex", 0) >= column_count:
-                continue
-            if merged.get("startRowIndex", 0) < 1 or merged.get("endColumnIndex", 0) > column_count:
-                raise StockSheetExportError(
-                    f"Лист «{name}»: объединённые ячейки выходят за диапазон выгрузки. "
-                    "Разделите их, чтобы сохранить данные за его пределами. Данные листа не изменены."
-                )
-            prepare_requests.append({"unmergeCells": {"range": {**merged, "sheetId": properties["sheetId"]}}})
-
+    ff_metrics: list[str],
+) -> list[list[object]]:
     data_rows: list[list[object]] = []
     for item in catalog:
         article = str(item.get("article") or "").strip()
@@ -935,9 +882,65 @@ def _write_marketplace(
                 fbo_stock,
                 ff_transit,
                 mp_inbound if mp_inbound is not None else "",
-                *(int(values_by_metric[metric].get(article, 0) or 0) for metric in ff_metrics),
+                *(int(values_by_metric.get(metric, {}).get(article, 0) or 0) for metric in ff_metrics),
             ]
         )
+
+    return data_rows
+
+
+def _write_stock_rows(
+    service,
+    spreadsheet_id: str,
+    marketplace: str,
+    sheet_names: list[str],
+    headers: list[str],
+    data_rows: list[list[object]],
+) -> dict:
+    """Write a prepared stock table with the shared timestamp and range safeguards."""
+    existing_sheets = _sheet_metadata(service, spreadsheet_id)
+    missing = sorted(set(sheet_names) - existing_sheets.keys())
+    if missing:
+        raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
+    destination_sheets = {name: existing_sheets[name] for name in sheet_names}
+    _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
+    last_column = _column_letter(len(headers) - 1)
+    clear_columns = _stock_clear_columns(service, spreadsheet_id, destination_sheets, len(headers))
+    clear_ranges = [
+        f"{_quote_sheet(name)}!A2:{_column_letter(count - 1)}" for name, count in clear_columns.items()
+    ]
+    prepare_requests = []
+    for name, sheet in destination_sheets.items():
+        properties = sheet["properties"]
+        column_count = clear_columns[name]
+        row_count = len(data_rows) + 2
+        grid = properties.get("gridProperties", {})
+        required_grid = {
+            field: count
+            for field, count in (("columnCount", column_count), ("rowCount", row_count))
+            if grid.get(field, count) < count
+        }
+        if required_grid:
+            prepare_requests.append(
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": properties["sheetId"],
+                            "gridProperties": required_grid,
+                        },
+                        "fields": ",".join(f"gridProperties.{field}" for field in required_grid),
+                    }
+                }
+            )
+        for merged in sheet.get("merges", ()):
+            if merged.get("endRowIndex", 0) <= 1 or merged.get("startColumnIndex", 0) >= column_count:
+                continue
+            if merged.get("startRowIndex", 0) < 1 or merged.get("endColumnIndex", 0) > column_count:
+                raise StockSheetExportError(
+                    f"Лист «{name}»: объединённые ячейки выходят за диапазон выгрузки. "
+                    "Разделите их, чтобы сохранить данные за его пределами. Данные листа не изменены."
+                )
+            prepare_requests.append({"unmergeCells": {"range": {**merged, "sheetId": properties["sheetId"]}}})
 
     values = [headers, *data_rows]
     if prepare_requests:
@@ -982,6 +985,34 @@ def _write_marketplace(
         "updated_cells": (len(values) * len(headers) + 2) * len(sheet_names),
         "exported_at": exported_at,
     }
+
+
+def _write_marketplace(
+    service,
+    spreadsheet_id: str,
+    settings: StockSheetExportSettings,
+    marketplace: str,
+    catalog: list[dict],
+    values_by_metric: dict[str, dict[str, int | None]],
+) -> dict:
+    targets = [
+        target
+        for target in settings.targets
+        if target.marketplace == marketplace and target.metric in repository.STOCK_METRICS
+    ]
+    if not targets:
+        return {"marketplace": marketplace, "metrics": {}, "updated_cells": 0}
+    sheet_names = list(dict.fromkeys(target.sheet_name for target in targets))
+    ff_metrics = sorted(
+        (metric for metric in values_by_metric if metric.startswith(FF_STOCK_METRIC_PREFIX)),
+        key=str.casefold,
+    )
+    headers = [
+        *EXPORT_HEADERS,
+        *(f"{FF_STOCK_HEADER_PREFIX}{metric.removeprefix(FF_STOCK_METRIC_PREFIX)}" for metric in ff_metrics),
+    ]
+    data_rows = _stock_export_rows(catalog, values_by_metric, ff_metrics)
+    return _write_stock_rows(service, spreadsheet_id, marketplace, sheet_names, headers, data_rows)
 
 
 def _order_article_sort_key(article: str) -> tuple[int, int | str]:

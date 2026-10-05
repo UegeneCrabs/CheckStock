@@ -881,6 +881,32 @@ class StockSheetExportTargetRecord(OrmBase):
     value_column_name: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class ProjectSheetExportSettingRecord(OrmBase):
+    __tablename__ = "project_sheet_export_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    schedule_kind: Mapped[str] = mapped_column(
+        String, nullable=False, default="daily", server_default="daily"
+    )
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    run_time: Mapped[str] = mapped_column(String, nullable=False, default="01:00", server_default="01:00")
+    spreadsheet_url: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class ProjectSheetExportTargetRecord(OrmBase):
+    __tablename__ = "project_sheet_export_targets"
+
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    spreadsheet_url: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    stock_sheet_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    orders_sheet_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+
+
 class UnitEconomics1CCabinetSettingRecord(OrmBase):
     __tablename__ = "unit_economics_1c_cabinet_settings"
 

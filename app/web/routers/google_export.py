@@ -14,11 +14,13 @@ from app.config import settings as app_settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
+from app.exports import project_sheet as project_sheet_export
 from app.exports import stock_sheet as stock_sheet_export
 from app.integrations import google_week_sales, google_week_search, google_week_stock, google_week_update
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import run_tracked
 from app.repositories import google_week_update as week_repository
+from app.repositories.project_sheet_export import MarketplaceExportTarget, ProjectSheetExportSettings
 from app.repositories.stock_sheet_export import (
     ExportTarget,
     MarketplaceSpreadsheet,
@@ -41,6 +43,7 @@ WEEKDAYS = (
 )
 MARKETPLACE_LABELS = {"WB": "Wildberries", "OZON": "Ozon", "YANDEX MARKET": "Яндекс Маркет"}
 MARKETPLACE_FORM_PREFIXES = {"WB": "wb", "OZON": "ozon", "YANDEX MARKET": "yandex"}
+PROJECT_MARKETPLACES = ("YANDEX MARKET", "OZON", "WB")
 METRIC_LABELS = {
     "ff_stock": "Остатки ФФ",
     "fbs_stock": "Текущий сток FBS",
@@ -221,22 +224,129 @@ async def google_export_page(request: Request):
 
 
 async def render_google_export() -> str:
-    """Embed the existing export editor in the integrations page."""
-    await run_in_threadpool(stock_sheet_export.ensure_defaults)
-    settings = await run_in_threadpool(stock_sheet_export.list_settings)
+    """Embed one shared export editor for every project in the integrations page."""
+    await run_in_threadpool(project_sheet_export.ensure_defaults)
+    settings = await run_in_threadpool(project_sheet_export.get_settings)
     return fill_template(
         "integrations/google-export.html",
-        store_tabs="".join(
-            '<button type="button" class="export-store-tab'
-            f'{" is-active" if index == 0 else ""}" data-export-store-tab="{item.store_slug}" aria-pressed="{str(index == 0).lower()}">'
-            f"{html.escape(STORES[item.store_slug].name)}</button>"
-            for index, item in enumerate(settings)
-        ),
-        store_cards="".join(
-            _render_store_card(item, active=index == 0) for index, item in enumerate(settings)
-        ),
+        export_form=_render_project_export(settings),
         service_account_email=html.escape(google_service_account_email()),
         week_update=await run_in_threadpool(_render_week_update),
+    )
+
+
+def _render_project_export(settings: ProjectSheetExportSettings) -> str:
+    saved = bool(settings.updated_at and any(target.spreadsheet_url.strip() for target in settings.targets))
+    last_error = project_sheet_export.current_error(settings)
+    status_parts = []
+    if settings.last_success_at:
+        status_parts.append(f"Последняя успешная выгрузка: {format_dt(settings.last_success_at)}.")
+    if last_error:
+        status_parts.append(f"Ошибка {format_dt(settings.last_attempt_at)}: {last_error}")
+    status_text = " ".join(status_parts) or (
+        "Выгрузка ещё не запускалась" if saved else "Сохраните общие настройки перед первой выгрузкой"
+    )
+    marketplace_sections = []
+    for marketplace in PROJECT_MARKETPLACES:
+        prefix = MARKETPLACE_FORM_PREFIXES[marketplace]
+        target = settings.target(marketplace)
+        has_url = bool(target.spreadsheet_url.strip())
+        stock_disabled = "" if saved and has_url and target.stock_sheet_name else " disabled"
+        orders_disabled = "" if saved and has_url and target.orders_sheet_name else " disabled"
+        marketplace_sections.append(
+            '<section class="export-marketplace">'
+            '<div class="export-marketplace-head"><div>'
+            f"<h3>{html.escape(MARKETPLACE_LABELS[marketplace])}</h3></div></div>"
+            '<label class="export-url-field"><span>Ссылка на Google Таблицу площадки</span>'
+            f'<input class="input-control" type="url" name="{prefix}_spreadsheet_url" '
+            f'value="{_input(target.spreadsheet_url)}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>'
+            '<label class="export-url-field"><span>Лист остатков</span>'
+            f'<input class="input-control" name="{prefix}_sheet_name" '
+            f'value="{_input(target.stock_sheet_name)}" maxlength="100" '
+            'placeholder="Название листа остатков"></label>'
+            '<label class="export-url-field"><span>Лист заказов FBS за 30 дней</span>'
+            f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
+            f'value="{_input(target.orders_sheet_name)}" maxlength="100" '
+            'placeholder="Название листа заказов"></label>'
+            '<p class="panel-desc">Пустое название листа отключает эту выгрузку. '
+            "Для остатков и заказов каждой площадки укажите разные листы.</p>"
+            '<div class="export-marketplace-actions">'
+            f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
+            f'data-url-field="{prefix}_spreadsheet_url" data-export-kind="stocks" '
+            f'data-sheet-field="{prefix}_sheet_name"{stock_disabled}>Выгрузить остатки</button>'
+            f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
+            f'data-url-field="{prefix}_spreadsheet_url" data-export-kind="fbs_orders" '
+            f'data-sheet-field="{prefix}_fbs_orders_sheet_name"{orders_disabled}>'
+            "Выгрузить заказы</button></div></section>"
+        )
+    projects = "".join(
+        f'<span class="export-project-chip">{html.escape(store.name)}</span>' for store in STORES.values()
+    )
+    has_targets = any(
+        target.spreadsheet_url.strip() and (target.stock_sheet_name or target.orders_sheet_name)
+        for target in settings.targets
+    )
+    return (
+        '<form class="panel export-project-form" data-export-form '
+        f'data-saved="{str(saved).lower()}">'
+        '<div class="export-card-head"><div class="export-store-title"><div>'
+        "<small>ВЫГРУЗКА ПО ПЛОЩАДКАМ</small><h2>Все 7 проектов на каждой площадке</h2></div></div>"
+        '<label class="export-enabled"><input type="checkbox" name="enabled" value="1"'
+        f"{' checked' if settings.enabled else ''}><span>Автовыгрузка включена</span></label></div>"
+        '<div class="export-projects" aria-label="Проекты в выгрузке">'
+        + projects
+        + '</div><p class="integration-hint">Для каждой площадки укажите отдельный файл Google Таблиц. '
+        "В каждый файл выгружаются все 7 проектов с названием проекта у каждого товара. "
+        "Одинаковые артикулы разных проектов остаются отдельными строками, в том числе ROCKKIDDO и TOYKA.</p>"
+        '<div class="export-schedule-grid">'
+        '<label><span>Периодичность</span><select class="integration-select" name="schedule_kind" data-schedule-kind>'
+        f'<option value="daily"{" selected" if settings.schedule_kind == "daily" else ""}>Каждый день</option>'
+        f'<option value="weekly"{" selected" if settings.schedule_kind == "weekly" else ""}>Раз в неделю</option>'
+        "</select></label><label data-weekday-field><span>День недели</span>"
+        '<select class="integration-select" name="weekday">'
+        f"{_render_weekdays(settings.weekday)}</select></label><label><span>Время (Москва)</span>"
+        f'<input class="input-control" type="time" name="run_time" value="{_input(settings.run_time)}" required>'
+        '</label></div><div class="integration-export-marketplaces">'
+        + "".join(marketplace_sections)
+        + '</div><p class="integration-hint">В остатках A — ПРОЕКТ, B:J — основные показатели, '
+        "с K — детализация по ФФ. В заказах A — ПРОЕКТ, B — артикул, C — количество. "
+        "Заказы считаются за 30 завершённых дней по Москве, без сегодняшнего дня.</p>"
+        '<p class="integration-hint">При устаревшем снимке поставок или ошибке обновления используются '
+        "последние подтверждённые значения с предупреждением о давности. Если подтверждённых данных нет, "
+        "«В пути на склады МП» и ТОТАЛ соответствующих товаров остаются пустыми.</p>"
+        f'<p class="export-status {"export-status--error" if last_error else "export-status--ok"}" '
+        f'data-export-status role="status" aria-live="polite">{html.escape(status_text)}</p>'
+        '<p class="integration-hint" data-export-save-hint>Ручная выгрузка использует сохранённые настройки. '
+        "После изменений сначала нажмите «Сохранить настройки».</p>"
+        '<div class="export-actions"><button class="btn-primary" type="submit">Сохранить настройки</button>'
+        '<button class="btn-secondary" type="button" data-export-now'
+        f"{'' if saved and has_targets else ' disabled'}>Выгрузить всё сейчас</button></div></form>"
+    )
+
+
+def _project_settings_from_form(form, existing: ProjectSheetExportSettings) -> ProjectSheetExportSettings:
+    try:
+        weekday = int(_value(form, "weekday") or 0)
+    except ValueError as error:
+        raise ValueError("Некорректный день недели") from error
+    return replace(
+        existing,
+        enabled=_value(form, "enabled") == "1",
+        schedule_kind=_value(form, "schedule_kind"),
+        weekday=weekday,
+        run_time=_value(form, "run_time"),
+        updated_at=datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
+        targets=tuple(
+            MarketplaceExportTarget(
+                marketplace=marketplace,
+                spreadsheet_url=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_spreadsheet_url"),
+                stock_sheet_name=_value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_sheet_name"),
+                orders_sheet_name=_value(
+                    form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbs_orders_sheet_name"
+                ),
+            )
+            for marketplace in PROJECT_MARKETPLACES
+        ),
     )
 
 
@@ -536,36 +646,36 @@ async def export_google_week_stock(request: Request):
     return JSONResponse({**state, "stock_result": result})
 
 
-@router.post("/admin/google-export/{store_slug}")
-async def save_google_export_settings(request: Request, store_slug: str):
+@router.post("/admin/google-export/settings")
+async def save_project_export_settings(request: Request):
     _require_superadmin(request)
-    if store_slug not in STORES:
-        raise HTTPException(status_code=404, detail="Магазин не найден")
     form = await request.form()
-    existing = await run_in_threadpool(stock_sheet_export.get_settings, store_slug)
+    existing = await run_in_threadpool(project_sheet_export.get_settings)
     try:
-        settings = _settings_from_form(store_slug, form, existing)
-        await run_in_threadpool(stock_sheet_export.save_settings, settings)
+        settings = _project_settings_from_form(form, existing)
+        await run_in_threadpool(project_sheet_export.save_settings, settings)
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
-
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Выгрузка уже выполняется. Сохраните настройки после её завершения"},
+            status_code=409,
+        )
     actor = request.state.user
     await run_in_threadpool(
         db.log_action,
         actor.id,
         actor.full_name,
-        "Изменены настройки выгрузки",
-        f"{STORES[store_slug].name}: {settings.schedule_kind} {settings.run_time}",
+        "Изменены общие настройки выгрузки",
+        f"Все проекты: {settings.schedule_kind} {settings.run_time} МСК",
         datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
     )
     return JSONResponse({"ok": True})
 
 
-@router.post("/admin/google-export/{store_slug}/run")
-async def run_google_export(request: Request, store_slug: str):
+@router.post("/admin/google-export/run")
+async def run_project_export(request: Request):
     _require_superadmin(request)
-    if store_slug not in STORES:
-        raise HTTPException(status_code=404, detail="Магазин не найден")
     form = await request.form()
     marketplace = _value(form, "marketplace") or None
     export_kind = _value(form, "export_kind") or None
@@ -574,7 +684,7 @@ async def run_google_export(request: Request, store_slug: str):
             {"ok": False, "error": "Укажите маркетплейс и тип выгрузки вместе"},
             status_code=400,
         )
-    if marketplace is not None and marketplace not in stock_sheet_export.repository.MARKETPLACES:
+    if marketplace is not None and marketplace not in PROJECT_MARKETPLACES:
         return JSONResponse({"ok": False, "error": "Неизвестный маркетплейс"}, status_code=400)
     if export_kind is not None and export_kind not in stock_sheet_export.EXPORT_KINDS:
         return JSONResponse({"ok": False, "error": "Неизвестный тип выгрузки"}, status_code=400)
@@ -583,12 +693,15 @@ async def run_google_export(request: Request, store_slug: str):
             run_tracked,
             "stock_sheet_export",
             "manual",
-            lambda: stock_sheet_export.run_store(
-                store_slug,
+            lambda: project_sheet_export.run_export(
                 marketplace=marketplace,
                 export_kind=export_kind,
             ),
         )
+    except SyncJobBusyError:
+        return JSONResponse({"ok": False, "error": "Выгрузка уже выполняется"}, status_code=409)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     except Exception as error:
         return JSONResponse(
             {"ok": False, "error": f"{type(error).__name__}: {error}"},
@@ -604,3 +717,26 @@ async def run_google_export(request: Request, store_slug: str):
             ),
         }
     )
+
+
+def _retired_store_export_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "Выгрузка по магазинам заменена общей выгрузкой всех проектов. "
+            "Обновите страницу и сохраните ссылки на таблицы и листы отдельно для каждой площадки.",
+        },
+        status_code=410,
+    )
+
+
+@router.post("/admin/google-export/{store_slug}")
+async def save_google_export_settings(request: Request, store_slug: str):
+    _require_superadmin(request)
+    return _retired_store_export_response()
+
+
+@router.post("/admin/google-export/{store_slug}/run")
+async def run_google_export(request: Request, store_slug: str):
+    _require_superadmin(request)
+    return _retired_store_export_response()

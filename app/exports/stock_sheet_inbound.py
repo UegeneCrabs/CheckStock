@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from app.config import settings
+from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSnapshot, InboundSupply
 from app.stock import inbound_supplies
 
@@ -42,6 +43,7 @@ def summarize(
     now: datetime | None = None,
     *,
     include_yandex_approved: bool = False,
+    allow_saved_snapshot: bool = False,
 ) -> InboundExport:
     products = {str(row["article"]).strip(): dict(row) for row in catalog if row.get("article")}
     aliases: dict[str, set[str]] = defaultdict(set)
@@ -82,12 +84,16 @@ def summarize(
     if current.tzinfo is None:
         current = current.replace(tzinfo=UTC)
     cutoff = current - timedelta(seconds=max(settings.inbound_sync_interval_seconds * 2, 3600))
-    available = bool(
+    fresh = bool(
         updated
         and updated >= cutoff
         and snapshot.status in {"ok", "partial", "running"}
         and not snapshot.error
     )
+    # Failed refreshes retain the last successful payload and its timestamp.
+    # Reuse is opt-in: pricing calculations still require the strict fresh snapshot.
+    available = fresh or (allow_saved_snapshot and updated is not None)
+    using_saved = allow_saved_snapshot and updated is not None and (not fresh or snapshot.status == "running")
     quantities: dict[str, int | None] = dict.fromkeys(products, 0)
     confirmed_quantities: dict[str, int] = defaultdict(int)
     for supply in snapshot.supplies:
@@ -131,15 +137,25 @@ def summarize(
     if not available:
         quantities = dict.fromkeys(products, None)
         confirmed_quantities.clear()
+        snapshot_description = "подтверждённого сохранённого" if allow_saved_snapshot else "свежего"
         warnings = (
-            "Нет полного свежего снимка поставок МП. Столбцы «В пути на склады МП» и «ТОТАЛ» оставлены пустыми.",
-        )
-    elif any(value is None for value in quantities.values()):
-        warnings = (
-            "Часть количеств в поставках МП не подтверждена. Для этих артикулов ячейки «В пути на склады МП» и «ТОТАЛ» оставлены пустыми.",
+            f"Нет полного {snapshot_description} снимка поставок МП. "
+            "Столбцы «В пути на склады МП» и «ТОТАЛ» оставлены пустыми.",
         )
     else:
-        warnings = ()
+        messages = []
+        if using_saved:
+            saved_at = updated.astimezone(MOSCOW_TIMEZONE).strftime("%d.%m.%Y %H:%M:%S")
+            messages.append(
+                f"Использован последний сохранённый снимок поставок МП от {saved_at} МСК. "
+                "Свежие данные пока не подтверждены."
+            )
+        if any(value is None for value in quantities.values()):
+            messages.append(
+                "Часть количеств в поставках МП не подтверждена. Для этих артикулов ячейки "
+                "«В пути на склады МП» и «ТОТАЛ» оставлены пустыми."
+            )
+        warnings = tuple(messages)
     return InboundExport(list(products.values()), quantities, available, warnings, dict(confirmed_quantities))
 
 
@@ -150,6 +166,13 @@ def load(
     *,
     now: datetime | None = None,
     include_yandex_approved: bool = False,
+    allow_saved_snapshot: bool = False,
 ) -> InboundExport:
     snapshot = inbound_supplies.build_service().report(((store_slug, marketplace),))[0]
-    return summarize(snapshot, catalog, now, include_yandex_approved=include_yandex_approved)
+    return summarize(
+        snapshot,
+        catalog,
+        now,
+        include_yandex_approved=include_yandex_approved,
+        allow_saved_snapshot=allow_saved_snapshot,
+    )

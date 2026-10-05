@@ -55,6 +55,37 @@
     gap: 20px;
 }
 
+.export-project-form {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+}
+
+.export-projects {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.export-project-chip {
+    padding: 5px 9px;
+    border: 1px solid var(--border, #dfe4ea);
+    border-radius: 7px;
+    background: var(--surface-soft, #f3f5f8);
+    color: var(--text, #1f2937);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.export-project-form[aria-busy='true'] {
+    cursor: progress;
+}
+
+.export-project-form :disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .export-store-card[hidden],
 [data-weekday-field][hidden] {
     display: none;

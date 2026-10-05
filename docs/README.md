@@ -2,6 +2,7 @@
 
 - [Архитектура и структура](architecture.md)
 - [Ручные и фоновые загрузки](manual-sync.md)
+- [Общая Google-выгрузка семи проектов](project-sheet-export.md)
 - [Поставки FBO и выгрузка остатков](inbound-supplies.md)
 - [Юнит-экономика ЯМ](unit-economics-yandex.md)
 - [Настройки калькулятора ЯМ](yandex-calculator-settings.md)
