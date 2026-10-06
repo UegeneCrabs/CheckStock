@@ -594,10 +594,22 @@ def _check_timestamp_cells(service, spreadsheet_id: str, sheets: dict[str, dict]
             )
 
 
-def _write_export_timestamp(service, spreadsheet_id: str, sheets: dict[str, dict]) -> str:
-    """Capture completion of this sheet's data write, not the scheduler's start time or the last marketplace sync. Store a fixed Sheets date, never a NOW formula."""
+def _write_export_timestamp(
+    service, spreadsheet_id: str, sheets: dict[str, dict], *, stock_headers: list[str] | None = None
+) -> str:
+    """Stamp the completed write with a fixed Moscow date and optional stock-column sums."""
     exported_at = datetime.now(MOSCOW_TIMEZONE).replace(microsecond=0)
     serial = (exported_at.replace(tzinfo=None) - datetime(1899, 12, 30)).total_seconds() / 86400
+    cells = [
+        {"userEnteredValue": {"stringValue": EXPORT_TIMESTAMP_LABEL}},
+        {"userEnteredValue": {"numberValue": serial}},
+    ]
+    if stock_headers is not None:
+        total_column = stock_headers.index("ТОТАЛ")
+        cells.extend({} for _ in range(total_column - len(cells)))
+        for column in range(total_column, len(stock_headers)):
+            letter = _column_letter(column)
+            cells.append({"userEnteredValue": {"formulaValue": f"=SUM({letter}3:{letter})"}})
     requests = []
     for sheet in sheets.values():
         sheet_id = sheet["properties"]["sheetId"]
@@ -610,16 +622,9 @@ def _write_export_timestamp(service, spreadsheet_id: str, sheets: dict[str, dict
                             "startRowIndex": 0,
                             "endRowIndex": 1,
                             "startColumnIndex": 0,
-                            "endColumnIndex": 2,
+                            "endColumnIndex": len(cells),
                         },
-                        "rows": [
-                            {
-                                "values": [
-                                    {"userEnteredValue": {"stringValue": EXPORT_TIMESTAMP_LABEL}},
-                                    {"userEnteredValue": {"numberValue": serial}},
-                                ]
-                            }
-                        ],
+                        "rows": [{"values": cells}],
                         "fields": "userEnteredValue",
                     }
                 },
@@ -896,6 +901,8 @@ def _write_stock_rows(
     sheet_names: list[str],
     headers: list[str],
     data_rows: list[list[object]],
+    *,
+    replace_sheet: bool = False,
 ) -> dict:
     """Write a prepared stock table with the shared timestamp and range safeguards."""
     existing_sheets = _sheet_metadata(service, spreadsheet_id)
@@ -903,17 +910,29 @@ def _write_stock_rows(
     if missing:
         raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
     destination_sheets = {name: existing_sheets[name] for name in sheet_names}
-    _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
     last_column = _column_letter(len(headers) - 1)
-    clear_columns = _stock_clear_columns(service, spreadsheet_id, destination_sheets, len(headers))
+    if replace_sheet:
+        clear_columns = {
+            name: max(
+                len(headers),
+                STOCK_CLEAR_COLUMN_COUNT,
+                sheet["properties"].get("gridProperties", {}).get("columnCount", 0),
+            )
+            for name, sheet in destination_sheets.items()
+        }
+    else:
+        _check_timestamp_cells(service, spreadsheet_id, destination_sheets)
+        clear_columns = _stock_clear_columns(service, spreadsheet_id, destination_sheets, len(headers))
+    first_row = 1 if replace_sheet else 2
     clear_ranges = [
-        f"{_quote_sheet(name)}!A2:{_column_letter(count - 1)}" for name, count in clear_columns.items()
+        f"{_quote_sheet(name)}!A{first_row}:{_column_letter(count - 1)}"
+        for name, count in clear_columns.items()
     ]
     prepare_requests = []
     for name, sheet in destination_sheets.items():
         properties = sheet["properties"]
         column_count = clear_columns[name]
-        row_count = len(data_rows) + 2
+        row_count = max(len(data_rows) + 2, 3 if replace_sheet else 2)
         grid = properties.get("gridProperties", {})
         required_grid = {
             field: count
@@ -933,9 +952,12 @@ def _write_stock_rows(
                 }
             )
         for merged in sheet.get("merges", ()):
-            if merged.get("endRowIndex", 0) <= 1 or merged.get("startColumnIndex", 0) >= column_count:
+            if merged.get("endRowIndex", 0) < first_row or merged.get("startColumnIndex", 0) >= column_count:
                 continue
-            if merged.get("startRowIndex", 0) < 1 or merged.get("endColumnIndex", 0) > column_count:
+            if (
+                merged.get("startRowIndex", 0) < first_row - 1
+                or merged.get("endColumnIndex", 0) > column_count
+            ):
                 raise StockSheetExportError(
                     f"Лист «{name}»: объединённые ячейки выходят за диапазон выгрузки. "
                     "Разделите их, чтобы сохранить данные за его пределами. Данные листа не изменены."
@@ -976,13 +998,19 @@ def _write_stock_rows(
             .execute(num_retries=GOOGLE_REQUEST_RETRIES)
         )
     row_count = len(data_rows)
-    exported_at = _write_export_timestamp(service, spreadsheet_id, destination_sheets)
+    if replace_sheet:
+        exported_at = _write_export_timestamp(
+            service, spreadsheet_id, destination_sheets, stock_headers=headers
+        )
+    else:
+        exported_at = _write_export_timestamp(service, spreadsheet_id, destination_sheets)
     return {
         "marketplace": marketplace,
         "sheets": sheet_names,
         "rows": row_count,
         "metrics": {metric: {"rows": row_count} for metric in STOCK_EXPORT_METRICS},
-        "updated_cells": (len(values) * len(headers) + 2) * len(sheet_names),
+        "updated_cells": (len(values) * len(headers) + (len(headers) if replace_sheet else 2))
+        * len(sheet_names),
         "exported_at": exported_at,
     }
 

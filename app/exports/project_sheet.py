@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 MARKETPLACES = repository.MARKETPLACES
 EXPORT_KINDS = legacy.EXPORT_KINDS
 PROJECT_HEADER = "ПРОЕКТ"
-EXPORT_HEADERS = (PROJECT_HEADER, *legacy.EXPORT_HEADERS)
+EXPORT_HEADERS = ("КЛЮЧ", PROJECT_HEADER, *legacy.EXPORT_HEADERS)
 ORDER_EXPORT_HEADERS = (PROJECT_HEADER, *legacy.ORDER_EXPORT_HEADERS)
 SPREADSHEET_PATH_RE = re.compile(r"^/spreadsheets/d/([a-zA-Z0-9_-]+)(?:/.*)?$")
 
@@ -181,9 +181,15 @@ def _write_marketplace(
     rows = []
     for snapshot in snapshots:
         project = STORES[snapshot.store_slug].name
-        for row in legacy._stock_export_rows(snapshot.catalog, snapshot.values_by_metric, ff_metrics):
-            rows.append([project, *row])
-    report = legacy._write_stock_rows(service, spreadsheet_id, marketplace, [sheet_name], headers, rows)
+        catalog = [item for item in snapshot.catalog if str(item.get("article") or "").strip()]
+        stock_rows = legacy._stock_export_rows(catalog, snapshot.values_by_metric, ff_metrics)
+        for item, row in zip(catalog, stock_rows, strict=True):
+            # Use the source text so leading zeroes are retained in the key.
+            barcode = str(item.get("barcode") or "").strip().removeprefix("'").strip()
+            rows.append([f"{project} {barcode}", project, *row])
+    report = legacy._write_stock_rows(
+        service, spreadsheet_id, marketplace, [sheet_name], headers, rows, replace_sheet=True
+    )
     report["store_slugs"] = tuple(snapshot.store_slug for snapshot in snapshots)
     report["warnings"] = [warning for snapshot in snapshots for warning in snapshot.warnings]
     return report
@@ -325,11 +331,10 @@ def export_all(
         missing = [name for name in names if name not in sheets]
         if missing:
             raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
-        legacy._check_timestamp_cells(service, spreadsheet_id, {name: sheets[name] for name in names})
         if include_orders:
-            _order_sheet_preparation(
-                target.orders_sheet_name.strip(), sheets[target.orders_sheet_name.strip()]
-            )
+            order_sheet = target.orders_sheet_name.strip()
+            legacy._check_timestamp_cells(service, spreadsheet_id, {order_sheet: sheets[order_sheet]})
+            _order_sheet_preparation(order_sheet, sheets[order_sheet])
         if snapshots is not None:
             report = _write_marketplace(service, spreadsheet_id, settings, selected, snapshots)
         else:
