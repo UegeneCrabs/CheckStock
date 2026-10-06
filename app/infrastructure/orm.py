@@ -930,6 +930,9 @@ class ProjectSheetExportTargetRecord(OrmBase):
     spreadsheet_url: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     stock_sheet_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     orders_sheet_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    orders_quantity_column: Mapped[str] = mapped_column(
+        String, nullable=False, default="C", server_default="C"
+    )
 
 
 class UnitEconomics1CCabinetSettingRecord(OrmBase):

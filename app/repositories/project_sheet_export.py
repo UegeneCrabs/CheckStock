@@ -14,6 +14,7 @@ class MarketplaceExportTarget:
     stock_sheet_name: str
     orders_sheet_name: str
     spreadsheet_url: str = ""
+    orders_quantity_column: str = "C"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ def get_settings() -> ProjectSheetExportSettings | None:
                 stock_sheet_name=str(target["stock_sheet_name"]),
                 orders_sheet_name=str(target["orders_sheet_name"]),
                 spreadsheet_url=str(target["spreadsheet_url"]),
+                orders_quantity_column=str(target["orders_quantity_column"]),
             )
             for target in conn.execute("SELECT * FROM project_sheet_export_targets").fetchall()
         }
@@ -99,14 +101,15 @@ def save_settings(settings: ProjectSheetExportSettings, *, only_if_missing: bool
         conn.execute("DELETE FROM project_sheet_export_targets")
         conn.executemany(
             """INSERT INTO project_sheet_export_targets
-                   (marketplace, stock_sheet_name, orders_sheet_name, spreadsheet_url)
-               VALUES (?, ?, ?, ?)""",
+                   (marketplace, stock_sheet_name, orders_sheet_name, spreadsheet_url, orders_quantity_column)
+               VALUES (?, ?, ?, ?, ?)""",
             [
                 (
                     target.marketplace,
                     target.stock_sheet_name,
                     target.orders_sheet_name,
                     target.spreadsheet_url,
+                    target.orders_quantity_column,
                 )
                 for target in settings.targets
             ],

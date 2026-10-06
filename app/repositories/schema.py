@@ -20,6 +20,7 @@ def init_db() -> None:
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
     _migrate_project_sheet_export_urls(database)
+    _migrate_project_sheet_export_orders_column(database)
     _migrate_stock_operation_item_purchase_price(database)
     _migrate_stock_operation_transit_batch(database)
     _migrate_manual_supply_note(database)
@@ -77,6 +78,16 @@ def _migrate_project_sheet_export_urls(database: Database) -> None:
                SET spreadsheet_url = COALESCE(
                    (SELECT spreadsheet_url FROM project_sheet_export_settings WHERE id = 1), ''
                )"""
+        )
+        connection.commit()
+
+
+def _migrate_project_sheet_export_orders_column(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        if "orders_quantity_column" in connection.column_names("project_sheet_export_targets"):
+            return
+        connection.execute(
+            "ALTER TABLE project_sheet_export_targets ADD COLUMN orders_quantity_column TEXT NOT NULL DEFAULT 'C'"
         )
         connection.commit()
 
