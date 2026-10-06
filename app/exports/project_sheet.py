@@ -7,7 +7,7 @@ from datetime import datetime
 from urllib.parse import urlsplit
 
 from app.core.domain import MOSCOW_TIMEZONE
-from app.core.stores import STORES
+from app.core.stores import PROJECT_STORE_ALIASES, STORES
 from app.exports import stock_sheet as legacy
 from app.jobs import locks as sync_locks
 from app.repositories import project_sheet_export as repository
@@ -18,7 +18,6 @@ MARKETPLACES = repository.MARKETPLACES
 EXPORT_KINDS = legacy.EXPORT_KINDS
 PROJECT_HEADER = "ПРОЕКТ"
 EXPORT_HEADERS = ("КЛЮЧ", PROJECT_HEADER, *legacy.EXPORT_HEADERS)
-ORDER_EXPORT_HEADERS = (PROJECT_HEADER, *legacy.ORDER_EXPORT_HEADERS)
 SPREADSHEET_PATH_RE = re.compile(r"^/spreadsheets/d/([a-zA-Z0-9_-]+)(?:/.*)?$")
 
 ProjectSheetExportSettings = repository.ProjectSheetExportSettings
@@ -80,6 +79,7 @@ def validate_settings(settings: ProjectSheetExportSettings) -> None:
         raise ValueError("Для каждого маркетплейса должна быть одна настройка выгрузки")
     destinations: dict[tuple[str, str], str] = {}
     for target in settings.targets:
+        _order_column_index(target.orders_quantity_column)
         spreadsheet_url = target.spreadsheet_url.strip()
         has_sheets = bool(target.stock_sheet_name.strip() or target.orders_sheet_name.strip())
         if has_sheets and not spreadsheet_url:
@@ -109,6 +109,7 @@ def save_settings(settings: ProjectSheetExportSettings) -> None:
                 spreadsheet_url=target.spreadsheet_url.strip(),
                 stock_sheet_name=target.stock_sheet_name.strip(),
                 orders_sheet_name=target.orders_sheet_name.strip(),
+                orders_quantity_column=target.orders_quantity_column.strip().upper(),
             )
             for target in settings.targets
         ),
@@ -195,98 +196,202 @@ def _write_marketplace(
     return report
 
 
-def _order_sheet_preparation(sheet_name: str, sheet: dict, *, required_rows: int | None = None) -> list[dict]:
-    properties = sheet["properties"]
-    requests = []
-    column_count = len(ORDER_EXPORT_HEADERS)
-    grid = properties.get("gridProperties", {})
-    required_grid = {
-        field: count
-        for field, count in (("columnCount", column_count), ("rowCount", required_rows))
-        if count is not None and grid.get(field, count) < count
+def _order_column_index(value: str) -> int:
+    value = value.strip().upper()
+    if not re.fullmatch(r"[A-Z]{1,3}", value):
+        raise ValueError("Укажите столбец количества FBS латинскими буквами, например C, K или AA")
+    column = 0
+    for letter in value:
+        column = column * 26 + ord(letter) - ord("A") + 1
+    return column - 1
+
+
+@dataclass
+class OrderSheetPlan:
+    sheet_name: str
+    column: str
+    updates: list[dict]
+    clear_range: str | None
+    prepare_requests: list[dict]
+    row_count: int
+    store_slugs: tuple[str, ...]
+    warnings: list[str]
+
+
+def _plan_fbs_orders(
+    service,
+    spreadsheet_id: str,
+    target: MarketplaceExportTarget,
+    totals: dict[str, dict[str, int]],
+    sheet: dict,
+) -> OrderSheetPlan:
+    sheet_name = target.orders_sheet_name.strip()
+    column_index = _order_column_index(target.orders_quantity_column)
+    column = legacy._column_letter(column_index)
+    quoted_sheet = legacy._quote_sheet(sheet_name)
+    rows = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range=quoted_sheet, valueRenderOption="FORMATTED_VALUE")
+        .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
+        .get("values", [])
+    )
+    headers = []
+    for index, row in enumerate(rows):
+        normalized = [legacy._header_key(value) for value in row]
+        projects = [col for col, value in enumerate(normalized) if value in {"проект", "project"}]
+        articles = [col for col, value in enumerate(normalized) if value in {"артикул", "article"}]
+        if projects and articles:
+            if len(projects) != 1 or len(articles) != 1:
+                raise StockSheetExportError(
+                    f"Лист «{sheet_name}»: неоднозначные колонки проекта или артикула"
+                )
+            headers.append((index, projects[0], articles[0]))
+    if len(headers) != 1:
+        raise StockSheetExportError(
+            f"Лист «{sheet_name}»: нужна одна шапка с колонками ПРОЕКТ (Project) и АРТИКУЛ (Article)"
+        )
+    header_row, project_column, article_column = headers[0]
+    header = rows[header_row]
+    if column_index < len(header) and legacy._header_key(header[column_index]) in {
+        "проект",
+        "project",
+        "артикул",
+        "article",
+        "ключ",
+        "key",
+        "barcode",
+        "баркод",
+        "штрихкод",
+        "название",
+        "name",
+    }:
+        raise StockSheetExportError(
+            f"Лист «{sheet_name}»: столбец {column} содержит данные товара; выберите столбец количества"
+        )
+    first_row = header_row + 2
+    last_row = len(rows)
+    grid = sheet["properties"].get("gridProperties", {})
+    grid_columns = grid.get("columnCount", column_index + 1)
+    if column_index < grid_columns and first_row <= grid.get("rowCount", first_row):
+        existing_values = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range=f"{quoted_sheet}!{column}{first_row}:{column}",
+                valueRenderOption="FORMULA",
+            )
+            .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
+            .get("values", [])
+        )
+        last_row = max(last_row, first_row - 1 + len(existing_values))
+    if any(
+        merge.get("startRowIndex", 0) < last_row
+        and merge.get("endRowIndex", 0) >= first_row
+        and merge.get("startColumnIndex", 0) <= column_index < merge.get("endColumnIndex", 0)
+        for merge in sheet.get("merges", ())
+    ):
+        raise StockSheetExportError(
+            f"Лист «{sheet_name}»: колонка {column} в области записи объединена с другими ячейками; разделите их перед выгрузкой"
+        )
+    quantities = {
+        (store_slug, legacy._article_key(str(article).strip().removeprefix("'"))): int(quantity or 0)
+        for store_slug, articles in totals.items()
+        for article, quantity in articles.items()
     }
-    if required_grid:
-        requests.append(
+    updates, matched = [], set()
+    skipped_rows = 0
+    row_count = 0
+    for row_index, row in enumerate(rows[header_row + 1 :], header_row + 1):
+        project = str(row[project_column] or "").strip() if project_column < len(row) else ""
+        article = (
+            legacy._article_key(str(row[article_column] or "").strip().removeprefix("'"))
+            if article_column < len(row)
+            else ""
+        )
+        store = PROJECT_STORE_ALIASES.get(project.casefold())
+        if not article or store not in totals:
+            if article or project:
+                skipped_rows += 1
+            continue
+        key = (store, article)
+        if key in quantities:
+            matched.add(key)
+        # Group adjacent matched rows without touching gaps or other columns.
+        if updates and updates[-1]["last_row"] == row_index:
+            updates[-1]["values"].append([quantities.get(key, 0)])
+            updates[-1]["last_row"] = row_index + 1
+        else:
+            updates.append(
+                {"first_row": row_index + 1, "last_row": row_index + 1, "values": [[quantities.get(key, 0)]]}
+            )
+        row_count += 1
+    data = [
+        {
+            "range": f"{quoted_sheet}!{column}{item['first_row']}:{column}{item['last_row']}",
+            "values": item["values"],
+        }
+        for item in updates
+    ]
+    missing = sum(quantity > 0 and key not in matched for key, quantity in quantities.items())
+    warnings = []
+    if skipped_rows:
+        warnings.append(f"{sheet_name}: пропущено строк без известного проекта или артикула: {skipped_rows}")
+    if missing:
+        warnings.append(f"{sheet_name}: товаров с заказами, не найденных в листе: {missing}")
+    if not row_count:
+        warnings.append(f"{sheet_name}: не найдено строк товаров для обновления FBS-заказов")
+    prepare_requests = []
+    if data and grid_columns <= column_index:
+        prepare_requests.append(
             {
                 "updateSheetProperties": {
                     "properties": {
-                        "sheetId": properties["sheetId"],
-                        "gridProperties": required_grid,
+                        "sheetId": sheet["properties"]["sheetId"],
+                        "gridProperties": {"columnCount": column_index + 1},
                     },
-                    "fields": ",".join(f"gridProperties.{field}" for field in required_grid),
+                    "fields": "gridProperties.columnCount",
                 }
             }
         )
-    for merged in sheet.get("merges", ()):
-        if merged.get("endRowIndex", 0) <= 1 or merged.get("startColumnIndex", 0) >= column_count:
-            continue
-        if merged.get("startRowIndex", 0) < 1 or merged.get("endColumnIndex", 0) > column_count:
-            raise StockSheetExportError(
-                f"Лист «{sheet_name}»: объединённые ячейки выходят за диапазон A2:C. "
-                "Разделите их. Данные листа не изменены."
-            )
-        requests.append({"unmergeCells": {"range": {**merged, "sheetId": properties["sheetId"]}}})
-    return requests
+    clear_range = (
+        f"{quoted_sheet}!{column}{first_row}:{column}{last_row}"
+        if last_row >= first_row and (column_index < grid_columns or data)
+        else None
+    )
+    return OrderSheetPlan(
+        sheet_name, column, data, clear_range, prepare_requests, row_count, tuple(totals), warnings
+    )
 
 
-def _write_fbs_orders(
-    service,
-    spreadsheet_id: str,
-    settings: ProjectSheetExportSettings,
-    marketplace: str,
-    totals: dict[str, dict[str, int]],
-) -> dict:
-    sheet_name = settings.target(marketplace).orders_sheet_name.strip()
-    existing_sheets = legacy._sheet_metadata(service, spreadsheet_id)
-    if sheet_name not in existing_sheets:
-        raise StockSheetExportError(f"В таблице нет листа: {sheet_name}")
-    destination_sheets = {sheet_name: existing_sheets[sheet_name]}
-    legacy._check_timestamp_cells(service, spreadsheet_id, destination_sheets)
-    data_rows = [
-        [STORES[store_slug].name, legacy._sheet_identifier(article), int(quantities[article])]
-        for store_slug, quantities in totals.items()
-        for article in sorted(quantities, key=legacy._order_article_sort_key)
-        if int(quantities[article] or 0) > 0
-    ]
-    prepare_requests = _order_sheet_preparation(
-        sheet_name, existing_sheets[sheet_name], required_rows=len(data_rows) + 2
-    )
-    values = [list(ORDER_EXPORT_HEADERS), *data_rows]
-    quoted_sheet = legacy._quote_sheet(sheet_name)
-    if prepare_requests:
-        (
-            service.spreadsheets()
-            .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": prepare_requests})
-            .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
-        )
-    (
-        service.spreadsheets()
-        .values()
-        .batchClear(spreadsheetId=spreadsheet_id, body={"ranges": [f"{quoted_sheet}!A2:C"]})
-        .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
-    )
-    (
-        service.spreadsheets()
-        .values()
-        .batchUpdate(
-            spreadsheetId=spreadsheet_id,
-            body={
-                "valueInputOption": "RAW",
-                "data": [{"range": f"{quoted_sheet}!A2:C{len(values) + 1}", "values": values}],
-            },
-        )
-        .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
-    )
-    exported_at = legacy._write_export_timestamp(service, spreadsheet_id, destination_sheets)
-    return {
+def _write_fbs_orders(service, spreadsheet_id: str, marketplace: str, plan: OrderSheetPlan) -> dict:
+    report = {
         "marketplace": marketplace,
-        "sheet": sheet_name,
+        "sheet": plan.sheet_name,
+        "quantity_column": plan.column,
         "period_days": legacy.FBS_ORDER_LOOKBACK_DAYS,
-        "rows": len(data_rows),
-        "updated_cells": len(values) * len(ORDER_EXPORT_HEADERS) + 2,
-        "exported_at": exported_at,
-        "store_slugs": tuple(totals),
+        "rows": plan.row_count,
+        "updated_cells": plan.row_count,
+        "store_slugs": plan.store_slugs,
+        "warnings": plan.warnings,
     }
+    if not plan.updates and not plan.clear_range:
+        return {**report, "skipped": True}
+    if plan.prepare_requests:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": plan.prepare_requests}
+        ).execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
+    if plan.clear_range:
+        service.spreadsheets().values().batchClear(
+            spreadsheetId=spreadsheet_id, body={"ranges": [plan.clear_range]}
+        ).execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
+    if plan.updates:
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"valueInputOption": "RAW", "data": plan.updates}
+        ).execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
+    report["exported_at"] = legacy._now_iso()
+    return report
 
 
 def export_all(
@@ -331,19 +436,21 @@ def export_all(
         missing = [name for name in names if name not in sheets]
         if missing:
             raise StockSheetExportError(f"В таблице нет листов: {', '.join(missing)}")
-        if include_orders:
-            order_sheet = target.orders_sheet_name.strip()
-            legacy._check_timestamp_cells(service, spreadsheet_id, {order_sheet: sheets[order_sheet]})
-            _order_sheet_preparation(order_sheet, sheets[order_sheet])
+        orders_plan = None
+        if totals is not None:
+            orders_plan = _plan_fbs_orders(
+                service, spreadsheet_id, target, totals, sheets[target.orders_sheet_name.strip()]
+            )
         if snapshots is not None:
             report = _write_marketplace(service, spreadsheet_id, settings, selected, snapshots)
         else:
             report = {"marketplace": selected, "stocks": {"skipped": True}, "updated_cells": 0}
-        if totals is not None:
-            orders_report = _write_fbs_orders(service, spreadsheet_id, settings, selected, totals)
+        if orders_plan is not None:
+            orders_report = _write_fbs_orders(service, spreadsheet_id, selected, orders_plan)
         else:
             orders_report = {"marketplace": selected, "skipped": True, "rows": 0, "updated_cells": 0}
         report["fbs_orders"] = orders_report
+        report["warnings"] = [*report.get("warnings", []), *orders_report.get("warnings", [])]
         report["updated_cells"] += orders_report["updated_cells"]
         reports.append(report)
     return {"spreadsheet_ids": spreadsheet_ids, "store_slugs": tuple(STORES), "marketplaces": reports}

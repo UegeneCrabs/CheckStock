@@ -148,6 +148,7 @@ class ProjectSheetExportTests(unittest.TestCase):
             "OZON": ("Ozon Stocks", "Ozon Orders"),
             "YANDEX MARKET": ("YM Stocks", "YM Orders"),
         }
+        columns = {"WB": "C", "OZON": "K", "YANDEX MARKET": "AA"}
         settings = replace(
             settings,
             schedule_kind="weekly",
@@ -159,6 +160,7 @@ class ProjectSheetExportTests(unittest.TestCase):
                     spreadsheet_url=f"https://docs.google.com/spreadsheets/d/doc-{index}/edit",
                     stock_sheet_name=names[target.marketplace][0],
                     orders_sheet_name=names[target.marketplace][1],
+                    orders_quantity_column=columns[target.marketplace],
                 )
                 for index, target in enumerate(settings.targets)
             ),
@@ -173,6 +175,7 @@ class ProjectSheetExportTests(unittest.TestCase):
             [target.spreadsheet_url for target in settings.targets],
         )
         for marketplace, (stock, orders) in names.items():
+            self.assertEqual(saved.target(marketplace).orders_quantity_column, columns[marketplace])
             self.assertEqual(
                 (saved.target(marketplace).stock_sheet_name, saved.target(marketplace).orders_sheet_name),
                 (stock, orders),
@@ -263,6 +266,35 @@ class ProjectSheetExportTests(unittest.TestCase):
         self.assertEqual(rows["WB"]["stock_sheet_name"], "WB stocks")
         self.assertEqual(rows["OZON"]["orders_sheet_name"], "OZON orders")
 
+    def test_orders_column_migration_defaults_to_c_and_keeps_saved_choice_on_repeat(self):
+        previous = self.database_module.Database(self.database.path.parent / "previous-orders.sqlite3")
+        self.addCleanup(previous.dispose)
+        with previous.connect() as conn:
+            conn.execute(
+                "CREATE TABLE project_sheet_export_targets (marketplace TEXT PRIMARY KEY, "
+                "stock_sheet_name TEXT, orders_sheet_name TEXT, spreadsheet_url TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO project_sheet_export_targets VALUES ('WB', 'Stocks', 'Orders', 'saved-url')"
+            )
+            conn.commit()
+        self.schema._migrate_project_sheet_export_orders_column(previous)
+        with previous.connect() as conn:
+            row = conn.execute("SELECT * FROM project_sheet_export_targets").fetchone()
+            self.assertEqual(row["orders_quantity_column"], "C")
+            self.assertEqual(row["orders_sheet_name"], "Orders")
+            self.assertEqual(row["spreadsheet_url"], "saved-url")
+            conn.execute("UPDATE project_sheet_export_targets SET orders_quantity_column = 'K'")
+            conn.commit()
+        self.schema._migrate_project_sheet_export_orders_column(previous)
+        with previous.connect() as conn:
+            self.assertEqual(
+                conn.execute("SELECT orders_quantity_column FROM project_sheet_export_targets").fetchone()[
+                    "orders_quantity_column"
+                ],
+                "K",
+            )
+
     def test_combined_output_expands_rows_before_clear_and_never_shrinks_larger_grids(self):
         catalog = [{"article": f"sku-{index}"} for index in range(1001)]
         self.mock(
@@ -278,7 +310,7 @@ class ProjectSheetExportTests(unittest.TestCase):
             {item["article"]: 1 for item in catalog} if slugs == ("rimili",) else {}
         )
         self.configure(orders="Orders")
-        for export_kind, sheet_name in (("stocks", "Stocks"), ("fbs_orders", "Orders")):
+        for export_kind, sheet_name in (("stocks", "Stocks"),):
             for current_rows in (1000, 5000):
                 with self.subTest(export_kind=export_kind, current_rows=current_rows):
                     self.google.reset_mock()
@@ -382,6 +414,11 @@ class ProjectSheetExportTests(unittest.TestCase):
             ),
         )
         self.orders.side_effect = lambda slugs, marketplace, **kwargs: {"Same-SKU": quantities[slugs[0]]}
+        self.sheet_values["'Orders'"] = [
+            ["Existing notes"],
+            ["ПРОЕКТ", "АРТИКУЛ", "FBS"],
+            *[[store.name, "Same-SKU", 99] for store in self.stores.values()],
+        ]
         report = self.export.run_export(self.now)
         self.assertEqual(report["spreadsheet_ids"], ids)
         writes = self.google.spreadsheets().values().batchUpdate.call_args_list
@@ -393,33 +430,16 @@ class ProjectSheetExportTests(unittest.TestCase):
                 if call.kwargs["spreadsheetId"] == spreadsheet_id
             ]
             self.assertEqual(len(file_writes), 2)
-            for update in file_writes:
-                is_stock = update["range"].startswith("'Stocks'")
-                self.assertEqual(
-                    update["values"][0],
-                    [
-                        *(["КЛЮЧ"] if is_stock else []),
-                        "ПРОЕКТ",
-                        *(self.legacy.EXPORT_HEADERS if is_stock else self.legacy.ORDER_EXPORT_HEADERS),
-                    ],
-                )
-                self.assertEqual(len(update["values"]), 8)
-                self.assertEqual(
-                    {row[1 if is_stock else 0] for row in update["values"][1:]},
-                    {store.name for store in self.stores.values()},
-                )
-                for row in update["values"][1:]:
-                    if is_stock:
-                        self.assertEqual(row[0], f"{row[1]} 1234567890")
-                        row = row[1:]
-                    self.assertEqual(row[1], "Same-SKU")
-                    quantity = next(
-                        quantities[slug] for slug, store in self.stores.items() if store.name == row[0]
-                    )
-                    if is_stock:
-                        self.assertEqual(row[2:6], [1234567890, "Synthetic product", quantity, quantity])
-                    else:
-                        self.assertEqual(row[2], quantity)
+            stock = next(update for update in file_writes if update["range"].startswith("'Stocks'"))
+            orders = next(update for update in file_writes if update["range"].startswith("'Orders'"))
+            self.assertEqual(stock["values"][0], ["КЛЮЧ", "ПРОЕКТ", *self.legacy.EXPORT_HEADERS])
+            self.assertEqual(len(stock["values"]), 8)
+            for row, (slug, store) in zip(stock["values"][1:], self.stores.items(), strict=True):
+                quantity = quantities[slug]
+                self.assertEqual(row[:4], [f"{store.name} 1234567890", store.name, "Same-SKU", 1234567890])
+                self.assertEqual(row[4:7], ["Synthetic product", quantity, quantity])
+            self.assertEqual(orders["range"], "'Orders'!C3:C9")
+            self.assertEqual(orders["values"], [[quantities[slug]] for slug in self.stores])
 
     def test_all_seven_projects_keep_identical_articles_and_separate_totals(self):
         self.configure()
@@ -667,25 +687,164 @@ class ProjectSheetExportTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs["allow_saved_snapshot"] for call in self.inbound.call_args_list))
         self.assertEqual(service.report.call_count, 7)
 
-    def test_order_rows_keep_project_and_fetch_every_project_before_first_write(self):
-        self.configure(stocks="", orders="Orders")
-        quantities = {slug: index for index, slug in enumerate(self.stores, 1)}
-        self.orders.side_effect = lambda slugs, marketplace, **kwargs: {"SKU-00123": quantities[slugs[0]]}
-        self.google.spreadsheets().values().batchClear.side_effect = lambda **kwargs: (
-            self.assertEqual(self.orders.call_count, len(self.stores)) or MagicMock()
+    def test_order_matching_keeps_row_order_and_writes_only_selected_column(self):
+        settings = self.configure(stocks="", orders="Orders")
+        self.export.save_settings(self.destination(settings, "WB", orders_quantity_column=" k "))
+        self.assertEqual(self.export.get_settings().target("WB").orders_quantity_column, "K")
+        self.orders.side_effect = lambda slugs, marketplace, **kwargs: {
+            "Same-SKU": 7 if slugs == ("rimili",) else 2,
+            "Not-in-sheet": 3,
+        }
+        self.sheet_values["'Orders'"] = [
+            ["User title", "=NOW()"],
+            ["Notes"],
+            ["Article", "Name", "Проект"],
+            ["same-sku", "First", "TRIS"],
+            ["Same-SKU", "Second", "RIMILI"],
+            ["Same-SKU", "Unknown", "Unknown project"],
+            ["No-orders", "Third", "RIMILI"],
+            ["", "No article", "RIMILI"],
+        ]
+        values_api = self.google.spreadsheets().values()
+
+        def after_clear(**kwargs):
+            self.assertEqual(self.orders.call_count, len(self.stores))
+            values_api.batchClear.assert_called_once_with(
+                spreadsheetId="test-doc", body={"ranges": ["'Orders'!K4:K8"]}
+            )
+            return MagicMock()
+
+        values_api.batchUpdate.side_effect = after_clear
+        report = self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+        self.assertEqual(
+            self.updates(),
+            [
+                {"range": "'Orders'!K4:K5", "values": [[2], [7]]},
+                {"range": "'Orders'!K7:K7", "values": [[0]]},
+            ],
+        )
+        self.google.spreadsheets().batchUpdate.assert_not_called()
+        self.timestamp.assert_not_called()
+        self.inbound.assert_not_called()
+        self.assertEqual(report["marketplaces"][0]["fbs_orders"]["updated_cells"], 3)
+        self.assertIn("не найденных в листе", " ".join(report["marketplaces"][0]["warnings"]))
+        self.assertIsNotNone(self.repository.get_settings().last_success_at)
+
+    def test_order_matching_expands_only_columns_and_accepts_project_aliases(self):
+        settings = self.configure(stocks="", orders="Orders")
+        self.export.save_settings(self.destination(settings, "WB", orders_quantity_column="AA"))
+        self.sheets[1]["properties"]["gridProperties"].update(columnCount=3, rowCount=10)
+        self.sheet_values["'Orders'"] = [["PROJECT", "АРТИКУЛ"], ["Хочушар", 123.0]]
+        self.orders.side_effect = lambda slugs, marketplace, **kwargs: (
+            {"123": 4} if slugs == ("rimili",) else {}
         )
         self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
-        values = self.update_for("Orders")["values"]
-        self.assertEqual(values[0], ["ПРОЕКТ", *self.legacy.ORDER_EXPORT_HEADERS])
+        self.assertEqual(self.updates(), [{"range": "'Orders'!AA2:AA2", "values": [[4]]}])
         self.assertEqual(
-            {row[0]: row[1:] for row in values[1:]},
-            {self.stores[slug].name: ["SKU-00123", quantity] for slug, quantity in quantities.items()},
+            self.google.spreadsheets().batchUpdate.call_args.kwargs["body"],
+            {
+                "requests": [
+                    {
+                        "updateSheetProperties": {
+                            "properties": {"sheetId": 2, "gridProperties": {"columnCount": 27}},
+                            "fields": "gridProperties.columnCount",
+                        }
+                    }
+                ]
+            },
         )
-        self.assertEqual(
-            {call.args[0] for call in self.orders.call_args_list}, {(slug,) for slug in self.stores}
+        self.timestamp.assert_not_called()
+
+    def test_order_matching_rejects_ambiguous_headers_and_identifier_column(self):
+        self.configure(stocks="", orders="Orders")
+        for rows, error in (
+            ([], "нужна одна шапка"),
+            ([["Проект", "АРТИКУЛ", "Article"]], "неоднозначные"),
+            ([["Проект", "Article"], ["Проект", "Article"]], "нужна одна шапка"),
+            ([["Name", "Article", "Проект"], ["name", "sku", "RIMILI"]], "данные товара"),
+        ):
+            with self.subTest(rows=rows):
+                self.sheet_values["'Orders'"] = rows
+                with self.assertRaisesRegex(self.export.StockSheetExportError, error):
+                    self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+                self.assert_no_google_writes()
+
+    def test_order_matching_rejects_merged_destination_before_stock_write(self):
+        self.configure(orders="Orders")
+        self.sheet_values["'Orders'"] = [["Проект", "Article"], ["RIMILI", "sku"]]
+        self.sheets[1]["merges"] = [
+            {"startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 2, "endColumnIndex": 4}
+        ]
+        with self.assertRaisesRegex(self.export.StockSheetExportError, "объединена"):
+            self.export.run_export(self.now, marketplace="WB")
+        self.assert_no_google_writes()
+
+    def test_order_matching_with_no_valid_rows_does_not_write_or_record_success(self):
+        self.configure(stocks="", orders="Orders")
+        self.sheets[1]["properties"]["gridProperties"]["rowCount"] = 1
+        self.sheet_values["'Orders'"] = [["Проект", "Article"]]
+        report = self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+        self.assert_no_google_writes()
+        self.assertTrue(report["marketplaces"][0]["fbs_orders"]["skipped"])
+        self.assertIsNone(self.repository.get_settings().last_success_at)
+        self.assertNotIn(
+            "'Orders'!C2:C",
+            [call.kwargs["range"] for call in self.google.spreadsheets().values().get.call_args_list],
         )
-        self.assertEqual({call.args[1] for call in self.orders.call_args_list}, {"WB"})
-        self.inbound.assert_not_called()
+
+    def test_order_matching_fills_each_occurrence_of_the_same_product(self):
+        self.configure(stocks="", orders="Orders")
+        self.sheet_values["'Orders'"] = [["ARTICLE", "Проект"], ["sku", "RIMILI"], ["SKU", "rimili"]]
+        self.orders.side_effect = lambda slugs, marketplace, **kwargs: (
+            {"sku": 6} if slugs == ("rimili",) else {}
+        )
+        self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+        self.assertEqual(self.updates(), [{"range": "'Orders'!C2:C3", "values": [[6], [6]]}])
+
+    def test_order_column_clear_includes_unmatched_rows_and_trailing_empty_result_formulas(self):
+        self.configure(stocks="", orders="Orders")
+        self.sheet_values["'Orders'"] = [["ARTICLE", "Проект"], ["sku", "Unknown", 99]]
+        self.sheet_values["'Orders'!C2:C"] = [[99], [], ['=IFERROR(1/0, "")']]
+        self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+        self.google.spreadsheets().values().batchClear.assert_called_once_with(
+            spreadsheetId="test-doc", body={"ranges": ["'Orders'!C2:C4"]}
+        )
+        self.google.spreadsheets().values().batchUpdate.assert_not_called()
+        self.timestamp.assert_not_called()
+        self.assertIsNotNone(self.repository.get_settings().last_success_at)
+
+    def test_orders_header_can_be_below_first_25_rows(self):
+        self.configure(stocks="", orders="Orders")
+        self.sheet_values["'Orders'"] = [["notes"] for _ in range(30)] + [
+            ["ARTICLE", "Проект"],
+            ["sku", "RIMILI", 99],
+        ]
+        self.orders.side_effect = lambda slugs, marketplace, **kwargs: (
+            {"sku": 6} if slugs == ("rimili",) else {}
+        )
+        self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+        self.assertEqual(self.updates(), [{"range": "'Orders'!C32:C32", "values": [[6]]}])
+        self.google.spreadsheets().values().batchClear.assert_called_once_with(
+            spreadsheetId="test-doc", body={"ranges": ["'Orders'!C32:C32"]}
+        )
+
+    def test_failed_order_clear_does_not_write_values_or_record_success(self):
+        self.configure(stocks="", orders="Orders")
+        self.sheet_values["'Orders'"] = [["ARTICLE", "Проект"], ["sku", "RIMILI", 99]]
+        self.google.spreadsheets().values().batchClear.return_value.execute.side_effect = RuntimeError(
+            "Clear failed"
+        )
+        with self.assertRaisesRegex(RuntimeError, "Clear failed"):
+            self.export.run_export(self.now, marketplace="WB", export_kind="fbs_orders")
+        self.google.spreadsheets().values().batchUpdate.assert_not_called()
+        self.assertIsNone(self.repository.get_settings().last_success_at)
+
+    def test_invalid_order_column_is_rejected_before_google_access(self):
+        settings = self.configure(stocks="", orders="Orders")
+        for column in ("", "K2", "A:K", "11", "К", "AAAA"):
+            with self.subTest(column=column), self.assertRaisesRegex(ValueError, "столбец"):
+                self.export.save_settings(self.destination(settings, "WB", orders_quantity_column=column))
+        self.google_factory.assert_not_called()
 
     def test_late_project_order_failure_leaves_selected_marketplace_sheets_untouched(self):
         self.configure(orders="Orders")

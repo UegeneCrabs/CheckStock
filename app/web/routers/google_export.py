@@ -279,6 +279,12 @@ def _render_project_export(settings: ProjectSheetExportSettings) -> str:
             f'<input class="input-control" name="{prefix}_fbs_orders_sheet_name" '
             f'value="{_input(target.orders_sheet_name)}" maxlength="100" '
             'placeholder="Название листа заказов"></label>'
+            '<label class="export-url-field"><span>Столбец количества заказов FBS</span>'
+            f'<input class="input-control" name="{prefix}_fbs_orders_quantity_column" '
+            f'value="{_input(target.orders_quantity_column)}" maxlength="3" pattern="[A-Za-z]{{1,3}}" '
+            'placeholder="Например, K" required></label>'
+            '<p class="panel-desc">Укажите столбец количества, например K или AA. Товары ищутся по '
+            "ARTICLE и «Проект». Столбец очищается ниже найденной шапки до последней заполненной строки.</p>"
             '<p class="panel-desc">Пустое название листа отключает эту выгрузку. '
             "Для остатков и заказов каждой площадки укажите разные листы.</p>"
             '<div class="export-marketplace-actions">'
@@ -319,8 +325,9 @@ def _render_project_export(settings: ProjectSheetExportSettings) -> str:
         f'<input class="input-control" type="time" name="run_time" value="{_input(settings.run_time)}" required>'
         '</label></div><div class="integration-export-marketplaces">'
         + "".join(marketplace_sections)
-        + '</div><p class="integration-hint">В остатках A — ПРОЕКТ, B:J — основные показатели, '
-        "с K — детализация по ФФ. В заказах A — ПРОЕКТ, B — артикул, C — количество. "
+        + '</div><p class="integration-hint">В остатках A — КЛЮЧ, B — ПРОЕКТ, C:K — основные показатели, '
+        "с L — детализация по ФФ. Заказы записываются в выбранный столбец существующего листа "
+        "по совпадению ARTICLE и проекта; остальные колонки и шапка сохраняются. "
         "Заказы считаются за 30 завершённых дней по Москве, без сегодняшнего дня.</p>"
         '<p class="integration-hint">При устаревшем снимке поставок или ошибке обновления используются '
         "последние подтверждённые значения с предупреждением о давности. Если подтверждённых данных нет, "
@@ -355,6 +362,13 @@ def _project_settings_from_form(form, existing: ProjectSheetExportSettings) -> P
                 orders_sheet_name=_value(
                     form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbs_orders_sheet_name"
                 ),
+                orders_quantity_column=(
+                    _value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbs_orders_quantity_column")
+                    if f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbs_orders_quantity_column" in form
+                    else existing.target(marketplace).orders_quantity_column
+                )
+                .strip()
+                .upper(),
             )
             for marketplace in PROJECT_MARKETPLACES
         ),

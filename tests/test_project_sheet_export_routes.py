@@ -66,10 +66,13 @@ class ProjectSheetExportRouteTests(unittest.TestCase):
             "run_time": "09:30",
             "wb_sheet_name": "WB Stocks",
             "wb_fbs_orders_sheet_name": "WB Orders",
+            "wb_fbs_orders_quantity_column": "C",
             "ozon_sheet_name": "Ozon Stocks",
             "ozon_fbs_orders_sheet_name": "Ozon Orders",
+            "ozon_fbs_orders_quantity_column": "K",
             "yandex_sheet_name": "YM Stocks",
             "yandex_fbs_orders_sheet_name": "YM Orders",
+            "yandex_fbs_orders_quantity_column": "AA",
             **changes,
         }
 
@@ -85,6 +88,9 @@ class ProjectSheetExportRouteTests(unittest.TestCase):
         self.assertEqual(settings.target("WB").stock_sheet_name, "WB Stocks")
         self.assertEqual(settings.target("OZON").orders_sheet_name, "Ozon Orders")
         self.assertEqual(settings.target("YANDEX MARKET").orders_sheet_name, "YM Orders")
+        self.assertEqual(settings.target("WB").orders_quantity_column, "C")
+        self.assertEqual(settings.target("OZON").orders_quantity_column, "K")
+        self.assertEqual(settings.target("YANDEX MARKET").orders_quantity_column, "AA")
         self.runner.assert_not_called()
 
     def test_shared_form_preserves_execution_status(self):
@@ -99,6 +105,31 @@ class ProjectSheetExportRouteTests(unittest.TestCase):
             (parsed.last_attempt_at, parsed.last_success_at, parsed.last_error),
             (existing.last_attempt_at, existing.last_success_at, existing.last_error),
         )
+
+    def test_order_column_normalizes_letters_and_old_form_preserves_saved_choice(self):
+        parsed = self.routes._project_settings_from_form(
+            self.form(wb_fbs_orders_quantity_column=" aa "), self.settings
+        )
+        self.assertEqual(parsed.target("WB").orders_quantity_column, "AA")
+        old_form = self.form()
+        del old_form["wb_fbs_orders_quantity_column"]
+        saved = self.routes._project_settings_from_form(old_form, parsed)
+        self.assertEqual(saved.target("WB").orders_quantity_column, "AA")
+
+    def test_invalid_order_quantity_column_returns_validation_error(self):
+        for column in ("", "K2", "A:K", "11", "К", "AAAA"):
+            with self.subTest(column=column):
+                response = self.client.post(
+                    "/admin/google-export/settings", data=self.form(wb_fbs_orders_quantity_column=column)
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.json()["ok"])
+
+    def test_editor_shows_saved_order_column(self):
+        settings = self.routes._project_settings_from_form(self.form(), self.settings)
+        rendered = self.routes._render_project_export(settings)
+        self.assertIn('name="ozon_fbs_orders_quantity_column" value="K"', rendered)
+        self.assertIn('name="yandex_fbs_orders_quantity_column" value="AA"', rendered)
 
     def test_reused_sheet_returns_validation_error(self):
         response = self.client.post(
@@ -194,6 +225,9 @@ class ProjectSheetExportRouteTests(unittest.TestCase):
             "wb_fbs_orders_sheet_name",
             "ozon_fbs_orders_sheet_name",
             "yandex_fbs_orders_sheet_name",
+            "wb_fbs_orders_quantity_column",
+            "ozon_fbs_orders_quantity_column",
+            "yandex_fbs_orders_quantity_column",
         ):
             self.assertEqual(rendered.count(f'name="{field}"'), 1)
         for store in self.routes.STORES.values():
