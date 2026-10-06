@@ -9,6 +9,21 @@
     var salesStatus = form.querySelector('[data-week-sales-status]');
     var stock = form.querySelector('[data-week-stock]');
     var stockStatus = form.querySelector('[data-week-stock-status]');
+    var freeze = form.querySelector('[data-week-freeze]');
+    var freezePreview = form.querySelector('[data-week-freeze-preview]');
+    var freezeStatus = form.querySelector('[data-week-freeze-status]');
+    var catalogRefresh = form.querySelector('[data-freeze-refresh]');
+    var catalogStatus = form.querySelector('[data-freeze-catalog-status]');
+    var sheetSearch = form.querySelector('[data-freeze-search]');
+    var sheetOptions = form.querySelector('[data-freeze-options]');
+    var selectionInput = form.querySelector('[name="freeze_sheet_ids"]');
+    var selectionInitialized = form.querySelector('[name="freeze_selection_initialized"]');
+    var selectionDocument = form.querySelector('[name="freeze_spreadsheet_id"]');
+    var catalog = JSON.parse(form.querySelector('[data-freeze-catalog]').dataset.catalog);
+    var selectedSheets = new Set(JSON.parse(selectionInput.value));
+    var catalogKey = '';
+    var previewResult = null;
+    var previewContext = null;
     var submit = form.querySelectorAll('[type="submit"]');
     var unsaved = form.querySelector('[data-week-unsaved]');
     var saveStatus = form.querySelector('[data-week-save-status]');
@@ -20,7 +35,7 @@
     var lastSearchError = '';
 
     function values() {
-        return JSON.stringify(Array.from(form.querySelectorAll('input, select'), function (input) {
+        return JSON.stringify(Array.from(form.querySelectorAll('input[name], select[name]'), function (input) {
             return [input.name, input.type === 'checkbox' ? input.checked : input.value];
         }));
     }
@@ -30,12 +45,19 @@
         search.disabled = busy || dirty || !saved;
         sales.disabled = busy || dirty || !saved;
         stock.disabled = busy || dirty || !saved;
+        freeze.disabled = freezePreview.disabled = busy || dirty || !saved || !selectedSheets.size;
+        catalogRefresh.disabled = busy || !saved || documentChanged();
+        form.querySelectorAll('[data-freeze-select-all], [data-freeze-clear-found], [data-freeze-clear]').forEach(function (button) {
+            button.disabled = busy || documentChanged();
+        });
         submit.forEach(function (button) { button.disabled = busy; });
         unsaved.hidden = !dirty;
         saveStatus.hidden = dirty && !saveStatus.classList.contains('export-status--error');
-        [run, search, sales, stock].forEach(function (button) {
+        [run, search, sales, stock, freeze, freezePreview].forEach(function (button) {
             button.title = dirty || !saved ? 'Сначала сохраните настройки' : '';
         });
+        catalogRefresh.title = documentChanged() || !saved ? 'Сначала сохраните ссылку на таблицу' : '';
+        sheetOptions.querySelectorAll('input').forEach(function (input) { input.disabled = busy || documentChanged(); });
     }
     function show(message, error) {
         status.textContent = message;
@@ -76,7 +98,101 @@
         stockStatus.textContent = data.stock_status_text;
         stockStatus.classList.toggle('export-status--error', Boolean(data.stock_has_error));
         replaceResult('[data-week-stock-results]', data.stock_html);
+        form.querySelector('[data-week-freeze-schedule]').textContent = data.freeze_schedule_text;
+        if (!dirty) form.querySelector('[name="freeze_enabled"]').checked = data.freeze_enabled;
+        freezeStatus.textContent = data.freeze_status_text;
+        freezeStatus.classList.toggle('export-status--error', Boolean(data.freeze_has_error));
+        // A periodic status refresh must not replace a preview the user is reviewing.
+        var context = JSON.stringify([data.value, data.sheet_catalog.spreadsheet_id, data.sheet_catalog.selected_sheet_ids]);
+        if (previewContext !== context) previewResult = null;
+        if (data.freeze_result) {
+            previewResult = data.freeze_result.dry_run ? data.freeze_html : null;
+            previewContext = context;
+        }
+        replaceResult('[data-week-freeze-results]', previewResult || data.freeze_html);
+        if (data.sheet_catalog) applyCatalog(data.sheet_catalog);
         revealSearchError();
+    }
+    function documentChanged() {
+        var match = form.querySelector('[name="spreadsheet_url"]').value.trim().match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+        return !match || match[1] !== selectionDocument.value;
+    }
+    function updateSelection() {
+        selectionInput.value = JSON.stringify(Array.from(selectedSheets).sort(function (a, b) { return a - b; }));
+        form.querySelector('[data-freeze-selected-count]').textContent = 'Выбрано: ' + selectedSheets.size;
+        var known = new Set(catalog.sheets.map(function (sheet) { return sheet.sheet_id; }));
+        var missing = Array.from(selectedSheets).filter(function (id) { return !known.has(id); });
+        var hint = form.querySelector('[data-freeze-selection-hint]');
+        hint.textContent = missing.length ? 'Выбранных листов нет в текущем списке: ' + missing.length + '. Обновите список или снимите выбор этих листов.' : 'Добавление и удаление меняет только список обработки. Сами листы сохраняются.';
+        hint.classList.toggle('week-search-warning', Boolean(missing.length));
+    }
+    function filterSheets() {
+        var query = sheetSearch.value.trim().toLocaleLowerCase('ru');
+        var visible = 0;
+        sheetOptions.querySelectorAll('label').forEach(function (label) {
+            label.hidden = !label.textContent.toLocaleLowerCase('ru').includes(query);
+            if (!label.hidden) visible += 1;
+        });
+        form.querySelector('[data-freeze-empty]').hidden = Boolean(visible);
+    }
+    function renderSheets() {
+        var scroll = sheetOptions.scrollTop;
+        var focused = document.activeElement && document.activeElement.dataset.freezeSheet;
+        sheetOptions.replaceChildren();
+        var sheets = catalog.sheets.slice();
+        var known = new Set(sheets.map(function (sheet) { return sheet.sheet_id; }));
+        selectedSheets.forEach(function (id) {
+            if (!known.has(id)) sheets.push({ sheet_id: id, title: 'Лист #' + id + ' — удалён или недоступен', missing: true });
+        });
+        sheets.forEach(function (sheet) {
+            var label = document.createElement('label');
+            var checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.dataset.freezeSheet = String(sheet.sheet_id);
+            checkbox.checked = selectedSheets.has(sheet.sheet_id);
+            checkbox.disabled = busy || documentChanged();
+            var title = document.createElement('span');
+            title.textContent = sheet.title;
+            if (sheet.missing) label.classList.add('week-search-warning');
+            label.append(checkbox, title);
+            sheetOptions.append(label);
+        });
+        filterSheets();
+        sheetOptions.scrollTop = scroll;
+        if (focused) {
+            var replacement = sheetOptions.querySelector('[data-freeze-sheet="' + focused + '"]');
+            if (replacement) replacement.focus({ preventScroll: true });
+        }
+        updateSelection();
+    }
+    function applyCatalog(next) {
+        var wasDirty = dirty;
+        var previousDocument = selectionDocument.value;
+        catalog = next;
+        if (!dirty || previousDocument !== next.spreadsheet_id) {
+            selectedSheets = new Set(next.selected_sheet_ids);
+            selectionInitialized.value = next.selection_initialized ? '1' : '0';
+            selectionDocument.value = next.spreadsheet_id;
+        }
+        var key = JSON.stringify([next.sheets, Array.from(selectedSheets)]);
+        if (key !== catalogKey) { catalogKey = key; renderSheets(); }
+        var updated = next.updated_at ? new Date(next.updated_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК' : 'ещё не обновлялся';
+        catalogStatus.textContent = next.last_error ? 'Не удалось обновить список: ' + next.last_error : 'Список: ' + updated;
+        catalogStatus.classList.toggle('export-status--error', Boolean(next.last_error));
+        if (!wasDirty) savedValues = values();
+        controls();
+    }
+    function selectionChanged() {
+        selectionInitialized.value = '1';
+        updateSelection();
+        previewResult = null;
+        markDirty();
+    }
+    function markDirty() {
+        dirty = values() !== savedValues;
+        saveStatus.classList.remove('export-status--error');
+        saveStatus.textContent = saved ? 'Настройки общие для всех действий.' : 'Сначала сохраните настройки.';
+        controls();
     }
     function revealSearchError() {
         var error = searchStatus.classList.contains('export-status--error') ? searchStatus.textContent : '';
@@ -86,11 +202,8 @@
         lastSearchError = error;
     }
     ['input', 'change'].forEach(function (event) {
-        form.addEventListener(event, function () {
-            dirty = values() !== savedValues;
-            saveStatus.classList.remove('export-status--error');
-            saveStatus.textContent = saved ? 'Настройки общие для всех действий.' : 'Сначала сохраните настройки.';
-            controls();
+        form.addEventListener(event, function (event) {
+            if (event.target.name) { previewResult = null; markDirty(); }
         });
     });
     async function request(url, body) {
@@ -135,19 +248,21 @@
             busy = false; controls();
         }
     }
-    form.addEventListener('submit', function (event) {
+    form.addEventListener('submit', async function (event) {
         event.preventDefault();
         if (busy) return;
         var body = new FormData(form);
-        perform(async function () {
+        await perform(async function () {
             showSave('Сохраняю настройки…', false);
             var data = await request('/admin/google-week-update', body);
             saved = true; dirty = false;
-            savedValues = values();
+            previewResult = null;
             apply(data);
+            savedValues = values();
             showSave('Настройки сохранены', false);
             form.querySelector('[data-week-sheet-link]').href = body.get('spreadsheet_url');
         }, null, submit[0], 'Сохраняю…');
+        if (!dirty && catalog.refresh_due) refreshCatalog();
     });
     run.addEventListener('click', function () {
         if (busy || dirty || !saved) return;
@@ -182,8 +297,57 @@
             form.querySelector('[data-week-stock-report]').open = true;
         }, stockStatus, stock, 'Выгружаю…');
     });
+    [freezePreview, freeze].forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (busy || dirty || !saved || !selectedSheets.size) return;
+            var preview = button === freezePreview;
+            perform(async function () {
+                if (!preview) previewResult = null;
+                freezeStatus.textContent = preview ? 'Проверяю диапазоны и формулы…' : 'Сохраняю резервную копию и фиксирую значения…';
+                freezeStatus.classList.remove('export-status--error');
+                var data = await request('/admin/google-week-update/freeze' + (preview ? '/preview' : ''), new FormData());
+                apply(data);
+                if (preview) freezeStatus.textContent = 'Диапазоны проверены. Данные в таблице не изменены.';
+                form.querySelector('[data-week-freeze-report]').open = true;
+            }, freezeStatus, button, preview ? 'Проверяю…' : 'Фиксирую…');
+        });
+    });
+    sheetSearch.addEventListener('input', filterSheets);
+    sheetOptions.addEventListener('change', function (event) {
+        var checkbox = event.target;
+        if (!checkbox.dataset.freezeSheet || busy || documentChanged()) return;
+        var id = Number(checkbox.dataset.freezeSheet);
+        if (checkbox.checked) selectedSheets.add(id); else selectedSheets.delete(id);
+        selectionChanged();
+    });
+    function bulkSelection(select, all) {
+        if (busy || documentChanged()) return;
+        sheetOptions.querySelectorAll('label').forEach(function (label) {
+            if (!all && label.hidden) return;
+            var checkbox = label.querySelector('input');
+            // Unavailable sheets can be deselected, but cannot be newly selected.
+            if (select && label.classList.contains('week-search-warning')) return;
+            var id = Number(checkbox.dataset.freezeSheet);
+            checkbox.checked = select;
+            if (select) selectedSheets.add(id); else selectedSheets.delete(id);
+        });
+        selectionChanged();
+    }
+    form.querySelector('[data-freeze-select-all]').addEventListener('click', function () { bulkSelection(true, false); });
+    form.querySelector('[data-freeze-clear-found]').addEventListener('click', function () { bulkSelection(false, false); });
+    form.querySelector('[data-freeze-clear]').addEventListener('click', function () { bulkSelection(false, true); });
+    async function refreshCatalog() {
+        if (busy || !saved || documentChanged()) return;
+        await perform(async function () {
+            catalogStatus.textContent = 'Получаю список листов…';
+            applyCatalog((await request('/admin/google-week-update/sheets/refresh', new FormData())).sheet_catalog);
+        }, catalogStatus, catalogRefresh, 'Обновляю…');
+    }
+    catalogRefresh.addEventListener('click', refreshCatalog);
+    applyCatalog(catalog);
     controls();
     revealSearchError();
+    if (saved && catalog.refresh_due) refreshCatalog();
     // Refresh persisted scheduled results while the card is visible, without touching a dirty form.
     window.setInterval(async function () {
         if (busy || dirty || document.hidden || form.closest('[hidden]')) return;
@@ -193,7 +357,10 @@
             });
             if (response.ok) {
                 var data = await response.json();
-                if (!busy && !dirty) apply(data);
+                if (!busy && !dirty) {
+                    apply(data);
+                    if (catalog.refresh_due) await refreshCatalog();
+                }
             }
         } catch (_error) { /* Keep the last visible result on a temporary connection failure. */ }
     }, 30000);

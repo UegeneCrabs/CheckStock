@@ -70,18 +70,47 @@ def save_settings(
     sales_enabled: bool | None = None,
     stock_enabled: bool | None = None,
     stock_sheet_name: str | None = None,
+    freeze_enabled: bool | None = None,
+    freeze_sheet_ids: tuple[int, ...] | None = None,
 ) -> None:
     normalized = validate(settings)
     if stock_sheet_name is not None:
         stock_sheet_name = validate(replace(normalized, sheet_name=stock_sheet_name)).sheet_name
     with locks.hold(JOB_NAME):
+        freeze_selection = _freeze_selection(normalized, freeze_enabled, freeze_sheet_ids)
         repository.save_settings(
             replace(normalized, updated_at=_now(now).isoformat()),
             search_enabled=search_enabled,
             sales_enabled=sales_enabled,
             stock_enabled=stock_enabled,
             stock_sheet_name=stock_sheet_name,
+            freeze_selection=freeze_selection,
         )
+
+
+def _freeze_selection(
+    settings: WeekUpdateSettings, enabled: bool | None, sheet_ids: tuple[int, ...] | None
+) -> tuple[str, tuple[int, ...], bool, bool]:
+    from app.repositories import google_week_freeze as freeze_repository
+
+    state = freeze_repository.get_state()
+    doc_id = spreadsheet_id(settings.spreadsheet_url)
+    if state.spreadsheet_id != doc_id:
+        # Never carry IDs (which are only unique within a document) into a different spreadsheet.
+        return doc_id, (), False, False
+    selected = state.sheet_ids
+    if sheet_ids is not None:
+        if any(type(value) is not int or value < 0 for value in sheet_ids):
+            raise ValueError("Неправильный идентификатор листа")
+        selected = tuple(sorted(set(sheet_ids)))
+        catalog = freeze_repository.get_catalog(doc_id)
+        known = {item["sheet_id"] for item in catalog["sheets"]} | set(state.sheet_ids)
+        if not set(selected) <= known:
+            raise ValueError("Обновите список листов и выберите листы из него")
+    active = state.enabled if enabled is None else enabled
+    if active and not selected:
+        raise ValueError("Выберите хотя бы один лист для фиксации недель")
+    return doc_id, selected, active, state.selection_initialized or sheet_ids is not None
 
 
 def scheduled_at(settings: WeekUpdateSettings, now: datetime) -> datetime:
@@ -116,7 +145,7 @@ def update_is_due(settings: WeekUpdateSettings, now: datetime) -> bool:
 
 
 def is_due(settings: WeekUpdateSettings | None = None, now: datetime | None = None) -> bool:
-    from app.integrations import google_week_sales, google_week_search, google_week_stock
+    from app.integrations import google_week_freeze, google_week_sales, google_week_search, google_week_stock
 
     settings = settings or repository.get_settings()
     current = _now(now)
@@ -127,7 +156,38 @@ def is_due(settings: WeekUpdateSettings | None = None, now: datetime | None = No
         google_week_stock.is_due(settings, now=current)
         or google_week_sales.is_due(settings, now=current)
         or google_week_search.is_due(settings, now=current)
+        or (freeze_dependencies_ready(settings, current) and google_week_freeze.is_due(settings, now=current))
     )
+
+
+def freeze_dependencies_ready(settings: WeekUpdateSettings, now: datetime) -> bool:
+    """Only freeze after the latest enabled exports have completed for this schedule slot."""
+    from app.integrations import google_week_search, google_week_stock
+
+    if pending_run(settings, now):
+        return False
+    slot = scheduled_at(settings, now)
+    for state, matches in (
+        (repository.get_sales_state(), google_week_search.result_matches_settings),
+        (repository.get_stock_state(), None),
+    ):
+        if not state.enabled:
+            continue
+        success = _timestamp(state.last_success_slot)
+        if (
+            not success
+            or success < slot
+            or state.last_error
+            or not state.result
+            or not state.result.get("complete")
+        ):
+            return False
+        if matches is not None:
+            if not matches(state.result, settings):
+                return False
+        elif not google_week_stock.result_matches_settings(state.result, settings, state):
+            return False
+    return True
 
 
 def next_run_at(settings: WeekUpdateSettings, now: datetime | None = None) -> datetime | None:
@@ -232,7 +292,7 @@ def _run(*, manual: bool, now: datetime | None = None) -> dict:
 
 
 def run_due(now: datetime | None = None) -> dict:
-    from app.integrations import google_week_sales, google_week_search, google_week_stock
+    from app.integrations import google_week_freeze, google_week_sales, google_week_search, google_week_stock
 
     current = _now(now)
     settings = repository.get_settings()
@@ -253,6 +313,13 @@ def run_due(now: datetime | None = None) -> dict:
             continue
         if not result.get("skipped"):
             report = {**({} if report.get("skipped") else report), name: result}
+    if freeze_dependencies_ready(repository.get_settings(), current):
+        try:
+            result = google_week_freeze.run_due(current)
+            if not result.get("skipped"):
+                report = {**({} if report.get("skipped") else report), "freeze": result}
+        except ValueError as error:
+            errors.append(str(error))
     if errors:
         raise ValueError("; ".join(errors))
     return report

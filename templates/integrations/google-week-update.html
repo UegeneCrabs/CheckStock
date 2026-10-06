@@ -1,9 +1,9 @@
-<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261002-design" />
+<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261006-freeze" />
 <form class="panel week-update" data-week-update-form aria-labelledby="week-update-title">
     <div class="week-update-head">
         <div>
             <h2 id="week-update-title">Автообновление недели</h2>
-            <p>Номер недели, заказы и остатки WB в Google Таблице.</p>
+            <p>Номер недели, заказы, остатки WB и фиксация формул в Google Таблице.</p>
         </div>
         <a class="week-sheet-link" href="$spreadsheet_url" target="_blank" rel="noopener noreferrer" data-week-sheet-link>Открыть таблицу <span aria-hidden="true">↗</span></a>
     </div>
@@ -36,7 +36,7 @@
                     <input class="input-control" type="time" name="run_time" value="$run_time" required />
                 </label>
             </div>
-            <p class="week-update-hint">При совместном запуске сначала обновляется номер недели, затем выгружаются данные.</p>
+            <p class="week-update-hint">При совместном запуске сначала обновляется номер недели, затем выгружаются данные. После успешных выгрузок фиксируются прошлые недели.</p>
         </section>
     </div>
     <div class="week-settings-footer">
@@ -87,6 +87,46 @@
             <details class="week-report" data-week-stock-report><summary>Результат выгрузки</summary><div class="week-report-body" data-week-stock-results>$stock_results</div></details>
         </section>
     </div>
+    <section class="week-action week-freeze" aria-labelledby="week-freeze-title">
+        <div class="week-action-title"><span class="week-action-icon" aria-hidden="true">=</span><h3 id="week-freeze-title">Фиксация прошлых недель</h3></div>
+        <p class="week-action-description">Ищет недели только в строке с заголовками ARTICLE и BARCODE. Заменяет формулы рассчитанными значениями в прошлых недельных столбцах ниже этой строки. Шапка и строки выше сохраняются. Неделю берёт из действия «Номер недели»: для W39 2026 фиксирует до W38 включительно.</p>
+        <div class="week-freeze-columns">
+            <div class="week-freeze-selection" data-freeze-catalog data-catalog="$freeze_catalog">
+                <input type="hidden" name="freeze_sheet_ids" value="$freeze_sheet_ids" />
+                <input type="hidden" name="freeze_selection_initialized" value="$freeze_selection_initialized" />
+                <input type="hidden" name="freeze_spreadsheet_id" value="$freeze_spreadsheet_id" />
+                <details class="week-sheet-picker" data-freeze-picker>
+                    <summary>Листы для фиксации <span data-freeze-selected-count>Выбрать листы</span></summary>
+                    <div class="week-sheet-dropdown">
+                        <label class="week-field"><span>Поиск по названию</span><input class="input-control" type="search" data-freeze-search placeholder="Название листа…" autocomplete="off" /></label>
+                        <div class="week-sheet-bulk">
+                            <button class="btn-secondary" type="button" data-freeze-select-all>Выбрать найденные</button>
+                            <button class="btn-secondary" type="button" data-freeze-clear-found>Убрать найденные</button>
+                            <button class="btn-secondary" type="button" data-freeze-clear>Снять всё</button>
+                        </div>
+                        <div class="week-sheet-options" data-freeze-options role="group" aria-label="Выбор листов"></div>
+                        <p class="week-update-hint" data-freeze-empty hidden>Нет листов по этому запросу.</p>
+                    </div>
+                </details>
+                <p class="week-update-hint" data-freeze-selection-hint>Добавление и удаление меняет только список обработки. Сами листы сохраняются.</p>
+                <div class="week-sheet-refresh"><button class="btn-secondary" type="button" data-freeze-refresh>Обновить список</button><span class="week-update-hint" data-freeze-catalog-status role="status" aria-live="polite"></span></div>
+                <p class="week-update-hint">Список обновляется ежедневно. Выбор сохраняется при переименовании листа.</p>
+            </div>
+            <div class="week-freeze-actions">
+                <label class="week-update-switch">
+                    <input type="checkbox" name="freeze_enabled" value="1"$freeze_enabled_checked aria-label="Фиксировать прошлые недели по расписанию" />
+                    <span class="week-switch-track" aria-hidden="true"></span><span>По расписанию</span>
+                </label>
+                <p class="week-next-run" data-week-freeze-schedule>$freeze_schedule_text</p>
+                <div class="week-check-actions">
+                    <button class="btn-secondary" type="button" data-week-freeze-preview$run_disabled>Проверить диапазоны</button>
+                    <button class="btn-secondary" type="button" data-week-freeze$run_disabled>Зафиксировать значения</button>
+                </div>
+                <p class="week-action-status $freeze_status_class" data-week-freeze-status role="status" aria-live="polite">$freeze_status_text</p>
+            </div>
+        </div>
+        <details class="week-report" data-week-freeze-report><summary>Диапазоны и результат фиксации</summary><div class="week-report-body" data-week-freeze-results>$freeze_results</div></details>
+    </section>
     <details class="week-check" data-week-search-panel>
         <summary><span>Проверить недели и ячейки</span><small>Без записи в таблицу</small></summary>
         <div class="week-check-body">
@@ -111,8 +151,10 @@
             <li>Нет данных — в ячейку записывается 0. Несопоставленные товары и незавершённые недели пропускаются.</li>
             <li>Дневные остатки собираются в 23:59 МСК. Для FBO используется снимок за воскресенье.</li>
             <li>Перед выгрузкой сохраняется резервная копия. Подробности доступны в результате действия.</li>
+            <li>Фиксация сначала находит строки, где одновременно есть ARTICLE и BARCODE, затем только в этих строках ищет точное значение недели начиная со столбца I. Слева выбирает непрерывный блок заголовков W(неделя) (год), исключая найденную неделю, и заменяет формулы значениями со следующей строки до конца листа. Шапка не изменяется. Если нужной строки нет или границы неоднозначны, лист пропускается.</li>
+            <li>Перед фиксацией сохраняется резервная копия формул. Оформление и рассчитанные значения остаются на месте.</li>
             <li>Ручной запуск работает и при выключенном расписании. После изменения настроек сначала нажмите «Сохранить настройки».</li>
         </ul>
     </details>
 </form>
-<script src="/static/integrations/google-week-update.js?v=20261002-design"></script>
+<script src="/static/integrations/google-week-update.js?v=20261006-freeze"></script>

@@ -844,6 +844,31 @@ class GoogleWeekStockStateRecord(OrmBase):
     result_json: Mapped[str | None] = mapped_column(Text)
 
 
+class GoogleWeekFreezeStateRecord(OrmBase):
+    __tablename__ = "google_week_freeze_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    spreadsheet_id: Mapped[str] = mapped_column(String, nullable=False, server_default="")
+    sheet_ids: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")
+    selection_initialized: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_success_at: Mapped[str | None] = mapped_column(String)
+    last_success_slot: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
+
+
+class GoogleSheetCatalogRecord(OrmBase):
+    __tablename__ = "google_sheet_catalog"
+
+    spreadsheet_id: Mapped[str] = mapped_column(String, primary_key=True)
+    sheets_json: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")
+    updated_at: Mapped[str | None] = mapped_column(String)
+    last_attempt_at: Mapped[str | None] = mapped_column(String)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
 class StockSheetExportSettingRecord(OrmBase):
     __tablename__ = "stock_sheet_export_settings"
 

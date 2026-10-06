@@ -43,6 +43,7 @@ def save_settings(
     sales_enabled: bool | None = None,
     stock_enabled: bool | None = None,
     stock_sheet_name: str | None = None,
+    freeze_selection: tuple[str, tuple[int, ...], bool, bool] | None = None,
 ) -> None:
     with WRITE_LOCK, get_connection() as conn:
         conn.execute(
@@ -86,6 +87,11 @@ def save_settings(
                 conn.execute(
                     "UPDATE google_week_stock_state SET sheet_name=? WHERE id=1", (stock_sheet_name,)
                 )
+        if freeze_selection is not None:
+            from app.repositories.google_week_freeze import save_selection
+
+            doc_id, sheet_ids, enabled, initialized = freeze_selection
+            save_selection(conn, doc_id, sheet_ids, enabled=enabled, initialized=initialized)
         conn.commit()
 
 
