@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from dataclasses import replace
 from datetime import datetime
 
@@ -16,9 +17,18 @@ from app.core.formatting import format_dt
 from app.core.stores import STORES
 from app.exports import project_sheet as project_sheet_export
 from app.exports import stock_sheet as stock_sheet_export
-from app.integrations import google_week_sales, google_week_search, google_week_stock, google_week_update
+from app.integrations import (
+    google_sheet_catalog,
+    google_week_freeze,
+    google_week_sales,
+    google_week_search,
+    google_week_stock,
+    google_week_update,
+)
+from app.jobs import locks
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import run_tracked
+from app.repositories import google_week_freeze as freeze_repository
 from app.repositories import google_week_update as week_repository
 from app.repositories.project_sheet_export import MarketplaceExportTarget, ProjectSheetExportSettings
 from app.repositories.stock_sheet_export import (
@@ -26,6 +36,7 @@ from app.repositories.stock_sheet_export import (
     MarketplaceSpreadsheet,
     StockSheetExportSettings,
 )
+from app.web.google_week_freeze import render_result as render_week_freeze_result
 from app.web.google_week_sales import render_result as render_week_sales_result
 from app.web.google_week_search import render_result as render_week_search_result
 from app.web.templating import fill_template
@@ -451,6 +462,41 @@ def _week_payload() -> dict:
             stock_status += ". Настройки назначения изменены — выполните новую выгрузку"
     if stock.last_error:
         stock_status += f". Ошибка {format_dt(stock.last_attempt_at)}: {stock.last_error}"
+    freeze = freeze_repository.get_state()
+    catalog = google_sheet_catalog.get_catalog(settings)
+    freeze_result = freeze.result
+    freeze_stale = bool(
+        freeze_result and not google_week_freeze.result_matches_settings(freeze_result, settings, freeze)
+    )
+    freeze_status = "Фиксация ещё не запускалась"
+    if freeze_result:
+        freeze_status = f"Последняя фиксация: {format_dt(freeze_result['processed_at'])}"
+        if not freeze_result.get("complete", True):
+            freeze_status += ". Выполнена с замечаниями"
+    if freeze_stale:
+        freeze_status += ". Таблица, выбранные листы или неделя изменились — проверьте диапазоны заново"
+    if freeze.last_error:
+        freeze_status += f". Ошибка {format_dt(freeze.last_attempt_at)}: {freeze.last_error}"
+    if not freeze.enabled:
+        freeze_schedule = "Фиксация по расписанию выключена"
+    elif not app_settings.background_sync_enabled:
+        freeze_schedule = "Фоновые задачи отключены. Фиксация доступна по кнопке"
+    else:
+        freeze_next = google_week_update.next_run_at(
+            google_week_search.schedule_settings(settings, freeze), now
+        )
+        if google_week_update.pending_run(settings, now) and next_run:
+            freeze_next = max(freeze_next, next_run)
+        freeze_schedule = f"Ближайшая фиксация: {format_dt(freeze_next.isoformat())}"
+        if settings.enabled or sales.enabled or stock.enabled:
+            freeze_schedule += ". После успешного завершения включённых обновления и выгрузок"
+        if google_week_update.pending_run(
+            google_week_search.schedule_settings(settings, freeze), now
+        ) and not google_week_update.freeze_dependencies_ready(settings, now):
+            freeze_schedule = (
+                "Фиксация ожидает успешного обновления недели и полных результатов включённых выгрузок. "
+                "Выгрузку с ошибкой или пропусками запустите повторно после исправления причины"
+            )
     return {
         "ok": True,
         "value": google_week_update.last_completed_week(now),
@@ -479,6 +525,15 @@ def _week_payload() -> dict:
             data_label="истории FBO",
             backup_folder="google-week-stock",
         ),
+        "freeze_enabled": freeze.enabled,
+        "freeze_sheet_ids": list(freeze.sheet_ids),
+        "freeze_schedule_text": freeze_schedule,
+        "freeze_status_text": freeze_status,
+        "freeze_has_error": bool(
+            freeze.last_error or (freeze_result and not freeze_result.get("complete", True))
+        ),
+        "freeze_html": render_week_freeze_result(None if freeze_stale else freeze_result),
+        "sheet_catalog": catalog,
     }
 
 
@@ -514,6 +569,15 @@ def _render_week_update() -> str:
         stock_status_text=html.escape(state["stock_status_text"]),
         stock_status_class="export-status--error" if state["stock_has_error"] else "",
         stock_results=state["stock_html"],
+        freeze_enabled_checked=" checked" if state["freeze_enabled"] else "",
+        freeze_schedule_text=html.escape(state["freeze_schedule_text"]),
+        freeze_status_text=html.escape(state["freeze_status_text"]),
+        freeze_status_class="export-status--error" if state["freeze_has_error"] else "",
+        freeze_results=state["freeze_html"],
+        freeze_sheet_ids=_input(json.dumps(state["sheet_catalog"]["selected_sheet_ids"])),
+        freeze_selection_initialized="1" if state["sheet_catalog"]["selection_initialized"] else "0",
+        freeze_spreadsheet_id=_input(state["sheet_catalog"]["spreadsheet_id"]),
+        freeze_catalog=_input(json.dumps(state["sheet_catalog"], ensure_ascii=False)),
     )
 
 
@@ -540,6 +604,21 @@ async def save_google_week_update(request: Request):
             weekday=weekday,
             run_time=_value(form, "run_time"),
         )
+        freeze_ids = None
+        if _value(form, "freeze_selection_initialized") == "1":
+            try:
+                selected = json.loads(_value(form, "freeze_sheet_ids"))
+            except (ValueError, TypeError) as error:
+                raise ValueError("Некорректный список листов для фиксации") from error
+            if not isinstance(selected, list) or any(
+                type(value) is not int or value < 0 for value in selected
+            ):
+                raise ValueError("Некорректный список листов для фиксации")
+            # A selection belongs to the saved document, never to another pasted URL.
+            if _value(form, "freeze_spreadsheet_id") == google_week_update.spreadsheet_id(
+                settings.spreadsheet_url
+            ):
+                freeze_ids = tuple(dict.fromkeys(selected))
         await run_in_threadpool(
             google_week_update.save_settings,
             settings,
@@ -547,6 +626,8 @@ async def save_google_week_update(request: Request):
             sales_enabled=_value(form, "sales_enabled") == "1",
             stock_enabled=_value(form, "stock_enabled") == "1" if "stock_sheet_name" in form else None,
             stock_sheet_name=_value(form, "stock_sheet_name") if "stock_sheet_name" in form else None,
+            freeze_enabled=_value(form, "freeze_enabled") == "1" if "freeze_sheet_ids" in form else None,
+            freeze_sheet_ids=freeze_ids,
         )
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
@@ -644,6 +725,70 @@ async def export_google_week_stock(request: Request):
         return JSONResponse({**state, "ok": False, "error": str(error)}, status_code=400)
     state = await run_in_threadpool(_week_payload)
     return JSONResponse({**state, "stock_result": result})
+
+
+@router.get("/admin/google-week-update/sheets")
+async def google_week_sheet_catalog(request: Request):
+    _require_superadmin(request)
+    catalog = await run_in_threadpool(
+        lambda: google_sheet_catalog.get_catalog(week_repository.get_settings())
+    )
+    return JSONResponse({"ok": True, "sheet_catalog": catalog}, headers={"Cache-Control": "no-store"})
+
+
+def _refresh_week_sheet_catalog() -> dict:
+    with locks.hold(google_week_update.JOB_NAME):
+        return google_sheet_catalog.get_catalog(week_repository.get_settings(), refresh=True)
+
+
+@router.post("/admin/google-week-update/sheets/refresh")
+async def refresh_google_week_sheet_catalog(request: Request):
+    _require_superadmin(request)
+    try:
+        catalog = await run_in_threadpool(_refresh_week_sheet_catalog)
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Обновление или выгрузка уже выполняется"}, status_code=409
+        )
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "sheet_catalog": catalog}, headers={"Cache-Control": "no-store"})
+
+
+async def _run_week_freeze(request: Request, *, preview: bool):
+    _require_superadmin(request)
+    try:
+        result = await run_in_threadpool(
+            run_tracked,
+            google_week_update.JOB_NAME,
+            "manual",
+            google_week_freeze.preview_now if preview else google_week_freeze.run_now,
+        )
+    except SyncJobBusyError:
+        return JSONResponse(
+            {"ok": False, "error": "Обновление, выгрузка или фиксация уже выполняется"}, status_code=409
+        )
+    except ValueError as error:
+        state = await run_in_threadpool(_week_payload)
+        return JSONResponse({**state, "ok": False, "error": str(error)}, status_code=400)
+    state = await run_in_threadpool(_week_payload)
+    return JSONResponse(
+        {
+            **state,
+            "freeze_result": result,
+            "freeze_html": render_week_freeze_result(result),
+        }
+    )
+
+
+@router.post("/admin/google-week-update/freeze/preview")
+async def preview_google_week_freeze(request: Request):
+    return await _run_week_freeze(request, preview=True)
+
+
+@router.post("/admin/google-week-update/freeze")
+async def freeze_google_week_formulas(request: Request):
+    return await _run_week_freeze(request, preview=False)
 
 
 @router.post("/admin/google-export/settings")

@@ -90,6 +90,25 @@
 .week-search-table-wrap th { background: var(--week-tint); }
 .week-search-table-wrap tr:last-child td { border-bottom: 0; }
 .week-search-warning { color: var(--red, #b32631); }
+.week-freeze { margin-top: 16px; }
+.week-freeze .week-action-description { min-height: 0; max-width: 1000px; }
+.week-freeze-columns { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(240px, 1fr); gap: 24px; }
+.week-freeze-selection, .week-freeze-actions { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.week-sheet-picker { border: 1px solid var(--border); border-radius: 9px; background: var(--paper); }
+.week-sheet-picker > summary { padding: 11px 12px; }
+.week-sheet-picker > summary > span { margin-left: 10px; color: var(--text-muted); font-weight: 400; }
+.week-sheet-dropdown { display: grid; gap: 12px; padding: 0 12px 12px; }
+.week-sheet-bulk, .week-sheet-refresh { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.week-update .week-sheet-bulk button { min-height: 30px; padding: 4px 8px; font-size: 11px; }
+.week-sheet-options { display: grid; align-content: start; gap: 2px; max-height: 265px; overflow-y: auto; overscroll-behavior: contain; }
+.week-sheet-options label { display: flex; align-items: flex-start; gap: 9px; padding: 7px 6px; font-size: 12px; line-height: 1.6; border-radius: 5px; cursor: pointer; overflow-wrap: anywhere; }
+.week-sheet-options label:hover { background: var(--week-tint); }
+.week-sheet-options input { flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--blue); }
+.week-sheet-options input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.week-freeze-actions .week-next-run { min-height: 0; }
+.week-freeze-results { display: grid; gap: 10px; list-style: none; padding-left: 0 !important; }
+.week-freeze-results > li { display: grid; gap: 3px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.week-freeze-results > li:last-child { border-bottom: 0; }
 @media (max-width: 1100px) {
     .week-settings { grid-template-columns: minmax(0, 1.3fr) minmax(240px, 1fr); gap: 18px; }
     .week-action { padding: 14px; }
@@ -100,6 +119,7 @@
     .week-settings { grid-template-columns: 1fr; }
     .week-timing { gap: 12px; }
     .week-action-grid { grid-template-columns: 1fr; }
+    .week-freeze-columns { grid-template-columns: 1fr; gap: 18px; }
     .week-action-description, .week-action-note, .week-value, .week-action .week-next-run { min-height: 0; }
 }
 @media (max-width: 600px) {
