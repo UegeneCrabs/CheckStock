@@ -151,6 +151,13 @@ def _retry_after_seconds(http_error: urllib.error.HTTPError, attempt: int) -> fl
 
 def _rate_limit_for_url(url: str) -> tuple[str, float] | None:
     normalized = url.casefold()
+    if "seller-analytics-api.wildberries.ru/api/v1/warehouse_remains" in normalized:
+        path = urllib.parse.urlsplit(normalized).path
+        if path.endswith("/status"):
+            return "warehouse_remains_status", 5.1
+        if path.endswith("/download"):
+            return "warehouse_remains_download", 60.1
+        return "warehouse_remains_create", 60.1
     for scope, marker, interval_seconds in _WB_RATE_LIMIT_RULES:
         if marker in normalized:
             return scope, interval_seconds
@@ -575,6 +582,32 @@ def get_fbo_stock_by_warehouse(token: str) -> dict[tuple[str, str], int]:
         if len(rows) < FBO_STOCK_PAGE_LIMIT:
             return by_warehouse
         offset += len(rows)
+
+
+def get_warehouse_remains(token: str, *, timeout_seconds: float = 300) -> list[dict]:
+    """Build a fresh report grouped by nmId, including customer transit counters."""
+    base = f"{ANALYTICS_BASE}/api/v1/warehouse_remains"
+    created = _request("GET", base, token, params={"locale": "ru", "groupByNm": "true"})
+    task_id = _expect(created, "data", "taskId", context="создание отчёта остатков WB")
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise WBApiError(None, detail="WB не вернул идентификатор отчёта остатков")
+    task_url = f"{base}/tasks/{urllib.parse.quote(task_id, safe='')}"
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        result = _request("GET", f"{task_url}/status", token)
+        status = _expect(result, "data", "status", context="статус отчёта остатков WB")
+        if status == "done":
+            rows = _request("GET", f"{task_url}/download", token)
+            # The documented 204 response has no body when there are no goods.
+            if rows is None:
+                return []
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise WBApiError(None, detail="WB вернул некорректный отчёт остатков")
+            return rows
+        if status not in {"new", "processing"}:
+            raise WBApiError(None, detail="WB не смог сформировать отчёт остатков")
+        time.sleep(5.1)
+    raise WBApiError(None, detail="WB не подготовил отчёт остатков за отведённое время")
 
 
 def get_cards_list(token: str, page_limit: int = CARDS_PAGE_LIMIT) -> list[dict]:

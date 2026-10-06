@@ -21,6 +21,7 @@ def init_db() -> None:
     OrmBase.metadata.create_all(database.engine)
     _migrate_project_sheet_export_urls(database)
     _migrate_project_sheet_export_orders_column(database)
+    _migrate_project_sheet_export_fbo_columns(database)
     _migrate_stock_operation_item_purchase_price(database)
     _migrate_stock_operation_transit_batch(database)
     _migrate_manual_supply_note(database)
@@ -89,6 +90,21 @@ def _migrate_project_sheet_export_orders_column(database: Database) -> None:
         connection.execute(
             "ALTER TABLE project_sheet_export_targets ADD COLUMN orders_quantity_column TEXT NOT NULL DEFAULT 'C'"
         )
+        connection.commit()
+
+
+def _migrate_project_sheet_export_fbo_columns(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        columns = connection.column_names("project_sheet_export_targets")
+        for name, default in (
+            ("fbo_sheet_name", ""),
+            ("fbo_to_customer_column", "J"),
+            ("fbo_from_customer_column", "L"),
+        ):
+            if name not in columns:
+                connection.execute(
+                    f"ALTER TABLE project_sheet_export_targets ADD COLUMN {name} TEXT NOT NULL DEFAULT '{default}'"
+                )
         connection.commit()
 
 

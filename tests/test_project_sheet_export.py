@@ -940,6 +940,164 @@ class ProjectSheetExportTests(unittest.TestCase):
         self.assertIsNone(saved.last_success_at)
         self.assert_no_google_writes()
 
+    def configure_fbo(self, **changes):
+        settings = self.configure(stocks="", orders="")
+        settings = self.destination(settings, "WB", fbo_sheet_name="Orders", **changes)
+        self.export.save_settings(settings)
+        return settings
+
+    def fbo_totals(self, to=3, back=1):
+        return {
+            store: self.export.fbo_transit.TransitSnapshot(
+                {"sku": to if store == "rimili" else 8}, {"sku": back if store == "rimili" else 2}
+            )
+            for store in self.stores
+        }
+
+    def test_fbo_persists_separate_settings_and_allows_shared_fbs_sheet(self):
+        settings = self.configure_fbo(
+            orders_sheet_name="Orders",
+            orders_quantity_column="K",
+            fbo_to_customer_column=" j ",
+            fbo_from_customer_column=" l ",
+        )
+        saved = self.export.get_settings().target("WB")
+        self.assertEqual(
+            (saved.fbo_sheet_name, saved.fbo_to_customer_column, saved.fbo_from_customer_column),
+            ("Orders", "J", "L"),
+        )
+        for changes in (
+            {"fbo_from_customer_column": "j"},
+            {"fbo_to_customer_column": "K"},
+            {"stock_sheet_name": "Orders"},
+            {"fbo_from_customer_column": "L5"},
+            {"fbo_to_customer_column": "К"},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.export.save_settings(self.destination(settings, "WB", **changes))
+
+    def test_fbo_matches_projects_clears_both_columns_and_preserves_fbs(self):
+        self.configure_fbo()
+        loader = self.mock(self.export.fbo_transit, "load", return_value=self.fbo_totals())
+        self.sheet_values["'Orders'"] = [
+            ["Date", "keep me"],
+            ["ARTICLE", "Проект", "Name"],
+            ["sku", "RIMILI"],
+            ["sku", "TRIS"],
+            ["sku", "UNKNOWN"],
+            ["no-transit", "RIMILI"],
+            ["sku", "Хочушар"],
+        ]
+        self.sheet_values["'Orders'!L3:L"] = [[5], [], [], [], [], [], ['=IFERROR(1/0, "")']]
+        report = self.export.run_export(self.now, marketplace="WB", export_kind="fbo_transit")
+        loader.assert_called_once_with("WB")
+        self.orders.assert_not_called()
+        self.inbound.assert_not_called()
+        self.google.spreadsheets().values().batchClear.assert_called_once_with(
+            spreadsheetId="test-doc", body={"ranges": ["'Orders'!J3:J7", "'Orders'!L3:L9"]}
+        )
+        self.assertEqual(
+            self.updates(),
+            [
+                {"range": "'Orders'!J3:J4", "values": [[3], [8]]},
+                {"range": "'Orders'!J6:J7", "values": [[0], [3]]},
+                {"range": "'Orders'!L3:L4", "values": [[1], [2]]},
+                {"range": "'Orders'!L6:L7", "values": [[0], [1]]},
+            ],
+        )
+        self.assertEqual(report["marketplaces"][0]["fbo_transit"]["updated_cells"], 8)
+        self.assertTrue(self.export.get_settings().last_success_at)
+        self.timestamp.assert_not_called()
+        self.google.spreadsheets().batchUpdate.assert_not_called()
+
+    def test_fbo_failure_or_bad_second_column_prevents_all_writes(self):
+        settings = self.configure_fbo(stock_sheet_name="Stocks", fbo_from_customer_column="B")
+        self.sheet_values["'Orders'"] = [["ARTICLE", "Проект"], ["sku", "RIMILI"]]
+        loader = self.mock(self.export.fbo_transit, "load", return_value=self.fbo_totals())
+        with self.assertRaisesRegex(self.export.StockSheetExportError, "данные товара"):
+            self.export.run_export(self.now)
+        self.assert_no_google_writes()
+        self.export.save_settings(self.destination(settings, "WB", fbo_from_customer_column="L"))
+        self.sheets[1]["merges"] = [
+            {"startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 11, "endColumnIndex": 13}
+        ]
+        with self.assertRaisesRegex(self.export.StockSheetExportError, "объединена"):
+            self.export.run_export(self.now)
+        self.assert_no_google_writes()
+        loader.side_effect = self.export.StockSheetExportError("TRIS / WB / FBO: missing page")
+        with self.assertRaisesRegex(self.export.StockSheetExportError, "TRIS"):
+            self.export.run_export(self.now)
+        self.assert_no_google_writes()
+
+    def test_shared_fbs_fbo_sheet_grows_once_to_largest_column(self):
+        self.configure_fbo(orders_sheet_name="Orders", orders_quantity_column="AA")
+        self.sheets[1]["properties"]["gridProperties"]["columnCount"] = 2
+        self.sheet_values["'Orders'"] = [["ARTICLE", "Проект"], ["sku", "RIMILI"]]
+        self.mock(self.export.fbo_transit, "load", return_value=self.fbo_totals())
+        self.export.run_export(self.now)
+        batches = self.google.spreadsheets().batchUpdate.call_args_list
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(
+            batches[0].kwargs["body"]["requests"][0]["updateSheetProperties"]["properties"],
+            {"sheetId": 2, "gridProperties": {"columnCount": 27}},
+        )
+        self.assertEqual(
+            [row["range"] for row in self.updates()], ["'Orders'!AA2:AA2", "'Orders'!J2:J2", "'Orders'!L2:L2"]
+        )
+
+    def test_fbo_scheduled_runs_fetch_new_counts_and_clear_previous_counts(self):
+        settings = self.configure_fbo()
+        self.export.save_settings(replace(settings, enabled=True, run_time="09:00"))
+        self.sheet_values["'Orders'"] = [["ARTICLE", "Проект"], ["sku", "RIMILI"]]
+        loader = self.mock(
+            self.export.fbo_transit, "load", side_effect=[self.fbo_totals(), self.fbo_totals(0, 0)]
+        )
+        self.export.run_due(self.now)
+        self.export.run_due(self.now + timedelta(days=1))
+        self.assertEqual(loader.call_count, 2)
+        self.assertEqual(
+            self.updates()[-2:],
+            [
+                {"range": "'Orders'!J2:J2", "values": [[0]]},
+                {"range": "'Orders'!L2:L2", "values": [[0]]},
+            ],
+        )
+        self.orders.assert_not_called()
+
+    def test_blank_fbo_sheet_never_calls_api(self):
+        self.configure(stocks="", orders="")
+        loader = self.mock(self.export.fbo_transit, "load", side_effect=AssertionError("disabled"))
+        self.export.run_export(self.now)
+        loader.assert_not_called()
+        self.assert_no_google_writes()
+
+    def test_fbo_migration_keeps_existing_fbs_settings_and_runs_idempotently(self):
+        previous = self.database_module.Database(self.database.path.parent / "previous-fbo.sqlite3")
+        self.addCleanup(previous.dispose)
+        with previous.connect() as conn:
+            conn.execute(
+                "CREATE TABLE project_sheet_export_targets (marketplace TEXT PRIMARY KEY, "
+                "orders_sheet_name TEXT, orders_quantity_column TEXT)"
+            )
+            conn.execute("INSERT INTO project_sheet_export_targets VALUES ('WB', 'Orders', 'K')")
+            conn.commit()
+        self.schema._migrate_project_sheet_export_fbo_columns(previous)
+        with previous.connect() as conn:
+            row = conn.execute("SELECT * FROM project_sheet_export_targets").fetchone()
+            self.assertEqual(
+                (row["fbo_sheet_name"], row["fbo_to_customer_column"], row["fbo_from_customer_column"]),
+                ("", "J", "L"),
+            )
+            self.assertEqual(row["orders_quantity_column"], "K")
+            conn.execute(
+                "UPDATE project_sheet_export_targets SET fbo_sheet_name='Custom', fbo_from_customer_column='Z'"
+            )
+            conn.commit()
+        self.schema._migrate_project_sheet_export_fbo_columns(previous)
+        with previous.connect() as conn:
+            row = conn.execute("SELECT * FROM project_sheet_export_targets").fetchone()
+            self.assertEqual((row["fbo_sheet_name"], row["fbo_from_customer_column"]), ("Custom", "Z"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import PROJECT_STORE_ALIASES, STORES
+from app.exports import fbo_transit
 from app.exports import stock_sheet as legacy
 from app.jobs import locks as sync_locks
 from app.repositories import project_sheet_export as repository
@@ -15,7 +16,7 @@ from app.repositories import project_sheet_export as repository
 logger = logging.getLogger(__name__)
 
 MARKETPLACES = repository.MARKETPLACES
-EXPORT_KINDS = legacy.EXPORT_KINDS
+EXPORT_KINDS = (*legacy.EXPORT_KINDS, "fbo_transit")
 PROJECT_HEADER = "ПРОЕКТ"
 EXPORT_HEADERS = ("КЛЮЧ", PROJECT_HEADER, *legacy.EXPORT_HEADERS)
 SPREADSHEET_PATH_RE = re.compile(r"^/spreadsheets/d/([a-zA-Z0-9_-]+)(?:/.*)?$")
@@ -77,27 +78,45 @@ def validate_settings(settings: ProjectSheetExportSettings) -> None:
     actual = [target.marketplace for target in settings.targets]
     if set(actual) != set(MARKETPLACES) or len(actual) != len(MARKETPLACES):
         raise ValueError("Для каждого маркетплейса должна быть одна настройка выгрузки")
-    destinations: dict[tuple[str, str], str] = {}
+    destinations: dict[tuple[str, str], list[tuple[str, str, set[int] | None]]] = {}
     for target in settings.targets:
-        _order_column_index(target.orders_quantity_column)
+        order_column = _order_column_index(target.orders_quantity_column)
+        to_column = _order_column_index(target.fbo_to_customer_column)
+        from_column = _order_column_index(target.fbo_from_customer_column)
+        if to_column == from_column:
+            raise ValueError(f"{target.marketplace}: для FBO к клиенту и от клиента нужны разные столбцы")
         spreadsheet_url = target.spreadsheet_url.strip()
-        has_sheets = bool(target.stock_sheet_name.strip() or target.orders_sheet_name.strip())
+        has_sheets = any(
+            name.strip()
+            for name in (target.stock_sheet_name, target.orders_sheet_name, target.fbo_sheet_name)
+        )
         if has_sheets and not spreadsheet_url:
             raise ValueError(f"{target.marketplace}: укажите ссылку на Google Таблицу")
         spreadsheet_id = _spreadsheet_id(spreadsheet_url) if spreadsheet_url else ""
-        for label, raw_name in (("стоки", target.stock_sheet_name), ("заказы", target.orders_sheet_name)):
+        for label, raw_name, columns in (
+            ("стоки", target.stock_sheet_name, None),
+            ("FBS-заказы", target.orders_sheet_name, {order_column}),
+            ("FBO в пути", target.fbo_sheet_name, {to_column, from_column}),
+        ):
             name = raw_name.strip()
             if not name:
                 continue
             if len(name) > 100 or any(char in name for char in "[]:*?/\\"):
                 raise ValueError(f"Некорректное название листа: {name}")
             key = (spreadsheet_id, name.casefold())
-            if key in destinations:
-                raise ValueError(
-                    f"Лист «{name}» в одной таблице указан несколько раз ({destinations[key]} и "
-                    f"{target.marketplace}: {label}). Для каждой выгрузки нужен отдельный лист."
-                )
-            destinations[key] = f"{target.marketplace}: {label}"
+            for previous_marketplace, previous_label, previous_columns in destinations.get(key, []):
+                if (
+                    previous_marketplace != target.marketplace
+                    or columns is None
+                    or previous_columns is None
+                    or columns & previous_columns
+                ):
+                    raise ValueError(
+                        f"Лист «{name}»: назначения {previous_marketplace}: {previous_label} и "
+                        f"{target.marketplace}: {label} пересекаются. Для остатков нужен отдельный лист; "
+                        "FBS и FBO одной площадки могут использовать общий лист с разными столбцами."
+                    )
+            destinations.setdefault(key, []).append((target.marketplace, label, columns))
 
 
 def save_settings(settings: ProjectSheetExportSettings) -> None:
@@ -110,6 +129,9 @@ def save_settings(settings: ProjectSheetExportSettings) -> None:
                 stock_sheet_name=target.stock_sheet_name.strip(),
                 orders_sheet_name=target.orders_sheet_name.strip(),
                 orders_quantity_column=target.orders_quantity_column.strip().upper(),
+                fbo_sheet_name=target.fbo_sheet_name.strip(),
+                fbo_to_customer_column=target.fbo_to_customer_column.strip().upper(),
+                fbo_from_customer_column=target.fbo_from_customer_column.strip().upper(),
             )
             for target in settings.targets
         ),
@@ -199,7 +221,7 @@ def _write_marketplace(
 def _order_column_index(value: str) -> int:
     value = value.strip().upper()
     if not re.fullmatch(r"[A-Z]{1,3}", value):
-        raise ValueError("Укажите столбец количества FBS латинскими буквами, например C, K или AA")
+        raise ValueError("Укажите столбец количества латинскими буквами, например C, K или AA")
     column = 0
     for letter in value:
         column = column * 26 + ord(letter) - ord("A") + 1
@@ -225,8 +247,29 @@ def _plan_fbs_orders(
     totals: dict[str, dict[str, int]],
     sheet: dict,
 ) -> OrderSheetPlan:
-    sheet_name = target.orders_sheet_name.strip()
-    column_index = _order_column_index(target.orders_quantity_column)
+    return _plan_quantities(
+        service,
+        spreadsheet_id,
+        target.orders_sheet_name,
+        target.orders_quantity_column,
+        totals,
+        sheet,
+        label="FBS-заказов",
+    )
+
+
+def _plan_quantities(
+    service,
+    spreadsheet_id: str,
+    sheet_name: str,
+    column: str,
+    totals: dict[str, dict[str, int]],
+    sheet: dict,
+    *,
+    label: str,
+) -> OrderSheetPlan:
+    sheet_name = sheet_name.strip()
+    column_index = _order_column_index(column)
     column = legacy._column_letter(column_index)
     quoted_sheet = legacy._quote_sheet(sheet_name)
     rows = (
@@ -339,9 +382,9 @@ def _plan_fbs_orders(
     if skipped_rows:
         warnings.append(f"{sheet_name}: пропущено строк без известного проекта или артикула: {skipped_rows}")
     if missing:
-        warnings.append(f"{sheet_name}: товаров с заказами, не найденных в листе: {missing}")
+        warnings.append(f"{sheet_name}: товаров с количеством {label}, не найденных в листе: {missing}")
     if not row_count:
-        warnings.append(f"{sheet_name}: не найдено строк товаров для обновления FBS-заказов")
+        warnings.append(f"{sheet_name}: не найдено строк товаров для обновления {label}")
     prepare_requests = []
     if data and grid_columns <= column_index:
         prepare_requests.append(
@@ -376,19 +419,49 @@ def _write_fbs_orders(service, spreadsheet_id: str, marketplace: str, plan: Orde
         "store_slugs": plan.store_slugs,
         "warnings": plan.warnings,
     }
-    if not plan.updates and not plan.clear_range:
-        return {**report, "skipped": True}
-    if plan.prepare_requests:
+    return _write_quantity_plans(service, spreadsheet_id, [plan], report)
+
+
+def _prepare_quantity_plans(service, spreadsheet_id: str, plans: list[OrderSheetPlan]) -> None:
+    # Plans may share a sheet. Grow once to the largest requested column, never shrink it.
+    growth = {}
+    for plan in plans:
+        for request in plan.prepare_requests:
+            properties = request["updateSheetProperties"]["properties"]
+            sheet_id = properties["sheetId"]
+            growth[sheet_id] = max(growth.get(sheet_id, 0), properties["gridProperties"]["columnCount"])
+    if growth:
         service.spreadsheets().batchUpdate(
-            spreadsheetId=spreadsheet_id, body={"requests": plan.prepare_requests}
+            spreadsheetId=spreadsheet_id,
+            body={
+                "requests": [
+                    {
+                        "updateSheetProperties": {
+                            "properties": {"sheetId": sheet_id, "gridProperties": {"columnCount": count}},
+                            "fields": "gridProperties.columnCount",
+                        }
+                    }
+                    for sheet_id, count in growth.items()
+                ]
+            },
         ).execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
-    if plan.clear_range:
+    for plan in plans:
+        plan.prepare_requests.clear()
+
+
+def _write_quantity_plans(service, spreadsheet_id: str, plans: list[OrderSheetPlan], report: dict) -> dict:
+    updates = [update for plan in plans for update in plan.updates]
+    ranges = [plan.clear_range for plan in plans if plan.clear_range]
+    if not updates and not ranges:
+        return {**report, "skipped": True}
+    _prepare_quantity_plans(service, spreadsheet_id, plans)
+    if ranges:
         service.spreadsheets().values().batchClear(
-            spreadsheetId=spreadsheet_id, body={"ranges": [plan.clear_range]}
+            spreadsheetId=spreadsheet_id, body={"ranges": ranges}
         ).execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
-    if plan.updates:
+    if updates:
         service.spreadsheets().values().batchUpdate(
-            spreadsheetId=spreadsheet_id, body={"valueInputOption": "RAW", "data": plan.updates}
+            spreadsheetId=spreadsheet_id, body={"valueInputOption": "RAW", "data": updates}
         ).execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
     report["exported_at"] = legacy._now_iso()
     return report
@@ -414,13 +487,15 @@ def export_all(
         target = settings.target(selected)
         include_stocks = export_kind in (None, "stocks") and bool(target.stock_sheet_name.strip())
         include_orders = export_kind in (None, "fbs_orders") and bool(target.orders_sheet_name.strip())
-        if not include_stocks and not include_orders:
+        include_fbo = export_kind in (None, "fbo_transit") and bool(target.fbo_sheet_name.strip())
+        if not include_stocks and not include_orders and not include_fbo:
             reports.append({"marketplace": selected, "skipped": True, "updated_cells": 0})
             continue
         spreadsheet_id = _spreadsheet_id(target.spreadsheet_url)
         spreadsheet_ids[selected] = spreadsheet_id
-        # Validate all seven order sources before touching either destination for this marketplace.
+        # Load every account before touching any destination for this marketplace.
         totals = _order_totals(selected, now=now) if include_orders else None
+        fbo_totals = fbo_transit.load(selected) if include_fbo else None
         snapshots = _stock_snapshot(selected, now=now) if include_stocks else None
         if service is None:
             service = legacy._google_service()
@@ -429,6 +504,7 @@ def export_all(
             for included, name in (
                 (include_stocks, target.stock_sheet_name),
                 (include_orders, target.orders_sheet_name),
+                (include_fbo, target.fbo_sheet_name),
             )
             if included
         ]
@@ -441,6 +517,26 @@ def export_all(
             orders_plan = _plan_fbs_orders(
                 service, spreadsheet_id, target, totals, sheets[target.orders_sheet_name.strip()]
             )
+        fbo_plans = []
+        if fbo_totals is not None:
+            for attribute, column, label in (
+                ("to_customer", target.fbo_to_customer_column, "FBO в пути к клиенту"),
+                ("from_customer", target.fbo_from_customer_column, "FBO в пути от клиента"),
+            ):
+                fbo_plans.append(
+                    _plan_quantities(
+                        service,
+                        spreadsheet_id,
+                        target.fbo_sheet_name,
+                        column,
+                        {store: getattr(value, attribute) for store, value in fbo_totals.items()},
+                        sheets[target.fbo_sheet_name.strip()],
+                        label=label,
+                    )
+                )
+        # All destinations are checked before any write, including both FBO columns.
+        quantity_plans = ([orders_plan] if orders_plan else []) + fbo_plans
+        _prepare_quantity_plans(service, spreadsheet_id, quantity_plans)
         if snapshots is not None:
             report = _write_marketplace(service, spreadsheet_id, settings, selected, snapshots)
         else:
@@ -450,8 +546,30 @@ def export_all(
         else:
             orders_report = {"marketplace": selected, "skipped": True, "rows": 0, "updated_cells": 0}
         report["fbs_orders"] = orders_report
-        report["warnings"] = [*report.get("warnings", []), *orders_report.get("warnings", [])]
-        report["updated_cells"] += orders_report["updated_cells"]
+        fbo_report = {"marketplace": selected, "skipped": True, "updated_cells": 0}
+        if fbo_plans:
+            fbo_report = _write_quantity_plans(
+                service,
+                spreadsheet_id,
+                fbo_plans,
+                {
+                    "marketplace": selected,
+                    "sheet": target.fbo_sheet_name,
+                    "to_customer_column": fbo_plans[0].column,
+                    "from_customer_column": fbo_plans[1].column,
+                    "rows": fbo_plans[0].row_count,
+                    "updated_cells": sum(plan.row_count for plan in fbo_plans),
+                    "store_slugs": tuple(fbo_totals),
+                    "warnings": list(dict.fromkeys(w for plan in fbo_plans for w in plan.warnings)),
+                },
+            )
+        report["fbo_transit"] = fbo_report
+        report["warnings"] = [
+            *report.get("warnings", []),
+            *orders_report.get("warnings", []),
+            *fbo_report.get("warnings", []),
+        ]
+        report["updated_cells"] += orders_report["updated_cells"] + fbo_report["updated_cells"]
         reports.append(report)
     return {"spreadsheet_ids": spreadsheet_ids, "store_slugs": tuple(STORES), "marketplaces": reports}
 
@@ -480,7 +598,7 @@ def run_export(
     exported_times = [
         str(part["exported_at"])
         for item in report["marketplaces"]
-        for part in (item, item.get("fbs_orders") or {})
+        for part in (item, item.get("fbs_orders") or {}, item.get("fbo_transit") or {})
         if part.get("exported_at") and not part.get("skipped")
     ]
     if exported_times:
