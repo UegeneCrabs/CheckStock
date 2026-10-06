@@ -933,6 +933,13 @@ class ProjectSheetExportTargetRecord(OrmBase):
     orders_quantity_column: Mapped[str] = mapped_column(
         String, nullable=False, default="C", server_default="C"
     )
+    fbo_sheet_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    fbo_to_customer_column: Mapped[str] = mapped_column(
+        String, nullable=False, default="J", server_default="J"
+    )
+    fbo_from_customer_column: Mapped[str] = mapped_column(
+        String, nullable=False, default="L", server_default="L"
+    )
 
 
 class UnitEconomics1CCabinetSettingRecord(OrmBase):

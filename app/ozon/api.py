@@ -59,9 +59,9 @@ THROTTLE_RELAX_AFTER = 5
 THROTTLE_RELAX_FACTOR = 0.8
 
 _throttle_lock = threading.Lock()
-_last_call_at: dict[str, float] = {}
-_interval: dict[str, float] = {}
-_calm_streak: dict[str, int] = {}
+_last_call_at: dict[tuple[str, str], float] = {}
+_interval: dict[tuple[str, str], float] = {}
+_calm_streak: dict[tuple[str, str], int] = {}
 
 
 def _throttle_key(path: str) -> str:
@@ -70,7 +70,7 @@ def _throttle_key(path: str) -> str:
     return "supply-orders" if "/supply-order/" in path else path
 
 
-def _throttle(path: str) -> None:
+def _throttle(path: str, client_id: str = "") -> None:
     key = _throttle_key(path)
     if key not in THROTTLED_PATHS:
         return
@@ -81,27 +81,30 @@ def _throttle(path: str) -> None:
     with _throttle_lock:
         now = time.monotonic()
         wait = max(
-            _interval.setdefault(name, THROTTLED_PATHS[name]) - (now - _last_call_at.get(name, 0.0))
+            _interval.setdefault((client_id, name), THROTTLED_PATHS[name])
+            - (now - _last_call_at.get((client_id, name), 0.0))
             for name in paths
         )
-        if wait > 0:
-            time.sleep(wait)
-            now = time.monotonic()
+        # Reserve this account's next slot under the lock, then wait outside it.
+        # A slow/backed-off account must not serialize the other six accounts.
         for name in paths:
-            _last_call_at[name] = now
+            _last_call_at[(client_id, name)] = now + max(wait, 0)
+    if wait > 0:
+        time.sleep(wait)
 
 
-def _note_rate_limit(path: str) -> float:
+def _note_rate_limit(path: str, client_id: str = "") -> float:
 
     path = _throttle_key(path)
     if path not in THROTTLED_PATHS:
         return 0.0
 
     with _throttle_lock:
-        current = _interval.get(path, THROTTLED_PATHS[path])
+        key = (client_id, path)
+        current = _interval.get(key, THROTTLED_PATHS[path])
         updated = min(current * THROTTLE_GROWTH, THROTTLE_MAX_INTERVAL)
-        _interval[path] = updated
-        _calm_streak[path] = 0
+        _interval[key] = updated
+        _calm_streak[key] = 0
 
     if updated > current:
         logger.info(
@@ -113,7 +116,7 @@ def _note_rate_limit(path: str) -> float:
     return updated
 
 
-def _note_success(path: str) -> None:
+def _note_success(path: str, client_id: str = "") -> None:
 
     path = _throttle_key(path)
     if path not in THROTTLED_PATHS:
@@ -121,17 +124,18 @@ def _note_success(path: str) -> None:
 
     with _throttle_lock:
         base = THROTTLED_PATHS[path]
-        current = _interval.get(path, base)
+        key = (client_id, path)
+        current = _interval.get(key, base)
         if current <= base:
             return
 
-        streak = _calm_streak.get(path, 0) + 1
+        streak = _calm_streak.get(key, 0) + 1
         if streak < THROTTLE_RELAX_AFTER:
-            _calm_streak[path] = streak
+            _calm_streak[key] = streak
             return
 
-        _calm_streak[path] = 0
-        _interval[path] = max(base, current * THROTTLE_RELAX_FACTOR)
+        _calm_streak[key] = 0
+        _interval[key] = max(base, current * THROTTLE_RELAX_FACTOR)
 
 
 def _retry_after(headers) -> float | None:
@@ -227,7 +231,7 @@ def _request(path: str, client_id: str, api_key: str, payload: dict) -> dict:
     max_attempts = PATH_MAX_ATTEMPTS.get(path, MAX_ATTEMPTS)
 
     for attempt in range(1, max_attempts + 1):
-        _throttle(path)
+        _throttle(path, client_id)
         request = urllib.request.Request(
             url,
             data=body,
@@ -242,7 +246,7 @@ def _request(path: str, client_id: str, api_key: str, payload: dict) -> dict:
         try:
             with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 raw = response.read().decode("utf-8")
-            _note_success(path)
+            _note_success(path, client_id)
             try:
                 return json.loads(raw)
             except ValueError as e:
@@ -254,7 +258,7 @@ def _request(path: str, client_id: str, api_key: str, payload: dict) -> dict:
 
             if e.code == 429 or 500 <= e.code < 600:
                 if e.code == 429:
-                    _note_rate_limit(path)
+                    _note_rate_limit(path, client_id)
 
                 if attempt < max_attempts:
                     pause = _retry_after(getattr(e, "headers", None)) or _backoff_pause(attempt)
@@ -423,6 +427,8 @@ def get_product_stocks(client_id: str, api_key: str) -> list[dict]:
 
     items: list[dict] = []
     cursor = ""
+    seen_cursors: set[str] = set()
+    seen_products: set[str] = set()
 
     while True:
         data = _request(
@@ -432,14 +438,25 @@ def get_product_stocks(client_id: str, api_key: str) -> list[dict]:
             {"cursor": cursor, "limit": PAGE_SIZE, "filter": {"visibility": "ALL"}},
         )
         page = data.get("items")
-        if page is None:
+        if not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
             raise OzonApiError(None, "неожиданный ответ на остатки товаров (нет items)")
-
+        for row in page:
+            identity = str(row.get("product_id") or "")
+            if not identity or identity in seen_products:
+                raise OzonApiError(None, "Ozon вернул повторный товар или товар без product_id")
+            seen_products.add(identity)
         items.extend(page)
         cursor = data.get("cursor") or ""
-
-        if not cursor or len(page) < PAGE_SIZE:
+        total = data.get("total_items", data.get("total"))
+        if total is not None and len(items) >= int(total):
             return items
+        if not cursor:
+            if total is not None and len(items) < int(total):
+                raise OzonApiError(None, "Ozon вернул неполный список товаров")
+            return items
+        if not isinstance(cursor, str) or cursor in seen_cursors or not page or len(items) > 500_000:
+            raise OzonApiError(None, "Ozon вернул некорректную пагинацию остатков товаров")
+        seen_cursors.add(cursor)
 
 
 INFO_CHUNK = 1000

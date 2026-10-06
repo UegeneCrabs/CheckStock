@@ -157,7 +157,11 @@ class ProjectSheetExportRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_full_and_scoped_runs_use_the_same_global_job(self):
-        for data in ({}, {"marketplace": "OZON", "export_kind": "stocks"}):
+        for data in (
+            {},
+            {"marketplace": "OZON", "export_kind": "stocks"},
+            {"marketplace": "WB", "export_kind": "fbo_transit"},
+        ):
             with self.subTest(data=data):
                 response = self.client.post("/admin/google-export/run", data=data)
                 self.assertEqual(response.status_code, 200)
@@ -252,6 +256,41 @@ class ProjectSheetExportRouteTests(unittest.TestCase):
         self.manual._sheets_now()
         self.runner.assert_called_once_with()
         enabled.assert_not_called()
+
+    def test_fbo_settings_are_editable_for_every_marketplace_and_preserved_by_old_form(self):
+        fields = {
+            f"{prefix}_{key}": value
+            for prefix in ("wb", "ozon", "yandex")
+            for key, value in (
+                ("fbo_sheet_name", "Stock at MP"),
+                ("fbo_to_customer_column", " j "),
+                ("fbo_from_customer_column", " l "),
+            )
+        }
+        response = self.client.post("/admin/google-export/settings", data=self.form(**fields))
+        self.assertEqual(response.status_code, 200)
+        settings = self.saver.call_args.args[0]
+        rendered = self.routes._render_project_export(settings)
+        for name in fields:
+            self.assertEqual(rendered.count(f'name="{name}"'), 1)
+        self.assertEqual(rendered.count('data-export-kind="fbo_transit"'), 3)
+        old_form = self.routes._project_settings_from_form(self.form(), settings)
+        for target in old_form.targets:
+            self.assertEqual(
+                (target.fbo_sheet_name, target.fbo_to_customer_column, target.fbo_from_customer_column),
+                ("Stock at MP", "J", "L"),
+            )
+
+    def test_fbo_columns_cannot_overlap_each_other_or_fbs(self):
+        for changes in ({"wb_fbo_from_customer_column": "J"}, {"wb_fbo_to_customer_column": "C"}):
+            response = self.client.post(
+                "/admin/google-export/settings", data=self.form(wb_fbo_sheet_name="WB Orders", **changes)
+            )
+            self.assertEqual(response.status_code, 400)
+        response = self.client.post(
+            "/admin/google-export/settings", data=self.form(wb_fbo_sheet_name="WB Orders")
+        )
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":

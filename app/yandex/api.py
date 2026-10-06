@@ -298,6 +298,90 @@ def get_business_orders(api_key: str, business_id: int, date_from: str, date_to:
             raise YandexApiError(None, "Превышен предел обхода заказов Яндекса; выгрузка неполна")
 
 
+def _transit_pages(path: str, api_key: str, key: str, *, payload=None, params=None) -> list[dict]:
+    """Read the complete current selection; never return a truncated snapshot."""
+    result = []
+    page_token = ""
+    seen_tokens: set[str] = set()
+    seen_ids: set[tuple] = set()
+    while True:
+        data = _request(
+            path,
+            api_key,
+            method="GET" if payload is None else "POST",
+            payload=payload,
+            params={**(params or {}), "limit": 50, "pageToken": page_token},
+        )
+        page = data.get(key)
+        if not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
+            raise YandexApiError(None, f"Яндекс не вернул список {key} для FBO")
+        for row in page:
+            identity = (
+                (row.get("orderId"), row.get("id"))
+                if key == "returns"
+                else (row.get("orderId") or row.get("id"),)
+            )
+            if not all(identity) or identity in seen_ids:
+                raise YandexApiError(None, "Яндекс повторил запись или не вернул её идентификатор")
+            seen_ids.add(identity)
+        result.extend(page)
+        if not isinstance(data.get("paging", {}), dict):
+            raise YandexApiError(None, "Некорректная пагинация FBO Яндекса")
+        page_token = _next_page_token(data, seen_tokens)
+        if not page_token:
+            return result
+        if not page or len(result) > 500_000:
+            raise YandexApiError(None, "Неполная выборка FBO Яндекса")
+
+
+def get_fby_delivery_orders(api_key: str, business_id: int, campaign_ids: list[int]) -> list[dict]:
+    """Recent live orders plus still-active older orders, refreshed by ID."""
+    path = f"/v1/businesses/{business_id}/orders"
+    orders = {}
+    for start in range(0, len(campaign_ids), 50):
+        page = _transit_pages(
+            path,
+            api_key,
+            "orders",
+            payload={
+                "campaignIds": campaign_ids[start : start + 50],
+                "programTypes": ["FBY"],
+                "statuses": ["DELIVERY", "PICKUP"],
+                "fake": False,
+                "sourcePlatforms": ["MARKET"],
+            },
+        )
+        orders.update({int(row["orderId"]): row for row in page})
+    # The live list defaults to the last 30 days. The stats selection has no date
+    # restriction; only use its IDs, since its statuses can lag behind the live API.
+    older_ids = set()
+    for campaign_id in campaign_ids:
+        rows = _transit_pages(
+            f"/v2/campaigns/{campaign_id}/stats/orders",
+            api_key,
+            "orders",
+            payload={"statuses": ["DELIVERY", "PICKUP"]},
+        )
+        older_ids.update(int(row["id"]) for row in rows if not row.get("fake"))
+    older_ids = sorted(older_ids - orders.keys())
+    for start in range(0, len(older_ids), 50):
+        chunk = older_ids[start : start + 50]
+        rows = _transit_pages(path, api_key, "orders", payload={"orderIds": chunk})
+        if {int(row["orderId"]) for row in rows} != set(chunk):
+            raise YandexApiError(None, "Яндекс не подтвердил текущий статус всех FBY-заказов")
+        orders.update({int(row["orderId"]): row for row in rows})
+    return list(orders.values())
+
+
+def get_fby_customer_returns(api_key: str, campaign_id: int) -> list[dict]:
+    return _transit_pages(
+        f"/v2/campaigns/{campaign_id}/returns",
+        api_key,
+        "returns",
+        params={"shipmentStatuses": "RECEIVED,IN_TRANSIT"},
+    )
+
+
 def get_fulfillment_warehouses(api_key: str) -> list[dict]:
 
     data = _request("/v2/warehouses", api_key, method="GET")

@@ -264,6 +264,7 @@ def _render_project_export(settings: ProjectSheetExportSettings) -> str:
         has_url = bool(target.spreadsheet_url.strip())
         stock_disabled = "" if saved and has_url and target.stock_sheet_name else " disabled"
         orders_disabled = "" if saved and has_url and target.orders_sheet_name else " disabled"
+        fbo_disabled = "" if saved and has_url and target.fbo_sheet_name else " disabled"
         marketplace_sections.append(
             '<section class="export-marketplace">'
             '<div class="export-marketplace-head"><div>'
@@ -285,8 +286,25 @@ def _render_project_export(settings: ProjectSheetExportSettings) -> str:
             'placeholder="Например, K" required></label>'
             '<p class="panel-desc">Укажите столбец количества, например K или AA. Товары ищутся по '
             "ARTICLE и «Проект». Столбец очищается ниже найденной шапки до последней заполненной строки.</p>"
+            '<label class="export-url-field"><span>Лист FBO: в пути к клиенту и от клиента</span>'
+            f'<input class="input-control" name="{prefix}_fbo_sheet_name" '
+            f'value="{_input(target.fbo_sheet_name)}" maxlength="100" '
+            'placeholder="Сток на складах МП"></label>'
+            '<label class="export-url-field"><span>Столбец FBO: в пути к клиенту</span>'
+            f'<input class="input-control" name="{prefix}_fbo_to_customer_column" '
+            f'value="{_input(target.fbo_to_customer_column)}" maxlength="3" pattern="[A-Za-z]{{1,3}}" '
+            'placeholder="Например, J" required></label>'
+            '<label class="export-url-field"><span>Столбец FBO: в пути от клиента</span>'
+            f'<input class="input-control" name="{prefix}_fbo_from_customer_column" '
+            f'value="{_input(target.fbo_from_customer_column)}" maxlength="3" pattern="[A-Za-z]{{1,3}}" '
+            'placeholder="Например, L" required></label>'
+            '<p class="panel-desc">FBO (FBY для Яндекс Маркета): данные запрашиваются по API при каждой '
+            "выгрузке, параллельно по всем кабинетам. Товары сопоставляются по ARTICLE и «Проект»; "
+            "оба выбранных столбца очищаются ниже шапки и заполняются текущим количеством. "
+            "Используется общее расписание этого блока.</p>"
             '<p class="panel-desc">Пустое название листа отключает эту выгрузку. '
-            "Для остатков и заказов каждой площадки укажите разные листы.</p>"
+            "Для остатков нужен отдельный лист. FBS и FBO одной площадки можно выгружать "
+            "в один лист, указав разные столбцы.</p>"
             '<div class="export-marketplace-actions">'
             f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
             f'data-url-field="{prefix}_spreadsheet_url" data-export-kind="stocks" '
@@ -294,13 +312,18 @@ def _render_project_export(settings: ProjectSheetExportSettings) -> str:
             f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
             f'data-url-field="{prefix}_spreadsheet_url" data-export-kind="fbs_orders" '
             f'data-sheet-field="{prefix}_fbs_orders_sheet_name"{orders_disabled}>'
-            "Выгрузить заказы</button></div></section>"
+            "Выгрузить заказы</button>"
+            f'<button class="btn-secondary" type="button" data-export-scope data-marketplace="{marketplace}" '
+            f'data-url-field="{prefix}_spreadsheet_url" data-export-kind="fbo_transit" '
+            f'data-sheet-field="{prefix}_fbo_sheet_name"{fbo_disabled}>'
+            "Выгрузить FBO в пути</button></div></section>"
         )
     projects = "".join(
         f'<span class="export-project-chip">{html.escape(store.name)}</span>' for store in STORES.values()
     )
     has_targets = any(
-        target.spreadsheet_url.strip() and (target.stock_sheet_name or target.orders_sheet_name)
+        target.spreadsheet_url.strip()
+        and (target.stock_sheet_name or target.orders_sheet_name or target.fbo_sheet_name)
         for target in settings.targets
     )
     return (
@@ -326,9 +349,10 @@ def _render_project_export(settings: ProjectSheetExportSettings) -> str:
         '</label></div><div class="integration-export-marketplaces">'
         + "".join(marketplace_sections)
         + '</div><p class="integration-hint">В остатках A — КЛЮЧ, B — ПРОЕКТ, C:K — основные показатели, '
-        "с L — детализация по ФФ. Заказы записываются в выбранный столбец существующего листа "
+        "с L — детализация по ФФ. FBS-заказы записываются в выбранный столбец существующего листа "
         "по совпадению ARTICLE и проекта; остальные колонки и шапка сохраняются. "
-        "Заказы считаются за 30 завершённых дней по Москве, без сегодняшнего дня.</p>"
+        "FBS-заказы считаются за 30 завершённых дней по Москве, без сегодняшнего дня. "
+        "FBO в пути отражает текущее движение товаров по данным API.</p>"
         '<p class="integration-hint">При устаревшем снимке поставок или ошибке обновления используются '
         "последние подтверждённые значения с предупреждением о давности. Если подтверждённых данных нет, "
         "«В пути на склады МП» и ТОТАЛ соответствующих товаров остаются пустыми.</p>"
@@ -366,6 +390,25 @@ def _project_settings_from_form(form, existing: ProjectSheetExportSettings) -> P
                     _value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbs_orders_quantity_column")
                     if f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbs_orders_quantity_column" in form
                     else existing.target(marketplace).orders_quantity_column
+                )
+                .strip()
+                .upper(),
+                fbo_sheet_name=(
+                    _value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbo_sheet_name")
+                    if f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbo_sheet_name" in form
+                    else existing.target(marketplace).fbo_sheet_name
+                ),
+                fbo_to_customer_column=(
+                    _value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbo_to_customer_column")
+                    if f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbo_to_customer_column" in form
+                    else existing.target(marketplace).fbo_to_customer_column
+                )
+                .strip()
+                .upper(),
+                fbo_from_customer_column=(
+                    _value(form, f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbo_from_customer_column")
+                    if f"{MARKETPLACE_FORM_PREFIXES[marketplace]}_fbo_from_customer_column" in form
+                    else existing.target(marketplace).fbo_from_customer_column
                 )
                 .strip()
                 .upper(),
@@ -845,7 +888,7 @@ async def run_project_export(request: Request):
         )
     if marketplace is not None and marketplace not in PROJECT_MARKETPLACES:
         return JSONResponse({"ok": False, "error": "Неизвестный маркетплейс"}, status_code=400)
-    if export_kind is not None and export_kind not in stock_sheet_export.EXPORT_KINDS:
+    if export_kind is not None and export_kind not in project_sheet_export.EXPORT_KINDS:
         return JSONResponse({"ok": False, "error": "Неизвестный тип выгрузки"}, status_code=400)
     try:
         report = await run_in_threadpool(

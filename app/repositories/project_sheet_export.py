@@ -15,6 +15,9 @@ class MarketplaceExportTarget:
     orders_sheet_name: str
     spreadsheet_url: str = ""
     orders_quantity_column: str = "C"
+    fbo_sheet_name: str = ""
+    fbo_to_customer_column: str = "J"
+    fbo_from_customer_column: str = "L"
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +51,9 @@ def get_settings() -> ProjectSheetExportSettings | None:
                 orders_sheet_name=str(target["orders_sheet_name"]),
                 spreadsheet_url=str(target["spreadsheet_url"]),
                 orders_quantity_column=str(target["orders_quantity_column"]),
+                fbo_sheet_name=str(target["fbo_sheet_name"]),
+                fbo_to_customer_column=str(target["fbo_to_customer_column"]),
+                fbo_from_customer_column=str(target["fbo_from_customer_column"]),
             )
             for target in conn.execute("SELECT * FROM project_sheet_export_targets").fetchall()
         }
@@ -101,8 +107,9 @@ def save_settings(settings: ProjectSheetExportSettings, *, only_if_missing: bool
         conn.execute("DELETE FROM project_sheet_export_targets")
         conn.executemany(
             """INSERT INTO project_sheet_export_targets
-                   (marketplace, stock_sheet_name, orders_sheet_name, spreadsheet_url, orders_quantity_column)
-               VALUES (?, ?, ?, ?, ?)""",
+                   (marketplace, stock_sheet_name, orders_sheet_name, spreadsheet_url, orders_quantity_column,
+                    fbo_sheet_name, fbo_to_customer_column, fbo_from_customer_column)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     target.marketplace,
@@ -110,6 +117,9 @@ def save_settings(settings: ProjectSheetExportSettings, *, only_if_missing: bool
                     target.orders_sheet_name,
                     target.spreadsheet_url,
                     target.orders_quantity_column,
+                    target.fbo_sheet_name,
+                    target.fbo_to_customer_column,
+                    target.fbo_from_customer_column,
                 )
                 for target in settings.targets
             ],
