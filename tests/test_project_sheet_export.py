@@ -55,6 +55,7 @@ class ProjectSheetExportTests(unittest.TestCase):
         self.google.spreadsheets().values().get.side_effect = lambda **kw: MagicMock(
             execute=MagicMock(return_value={"values": self.sheet_values.get(kw["range"], [])})
         )
+        self.original_timestamp = self.legacy._write_export_timestamp
         self.timestamp = self.mock(self.legacy, "_write_export_timestamp", return_value=self.now.isoformat())
         self.orders = self.mock(self.legacy, "_combined_fbs_order_totals", return_value={})
         self.original_inbound_load = self.legacy.stock_sheet_inbound.load
@@ -397,16 +398,20 @@ class ProjectSheetExportTests(unittest.TestCase):
                 self.assertEqual(
                     update["values"][0],
                     [
+                        *(["КЛЮЧ"] if is_stock else []),
                         "ПРОЕКТ",
                         *(self.legacy.EXPORT_HEADERS if is_stock else self.legacy.ORDER_EXPORT_HEADERS),
                     ],
                 )
                 self.assertEqual(len(update["values"]), 8)
                 self.assertEqual(
-                    {row[0] for row in update["values"][1:]},
+                    {row[1 if is_stock else 0] for row in update["values"][1:]},
                     {store.name for store in self.stores.values()},
                 )
                 for row in update["values"][1:]:
+                    if is_stock:
+                        self.assertEqual(row[0], f"{row[1]} 1234567890")
+                        row = row[1:]
                     self.assertEqual(row[1], "Same-SKU")
                     quantity = next(
                         quantities[slug] for slug, store in self.stores.items() if store.name == row[0]
@@ -428,20 +433,167 @@ class ProjectSheetExportTests(unittest.TestCase):
             self.seed(slug, quantity, article="SKU-00123", barcode="1234567890")
         self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
         values = self.update_for("Stocks")["values"]
-        self.assertEqual(values[0][:10], ["ПРОЕКТ", *self.legacy.EXPORT_HEADERS])
-        self.assertEqual(values[0][10], f"{self.legacy.FF_STOCK_HEADER_PREFIX}Основной ФФ")
+        self.assertEqual(values[0][:11], ["КЛЮЧ", "ПРОЕКТ", *self.legacy.EXPORT_HEADERS])
+        self.assertEqual(values[0][11], f"{self.legacy.FF_STOCK_HEADER_PREFIX}Основной ФФ")
         self.assertEqual(len(values), 8)
-        by_project = {row[0]: row for row in values[1:]}
+        by_project = {row[1]: row for row in values[1:]}
         self.assertEqual(set(by_project), {store.name for store in self.stores.values()})
         for quantity, (_, store) in enumerate(self.stores.items(), 1):
             self.assertEqual(
-                by_project[store.name][:4], [store.name, "SKU-00123", 1234567890, "Synthetic product"]
+                by_project[store.name][:5],
+                [f"{store.name} 1234567890", store.name, "SKU-00123", 1234567890, "Synthetic product"],
             )
             self.assertEqual(
-                (by_project[store.name][4], by_project[store.name][5], by_project[store.name][10]),
+                (by_project[store.name][5], by_project[store.name][6], by_project[store.name][11]),
                 (quantity, quantity, quantity),
             )
         self.orders.assert_not_called()
+
+    def test_stock_keys_preserve_barcode_text_and_align_with_exported_products(self):
+        self.configure()
+        catalog = [
+            {"article": "leading-zero", "barcode": "  '0012345678901  "},
+            {"article": " ", "barcode": "skipped"},
+            {"article": "long-barcode", "barcode": "12345678901234567890"},
+            {"article": "text-barcode", "barcode": "CODE-001"},
+            {"article": "numeric-barcode", "barcode": 1234567890},
+            {"article": "missing-barcode", "barcode": None},
+        ]
+        self.mock(
+            self.legacy,
+            "_combined_stock_snapshot",
+            side_effect=lambda slugs, marketplace, **kwargs: (
+                catalog if slugs == ("rimili",) else [],
+                {},
+                [],
+            ),
+        )
+        self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
+        update = self.update_for("Stocks")
+        self.assertEqual(update["range"], "'Stocks'!A2:K7")
+        self.assertEqual(
+            [(row[0], row[2]) for row in update["values"][1:]],
+            [
+                ("RIMILI 0012345678901", "leading-zero"),
+                ("RIMILI 12345678901234567890", "long-barcode"),
+                ("RIMILI CODE-001", "text-barcode"),
+                ("RIMILI 1234567890", "numeric-barcode"),
+                ("RIMILI ", "missing-barcode"),
+            ],
+        )
+        self.assertEqual(
+            self.google.spreadsheets().values().batchUpdate.call_args.kwargs["body"]["valueInputOption"],
+            "RAW",
+        )
+
+    def test_stock_sheet_replaces_existing_cells_and_writes_timestamp_and_sum_formulas(self):
+        self.configure()
+        self.seed("rimili", 5, barcode="2050292584830")
+        self.timestamp.side_effect = self.original_timestamp
+        self.mock(
+            self.legacy, "_check_timestamp_cells", side_effect=AssertionError("Stock sheet is replaced")
+        )
+        self.sheet_values["'Stocks'!A1:B1"] = [["Old label", "=NOW()"]]
+        self.sheet_values["'Stocks'!AA2:AD"] = [["Old formulas", "=SUM(A1:A2)"]]
+        stock_sheet = self.sheets[0]
+        stock_sheet["properties"]["gridProperties"].update(columnCount=30, rowCount=1000)
+        stock_sheet["merges"] = [
+            {"startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 2},
+            {"startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 26, "endColumnIndex": 30},
+        ]
+        values_api = self.google.spreadsheets().values()
+
+        def write_data(**kwargs):
+            values_api.batchClear.assert_called_once_with(
+                spreadsheetId="test-doc", body={"ranges": ["'Stocks'!A1:AD"]}
+            )
+            self.timestamp.assert_not_called()
+            return MagicMock()
+
+        values_api.batchUpdate.side_effect = write_data
+        report = self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
+        requests = self.google.spreadsheets().batchUpdate.call_args_list
+        self.assertEqual(
+            requests[0].kwargs["body"]["requests"],
+            [{"unmergeCells": {"range": {"sheetId": 1, **merged}}} for merged in stock_sheet["merges"]],
+        )
+        summary, formatting = requests[-1].kwargs["body"]["requests"]
+        summary = summary["updateCells"]
+        self.assertEqual(
+            summary["range"],
+            {"sheetId": 1, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 12},
+        )
+        cells = summary["rows"][0]["values"]
+        self.assertEqual(cells[0], {"userEnteredValue": {"stringValue": "Выгрузка (МСК)"}})
+        exported_at = datetime.fromisoformat(report["marketplaces"][0]["exported_at"])
+        serial = (exported_at.replace(tzinfo=None) - datetime(1899, 12, 30)).total_seconds() / 86400
+        self.assertEqual(cells[1], {"userEnteredValue": {"numberValue": serial}})
+        self.assertEqual(cells[2:5], [{}, {}, {}])
+        self.assertEqual(
+            [cell["userEnteredValue"]["formulaValue"] for cell in cells[5:]],
+            [
+                "=SUM(F3:F)",
+                "=SUM(G3:G)",
+                "=SUM(H3:H)",
+                "=SUM(I3:I)",
+                "=SUM(J3:J)",
+                "=SUM(K3:K)",
+                "=SUM(L3:L)",
+            ],
+        )
+        self.assertEqual(
+            formatting["repeatCell"]["cell"]["userEnteredFormat"]["numberFormat"],
+            {"type": "DATE_TIME", "pattern": "dd.mm.yyyy hh:mm:ss"},
+        )
+        self.assertEqual(summary["fields"], "userEnteredValue")
+        update = self.update_for("Stocks")
+        self.assertEqual(update["range"], "'Stocks'!A2:L3")
+        self.assertEqual(update["values"][0][0:2], ["КЛЮЧ", "ПРОЕКТ"])
+        self.assertEqual(update["values"][1][0], "RIMILI 2050292584830")
+        self.assertEqual(report["marketplaces"][0]["updated_cells"], 36)
+
+    def test_empty_stock_sheet_keeps_sum_formulas_through_last_center_beyond_z(self):
+        self.configure()
+        self.timestamp.side_effect = self.original_timestamp
+        self.sheets[0]["properties"]["gridProperties"].update(columnCount=35, rowCount=2)
+        self.mock(
+            self.legacy,
+            "_combined_stock_snapshot",
+            return_value=([], {f"ff_stock:ФФ {index:02d}": {} for index in range(20)}, []),
+        )
+        self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
+        self.google.spreadsheets().values().batchClear.assert_called_once_with(
+            spreadsheetId="test-doc", body={"ranges": ["'Stocks'!A1:AI"]}
+        )
+        requests = self.google.spreadsheets().batchUpdate.call_args_list
+        self.assertEqual(
+            requests[0].kwargs["body"]["requests"],
+            [
+                {
+                    "updateSheetProperties": {
+                        "properties": {"sheetId": 1, "gridProperties": {"rowCount": 3}},
+                        "fields": "gridProperties.rowCount",
+                    }
+                }
+            ],
+        )
+        cells = requests[-1].kwargs["body"]["requests"][0]["updateCells"]["rows"][0]["values"]
+        self.assertEqual(len(cells), 31)
+        self.assertEqual(cells[5], {"userEnteredValue": {"formulaValue": "=SUM(F3:F)"}})
+        self.assertEqual(cells[-1], {"userEnteredValue": {"formulaValue": "=SUM(AE3:AE)"}})
+        self.assertEqual(self.update_for("Stocks")["range"], "'Stocks'!A2:AE2")
+        self.assertEqual(len(self.update_for("Stocks")["values"]), 1)
+
+    def test_failed_stock_data_write_does_not_publish_summary_or_success(self):
+        self.configure()
+        self.seed("rimili", 5)
+        self.google.spreadsheets().values().batchUpdate.return_value.execute.side_effect = RuntimeError(
+            "Synthetic write failure"
+        )
+        with self.assertRaisesRegex(RuntimeError, "Synthetic write failure"):
+            self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
+        self.timestamp.assert_not_called()
+        self.assertIsNone(self.repository.get_settings().last_success_at)
 
     def test_unknown_inbound_only_blanks_the_affected_project(self):
         self.configure()
@@ -459,9 +611,9 @@ class ProjectSheetExportTests(unittest.TestCase):
 
         self.inbound.side_effect = inbound
         self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
-        rows = {row[0]: row for row in self.update_for("Stocks")["values"][1:]}
-        self.assertEqual((rows["RIMILI"][4], rows["RIMILI"][9], rows["RIMILI"][5]), ("", "", 3))
-        self.assertEqual((rows["TRIS"][4], rows["TRIS"][9], rows["TRIS"][5]), (7, 0, 7))
+        rows = {row[1]: row for row in self.update_for("Stocks")["values"][1:]}
+        self.assertEqual((rows["RIMILI"][5], rows["RIMILI"][10], rows["RIMILI"][6]), ("", "", 3))
+        self.assertEqual((rows["TRIS"][5], rows["TRIS"][10], rows["TRIS"][6]), (7, 0, 7))
 
     def test_saved_inbound_after_failed_refresh_keeps_quantities_and_total_with_warning(self):
         from app.dto.inbound_supplies import InboundItem, InboundSnapshot, InboundSupply
@@ -506,9 +658,9 @@ class ProjectSheetExportTests(unittest.TestCase):
 
         service.report.side_effect = snapshot
         report = self.export.run_export(self.now, marketplace="WB", export_kind="stocks")
-        rows = {row[0]: row for row in self.update_for("Stocks")["values"][1:]}
-        self.assertEqual((rows["RIMILI"][4], rows["RIMILI"][5], rows["RIMILI"][9]), (8, 3, 5))
-        self.assertEqual((rows["TRIS"][4], rows["TRIS"][5], rows["TRIS"][9]), (7, 7, 0))
+        rows = {row[1]: row for row in self.update_for("Stocks")["values"][1:]}
+        self.assertEqual((rows["RIMILI"][5], rows["RIMILI"][6], rows["RIMILI"][10]), (8, 3, 5))
+        self.assertEqual((rows["TRIS"][5], rows["TRIS"][6], rows["TRIS"][10]), (7, 7, 0))
         warning = " ".join(report["marketplaces"][0]["warnings"])
         self.assertIn("RIMILI", warning)
         self.assertIn("01.10.2026 12:00:00 МСК", warning)
@@ -571,7 +723,7 @@ class ProjectSheetExportTests(unittest.TestCase):
         report = self.export.run_export(self.now, marketplace="OZON", export_kind="stocks")
         self.assertEqual(report["spreadsheet_ids"], {"OZON": "ozon-doc"})
         self.assertEqual(len(self.updates()), 1)
-        self.assertEqual(self.update_for("Ozon Stocks")["values"][1][4], 9)
+        self.assertEqual(self.update_for("Ozon Stocks")["values"][1][5], 9)
         self.orders.assert_not_called()
         self.assertEqual({call.args[1] for call in self.inbound.call_args_list}, {"OZON"})
         self.assertEqual(
