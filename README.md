@@ -8,7 +8,7 @@ FastAPI-приложение для синхронизации каталого�
 - [templates](templates/README.md) — шаблоны страниц по разделам сайта.
 - [static](static/README.md) — CSS, JavaScript и изображения тех же разделов.
 - [scripts](scripts/README.md) — команды обслуживания, синхронизации, импорта, экспорта и диагностики.
-- [docs](docs/README.md) — актуальные инструкции.
+- [docs](docs/README.md) — индекс инструкций; [LLM wiki](docs/llm-wiki.md) — карта кода и источников для ИИ-ассистента.
 - `data` — рабочая локальная БД, состояние парсера и `backups` с резервными копиями.
 - `deploy` — сборка и настройки контейнера парсера.
 
@@ -19,24 +19,22 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-make run
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 Перед запуском положите реальные файлы доступов в `secrets/` по образцам из `secrets/example/`. `.env`, база и реальные секреты исключены из Git.
 
 ## Проверки
 
-```text
-make format
-make lint
-make check
+```powershell
+python -m ruff format --check app scripts
+python -m ruff check app scripts
 python -m unittest discover -s tests -v
 node --test tests/test_stock_mutation_ui.cjs
 ```
 
-`check` запускает проверку форматирования и Ruff для `app` и `scripts`. Тесты импорта поставок запускаются
-отдельной командой `unittest`: используют временную SQLite-базу, не читают `.env` и подменяют ответы Google.
-Проверки транзакций F03 запускаются той же командой; тесты ключей запросов UI — через `node --test`.
+При наличии `make` доступны цели `run`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
+Python-тесты запускаются через `unittest`; тесты клиентского кода — через `node --test` для файлов `tests/*.cjs`.
 
 ## Поставки на ФФ
 
