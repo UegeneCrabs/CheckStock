@@ -72,6 +72,21 @@
             <span>Расписание поставок</span>
         </a>
 
+        <div class="nav-group" data-nav-group$analytics_hidden>
+            <div class="nav-group-head">
+                <button class="nav-item nav-group-trigger $analytics_active" type="button"
+                    title="Аналитика" aria-expanded="false" aria-controls="nav-analytics-submenu" data-nav-toggle>
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16m-13-4 4-5 4 2 5-7"></path></svg>
+                    <span>Аналитика</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-analytics-submenu" data-nav-submenu>
+                <a class="nav-subitem $analyzer_active" href="/analytics/analyzer"$analyzer_hidden>Анализатор</a>
+                <a class="nav-subitem $sales_api_active" href="/analytics/sales-api"$sales_api_hidden>Продажи по API</a>
+            </div>
+        </div>
+
         <div class="nav-group $unit_1c_open" data-nav-group$unit_1c_group_hidden>
             <div class="nav-group-head">
                 <button

@@ -51,6 +51,8 @@ class SectionName(StrEnum):
     STOCK_RANDOMIZER = "stock_randomizer"
     STOCK_COST_REPORT = "stock_cost_report"
     STOCK_OPERATIONS = "stock_operations"
+    ANALYZER = "analyzer"
+    ANALYTICS_SALES_API = "analytics_sales_api"
     UNIT_ECONOMICS_OZON = "unit_economics_ozon"
     UNIT_ECONOMICS_YANDEX = "unit_economics_yandex"
     REPORT_UNIT_PROFIT = "report_unit_profit"

@@ -1544,6 +1544,19 @@ body:has(.content--unit-1c) {
 .ue1c-chart-line.is-drr {
     stroke: var(--ue-accent);
 }
+.ue1c-chart-line.is-price {
+    stroke: #267ac3;
+}
+.ue1c-chart-point.is-price,
+.ue1c-chart-hover-point.is-price {
+    fill: #267ac3;
+}
+.ue1c-chart-controls .is-price {
+    color: #267ac3;
+}
+.ue1c-chart-controls .is-price input {
+    accent-color: #267ac3;
+}
 .ue1c-chart-line.is-stock {
     stroke: var(--ue-purple);
 }

@@ -1,6 +1,8 @@
 """Daily YM series for the shared WB-style 14-day chart (plus a comparison week)."""
 
+from collections import defaultdict
 from datetime import datetime, timedelta
+from math import isfinite
 
 from app.core.domain import MOSCOW_TIMEZONE
 from app.economics.wb.calculations import calculate_drr_percent
@@ -13,16 +15,58 @@ from app.yandex.economics_calculation import VERSION
 from app.yandex.economics_days import resolve_day
 
 
+def _chart_price(data):
+    values = data.get("inputs") or data.get("values") or {}
+    value = values.get("buyer_price")
+    try:
+        price = float(value) if value is not None else None
+    except (TypeError, ValueError):
+        price = None
+    if price is not None and not isfinite(price):
+        price = None
+    return {
+        "price_with_spp_rub": price,
+        "price_with_spp_estimated": bool(
+            price is not None
+            and (
+                (data.get("pricing") or {}).get("buyer_estimated")
+                or "Расчётная" in str((data.get("origins") or {}).get("buyer_price", ""))
+            )
+        ),
+    }
+
+
+def _chart_prices_by_day(rows, article):
+    """Prices survive legacy model merging; conflicting model prices stay unknown."""
+    grouped = defaultdict(dict)
+    for row in rows:
+        if row["article"] == article and row["scheme"] in (shared.SCHEME, *shared.SOURCE_SCHEMES):
+            grouped[row["day"]][row["scheme"]] = row["data"]
+    result = {}
+    for day, models in grouped.items():
+        if shared.SCHEME in models:
+            result[day] = _chart_price(models[shared.SCHEME])
+            continue
+        prices = [_chart_price(data) for data in models.values()]
+        known = [item for item in prices if item["price_with_spp_rub"] is not None]
+        distinct = {item["price_with_spp_rub"] for item in known}
+        result[day] = {
+            "price_with_spp_rub": next(iter(distinct)) if len(distinct) == 1 else None,
+            "price_with_spp_estimated": len(distinct) == 1
+            and any(item["price_with_spp_estimated"] for item in known),
+        }
+    return result
+
+
 def product_history(store, article, scheme, *, today=None):
     """Read local history only; opening the chart never loads APIs or saves snapshots."""
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     start, end = (today - timedelta(days=20)).isoformat(), today.isoformat()
-    history = shared.history(
-        repository.history(
-            store, (today - timedelta(days=30)).isoformat(), today.isoformat()
-        ),
-        article,
+    saved_rows = repository.history(
+        store, (today - timedelta(days=30)).isoformat(), today.isoformat()
     )
+    history = shared.history(saved_rows, article)
+    chart_prices = _chart_prices_by_day(saved_rows, article)
     closed = {row["day"]: row for row in history}
     ads, ads_days = metrics.get_history(store, "advertising", start, end)
     orders, order_days = metrics.get_history(store, "orders", start, end)
@@ -58,6 +102,9 @@ def product_history(store, article, scheme, *, today=None):
         buyout = inputs.get("buyout_percent")
         count, spend, profit = resolved["orders_count"], resolved["advertising_spend"], resolved["profit"]
         amount = float(orders.get(day, {}).get("orders_amount") or 0) if day in order_days else None
+        day_price = chart_prices.get(day)
+        if day_price is None:
+            day_price = _chart_price(current if day == end else snapshot)
 
         stock = stocks.get(day, {})
         quantities = {}
@@ -73,6 +120,7 @@ def product_history(store, article, scheme, *, today=None):
                 "label": day[8:10] + "." + day[5:7],
                 "orders_count": count,
                 "turnover_rub": amount,
+                **day_price,
                 "buyout_percent": buyout,
                 "advertising_rub": round(spend, 2) if spend is not None else None,
                 "drr_percent": calculate_drr_percent(spend, amount, buyout)
