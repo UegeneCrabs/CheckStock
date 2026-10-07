@@ -115,7 +115,7 @@ async def authentication_middleware(request: Request, call_next):
             )
 
     response = await call_next(request)
-    if path.startswith(("/sales/unit-economics-1c", "/api/unit-economics-1c", "/admin/integrations", "/api/admin/integrations")):
+    if path.startswith(("/analytics/", "/api/analytics/", "/sales/unit-economics-1c", "/api/unit-economics-1c", "/admin/integrations", "/api/admin/integrations")):
         response.headers["Cache-Control"] = "private, no-store"
     return response
 

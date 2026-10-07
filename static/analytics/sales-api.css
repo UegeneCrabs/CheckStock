@@ -1,0 +1,224 @@
+.sales-api {--bg:#f5f6f8;--surface:#fff;--line:#e3e7ed;--text:#152032;--muted:#5c677a;--quiet:#929dad;--accent:#315efb;--green:#17815d;--red:#cf3442}
+.sales-api * {box-sizing:border-box}
+.sales-api {margin:0;background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}
+.sales-api button, .sales-api input, .sales-api select {font:inherit}
+.sales-api button {cursor:pointer;color:inherit}
+.sales-api button:disabled {opacity:.35;cursor:default}
+.sales-api button:focus-visible, .sales-api input:focus-visible, .sales-api select:focus-visible, .sales-api a:focus-visible {outline:3px solid #315efb66;outline-offset:2px}
+.sales-api [hidden] {display:none!important}
+.sales-api button, .sales-api a {-webkit-tap-highlight-color:transparent}
+.sales-api button {border:0}
+.sales-api .ico {width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.sales-api .sales-main {height:100dvh;min-height:600px;display:flex;flex-direction:column;gap:15px;padding:23px 22px 13px}
+.sales-api .heading, .sales-api .heading-left, .sales-api .heading-right {display:flex;align-items:center;gap:12px}
+.sales-api .heading {justify-content:space-between}
+.sales-api h1 {font-size:25px;letter-spacing:-.035em;margin:0;font-weight:750}
+.sales-api .demo {font-size:10px;color:#667184;border:1px solid #dfe3eb;border-radius:5px;padding:3px 7px;font-weight:700;letter-spacing:.05em}
+.sales-api .subdued {color:var(--quiet);font-size:11px}
+.sales-api .button {height:38px;padding:0 13px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dce2ea;border-radius:9px;background:white;font-weight:600;white-space:nowrap}
+.sales-api .button:hover {background:#f8faff;border-color:#aebcd0}
+.sales-api .button.primary {background:var(--accent);border-color:var(--accent);color:#fff}
+.sales-api .button.primary:hover {background:#264ed7}
+.sales-api .icon-button {height:30px;width:30px;background:#fff;border:1px solid var(--line);border-radius:7px;font-size:18px}
+.sales-api .icon-button:hover {background:#edf1ff}
+.sales-api .toolbar {display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.sales-api .search {position:relative;flex:1 1 260px;max-width:440px}
+.sales-api .search .ico {position:absolute;left:13px;top:13px;color:#8390a3}
+.sales-api .search input {width:100%;height:42px;background:white;border:1px solid #dce2ea;border-radius:10px;padding:0 12px 0 38px;color:var(--text)}
+.sales-api input::placeholder {color:#99a4b3}
+.sales-api .select {height:42px;border:1px solid #dce2ea;background:#fff;border-radius:10px;color:var(--text);padding:0 30px 0 12px;min-width:143px;max-width:240px}
+.sales-api .period-wrap {position:relative;margin-left:auto}
+.sales-api .period-button {height:42px;font-size:12px;gap:9px}
+.sales-api .period-button small {color:var(--quiet);font-weight:400}
+.sales-api .period-panel, .sales-api .view-panel {position:absolute;top:49px;right:0;z-index:35;border:1px solid var(--line);border-radius:13px;background:white;box-shadow:0 15px 60px #19263e26;padding:18px;width:320px}
+.sales-api .period-panel h3, .sales-api .view-panel h3 {margin:0 0 12px;font-size:14px}
+.sales-api .date-row {display:flex;gap:12px}
+.sales-api .date-row label {flex:1;color:var(--muted);font-size:11px}
+.sales-api .date-row input {margin-top:5px;height:37px;width:100%;border:1px solid #dce2ea;border-radius:7px;padding:6px;color:var(--text)}
+.sales-api .panel-copy {font-size:11px;color:var(--muted);margin:12px 0}
+.sales-api .panel-actions {display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+.sales-api .error {font-size:11px;color:var(--red)}
+.sales-api .view-wrap {position:relative}
+.sales-api .view-panel label {display:flex;gap:9px;align-items:center;padding:8px 0;font-size:12px}
+.sales-api .view-panel input {accent-color:var(--accent)}
+.sales-api .view-panel hr {border:0;border-top:1px solid var(--line);margin:8px 0}
+.sales-api .toolbar>.view-wrap>.button {height:42px}
+.sales-api .summary {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.sales-api .metric {border:1px solid var(--line);background:white;border-radius:11px;padding:13px 17px;min-height:91px;position:relative}
+.sales-api .metric-label {font-size:11px;color:var(--muted)}
+.sales-api .metric-value {font-size:27px;font-weight:750;letter-spacing:-.035em;margin-top:3px;font-variant-numeric:tabular-nums;line-height:1.25}
+.sales-api .metric-value small {font-size:12px;color:#8c98a9;font-weight:400;letter-spacing:0;margin-left:5px}
+.sales-api .metric-caption {font-size:10px;color:#95a0ae;margin-top:3px}
+.sales-api .metric:first-child .metric-value {color:var(--green)}
+.sales-api .metric-mark {position:absolute;right:16px;top:16px;color:#8f9bab}
+.sales-api .mini-bars {position:absolute;right:16px;bottom:18px;width:94px;height:29px;display:flex;gap:4px;align-items:flex-end}
+.sales-api .mini-bars i {flex:1;background:#d7eae3;border-radius:3px 3px 0 0;min-height:2px}
+.sales-api .mini-bars i.peak {background:#62a88e}
+.sales-api .table-card {flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line);background:#fff;border-radius:13px;box-shadow:0 4px 18px #19263e08}
+.sales-api .table-top {display:flex;align-items:center;gap:20px;padding:12px 15px;border-bottom:1px solid var(--line);min-height:57px}
+.sales-api .table-title {font-size:13px;font-weight:750;white-space:nowrap}
+.sales-api .count {font-size:11px;font-weight:600;padding:2px 6px;border-radius:5px;background:#f0f2f6;color:#798496;margin-left:7px}
+.sales-api .segments {padding:3px;display:flex;background:#edf0f5;border-radius:8px;gap:2px}
+.sales-api .segments button {background:none;font-size:11px;font-weight:650;padding:6px 11px;border-radius:6px;color:#6d7789;white-space:nowrap}
+.sales-api .segments button.active {background:white;color:#274363;box-shadow:0 2px 5px #19283e0d}
+.sales-api .table-top-right {margin-left:auto;display:flex;align-items:center;gap:15px;color:var(--quiet);font-size:11px}
+.sales-api .legend {display:flex;align-items:center;gap:6px}
+.sales-api .legend i {width:9px;height:9px;background:#e9f3ee;border:1px solid #d4e9dd;border-radius:2px}
+.sales-api .reset {background:none;color:var(--accent);font-size:11px;padding:0}
+.sales-api .scroll {flex:1;min-height:0;overflow:auto;scrollbar-color:#bbc4d4 #f0f2f6;scrollbar-width:thin}
+.sales-api .scroll::-webkit-scrollbar {height:9px;width:9px}
+.sales-api .scroll::-webkit-scrollbar-thumb {background:#bdc6d5;border:2px solid #f0f2f6;border-radius:6px}
+.sales-api table {border-spacing:0;table-layout:fixed;width:100%;min-width:1515px;font-variant-numeric:tabular-nums}
+.sales-api th, .sales-api td {border-right:1px solid #e9edf2;border-bottom:1px solid #edf0f3;padding:9px 12px;vertical-align:middle;text-align:right}
+.sales-api thead th {position:sticky;z-index:5;font-size:11px;color:var(--muted);font-weight:700;text-align:center}
+.sales-api .group th {top:0;height:31px;padding:5px 12px;background:#f3f5f8;font-size:10px;letter-spacing:.055em;text-transform:uppercase}
+.sales-api .group .sales-group {background:#edf5f1;color:#527869}
+.sales-api .group .total-group {background:#eef1f9;color:#5b6e90}
+.sales-api .heads th {top:31px;height:61px;background:#f8f9fb;padding:8px}
+.sales-api .heads button {font:inherit;font-weight:inherit;color:inherit;background:none;width:100%;padding:0;text-align:inherit}
+.sales-api .heads button:hover {color:var(--accent)}
+.sales-api .day-week {color:#929dad;font-weight:400;font-size:10px;margin-left:4px}
+.sales-api .heads .weekend {background:#f4f6f9}
+.sales-api .heads .sort-active {color:var(--accent)}
+.sales-api .totals th {top:92px;height:39px;background:#edf1fa;color:#334562;text-align:right;font-size:12px}
+.sales-api .totals th:first-child {text-align:left}
+.sales-api .totals small {display:block;color:#8593a7;font-size:9px;font-weight:400}
+.sales-api td {height:62px;background:white;font-size:12px}
+.sales-api tbody tr:hover td {background:#f7f9fd}
+.sales-api tbody tr:hover .daily {box-shadow:inset 0 0 0 999px #315efb06}
+.sales-api .frozen {position:sticky;left:0;z-index:3;box-shadow:2px 0 0 #dce2ea}
+.sales-api .group .frozen {z-index:9;background:#f3f5f8}
+.sales-api .heads .frozen {z-index:9;background:#f8f9fb}
+.sales-api .totals .frozen {z-index:9;background:#edf1fa}
+.sales-api .text {text-align:left}
+.sales-api .center {text-align:center}
+.sales-api .muted {color:var(--quiet)}
+.sales-api .zero {color:#b0b9c6}
+.sales-api .category-label {font-size:11px;color:#66758a;line-height:1.4;display:block;max-height:32px;overflow:hidden}
+.sales-api .product-name {display:block;background:none;padding:0;color:#24314a;font-size:12px;font-weight:650;text-align:left;line-height:1.35;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sales-api .product-name:hover {color:var(--accent)}
+.sales-api .product-cell {display:flex;align-items:center;gap:10px;min-width:0}
+.sales-api .product-description {flex:1;min-width:0}
+.sales-api .product-photo {display:flex;align-items:center;justify-content:center;flex:0 0 40px;width:40px;height:40px;overflow:hidden;border-radius:6px;background:#f2e8f8;color:#9c32a2;font-size:10px;font-weight:700}
+.sales-api .product-photo img {display:block;width:100%;height:100%;max-width:100%;object-fit:contain;background:#fff}
+.sales-api .product-meta {font-size:10px;color:#8996a7;margin-top:4px;display:flex;gap:9px}
+.sales-api .product-meta .barcode {color:#a0aab8}
+.sales-api .number-main {font-weight:750;color:#17815d}
+.sales-api .cancel-main {font-weight:650;color:#6c7790}
+.sales-api .cancel-high {color:#cf3442}
+.sales-api .metric-cell {display:inline-flex;align-items:center;justify-content:flex-end;min-width:34px;padding:5px 6px;border-radius:5px}
+.sales-api .daily {position:relative}
+.sales-api .daily.heat {background:var(--heat)}
+.sales-api .daily.heat .metric-cell {color:#36574a}
+.sales-api .daily.heat.zero .metric-cell {color:#a3aea9}
+.sales-api .section-start {border-left:1px solid #d5ddea}
+.sales-api .footer {padding:10px 14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:50px;color:var(--muted);font-size:11px}
+.sales-api .footer-controls {display:flex;align-items:center;gap:10px}
+.sales-api .footer select {padding:5px 6px;border:1px solid var(--line);border-radius:6px;color:var(--muted);background:white}
+.sales-api .page {padding:5px 9px;border:1px solid #cdd8fa;background:#edf1ff;color:var(--accent);border-radius:6px;font-weight:700}
+.sales-api .footnote {display:flex;justify-content:space-between;gap:12px;color:#96a0af;font-size:10px}
+.sales-api .empty {padding:55px 25px;text-align:center;color:var(--muted)}
+.sales-api .empty strong {font-size:15px;display:block;color:var(--text);margin-bottom:6px}
+.sales-api .compact td {height:45px;padding-top:5px;padding-bottom:5px}
+.sales-api .compact .barcode {display:none}
+.sales-api .compact .product-meta {margin-top:2px}
+.sales-api .compact .product-photo {width:28px;height:28px;flex-basis:28px;border-radius:4px;font-size:8px}
+.sales-api .compact .product-cell {gap:8px}
+.sales-api .overlay {position:fixed;inset:0;background:#13203936;backdrop-filter:blur(2px);z-index:60}
+.sales-api .drawer {position:fixed;top:0;right:0;bottom:0;width:460px;max-width:100%;z-index:65;background:#fff;box-shadow:-15px 0 60px #17244120;display:flex;flex-direction:column}
+.sales-api .drawer-head {padding:20px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.sales-api .drawer-head h2 {font-size:16px;margin:0}
+.sales-api .drawer-body {padding:24px;overflow:auto;flex:1}
+.sales-api .drawer-name {font-size:19px;line-height:1.4;letter-spacing:-.02em;margin:0 0 8px}
+.sales-api .drawer-meta {font-size:11px;color:var(--muted);margin-bottom:23px}
+.sales-api .detail-grid {display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;margin:20px 0;overflow:hidden}
+.sales-api .detail-grid>div {padding:14px}
+.sales-api .detail-grid>div:first-child {border-right:1px solid var(--line)}
+.sales-api .detail-grid small {display:block;color:var(--muted);font-size:11px}
+.sales-api .detail-grid strong {display:block;font-size:27px;margin-top:4px}
+.sales-api .drawer h3 {font-size:12px;margin:23px 0 12px}
+.sales-api .chart {height:160px;display:flex;align-items:flex-end;gap:12px;padding:22px 6px 25px;border-bottom:1px solid var(--line)}
+.sales-api .bar {flex:1;background:#c6dcf0;position:relative;min-height:2px;border-radius:5px 5px 0 0}
+.sales-api .bar.peak {background:#6c93dc}
+.sales-api .bar b {position:absolute;left:0;right:0;text-align:center;top:-21px;font-size:11px;color:#5f7495}
+.sales-api .bar small {position:absolute;left:-8px;right:-8px;text-align:center;bottom:-21px;font-size:10px;color:#8996a7}
+.sales-api .detail-list {min-width:0;table-layout:auto;font-size:12px}
+.sales-api .detail-list th {background:#f5f7fa;font-size:10px;color:var(--muted);height:31px}
+.sales-api .detail-list td {height:35px}
+.sales-api .detail-list th:first-child, .sales-api .detail-list td:first-child {text-align:left}
+.sales-api .drawer-bottom {padding:16px 24px;border-top:1px solid var(--line);font-size:11px;color:var(--quiet);display:flex;justify-content:space-between;align-items:center}
+.sales-api .drawer-bottom a {color:var(--accent);text-decoration:none}
+.sales-api .toast {position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#24344d;color:#fff;padding:12px 19px;border-radius:9px;z-index:90;font-size:12px}
+
+@media(max-width:1200px){.sales-api .sales-main {padding:18px 16px 12px}
+.sales-api .toolbar {gap:7px}
+.sales-api .search {max-width:none;flex:1 1 250px}
+.sales-api .period-wrap {margin-left:0}
+.sales-api .metric {padding:12px}
+.sales-api .mini-bars {display:none}
+.sales-api .table-top {gap:12px}
+.sales-api .legend {display:none}
+.sales-api .select {min-width:130px;max-width:210px}
+}@media(max-width:800px){.sales-api .sales-main {height:100dvh;min-height:660px;padding:14px 10px 10px;gap:11px}
+.sales-api .heading-right .subdued {display:none}
+.sales-api h1 {font-size:22px}
+.sales-api .heading-left {gap:8px}
+.sales-api .heading-right .button {font-size:11px;padding:0 9px}
+.sales-api .toolbar .search {flex-basis:100%}
+.sales-api .toolbar>.select {flex:1;min-width:0;max-width:100%}
+.sales-api .period-wrap {flex:1}
+.sales-api .period-button {width:100%}
+.sales-api .summary {gap:7px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.sales-api .metric {min-height:76px;padding:10px 12px}
+.sales-api .metric-value {font-size:23px}
+.sales-api .metric-caption {font-size:9px}
+.sales-api .metric-mark {right:10px;top:11px}
+.sales-api .table-top {flex-wrap:wrap;padding:10px;gap:8px}
+.sales-api .table-top-right {display:none}
+.sales-api .segments {margin-left:auto}
+.sales-api .segments button {padding:5px 7px;font-size:10px}
+.sales-api .footer {padding:9px 10px;font-size:10px}
+.sales-api .footer-controls {gap:6px}
+.sales-api .footer-controls label {display:none}
+.sales-api .footnote span:last-child {display:none}
+.sales-api .view-panel {width:290px}
+.sales-api .period-panel {right:auto;left:0;width:290px}
+.sales-api table {min-width:1400px}
+.sales-api .product-col {width:270px!important}
+}
+@media(prefers-reduced-motion:reduce){.sales-api * {scroll-behavior:auto!important}
+}
+
+/* Keep the report below the shared navigation and scroll only the data area. */
+body:has(.content--sales-api) {overflow:hidden}
+.workspace:has(.content--sales-api) {height:100dvh;min-height:0}
+.content--sales-api {height:calc(100dvh - var(--app-header-height));min-height:0;display:flex;padding:0!important;max-width:none!important}
+.sales-api {flex:1;min-width:0;min-height:0}
+.sales-api .sales-main {height:100%;min-height:0;gap:12px}
+.sales-api .load-status {font-size:11px;color:#6e7b8e;min-height:16px}
+.sales-api .load-status .reset {margin-left:8px}
+.sales-api .scroll[aria-busy="true"] {opacity:.55}
+.sales-api #sales-table {min-width:100%}
+.sales-api .heads .tf-th-inner {display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:4px}
+.sales-api .heads .tf-th-text {min-width:0;white-space:normal;flex:1}
+.sales-api .heads .tf-btn {width:22px;min-width:22px;height:24px;padding:3px;flex:0 0 22px}
+.sales-api .heads th[aria-sort="ascending"], .sales-api .heads th[aria-sort="descending"] {color:var(--accent)}
+.sales-api td.text {overflow:hidden;text-overflow:ellipsis}
+.sales-api .product-meta {min-width:0;overflow:hidden;white-space:nowrap}
+.sales-api .product-meta .barcode {overflow:hidden;text-overflow:ellipsis}
+.sales-api .partial {display:block;color:#929dad;font-size:9px;font-weight:400;white-space:nowrap;margin-top:3px}
+.sales-api .overlay {z-index:250}
+.sales-api .drawer {top:var(--app-header-height);z-index:260}
+.sales-api .toast {z-index:350;max-width:calc(100vw - 32px)}
+.sales-api .drawer .drawer-name {font-size:19px;margin-top:0}
+.sales-api .drawer-meta {overflow-wrap:anywhere}
+.sales-api .coverage {font-size:11px;color:var(--muted)}
+.sales-api .chart-scroll {overflow-x:auto}
+.sales-api .detail-list {min-width:0;width:100%}
+.sales-api .detail-list th {position:static}
+@media(max-width:800px){
+    .sales-api .sales-main {gap:8px}
+    .sales-api .load-status {font-size:10px}
+    .sales-api .heading-left .demo {display:none}
+    .sales-api .drawer {width:min(460px,100vw)}
+}

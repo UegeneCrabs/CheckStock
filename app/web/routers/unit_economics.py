@@ -189,6 +189,7 @@ def _unit_economics_1c_mock_product(
     turnover_coverage: dict | None = None,
     history_product_metrics: dict | None = None,
     history_day_economics: dict[str, dict] | None = None,
+    history_prices_by_day: dict[str, dict] | None = None,
     product_settings: UnitEconomics1CProductSettings | None = None,
     acceptance_coefficient: float = 0,
     team_commission_percent: float = 0,
@@ -221,6 +222,7 @@ def _unit_economics_1c_mock_product(
     current_product_metrics = current_product_metrics or product_metrics
     history_product_metrics = history_product_metrics or product_metrics
     history_day_economics = history_day_economics or {}
+    history_prices_by_day = history_prices_by_day or {}
     product_settings = product_settings or UnitEconomics1CProductSettings(
         store_slug=store_slug,
         article=article,
@@ -401,6 +403,9 @@ def _unit_economics_1c_mock_product(
         history_item = {
             "date": day.isoformat(),
             "label": day.strftime("%d.%m"),
+            "price_with_spp_rub": _price_value(
+                (history_prices_by_day.get(day.isoformat()) or {}).get("customer_price_with_spp")
+            ),
             "margin_rub": day_margin,
             "margin_complete": (saved_day_economics or {}).get("complete", False),
             "messages": (saved_day_economics or {}).get("messages", ["Недостаточно данных: нет дневного снимка"]),
@@ -884,6 +889,14 @@ async def sales_unit_economics_1c(request: Request):
         chart_metrics = (
             unit_economics_1c.load_product_metrics(store_slugs, period_days=21) if include_history else {}
         )
+        chart_prices = (
+            {
+                str(row["day"]): row
+                for row in db.get_unit_economics_1c_daily_price_history(detail_store, detail_article, 21)
+            }
+            if include_history
+            else {}
+        )
         saved_funnel_daily_rows = db.get_unit_economics_1c_funnel_daily_order_rows(
             store_slugs,
             history_from.isoformat(),
@@ -1176,6 +1189,7 @@ async def sales_unit_economics_1c(request: Request):
                         turnover_coverage=turnover_coverage,
                         history_product_metrics=history_product_metrics,
                         history_day_economics=history_day_economics,
+                        history_prices_by_day=chart_prices,
                         product_settings=effective_product_settings,
                         acceptance_coefficient=cabinet.acceptance_coefficient,
                         team_commission_percent=cabinet.team_commission_percent,

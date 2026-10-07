@@ -1214,6 +1214,21 @@ class RnpActionRecord(OrmBase):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class RnpActionRevisionRecord(OrmBase):
+    """Immutable prior text and editor for an in-place work-note correction."""
+
+    __tablename__ = "rnp_action_revisions"
+    __table_args__ = (Index("idx_rnp_action_revision_note", "action_id", "edited_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("rnp_action_log.id"), nullable=False)
+    previous_note: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    user_name: Mapped[str] = mapped_column(String, nullable=False)
+    edited_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class DecisionMetricRecord(OrmBase):
     __tablename__ = "wb_decision_metrics"
 

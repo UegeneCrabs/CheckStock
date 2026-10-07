@@ -270,7 +270,7 @@
         if (columnPreferences.order.indexOf(key) === -1) columnPreferences.order.push(key);
     });
     var savedChart = readJson(chartKey, {});
-    var chartSeries = ['orders', 'stock', 'margin', 'ads', 'drr'];
+    var chartSeries = ['orders', 'stock', 'margin', 'ads', 'drr', 'price'];
     var chartPreferences = {
         series: Array.isArray(savedChart.series)
             ? savedChart.series.filter(function (key) {
@@ -278,7 +278,11 @@
               })
             : chartSeries.slice(),
         compare: savedChart.compare === true,
+        priceSeriesVersion: 1,
     };
+    if (savedChart.priceSeriesVersion !== 1 && chartPreferences.series.indexOf('price') === -1) {
+        chartPreferences.series.push('price');
+    }
     if (!chartPreferences.series.length) chartPreferences.series = ['orders', 'stock'];
 
     function id(value) {
@@ -2147,12 +2151,14 @@
         visibleHistory.forEach(function (item) {
             var marginValue = enabled('margin') ? finite(item.margin_rub, null) : null;
             var advertisingValue = enabled('ads') ? finite(item.advertising_rub, null) : null;
+            var priceValue = enabled('price') ? finite(item.price_with_spp_rub, null) : null;
             if (marginValue !== null) moneyValues.push(marginValue);
             if (advertisingValue !== null) moneyValues.push(advertisingValue);
+            if (priceValue !== null) moneyValues.push(priceValue);
         });
         var minimum = Math.min.apply(null, [0].concat(moneyValues));
         var maximum = Math.max.apply(null, [1].concat(moneyValues));
-        var usesMoneyAxis = enabled('margin') || enabled('ads');
+        var usesMoneyAxis = enabled('margin') || enabled('ads') || enabled('price');
         if (usesMoneyAxis && enabled('orders') && minimum < 0) {
             var moneyBoundary = Math.max(Math.abs(minimum), Math.abs(maximum), 1);
             minimum = -moneyBoundary;
@@ -2275,37 +2281,50 @@
                 .join('');
         }
         function line(items, key, yFunction, className, seriesKey) {
-            var availablePoints = [];
+            var segments = [];
+            var availablePoints = null;
             items.forEach(function (item, index) {
                 var itemValue = finite(item[key], null);
-                if (itemValue !== null) availablePoints.push([x(index), yFunction(itemValue)]);
+                if (itemValue === null) {
+                    if (seriesKey === 'price') availablePoints = null;
+                    return;
+                }
+                if (!availablePoints) {
+                    availablePoints = [];
+                    segments.push(availablePoints);
+                }
+                availablePoints.push([x(index), yFunction(itemValue)]);
             });
-            if (!availablePoints.length) return { visual: '', hit: '' };
-            if (availablePoints.length === 1) {
-                return {
-                    visual: window.CheckStockUI.render('economics/shared/dashboard/visual', {
-                        className: className,
-                        content: availablePoints[0][0],
-                        content_2: availablePoints[0][1],
-                    }),
-                    hit: window.CheckStockUI.render('economics/shared/dashboard/hit', {
-                        seriesKey: seriesKey,
-                        content: availablePoints[0][0],
-                        content_2: availablePoints[0][1],
-                    }),
-                };
-            }
-            var path = chartPath(availablePoints);
-            return {
-                visual: window.CheckStockUI.render('economics/shared/dashboard/visual-2', {
-                    className: className,
-                    path: path,
-                }),
-                hit: window.CheckStockUI.render('economics/shared/dashboard/hit-2', {
-                    seriesKey: seriesKey,
-                    path: path,
-                }),
-            };
+            return segments.reduce(function (rendered, points) {
+                var segment;
+                if (points.length === 1) {
+                    segment = {
+                        visual: window.CheckStockUI.render('economics/shared/dashboard/visual', {
+                            className: className,
+                            content: points[0][0],
+                            content_2: points[0][1],
+                        }),
+                        hit: window.CheckStockUI.render('economics/shared/dashboard/hit', {
+                            seriesKey: seriesKey,
+                            content: points[0][0],
+                            content_2: points[0][1],
+                        }),
+                    };
+                } else {
+                    var path = chartPath(points);
+                    segment = {
+                        visual: window.CheckStockUI.render('economics/shared/dashboard/visual-2', {
+                            className: className,
+                            path: path,
+                        }),
+                        hit: window.CheckStockUI.render('economics/shared/dashboard/hit-2', {
+                            seriesKey: seriesKey,
+                            path: path,
+                        }),
+                    };
+                }
+                return { visual: rendered.visual + segment.visual, hit: rendered.hit + segment.hit };
+            }, { visual: '', hit: '' });
         }
         var renderedLines = {
             stock: enabled('stock')
@@ -2319,6 +2338,9 @@
                 : { visual: '', hit: '' },
             drr: enabled('drr')
                 ? line(history, 'drr_percent', drrY, 'is-drr', 'drr')
+                : { visual: '', hit: '' },
+            price: enabled('price')
+                ? line(history, 'price_with_spp_rub', moneyY, 'is-price', 'price')
                 : { visual: '', hit: '' },
         };
         var labels = history
@@ -2352,7 +2374,7 @@
             : '';
         nodes.chart.innerHTML = window.CheckStockUI.render('economics/shared/dashboard/render-chart', {
             content:
-                grid +
+                (usesMoneyAxis ? '<text class="ue1c-chart-y" x="7" y="9">₽</text>' : '') + grid +
                 drrAxis +
                 zeroAxis +
                 orderBars(compare ? previousHistory : [], true) +
@@ -2360,7 +2382,8 @@
                 renderedLines.stock.visual +
                 renderedLines.margin.visual +
                 renderedLines.ads.visual +
-                renderedLines.drr.visual,
+                renderedLines.drr.visual +
+                renderedLines.price.visual,
             left: left,
             top: top,
             left_2: left,
@@ -2370,7 +2393,7 @@
             hit: renderedLines.stock.hit,
             hit_2: renderedLines.margin.hit,
             hit_3: renderedLines.ads.hit,
-            hit_4: renderedLines.drr.hit,
+            hit_4: renderedLines.drr.hit + renderedLines.price.hit,
         });
         Array.prototype.forEach.call(nodes.chart.querySelectorAll('[data-chart-index]'), function (hit) {
             function show() {
@@ -2385,6 +2408,7 @@
             margin: { key: 'margin_rub', label: 'Прибыль', formatter: preciseMoney, suffix: '', y: moneyY },
             ads: { key: 'advertising_rub', label: 'Реклама', formatter: preciseMoney, suffix: '', y: moneyY },
             drr: { key: 'drr_percent', label: 'ДРР с выкупом', formatter: decimal, suffix: '%', y: drrY },
+            price: { key: 'price_with_spp_rub', label: 'Цена с СПП', formatter: preciseMoney, suffix: '', y: moneyY },
         };
         Array.prototype.forEach.call(
             nodes.chart.querySelectorAll('[data-chart-line-series]'),
@@ -2443,7 +2467,7 @@
             {
                 label: item.label,
                 label_2: definition.label,
-                content: definition.formatter.format(value) + definition.suffix + (seriesKey === 'margin' && item.margin_complete === false ? ' · Неполный расчёт. ' + (item.messages || []).join(' ') : ''),
+                content: definition.formatter.format(value) + definition.suffix + (seriesKey === 'margin' && item.margin_complete === false ? ' · Неполный расчёт. ' + (item.messages || []).join(' ') : '') + (seriesKey === 'price' && item.price_with_spp_estimated ? ' · расчётная' : ''),
             },
         );
         nodes.chartSeriesTooltip.style.left =
@@ -2485,6 +2509,7 @@
                 content_4: nullable(item.drr_percent, decimal, '%'),
                 content_5: nullable(item.margin_rub, preciseMoney) + calculationNote(item.margin_rub, item.messages),
                 content_6: nullable(item.stock_units, integer, ' шт.'),
+                price: nullable(item.price_with_spp_rub, preciseMoney) + (item.price_with_spp_rub != null && item.price_with_spp_estimated ? ' · расчётная' : ''),
                 content_7: previous
                     ? window.CheckStockUI.render('economics/shared/dashboard/show-chart-tooltip', {
                           content: nullable(previous.orders_count, decimal, ' шт.'),
@@ -2564,6 +2589,7 @@
             margin: 'margin_rub',
             ads: 'advertising_rub',
             drr: 'drr_percent',
+            price: 'price_with_spp_rub',
         };
         Object.keys(seriesKeys).forEach(function (series) {
             var control = nodes.chartWrap.querySelector('[data-chart-series="' + series + '"]');

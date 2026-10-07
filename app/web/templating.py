@@ -6,6 +6,7 @@ from app import db
 from app.access import auth
 from app.access.access_control import accessible_marketplaces
 from app.access.sections import (
+    ANALYTICS_SECTIONS,
     REPORT_SECTIONS,
     SECTION_LABELS,
     SECTION_PARENTS,
@@ -221,6 +222,8 @@ def render_page(
         return "" if allowed else " hidden"
 
     marketplace = {
+        "analytics_sales_api": ("wb", "WB", "Wildberries"),
+        "analyzer": ("wb", "WB", "Wildberries"),
         "unit_1c_wb": ("wb", "WB", "Wildberries"),
         "unit_1c_ozon": ("ozon", "O", "Ozon"),
         "unit_1c_yandex": ("ym", "Я", "Яндекс Маркет"),
@@ -232,7 +235,7 @@ def render_page(
     marketplace_badge = ""
     if marketplace:
         color, mark, label = marketplace
-        marketplace_section = "Отчёты" if reports_open else "Юнит-экономика"
+        marketplace_section = "Аналитика" if active in {"analyzer", "analytics_sales_api"} else "Отчёты" if reports_open else "Юнит-экономика"
         marketplace_badge = (
             f'<span class="marketplace-badge" aria-label="{marketplace_section}: {label}">'
             f'<span class="marketplace-badge-mark" aria-hidden="true">{mark}</span>'
@@ -242,6 +245,12 @@ def render_page(
         "layout/header.html",
         marketplace_header_class=" marketplace-" + marketplace[0] if marketplace else "",
         marketplace_badge=marketplace_badge,
+        analytics_hidden=hidden(any(visible[item] for item in ANALYTICS_SECTIONS)),
+        analytics_active="active" if active in {"analyzer", "analytics_sales_api"} else "",
+        analyzer_hidden=hidden(visible[SectionName.ANALYZER]),
+        analyzer_active="active" if active == "analyzer" else "",
+        sales_api_hidden=hidden(visible[SectionName.ANALYTICS_SALES_API]),
+        sales_api_active="active" if active == "analytics_sales_api" else "",
         stock_open="",
         stock_expanded="false",
         stock_group_hidden=hidden(any(visible[item] for item in STOCK_SECTIONS)),
