@@ -75,6 +75,7 @@
 | Переменная | По умолчанию | Значение |
 | --- | --- | --- |
 | `CHECKSTOCK_YANDEX_FINANCE_ENABLED` | `0` | Разрешение автоматического финансового задания. |
+| `CHECKSTOCK_YANDEX_FINANCE_SECRETS_PATH` | Рядом с файлом токенов Яндекса, `yandex-finance/` | Отдельный записываемый каталог ключей. В Docker — `/app/finance-credentials` в постоянном volume `yandex-finance-credentials`; существующий `secrets` остаётся read-only. |
 | `CHECKSTOCK_YANDEX_FINANCE_RAW_RETENTION_DAYS` | `365` | Срок хранения исходного JSON устаревших версий, минимум 90 дней. |
 | `CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS` | `0` | Дополнительная глубина сверки на первое число месяца, 0–12. |
 

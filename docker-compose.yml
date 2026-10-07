@@ -51,6 +51,7 @@ services:
       CHECKSTOCK_DISABLE_BACKGROUND_SYNC: ${CHECKSTOCK_DISABLE_BACKGROUND_SYNC:-0}
       CHECKSTOCK_ECONOMICS_PREVIEW_USER_ID: ${CHECKSTOCK_ECONOMICS_PREVIEW_USER_ID:-0}
       CHECKSTOCK_YANDEX_FINANCE_ENABLED: ${CHECKSTOCK_YANDEX_FINANCE_ENABLED:-0}
+      CHECKSTOCK_YANDEX_FINANCE_SECRETS_PATH: /app/finance-credentials
       CHECKSTOCK_YANDEX_FINANCE_RAW_RETENTION_DAYS: ${CHECKSTOCK_YANDEX_FINANCE_RAW_RETENTION_DAYS:-365}
       CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS: ${CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS:-0}
       CHECKSTOCK_FTP_EXPORT_ENABLED: ${CHECKSTOCK_FTP_EXPORT_ENABLED:-1}
@@ -104,6 +105,7 @@ services:
       CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS: ${CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS:-1}
     volumes:
       - ./secrets:/app/secrets:ro
+      - yandex-finance-credentials:/app/finance-credentials
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
     stop_grace_period: 60s
@@ -134,3 +136,4 @@ volumes:
   wb-storefront-data:
   yandex-parser-data:
   postgres-data:
+  yandex-finance-credentials:

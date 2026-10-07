@@ -23,7 +23,11 @@ class FinanceSecrets:
     """Per-connection files; old token configuration is only a read-only fallback."""
 
     def __init__(self, directory=None):
-        self.directory = directory or settings.yandex_tokens_path.parent / "yandex-finance"
+        self.directory = (
+            directory
+            or settings.yandex_finance_secrets_path
+            or settings.yandex_tokens_path.parent / "yandex-finance"
+        )
 
     def _path(self, identifier):
         from uuid import UUID
