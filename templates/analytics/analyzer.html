@@ -1,5 +1,5 @@
 <link rel="stylesheet" href="/static/common/table-filter.css?v=20260912">
-<link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261007-3">
+<link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261007-4">
 <section class="analyzer" id="analyzer"><div class="analyzer-main">
  <section class="toolbar" aria-label="Фильтры товаров">
   <div class="report-search"><div class="heading-left"><h1>Анализатор товаров</h1><span class="demo">WB</span></div>
@@ -11,7 +11,7 @@
  <div id="load-status" class="load-status" role="status">Загрузка данных…</div>
  <div class="table-workspace" id="table-workspace">
   <section class="table-card" aria-label="Анализатор товаров WB">
-  <div class="table-top"><div class="table-navigation"><div class="table-title">Товары <span id="count">0</span></div><div class="jumps" aria-label="Перейти к блоку"><button class="active" data-jump="product">Обзор</button><button data-jump="traffic">Воронка</button><button data-jump="performance">Эффективность</button><button data-jump="week">Заказы по дням</button><button data-jump="plan">Цены и план</button><button data-jump="turnover">Товарооборот</button><button data-jump="notes">Работа по неделе</button></div></div>
+  <div class="table-top"><div class="table-navigation"><div class="table-title">Товары <span id="count">0</span></div><div class="jumps" aria-label="Перейти к блоку"><button class="active" data-jump="product">Обзор</button><button data-jump="traffic">Воронка</button><button data-jump="performance">Эффективность</button><button data-jump="goals" data-jump-fallback="week">Заказы по дням</button><button data-jump="plan">Цены и план</button><button data-jump="turnover">Товарооборот</button><button data-jump="notes">Работа по неделе</button></div></div>
    <div class="table-actions"><div class="period"><button id="prev-week" aria-label="Предыдущая неделя">‹</button><div class="period-text"><small id="week-caption">Неделя</small><strong id="week-label">Загрузка…</strong></div><button id="next-week" aria-label="Следующая неделя">›</button></div><button class="button" id="export"><svg class="ico"><use href="#i-download"/></svg>Экспорт</button>
    <div class="columns-wrap"><button class="button" id="columns-toggle" aria-expanded="false"><svg class="ico"><use href="#i-columns"/></svg>Колонки</button><div class="column-panel" id="column-panel" hidden><strong>Вид таблицы</strong><p>Настройте группы столбцов и плотность строк.</p><label><input id="sheet-order" type="checkbox">Отдельные столбцы товара</label><label><input id="dense" type="checkbox">Компактные строки</label><hr><div id="groups-list"></div><div class="panel-actions"><button class="button" id="show-all">Показать все</button><button class="button primary" id="columns-done">Готово</button></div></div></div></div>
   </div>
@@ -36,4 +36,4 @@
 </section>
 <script type="application/json" id="analyzer-config">$analyzer_config</script>
 <script src="/static/analytics/analyzer-model.js?v=20261007-3" defer></script>
-<script src="/static/analytics/analyzer.js?v=20261007" defer></script>
+<script src="/static/analytics/analyzer.js?v=20261007-4" defer></script>

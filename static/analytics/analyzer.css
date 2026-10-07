@@ -269,7 +269,7 @@ body:has(.content--analyzer) {overflow:hidden}
 .analyzer .report-search h1 {font-size:21px}
 .analyzer .report-search .search {flex:none;width:100%;max-width:none}
 .analyzer .report-search .segments {align-self:flex-start;order:0;height:34px}
-.analyzer .store-summary-wrap {flex:1;min-width:0;max-height:184px;overflow:auto;border:1px solid #dcd1ed;border-radius:9px;background:white;scrollbar-width:thin}
+.analyzer .store-summary-wrap {flex:0 1 620px;width:620px;max-width:100%;min-width:0;max-height:184px;overflow:auto;border:1px solid #dcd1ed;border-radius:9px;background:white;scrollbar-width:thin}
 .analyzer .store-summary {width:100%;min-width:590px;table-layout:fixed;font-size:10px}
 .analyzer .store-summary caption {text-align:left;padding:3px 8px;background:#f4ecfc;color:#79618e;font-size:10px;position:sticky;top:0;z-index:11;height:21px}
 .analyzer .store-summary th, .analyzer .store-summary td {padding:1px 7px;height:18px;font-size:10px;white-space:nowrap;background:#fff}

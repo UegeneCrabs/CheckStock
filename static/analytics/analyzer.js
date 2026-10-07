@@ -21,7 +21,7 @@
     let payload = null, rows = [], columns = [], loadedWeek = null, requestedWeek = monday(config.today);
     let pending = null, loading = false, selected = null, editingNoteId = null, noteSaving = false, toastTimer;
     const noteDrafts = new Map();
-    const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: null, direction: 1, page: 1, pageSize: 20};
+    const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: M.fields.find(column => column.key === 'fact').index, direction: -1, page: 1, pageSize: 20};
     const visibleGroups = new Set(Object.keys(M.groups));
     const preferenceKey = 'checkstock.analyzer.columns.v1';
     try {
@@ -110,7 +110,7 @@
             return `<th colspan="${group.columns.length}" data-section="${group.key}" class="tone-${group.key} ${pinned ? 'frozen' : ''}" ${pinned ? `style="left:${group.frozenLeft}px"` : ''}>${pinned ? group.columns[0].key === 'code' ? 'Код' : 'Товар' : group.key === 'product' ? 'Команда и проект' : M.groups[group.key]}</th>`;
         }).join('');
         $('thead').innerHTML = `<tr class="group">${groupHeaders}</tr><tr class="heads">${columns.map(column => `<th ${columnAttributes(column)} ${column.type === 'spacer' ? '' : `data-filter-column="${column.index}" ${M.numeric(column) ? 'data-filter-type="number"' : ''}`} title="${esc(title(column))}">${label(column)}</th>`).join('')}</tr><tr class="totals"></tr>`;
-        root.querySelectorAll('[data-jump]').forEach(button => { button.hidden = !columns.some(column => column.group === button.dataset.jump); });
+        root.querySelectorAll('[data-jump]').forEach(button => { button.hidden = jumpColumnIndex(button) < 0; });
         // Stable column IDs keep filters attached to the right fields when groups move.
         $('table')._tfFilters = state.filters;
         window.CheckStockTableFilter.refresh($('table'));
@@ -333,8 +333,12 @@
         if (note) openDrawer(note.dataset.note, Number(note.dataset.day));
         if (copy) { try { await navigator.clipboard.writeText(copy.dataset.copy); toast('Артикул скопирован'); } catch { toast('Не удалось скопировать артикул'); } }
     });
-    root.querySelectorAll('[data-jump]').forEach(button => button.onclick = () => {
+    function jumpColumnIndex(button) {
         const idx = columns.findIndex(column => column.group === button.dataset.jump);
+        return idx >= 0 ? idx : columns.findIndex(column => column.group === button.dataset.jumpFallback);
+    }
+    root.querySelectorAll('[data-jump]').forEach(button => button.onclick = () => {
+        const idx = jumpColumnIndex(button);
         if (idx < 0) return;
         const offset = columns.slice(0, idx).reduce((sum, column) => sum + column.width, 0);
         const pinnedWidth = columns.filter(column => column.frozenLeft != null).reduce((sum, column) => sum + column.width, 0);
