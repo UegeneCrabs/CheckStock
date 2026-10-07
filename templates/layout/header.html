@@ -8,7 +8,6 @@
     </div>
 
     <nav class="side-nav" aria-label="Основная навигация">
-        <a class="nav-item $finance_active" href="/finance-reports/yandex"$finance_hidden title="Финансовые отчёты · Яндекс Маркет" aria-label="Финансовые отчёты · Яндекс Маркет"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 15v-3m5 3V8m5 7v-5M7 17h10"></path></svg><span>Финансовые отчёты · ЯМ</span></a>
         <div class="nav-group $stock_open" data-nav-group$stock_group_hidden>
             <div class="nav-group-head">
                 <button
@@ -167,6 +166,21 @@
                 >
                 <a class="nav-subitem marketplace-report-ym $unit_1c_reports_yandex_active" href="/sales/unit-economics-1c/yandex-market/reports/unit-profit" $unit_1c_reports_yandex_hidden>ЯМ · Юниточная прибыль</a>
                 <a class="nav-subitem marketplace-report-ym $unit_1c_target_price_yandex_active" href="/sales/unit-economics-1c/yandex-market/reports/target-price" $unit_1c_target_price_yandex_hidden>ЯМ · Целевая цена</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-nav-group$finance_hidden>
+            <div class="nav-group-head">
+                <button class="nav-item nav-group-trigger $finance_active" type="button"
+                    title="Финансовые отчёты" aria-expanded="$finance_expanded"
+                    aria-controls="nav-finance-reports-submenu" data-nav-toggle>
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 15v-3M12 15V8M17 15v-5"></path></svg>
+                    <span>Финансовые отчёты</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-finance-reports-submenu" data-nav-submenu>
+                <a class="nav-subitem $finance_active" href="/finance-reports/yandex">Яндекс</a>
             </div>
         </div>
 

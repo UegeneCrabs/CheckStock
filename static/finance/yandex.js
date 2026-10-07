@@ -7,6 +7,29 @@
   const filters = $('finance-filters');
   const admin = $('finance-admin');
   const dialog = $('finance-detail');
+  const rangePicker = $('finance-date-range-picker');
+  const rangePanel = $('finance-date-range-panel');
+  const calendarDays = $('finance-calendar-days');
+  const calendarHint = $('finance-calendar-hint');
+  let calendarMonth, calendarMax = '', draftFrom = '', draftTo = '';
+  const formatDay = value => String(value).replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3.$2.$1');
+  const parseDay = value => new Date(`${value}T00:00:00Z`);
+  const isoDay = value => value.toISOString().slice(0, 10);
+  const primaryRows = [
+    ['orders_turnover', 'ТО заказы из воронки', 'Стоимость созданных заказов. Не означает состоявшуюся реализацию и не уменьшается на последующие отмены.'],
+    ['seller_turnover', 'ТО выкупы-возвраты в цене селлера', 'Финансовая реализация с компенсациями за вычетом финансовых возвратов.'],
+    ['buyer_turnover', 'ТО выкупы-возвраты в цене покупателя', 'Стоимость тех же реализованных и возвращённых единиц в цене покупателя.'],
+    ['buyout_count', 'К-во выкупов', 'Реализованные единицы минус финансовые возвраты. Это количество товаров, а не заказов; оно может быть отрицательным.'],
+    ['commission', 'Комиссия', 'Фактические денежные начисления комиссии и их корректировки.'],
+    ['storage', 'Хранение', 'Фактические расходы на хранение за период, включая дни без продаж.'],
+    ['logistics', 'Логистика', 'Фактические логистические услуги. Эквайринг и перевод платежей показаны отдельно.'],
+    ['acquiring', 'Эквайринг и перевод платежей', 'Приём и перечисление платежей. Прочие расходы и начисления доступны в дополнительных показателях.'],
+    ['advertising', 'Реклама', 'Фактические расходы на рекламу Маркета и их корректировки.'],
+    ['accrual_result', 'Результат по начислениям', 'Оборот селлера минус все расходы Маркета плюс прочие начисления. Это не фактическая выплата на расчётный счёт.'],
+    ['net_cost', 'ЗЦ проданных товаров', 'Закупка реализованных товаров за вычетом восстановленной закупки возвратов.'],
+    ['profit', 'Маржинальная прибыль', 'Результат по начислениям минус закупка нетто. До налогов и внешних расходов.'],
+    ['margin_percent', 'Маржинальная прибыль, % от ТО выкупов в цене покупателя', 'Прибыль / оборот покупателя нетто × 100. Рассчитывается при полных данных и положительном обороте.'],
+  ];
   const fmt = value => {
     if(value == null) return '—';
     const match=String(value).match(/^(-?)(\d+)(?:\.(\d+))?$/);
@@ -28,13 +51,17 @@
   }
   function metric(key, value, day = '') {
     const title = value.reasons.length ? value.reasons.slice(0, 15).join('\n') : value.label;
-    const inside = `${fmt(value.value)}${!value.complete ? `<small>известно ${fmt(value.known_value)}</small>` : ''}`;
+    const inside = `${fmt(value.value)}${key === 'margin_percent' && value.value != null ? '%' : ''}${!value.complete ? `<small>известно ${fmt(value.known_value)}</small>` : ''}`;
     if (key === 'margin_percent') return `<span class="finance-value" title="${esc(title)}">${inside}</span>`;
     return `<button type="button" class="finance-value ${!value.complete ? 'is-partial' : ''}" data-metric="${esc(key)}" data-day="${esc(day)}" title="${esc(title)}">${inside}</button>`;
   }
+  function metricRow(key, value, label = value.label, help = value.label) {
+    const total = key === 'profit' ? ' finance-row--total finance-row--total-start' : key === 'margin_percent' ? ' finance-row--total' : '';
+    return `<tr class="finance-row${total}"><th scope="row"><span class="finance-help" tabindex="0" title="${esc(help)}" data-tooltip="${esc(help)}">${esc(label)}</span></th><td>${metric(key, value)}</td></tr>`;
+  }
   function render(data) {
     $('finance-report').hidden = false;
-    $('finance-period').textContent = `${data.date_from} — ${data.date_to}`;
+    $('finance-period').textContent = `${formatDay(data.date_from)} — ${formatDay(data.date_to)}`;
     $('finance-version').textContent = `Магазинов: ${data.stores.length}`;
     const missing = Object.values(data.metrics).some(m => !m.complete && m !== data.metrics.margin_percent);
     const stamps = data.status.map(s => s.last_success).filter(Boolean).sort();
@@ -42,9 +69,9 @@
     state.classList.toggle('finance-warning', missing || data.stale);
     state.textContent = [data.empty_scope ? 'Нет доступных магазинов.' : missing ? 'Неполные данные: прочерк означает, что полный итог пока неизвестен.' : 'Все обязательные источники загружены.', data.preliminary ? 'Текущий месяц предварительный.' : '', data.stale ? 'Последнее обновление завершилось ошибкой. Показана последняя опубликованная версия.' : '', stamps.length ? `Последняя успешная загрузка: ${new Date(stamps.at(-1)).toLocaleString('ru-RU')}.` : 'Успешных загрузок ещё нет.'].filter(Boolean).join(' ');
     if (data.status.some(s=>s.running)) state.textContent += ' Идёт обновление; пока показан опубликованный результат.';
-    const cards = ['seller_turnover','expenses','profit','margin_percent'];
-    $('finance-cards').innerHTML = cards.map(key => `<article class="finance-card"><h3>${esc(data.metrics[key].label)}</h3>${metric(key,data.metrics[key])}</article>`).join('');
-    $('finance-metrics').innerHTML = Object.entries(data.metrics).map(([key,value]) => `<div class="finance-metric-row"><span>${esc(value.label)}</span>${metric(key,value)}</div>`).join('');
+    $('finance-main-rows').innerHTML = primaryRows.filter(([key]) => data.metrics[key]).map(([key,label,help]) => metricRow(key,data.metrics[key],label,help)).join('');
+    const primaryKeys = new Set(primaryRows.map(([key]) => key));
+    $('finance-metrics').innerHTML = Object.entries(data.metrics).filter(([key]) => !primaryKeys.has(key)).map(([key,value]) => metricRow(key,value)).join('');
     $('finance-daily').querySelector('tbody').innerHTML = data.daily.map(row => `<tr><td>${esc(row.day)}</td>${['seller_turnover','expenses','net_cost','profit','buyout_count'].map(key => `<td>${metric(key,row.metrics[key],row.day)}</td>`).join('')}</tr>`).join('');
     $('finance-sources').innerHTML = data.status.map(s => `<div class="finance-source"><strong>${esc(s.store_slug)} · ${esc(s.business_id)} · ${esc(labels[s.source] || s.source)}</strong><p>Последнее обновление: ${s.last_success ? esc(new Date(s.last_success).toLocaleString('ru-RU')) : 'не загружено'}</p>${s.errors.map(e => `<p class="finance-error">${esc(e.month)}: ${esc(e.message)}</p>`).join('')}${s.coverage.map(c => `<p>${esc(c.from)} — ${esc(c.to)} ${c.issues.map(esc).join('; ')}</p>`).join('')}</div>`).join('') || 'Нет настроенных финансовых подключений для периода.';
   }
@@ -54,6 +81,7 @@
     controller = new AbortController(); dialog.close();
     summary = null;
     $('finance-report').hidden = true;
+    $('finance-report').setAttribute('aria-busy', 'true');
     $('finance-message').className = '';
     $('finance-message').textContent = 'Загрузка отчёта…';
     query = new URLSearchParams(new FormData(filters)).toString();
@@ -62,7 +90,84 @@
       if (own !== sequence) return;
       summary = data; render(data); $('finance-message').textContent = '';
     } catch (error) { if (own === sequence && error.name !== 'AbortError') { $('finance-message').className = 'finance-error'; $('finance-message').textContent = error.message; } }
+    finally { if (own === sequence) $('finance-report').setAttribute('aria-busy', 'false'); }
   }
+  function updateRangeLabel() {
+    $('finance-date-range-label').textContent = `${formatDay(filters.elements.date_from.value)} — ${formatDay(filters.elements.date_to.value)}`;
+  }
+  function renderCalendar() {
+    const year = calendarMonth.getUTCFullYear(), month = calendarMonth.getUTCMonth();
+    const first = new Date(Date.UTC(year, month, 1));
+    const offset = (first.getUTCDay() + 6) % 7;
+    const title = new Intl.DateTimeFormat('ru-RU', {month:'long',year:'numeric',timeZone:'UTC'}).format(first);
+    $('finance-calendar-title').textContent = title[0].toUpperCase() + title.slice(1);
+    $('finance-calendar-next').disabled = isoDay(new Date(Date.UTC(year, month + 1, 1))) > calendarMax;
+    calendarDays.innerHTML = Array.from({length:42}, (_, index) => {
+      const day = new Date(Date.UTC(year, month, 1 - offset + index));
+      const value = isoDay(day), classes = [];
+      if (day.getUTCMonth() !== month) classes.push('is-outside');
+      if (draftFrom && draftTo && value > draftFrom && value < draftTo) classes.push('is-in-range');
+      const selected = value === draftFrom || value === draftTo;
+      if (selected) classes.push('is-range-edge');
+      return `<button type="button" data-finance-calendar-day="${value}" class="${classes.join(' ')}" aria-label="${formatDay(value)}" aria-pressed="${selected}"${value > calendarMax ? ' disabled' : ''}>${day.getUTCDate()}</button>`;
+    }).join('');
+  }
+  function closeCalendar(restoreFocus = false) {
+    rangePanel.hidden = true;
+    rangePicker.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) rangePicker.focus();
+  }
+  function openCalendar() {
+    if (!calendarMax) return;
+    draftFrom = filters.elements.date_from.value;
+    draftTo = filters.elements.date_to.value;
+    const anchor = parseDay(draftTo || draftFrom || calendarMax);
+    calendarMonth = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+    calendarHint.textContent = 'Выберите начало и конец периода · до 366 дней';
+    renderCalendar();
+    rangePanel.hidden = false;
+    rangePicker.setAttribute('aria-expanded', 'true');
+  }
+  function selectCalendarDay(value) {
+    if (value > calendarMax) return;
+    if (!draftFrom || draftTo) {
+      draftFrom = value;
+      draftTo = '';
+      calendarHint.textContent = `Начало: ${formatDay(value)}. Выберите конец периода`;
+    } else {
+      const start = value < draftFrom ? value : draftFrom;
+      const end = value < draftFrom ? draftFrom : value;
+      if ((parseDay(end) - parseDay(start)) / 86400000 >= 366) {
+        calendarHint.textContent = 'Период должен быть не длиннее 366 дней. Выберите другую дату окончания';
+        return;
+      }
+      draftFrom = start;
+      draftTo = end;
+      filters.elements.date_from.value = start;
+      filters.elements.date_to.value = end;
+      updateRangeLabel();
+      closeCalendar(true);
+      load();
+    }
+    renderCalendar();
+  }
+  rangePicker.addEventListener('click', () => rangePanel.hidden ? openCalendar() : closeCalendar());
+  calendarDays.addEventListener('click', e => {
+    const day = e.target.closest('[data-finance-calendar-day]');
+    if (day && !day.disabled) selectCalendarDay(day.dataset.financeCalendarDay);
+  });
+  for (const [id, step] of [['finance-calendar-prev', -1], ['finance-calendar-next', 1]]) {
+    $(id).addEventListener('click', () => {
+      calendarMonth = new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() + step, 1));
+      renderCalendar();
+    });
+  }
+  document.addEventListener('click', e => {
+    if (!rangePanel.hidden && !rangePanel.contains(e.target) && !rangePicker.contains(e.target) && !e.target.closest('[data-finance-calendar-day]')) closeCalendar();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !rangePanel.hidden) { e.preventDefault(); closeCalendar(true); }
+  });
   async function loadDetails() {
     if (!summary || !selection) return;
     const own = ++detailSequence;
@@ -81,7 +186,15 @@
       $('finance-prev').disabled = data.page <= 1; $('finance-next').disabled = data.page * data.page_size >= data.total_count;
     } catch (error) { if (own === detailSequence && error.name !== 'AbortError') $('finance-detail-message').textContent = error.message; }
   }
-  filters.addEventListener('submit', e => {e.preventDefault();load();});
+  filters.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!rangePanel.hidden && draftFrom && !draftTo) {
+      calendarHint.textContent = 'Выберите конец периода';
+      return;
+    }
+    closeCalendar(); load();
+  });
+  filters.elements.store.addEventListener('change', () => {closeCalendar();load();});
   $('finance-report').addEventListener('click', e => {
     const button = e.target.closest('[data-metric]'); if (!button || !summary) return;
     selection = {metric:button.dataset.metric, day:button.dataset.day, page:1};
@@ -132,7 +245,7 @@
       const options=data.stores.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
       filters.elements.store.insertAdjacentHTML('beforeend',options);
       filters.elements.date_from.value=data.date_from;filters.elements.date_to.value=data.date_to;
-      filters.elements.date_from.max=filters.elements.date_to.max=data.today;
+      calendarMax=data.today;updateRangeLabel();
       if (!admin.hidden) {
         admin.querySelectorAll('[data-finance-stores]').forEach(s=>s.insertAdjacentHTML('beforeend',options));
         $('finance-run-form').elements.date_from.value=data.date_from;$('finance-run-form').elements.date_to.value=data.date_to;

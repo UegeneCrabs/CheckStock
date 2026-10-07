@@ -256,6 +256,7 @@ def render_page(
         "layout/header.html",
         finance_hidden=hidden(visible[SectionName.FINANCE_YANDEX]),
         finance_active="active" if active == "finance_yandex" else "",
+        finance_expanded="false",
         marketplace_header_class=" marketplace-" + marketplace[0] if marketplace else "",
         marketplace_badge=marketplace_badge,
         analytics_hidden=hidden(any(visible[item] for item in ANALYTICS_SECTIONS)),

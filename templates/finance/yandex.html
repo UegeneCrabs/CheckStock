@@ -1,23 +1,37 @@
-<link rel="stylesheet" href="/static/finance/yandex.css">
-<section class="finance-page" id="finance-page">
-  <div class="finance-heading"><div><p class="finance-eyebrow">ФИНАНСОВЫЕ ОТЧЁТЫ / ЯНДЕКС МАРКЕТ</p><h1>Финансы магазина</h1><p>Реализация, расходы и закупка — с расшифровкой каждой суммы.</p></div><span class="finance-badge">Учёт по начислениям</span></div>
-  <form id="finance-filters" class="finance-panel finance-filters">
-    <label>Магазин<select name="store" aria-label="Магазин"><option value="">Все доступные магазины</option></select></label>
-    <label>С<input type="date" name="date_from" required></label><label>По<input type="date" name="date_to" required></label>
-    <button type="submit">Показать</button><span>До 366 дней · время Москвы · суммы в ₽</span>
-  </form>
+<link rel="stylesheet" href="/static/finance/yandex.css?v=20261007-table">
+<section class="finance-report finance-page" id="finance-page" aria-label="Финансовый отчёт Яндекс">
+  <header class="finance-report__header">
+    <div><p class="finance-report__eyebrow">Яндекс Маркет</p><h1>RBE</h1></div>
+    <form id="finance-filters" class="finance-report__controls" aria-label="Параметры отчёта">
+      <div class="finance-date-range">
+        <label>Магазин<select name="store" aria-label="Магазин"><option value="">Все магазины</option></select></label>
+        <div class="finance-range-picker">
+          <span class="finance-range-picker__label">Период</span>
+          <button class="finance-range-picker__trigger" id="finance-date-range-picker" type="button" aria-label="Выбрать период" aria-expanded="false" aria-haspopup="dialog" aria-controls="finance-date-range-panel"><span id="finance-date-range-label">Выберите период</span><span aria-hidden="true">▣</span></button>
+          <div class="finance-range-picker__panel" id="finance-date-range-panel" role="dialog" aria-label="Выбор периода" hidden>
+            <div class="finance-range-picker__header"><button type="button" id="finance-calendar-prev" aria-label="Предыдущий месяц">‹</button><strong id="finance-calendar-title"></strong><button type="button" id="finance-calendar-next" aria-label="Следующий месяц">›</button></div>
+            <div class="finance-range-picker__weekdays" aria-hidden="true"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+            <div class="finance-range-picker__days" id="finance-calendar-days"></div>
+            <p class="finance-range-picker__hint" id="finance-calendar-hint" role="status">Выберите начало и конец периода · до 366 дней</p>
+          </div>
+          <input type="hidden" name="date_from"><input type="hidden" name="date_to">
+        </div>
+        <button class="finance-apply" type="submit">Применить</button>
+      </div>
+    </form>
+  </header>
   <p id="finance-message" role="status" aria-live="polite">Загрузка доступных магазинов…</p>
   <div id="finance-report" hidden>
-    <div class="finance-result-heading"><h2 id="finance-period"></h2><span id="finance-version"></span></div>
-    <div class="finance-panel finance-notice" id="finance-state"></div>
-    <div class="finance-cards" id="finance-cards"></div>
-    <section class="finance-panel"><h2>Состав финансового результата</h2><p class="finance-muted">Выберите сумму, чтобы увидеть операции. Неполные показатели содержат только известную часть.</p><div id="finance-metrics"></div></section>
-    <section class="finance-panel"><h2>По дням</h2><div class="finance-scroll"><table id="finance-daily"><thead><tr><th>Дата</th><th>Реализация нетто</th><th>Расходы</th><th>Закупка нетто</th><th>Прибыль</th><th>Количество нетто</th></tr></thead><tbody></tbody></table></div></section>
+    <div class="finance-table-wrap"><table class="finance-table" aria-label="Финансовые показатели"><thead><tr><th scope="col">Показатель</th><th scope="col" id="finance-period">Факт</th></tr></thead><tbody id="finance-main-rows"></tbody></table></div>
+    <div class="finance-report-meta"><span id="finance-version"></span><span>Суммы в ₽ · время Москвы · нажмите сумму для расшифровки</span></div>
+    <p class="finance-notice" id="finance-state" role="status"></p>
+    <details class="finance-panel"><summary>Дополнительные показатели</summary><div class="finance-table-wrap"><table class="finance-table" aria-label="Дополнительные финансовые показатели"><thead><tr><th scope="col">Показатель</th><th scope="col">Факт</th></tr></thead><tbody id="finance-metrics"></tbody></table></div></details>
+    <details class="finance-panel"><summary>По дням</summary><div class="finance-scroll"><table class="finance-detail-table" id="finance-daily"><thead><tr><th>Дата</th><th>Реализация нетто</th><th>Расходы</th><th>Закупка нетто</th><th>Прибыль</th><th>Количество нетто</th></tr></thead><tbody></tbody></table></div></details>
     <details class="finance-panel"><summary>Источники и полнота загрузки</summary><div id="finance-sources"></div></details>
     <p class="finance-footnote">Прибыль рассчитана до налогов и внешних расходов. Выплаты показаны отдельно по данным Маркета: это не подтверждение зачисления на банковский счёт. Текущий месяц предварительный.</p>
   </div>
-  <section class="finance-panel finance-admin" $admin_hidden id="finance-admin">
-    <h2>Настройка финансового учёта</h2><p>Управление доступно суперадминистратору. Автообновление включается настройкой CHECKSTOCK_YANDEX_FINANCE_ENABLED и управляется в <a href="/admin/integrations">фоновых заданиях</a>.</p>
+  <details class="finance-panel finance-admin" $admin_hidden id="finance-admin">
+    <summary>Настройка финансового учёта</summary><p>Управление доступно суперадминистратору. Автообновление включается настройкой CHECKSTOCK_YANDEX_FINANCE_ENABLED и управляется в <a href="/admin/integrations">фоновых заданиях</a>.</p>
     <details><summary>Подключения кабинетов и кампаний</summary>
       <div id="finance-connections"></div>
       <form id="finance-connection-form" class="finance-form-grid">
@@ -44,7 +58,7 @@
       <label>Основание<input name="reason" minlength="3" maxlength="1000" required></label><button type="submit">Сохранить цену</button><button type="button" id="finance-load-costs">Показать историю цен</button>
     </form><p>Цена применяется к дате продажи. Возврат восстанавливает закупку исходной продажи. Для изменения опубликованной истории запустите пересчёт, начиная с месяца продажи.</p><div id="finance-costs"></div></details>
     <p id="finance-admin-message" role="status" aria-live="polite"></p>
-  </section>
+  </details>
 </section>
 <dialog id="finance-detail"><div class="finance-dialog-heading"><h2 id="finance-detail-title">Операции</h2><button type="button" id="finance-detail-close" aria-label="Закрыть операции">Закрыть</button></div>
   <form id="finance-detail-filters" class="finance-filters"><label>Тип<select name="kind"><option value="">Все типы</option><option value="sale">Реализация</option><option value="return">Возврат</option><option value="expense">Расход</option><option value="income">Начисление</option><option value="order">Заказ</option><option value="payment">Выплата</option></select></label><label>Статья<select name="category"><option value="">Все статьи</option><option value="commission">Комиссия</option><option value="acquiring">Платежи</option><option value="logistics">Логистика</option><option value="storage">Хранение</option><option value="advertising">Реклама</option><option value="other">Прочее</option><option value="unclassified">Не классифицировано</option></select></label><button type="submit">Применить</button></form>
@@ -53,4 +67,4 @@
   <div class="finance-pagination"><button id="finance-prev" type="button">Назад</button><span id="finance-detail-page"></span><button id="finance-next" type="button">Далее</button></div>
 </dialog>
 <dialog id="finance-key-dialog"><form id="finance-key-form"><h2>Заменить API-ключ</h2><p>Выбранные кампании сохранятся.</p><label>Новый ключ<input name="api_key" type="password" autocomplete="new-password" required maxlength="16384"></label><button type="submit">Сохранить</button><button type="button" id="finance-key-cancel">Отмена</button></form></dialog>
-<script src="/static/finance/yandex.js" defer></script>
+<script src="/static/finance/yandex.js?v=20261007-table" defer></script>

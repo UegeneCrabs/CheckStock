@@ -86,7 +86,13 @@ async def page(request: Request):
         "finance/yandex.html", admin_hidden="" if user.role is Role.SUPERADMIN else "hidden"
     )
     return HTMLResponse(
-        render_page("Финансовый отчёт · Яндекс Маркет", "finance_yandex", content, user),
+        render_page(
+            "Финансовый отчёт · Яндекс Маркет",
+            "finance_yandex",
+            content,
+            user,
+            content_class="content--finance-report",
+        ),
         headers={"Cache-Control": "private, no-store"},
     )
 
