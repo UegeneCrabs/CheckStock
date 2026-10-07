@@ -5,6 +5,7 @@ from app.access.access_control import (
     accessible_marketplaces,
     accessible_stores,
     profile_has_permission,
+    restricts_unit_economics_to_manager,
 )
 from app.dto.identity import Role, SectionAccessLevel, SectionName, User, coerce_user
 
@@ -34,10 +35,12 @@ SECTION_GROUPS = (
     ("Аналитика", ANALYTICS_SECTIONS),
     ("Юнит-экономика 1С", UNIT_ECONOMICS_SECTIONS),
     ("Отчёты", REPORT_SECTIONS),
+    ("Финансовые отчёты", (S.FINANCE_YANDEX,)),
     ("API и интеграции", (S.AI_AGENTS,)),
     ("Администрирование", (S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
 )
 SECTION_LABELS = {
+    S.FINANCE_YANDEX: "Финансовые отчёты · Яндекс Маркет",
     S.ANALYTICS_SALES_API: "Аналитика · Продажи по API WB",
     S.ANALYZER: "Аналитика · Анализатор WB",
     S.STOCK_BALANCES: "Остатки и склады",
@@ -63,6 +66,7 @@ SECTION_LABELS = {
     S.ADMIN_INTEGRATIONS: "API-ключи и фоновые выгрузки",
 }
 SECTION_PATHS = {
+    S.FINANCE_YANDEX: "/finance-reports/yandex",
     S.ANALYTICS_SALES_API: "/analytics/sales-api",
     S.ANALYZER: "/analytics/analyzer",
     S.REPORT_UNIT_PROFIT_YANDEX: "/sales/unit-economics-1c/yandex-market/reports/unit-profit",
@@ -88,6 +92,7 @@ SECTION_PATHS = {
     S.ADMIN_INTEGRATIONS: "/admin/integrations",
 }
 SECTION_DESCRIPTIONS = {
+    S.FINANCE_YANDEX: "Финансовый итог целого магазина: реализация, расходы, закупка и выплаты. Недоступен при товарных ограничениях.",
     S.ANALYTICS_SALES_API: "Заказы и отмены из воронки WB: период, дни, фильтры и экспорт.",
     S.ANALYZER: "Товары WB, воронка, эффективность, недельные заказы и рабочие записи.",
     S.REPORT_UNIT_PROFIT_YANDEX: "Прибыль ЯМ за период, дневная история и Excel.",
@@ -130,6 +135,7 @@ SECTION_PARENTS = {
     },
 }
 READ_ONLY_SECTIONS = {
+    S.FINANCE_YANDEX,
     S.ANALYTICS_SALES_API,
     S.STOCK_TOTAL,
     S.STOCK_OPERATIONS,
@@ -139,6 +145,7 @@ READ_ONLY_SECTIONS = {
 }
 SUPERADMIN_SECTIONS = {S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS}
 SECTION_MARKETPLACES = {
+    S.FINANCE_YANDEX: "YANDEX MARKET",
     S.ANALYTICS_SALES_API: "WB",
     S.ANALYZER: "WB",
     S.REPORT_UNIT_PROFIT_YANDEX: "YANDEX MARKET",
@@ -160,6 +167,8 @@ def _under(path: str, prefix: str) -> bool:
 def section_for_path(path: str) -> SectionName | None:
     path = path.rstrip("/") or "/"
     for prefix, section in (
+        ("/finance-reports/yandex", S.FINANCE_YANDEX),
+        ("/api/finance-reports/yandex", S.FINANCE_YANDEX),
         ("/analytics/sales-api", S.ANALYTICS_SALES_API),
         ("/api/analytics/sales-api", S.ANALYTICS_SALES_API),
         ("/analytics/analyzer", S.ANALYZER),
@@ -233,6 +242,8 @@ def access_limit(user: User | None, section: SectionName) -> SectionAccessLevel:
         return L.READ if section in READ_ONLY_SECTIONS else L.WRITE
     if section in SUPERADMIN_SECTIONS:
         return L.NONE
+    if section is S.FINANCE_YANDEX and restricts_unit_economics_to_manager(user):
+        return L.NONE
     if section is S.ADMIN_USERS:
         return (L.WRITE if user.can_manage_users else L.READ) if user.role is Role.ADMIN else L.NONE
     if user.access_profile is not None or user.access_scopes:
@@ -252,6 +263,8 @@ def access_limit(user: User | None, section: SectionName) -> SectionAccessLevel:
 
 
 def default_access_level(user: User, section: SectionName) -> SectionAccessLevel:
+    if section is S.FINANCE_YANDEX:
+        return L.NONE
     if section in ANALYTICS_SECTIONS:
         return access_level(user, S.UNIT_ECONOMICS_WB)
     if section is S.AI_AGENTS:
@@ -302,6 +315,7 @@ def landing_path(user: User | None) -> str:
 
 def active_section(active: str) -> SectionName | None:
     return {
+        "finance_yandex": S.FINANCE_YANDEX,
         "analytics_sales_api": S.ANALYTICS_SALES_API,
         "analyzer": S.ANALYZER,
         "unit_1c_settings": S.UNIT_ECONOMICS_WB,

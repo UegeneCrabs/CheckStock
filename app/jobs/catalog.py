@@ -39,6 +39,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
     prices = settings.unit_economics_1c_price_sync_enabled
     return (
         SyncJobDefinition(
+            "yandex_finance_sync",
+            "Финансовые отчёты Яндекс Маркета",
+            "Обновляет отдельный финансовый реестр за 90 завершённых дней. Требует настроенных финансовых подключений.",
+            "Ежедневно в 05:00 МСК",
+            base and settings.yandex_finance_enabled,
+            "store_marketplaces",
+            ("YANDEX MARKET",),
+        ),
+        SyncJobDefinition(
             "catalog_sync",
             "Каталоги товаров",
             "Обновляет карточки и привязки товаров WB, Ozon и Яндекс Маркета.",

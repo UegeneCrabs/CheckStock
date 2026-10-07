@@ -53,6 +53,7 @@ class SectionName(StrEnum):
     STOCK_OPERATIONS = "stock_operations"
     ANALYZER = "analyzer"
     ANALYTICS_SALES_API = "analytics_sales_api"
+    FINANCE_YANDEX = "finance_yandex"
     UNIT_ECONOMICS_OZON = "unit_economics_ozon"
     UNIT_ECONOMICS_YANDEX = "unit_economics_yandex"
     REPORT_UNIT_PROFIT = "report_unit_profit"

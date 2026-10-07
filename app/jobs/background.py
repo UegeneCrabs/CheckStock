@@ -23,6 +23,7 @@ from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
 from app.integrations import google_sheet_catalog, google_week_update
+from app.jobs import finance as finance_sync
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, run_background_job
 from app.ozon import catalog as ozon_catalog
@@ -349,6 +350,13 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
 
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
+        BackgroundJob(
+            finance_sync.JOB,
+            finance_sync.daily,
+            _moscow_daily_delay(5),
+            startup_delay_seconds=_seconds_until_next_moscow_run(5),
+            is_enabled=lambda: settings.background_sync_enabled and _job_enabled(finance_sync.JOB),
+        ),
         BackgroundJob(
             google_sheet_catalog.JOB_NAME,
             google_sheet_catalog.refresh_if_due,
