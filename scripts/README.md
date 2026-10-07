@@ -11,6 +11,8 @@
 | `diagnostics` | Проверка подключений, складов, каталогов и исходных таблиц. |
 | `parsers` | Браузерный сборщик цен ЯМ и подготовка отдельного анонимного сеанса WB. |
 
+Офлайн-сверка финансового месяца ЯМ: `python -m scripts.diagnostics.reconcile_yandex_finance tests/fixtures/yandex_finance/month.json --output work/finance-reconciliation.json`. Использует SQLite в памяти, не вызывает API и не пишет в рабочую БД. Формат bundle и ограничения описаны в [инструкции финансового отчёта](../docs/yandex-finance.md).
+
 ```shell
 python -m scripts.sync.sync_unit_economics_1c_source_data
 python -m scripts.sync.sync_unit_economics_yandex --store rimili --source orders
