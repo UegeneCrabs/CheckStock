@@ -3,10 +3,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.access.security import Pbkdf2PasswordService
+from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
 from app.config import settings
 from app.infrastructure.database import database_for_path
+from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
@@ -15,6 +17,10 @@ from app.stock.inbound_supplies import build_service as build_inbound_service
 
 
 class ApplicationContainer:
+    @property
+    def finance(self) -> FinanceService:
+        return FinanceService(FinanceRepository(database_for_path(self._database_path()).session_factory))
+
     def __init__(self, database_path: Callable[[], Path] | None = None) -> None:
         self._database_path = database_path or (lambda: core.DB_PATH)
         self.inbound_supplies = build_inbound_service(self._database_path)
