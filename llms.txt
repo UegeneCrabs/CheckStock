@@ -1,0 +1,12 @@
+# CheckStock
+
+FastAPI application for marketplace catalogs, stock, sales, unit economics, and integrations with Wildberries, Ozon, and Yandex Market.
+
+## Start here
+
+- [LLM wiki](docs/llm-wiki.md): code map, data flow, source-of-truth rules, and verification commands.
+- [Documentation index](docs/README.md): all topic-specific guides.
+- [Architecture](docs/architecture.md): application layers and dependencies.
+- [Project README](README.md): local and Docker startup.
+
+The documentation is a guide to the repository. For current behavior, verify the implementation, tests, configuration, and the running application's OpenAPI schema.
