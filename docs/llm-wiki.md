@@ -17,6 +17,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
+| Финансовый отчёт Яндекс Маркета | `app/application/finance.py`, `app/finance/`, `app/infrastructure/finance_*`, [финансовый учёт](yandex-finance.md), [ТЗ](yandex-finance-spec.md) |
 | Веб-интерфейс | `templates/`, `static/`, соответствующий файл в `app/web/routers/` |
 | Выгрузки и Google-интеграция | `app/exports/`, `app/integrations/`, [формат выгрузки](project-sheet-export.md) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |

@@ -211,7 +211,12 @@ def render_page(
         "unit_1c_ozon",
         "unit_1c_yandex",
     }
-    reports_open = active in {"unit_1c_reports", "unit_1c_target_price", "unit_1c_reports_yandex", "unit_1c_target_price_yandex"}
+    reports_open = active in {
+        "unit_1c_reports",
+        "unit_1c_target_price",
+        "unit_1c_reports_yandex",
+        "unit_1c_target_price_yandex",
+    }
     visible = {section: has_access(user, section) for section in SectionName}
     current_section = active_section(active)
     current_access = (
@@ -235,7 +240,13 @@ def render_page(
     marketplace_badge = ""
     if marketplace:
         color, mark, label = marketplace
-        marketplace_section = "Аналитика" if active in {"analyzer", "analytics_sales_api"} else "Отчёты" if reports_open else "Юнит-экономика"
+        marketplace_section = (
+            "Аналитика"
+            if active in {"analyzer", "analytics_sales_api"}
+            else "Отчёты"
+            if reports_open
+            else "Юнит-экономика"
+        )
         marketplace_badge = (
             f'<span class="marketplace-badge" aria-label="{marketplace_section}: {label}">'
             f'<span class="marketplace-badge-mark" aria-hidden="true">{mark}</span>'
@@ -243,6 +254,9 @@ def render_page(
         )
     header = fill_template(
         "layout/header.html",
+        finance_hidden=hidden(visible[SectionName.FINANCE_YANDEX]),
+        finance_active="active" if active == "finance_yandex" else "",
+        finance_expanded="false",
         marketplace_header_class=" marketplace-" + marketplace[0] if marketplace else "",
         marketplace_badge=marketplace_badge,
         analytics_hidden=hidden(any(visible[item] for item in ANALYTICS_SECTIONS)),

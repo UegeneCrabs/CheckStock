@@ -21,7 +21,8 @@ COPY scripts ./scripts
 COPY static ./static
 COPY templates ./templates
 
-RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/secrets && chown -R checkstock:checkstock /app
+RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/secrets /app/finance-credentials \
+    && chmod 700 /app/finance-credentials && chown -R checkstock:checkstock /app
 
 USER checkstock
 

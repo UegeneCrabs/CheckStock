@@ -72,7 +72,10 @@ async def authentication_middleware(request: Request, call_next):
         or path == "/api/unit-economics-1c/calculator/verify"
         or path == "/api/unit-economics-1c/reports/target-price.xlsx"
         or path == "/api/unit-economics-1c/yandex-market/reports/target-price.xlsx"
-        or (path.startswith("/api/unit-economics-1c/yandex-market/reports/target-price/") and path.endswith("/preview"))
+        or (
+            path.startswith("/api/unit-economics-1c/yandex-market/reports/target-price/")
+            and path.endswith("/preview")
+        )
     ):
         required_access = SectionAccessLevel.READ
     if section is not None and not has_section_access(user, section, required_access):
@@ -115,7 +118,18 @@ async def authentication_middleware(request: Request, call_next):
             )
 
     response = await call_next(request)
-    if path.startswith(("/analytics/", "/api/analytics/", "/sales/unit-economics-1c", "/api/unit-economics-1c", "/admin/integrations", "/api/admin/integrations")):
+    if path.startswith(
+        (
+            "/finance-reports/",
+            "/api/finance-reports/",
+            "/analytics/",
+            "/api/analytics/",
+            "/sales/unit-economics-1c",
+            "/api/unit-economics-1c",
+            "/admin/integrations",
+            "/api/admin/integrations",
+        )
+    ):
         response.headers["Cache-Control"] = "private, no-store"
     return response
 
@@ -161,6 +175,10 @@ async def request_logging_middleware(request: Request, call_next):
                 request.client.host if request.client else "-",
             )
         response.headers["X-Request-ID"] = request_id
+        if request.url.path.startswith(
+            ("/finance-reports/", "/api/finance-reports/", "/api/admin/integrations/yandex-finance")
+        ):
+            response.headers["Cache-Control"] = "private, no-store"
         return response
     finally:
         request_id_context.reset(token)
