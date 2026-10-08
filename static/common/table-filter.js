@@ -228,8 +228,8 @@
 
         popover.querySelectorAll('.tf-sort-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                sortColumn(table, colIndex, btn.getAttribute('data-dir'));
                 closePopover();
+                sortColumn(table, colIndex, btn.getAttribute('data-dir'));
             });
         });
 
@@ -268,9 +268,11 @@
                 table._tfFilters[colIndex] = new Set(selected);
             }
 
-            applyAllFilters(table);
             updateButtonState(table, colIndex, current.button);
             closePopover();
+            // An adapter may rebuild the header while applying the selection.
+            // Close first, before its refresh discards the current button.
+            applyAllFilters(table);
         });
     }
 
@@ -334,6 +336,12 @@
         inner.appendChild(btn);
         th.innerHTML = '';
         th.appendChild(inner);
+        updateButtonState(table, colIndex, btn);
+    }
+
+    function headerColumn(th) {
+        var key = th.getAttribute('data-filter-column');
+        return /^\d+$/.test(key) ? Number(key) : key;
     }
 
     function buildToolbar(table) {
@@ -395,7 +403,7 @@
         if (explicitHeaders.length) {
             Array.prototype.forEach.call(explicitHeaders, function (th) {
                 if (th.classList.contains('col-filler')) return;
-                buildHeaderButton(th, table, Number(th.getAttribute('data-filter-column')));
+                buildHeaderButton(th, table, headerColumn(th));
             });
         } else {
             Array.prototype.forEach.call(headerRow.children, function (th, colIndex) {
@@ -431,15 +439,16 @@
     );
 
     window.CheckStockTableFilter = {
-        refresh: function (table) {
+        refresh: function (table, options) {
             if (!table) return;
             closePopover();
             table.querySelectorAll('thead th[data-filter-column]').forEach(function (th) {
                 if (th.classList.contains('col-filler') || th.querySelector('.tf-th-inner')) return;
-                buildHeaderButton(th, table, Number(th.getAttribute('data-filter-column')));
+                buildHeaderButton(th, table, headerColumn(th));
             });
             buildToolbar(table);
-            applyAllFilters(table);
+            // Data-driven tables can render their filtered rows themselves.
+            if (!options || options.applyFilters !== false) applyAllFilters(table);
         },
     };
 })();

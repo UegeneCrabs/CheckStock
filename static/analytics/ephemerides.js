@@ -13,7 +13,7 @@
     const initial=new URL(location.href).searchParams.get('week');
     let week=M.monday(initial && /^\d{4}-\d{2}-\d{2}$/.test(initial) && !isNaN(Date.parse(initial)) ? initial:config.today);
     if(week>config.today || week<'2000-01-03') week=M.monday(config.today);
-    let data=null, columns=[], columnMap=new Map(), filtered=[], page=1, pageSize=20, query='',segment='all', sort=config.history?null:'today-turnover', direction=-1, filterColumn=null, filterOptions=[], revisionsItem=null, latestRevision=null, busy=false;
+    let data=null, columns=[], columnMap=new Map(), filtered=[], page=1, pageSize=20, query='',segment='all', sort=config.history?null:'today-turnover', direction=-1, revisionsItem=null, latestRevision=null, busy=false;
     let separate=false, dense=false, summaryCollapsed=false, visible=new Set(Object.keys(groups));
     try { const prefs=JSON.parse(localStorage.getItem('ephemerides-view')||'null'); if(prefs) {separate=!!prefs.separate;dense=!!prefs.dense;summaryCollapsed=!!prefs.summaryCollapsed;visible=new Set((prefs.visible||Object.keys(groups)).filter(g=>g in groups));visible.add('product');} } catch {}
     const filters=new Map();
@@ -137,15 +137,18 @@
         if(c.key==='fbs'||c.key==='fbo') title=`Текущие остатки: ${row.stockUpdated||'нет даты'}`;
         return `<span title="${escape(title)}" class="${val==null?'e-muted':c.key==='roi'?val<0?'e-negative':'e-positive':''}">${number(val,c.type==='percent')}</span>`;
     }
-    function applyFilters() {
+    function externalRows() {
         const q=query.toLocaleLowerCase('ru').trim();
-        filtered=data.rows.filter(row=>{
+        return data.rows.filter(row=>{
             const text=[row.name,row.article,row.barcode,row.project,row.manager,row.category,...Object.values(row.comments||{}).map(c=>c?.text||'')].join(' ').toLocaleLowerCase('ru');
             if(q&&!text.includes(q)) return false;
             if(segment==='negative'&&!(row.current?.roi!=null&&row.current.roi<0)) return false;
             if(segment==='below'&&!(row.current?.goal!=null&&row.current?.fact!=null&&row.current.fact<row.current.goal)) return false;
-            return [...filters].every(([key,set])=>!columnMap.has(key)||set.has(String(value(row,columnMap.get(key))??'')));
+            return true;
         });
+    }
+    function applyFilters() {
+        filtered=externalRows().filter(row=>[...filters].every(([key,set])=>!columnMap.has(key)||set.has(String(value(row,columnMap.get(key))??''))));
         if(sort&&columnMap.has(sort)) {const c=columnMap.get(sort);filtered.sort((a,b)=>{const x=value(a,c),y=value(b,c);return x==null?y==null?0:1:y==null?-1:direction*(typeof x==='number'?x-y:String(x).localeCompare(String(y),'ru',{numeric:true}));});}
     }
     function renderSummary() {
@@ -166,7 +169,9 @@
         $('cols').innerHTML=columns.map(c=>`<col style="width:${c.width}px">`).join('');$('table').style.width=columns.reduce((n,c)=>n+c.width,0)+'px';
         const sections=[];columns.forEach(c=>{const key=c.id==='product'?'frozen':c.group;const last=sections.at(-1);if(last?.key===key)last.count++;else sections.push({key,count:1,group:c.group});});
         const label=group=>data[group]?.number?'Неделя '+weekLabel(data[group]):groups[group];
-        $('head').innerHTML=`<tr class="e-group">${sections.map(s=>`<th colspan="${s.count}" class="tone-${tones[s.group]} ${s.key==='frozen'?'e-sticky':''}">${s.key==='frozen'?'Товар':escape(label(s.group))}</th>`).join('')}</tr><tr class="e-labels">${columns.map(c=>`<th data-group="${c.group}" class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':''}" aria-sort="${sort===c.id?direction===1?'ascending':'descending':'none'}"><button class="e-sort" data-sort="${c.id}">${escape(c.label)}${sort===c.id?direction===1?' ↑':' ↓':''}</button><button class="e-filter ${filters.has(c.id)?'active':''}" data-filter="${c.id}" aria-label="Фильтр: ${escape(c.label)}">▽</button></th>`).join('')}</tr>`;
+        $('head').innerHTML=`<tr class="e-group">${sections.map(s=>`<th colspan="${s.count}" class="tone-${tones[s.group]} ${s.key==='frozen'?'e-sticky':''}">${s.key==='frozen'?'Товар':escape(label(s.group))}</th>`).join('')}</tr><tr class="e-labels">${columns.map(c=>`<th data-group="${c.group}" data-filter-column="${c.id}" ${['number','percent'].includes(c.type)?'data-filter-type="number"':''} class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':''}" aria-sort="${sort===c.id?direction===1?'ascending':'descending':'none'}"><button class="e-sort" data-sort="${c.id}">${escape(c.label)}${sort===c.id?direction===1?' ↑':' ↓':''}</button></th>`).join('')}</tr>`;
+        $('table')._tfFilters=Object.fromEntries(filters);
+        window.CheckStockTableFilter.refresh($('table'),{applyFilters:false});
         if(!config.history) $('head').insertAdjacentHTML('beforeend',`<tr class="e-totals">${columns.map(c=>{const total=M.summary(filtered,c.period,c.key);return `<td class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':'e-number'}">${c.id==='product'?'Итого · '+filtered.length:total==null?'':number(total,c.type==='percent')}</td>`;}).join('')}</tr>`);
         const shown=filtered.slice((page-1)*pageSize,page*pageSize);
         $('body').innerHTML=shown.map(row=>`<tr>${columns.map(c=>`<td class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':''} ${['number','percent'].includes(c.type)?'e-number':''}">${cell(row,c)}</td>`).join('')}</tr>`).join('');
@@ -176,20 +181,12 @@
         bindComments($('body'));updateSaveState();
     }
     function prefs() { try {localStorage.setItem('ephemerides-view',JSON.stringify({separate,dense,summaryCollapsed,visible:[...visible]}));} catch {} }
-    function showFilter(id) {
-        filterColumn=columnMap.get(id);$('filter-title').textContent=filterColumn.label;$('filter-search').value='';
-        filterOptions=[...new Set(data.rows.map(row=>String(value(row,filterColumn)??'')))].sort((a,b)=>a.localeCompare(b,'ru',{numeric:true})).map(text=>({text,checked:!filters.has(id)||filters.get(id).has(text)}));
-        renderFilter();$('filter-dialog').showModal();
-    }
-    function renderFilter() {
-        const q=$('filter-search').value.toLocaleLowerCase('ru');
-        $('filter-values').innerHTML=filterOptions.map((item,i)=>({item,i})).filter(({item})=>item.text.toLocaleLowerCase('ru').includes(q)).map(({item,i})=>`<label><input type="checkbox" data-option="${i}" ${item.checked?'checked':''}><span>${escape(item.text||'Нет данных')}</span></label>`).join('');
-    }
-    $('filter-search').oninput=renderFilter;
-    $('filter-values').onchange=e=>{if(e.target.dataset.option!=null)filterOptions[Number(e.target.dataset.option)].checked=e.target.checked;};
-    $('filter-apply').onclick=()=>{if(filterOptions.every(o=>o.checked))filters.delete(filterColumn.id);else filters.set(filterColumn.id,new Set(filterOptions.filter(o=>o.checked).map(o=>o.text)));$('filter-dialog').close();page=1;render();};
-    $('filter-reset').onclick=()=>{filters.delete(filterColumn.id);$('filter-dialog').close();page=1;render();};
-    $('head').onclick=e=>{const sortButton=e.target.closest('[data-sort]'),filterButton=e.target.closest('[data-filter]');if(sortButton){direction=sort===sortButton.dataset.sort?-direction:1;sort=sortButton.dataset.sort;render();}else if(filterButton)showFilter(filterButton.dataset.filter);};
+    $('table')._tfAdapter={
+        values: key=>columnMap.has(key)?externalRows().map(row=>String(value(row,columnMap.get(key))??'')):[],
+        filter: selected=>{filters.clear();Object.entries(selected||{}).forEach(([key,values])=>filters.set(key,values));page=1;render();},
+        sort: (key,order)=>{sort=key;direction=order==='desc'?-1:1;page=1;render();},
+    };
+    $('head').onclick=e=>{const button=e.target.closest('[data-sort]');if(button){direction=sort===button.dataset.sort?-direction:1;sort=button.dataset.sort;page=1;render();}};
     $('filter-chips').onclick=e=>{const button=e.target.closest('[data-clear]');if(button){filters.delete(button.dataset.clear);page=1;render();}};
     $('jumps').onclick=e=>{
         const group=e.target.closest('[data-jump]')?.dataset.jump;
