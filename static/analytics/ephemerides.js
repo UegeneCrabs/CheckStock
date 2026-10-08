@@ -4,7 +4,8 @@
     const $=id=>document.getElementById('e-'+id), M=window.EphemeridesModel, A=window.CheckStockAnalyzer;
     const config=JSON.parse(document.getElementById('ephemerides-config').textContent);
     const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const number=(n,percent=false)=>n==null?'—':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:percent?1:2}).format(n)+(percent?'%':'');
+    const formats=[new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}),new Intl.NumberFormat('ru-RU',{maximumFractionDigits:1})];
+    const number=(n,percent=false)=>n==null?'—':formats[percent?1:0].format(n)+(percent?'%':'');
     const weekLabel=w=>`W${w.number} · ${w.year}`;
     const kinds={competitor:'Конкуренты',decision:'Решения',next:'На следующую неделю'};
     const groups={product:'Реквизиты товара',stock:'Остатки',control:'Контроль товара',previous:'Предыдущая неделя',current:'Выбранная неделя',history:'Комментарии по неделям'};
@@ -12,7 +13,7 @@
     const initial=new URL(location.href).searchParams.get('week');
     let week=M.monday(initial && /^\d{4}-\d{2}-\d{2}$/.test(initial) && !isNaN(Date.parse(initial)) ? initial:config.today);
     if(week>config.today || week<'2000-01-03') week=M.monday(config.today);
-    let data=null, columns=[], columnMap=new Map(), filtered=[], page=1, pageSize=20, query='',segment='all', sort=null, direction=1, filterColumn=null, filterOptions=[], revisionsItem=null, latestRevision=null, busy=false;
+    let data=null, columns=[], columnMap=new Map(), filtered=[], page=1, pageSize=20, query='',segment='all', sort=config.history?null:'today-turnover', direction=-1, filterColumn=null, filterOptions=[], revisionsItem=null, latestRevision=null, busy=false;
     let separate=false, dense=false, summaryCollapsed=false, visible=new Set(Object.keys(groups));
     try { const prefs=JSON.parse(localStorage.getItem('ephemerides-view')||'null'); if(prefs) {separate=!!prefs.separate;dense=!!prefs.dense;summaryCollapsed=!!prefs.summaryCollapsed;visible=new Set((prefs.visible||Object.keys(groups)).filter(g=>g in groups));visible.add('product');} } catch {}
     const filters=new Map();
@@ -88,6 +89,7 @@
             add('manager','Менеджер','product',100,'text');add('category','Категория','product',100,'text');add('project','Проект','product',75,'text');
             if(separate) {add('barcode','Баркод','product',120,'text');add('article','Артикул WB','product',105,'text');add('image','Фото','product',55,'photo');}
             add('code','Код ABC-D','product',65,'text');
+            add('today-turnover','ТО сегодня, ₽','product',110,'number',{key:'fact',period:'dayTurnover'});
             add('fbs','Сток FBS','stock',65);add('fbo','Сток FBO','stock',65);add('fromCustomer','В пути от клиента','stock',75);add('stock','Общий сток','stock',75);
             add('rating','Рейтинг','control',65);add('competitor','Конкуренты','control',180,'comment',{week:data.current.start,kind:'competitor'});
             for(const period of ['previous','current']) {
@@ -109,6 +111,7 @@
         return c.period?row[c.period]?.[c.key]??null:row[c.key]??null;
     }
     function incomplete(row,c) {
+        if(c.period==='dayTurnover') return false;
         if(c.key==='stock') return row.stockPartial;
         if(!c.period) return false;
         const coverage=row[c.period]?.coverage||{};
@@ -127,6 +130,7 @@
         if(c.type==='text') return `<span class="e-text">${escape(val||'—')}</span>`;
         const partial=incomplete(row,c), coverage=row[c.period]?.coverage;
         let title=partial?'Неполные данные':'';
+        if(c.period==='dayTurnover') title=`Сумма заказов за сегодня (${data.today}, Москва), без вычета отмен. По умолчанию товары ранжируются по этому показателю.`;
         if(c.period&&c.key==='turnover') title=`Сумма заказов за ${data[c.period].start} — ${data[c.period].end}. Загружено дней: ${coverage.turnover} из ${coverage.expected}.`;
         if(c.period&&['price','wallet','spp'].includes(c.key)) title=`Последняя сохранённая цена внутри недели: ${row[c.period].priceDay||'нет данных'}`;
         if(c.key==='fromCustomer') title=`Снимок возвратов: ${row.transitUpdated||'ещё не загружен'}. Показатель всего артикула WB.`;
@@ -214,7 +218,7 @@
     $('retry').onclick=()=>drafts.flush();
     $('search').oninput=()=>{query=$('search').value;page=1;render();};
     $('segments').onclick=e=>{const button=e.target.closest('[data-segment]');if(!button)return;segment=button.dataset.segment;$('segments').querySelectorAll('button').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});page=1;render();};
-    $('reset').onclick=()=>{filters.clear();query='';$('search').value='';segment='all';$('segments').querySelector('[data-segment="all"]').click();};
+    $('reset').onclick=()=>{filters.clear();query='';$('search').value='';segment='all';sort=config.history?null:'today-turnover';direction=-1;$('segments').querySelector('[data-segment="all"]').click();};
     $('size').onchange=()=>{pageSize=Number($('size').value);page=1;render();};
     $('prev-page').onclick=()=>{page--;render();$('scroll').scrollTop=0;};$('next-page').onclick=()=>{page++;render();$('scroll').scrollTop=0;};
     $('kind').onchange=()=>{filters.clear();render();};
@@ -228,7 +232,7 @@
     $('columns-done').onclick=()=>{$('column-panel').hidden=true;$('columns').setAttribute('aria-expanded','false');};
     $('export').onclick=()=>{
         if(!data)return;
-        const lines=[columns.map(c=>A.csvCell(c.period?weekLabel(data[c.period])+' · '+c.label:c.label)).join(';'),...filtered.map(row=>columns.map(c=>A.csvCell(value(row,c))).join(';'))];
+        const lines=[columns.map(c=>A.csvCell(c.period==='dayTurnover'?c.label+' · '+data.today:c.period?weekLabel(data[c.period])+' · '+c.label:c.label)).join(';'),...filtered.map(row=>columns.map(c=>A.csvCell(value(row,c))).join(';'))];
         const url=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`ephemerides-${config.history?'comments-':''}${week}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };
     async function load(next=week) {

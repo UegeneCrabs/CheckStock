@@ -8,8 +8,10 @@
         {index: 4, key: 'name', label: 'Название', width: 335},
     ];
     const combined = {index: 1000, key: 'product', label: 'Товар', width: 375};
+    const turnover = {index: 1001, key: 'today_turnover', label: 'ТО сегодня, ₽', width: 130, numeric: true};
     function columns(dates, exact = false, showDays = true) {
         const result = exact ? [...identities] : [combined, identities[0], identities[1]];
+        result.push(turnover);
         result.push({index: 5, key: 'orders', label: 'Итого заказы', width: 105, numeric: true});
         result.push({index: 6, key: 'cancels', label: 'Итого отмены', width: 105, numeric: true});
         if (showDays) dates.forEach((date, day) => result.push({index: 7 + day, key: date, label: date, width: 102, day, numeric: true}));
@@ -45,14 +47,14 @@
     function total(rows, column) {
         const values = rows.map(row => value(row, column)).filter(value => typeof value === 'number');
         return {value: values.length ? values.reduce((a, b) => a + b, 0) : null,
-            partial: values.length < rows.length || column.day == null && rows.some(row => !row.complete)};
+            partial: values.length < rows.length || ['orders','cancels'].includes(column.key) && rows.some(row => !row.complete)};
     }
     function csvCell(value) {
         let text = String(value ?? '');
         if (typeof value !== 'number' && /^[\s]*[=+@-]/.test(text)) text = "'" + text;
         return '"' + text.replace(/"/g, '""') + '"';
     }
-    const api = {columns, combined, value, filterValue, externalRows, filteredRows, total, csvCell};
+    const api = {columns, combined, turnover, value, filterValue, externalRows, filteredRows, total, csvCell};
     scope.CheckStockSalesApi = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof window === 'undefined' ? globalThis : window);

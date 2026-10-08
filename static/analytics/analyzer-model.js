@@ -34,7 +34,7 @@
     col('AQ', 'Цель день,<br>шт', 'dayGoal', 'plan', 65, 'decimal');
     col('AR', '', 'spacer', 'turnover', 8, 'spacer');
     col('AT', 'ТО цель на день,<br>₽', 'plan', 'turnover', 110, 'money');
-    col('', 'ТО факт на данный<br>момент, ₽', 'fact', 'turnover', 110, 'money');
+    col('', 'ТО сегодня,<br>₽', 'fact', 'turnover', 110, 'money');
     col('AS', 'Прогнозируемый ТО<br>на день, ₽', 'forecast', 'turnover', 120, 'money');
     col('AU', 'Разница,<br>₽', 'difference', 'turnover', 85, 'difference');
     col('AV', 'Отклонение,<br>%', 'deviation', 'turnover', 70, 'deviation');

@@ -119,6 +119,20 @@ class DatabaseConnection(AbstractContextManager["DatabaseConnection"]):
         normalized = parameters if isinstance(parameters, Mapping) else tuple(parameters)
         return DatabaseResult(self._connection.exec_driver_sql(self._statement(statement), normalized))
 
+    @contextmanager
+    def stream(self, statement: str, parameters: SqlParameters = (), *, batch_size: int = 128):
+        """Bound memory while reading large source payloads; always close the cursor."""
+        normalized = parameters if isinstance(parameters, Mapping) else tuple(parameters)
+        result = self._connection.exec_driver_sql(
+            self._statement(statement),
+            normalized,
+            execution_options={"stream_results": True, "max_row_buffer": batch_size},
+        ).yield_per(batch_size)
+        try:
+            yield DatabaseResult(result)
+        finally:
+            result.close()
+
     def executemany(self, statement: str, parameters: Iterable[Sequence[DatabaseScalar]]) -> DatabaseResult:
         values = [tuple(row) for row in parameters]
         if not values:

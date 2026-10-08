@@ -13,13 +13,13 @@
         return values.size === 1 ? [...values][0] : null;
     }
     function summary(rows, period, key) {
-        const groups = unique(rows), value = row => period ? row[period]?.[key] : row[key];
+        const value = row => period ? row[period]?.[key] : row[key];
         if (key === 'goal' || ['fbs','fbo'].includes(key)) return sum(rows.map(value));
         if (key === 'stock') return sum([summary(rows,null,'fbs'),summary(rows,null,'fbo'),summary(rows,null,'fromCustomer')]);
-        if (['fact','turnover','impressions','fromCustomer'].includes(key)) return sum(groups.map(group => shared(group,value)));
+        if (['fact','turnover','impressions','fromCustomer'].includes(key)) return sum(unique(rows).map(group => shared(group,value)));
         const weights = {ctr:['clicks','impressions'], drr:['spend','boughtAmount'], roi:['profit','purchase']}[key];
         if (period && weights) {
-            const pairs = groups.map(group => weights.map(k => shared(group, row => row[period]?.weights?.[k]))).filter(p => p.every(v => v != null));
+            const pairs = unique(rows).map(group => weights.map(k => shared(group, row => row[period]?.weights?.[k]))).filter(p => p.every(v => v != null));
             const a=sum(pairs.map(p=>p[0])), b=sum(pairs.map(p=>p[1]));
             return key === 'drr' && a === 0 && b === 0 ? 0 : ratio(a,b);
         }

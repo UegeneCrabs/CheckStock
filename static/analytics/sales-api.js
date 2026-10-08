@@ -16,7 +16,7 @@
     };
     const periodLabel = () => payload.date_from === payload.date_to ? shortDate(payload.date_to) + '.' + payload.date_to.slice(0, 4)
         : shortDate(payload.date_from) + '.' + payload.date_from.slice(0, 4) + ' – ' + shortDate(payload.date_to) + '.' + payload.date_to.slice(0, 4);
-    const state = {query: '', segment: 'all', filters: {}, sort: null, direction: 1, page: 1, pageSize: 20};
+    const state = {query: '', segment: 'all', filters: {}, sort: M.turnover.index, direction: -1, page: 1, pageSize: 20};
     let payload, rows = [], columns = [], fields = [], loading = false, pending, focusBeforeDrawer, toastTimer;
     const preferenceKey = 'checkstock.sales-api.view.v1';
     const preferences = ['sheet-order', 'compact', 'heat', 'show-days'];
@@ -45,7 +45,7 @@
         $('sales-table').style.width = columns.reduce((sum, column) => sum + column.width, 0) + 'px';
         $('cols').innerHTML = columns.map(column => `<col style="width:${column.width}px">`).join('');
         const identities = $('sheet-order').checked ? 5 : 3;
-        $('head').innerHTML = `<tr class="group"><th class="frozen">${$('sheet-order').checked ? 'Проект' : 'Товар'}</th><th colspan="${identities - 1}">Данные товара</th><th colspan="2" class="total-group">За выбранный период</th>${$('show-days').checked ? `<th colspan="${payload.dates.length}" class="sales-group">Заказы по дням · ${periodLabel()}</th>` : ''}</tr><tr class="heads">${columns.map((column, i) => {
+        $('head').innerHTML = `<tr class="group"><th class="frozen">${$('sheet-order').checked ? 'Проект' : 'Товар'}</th><th colspan="${identities - 1}">Данные товара</th><th class="total-group" title="Сумма заказов за сегодня по московскому времени, без вычета отмен">Сегодня · ${shortDate(payload.turnover_day)}</th><th colspan="2" class="total-group">За выбранный период</th>${$('show-days').checked ? `<th colspan="${payload.dates.length}" class="sales-group">Заказы по дням · ${periodLabel()}</th>` : ''}</tr><tr class="heads">${columns.map((column, i) => {
             const weekend = column.day != null && [0, 6].includes(new Date(column.key + 'T12:00:00').getDay());
             return `<th class="${i === 0 ? 'frozen ' : ''}${weekend ? 'weekend ' : ''}${column.key === 'orders' || column.day === 0 ? 'section-start' : ''}" data-filter-column="${column.index}" ${column.numeric ? 'data-filter-type="number"' : ''} title="${esc(column.day != null ? column.key + ' · Заказы, шт.' : column.label)}">${column.day != null ? shortDate(column.key) + `<span class="day-week">${weekday(column.key)}</span>` : esc(column.label)}</th>`;
         }).join('')}</tr><tr class="totals"></tr>`;
@@ -70,7 +70,7 @@
         if (column.key === 'name') return `<td class="text${frozen}"><div class="product-cell">${photo(row)}<div class="product-description">${name}</div></div></td>`;
         if (column.key === 'category') return `<td class="text${frozen}"><span class="category-label" title="${esc(value)}">${esc(value) || '—'}</span></td>`;
         if (!column.numeric) return `<td class="text muted${frozen}" title="${esc(value)}">${esc(value) || '—'}</td>`;
-        if (column.day == null) return `<td class="${column.key === 'orders' ? 'section-start' : ''}"><span class="${value === 0 ? 'zero' : column.key === 'orders' ? 'number-main' : 'cancel-main'}">${fmt(value)}</span>${value != null && !row.complete ? '<small class="partial" title="Сумма только по загруженным дням">неполные данные</small>' : ''}</td>`;
+        if (column.day == null) return `<td class="${column.key === 'orders' ? 'section-start' : ''}"><span class="${value === 0 ? 'zero' : column.key === 'cancels' ? 'cancel-main' : 'number-main'}">${fmt(value)}</span>${value != null && ['orders','cancels'].includes(column.key) && !row.complete ? '<small class="partial" title="Сумма только по загруженным дням">неполные данные</small>' : ''}</td>`;
         const max = Math.max(1, ...row.days.filter(value => value != null));
         const alpha = value > 0 ? 0.035 + value / max * 0.11 : 0;
         return `<td class="daily ${!value ? 'zero' : ''} ${$('heat').checked ? 'heat' : ''} ${column.day === 0 ? 'section-start' : ''}" style="--heat:rgba(57,145,104,${alpha})"><span class="metric-cell">${fmt(value)}</span></td>`;
@@ -96,7 +96,7 @@
         $('next-page').disabled = loading || state.page >= pages;
         $('export').disabled = loading || !visible.length;
         $('empty').hidden = !!visible.length || loading;
-        $('reset').hidden = !state.query && state.segment === 'all' && !Object.keys(state.filters).length && state.sort == null;
+        $('reset').hidden = !state.query && state.segment === 'all' && !Object.keys(state.filters).length && state.sort === M.turnover.index && state.direction === -1;
         root.querySelectorAll('[data-segment]').forEach(button => {
             button.classList.toggle('active', button.dataset.segment === state.segment);
             button.setAttribute('aria-pressed', String(button.dataset.segment === state.segment));
@@ -132,7 +132,7 @@
             state.page = 1;
             // Daily column positions change with the period, so reset all column filters and sorting.
             state.filters = {};
-            state.sort = null;
+            state.sort = M.turnover.index; state.direction = -1;
             $('period-label').textContent = periodLabel();
             $('day-count').textContent = `${body.dates.length} дн.`;
             $('start').value = body.date_from;
@@ -196,7 +196,7 @@
     root.querySelectorAll('[data-segment]').forEach(button => button.addEventListener('click', () => { state.segment = button.dataset.segment; change(); }));
     $('reset').addEventListener('click', () => {
         state.query = '';
-        state.segment = 'all'; state.filters = {}; state.sort = null; state.page = 1;
+        state.segment = 'all'; state.filters = {}; state.sort = M.turnover.index; state.direction = -1; state.page = 1;
         $('search').value = '';
         buildColumns();
     });

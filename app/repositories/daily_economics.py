@@ -29,8 +29,8 @@ def now():
     return datetime.now(UTC).isoformat()
 
 
-def _decode(row, *, inputs_only=False):
-    saved = json.loads(row["payload_json"])
+def _decode(row, *, inputs_only=False, payload=None):
+    saved = json.loads(row["payload_json"]) if payload is None else payload
     # Read only the recorded inputs with their formula version; current settings
     # and remote sources are never consulted by a read/recalculation.
     if inputs_only:
@@ -203,7 +203,7 @@ def source_times(marketplace, source):
     return result
 
 
-def records(marketplace, stores, start, end, *, articles=None, compact=False, inputs_only=False):
+def records(marketplace, stores, start, end, *, articles=None, compact=False, inputs_only=False, include_reference=False):
     """Reports need calculated inputs, not the original/raw source audit payloads."""
     if not stores or articles is not None and not articles:
         return []
@@ -213,24 +213,26 @@ def records(marketplace, stores, start, end, *, articles=None, compact=False, in
     if articles is not None:
         article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
         parameters += tuple(articles)
+    result = []
     with get_connection() as conn:
-        columns = "*"
-        if compact:
-            # Strip audit-only data before transferring/decoding thousands of
-            # snapshots. Keep the recorded formula version and every overlay.
-            if conn.dialect_name == "postgresql":
-                payload = "((payload_json::jsonb - 'original') #- '{source,raw}')::text"
-            else:
-                payload = "json_remove(payload_json, '$.original', '$.source.raw')"
-            columns = f"marketplace,store_slug,article,day,revision,{payload} AS payload_json"
-        rows = conn.execute(
-            f"SELECT {columns} FROM economics_daily WHERE marketplace=? AND store_slug IN ({marks}) AND day>=? AND day<=?{article_filter}",
+        # Converting the entire audit archive to jsonb just to discard it was
+        # the dominant report cost. Decode once and discard raw data per row,
+        # with a server cursor so the full archive is never buffered in memory.
+        with conn.stream(
+            f"SELECT marketplace,store_slug,article,day,revision,payload_json FROM economics_daily WHERE marketplace=? AND store_slug IN ({marks}) AND day>=? AND day<=?{article_filter}",
             parameters,
-        ).fetchall()
-    return [
-        {"store_slug": row["store_slug"], "article": row["article"], "day": row["day"], **_decode(row, inputs_only=inputs_only)}
-        for row in rows
-    ]
+        ) as rows:
+            for row in rows:
+                saved = json.loads(row["payload_json"])
+                reference = (saved["source"].get("raw") or {}).get("reference") if include_reference else None
+                if compact:
+                    saved.pop("original", None)
+                    saved["source"].pop("raw", None)
+                decoded = {"store_slug": row["store_slug"], "article": row["article"], "day": row["day"], **_decode(row, inputs_only=inputs_only, payload=saved)}
+                if include_reference:
+                    decoded["reference_json"] = encode(reference) if reference is not None else None
+                result.append(decoded)
+    return result
 
 
 def day_records(marketplace, store, day):

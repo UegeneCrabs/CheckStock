@@ -65,7 +65,7 @@ def save_comment(key, text, expected_version, user):
     )
 
 
-def dated_sources(stores, start, end):
+def dated_sources(stores, start, end, *, references=None):
     if not stores:
         return [], []
     marks = ",".join("?" for _ in stores)
@@ -77,9 +77,11 @@ def dated_sources(stores, start, end):
                 (*stores, start, end),
             )
         ]
+        if references is not None:
+            return prices, sorted(references, key=lambda row: row["day"])
         # Project only the tiny reference object, never transfer the raw audit archive.
         reference = (
-            "payload_json::jsonb #>> '{source,raw,reference}'"
+            "payload_json::json #>> '{source,raw,reference}'"
             if conn.dialect_name == "postgresql"
             else "json_extract(payload_json, '$.source.raw.reference')"
         )

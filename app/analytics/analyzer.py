@@ -61,7 +61,60 @@ def cart_value(day: str, today: date, product_orders: dict, product_rnp: dict):
     return value if value is not None else product_rnp.get(day, {}).get("traffic_carts")
 
 
-def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None, include_notes=True) -> dict:
+class Sources:
+    """One request's saved inputs, shared by the two ephemerides weeks."""
+
+    def __init__(self, stores, week, today, *, last_week=None, include_reference=False):
+        end = min(today, (last_week or week) + timedelta(days=6)).isoformat()
+        start = (week - timedelta(days=7)).isoformat()
+        anchor = min(today, week + timedelta(days=6))
+        self.references = index(db.get_unit_economics_1c_product_reference_rows(stores))
+        self.prices = index(db.get_unit_economics_1c_latest_daily_prices(stores))
+        self.reputations = index(db.get_unit_economics_1c_latest_product_reputation(stores))
+        self.orders = daily_index(db.get_unit_economics_1c_funnel_daily_order_rows(stores, start, end))
+        self.advertising = daily_index(
+            db.get_unit_economics_1c_daily_advertising(stores, start, end), "nm_id"
+        )
+        self.rnp = daily_index(repository.daily_metrics(stores, start, end))
+        self.snapshots = daily_index(
+            db.get_unit_economics_1c_daily_margin_snapshots(
+                stores,
+                min(week, anchor - timedelta(days=1)).isoformat(),
+                end,
+                inputs_only=True,
+                include_reference=include_reference,
+            )
+        )
+        self.coverage = wb_days(stores, start, end)
+        if end < today.isoformat():
+            stock_start = (today - timedelta(days=today.weekday() + 7)).isoformat()
+            current = daily_index(
+                db.get_unit_economics_1c_funnel_daily_order_rows(stores, stock_start, today.isoformat())
+            )
+            for key, values in current.items():
+                self.orders[key].update(values)
+            coverage = wb_days(stores, stock_start, today.isoformat())
+            for store in stores:
+                self.coverage[store]["orders"].update(coverage[store]["orders"])
+        self.cabinets = {row.store_slug: row for row in db.list_unit_economics_1c_cabinet_settings(stores)}
+        self.settings = {
+            (row.store_slug, row.article): row for row in db.list_unit_economics_1c_product_settings(stores)
+        }
+        self.current_metrics = (
+            calculations.load_product_metrics(stores, period_days=1, today=today)
+            if week <= today <= (last_week or week) + timedelta(days=6)
+            else {}
+        )
+        self.products = {store: db.get_stock_items(store, "WB") for store in stores}
+
+
+def turnover_sort_key(row, value):
+    return (value is None, -(value or 0), row["project"], row["name"].casefold(), row["article"])
+
+
+def load(
+    stores: tuple[str, ...], week: date, user, *, today: date | None = None, include_notes=True, sources=None
+) -> dict:
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     week = week - timedelta(days=week.weekday())
     days = [(week + timedelta(days=i)).isoformat() for i in range(7)]
@@ -71,39 +124,12 @@ def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None
     stock_week = today - timedelta(days=today.weekday() + 7)
     stock_days = [(stock_week + timedelta(days=i)).isoformat() for i in range(7)]
     period = [day for day in days if day <= today.isoformat()]
-    start, end = previous[0], anchor.isoformat()
-    references = index(db.get_unit_economics_1c_product_reference_rows(stores))
-    prices = index(db.get_unit_economics_1c_latest_daily_prices(stores))
-    reputations = index(db.get_unit_economics_1c_latest_product_reputation(stores))
-    orders = daily_index(db.get_unit_economics_1c_funnel_daily_order_rows(stores, start, end))
-    advertising = daily_index(db.get_unit_economics_1c_daily_advertising(stores, start, end), "nm_id")
-    rnp = daily_index(repository.daily_metrics(stores, start, end))
-    snapshots = daily_index(
-        db.get_unit_economics_1c_daily_margin_snapshots(
-            stores, min(week, anchor - timedelta(days=1)).isoformat(), end, inputs_only=True
-        )
-    )
-    coverage = wb_days(stores, start, end)
-    # Stock is current, and turnover is today's saved funnel value even when
-    # the user inspects an older week. Do not read all intervening weeks.
-    if end < today.isoformat():
-        current_orders = daily_index(
-            db.get_unit_economics_1c_funnel_daily_order_rows(stores, stock_days[0], today.isoformat())
-        )
-        for key, values in current_orders.items():
-            orders[key].update(values)
-        current_coverage = wb_days(stores, stock_days[0], today.isoformat())
-        for store in stores:
-            coverage[store]["orders"].update(current_coverage[store]["orders"])
-    cabinets = {row.store_slug: row for row in db.list_unit_economics_1c_cabinet_settings(stores)}
-    settings = {
-        (row.store_slug, row.article): row for row in db.list_unit_economics_1c_product_settings(stores)
-    }
-    current_metrics = (
-        calculations.load_product_metrics(stores, period_days=1, today=today)
-        if today.isoformat() in period
-        else {}
-    )
+    end = anchor.isoformat()
+    sources = sources or Sources(stores, week, today)
+    references, prices, reputations = sources.references, sources.prices, sources.reputations
+    orders, advertising, rnp = sources.orders, sources.advertising, sources.rnp
+    snapshots, coverage = sources.snapshots, sources.coverage
+    cabinets, settings, current_metrics = sources.cabinets, sources.settings, sources.current_metrics
     work = defaultdict(lambda: defaultdict(list))
     can_edit = has_access(user, SectionName.ANALYZER, SectionAccessLevel.WRITE)
     for row in repository.notes(stores, days[0], today.isoformat()) if include_notes else ():
@@ -112,7 +138,7 @@ def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None
 
     rows = []
     for store in stores:
-        for product in db.get_stock_items(store, "WB"):
+        for product in sources.products[store]:
             article = str(product["article"])
             key = (store, article)
             metric_key = (store, article.partition(" / ")[0].strip())
@@ -331,7 +357,7 @@ def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None
                 },
             }
             rows.append(row)
-    rows.sort(key=lambda row: (row["project"], row["name"].casefold(), row["article"]))
+    rows.sort(key=lambda row: turnover_sort_key(row, row["fact"]))
     return {
         "ok": True,
         "rows": rows,

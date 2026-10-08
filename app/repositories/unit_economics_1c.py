@@ -927,6 +927,7 @@ def get_daily_margin_snapshots(
     *,
     articles: tuple[str, ...] | None = None,
     inputs_only: bool = False,
+    include_reference: bool = False,
 ) -> list[dict]:
     if not store_slugs or articles is not None and not articles:
         return []
@@ -955,8 +956,11 @@ def get_daily_margin_snapshots(
     from app.repositories import daily_economics
 
     result = {(row["store_slug"], row["article"], row["day"]): dict(row) for row in rows}
-    for row in daily_economics.records("WB", store_slugs, date_from, date_to, articles=articles, compact=True, inputs_only=inputs_only):
-        result[(row["store_slug"], row["article"], row["day"])] = daily_economics.wb_report_row(row)
+    for row in daily_economics.records("WB", store_slugs, date_from, date_to, articles=articles, compact=True, inputs_only=inputs_only, include_reference=include_reference):
+        snapshot = daily_economics.wb_report_row(row)
+        if include_reference:
+            snapshot["reference_json"] = row["reference_json"]
+        result[(row["store_slug"], row["article"], row["day"])] = snapshot
     return list(result.values())
 
 

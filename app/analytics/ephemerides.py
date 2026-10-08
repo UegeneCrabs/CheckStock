@@ -8,7 +8,6 @@ from app.analytics import analyzer
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.repositories import ephemerides as repository
-from app.repositories.economics_coverage import wb_days
 
 
 def monday(day):
@@ -25,11 +24,15 @@ def week_info(day):
     }
 
 
-def catalog(stores, user):
-    references = analyzer.index(db.get_unit_economics_1c_product_reference_rows(stores))
+def catalog(stores, user, *, sources=None):
+    references = (
+        sources.references
+        if sources
+        else analyzer.index(db.get_unit_economics_1c_product_reference_rows(stores))
+    )
     result = []
     for store in stores:
-        for product in db.get_stock_items(store, "WB"):
+        for product in sources.products[store] if sources else db.get_stock_items(store, "WB"):
             article = str(product["article"])
             reference = references.get((store, article), {})
             if analyzer.permitted(reference.get("manager"), user):
@@ -76,18 +79,22 @@ def load(stores, week, user, *, today=None):
     previous = week - timedelta(days=7)
     end = min(today, week + timedelta(days=6))
     # Reuse the analyzer's established ROI/DRR/coverage rules, without its daily notes.
+    sources = analyzer.Sources(stores, previous, today, last_week=week, include_reference=True)
     comparisons = [
-        analyzer.load(stores, start, user, today=today, include_notes=False) for start in (previous, week)
+        analyzer.load(stores, start, user, today=today, include_notes=False, sources=sources)
+        for start in (previous, week)
     ]
     source_rows = [{row["id"]: row for row in item["rows"]} for item in comparisons]
-    rows = catalog(stores, user)
-    prices, references = repository.dated_sources(stores, previous.isoformat(), end.isoformat())
+    rows = catalog(stores, user, sources=sources)
+    saved_references = [
+        row for daily in sources.snapshots.values() for row in daily.values() if "reference_json" in row
+    ]
+    prices, references = repository.dated_sources(
+        stores, previous.isoformat(), end.isoformat(), references=saved_references
+    )
     prices = analyzer.daily_index(prices)
     references = analyzer.daily_index(references)
-    orders = analyzer.daily_index(
-        db.get_unit_economics_1c_funnel_daily_order_rows(stores, previous.isoformat(), end.isoformat())
-    )
-    coverage = wb_days(stores, previous.isoformat(), end.isoformat())
+    orders, coverage = sources.orders, sources.coverage
     transit = repository.transit(stores)
     for row in rows:
         key = (row["store_slug"], row["article"])
@@ -148,6 +155,7 @@ def load(stores, week, user, *, today=None):
         row["dayTurnover"] = {
             key: current.get(key) for key in ("plan", "fact", "forecast", "difference", "deviation")
         }
+    rows.sort(key=lambda row: analyzer.turnover_sort_key(row, row["dayTurnover"]["fact"]))
     weeks = [week_info(week - timedelta(weeks=i)) for i in range(6)]
     attach_comments(rows, stores, week - timedelta(weeks=5), week)
     return {

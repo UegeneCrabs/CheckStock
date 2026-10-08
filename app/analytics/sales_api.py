@@ -7,7 +7,7 @@ No source request or synchronization is started by this read-only report.
 from datetime import UTC, date, datetime, timedelta
 
 from app import db
-from app.analytics.analyzer import permitted
+from app.analytics.analyzer import permitted, turnover_sort_key
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.repositories.economics_coverage import wb_days
@@ -106,6 +106,16 @@ def load(stores, user, date_from=None, date_to=None, *, today=None):
         if record.get("updated_at"):
             latest_update = max(latest_update or "", str(record["updated_at"]))
     coverage = wb_days(stores, dates[0], dates[-1])
+    turnover_day = today.isoformat()
+    if turnover_day in dates:
+        today_orders = {key: days[turnover_day] for key, days in saved.items() if turnover_day in days}
+        today_coverage = coverage
+    else:
+        today_orders = {
+            (record["store_slug"], str(record["article"])): record
+            for record in db.get_unit_economics_1c_funnel_daily_order_rows(stores, turnover_day, turnover_day)
+        }
+        today_coverage = wb_days(stores, turnover_day, turnover_day)
     rows = []
     for key, product in products.items():
         source = saved.get(key, {})
@@ -127,17 +137,14 @@ def load(stores, user, date_from=None, date_to=None, *, today=None):
                 "cancels": known_total(cancels),
                 "known_days": known_days,
                 "complete": known_days == len(dates),
+                "today_turnover": today_orders[key].get("orders_amount")
+                if key in today_orders
+                else 0
+                if turnover_day in today_coverage[key[0]]["orders"]
+                else None,
             }
         )
-    rows.sort(
-        key=lambda row: (
-            row["orders"] is None,
-            -(row["orders"] or 0),
-            row["project"],
-            row["name"].casefold(),
-            row["article"],
-        )
-    )
+    rows.sort(key=lambda row: turnover_sort_key(row, row["today_turnover"]))
     return {
         "ok": True,
         "rows": rows,
@@ -147,6 +154,7 @@ def load(stores, user, date_from=None, date_to=None, *, today=None):
         "available_from": first,
         "available_to": last,
         "today": today.isoformat(),
+        "turnover_day": turnover_day,
         "updated_at": latest_update,
         "loaded_at": datetime.now(UTC).isoformat(),
         "max_days": MAX_DAYS,
