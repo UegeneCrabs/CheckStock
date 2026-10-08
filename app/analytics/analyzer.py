@@ -53,7 +53,15 @@ def ratio(numerator, denominator):
     return round(numerator / denominator * 100, 2) if numerator is not None and denominator else None
 
 
-def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None) -> dict:
+def cart_value(day: str, today: date, product_orders: dict, product_rnp: dict):
+    """All daily adds to cart per WB card; absent legacy counters stay unknown."""
+    if day > today.isoformat():
+        return None
+    value = product_orders.get(day, {}).get("cart_count")
+    return value if value is not None else product_rnp.get(day, {}).get("traffic_carts")
+
+
+def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None, include_notes=True) -> dict:
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     week = week - timedelta(days=week.weekday())
     days = [(week + timedelta(days=i)).isoformat() for i in range(7)]
@@ -98,7 +106,7 @@ def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None
     )
     work = defaultdict(lambda: defaultdict(list))
     can_edit = has_access(user, SectionName.ANALYZER, SectionAccessLevel.WRITE)
-    for row in repository.notes(stores, days[0], today.isoformat()):
+    for row in repository.notes(stores, days[0], today.isoformat()) if include_notes else ():
         row["can_edit"] = can_edit and row["action_date"] == today.isoformat()
         work[(row["store_slug"], row["article"])][row["action_date"]].append(row)
 
@@ -267,7 +275,7 @@ def load(stores: tuple[str, ...], week: date, user, *, today: date | None = None
                 "impressions": [ad_value(day, "impressions") for day in traffic_days],
                 "clicks": [ad_value(day, "clicks") for day in traffic_days],
                 "ctr": [ratio(ad_value(day, "clicks"), ad_value(day, "impressions")) for day in traffic_days],
-                "carts": [product_rnp.get(day, {}).get("traffic_carts") for day in traffic_days],
+                "carts": [cart_value(day, today, product_orders, product_rnp) for day in traffic_days],
                 "spend": ad_value(yesterday, "spend"),
                 "yesterdayDrr": ratio(yesterday_spend, yesterday_amount)
                 if yesterday_amount

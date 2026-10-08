@@ -410,7 +410,8 @@ def load_products(
                 errors.append("Не загружены данные 1С для товара ЯМ")
             if not buyout_available:
                 errors.append("Не загружен процент выкупа ЯМ за выбранный период")
-            if products[-1].get("rating") is None:
+            # A successfully loaded zero review count can legitimately have no rating.
+            if products[-1].get("rating") is None and products[-1].get("reviews_count") != 0:
                 errors.append("Не загружен рейтинг ЯМ")
             if products[-1].get("reviews_count") is None:
                 errors.append("Не загружено количество отзывов ЯМ")

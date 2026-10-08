@@ -22,7 +22,7 @@ STOCK_SECTIONS = (
     S.STOCK_OPERATIONS,
 )
 UNIT_ECONOMICS_SECTIONS = (S.UNIT_ECONOMICS_WB, S.UNIT_ECONOMICS_OZON, S.UNIT_ECONOMICS_YANDEX)
-ANALYTICS_SECTIONS = (S.ANALYZER, S.ANALYTICS_SALES_API)
+ANALYTICS_SECTIONS = (S.ANALYZER, S.ANALYTICS_SALES_API, S.EPHEMERIDES)
 REPORT_SECTIONS = (
     S.REPORT_UNIT_PROFIT,
     S.REPORT_TARGET_PRICE,
@@ -40,6 +40,7 @@ SECTION_GROUPS = (
     ("Администрирование", (S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
 )
 SECTION_LABELS = {
+    S.EPHEMERIDES: "Аналитика · Эфемериды WB",
     S.FINANCE_YANDEX: "Финансовые отчёты · Яндекс Маркет",
     S.ANALYTICS_SALES_API: "Аналитика · Продажи по API WB",
     S.ANALYZER: "Аналитика · Анализатор WB",
@@ -66,6 +67,7 @@ SECTION_LABELS = {
     S.ADMIN_INTEGRATIONS: "API-ключи и фоновые выгрузки",
 }
 SECTION_PATHS = {
+    S.EPHEMERIDES: "/analytics/ephemerides",
     S.FINANCE_YANDEX: "/finance-reports/yandex",
     S.ANALYTICS_SALES_API: "/analytics/sales-api",
     S.ANALYZER: "/analytics/analyzer",
@@ -92,6 +94,7 @@ SECTION_PATHS = {
     S.ADMIN_INTEGRATIONS: "/admin/integrations",
 }
 SECTION_DESCRIPTIONS = {
+    S.EPHEMERIDES: "Сравнение недель WB, оборот и комментарии с историей изменений.",
     S.FINANCE_YANDEX: "Финансовый итог целого магазина: реализация, расходы, закупка и выплаты. Недоступен при товарных ограничениях.",
     S.ANALYTICS_SALES_API: "Заказы и отмены из воронки WB: период, дни, фильтры и экспорт.",
     S.ANALYZER: "Товары WB, воронка, эффективность, недельные заказы и рабочие записи.",
@@ -145,6 +148,7 @@ READ_ONLY_SECTIONS = {
 }
 SUPERADMIN_SECTIONS = {S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS}
 SECTION_MARKETPLACES = {
+    S.EPHEMERIDES: "WB",
     S.FINANCE_YANDEX: "YANDEX MARKET",
     S.ANALYTICS_SALES_API: "WB",
     S.ANALYZER: "WB",
@@ -172,6 +176,8 @@ def section_for_path(path: str) -> SectionName | None:
         ("/analytics/sales-api", S.ANALYTICS_SALES_API),
         ("/api/analytics/sales-api", S.ANALYTICS_SALES_API),
         ("/analytics/analyzer", S.ANALYZER),
+        ("/analytics/ephemerides", S.EPHEMERIDES),
+        ("/api/analytics/ephemerides", S.EPHEMERIDES),
         ("/api/analytics/analyzer", S.ANALYZER),
         ("/sales/unit-economics-1c/yandex-market/reports/unit-profit", S.REPORT_UNIT_PROFIT_YANDEX),
         ("/api/unit-economics-1c/yandex-market/reports/unit-profit", S.REPORT_UNIT_PROFIT_YANDEX),
@@ -318,6 +324,7 @@ def active_section(active: str) -> SectionName | None:
         "finance_yandex": S.FINANCE_YANDEX,
         "analytics_sales_api": S.ANALYTICS_SALES_API,
         "analyzer": S.ANALYZER,
+        "ephemerides": S.EPHEMERIDES,
         "unit_1c_settings": S.UNIT_ECONOMICS_WB,
         "unit_1c_wb": S.UNIT_ECONOMICS_WB,
         "unit_1c_ozon": S.UNIT_ECONOMICS_OZON,

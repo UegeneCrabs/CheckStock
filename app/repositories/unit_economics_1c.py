@@ -505,7 +505,7 @@ def get_funnel_daily_order_rows(
         f"""
         SELECT store_slug, article, day, vendor_code, product_name,
                orders_count, orders_amount, cancel_count, cancel_amount,
-               buyout_count, buyout_amount, buyout_percent,
+               buyout_count, buyout_amount, buyout_percent, cart_count,
                orders_count - cancel_count AS net_orders_count,
                orders_amount - cancel_amount AS net_orders_amount,
                source_version, updated_at

@@ -10,6 +10,7 @@ import zipfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from threading import Lock
 
@@ -180,6 +181,21 @@ def load_reputation(api_key: str, business_id: int) -> list[dict]:
     return list(result.values())
 
 
+def _advertising_number(row: dict, field: str) -> float:
+    value = row[field]  # A missing column is a schema error, unlike an explicit null.
+    if value is None and field in {"clicks", "clicksVendorWithFee"}:
+        value = 0
+    elif value is None and field == "cost":
+        # shows-boost can omit a sub-kopeck cost (observed: 1 show, CPM 4.97).
+        # Accept zero only if even the upper rounding bound of CPM proves it.
+        # Other null monetary values remain unknown and must fail the import.
+        shows = Decimal(str(_number(row.get("shows"))))
+        cpm_upper = Decimal(str(_number(row.get("cpm")))) + Decimal("0.005")
+        if shows * cpm_upper / 1000 < Decimal("0.005"):
+            value = 0
+    return _number(value)
+
+
 def load_advertising(api_key: str, business_id: int, start: date, end: date) -> list[dict]:
     payload = {"businessId": business_id, "dateFrom": start.isoformat(), "dateTo": end.isoformat()}
     boost = load_report(api_key, "boost-consolidated", payload, "business_boost_consolidated", "shopSku")
@@ -191,17 +207,21 @@ def load_advertising(api_key: str, business_id: int, start: date, end: date) -> 
         "offerId",
     )
     grouped = defaultdict(lambda: {"spend": 0.0, "impressions": 0, "clicks": 0})
-    for rows, identifier, spend, impressions, clicks in (
-        (boost, "shopSku", "billedAmount", "showsWithFee", "clicksVendorWithFee"),
-        (shows, "offerId", "cost", "shows", "clicks"),
+    for report, rows, identifier, spend, impressions, clicks in (
+        ("boost-consolidated", boost, "shopSku", "billedAmount", "showsWithFee", "clicksVendorWithFee"),
+        ("shows-boost", shows, "offerId", "cost", "shows", "clicks"),
     ):
-        for row in rows:
+        for index, row in enumerate(rows, start=1):
             item = grouped[str(row[identifier]).strip()]
-            item["spend"] += _number(row.get(spend))
-            item["impressions"] += int(_number(row.get(impressions)))
-
-            click_count = row[clicks]
-            item["clicks"] += int(_number(0 if click_count is None else click_count))
+            for metric, field in (("spend", spend), ("impressions", impressions), ("clicks", clicks)):
+                try:
+                    value = _advertising_number(row, field)
+                except (KeyError, ValueError) as error:
+                    raise ValueError(
+                        f"В отчёте ЯМ {report} отсутствует или некорректен показатель {field} "
+                        f"за {start} — {end}, строка {index}"
+                    ) from error
+                item[metric] += value if metric == "spend" else int(value)
     return [
         {"article": article, **values, "spend": round(values["spend"], 2)}
         for article, values in grouped.items()

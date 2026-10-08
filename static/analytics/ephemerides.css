@@ -1,0 +1,52 @@
+.ephemerides .e-page-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ephemerides .toolbar{align-items:stretch;gap:24px;flex-wrap:wrap}
+.ephemerides .e-store-summary{flex:0 1 620px;width:620px;max-width:100%;min-width:0;margin-left:auto;align-self:flex-start}
+.ephemerides .e-summary-toggle{display:flex;align-items:center;justify-content:space-between;gap:4px;width:100%;min-height:28px;padding:0;background:transparent;color:inherit;font:inherit;text-align:left}
+.ephemerides .e-summary-toggle:hover{color:#4e266e}
+.ephemerides .e-summary-toggle:focus-visible{outline:2px solid #aa96d0;outline-offset:0;border-radius:3px}
+.ephemerides .store-summary .e-summary-total td{font-weight:650;background:#f4ecfc}
+.ephemerides .e-store-summary .store-summary-wrap{width:100%;margin-left:0}
+.ephemerides .report-search{flex:1 1 540px;max-width:100%;display:flex;justify-content:space-between}
+.ephemerides .e-search-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+.ephemerides .e-search-row .search{flex:1 1 260px;max-width:380px;margin-top:0}
+.ephemerides .e-search-row .segments{flex:none;align-self:center;height:42px}
+.ephemerides .search{display:flex;align-items:center;position:relative;margin-top:12px}.ephemerides .search>span{position:absolute;left:12px;z-index:1;color:#9398a6}
+.ephemerides a.button{color:inherit;text-decoration:none}
+.ephemerides .table-actions{flex-wrap:wrap;min-width:0}
+.ephemerides .e-status-line{display:flex;gap:14px;align-items:center;min-height:24px;font-size:11px;color:#727a89}
+.ephemerides .e-status-line:empty{display:none}
+.ephemerides .heading-left{flex-wrap:wrap;gap:8px}
+.ephemerides .e-save-status{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%;font-size:11px;line-height:1.4}
+.ephemerides .e-save-status .button{height:26px;padding:0 8px;font-size:11px}
+.ephemerides #e-save{color:#388779}.ephemerides #e-save.error{color:#b54254}
+.ephemerides .period input{border:0;background:transparent;color:inherit;font:inherit;width:124px;max-width:124px;padding:0}
+.ephemerides .e-filter-chips{display:flex;gap:6px;padding:0 12px;flex-wrap:wrap}.ephemerides .e-filter-chips:not(:empty){padding:6px 12px;border-bottom:1px solid #edf0f5}
+.ephemerides .e-filter-chips button{border:0;border-radius:5px;background:#f0edfb;color:#6e55a5;padding:4px 8px;font:inherit}
+.ephemerides #e-table{table-layout:fixed;width:max-content;border-collapse:separate;border-spacing:0}
+/* Pin the header as one block: wrapped labels must not overlap the totals. */
+.ephemerides #e-table thead{position:sticky;top:0;z-index:5}
+.ephemerides #e-scroll{scroll-padding-top:104px}
+.ephemerides #e-table th,.ephemerides #e-table td{box-sizing:border-box;border-right:1px solid #eef0f4}
+.ephemerides #e-table td:not(.e-number){text-align:left}
+.ephemerides #e-table th{white-space:normal}.ephemerides #e-table td{height:76px;padding:8px 10px;vertical-align:middle;font-size:12px}
+.ephemerides #e-table .e-group th{height:24px;padding:3px 6px;line-height:1.2;text-align:center;text-transform:uppercase;letter-spacing:.035em;font-size:10px;font-weight:600;background:var(--column-group);color:var(--column-text);border-bottom:1px solid #b4aac4;border-right:2px solid #9786ad}
+.ephemerides #e-table thead th,.ephemerides #e-table thead td{position:static;border-right-color:#b4aac4;border-bottom-color:#b4aac4}
+.ephemerides #e-table tbody td{background:var(--column-bg)}
+.ephemerides #e-table .e-labels th{height:56px;line-height:1.15;background:var(--column-head);color:var(--column-text);text-align:left;padding:2px 4px;border-bottom:1px solid #e7eaf1}
+.ephemerides #e-table .e-totals td{background:var(--column-head);height:24px;padding:2px 6px;white-space:nowrap;font-size:11px;line-height:1.2;font-weight:600;border-bottom:1px solid #e7eaf1}
+.ephemerides #e-table .e-sticky{position:sticky;left:0;z-index:3;background:var(--column-bg);box-shadow:1px 0 0 #cfc1df;border-right:1px solid #dde1eb}
+.ephemerides #e-table thead .e-sticky{position:sticky;z-index:7}.ephemerides #e-table tbody tr:hover td{box-shadow:inset 0 0 0 999px #566eb707}.ephemerides #e-table tbody tr:hover .e-sticky{box-shadow:1px 0 0 #cfc1df,inset 0 0 0 999px #566eb707}
+.ephemerides .e-sort{border:0;background:none;text-align:left;font:inherit;color:inherit;padding:0;width:100%;cursor:pointer;min-height:0;line-height:1.15}.ephemerides .e-filter{display:block;border:1px solid #e5e8ef;background:#fff;border-radius:3px;color:#9397a4;margin-top:2px;padding:0;width:16px;height:14px;line-height:12px;font-size:10px;cursor:pointer}.ephemerides .e-filter.active{color:#7356a7;background:#eee9fa}
+.ephemerides .e-product{display:flex;align-items:center;gap:10px;border:0;background:none;padding:0;text-align:left;width:100%;font:inherit;cursor:pointer;color:inherit}.ephemerides .e-product img,.ephemerides .e-photo{width:35px;height:48px;object-fit:contain;border-radius:4px;flex-shrink:0}.ephemerides .e-product strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;font-weight:600}.ephemerides .e-product small{display:block;color:#9398a6;font-size:10px;margin-top:3px}.ephemerides .e-product span{min-width:0}
+.ephemerides .e-comment-readonly{padding:3px 22px 3px 0}
+.ephemerides .e-comment-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.5}
+.ephemerides .e-text{overflow-wrap:anywhere}
+.ephemerides .e-number{text-align:right;font-variant-numeric:tabular-nums}.ephemerides .e-negative{color:#be5c6e}.ephemerides .e-positive{color:#338b7c}.ephemerides .e-muted{color:#979caa}
+.ephemerides .e-comment{position:relative}.ephemerides .e-comment textarea{width:100%;min-height:53px;height:58px;box-sizing:border-box;resize:vertical;border:1px solid #e8eaf1;background:#fcfcff;border-radius:6px;padding:7px 22px 7px 7px;font:11px/1.5 inherit;color:#404656;display:block}.ephemerides .e-comment textarea:focus{outline:2px solid #aa96d0;background:white}.ephemerides .e-comment textarea[readonly]{background:#f7f8fb}.ephemerides .e-comment button{position:absolute;right:4px;top:3px;border:0;background:transparent;color:#a1a3af;cursor:pointer}.ephemerides .e-comment small{display:block;color:#9095a2;font-size:9px;white-space:normal;line-height:1.3;margin-top:3px}.ephemerides .e-comment small.error{color:#b54254}
+.ephemerides.e-dense #e-table tbody td{height:53px;padding:5px 8px}.ephemerides.e-dense .e-comment textarea{height:38px;min-height:38px}.ephemerides.e-dense .e-product img{height:36px;width:27px}
+.ephemerides #e-kind-wrap{font-size:11px;white-space:nowrap}.ephemerides #e-kind{display:block;max-width:180px;border:1px solid #e2e5ee;border-radius:5px;padding:5px;font:inherit;background:white}
+.ephemerides .e-dialog{border:1px solid #e1e4ed;border-radius:12px;padding:20px;width:min(520px,85vw);max-height:80vh;color:#404656;box-shadow:0 16px 80px #32304b25}.ephemerides .e-dialog::backdrop{background:#22273944}.ephemerides .e-dialog h2{font-size:16px;margin:0 0 16px}.ephemerides .e-dialog-close{float:right}.ephemerides .e-dialog input[type=search]{width:100%;padding:8px;border:1px solid #e3e5ed;border-radius:6px;margin-bottom:10px}.ephemerides #e-filter-values{max-height:45vh;overflow:auto;display:grid;gap:7px}.ephemerides #e-filter-values label{display:flex;gap:8px;font-size:12px}.ephemerides .e-dialog-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}.ephemerides #e-revisions article{border-top:1px solid #eceef4;padding:10px 0}.ephemerides #e-revisions p{white-space:pre-wrap;overflow-wrap:anywhere}.ephemerides #e-revisions small{color:#8a909e}
+.ephemerides .drawer{flex:0 0 350px}.ephemerides .drawer-body{padding:16px;overflow:auto}.ephemerides .drawer-body h3{font-size:12px;margin:20px 0 8px}.ephemerides .drawer-body table{width:100%;font-size:11px}.ephemerides .drawer-body td,.ephemerides .drawer-body th{padding:7px;border-bottom:1px solid #edf0f5}.ephemerides .drawer-body .e-comment textarea{height:90px}
+.ephemerides [hidden]{display:none!important}
+@media(max-width:1250px){.ephemerides .toolbar{flex-wrap:wrap}.ephemerides .e-store-summary{min-width:530px}.ephemerides .store-summary-wrap{min-width:530px}.ephemerides .jumps{display:none}.ephemerides .table-top{flex-wrap:wrap}}
+@media(max-width:750px){.ephemerides .e-store-summary{flex:none;min-width:0;width:100%}.ephemerides .store-summary-wrap{flex:none;min-width:0;width:100%}.ephemerides .drawer{position:fixed;right:8px;top:90px;bottom:10px;width:min(350px,90vw);z-index:20;box-shadow:0 10px 50px #27314b33}.ephemerides .report-search{flex:none;width:100%}}

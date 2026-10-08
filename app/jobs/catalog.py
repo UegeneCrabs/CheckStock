@@ -39,6 +39,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
     prices = settings.unit_economics_1c_price_sync_enabled
     return (
         SyncJobDefinition(
+            "wb_customer_transit_sync",
+            "Возвраты WB в пути",
+            "Сохраняет остатки в пути от покупателей для эфемерид, отдельно от складских остатков.",
+            "Каждые 4 часа",
+            base,
+            "store_marketplaces",
+            ("WB",),
+        ),
+        SyncJobDefinition(
             "yandex_finance_sync",
             "Финансовые отчёты Яндекс Маркета",
             "Обновляет отдельный финансовый реестр за 90 завершённых дней. Требует настроенных финансовых подключений.",

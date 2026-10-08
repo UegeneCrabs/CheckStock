@@ -4,43 +4,43 @@
     function col(letter, label, key, group, width = 108, type = 'number', extra = {}) {
         fields.push({letter, label, key, group, width, type, index: fields.length, ...extra});
     }
-    col('A', 'Ответственный', 'manager', 'product', 145, 'person');
-    col('B', 'Проект', 'project', 'product', 130, 'project');
-    col('C', 'BARCODE', 'barcode', 'product', 164, 'text');
-    col('D', 'ARTICLE', 'article', 'product', 148, 'text');
-    col('E', 'Название', 'name', 'product', 255, 'name');
-    col('F', 'Фото', 'image', 'product', 82, 'photo');
-    col('G', 'Код', 'code', 'product', 80, 'code');
-    col('H', 'Сток, шт', 'stock', 'base', 112, 'stock');
-    col('I', 'ДРР', 'drr', 'base', 100, 'drr');
-    col('J', 'ROI', 'roi', 'base', 100, 'roi');
-    col('K', 'Средняя цена<br>пред. периода', 'previousPrice', 'base', 140, 'money');
-    ['L', 'M', 'N', 'O'].forEach((letter, idx) => col(letter, 'Показы', 'impressions' + idx, 'traffic', 110, 'number', {idx, metric: 'impressions'}));
-    ['P', 'Q', 'R', 'S'].forEach((letter, idx) => col(letter, 'CTR', 'ctr' + idx, 'traffic', 100, 'percent', {idx, metric: 'ctr'}));
-    ['T', 'U', 'V', 'W'].forEach((letter, idx) => col(letter, 'Корзины', 'carts' + idx, 'traffic', 110, 'number', {idx, metric: 'carts'}));
-    col('X', 'Расход РК<br>вчера', 'spend', 'performance', 120, 'money');
-    col('Y', 'ДРР<br>вчера', 'yesterdayDrr', 'performance', 105, 'percent');
-    col('Z', 'ДРР<br>накопительный итог', 'drr', 'performance', 138, 'drr');
-    col('AA', 'РОИ<br>накопительный итог', 'roi', 'performance', 138, 'roi');
-    col('AB', 'СТР<br>накопительный итог', 'totalCtr', 'performance', 138, 'percent');
-    col('AC', 'Рейтинг', 'rating', 'performance', 100, 'rating');
-    col('AD', 'Цели на новую неделю', 'goals', 'goals', 160, 'goal');
-    ['AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK'].forEach((letter, idx) => col(letter, '', 'day' + idx, 'week', 105, 'day', {idx}));
-    col('AL', 'СПП', 'spp', 'plan', 100, 'percent');
-    col('AM', 'Цена WB<br>с кошельком', 'wallet', 'plan', 142, 'money');
-    col('AN', 'Цена<br>поставщика', 'price', 'plan', 126, 'money');
-    col('AO', 'Цель W,<br>шт', 'goal', 'plan', 108);
-    col('AP', 'Коэф D', 'coeff', 'plan', 100, 'decimal');
-    col('AQ', 'Цель день,<br>шт', 'dayGoal', 'plan', 112, 'decimal');
-    col('AR', '', 'spacer', 'turnover', 16, 'spacer');
-    col('AT', 'ТО цель на день,<br>₽', 'plan', 'turnover', 150, 'money');
-    col('', 'ТО факт на данный<br>момент, ₽', 'fact', 'turnover', 160, 'money');
-    col('AS', 'Прогнозируемый ТО<br>на день, ₽', 'forecast', 'turnover', 165, 'money');
-    col('AU', 'Разница,<br>₽', 'difference', 'turnover', 130, 'difference');
-    col('AV', 'Отклонение,<br>%', 'deviation', 'turnover', 130, 'deviation');
-    ['AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC'].forEach((letter, idx) => col(letter, '', 'note' + idx, 'notes', 194, 'note', {idx}));
-    const combined = {index: fields.length, label: 'Товар', key: 'product', group: 'product', width: 310, type: 'product'};
-    const groups = {product: 'Товар', base: 'Текущие показатели', traffic: 'Воронка · 4 дня', performance: 'Эффективность', goals: 'Цели на неделю', week: 'Заказы · выбранная неделя', plan: 'Цены и план', turnover: 'Товарооборот', notes: 'Работа по неделе'};
+    col('A', 'Ответственный', 'manager', 'product', 100, 'person');
+    col('B', 'Проект', 'project', 'product', 75, 'project');
+    col('C', 'BARCODE', 'barcode', 'product', 120, 'text');
+    col('D', 'ARTICLE', 'article', 'product', 105, 'text');
+    col('E', 'Название', 'name', 'product', 160, 'name');
+    col('F', 'Фото', 'image', 'product', 55, 'photo');
+    col('G', 'Код', 'code', 'product', 65, 'code');
+    col('H', 'Сток, шт', 'stock', 'base', 75, 'stock');
+    col('I', 'ДРР', 'drr', 'base', 55, 'drr');
+    col('J', 'ROI', 'roi', 'base', 65, 'roi');
+    col('K', 'Средняя цена<br>пред. периода', 'previousPrice', 'base', 90, 'money');
+    ['L', 'M', 'N', 'O'].forEach((letter, idx) => col(letter, 'Показы', 'impressions' + idx, 'traffic', 70, 'number', {idx, metric: 'impressions'}));
+    ['P', 'Q', 'R', 'S'].forEach((letter, idx) => col(letter, 'CTR', 'ctr' + idx, 'traffic', 55, 'percent', {idx, metric: 'ctr'}));
+    ['T', 'U', 'V', 'W'].forEach((letter, idx) => col(letter, 'Корзины', 'carts' + idx, 'traffic', 65, 'number', {idx, metric: 'carts'}));
+    col('X', 'Расход РК<br>вчера', 'spend', 'performance', 85, 'money');
+    col('Y', 'ДРР<br>вчера', 'yesterdayDrr', 'performance', 55, 'percent');
+    col('Z', 'ДРР<br>накопительный итог', 'drr', 'performance', 85, 'drr');
+    col('AA', 'РОИ<br>накопительный итог', 'roi', 'performance', 85, 'roi');
+    col('AB', 'СТР<br>накопительный итог', 'totalCtr', 'performance', 85, 'percent');
+    col('AC', 'Рейтинг', 'rating', 'performance', 65, 'rating');
+    col('AD', 'Цели на новую неделю', 'goals', 'goals', 110, 'goal');
+    ['AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK'].forEach((letter, idx) => col(letter, '', 'day' + idx, 'week', 65, 'day', {idx}));
+    col('AL', 'СПП', 'spp', 'plan', 55, 'percent');
+    col('AM', 'Цена WB<br>с кошельком', 'wallet', 'plan', 80, 'money');
+    col('AN', 'Цена<br>поставщика', 'price', 'plan', 80, 'money');
+    col('AO', 'Цель W,<br>шт', 'goal', 'plan', 65);
+    col('AP', 'Коэф D', 'coeff', 'plan', 55, 'decimal');
+    col('AQ', 'Цель день,<br>шт', 'dayGoal', 'plan', 65, 'decimal');
+    col('AR', '', 'spacer', 'turnover', 8, 'spacer');
+    col('AT', 'ТО цель на день,<br>₽', 'plan', 'turnover', 110, 'money');
+    col('', 'ТО факт на данный<br>момент, ₽', 'fact', 'turnover', 110, 'money');
+    col('AS', 'Прогнозируемый ТО<br>на день, ₽', 'forecast', 'turnover', 120, 'money');
+    col('AU', 'Разница,<br>₽', 'difference', 'turnover', 85, 'difference');
+    col('AV', 'Отклонение,<br>%', 'deviation', 'turnover', 70, 'deviation');
+    ['AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC'].forEach((letter, idx) => col(letter, '', 'note' + idx, 'notes', 165, 'note', {idx}));
+    const combined = {index: fields.length, label: 'Товар', key: 'product', group: 'product', width: 160, type: 'product'};
+    const groups = {product: 'Товар', base: 'Текущие показатели', traffic: 'Рекламная воронка · 4 дня', performance: 'Эффективность', goals: 'Цели на неделю', week: 'Заказы · выбранная неделя', plan: 'Цены и план', turnover: 'Товарооборот', notes: 'Работа по неделе'};
     const numeric = c => !['product', 'text', 'person', 'project', 'name', 'photo', 'code', 'goal', 'spacer', 'note'].includes(c.type);
     function value(row, column) {
         if (column.metric) return row[column.metric]?.[column.idx] ?? null;
@@ -78,7 +78,7 @@
         return known.length ? known.reduce((a, b) => a + b, 0) : null;
     }
     function ratio(a, b) { return a != null && b > 0 ? a / b * 100 : null; }
-    function displayColumns(visibleGroups, separate = false, productWidth = 310) {
+    function displayColumns(visibleGroups, separate = false, productWidth = 160) {
         const enabled = fields.filter(column => visibleGroups.has(column.group));
         if (!visibleGroups.has('product')) return enabled;
         const primary = separate ? enabled.find(column => column.key === 'name') : {...combined, width: productWidth};
@@ -134,6 +134,16 @@
             const pairs = rows.filter(row => row.weights[numerator] != null && row.weights[denominator] != null);
             return ratio(sum(pairs.map(row => row.weights[numerator])), sum(pairs.map(row => row.weights[denominator])));
         };
+        if (column.metric === 'carts') {
+            const articles = new Map();
+            rows.forEach(row => {
+                const key = JSON.stringify([storeKey(row), String(row.article || row.id || '').split(' / ')[0]]);
+                if (!articles.has(key)) articles.set(key, new Set());
+                const count = value(row, column);
+                if (typeof count === 'number' && Number.isFinite(count)) articles.get(key).add(count);
+            });
+            return sum([...articles.values()].map(counts => counts.size === 1 ? [...counts][0] : null));
+        }
         if (column.metric === 'ctr') {
             const pairs = rows.filter(row => row.impressions[column.idx] != null && row.clicks[column.idx] != null);
             return ratio(sum(pairs.map(row => row.clicks[column.idx])), sum(pairs.map(row => row.impressions[column.idx])));
@@ -150,12 +160,20 @@
         if (!numeric(column) || ['price', 'wallet', 'spp', 'rating', 'coeff'].includes(column.key)) return null;
         return sum(rows.map(row => value(row, column)));
     }
+    function orderProgress(orders, goal) {
+        if (!Number.isFinite(orders) || orders < 0 || !Number.isFinite(goal) || goal <= 0) return null;
+        return {
+            state: orders > goal ? 'over' : orders < goal ? 'under' : 'met',
+            split: Math.min(orders, goal) / Math.max(orders, goal) * 100,
+            difference: Math.abs(orders - goal),
+        };
+    }
     function csvCell(value) {
         let text = String(value ?? '');
         if (/^[\s]*[=+@\-]/.test(text) && typeof value !== 'number') text = "'" + text;
         return '"' + text.replace(/"/g, '""') + '"';
     }
-    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, csvCell, displayColumns, storeTurnover};
+    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress};
     scope.CheckStockAnalyzer = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof window === 'undefined' ? globalThis : window);

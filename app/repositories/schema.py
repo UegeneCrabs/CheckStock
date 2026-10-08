@@ -6,6 +6,7 @@ from sqlalchemy import inspect, select
 from app.core.stores import STORES
 from app.infrastructure import daily_economics_orm as daily_economics_orm
 from app.infrastructure import economics_coverage_orm as economics_coverage_orm
+from app.infrastructure import ephemerides_orm as ephemerides_orm
 from app.infrastructure import finance_orm as finance_orm
 from app.infrastructure import yandex_economics_orm as yandex_economics_orm
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path
@@ -455,6 +456,7 @@ def _migrate_wb_funnel_daily_orders(database: Database) -> None:
             ("buyout_count", "INTEGER"),
             ("buyout_amount", "FLOAT"),
             ("buyout_percent", "FLOAT"),
+            ("cart_count", "INTEGER"),
         ):
             if columns and column not in columns:
                 connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} {definition}")
