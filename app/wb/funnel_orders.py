@@ -88,7 +88,7 @@ def _payload(
 
 def _product_values(
     raw: object,
-) -> tuple[str, str, str, int, float, int, float, int, float, float] | None:
+) -> tuple[str, str, str, int, float, int, float, int, float, float, int | None] | None:
     item = _mapping(raw)
     product = _mapping(item.get("product"))
     article = str(product.get("nmId") or product.get("nmID") or "").strip()
@@ -118,6 +118,7 @@ def _product_values(
         buyout_count,
         buyout_amount,
         buyout_percent,
+        _integer(selected["cartCount"]) if selected.get("cartCount") is not None else None,
     )
 
 
@@ -139,7 +140,7 @@ def _daily_products(
     token: str,
     day: date,
     nm_ids: tuple[int, ...] = (),
-) -> list[tuple[str, str, str, int, float, int, float, int, float, float]]:
+) -> list[tuple[str, str, str, int, float, int, float, int, float, float, int | None]]:
     """Return daily raw orderCount and orderSum separately for every WB product card.
 
     The v3 endpoint returns an aggregate for the selected period per card. We
@@ -147,7 +148,7 @@ def _daily_products(
     card in the seller account has been collected.
     """
 
-    products: dict[str, tuple[str, str, str, int, float, int, float, int, float, float]] = {}
+    products: dict[str, tuple[str, str, str, int, float, int, float, int, float, float, int | None]] = {}
     cursor: str | None = None
     seen_cursors: set[str] = set()
     for _ in range(MAX_PAGES):
@@ -222,6 +223,7 @@ def _replace_day(store_slug: str, day: date, products: list[tuple]) -> None:
         buyout_count = metrics[2] if len(metrics) > 2 else None
         buyout_amount = metrics[3] if len(metrics) > 3 else None
         buyout_percent = metrics[4] if len(metrics) > 4 else None
+        cart_count = metrics[5] if len(metrics) > 5 else None
         normalized.append(
             (
                 store_slug,
@@ -240,6 +242,7 @@ def _replace_day(store_slug: str, day: date, products: list[tuple]) -> None:
                     if buyout_percent is not None
                     else None
                 ),
+                _integer(cart_count) if cart_count is not None else None,
                 now,
             )
         )
@@ -255,9 +258,9 @@ def _replace_day(store_slug: str, day: date, products: list[tuple]) -> None:
                 INSERT INTO wb_funnel_daily_orders
                     (store_slug, day, article, vendor_code, product_name,
                      orders_count, orders_amount, cancel_count, cancel_amount,
-                     buyout_count, buyout_amount, buyout_percent,
+                     buyout_count, buyout_amount, buyout_percent, cart_count,
                      source_version, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 4, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 4, ?)
                 ON CONFLICT(store_slug, day, article) DO UPDATE SET
                     vendor_code = excluded.vendor_code,
                     product_name = excluded.product_name,
@@ -268,6 +271,7 @@ def _replace_day(store_slug: str, day: date, products: list[tuple]) -> None:
                     buyout_count = excluded.buyout_count,
                     buyout_amount = excluded.buyout_amount,
                     buyout_percent = excluded.buyout_percent,
+                    cart_count = excluded.cart_count,
                     source_version = excluded.source_version,
                     updated_at = excluded.updated_at
                 """,

@@ -23,10 +23,12 @@
     const noteDrafts = new Map();
     const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: M.fields.find(column => column.key === 'fact').index, direction: -1, page: 1, pageSize: 20};
     const visibleGroups = new Set(Object.keys(M.groups));
+    let summaryCollapsed = false;
     const preferenceKey = 'checkstock.analyzer.columns.v1';
     try {
         const saved = JSON.parse(localStorage.getItem(preferenceKey) || 'null');
         if (saved) {
+            summaryCollapsed = !!saved.summaryCollapsed;
             $('dense').checked = !!saved.dense;
             $('sheet-order').checked = !!saved.exact;
             if (Array.isArray(saved.groups) && saved.groups.length) {
@@ -36,7 +38,7 @@
         }
     } catch { /* Preferences are optional. */ }
     function savePreferences() {
-        try { localStorage.setItem(preferenceKey, JSON.stringify({dense: $('dense').checked, exact: $('sheet-order').checked, groups: [...visibleGroups]})); } catch { /* Storage may be disabled. */ }
+        try { localStorage.setItem(preferenceKey, JSON.stringify({dense: $('dense').checked, exact: $('sheet-order').checked, summaryCollapsed, groups: [...visibleGroups]})); } catch { /* Storage may be disabled. */ }
     }
     function toast(text) {
         $('toast').textContent = text;
@@ -52,7 +54,7 @@
     }
     function title(column) {
         if (column.metric === 'impressions' || column.metric === 'ctr' || column.key === 'totalCtr') return 'Показы и CTR рекламных кампаний WB. CTR = клики / показы × 100%.';
-        if (column.metric === 'carts') return 'Добавления в корзину из сохранённой воронки WB.';
+        if (column.metric === 'carts') return 'Все добавления товара в корзину за день, включая органические. Показатель карточки WB общий для её размеров; в итогах учитывается один раз.';
         if (column.key === 'stock') return 'Последний сохранённый остаток: FBO + FBS + ФФ. Если часть источников отсутствует, показана известная часть.';
         if (column.key === 'roi') return 'ROI по дневным расчётам юнит-экономики за выбранную неделю. Неполные данные отмечены в карточке.';
         if (['drr', 'yesterdayDrr'].includes(column.key)) return 'Расход рекламы / ожидаемый выкупленный оборот × 100%, как в юнит-экономике WB. Только дни с известными исходными значениями.';
@@ -76,6 +78,14 @@
         const url = /^https?:\/\//i.test(row.image) || /^\/(?!\/)/.test(row.image) ? row.image : '';
         return url ? `<img class="thumb" loading="lazy" src="${esc(url)}" alt="${esc(row.name)}">` : '<span class="thumb no-photo" aria-label="Нет фото">WB</span>';
     }
+    function orderBadge(orders, goal) {
+        const progress = M.orderProgress(orders, goal);
+        if (!progress) return `<span class="cell-main">${num(orders)}</span>`;
+        const difference = progress.state === 'over' ? ` · Сверх цели: ${num(progress.difference, 2)} шт.`
+            : progress.state === 'under' ? ` · Не хватает: ${num(progress.difference, 2)} шт.` : ' · Цель выполнена';
+        const description = `Заказы: ${num(orders)} шт. · Цель на день: ${num(goal, 2)} шт.${difference}`;
+        return `<span class="order-badge ${progress.state}" style="--order-split:${progress.split}%" title="${esc(description)}" aria-label="${esc(description)}">${num(orders)}</span>`;
+    }
     function cell(row, column) {
         const value = M.value(row, column);
         if (column.key === 'product') return `<div class="product">${photo(row)}<div><button class="product-name" data-open="${esc(row.id)}" title="${esc(row.name)}">${esc(row.name)}</button><div class="product-meta"><span>WB</span><button data-copy="${esc(row.article)}" title="Копировать артикул">${esc(row.article)} ⧉</button></div><div class="product-barcode">${esc(row.barcode)}</div></div></div>`;
@@ -91,12 +101,12 @@
         if (value == null) return '<span class="empty-value">—</span>';
         if (column.type === 'stock') return `<strong>${num(value)}</strong><span class="cell-sub" title="Сток / среднесуточные заказы за ${shortDate(payload.stockPreviousFrom)}–${shortDate(payload.stockPreviousTo)}">${row.stockDays != null ? '≈ ' + num(row.stockDays, 1) + ' дней запаса' : row.stockOrdersComplete && row.stockDailyOrders === 0 ? 'Нет заказов за прошлую неделю' : 'Запас дней: нет данных'}</span>`;
         if (column.type === 'rating') return `<span class="rating">★</span> <strong>${num(value, 1)}</strong>`;
-        if (column.type === 'day') return `<span class="cell-main">${num(value)}</span>${row.dayGoal > 0 ? `<span class="progress"><i style="width:${Math.min(value / row.dayGoal * 100, 100)}%"></i></span>` : ''}`;
+        if (column.type === 'day') return orderBadge(value, row.dayGoal);
         const partial = column.key === 'roi' && !row.coverage.roiComplete || column.key === 'drr' && row.coverage.drr < row.coverage.expected;
         return `<span class="cell-main ${column.type === 'roi' ? value < 0 ? 'negative' : 'positive' : ''}">${format(value, column)}</span>${partial ? '<span class="cell-sub">неполные данные</span>' : ''}`;
     }
     function buildColumns() {
-        columns = M.displayColumns(visibleGroups, $('sheet-order').checked, innerWidth < 800 ? 220 : 290);
+        columns = M.displayColumns(visibleGroups, $('sheet-order').checked);
         root.classList.toggle('compact', $('dense').checked);
         $('table').style.width = columns.reduce((sum, column) => sum + column.width, 0) + 'px';
         $('cols').innerHTML = columns.map(column => `<col style="width:${column.width}px">`).join('');
@@ -123,8 +133,13 @@
         return `class="tone-${column.group} ${column.frozenLeft != null ? 'frozen ' : ''}${column.type === 'spacer' ? 'spacer ' : ''}${extra}" ${column.frozenLeft != null ? `style="left:${column.frozenLeft}px"` : ''}`;
     }
     function renderStoreSummary(filtered) {
-        $('summary-caption').textContent = 'Товарооборот на ' + shortDate(payload.turnover_day) + ' · по фильтрам таблицы';
-        $('store-summary').innerHTML = M.storeTurnover(filtered).map(store => `<tr><th scope="row">${esc(store.project)}</th>${['plan', 'fact', 'forecast', 'difference', 'deviation'].map(key => `<td title="${store.partial[key] ? 'Неполные данные: учтены только известные значения' : ''}">${key === 'deviation' ? pct(store[key]) : num(store[key], 0)}${store.partial[key] && store[key] != null ? '<sup>*</sup>' : ''}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">Нет товаров по выбранным фильтрам</td></tr>';
+        const toggle = $('summary-toggle'), action = summaryCollapsed ? 'Развернуть по магазинам' : 'Свернуть до общего итога';
+        toggle.setAttribute('aria-expanded', String(!summaryCollapsed));
+        toggle.setAttribute('aria-label', action); toggle.title = action;
+        $('summary-arrow').textContent = summaryCollapsed ? '▾' : '▴';
+        if (!payload) return;
+        const stores = summaryCollapsed && filtered.length ? [{project: 'Все магазины', ...M.turnoverTotals(filtered)}] : M.storeTurnover(filtered);
+        $('store-summary').innerHTML = stores.map(store => `<tr class="${summaryCollapsed ? 'summary-total' : ''}"><th scope="row">${esc(store.project)}</th>${['plan', 'fact', 'forecast', 'difference', 'deviation'].map(key => `<td title="${store.partial[key] ? 'Неполные данные: учтены только известные значения' : ''}">${key === 'deviation' ? pct(store[key]) : num(store[key], 2)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">Нет товаров по выбранным фильтрам</td></tr>';
     }
     function renderPage() {
         if (!payload) return;
@@ -306,6 +321,8 @@
     $('columns-toggle').onclick = () => toggleColumns($('column-panel').hidden);
     $('columns-done').onclick = () => toggleColumns(false);
     document.addEventListener('click', event => { if (!event.target.closest('.columns-wrap')) toggleColumns(false); });
+    $('summary-toggle').onclick = () => { summaryCollapsed = !summaryCollapsed; savePreferences(); renderStoreSummary(M.tableRows(rows, state)); };
+    renderStoreSummary([]);
     $('search').oninput = event => { state.query = event.target.value; state.page = 1; renderPage(); };
     root.querySelectorAll('[data-state]').forEach(button => button.onclick = () => {
         state.segment = button.dataset.state;
@@ -340,9 +357,11 @@
     root.querySelectorAll('[data-jump]').forEach(button => button.onclick = () => {
         const idx = jumpColumnIndex(button);
         if (idx < 0) return;
-        const offset = columns.slice(0, idx).reduce((sum, column) => sum + column.width, 0);
-        const pinnedWidth = columns.filter(column => column.frozenLeft != null).reduce((sum, column) => sum + column.width, 0);
-        $('table-scroll').scrollTo({left: Math.max(0, offset - pinnedWidth), behavior: 'instant'});
+        const scroll = $('table-scroll'), headers = $('thead').querySelector('.heads').children;
+        const pinned = [...headers].filter(header => header.classList.contains('frozen'));
+        const visibleStart = pinned.length ? Math.max(...pinned.map(header => header.getBoundingClientRect().right)) : scroll.getBoundingClientRect().left + scroll.clientLeft;
+        const left = idx === 0 ? 0 : scroll.scrollLeft + headers[idx].getBoundingClientRect().left - visibleStart;
+        scroll.scrollTo({left: Math.max(0, left), behavior: 'instant'});
         root.querySelectorAll('[data-jump]').forEach(item => item.classList.toggle('active', item === button));
     });
     document.addEventListener('keydown', event => {

@@ -1,0 +1,37 @@
+<link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261008-2">
+<link rel="stylesheet" href="/static/analytics/ephemerides.css?v=20261008-12">
+<section class="analyzer ephemerides" id="ephemerides"><div class="analyzer-main">
+ <section class="toolbar" aria-label="Эфемериды WB">
+  <div class="report-search"><div class="heading-left"><h1 id="e-title">Эфемериды</h1><span class="demo">WB</span><div class="e-save-status"><span id="e-save" role="status"></span><button class="button" id="e-retry" hidden>Повторить сохранение</button></div></div>
+   <div class="e-search-row">
+    <label class="search"><span aria-hidden="true">⌕</span><input type="search" id="e-search" placeholder="Название, артикул, баркод или комментарий" aria-label="Поиск"></label>
+    <div class="segments" id="e-segments"><button data-segment="all" class="active" aria-pressed="true">Все товары</button><button data-segment="below" aria-pressed="false">Ниже цели</button><button data-segment="negative" aria-pressed="false">ROI &lt; 0</button></div>
+   </div>
+  </div>
+  <div class="e-store-summary" id="e-summary-panel">
+   <div class="store-summary-wrap" id="e-summary-wrap"><table class="store-summary" aria-label="Товарооборот по магазинам"><thead><tr><th><button class="e-summary-toggle" id="e-summary-toggle" type="button" aria-expanded="true" aria-controls="e-summary" aria-label="Свернуть до общего итога" title="Свернуть до общего итога"><span>Магазин</span><span id="e-summary-arrow" aria-hidden="true">▴</span></button></th><th>ТО цель<br>на день, ₽</th><th>ТО факт<br>на данный момент, ₽</th><th>Прогнозируемый ТО<br>на день, ₽</th><th>Разница, ₽</th><th>Отклонение, %</th></tr></thead><tbody id="e-summary"></tbody></table></div>
+  </div>
+ </section>
+ <div class="e-status-line" id="e-load" role="status">Загрузка данных…</div>
+ <div class="table-workspace" id="e-workspace"><section class="table-card">
+  <div class="table-top"><div class="table-navigation"><strong class="table-title">Товары <span id="e-count">0</span></strong><div class="jumps" id="e-jumps"></div></div>
+   <div class="table-actions"><label id="e-kind-wrap" hidden>Тип записи <select id="e-kind"><option value="decision">Решения</option><option value="competitor">Конкуренты</option><option value="next">На следующую неделю</option></select></label>
+    <div class="period"><button id="e-prev-week" aria-label="Предыдущая неделя">‹</button><label class="period-text"><small id="e-week-label">Выбранная неделя</small><input type="date" id="e-week" min="2000-01-03" aria-label="Дата выбранной недели"></label><button id="e-next-week" aria-label="Следующая неделя">›</button></div>
+    <div class="e-page-actions"><a class="button" id="e-other-page" href="/analytics/ephemerides/comments">↶ История комментариев</a><button class="button" id="e-export">↓ Экспорт</button></div>
+    <div class="columns-wrap"><button class="button" id="e-columns" aria-expanded="false">▥ Колонки</button><div class="column-panel" id="e-column-panel" hidden><strong>Вид таблицы</strong><label><input type="checkbox" id="e-separate">Отдельные столбцы товара</label><label><input type="checkbox" id="e-dense">Компактные строки</label><hr><div id="e-groups"></div><button class="button" id="e-columns-done">Готово</button></div></div>
+   </div>
+  </div>
+  <div id="e-filter-chips" class="e-filter-chips"></div>
+  <div class="scroll" id="e-scroll" tabindex="0" aria-label="Таблица с горизонтальной прокруткой"><table id="e-table" aria-label="Эфемериды WB"><colgroup id="e-cols"></colgroup><thead id="e-head"></thead><tbody id="e-body"></tbody></table><div class="empty" id="e-empty" hidden><strong>Товары не найдены</strong><span>Измените поиск или фильтры.</span><button class="button" id="e-reset">Сбросить фильтры</button></div></div>
+  <footer class="table-footer"><span id="e-pagination">Загрузка…</span><div class="footer-right"><label for="e-size">На странице</label><select id="e-size"><option>20</option><option>50</option><option>100</option></select><button class="icon-button" id="e-prev-page" aria-label="Предыдущая страница">‹</button><span class="page-num" id="e-page-number">1</span><button class="icon-button" id="e-next-page" aria-label="Следующая страница">›</button></div></footer>
+ </section>
+ <aside class="drawer" id="e-drawer" hidden aria-labelledby="e-drawer-title"><div class="drawer-head"><strong id="e-drawer-title">Карточка товара</strong><button class="icon-button" id="e-close-drawer" aria-label="Закрыть карточку">×</button></div><div class="drawer-body" id="e-drawer-body"></div></aside>
+ </div>
+</div>
+<dialog id="e-filter-dialog" class="e-dialog"><form method="dialog"><button class="icon-button e-dialog-close" aria-label="Закрыть">×</button></form><h2 id="e-filter-title">Фильтр</h2><input type="search" id="e-filter-search" placeholder="Найти значение" aria-label="Поиск значений"><div id="e-filter-values"></div><div class="e-dialog-actions"><button class="button" id="e-filter-reset">Сбросить</button><button class="button primary" id="e-filter-apply">Применить</button></div></dialog>
+<dialog id="e-revisions-dialog" class="e-dialog"><form method="dialog"><button class="icon-button e-dialog-close" aria-label="Закрыть">×</button></form><h2>История изменений</h2><div id="e-revisions"></div><div id="e-conflict-actions" class="e-dialog-actions" hidden><button class="button" id="e-use-server">Использовать сохранённый текст</button><button class="button primary" id="e-use-draft">Сохранить мой текст новой версией</button></div></dialog>
+</section>
+<script type="application/json" id="ephemerides-config">$ephemerides_config</script>
+<script src="/static/analytics/analyzer-model.js?v=20261008-4" defer></script>
+<script src="/static/analytics/ephemerides-model.js?v=20261008-4" defer></script>
+<script src="/static/analytics/ephemerides.js?v=20261008-23" defer></script>

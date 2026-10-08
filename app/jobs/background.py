@@ -25,6 +25,7 @@ from app.exports import project_sheet as stock_sheet_export
 from app.integrations import google_sheet_catalog, google_week_update
 from app.jobs import finance as finance_sync
 from app.jobs import settings as sync_settings
+from app.jobs import wb_transit
 from app.jobs.scheduling import BackgroundJob, run_background_job
 from app.ozon import catalog as ozon_catalog
 from app.ozon import reputation as ozon_reputation
@@ -350,6 +351,14 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
 
 def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
+        BackgroundJob(
+            wb_transit.JOB,
+            wb_transit.sync_all,
+            _fixed_delay(4 * 60 * 60),
+            startup_delay_seconds=180,
+            ready_event=catalog_ready,
+            is_enabled=lambda: settings.background_sync_enabled and _job_enabled(wb_transit.JOB),
+        ),
         BackgroundJob(
             finance_sync.JOB,
             finance_sync.daily,

@@ -756,6 +756,7 @@ class WbFunnelDailyOrderRecord(OrmBase):
     buyout_count: Mapped[int | None] = mapped_column(Integer)
     buyout_amount: Mapped[float | None] = mapped_column(Float)
     buyout_percent: Mapped[float | None] = mapped_column(Float)
+    cart_count: Mapped[int | None] = mapped_column(Integer)
     source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=4, server_default="4")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
