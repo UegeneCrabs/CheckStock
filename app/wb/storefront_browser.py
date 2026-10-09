@@ -189,7 +189,7 @@ def _prepare_browser_in_environment(
 
 
 def _browser_command(
-    executable: Path, profile: Path, port: int, article: str, *, headless: bool
+    executable: Path, profile: Path, port: int, article: str, *, headless: bool, no_sandbox: bool = False
 ) -> list[str]:
     command = [
         str(executable),
@@ -201,8 +201,18 @@ def _browser_command(
     ]
     if headless:
         command.append("--headless=new")
+    if no_sandbox:
+        command.append("--no-sandbox")
     command.append(f"https://www.wildberries.ru/catalog/{article}/detail.aspx")
     return command
+
+
+def _wait_for_browser_start(process: subprocess.Popen, seconds: int = 25) -> None:
+    try:
+        exit_code = process.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return
+    raise RuntimeError(f"Браузер WB завершился до подключения Playwright (код {exit_code}).")
 
 
 def _prepare_browser_in_profile(
@@ -225,7 +235,12 @@ def _prepare_browser_in_profile(
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
     command = _browser_command(
-        executable, profile, port, article, headless=settings.wb_storefront_browser_headless
+        executable,
+        profile,
+        port,
+        article,
+        headless=settings.wb_storefront_browser_headless,
+        no_sandbox=settings.wb_storefront_browser_no_sandbox,
     )
     process = subprocess.Popen(
         command,
@@ -238,7 +253,7 @@ def _prepare_browser_in_profile(
     try:
         logger.info("Ожидаем автоматическую проверку WB в отдельном профиле браузера")
         # Let the regular browser finish its first navigation before attaching CDP.
-        time.sleep(25)
+        _wait_for_browser_start(process)
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=15000)

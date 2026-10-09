@@ -1,11 +1,12 @@
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from app.config import Settings
-from app.wb.storefront_browser import _browser_command, browser_path
+from app.wb.storefront_browser import _browser_command, _wait_for_browser_start, browser_path
 
 
 class BrowserPathTests(unittest.TestCase):
@@ -66,3 +67,28 @@ class BrowserCommandTests(unittest.TestCase):
         self.assertIn("--headless=new", hidden)
         self.assertNotIn("--headless=new", visible)
         self.assertEqual(hidden[-1], visible[-1])
+
+    def test_no_sandbox_requires_explicit_setting(self) -> None:
+        with mock.patch.dict(os.environ, {"CHECKSTOCK_WB_BROWSER_NO_SANDBOX": "0"}):
+            self.assertFalse(Settings.from_env().wb_storefront_browser_no_sandbox)
+        with mock.patch.dict(os.environ, {"CHECKSTOCK_WB_BROWSER_NO_SANDBOX": "1"}):
+            self.assertTrue(Settings.from_env().wb_storefront_browser_no_sandbox)
+
+        executable = Path("chrome.exe")
+        profile = Path("profile")
+        default = _browser_command(executable, profile, 9222, "153985484", headless=True)
+        opt_in = _browser_command(executable, profile, 9222, "153985484", headless=True, no_sandbox=True)
+        self.assertNotIn("--no-sandbox", default)
+        self.assertIn("--no-sandbox", opt_in)
+
+    def test_browser_exit_is_reported_before_cdp_connection(self) -> None:
+        process = mock.Mock()
+        process.wait.return_value = 2147483651
+        with self.assertRaisesRegex(RuntimeError, "код 2147483651"):
+            _wait_for_browser_start(process)
+        process.wait.assert_called_once_with(timeout=25)
+
+    def test_running_browser_reaches_cdp_connection(self) -> None:
+        process = mock.Mock()
+        process.wait.side_effect = subprocess.TimeoutExpired("chrome.exe", 25)
+        _wait_for_browser_start(process)
