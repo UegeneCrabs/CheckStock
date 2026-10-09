@@ -88,6 +88,9 @@
         }
         var signature = await digest(JSON.stringify(parts));
         var pending = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+        if (options.pendingOnly && !pending) {
+            throw new Error('Нет незавершённой операции для повтора.');
+        }
         if (pending && pending.signature !== signature) {
             throw new Error('Результат предыдущей операции неизвестен. Сначала повторите её с прежними данными.');
         }

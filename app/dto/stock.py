@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import Field, PositiveInt, RootModel, field_validator
 
@@ -49,6 +50,12 @@ class ShipmentCommand(DtoModel):
     fulfillment: str = Field(min_length=1, max_length=200)
     marketplace: Marketplace
     to_trash: bool = False
+
+
+class FboShipmentCommand(ShipmentCommand):
+    user_id: PositiveInt | None = None
+    user_name: str
+    note: str = Field(default="", max_length=200)
 
 
 class StockMovementItem(DtoModel):
@@ -278,6 +285,7 @@ class ApplyTransferCommand(DtoModel):
     transfer: TransferStockCommand
     items: TargetStockEntries
     created_at: datetime
+    kind: Literal["ff_transfer", "fbo_shipment"] = "ff_transfer"
 
 
 class ApplyShipmentCommand(DtoModel):

@@ -10,6 +10,10 @@ OPERATION_LABELS = {
     "transfer_receive_revert": "Приёмка возвращена в путь",
     "transfer_cancel": "Перемещение отменено",
     "shipment": "Отгрузка со стока",
+    "fbo_dispatch": "Отгрузка на склады FBO",
+    "fbo_receive": "Отгрузка на FBO принята",
+    "fbo_receive_revert": "Приёмка отгрузки на FBO возвращена в путь",
+    "fbo_cancel": "Отгрузка на FBO отменена",
     "fbs_transfer": "Перемещение на FBS",
     "trash": "Списание в мусорку",
 }

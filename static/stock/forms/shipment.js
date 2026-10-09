@@ -7,11 +7,14 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
     var ffSelect = document.getElementById('sh-ff');
     var mpSelect = document.getElementById('sh-mp');
     var noteInput = document.getElementById('sh-note');
-    var fbsInput = document.getElementById('sh-fbs');
+    var fboInput = document.getElementById('sh-fbo');
     var trashInput = document.getElementById('sh-trash');
+    var legacyFbsInput = document.getElementById('sh-legacy-fbs');
+    var legacyFbsOption = document.getElementById('sh-legacy-fbs-option');
     var fileInput = document.getElementById('sh-file');
     var urlInput = document.getElementById('sh-url');
     var status = document.getElementById('sh-status');
+    var shipmentUrl = '/stock/' + storeSlug + '/shipment';
 
     var io = window.initIoBlock(document.getElementById('sh-io'));
 
@@ -23,6 +26,10 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
         getSource: function () {
             return { ff: ffSelect.value, mp: mpSelect.value };
         },
+        isPendingRetry: function () {
+            // The mutation helper still requires the original payload and saved request key.
+            return window.CheckStockMutation.hasPending(shipmentUrl);
+        },
         emptyHint: 'Сначала выберите, откуда отгружаем',
     });
 
@@ -32,22 +39,35 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
     ffSelect.addEventListener('change', rows.onSourceChange);
     mpSelect.addEventListener('change', rows.onSourceChange);
 
-    trashInput.addEventListener('change', function () {
-        if (trashInput.checked) fbsInput.checked = false;
+    function updateMode() {
         btn.textContent = trashInput.checked
             ? 'Списать в мусорку'
-            : fbsInput.checked
-              ? 'Переместить на FBS'
-              : 'Отгрузить';
-
+            : fboInput.checked
+              ? 'Отгрузить на склады FBO'
+              : legacyFbsInput.checked
+                ? 'Повторить перемещение на FBS'
+                : 'Отгрузить';
         rows.setAllowNegative(trashInput.checked);
+    }
+
+    [trashInput, fboInput, legacyFbsInput].forEach(function (input, _, inputs) {
+        input.addEventListener('change', function () {
+            if (input.checked) {
+                inputs.forEach(function (other) {
+                    if (other !== input) other.checked = false;
+                });
+            }
+            updateMode();
+        });
     });
 
-    fbsInput.addEventListener('change', function () {
-        if (fbsInput.checked) trashInput.checked = false;
-        btn.textContent = fbsInput.checked ? 'Переместить на FBS' : 'Отгрузить';
-        rows.setAllowNegative(false);
-    });
+    function refreshLegacyRetry() {
+        var pending = window.CheckStockMutation.hasPending(shipmentUrl);
+        legacyFbsOption.hidden = !pending;
+        if (!pending) legacyFbsInput.checked = false;
+        updateMode();
+    }
+    refreshLegacyRetry();
 
     btn.addEventListener('click', function () {
         if (!ffSelect.value || !mpSelect.value) {
@@ -66,7 +86,9 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
         fd.append('fulfillment', ffSelect.value);
         fd.append('marketplace', mpSelect.value);
         fd.append('note', noteInput.value.trim());
-        fd.append('to_fbs', fbsInput.checked ? '1' : '');
+        // Keep legacy signatures, including FBS retries, exactly as they were before FBO.
+        if (fboInput.checked) fd.append('to_fbo', '1');
+        else fd.append('to_fbs', legacyFbsInput.checked ? '1' : '');
         fd.append('to_trash', trashInput.checked ? '1' : '');
 
         var method = io.current();
@@ -101,13 +123,16 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
         btn.disabled = true;
         status.textContent = trashInput.checked
             ? 'Списываю в мусорку...'
-            : fbsInput.checked
-              ? 'Фиксирую перемещение на FBS...'
-              : 'Отгружаю...';
+            : fboInput.checked
+              ? 'Отправляю на склады FBO...'
+              : legacyFbsInput.checked
+                ? 'Повторяю перемещение на FBS...'
+                : 'Отгружаю...';
 
-        window.CheckStockMutation.fetch('/stock/' + storeSlug + '/shipment', {
+        window.CheckStockMutation.fetch(shipmentUrl, {
             method: 'POST',
             body: fd,
+            pendingOnly: legacyFbsInput.checked,
             headers: { 'X-Requested-With': 'fetch' },
         })
             .then(function (r) {
@@ -122,11 +147,13 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
                 }
                 var list = res.data.results || [];
                 rows.showServerMessage(
-                    (trashInput.checked
+                    (fd.get('to_trash') === '1'
                         ? 'В мусорку: '
-                        : fbsInput.checked
-                          ? 'Перемещено на FBS: '
-                          : 'Отгружено: ') +
+                        : res.data.transfer_id
+                          ? 'Отправлено на склады FBO, партия №' + res.data.transfer_id + ': '
+                          : fd.get('to_fbs') === '1'
+                            ? 'Перемещено на FBS: '
+                            : 'Отгружено: ') +
                         list
                             .map(function (r) {
                                 return r.article + ' x' + r.quantity;
@@ -138,8 +165,9 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
                 rows.reset();
                 urlInput.value = '';
                 noteInput.value = '';
-                fbsInput.checked = false;
+                fboInput.checked = false;
                 trashInput.checked = false;
+                legacyFbsInput.checked = false;
                 btn.textContent = 'Отгрузить';
                 fileInput.value = '';
                 var drop = fileInput.closest('.file-drop');
@@ -147,12 +175,14 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
                 if (lbl) lbl.textContent = 'Выбрать файл .xlsx';
                 rows.loadSourceStock();
                 if (window.stockTable) window.stockTable.refresh();
+                if (window.stockTransit) window.stockTransit.refresh();
             })
             .catch(function (e) {
                 rows.showServerMessage('Ошибка: ' + e, true);
             })
             .finally(function () {
                 btn.disabled = false;
+                refreshLegacyRetry();
                 rows.validateRows();
             });
     });

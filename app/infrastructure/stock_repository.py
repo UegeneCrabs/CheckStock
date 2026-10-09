@@ -1,6 +1,6 @@
 from types import TracebackType
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.barcodes import ordered_barcodes
@@ -126,6 +126,7 @@ class SqlAlchemyStockRepository:
         transfer = command.transfer
         batch = FulfillmentTransitBatchRecord(
             store_slug=transfer.store_slug,
+            kind=command.kind,
             from_fulfillment=transfer.from_fulfillment,
             from_marketplace=transfer.from_marketplace.value,
             to_fulfillment=transfer.to_fulfillment,
@@ -160,23 +161,24 @@ class SqlAlchemyStockRepository:
                     sent_quantity=item.quantity,
                     received_quantity=0,
                     cancelled_quantity=0,
-                    purchase_price=self._purchase_price(transfer.store_slug, item.from_article),
+                    purchase_price=self._purchase_price(transfer.store_slug, item.from_article, item.barcode),
                 )
             )
-            self._session.add(
-                FulfillmentTransferRecord(
-                    store_slug=transfer.store_slug,
-                    article=item.to_article,
-                    quantity=item.quantity,
-                    from_fulfillment=transfer.from_fulfillment,
-                    from_marketplace=transfer.from_marketplace.value,
-                    to_fulfillment=transfer.to_fulfillment,
-                    to_marketplace=transfer.to_marketplace.value,
-                    user_id=transfer.user_id,
-                    user_name=transfer.user_name,
-                    created_at=command.created_at.isoformat(),
+            if command.kind == "ff_transfer":
+                self._session.add(
+                    FulfillmentTransferRecord(
+                        store_slug=transfer.store_slug,
+                        article=item.to_article,
+                        quantity=item.quantity,
+                        from_fulfillment=transfer.from_fulfillment,
+                        from_marketplace=transfer.from_marketplace.value,
+                        to_fulfillment=transfer.to_fulfillment,
+                        to_marketplace=transfer.to_marketplace.value,
+                        user_id=transfer.user_id,
+                        user_name=transfer.user_name,
+                        created_at=command.created_at.isoformat(),
+                    )
                 )
-            )
         self._session.flush()
         return batch.id
 
@@ -231,16 +233,17 @@ class SqlAlchemyStockRepository:
                 raise StockValidationError(
                     f"{item.to_article}: принимается {quantity}, в пути осталось {remaining}"
                 )
-            self.increment(
-                StockIncrement(
-                    store_slug=batch.store_slug,
-                    article=item.to_article,
-                    fulfillment=batch.to_fulfillment,
-                    marketplace=Marketplace(batch.to_marketplace),
-                    quantity=quantity,
-                    updated_at=created_at,
+            if batch.kind == "ff_transfer":
+                self.increment(
+                    StockIncrement(
+                        store_slug=batch.store_slug,
+                        article=item.to_article,
+                        fulfillment=batch.to_fulfillment,
+                        marketplace=Marketplace(batch.to_marketplace),
+                        quantity=quantity,
+                        updated_at=created_at,
+                    )
                 )
-            )
             item.received_quantity += quantity
             self._session.add(
                 FulfillmentTransitReceiptItemRecord(
@@ -380,6 +383,8 @@ class SqlAlchemyStockRepository:
 
         destination_records: dict[str, FulfillmentStockRecord] = {}
         for article, entry in received_by_article.items():
+            if batch.kind == "fbo_shipment":
+                continue
             quantity = int(entry["quantity"])
             record = self._stock_record(
                 StockQuantityQuery(
@@ -401,11 +406,12 @@ class SqlAlchemyStockRepository:
         moved: list[StockMovementItem] = []
         for article, entry in received_by_article.items():
             quantity = int(entry["quantity"])
-            record = destination_records[article]
-            record.quantity -= quantity
-            record.updated_at = created_at.isoformat()
-            if record.quantity == 0:
-                self._session.delete(record)
+            if batch.kind == "ff_transfer":
+                record = destination_records[article]
+                record.quantity -= quantity
+                record.updated_at = created_at.isoformat()
+                if record.quantity == 0:
+                    self._session.delete(record)
             moved.append(
                 StockMovementItem(
                     article=article,
@@ -494,20 +500,37 @@ class SqlAlchemyStockRepository:
             statement = statement.with_for_update()
         return self._session.scalar(statement)
 
-    def _purchase_price(self, store_slug: str, article: str) -> float | None:
-        value = self._session.scalar(
+    def _purchase_price(self, store_slug: str, article: str, barcode: str) -> float | None:
+        statement = (
             select(UnitEconomics1CSourceValueRecord.purchase_price)
-            .join(
-                StockItemRecord,
+            .select_from(StockItemRecord)
+            .outerjoin(
+                UnitEconomics1CSourceValueRecord,
                 StockItemRecord.id == UnitEconomics1CSourceValueRecord.stock_item_id,
             )
             .where(
                 StockItemRecord.store_slug == store_slug,
                 StockItemRecord.marketplace == "WB",
-                StockItemRecord.article == article,
                 StockItemRecord.is_service == 0,
             )
         )
+        value = self._session.scalar(statement.where(StockItemRecord.article == article))
+        if value is None and barcode:
+            matches = self._session.scalars(
+                statement.where(
+                    or_(
+                        StockItemRecord.barcode == barcode,
+                        StockItemRecord.id.in_(
+                            select(CatalogBarcodeRecord.stock_item_id).where(
+                                CatalogBarcodeRecord.barcode == barcode
+                            )
+                        ),
+                    )
+                ).limit(2)
+            ).all()
+            # An ambiguous barcode must not snapshot an arbitrary product's price.
+            if len(matches) == 1:
+                value = matches[0]
         return float(value) if value is not None else None
 
     def _adjust_trash(

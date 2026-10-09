@@ -779,8 +779,8 @@ def render_access_request_rows(requests: list[dict]) -> str:
         return '<tr class="empty-row"><td colspan="7">Запросов доступа пока нет</td></tr>'
     permission_labels = {
         "stock.transfer.cross_marketplace": "Перемещение на чужую площадку",
-        "stock.transfer.receive": "Приёмка перемещения между ФФ",
-        "stock.transfer.cancel": "Отмена перемещения между ФФ",
+        "stock.transfer.receive": "Приёмка перемещения или отгрузки на FBO",
+        "stock.transfer.cancel": "Отмена перемещения или отгрузки на FBO",
         "stock.receive.create": "Добавление стока",
         "stock.transfer.create": "Перемещение стока",
         "stock.shipment.create": "Отгрузка",

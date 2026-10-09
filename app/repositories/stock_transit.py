@@ -136,6 +136,8 @@ def get_ff_transit_totals(
     store_slug: str,
     marketplace: str,
     fulfillment: str | None = None,
+    *,
+    include_fbo: bool = True,
 ) -> dict[str, int]:
     where = [
         "batch.store_slug = ?",
@@ -143,9 +145,14 @@ def get_ff_transit_totals(
         "batch.status IN ('in_transit', 'partial')",
     ]
     params: list[str] = [store_slug, marketplace]
+    if not include_fbo:
+        where.append("batch.kind = 'ff_transfer'")
     if fulfillment:
-        where.append("batch.to_fulfillment = ?")
-        params.append(fulfillment)
+        where.append(
+            "((batch.kind = 'ff_transfer' AND batch.to_fulfillment = ?) "
+            "OR (batch.kind = 'fbo_shipment' AND batch.from_fulfillment = ?))"
+        )
+        params.extend((fulfillment, fulfillment))
 
     connection = get_connection()
     try:

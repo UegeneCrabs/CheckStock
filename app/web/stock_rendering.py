@@ -60,7 +60,7 @@ def render_stock_head(marketplace: str, store_slug: str = "") -> str:
         '<span class="stock-head-label">Доступно ФФ для распределения</span>'
         f'<strong class="stock-head-total tot-ff">{_fmt_num(ff_total)}</strong></span></th>',
         '<th class="col-transit"><span class="stock-head-heading">'
-        '<span class="stock-head-label">В пути между ФФ</span>'
+        '<span class="stock-head-label">В пути</span>'
         f'<strong class="stock-head-total tot-transit">{_fmt_num(transit_total)}</strong></span></th>',
     ]
     cells += [

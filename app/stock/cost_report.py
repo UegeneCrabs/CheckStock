@@ -14,7 +14,7 @@ VIEW_KINDS = {
         "transfer_receive_revert",
         "transfer_cancel",
     },
-    "shipments": {"shipment"},
+    "shipments": {"shipment", "fbo_dispatch", "fbo_receive", "fbo_receive_revert", "fbo_cancel"},
     "fbs_transfers": {"fbs_transfer"},
     "fbs_sales": set(),
 }
@@ -30,18 +30,21 @@ def _empty_metric() -> dict:
     }
 
 
-def _add_items(metric: dict, items: list[dict], *, count_operation: bool = True) -> None:
+def _add_items(
+    metric: dict, items: list[dict], *, count_operation: bool = True, subtract: bool = False
+) -> None:
+    sign = -1 if subtract else 1
     if count_operation:
         metric["operations"] += 1
     metric["positions"] += len(items)
     for item in items:
         quantity = int(item.get("quantity") or 0)
-        metric["units"] += quantity
+        metric["units"] += sign * quantity
         item_cost = item.get("purchase_cost")
         if item_cost is None:
-            metric["missing_units"] += abs(quantity)
+            metric["missing_units"] += sign * abs(quantity)
         else:
-            metric["cost"] += float(item_cost)
+            metric["cost"] += sign * float(item_cost)
     metric["cost"] = round(float(metric["cost"]), 2)
 
 
@@ -356,12 +359,20 @@ def build_report(
             key = (operation["store_slug"], operation.get("to_marketplace"))
             if key in summary_by_key:
                 _add_items(summary_by_key[key]["moved_in"], operation["items"])
-        elif kind == "shipment":
+        elif kind in {"shipment", "fbo_dispatch"}:
             key = (operation["store_slug"], operation.get("from_marketplace"))
             if key not in summary_by_key:
                 continue
             target = "moved_in" if operation.get("is_fbs_transfer") else "shipped"
             _add_items(summary_by_key[key][target], operation["items"])
+        elif kind == "fbo_cancel":
+            key = (operation["store_slug"], operation.get("to_marketplace"))
+            if key in summary_by_key:
+                _add_items(
+                    summary_by_key[key]["shipped"],
+                    operation["items"],
+                    subtract=True,
+                )
         elif kind == "fbs_transfer":
             key = (operation["store_slug"], operation.get("from_marketplace"))
             if key in summary_by_key:

@@ -26,6 +26,7 @@ from app.dto.stock import (
     AddFulfillmentItemsRequest,
     CancelTransitCommand,
     CancelTransitRequest,
+    FboShipmentCommand,
     ReceiveTransitCommand,
     ReceiveTransitRequest,
     ReopenTransitCommand,
@@ -751,7 +752,7 @@ async def receive_in_transit_transfer(
         items = result.moved.model_dump(mode="json")
         operation_id = db.record_operation(
             store_slug,
-            "transfer_receive",
+            "fbo_receive" if batch["kind"] == "fbo_shipment" else "transfer_receive",
             "manual",
             items,
             actor.id,
@@ -769,7 +770,9 @@ async def receive_in_transit_transfer(
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            "Принято перемещение между фулфилментами",
+            "Принята отгрузка на склады FBO"
+            if batch["kind"] == "fbo_shipment"
+            else "Принято перемещение между фулфилментами",
             f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved}",
             now,
             operation_id,
@@ -834,7 +837,7 @@ async def reopen_received_transfer(
         operation_items = [item | {"quantity": -abs(int(item["quantity"]))} for item in moved_items]
         operation_id = db.record_operation(
             store_slug,
-            "transfer_receive_revert",
+            "fbo_receive_revert" if batch["kind"] == "fbo_shipment" else "transfer_receive_revert",
             "manual",
             operation_items,
             actor.id,
@@ -852,7 +855,9 @@ async def reopen_received_transfer(
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            "Приёмка перемещения возвращена в путь",
+            "Приёмка отгрузки на FBO возвращена в путь"
+            if batch["kind"] == "fbo_shipment"
+            else "Приёмка перемещения возвращена в путь",
             f"{STORES[store_slug]['name']} · партия №{transfer_id} · {moved} · {payload.reason}",
             now,
             operation_id,
@@ -913,7 +918,7 @@ async def cancel_in_transit_transfer(
         items = result.moved.model_dump(mode="json")
         operation_id = db.record_operation(
             store_slug,
-            "transfer_cancel",
+            "fbo_cancel" if batch["kind"] == "fbo_shipment" else "transfer_cancel",
             "manual",
             items,
             actor.id,
@@ -931,7 +936,9 @@ async def cancel_in_transit_transfer(
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            "Отменено перемещение между фулфилментами",
+            "Отменена отгрузка на склады FBO"
+            if batch["kind"] == "fbo_shipment"
+            else "Отменено перемещение между фулфилментами",
             f"{STORES[store_slug]['name']} · партия №{transfer_id} · возвращено: {returned}",
             now,
             operation_id,
@@ -963,6 +970,7 @@ async def ship_ff_stock(
     marketplace: Marketplace = Form(...),
     note: str = Form("", max_length=200),
     to_fbs: str = Form(""),
+    to_fbo: str = Form(""),
     to_trash: str = Form(""),
     items: str = Form(""),
     sheet_url: str = Form(""),
@@ -980,12 +988,21 @@ async def ship_ff_stock(
 
     trash = to_trash.strip().lower() in ("1", "true", "on", "yes")
     fbs_transfer = to_fbs.strip().lower() in ("1", "true", "on", "yes")
-    if trash and fbs_transfer:
+    fbo_shipment = to_fbo.strip().lower() in ("1", "true", "on", "yes")
+    if sum((trash, fbs_transfer, fbo_shipment)) > 1:
         return JSONResponse(
-            {"ok": False, "error": "Выберите только один тип операции: FBS или мусорка"},
+            {"ok": False, "error": "Выберите только один режим отгрузки"},
             status_code=400,
         )
-    kind = "trash" if trash else ("fbs_transfer" if fbs_transfer else "shipment")
+    kind = (
+        "trash"
+        if trash
+        else "fbo_dispatch"
+        if fbo_shipment
+        else "fbs_transfer"
+        if fbs_transfer
+        else "shipment"
+    )
     permission = ActionPermission.STOCK_WRITEOFF if trash else ActionPermission.STOCK_SHIPMENT
     denied = await run_in_threadpool(
         _guard_stock_action,
@@ -1034,7 +1051,24 @@ async def ship_ff_stock(
                 marketplace=marketplace,
                 to_trash=trash,
             )
-            results = (stock.register_fbs_transfer if fbs_transfer else stock.ship)(command, unit_of_work=uow)
+            transit_batch = None
+            if fbo_shipment:
+                transfer_result = stock.ship_to_fbo(
+                    FboShipmentCommand(
+                        **command.model_dump(), user_id=actor.id, user_name=actor.full_name, note=note_text
+                    ),
+                    unit_of_work=uow,
+                )
+                results = transfer_result.moved
+                transit_batch = db.get_ff_transit_batch(
+                    transfer_result.transfer_id, connection=uow.connection
+                )
+                if transit_batch is None:
+                    raise RuntimeError("Не удалось прочитать созданную партию отгрузки")
+            else:
+                results = (stock.register_fbs_transfer if fbs_transfer else stock.ship)(
+                    command, unit_of_work=uow
+                )
         except (ff_stock_import.FFImportError, StockValidationError) as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
         except Exception:
@@ -1043,13 +1077,25 @@ async def ship_ff_stock(
                 {"ok": False, "error": "непредвиденная ошибка — см. лог сервера"}, status_code=500
             )
         shipped = ", ".join(f"{item.article} x{item.quantity}" for item in results.root)
+        operation_items = results.model_dump(mode="json")
+        if transit_batch is not None:
+            operation_items = [
+                {
+                    "article": item["to_article"],
+                    "barcode": item.get("barcode"),
+                    "name": item.get("name"),
+                    "quantity": item["sent_quantity"],
+                    "purchase_price": item.get("purchase_price"),
+                }
+                for item in transit_batch["items"]
+            ]
 
         now = _now_iso()
         operation_id = db.record_operation(
             store_slug=slug.lower(),
             kind=kind,
             source_type=source_type,
-            items=results.model_dump(mode="json"),
+            items=operation_items,
             user_id=actor.id,
             user_name=actor.full_name,
             created_at=now,
@@ -1057,15 +1103,22 @@ async def ship_ff_stock(
             sheet_url=sheet_url.strip() or None,
             from_fulfillment=fulfillment.strip(),
             from_marketplace=marketplace.value,
-            to_fulfillment="Мусорка" if trash else "FBS" if fbs_transfer else None,
-            to_marketplace=marketplace.value if trash or fbs_transfer else None,
+            to_fulfillment="Мусорка"
+            if trash
+            else "Склады FBO"
+            if fbo_shipment
+            else "FBS"
+            if fbs_transfer
+            else None,
+            to_marketplace=marketplace.value if trash or fbs_transfer or fbo_shipment else None,
             note=note_text,
+            transit_batch_id=transit_batch["id"] if transit_batch else None,
             connection=uow.connection,
         )
         db.log_action_for_operation(
             actor.id,
             actor.full_name,
-            "Списание в мусорку" if trash else "Перемещение на FBS" if fbs_transfer else "Отгрузка стока",
+            db.OPERATION_LABELS[kind],
             f"{store.name} · {fulfillment}/{marketplace.value} · {shipped}"
             + (f" · {note_text}" if note_text else ""),
             now,
@@ -1083,7 +1136,10 @@ async def ship_ff_stock(
             now,
             connection=uow.connection,
         )
-        return JSONResponse({"ok": True, "results": results.model_dump(mode="json")})
+        response = {"ok": True, "results": results.model_dump(mode="json")}
+        if transit_batch is not None:
+            response.update(transfer_id=transit_batch["id"], status="in_transit")
+        return JSONResponse(response)
 
     return await _run_stock_mutation(
         request,
@@ -1095,6 +1151,8 @@ async def ship_ff_stock(
             "marketplace": marketplace,
             "note": note,
             "to_fbs": to_fbs,
+            # Preserve hashes of pending requests sent by the previous UI.
+            **({"to_fbo": to_fbo} if fbo_shipment else {}),
             "to_trash": to_trash,
             "items": items,
             "sheet_url": sheet_url,

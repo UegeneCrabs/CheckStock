@@ -48,6 +48,8 @@ window.createRowEditor = function (options) {
     }
 
     function availableFor(row) {
+        // A committed request can already have consumed the stock; its retry only reads the saved result.
+        if (options.isPendingRetry && options.isPendingRetry()) return null;
         var code = row.querySelector('.mv-code').value.trim();
         if (!code) return null;
         return Object.prototype.hasOwnProperty.call(sourceStock, code) ? sourceStock[code] : null;
@@ -268,6 +270,7 @@ window.createRowEditor = function (options) {
         rowsBox.querySelectorAll('.mv-qty').forEach(function (input) {
             input.setAttribute('min', allowNegative ? '-999999' : '1');
         });
+        refreshHints();
         validateRows();
     }
 

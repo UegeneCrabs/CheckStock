@@ -12,6 +12,7 @@ from app.dto.stock import (
     CancelTransitCommand,
     CatalogItem,
     CatalogQuery,
+    FboShipmentCommand,
     ReceiveTransitCommand,
     ReopenTransitCommand,
     ResolvedStockEntries,
@@ -215,6 +216,59 @@ class StockMovementService:
                 )
                 for entry in entries.root
             )
+        )
+
+    def ship_to_fbo(self, command: FboShipmentCommand, *, unit_of_work: StockUnitOfWork) -> TransferResult:
+        if command.to_trash:
+            raise StockValidationError("Отгрузка на склады FBO не может быть списанием в мусорку")
+        entries = self._resolve_entries(
+            unit_of_work.repository,
+            ResolveStockEntriesCommand(
+                store_slug=command.store_slug, entries=command.entries, marketplace=command.marketplace
+            ),
+        )
+        self._check_availability(
+            unit_of_work.repository,
+            StockAvailabilityQuery(
+                store_slug=command.store_slug,
+                entries=entries,
+                fulfillment=command.fulfillment,
+                marketplace=command.marketplace,
+            ),
+        )
+        transfer_id = unit_of_work.repository.apply_transfer(
+            ApplyTransferCommand(
+                kind="fbo_shipment",
+                transfer=TransferStockCommand(
+                    store_slug=command.store_slug,
+                    entries=command.entries,
+                    from_fulfillment=command.fulfillment,
+                    from_marketplace=command.marketplace,
+                    to_fulfillment="Склады FBO",
+                    to_marketplace=command.marketplace,
+                    user_id=command.user_id,
+                    user_name=command.user_name,
+                    note=command.note,
+                ),
+                items=TargetStockEntries(
+                    tuple(
+                        TargetStockEntry(
+                            from_article=item.article,
+                            to_article=item.article,
+                            quantity=item.quantity,
+                            name=item.name,
+                            barcode=item.barcode,
+                        )
+                        for item in entries.root
+                    )
+                ),
+                created_at=self._clock(),
+            )
+        )
+        return TransferResult(
+            moved=StockMovementItems(tuple(StockMovementItem(**item.model_dump()) for item in entries.root)),
+            skipped=StockMovementItems(()),
+            transfer_id=transfer_id,
         )
 
     def register_fbs_transfer(

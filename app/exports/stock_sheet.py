@@ -531,7 +531,10 @@ def _metric_values(
     if "fbo_stock" in metrics:
         values["fbo_stock"] = with_zeroes(db.get_mp_stock_totals(store_slug, marketplace, "fbo"))
     if "ff_transit" in metrics:
-        values["ff_transit"] = with_zeroes(db.get_ff_transit_totals(store_slug, marketplace))
+        # FBO supplies already contribute through mp_inbound; manual batches must not duplicate them.
+        values["ff_transit"] = with_zeroes(
+            db.get_ff_transit_totals(store_slug, marketplace, include_fbo=False)
+        )
     if "fbs_orders" in metrics:
         if marketplace == "WB":
             order_totals = _wb_fbs_order_totals(store_slug, now)

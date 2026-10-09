@@ -23,7 +23,8 @@ def get_operations_with_items_for_period(
                AND operation.kind IN
                    ('delivery', 'manual_add', 'transfer', 'transfer_dispatch',
                     'transfer_receive', 'transfer_receive_revert', 'transfer_cancel',
-                    'shipment', 'fbs_transfer')
+                    'shipment', 'fbs_transfer', 'fbo_dispatch', 'fbo_receive',
+                    'fbo_receive_revert', 'fbo_cancel')
                AND operation.created_at>=? AND operation.created_at<?
              ORDER BY operation.created_at DESC, operation.id DESC
             """,

@@ -42,6 +42,7 @@ TRANSFER_KINDS = (
     "transfer_receive_revert",
     "transfer_cancel",
 )
+SHIPMENT_KINDS = ("shipment", "fbo_dispatch", "fbo_receive", "fbo_receive_revert", "fbo_cancel")
 
 
 def render_kind_tabs(slug: str, active: str, counts: dict[str, int]) -> str:
@@ -196,6 +197,8 @@ def _history_kinds(kind: str) -> tuple[str, ...] | None:
     known = {k for k, _ in OPERATION_FILTERS if k}
     if kind == "transfer":
         return TRANSFER_KINDS
+    if kind == "shipment":
+        return SHIPMENT_KINDS
     return (kind,) if kind in known else None
 
 
@@ -232,6 +235,7 @@ async def stock_store_operations(
     counts = stats["counts"]
     counts[""] = sum(counts.values())
     counts["transfer"] = sum(counts.get(item, 0) for item in TRANSFER_KINDS)
+    counts["shipment"] = sum(counts.get(item, 0) for item in SHIPMENT_KINDS)
 
     content = fill_template(
         "stock/operations.html",

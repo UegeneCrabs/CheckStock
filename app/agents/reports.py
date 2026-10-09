@@ -188,7 +188,7 @@ def stock_summary(query):
     labels = {
         "total": "Тотал",
         "ff_available": "Доступно ФФ для распределения",
-        "transit": "В пути между ФФ",
+        "transit": "В пути",
         **{scheme + "_stock": label for scheme, label in schemes},
     }
     rows = db.get_stock_items(query.store, query.marketplace, tuple(s for s, _ in schemes))

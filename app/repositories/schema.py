@@ -26,6 +26,7 @@ def init_db() -> None:
     _migrate_project_sheet_export_fbo_columns(database)
     _migrate_stock_operation_item_purchase_price(database)
     _migrate_stock_operation_transit_batch(database)
+    _migrate_stock_transit_kind(database)
     _migrate_manual_supply_note(database)
     _backfill_sync_job_runs(database)
     _migrate_yandex_sync_settings(database)
@@ -215,6 +216,17 @@ def _migrate_stock_operation_transit_batch(database: Database) -> None:
         columns = connection.column_names("stock_operations")
         if columns and "transit_batch_id" not in columns:
             connection.execute("ALTER TABLE stock_operations ADD COLUMN transit_batch_id INTEGER")
+        connection.commit()
+
+
+def _migrate_stock_transit_kind(database: Database) -> None:
+    """Existing transit batches keep their FF-to-FF receipt behavior."""
+    with database.connect() as connection:
+        columns = connection.column_names("ff_transit_batches")
+        if columns and "kind" not in columns:
+            connection.execute(
+                "ALTER TABLE ff_transit_batches ADD COLUMN kind VARCHAR NOT NULL DEFAULT 'ff_transfer'"
+            )
         connection.commit()
 
 

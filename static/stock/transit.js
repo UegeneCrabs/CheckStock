@@ -14,6 +14,7 @@
     var reopenReason = document.querySelector('[data-stock-transit-reopen-reason]');
     var reopenDescription = document.querySelector('[data-stock-transit-reopen-description]');
     var reopenQuantity = document.querySelector('[data-stock-transit-reopen-quantity]');
+    var reopenEffect = document.querySelector('[data-stock-transit-reopen-effect]');
     var reopenError = document.querySelector('[data-stock-transit-reopen-error]');
     var reopenSubmit = document.querySelector('[data-stock-transit-reopen-submit]');
     var pathParts = window.location.pathname.split('/').filter(Boolean);
@@ -289,6 +290,12 @@
             ' · ' +
             batch.to_marketplace;
         reopenQuantity.textContent = numberFormat.format(batch.received_units || 0) + ' ед.';
+        if (reopenEffect) {
+            reopenEffect.textContent =
+                batch.kind === 'fbo_shipment'
+                    ? 'Вернётся в путь без изменения остатков ФФ и FBO'
+                    : 'Со склада назначения будет снято';
+        }
         reopenDialog.showModal();
         window.setTimeout(function () {
             reopenReason.focus();
@@ -340,7 +347,10 @@
         var card = el('article', 'stock-transit-card');
         var head = el('div', 'stock-transit-card-head');
         var title = el('div');
-        title.appendChild(el('strong', '', 'Партия №' + batch.id));
+        var isFbo = batch.kind === 'fbo_shipment';
+        title.appendChild(
+            el('strong', '', (isFbo ? 'Отгрузка на FBO' : 'Перемещение между ФФ') + ' · партия №' + batch.id),
+        );
         title.appendChild(
             el('small', '', formatDate(batch.sent_at) + ' · ' + (batch.sent_by_name || 'пользователь')),
         );
@@ -364,6 +374,15 @@
         );
         if (batch.note && currentView === 'active')
             card.appendChild(el('p', 'stock-transit-note', batch.note));
+        if (isFbo) {
+            card.appendChild(
+                el(
+                    'p',
+                    'stock-transit-note',
+                    'Приёмка убирает товар из пути. Остатки ФФ не увеличиваются; остатки FBO загружаются из отчётов маркетплейса.',
+                ),
+            );
+        }
 
         var summary = el('div', 'stock-transit-summary');
         summary.appendChild(el('span', '', 'Отправлено: ' + numberFormat.format(batch.sent_units || 0)));
@@ -454,7 +473,7 @@
                     'div',
                     'stock-transit-empty',
                     currentView === 'history'
-                        ? 'Завершённых перемещений пока нет'
+                        ? 'Завершённых движений пока нет'
                         : 'Активных партий в пути нет',
                 ),
             );

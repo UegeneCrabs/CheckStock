@@ -447,6 +447,9 @@ class FulfillmentTransitBatchRecord(OrmBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     store_slug: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String, nullable=False, default="ff_transfer", server_default="ff_transfer"
+    )
     from_fulfillment: Mapped[str] = mapped_column(String, nullable=False)
     from_marketplace: Mapped[str] = mapped_column(String, nullable=False)
     to_fulfillment: Mapped[str] = mapped_column(String, nullable=False)
