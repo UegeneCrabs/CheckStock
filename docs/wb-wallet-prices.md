@@ -2,7 +2,14 @@
 
 ## Локальная полная выгрузка
 
-Из корня проекта, в окружении с установленным Playwright и Яндекс Браузером:
+Из корня проекта, в окружении с установленным Playwright и Яндекс Браузером или Chromium Playwright:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-parser.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+```
+
+После установки запустите синхронизацию:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.sync.sync_unit_economics_1c_prices
@@ -55,9 +62,12 @@ WB может отклонить сеанс значительно раньше 
 
 Автовосстановление включено по умолчанию:
 `CHECKSTOCK_WB_STOREFRONT_AUTO_REFRESH=1`. Значение `0` отключает его для
-диагностики. Локально нужны Playwright и установленный Яндекс Браузер;
-нестандартный путь задаётся `CHECKSTOCK_WB_BROWSER_PATH`. Используется отдельный
-профиль, проверка WB ожидается автоматически; CAPTCHA не решается.
+диагностики. Локально нужны Playwright и Яндекс Браузер либо Chromium Playwright;
+нестандартный путь задаётся `CHECKSTOCK_WB_BROWSER_PATH`. На Windows сначала
+ищется Chromium Playwright, затем Яндекс Браузер. Используется отдельный
+профиль, браузер по умолчанию запускается без окна. Для диагностики добавьте
+`CHECKSTOCK_WB_BROWSER_HEADLESS=0` в `.env` и перезапустите приложение;
+`1` возвращает фоновый режим. Проверка WB ожидается автоматически; CAPTCHA не решается.
 При недоступном браузере или незавершённой проверке выводится ошибка.
 В Docker используется установленный Chromium Playwright с виртуальным дисплеем
 Xvfb. Браузер работает от пользователя приложения с включённой песочницей.

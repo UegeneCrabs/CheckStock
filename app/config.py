@@ -124,6 +124,7 @@ class Settings(BaseModel):
     wb_storefront_dest: str = Field(min_length=1)
     wb_storefront_batch_size: int = Field(ge=1, le=1_000)
     wb_storefront_auto_refresh: bool = True
+    wb_storefront_browser_headless: bool = True
     session_ttl_days: int = Field(ge=1)
     session_cookie_secure: bool
     pbkdf2_iterations: int = Field(ge=MIN_PBKDF2_ITERATIONS, le=MAX_PBKDF2_ITERATIONS)
@@ -290,6 +291,7 @@ class Settings(BaseModel):
                 "CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE", 1_000, minimum=1, maximum=1_000
             ),
             wb_storefront_auto_refresh=_env_bool("CHECKSTOCK_WB_STOREFRONT_AUTO_REFRESH", True),
+            wb_storefront_browser_headless=_env_bool("CHECKSTOCK_WB_BROWSER_HEADLESS", True),
             session_ttl_days=_env_int("CHECKSTOCK_SESSION_TTL_DAYS", 14, minimum=1),
             session_cookie_secure=_env_bool("CHECKSTOCK_SESSION_COOKIE_SECURE", False),
             pbkdf2_iterations=_env_int(

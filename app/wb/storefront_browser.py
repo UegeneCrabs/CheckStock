@@ -34,21 +34,20 @@ def browser_path(configured: Path | None) -> Path:
     if configured:
         candidates = [configured]
     else:
-        candidates = [
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            candidates = [Path(playwright.chromium.executable_path)]
+        candidates.extend(
             Path(os.environ[name]) / "Yandex/YandexBrowser/Application/browser.exe"
             for name in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)")
             if os.environ.get(name)
-        ]
-        if os.name != "nt":
-            from playwright.sync_api import sync_playwright
-
-            with sync_playwright() as playwright:
-                candidates.append(Path(playwright.chromium.executable_path))
+        )
     for path in candidates:
         if path.is_file():
             return path.resolve()
     raise RuntimeError(
-        "Браузер WB не найден. Установите Яндекс Браузер (Windows) или Chromium Playwright (Linux), "
+        "Браузер WB не найден. Установите Яндекс Браузер или Chromium Playwright, "
         "либо задайте CHECKSTOCK_WB_BROWSER_PATH."
     )
 
@@ -189,6 +188,23 @@ def _prepare_browser_in_environment(
         )
 
 
+def _browser_command(
+    executable: Path, profile: Path, port: int, article: str, *, headless: bool
+) -> list[str]:
+    command = [
+        str(executable),
+        "--user-data-dir=" + str(profile),
+        "--remote-debugging-port=" + str(port),
+        "--remote-debugging-address=127.0.0.1",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+    if headless:
+        command.append("--headless=new")
+    command.append(f"https://www.wildberries.ru/catalog/{article}/detail.aspx")
+    return command
+
+
 def _prepare_browser_in_profile(
     article: str,
     executable_path: Path | None,
@@ -208,16 +224,11 @@ def _prepare_browser_in_profile(
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
+    command = _browser_command(
+        executable, profile, port, article, headless=settings.wb_storefront_browser_headless
+    )
     process = subprocess.Popen(
-        [
-            str(executable),
-            "--user-data-dir=" + str(profile),
-            "--remote-debugging-port=" + str(port),
-            "--remote-debugging-address=127.0.0.1",
-            "--no-first-run",
-            "--no-default-browser-check",
-            f"https://www.wildberries.ru/catalog/{article}/detail.aspx",
-        ],
+        command,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         startupinfo=startupinfo,
