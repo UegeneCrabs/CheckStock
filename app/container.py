@@ -7,13 +7,18 @@ from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
 from app.config import settings
+from app.economics.wb.prices import calculate_wallet_price
 from app.infrastructure.database import database_for_path
 from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
+from app.infrastructure.wb_hourly_price_repository import SqlAlchemyHourlyPriceWriter
+from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
+from app.wb import api as wb_api
+from app.wb.hourly_prices import WbHourlyPriceService
 
 
 class ApplicationContainer:
@@ -34,6 +39,13 @@ class ApplicationContainer:
         self.stock = StockMovementService(
             unit_of_work_factory=self._stock_unit_of_work,
             clock=lambda: datetime.now(UTC),
+        )
+        self.wb_hourly_prices = WbHourlyPriceService(
+            catalog_items=wb_catalog_items,
+            storefront_products=wb_api.get_storefront_products,
+            wallet_discount=wb_api.get_default_wallet_discount_percent,
+            wallet_price=calculate_wallet_price,
+            writer=SqlAlchemyHourlyPriceWriter(self._database_path),
         )
 
     def _identity_unit_of_work(self) -> SqlAlchemyIdentityUnitOfWork:

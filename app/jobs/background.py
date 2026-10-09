@@ -11,6 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from app import db
 from app.access import auth
 from app.config import settings
+from app.container import ApplicationContainer
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.economics import ozon_advertising, ozon_turnover
@@ -38,6 +39,7 @@ from app.wb import catalog as wb_catalog
 from app.wb import funnel_orders as wb_funnel_orders
 from app.wb import sync as wb_sync
 from app.wb import token_watch
+from app.wb.hourly_prices import WbHourlyPriceService
 from app.yandex import catalog as ya_catalog
 from app.yandex import categories as ya_categories
 from app.yandex import category_commissions as ya_category_commissions
@@ -286,6 +288,16 @@ def _unit_economics_1c_price_jobs() -> tuple[BackgroundJob, ...]:
             is_enabled=lambda: _job_enabled("unit_economics_1c_wallet_sync"),
             run_callback=_sync_wallet_prices_configured,
         ),
+    )
+
+
+def _wb_hourly_price_job(service: WbHourlyPriceService) -> BackgroundJob:
+    return BackgroundJob(
+        "wb_hourly_prices_sync",
+        lambda: service.collect(sync_settings.enabled_stores("wb_hourly_prices_sync")),
+        _fixed_delay(settings.wb_hourly_prices_interval_seconds),
+        startup_delay_seconds=60,
+        is_enabled=lambda: _job_enabled("wb_hourly_prices_sync"),
     )
 
 
@@ -557,6 +569,8 @@ def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
         jobs += _funnel_jobs()
     if settings.unit_economics_1c_price_sync_enabled:
         jobs += _unit_economics_1c_price_jobs()
+    if settings.wb_hourly_prices_enabled:
+        jobs += (_wb_hourly_price_job(ApplicationContainer().wb_hourly_prices),)
     return jobs
 
 

@@ -263,6 +263,14 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "stores",
         ),
         SyncJobDefinition(
+            "wb_hourly_prices_sync",
+            "Почасовые цены витрины WB",
+            "Сохраняет фактические цены с СПП из карточек WB по всем товарам магазинов.",
+            _interval(settings.wb_hourly_prices_interval_seconds),
+            settings.wb_hourly_prices_enabled,
+            "stores",
+        ),
+        SyncJobDefinition(
             "unit_economics_1c_daily_margin_snapshot_00_msk",
             "Дневная маржа WB",
             "Сохраняет наблюдения текущего дня, включая неполные параметры; история не восстанавливается текущими настройками.",

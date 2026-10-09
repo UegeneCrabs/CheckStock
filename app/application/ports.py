@@ -45,6 +45,10 @@ from app.dto.stock import (
 )
 
 
+class HourlyPriceWriter(Protocol):
+    def upsert(self, rows: list[dict]) -> int: ...
+
+
 class IdentityRepository(Protocol):
     def create_user(self, command: CreateUserCommand) -> UserId: ...
 

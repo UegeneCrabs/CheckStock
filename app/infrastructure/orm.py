@@ -993,6 +993,26 @@ class UnitEconomics1CDailyPriceRecord(OrmBase):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class WbHourlyPriceRecord(OrmBase):
+    __tablename__ = "wb_hourly_prices"
+    __table_args__ = (Index("idx_wb_hourly_prices_nm", "nm_id", "observed_hour"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_hour: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_at: Mapped[str] = mapped_column(String, nullable=False)
+    nm_id: Mapped[str] = mapped_column(String, nullable=False)
+    size_id: Mapped[int | None] = mapped_column(BigInteger)
+    tech_size_name: Mapped[str | None] = mapped_column(String)
+    customer_price_with_spp: Mapped[float] = mapped_column(Float, nullable=False)
+    customer_price_with_wallet: Mapped[float | None] = mapped_column(Float)
+    wallet_discount_percent: Mapped[float | None] = mapped_column(Float)
+    product_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    logistics_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_fields_json: Mapped[str] = mapped_column(Text, nullable=False)
+    sale_conditions: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 class UnitEconomics1CPriceSyncStateRecord(OrmBase):
     __tablename__ = "unit_economics_1c_wb_price_sync_state"
 
