@@ -14,6 +14,7 @@ from app.config import settings
 from app.container import ApplicationContainer
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
+from app.dto.wb_hourly_prices import WbHourlyCollection
 from app.economics import ozon_advertising, ozon_turnover
 from app.economics.sources import ozon as ozon_source_sync
 from app.economics.sources import purchase_prices as unit_source_sync
@@ -291,10 +292,27 @@ def _unit_economics_1c_price_jobs() -> tuple[BackgroundJob, ...]:
     )
 
 
+def _wb_hourly_job_report(result: WbHourlyCollection) -> dict[str, dict]:
+    """The existing job tracker reads nested dictionaries to identify failures."""
+    reports: dict[str, dict] = {}
+    for report in result.reports:
+        value: dict = {"ok": report.ok, "rows": report.rows}
+        if report.catalog_products is not None:
+            value["catalog_products"] = report.catalog_products
+        if report.missing_prices is not None:
+            value["missing_prices"] = report.missing_prices
+            value["failed_nm_ids"] = list(report.failed_nm_ids)
+            value["errors"] = list(report.errors)
+        if report.error is not None:
+            value["error"] = report.error
+        reports[report.store_slug] = value
+    return reports
+
+
 def _wb_hourly_price_job(service: WbHourlyPriceService) -> BackgroundJob:
     return BackgroundJob(
         "wb_hourly_prices_sync",
-        lambda: service.collect(sync_settings.enabled_stores("wb_hourly_prices_sync")),
+        lambda: _wb_hourly_job_report(service.collect(sync_settings.enabled_stores("wb_hourly_prices_sync"))),
         _fixed_delay(settings.wb_hourly_prices_interval_seconds),
         startup_delay_seconds=60,
         is_enabled=lambda: _job_enabled("wb_hourly_prices_sync"),

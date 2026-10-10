@@ -6,11 +6,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from app.dto.wb_hourly_prices import WbCatalogItem, WbHourlyCollection, WbHourlyStoreReport
 from app.infrastructure.database import Database
 from app.infrastructure.orm import OrmBase
 from app.infrastructure.wb_hourly_price_repository import SqlAlchemyHourlyPriceWriter
 from app.jobs import background
-from app.wb.hourly_prices import WbHourlyPriceService
+from app.repositories.schema import _migrate_wb_hourly_spp_percent
+from app.wb import api
+from app.wb.hourly_prices import (
+    WbHourlyPriceService,
+    seller_prices_from_payload,
+    storefront_result_from_payload,
+)
 
 
 class HourlyPriceTests(unittest.TestCase):
@@ -48,14 +55,25 @@ class HourlyPriceTests(unittest.TestCase):
             "failed_nm_ids": ["456"],
             "errors": ["WB недоступен для 456"],
         }
+        self.seller_goods = [
+            {
+                "nmID": 123,
+                "sizes": [
+                    {"sizeID": 11, "techSizeName": "M", "discountedPrice": 1200},
+                    {"sizeID": 12, "techSizeName": "L", "discountedPrice": 1375},
+                ],
+            }
+        ]
         self.requested = []
+        self.seller_requested = []
         self.service = WbHourlyPriceService(
             catalog_items=lambda store: (
-                [{"article": "123 / M"}, {"article": "123 / L"}, {"article": "456"}]
+                (WbCatalogItem("123 / M"), WbCatalogItem("123 / L"), WbCatalogItem("456"))
                 if store == "rimili"
-                else [{"article": "123 / M"}]
+                else (WbCatalogItem("123 / M"),)
             ),
-            storefront_products=lambda ids: self._response(ids),
+            storefront_products=lambda ids: storefront_result_from_payload(self._response(ids)),
+            seller_prices=lambda store, ids: self._seller_response(store, ids),
             wallet_discount=lambda: 5,
             wallet_price=lambda price, discount, conditions: price * (1 - discount / 100),
             writer=SqlAlchemyHourlyPriceWriter(lambda: Path(self.directory.name) / "prices.sqlite"),
@@ -65,6 +83,10 @@ class HourlyPriceTests(unittest.TestCase):
     def _response(self, ids):
         self.requested.append(ids)
         return self.response
+
+    def _seller_response(self, store, ids):
+        self.seller_requested.append((store, ids))
+        return seller_prices_from_payload(self.seller_goods)
 
     def rows(self):
         with self.database.connect() as connection:
@@ -76,16 +98,25 @@ class HourlyPriceTests(unittest.TestCase):
             ]
 
     def test_all_stores_sizes_and_failed_product(self):
-        report = self.service.collect(("rimili", "tris"))
+        with self.assertLogs("app.wb.hourly_prices", level="INFO") as captured:
+            report = self.service.collect(("rimili", "tris"))
+        messages = "\n".join(captured.output)
+        self.assertIn("начало сбора, магазинов=2", messages)
+        self.assertIn("ответ витрины, размеров с ценой=2", messages)
+        self.assertIn("магазин=tris, сохранено=1, с процентом СПП=1", messages)
+        self.assertIn("сбор завершён, магазинов=2, сохранено=3", messages)
         self.assertEqual(self.requested, [("123", "456")])
-        self.assertEqual(report["rimili"]["rows"], 2, report)
-        self.assertFalse(report["rimili"]["ok"])
-        self.assertEqual(report["rimili"]["failed_nm_ids"], ["456"])
-        self.assertTrue(report["tris"]["ok"])
+        self.assertEqual(report.for_store("rimili").rows, 2, report)
+        self.assertFalse(report.for_store("rimili").ok)
+        self.assertEqual(report.for_store("rimili").failed_nm_ids, ("456",))
+        self.assertTrue(report.for_store("tris").ok)
         rows = self.rows()
         self.assertEqual(len(rows), 3)
         self.assertEqual(rows[0]["customer_price_with_spp"], 1100)
         self.assertEqual(rows[1]["customer_price_with_spp"], 1000)
+        self.assertAlmostEqual(rows[1]["spp_percent"], (1200 - 1000) / 1200 * 100)
+        self.assertEqual(rows[0]["spp_percent"], 20)
+        self.assertEqual(self.seller_requested, [("rimili", ("123",)), ("tris", ("123",))])
         self.assertEqual(rows[1]["wallet_discount_percent"], 5)
         self.assertIn('"basic": 120000', rows[1]["price_fields_json"])
         self.assertEqual(rows[1]["observed_hour"], "2026-10-09T10:00:00+00:00")
@@ -97,6 +128,7 @@ class HourlyPriceTests(unittest.TestCase):
         self.service.collect(("tris",))
         self.assertEqual(len(self.rows()), 1, self.rows())
         self.assertEqual(self.rows()[0]["customer_price_with_spp"], 900)
+        self.assertEqual(self.rows()[0]["spp_percent"], 25)
         self.now = datetime(2026, 10, 9, 11, 1, tzinfo=UTC)
         self.service.collect(("tris",))
         self.assertEqual(len(self.rows()), 2)
@@ -104,16 +136,63 @@ class HourlyPriceTests(unittest.TestCase):
     def test_missing_price_is_not_replaced_with_estimate(self):
         self.response["products"] = []
         report = self.service.collect(("tris",))
-        self.assertEqual(report["tris"]["missing_prices"], 1)
-        self.assertFalse(report["tris"]["ok"])
+        self.assertEqual(report.for_store("tris").missing_prices, 1)
+        self.assertFalse(report.for_store("tris").ok)
         self.assertEqual(self.rows(), [])
 
     def test_wallet_failure_does_not_prevent_spp_history(self):
         self.service.wallet_discount = lambda: (_ for _ in ()).throw(ConnectionError("wallet"))
         report = self.service.collect(("tris",))
-        self.assertTrue(report["tris"]["ok"])
+        self.assertTrue(report.for_store("tris").ok)
         self.assertEqual(self.rows()[0]["customer_price_with_spp"], 1000)
         self.assertIsNone(self.rows()[0]["customer_price_with_wallet"])
+
+    def test_seller_failure_does_not_prevent_price_history(self):
+        self.service.seller_prices = lambda store, ids: (_ for _ in ()).throw(ConnectionError("seller"))
+        with self.assertLogs("app.wb.hourly_prices", level="WARNING") as captured:
+            self.service.collect(("tris",))
+        self.assertIn("цены продавца недоступны, магазин=tris", captured.output[0])
+        self.assertEqual(self.rows()[0]["customer_price_with_spp"], 1000)
+        self.assertIsNone(self.rows()[0]["spp_percent"])
+
+    def test_api_does_not_send_a_fixed_spp_percent(self):
+        with patch("app.wb.api._public_request", return_value={"products": [{"id": 123}]}) as request:
+            api.get_storefront_products(("123",))
+        self.assertNotIn("spp", request.call_args.kwargs["params"])
+
+    def test_legacy_history_remains_without_calculated_spp(self):
+        legacy = Database(path=Path(self.directory.name) / "legacy.sqlite")
+        with legacy.connect() as connection:
+            connection.execute(
+                "CREATE TABLE wb_hourly_prices (store_slug TEXT, article TEXT, observed_hour TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO wb_hourly_prices VALUES ('tris', '123 / M', '2026-10-09T10:00:00+00:00')"
+            )
+            connection.commit()
+        _migrate_wb_hourly_spp_percent(legacy)
+        _migrate_wb_hourly_spp_percent(legacy)
+        with legacy.connect() as connection:
+            row = connection.execute("SELECT spp_percent FROM wb_hourly_prices").fetchone()
+        self.assertIsNone(row["spp_percent"])
+
+    def test_unmatched_or_invalid_seller_price_keeps_spp_unknown(self):
+        self.seller_goods[0]["sizes"] = [
+            {"sizeID": 99, "techSizeName": "M", "discountedPrice": 1200},
+        ]
+        self.service.collect(("tris",))
+        self.assertIsNone(self.rows()[0]["spp_percent"])
+        self.seller_goods[0]["sizes"] = [
+            {"sizeID": 99, "techSizeName": "XL", "discountedPrice": 1200},
+            {"sizeID": 98, "techSizeName": "S", "discountedPrice": 1300},
+        ]
+        self.service.collect(("tris",))
+        self.assertIsNone(self.rows()[0]["spp_percent"])
+        self.seller_goods[0]["sizes"] = [
+            {"sizeID": 11, "techSizeName": "M", "discountedPrice": 900},
+        ]
+        self.service.collect(("tris",))
+        self.assertIsNone(self.rows()[0]["spp_percent"])
 
     def test_catalog_failure_in_one_store_does_not_block_another(self):
         original = self.service.catalog_items
@@ -125,34 +204,64 @@ class HourlyPriceTests(unittest.TestCase):
 
         self.service.catalog_items = catalog
         report = self.service.collect(("rimili", "tris"))
-        self.assertFalse(report["rimili"]["ok"])
-        self.assertEqual(report["tris"]["rows"], 1)
+        self.assertFalse(report.for_store("rimili").ok)
+        self.assertEqual(report.for_store("tris").rows, 1)
         self.assertEqual(len(self.rows()), 1)
+
+    def test_empty_catalog_logs_completion_without_storefront_request(self):
+        self.service.catalog_items = lambda store: ()
+        with self.assertLogs("app.wb.hourly_prices", level="INFO") as captured:
+            report = self.service.collect(("tris",))
+        self.assertEqual(self.requested, [])
+        self.assertTrue(report.for_store("tris").ok)
+        self.assertIn("нет nmID для запроса витрины", "\n".join(captured.output))
+        self.assertIn("сбор завершён, магазинов=1, сохранено=0", "\n".join(captured.output))
 
     def test_hourly_job_is_independent_of_price_sync(self):
         service = Mock()
+        service.collect.return_value = WbHourlyCollection(
+            (WbHourlyStoreReport(store_slug="rimili", ok=False, rows=0, error="catalog unavailable"),)
+        )
         job = background._wb_hourly_price_job(service)
         self.assertEqual(job.name, "wb_hourly_prices_sync")
         self.assertEqual(job.next_delay(), background.settings.wb_hourly_prices_interval_seconds)
         with patch.object(background.sync_settings, "enabled_stores", return_value=("rimili",)):
-            job.callback()
+            result = job.callback()
         service.collect.assert_called_once_with(("rimili",))
+        self.assertEqual(result["rimili"]["error"], "catalog unavailable")
 
     def test_container_wires_collection_to_wb_and_database(self):
         from app.container import ApplicationContainer
 
         with (
-            patch("app.container.wb_catalog_items", return_value=[{"article": "123 / M"}]),
+            patch("app.container.wb_catalog_items", return_value=(WbCatalogItem("123 / M"),)),
             patch("app.container.wb_api.get_storefront_products", return_value=self.response) as fetch,
+            patch(
+                "app.container._wb_seller_prices", return_value=seller_prices_from_payload(self.seller_goods)
+            ),
             patch("app.container.wb_api.get_default_wallet_discount_percent", return_value=5),
         ):
             container = ApplicationContainer(
                 database_path=lambda: Path(self.directory.name) / "prices.sqlite"
             )
             report = container.wb_hourly_prices.collect(("tris",))
-        self.assertEqual(report["tris"]["rows"], 1)
+        self.assertEqual(report.for_store("tris").rows, 1)
         fetch.assert_called_once_with(("123",))
         self.assertEqual(self.rows()[0]["customer_price_with_spp"], 1000)
+        self.assertAlmostEqual(self.rows()[0]["spp_percent"], (1200 - 1000) / 1200 * 100)
+
+    def test_seller_api_adapter_returns_named_prices(self):
+        from app.container import _wb_seller_prices
+
+        with (
+            patch("app.container.wb_tokens.get_token", return_value="token"),
+            patch("app.container.wb_api.get_goods_prices_by_nm_ids", return_value=self.seller_goods) as fetch,
+        ):
+            prices = _wb_seller_prices("tris", ("123",))
+        fetch.assert_called_once_with("token", [123])
+        self.assertEqual(prices[0].nm_id, "123")
+        self.assertEqual(prices[0].size_id, 11)
+        self.assertEqual(prices[0].discounted_price, 1200)
 
 
 if __name__ == "__main__":

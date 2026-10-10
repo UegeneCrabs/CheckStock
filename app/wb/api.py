@@ -927,6 +927,10 @@ def get_storefront_products(
     caller can use an order-price fallback only for affected products. The
     regular scheduler relies on the configured safe batch size; a manual probe
     may explicitly request a larger batch.
+
+    TODO: Для дневной юнит-экономики читать свежие наблюдения из wb_hourly_prices,
+    когда таблица будет содержать все нужные поля карточки. Почасовой сборщик
+    и диагностика пока используют прямой запрос.
     """
 
     unique: list[str] = []
@@ -974,7 +978,6 @@ def get_storefront_products(
                     "curr": "rub",
                     "dest": settings.wb_storefront_dest,
                     "lang": "ru",
-                    "spp": 30,
                     "nm": ";".join(chunk),
                 },
             )

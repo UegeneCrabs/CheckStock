@@ -7,6 +7,7 @@ from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
 from app.config import settings
+from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
 from app.economics.wb.prices import calculate_wallet_price
 from app.infrastructure.database import database_for_path
 from app.infrastructure.finance_repository import FinanceRepository
@@ -18,7 +19,27 @@ from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_ca
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
 from app.wb import api as wb_api
-from app.wb.hourly_prices import WbHourlyPriceService
+from app.wb import tokens as wb_tokens
+from app.wb.hourly_prices import (
+    WbHourlyPriceService,
+    seller_prices_from_payload,
+    storefront_result_from_payload,
+)
+
+
+def _wb_storefront_products(nm_ids: tuple[str, ...]) -> WbStorefrontResult:
+    return storefront_result_from_payload(wb_api.get_storefront_products(nm_ids))
+
+
+def _wb_seller_prices(store_slug: str, nm_ids: tuple[str, ...]) -> tuple[WbSellerPrice, ...]:
+    if not nm_ids:
+        return ()
+    token = wb_tokens.get_token(store_slug)
+    goods: list[dict] = []
+    for start in range(0, len(nm_ids), wb_api.PRICES_PAGE_LIMIT):
+        batch = [int(nm_id) for nm_id in nm_ids[start : start + wb_api.PRICES_PAGE_LIMIT]]
+        goods.extend(wb_api.get_goods_prices_by_nm_ids(token, batch))
+    return seller_prices_from_payload(goods)
 
 
 class ApplicationContainer:
@@ -42,7 +63,8 @@ class ApplicationContainer:
         )
         self.wb_hourly_prices = WbHourlyPriceService(
             catalog_items=wb_catalog_items,
-            storefront_products=wb_api.get_storefront_products,
+            storefront_products=_wb_storefront_products,
+            seller_prices=_wb_seller_prices,
             wallet_discount=wb_api.get_default_wallet_discount_percent,
             wallet_price=calculate_wallet_price,
             writer=SqlAlchemyHourlyPriceWriter(self._database_path),

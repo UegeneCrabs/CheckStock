@@ -58,7 +58,6 @@ def verify_session(data: dict, article: str, *, params: dict | None = None) -> N
         "curr": "rub",
         "dest": settings.wb_storefront_dest,
         "lang": "ru",
-        "spp": 30,
         "nm": article,
     }
     headers = {

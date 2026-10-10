@@ -1143,6 +1143,8 @@ def sync_store(
     snapshot_day = snapshot_day or _today()
     nm_ids = _catalog_nm_ids((store_slug,))
     wallet_discount_report = _wallet_discount_report()
+    # TODO: Читать свежий снимок wb_hourly_prices для магазина, когда в нём будут
+    # данные о рейтинге и остатках, необходимые _sync_store.
     storefront_report = wb_api.get_storefront_products(nm_ids, batch_size=storefront_batch_size)
     return _sync_store(
         store_slug,
@@ -1172,6 +1174,9 @@ def sync_stores(
         len(nm_ids),
     )
     try:
+        # TODO: Читать свежие снимки wb_hourly_prices отдельно по магазинам.
+        # Перед отказом от общего запроса сохранить различие между отсутствующей
+        # карточкой и ошибкой загрузки пачки.
         storefront_report = wb_api.get_storefront_products(
             nm_ids,
             batch_size=storefront_batch_size,

@@ -43,10 +43,11 @@ from app.dto.stock import (
     StockQuantityQuery,
     TransitActionResult,
 )
+from app.dto.wb_hourly_prices import WbHourlyPriceObservation
 
 
 class HourlyPriceWriter(Protocol):
-    def upsert(self, rows: list[dict]) -> int: ...
+    def upsert(self, rows: list[WbHourlyPriceObservation]) -> int: ...
 
 
 class IdentityRepository(Protocol):
