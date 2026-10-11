@@ -918,6 +918,7 @@ class UnitEconomics1CProductCategoryRecord(OrmBase):
     wb_subject_id: Mapped[int | None] = mapped_column(Integer)
     imt_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
     category: Mapped[str | None] = mapped_column(String)
+    brand: Mapped[str | None] = mapped_column(String)
     category_key: Mapped[str | None] = mapped_column(String, index=True)
     created_at: Mapped[str | None] = mapped_column(String)
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -995,7 +996,10 @@ class UnitEconomics1CDailyPriceRecord(OrmBase):
 
 class WbHourlyPriceRecord(OrmBase):
     __tablename__ = "wb_hourly_prices"
-    __table_args__ = (Index("idx_wb_hourly_prices_nm", "nm_id", "observed_hour"),)
+    __table_args__ = (
+        Index("idx_wb_hourly_prices_nm", "nm_id", "observed_hour"),
+        Index("idx_wb_hourly_prices_store_time", "store_slug", "observed_at"),
+    )
 
     store_slug: Mapped[str] = mapped_column(String, primary_key=True)
     article: Mapped[str] = mapped_column(String, primary_key=True)

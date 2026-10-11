@@ -210,6 +210,7 @@ def sync_product_categories(store_slug: str) -> dict:
             "imt_id": card.get("imtID"),
             "created_at": str(card.get("createdAt") or "").strip() or None,
             "category": _text(card.get("subjectName")) or None,
+            "brand": _text(card.get("brand")) or None,
         }
         for card in cards
         if str(card.get("nmID") or "").strip()
@@ -229,6 +230,7 @@ def sync_product_categories(store_slug: str) -> dict:
                 "imt_id": category.get("imt_id"),
                 "created_at": category.get("created_at"),
                 "category": name,
+                "brand": category.get("brand"),
                 "category_key": _category_key(name) or None,
             }
         )

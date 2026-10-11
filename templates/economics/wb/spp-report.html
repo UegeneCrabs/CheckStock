@@ -1,0 +1,57 @@
+<link rel="stylesheet" href="/static/economics/wb/spp-report.css?v=3" />
+<section class="spp-report" id="spp-report" aria-label="Отчёт по СПП">
+    <header class="spp-report__heading">
+        <div><h1>Отчёт по СПП</h1><p>Wildberries · сравнение с предшествующим периодом той же длины</p></div>
+    </header>
+    <div class="spp-report__top">
+        <form class="spp-card spp-filters" id="spp-filters">
+            <h2>Фильтры</h2>
+            <fieldset class="spp-period"><legend>Период</legend>
+                <label>От<input type="date" name="date_from" id="spp-date-from" required /></label>
+                <label>До<input type="date" name="date_to" id="spp-date-to" required /></label>
+            </fieldset>
+            <div class="spp-filters__grid">
+                <label>Магазин<select name="store" id="spp-store"><option value="">Все</option></select></label>
+                <label>Бренд<select name="brand" id="spp-brand"><option value="">Все</option></select></label>
+                <label id="spp-manager-label">Менеджер<select name="manager" id="spp-manager"><option value="">Все</option></select></label>
+                <label>Предмет товара<select name="subject" id="spp-subject"><option value="">Все</option></select></label>
+                <label>Артикул<select name="article" id="spp-article"><option value="">Все</option></select></label>
+                <label>Поиск по слову<input type="search" name="search" id="spp-search" placeholder="Введите слово" /></label>
+            </div>
+            <button type="submit" class="spp-button">Сформировать</button>
+        </form>
+        <section class="spp-card spp-health" aria-labelledby="spp-health-title">
+            <h2 id="spp-health-title">Здоровье по СПП</h2>
+            <div class="spp-health__cards">
+                <div class="spp-health__metric spp-health__metric--bad"><strong>Проблемные товары</strong><b id="spp-problem-percent">—</b><span id="spp-problem-count">Нет данных</span></div>
+                <div class="spp-health__metric spp-health__metric--good"><strong>Без проблем</strong><b id="spp-healthy-percent">—</b><span id="spp-healthy-count">Нет данных</span></div>
+            </div>
+            <div class="spp-health__bar" id="spp-health-bar" aria-label="Доля товаров с проблемами и без проблем">
+                <span class="spp-health__bar-bad" id="spp-bar-bad"></span><span class="spp-health__bar-good" id="spp-bar-good"></span>
+            </div>
+            <p class="spp-health__overall">Общее здоровье: <strong id="spp-overall">—</strong></p>
+            <p class="spp-health__missing" id="spp-missing"></p>
+        </section>
+    </div>
+    <section class="spp-card spp-table-card" aria-labelledby="spp-table-title">
+        <h2 id="spp-table-title">Товары</h2>
+        <p id="spp-period-note">Аналогичный период рассчитывается автоматически</p>
+        <div class="spp-message" id="spp-message" role="status"></div>
+        <div class="spp-table-wrap"><table><colgroup>
+            <col style="width:12%" /><col style="width:25%" /><col style="width:14%" />
+            <col style="width:16%" /><col style="width:17%" /><col style="width:16%" />
+        </colgroup><thead><tr>
+            <th scope="col" aria-sort="none"><button type="button" data-spp-sort="article"><span class="spp-sort-label">Артикул</span><span class="spp-sort-indicator" aria-hidden="true"></span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-spp-sort="name"><span class="spp-sort-label">Название</span><span class="spp-sort-indicator" aria-hidden="true"></span></button></th>
+            <th scope="col" aria-sort="descending"><button type="button" data-spp-sort="turnover"><span class="spp-sort-label">Торговый оборот</span><span class="spp-sort-indicator" aria-hidden="true"></span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-spp-sort="current_spp"><span class="spp-sort-label">СПП за выбранный период</span><span class="spp-sort-indicator" aria-hidden="true"></span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-spp-sort="previous_spp"><span class="spp-sort-label">СПП за предыдущий период</span><span class="spp-sort-indicator" aria-hidden="true"></span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-spp-sort="status"><span class="spp-sort-label">Статус</span><span class="spp-sort-indicator" aria-hidden="true"></span></button></th>
+        </tr></thead><tbody id="spp-rows"></tbody></table></div>
+        <nav class="spp-pagination" aria-label="Страницы отчёта">
+            <button type="button" id="spp-prev">Назад</button><span id="spp-page-label"></span><button type="button" id="spp-next">Далее</button>
+        </nav>
+    </section>
+</section>
+<script type="application/json" id="spp-config">$spp_report_config</script>
+<script src="/static/economics/wb/spp-report.js?v=3"></script>

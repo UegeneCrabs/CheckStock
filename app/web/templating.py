@@ -211,6 +211,7 @@ def render_page(
     }
     reports_open = active in {
         "unit_1c_reports",
+        "unit_1c_spp_report",
         "unit_1c_target_price",
         "unit_1c_reports_yandex",
         "unit_1c_target_price_yandex",
@@ -229,6 +230,7 @@ def render_page(
         "unit_1c_ozon": ("ozon", "O", "Ozon"),
         "unit_1c_yandex": ("ym", "Я", "Яндекс Маркет"),
         "unit_1c_reports": ("wb", "WB", "Wildberries"),
+        "unit_1c_spp_report": ("wb", "WB", "Wildberries"),
         "unit_1c_target_price": ("wb", "WB", "Wildberries"),
         "unit_1c_reports_yandex": ("ym", "Я", "Яндекс Маркет"),
         "unit_1c_target_price_yandex": ("ym", "Я", "Яндекс Маркет"),
@@ -280,6 +282,7 @@ def render_page(
         reports_group_hidden=hidden(any(visible[item] for item in REPORT_SECTIONS)),
         reports_group_active="active" if reports_open else "",
         unit_1c_reports_active="active" if active == "unit_1c_reports" else "",
+        unit_1c_spp_report_active="active" if active == "unit_1c_spp_report" else "",
         unit_1c_target_price_active="active" if active == "unit_1c_target_price" else "",
         ai_agents_active="active" if active == "ai_agents" else "",
         ai_agents_hidden=hidden(visible[SectionName.AI_AGENTS]),
@@ -310,6 +313,7 @@ def render_page(
         unit_1c_reports_yandex_hidden=hidden(visible[SectionName.REPORT_UNIT_PROFIT_YANDEX]),
         unit_1c_target_price_yandex_hidden=hidden(visible[SectionName.REPORT_TARGET_PRICE_YANDEX]),
         unit_1c_reports_hidden=hidden(visible[SectionName.REPORT_UNIT_PROFIT]),
+        unit_1c_spp_report_hidden=hidden(visible[SectionName.REPORT_SPP]),
         unit_1c_target_price_hidden=hidden(visible[SectionName.REPORT_TARGET_PRICE]),
         admin_link=admin_link,
         user_name=html.escape(full_name),
