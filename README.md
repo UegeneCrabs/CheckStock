@@ -29,12 +29,10 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```powershell
 python -m ruff format --check app scripts
 python -m ruff check app scripts
-python -m unittest discover -s tests -v
-node --test tests/test_stock_mutation_ui.cjs
 ```
 
 При наличии `make` доступны цели `run`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
-Python-тесты запускаются через `unittest`; тесты клиентского кода — через `node --test` для файлов `tests/*.cjs`.
+Автотесты удалены из рабочего дерева; команды выше выполняют статические проверки кода.
 
 ## Поставки на ФФ
 

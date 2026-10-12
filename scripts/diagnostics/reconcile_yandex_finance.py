@@ -66,7 +66,7 @@ def reconcile(bundle):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("bundle", type=Path, help="UTF-8 JSON; see tests/fixtures/yandex_finance/month.json")
+    parser.add_argument("bundle", type=Path, help="UTF-8 JSON finance bundle; see docs/yandex-finance.md")
     parser.add_argument(
         "--output", type=Path, help="Save the reconciliation with daily totals and quality reasons"
     )

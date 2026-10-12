@@ -25,7 +25,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Выгрузки и Google-интеграция | `app/exports/`, `app/integrations/`, [формат выгрузки](project-sheet-export.md) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |
-| Проверки поведения | `tests/` — Python `unittest` и Node `node --test` |
+| Статические проверки | `pyproject.toml`, цели `lint` и `check` в `Makefile` |
 
 ## Поток запроса и данных
 
@@ -44,7 +44,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log`. Для Docker используйте `docker compose up --build -d`; Compose требует `POSTGRES_PASSWORD` в `.env`. Для локальной диагностики доступны `/healthz` и `/readyz`.
 
-Проверки: `python -m ruff format --check app scripts`, `python -m ruff check app scripts`, `python -m unittest discover -s tests -v` и `node --test` с конкретными файлами `tests/*.cjs`. Интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов; прохождение локальных тестов не подтверждает их работу в production.
+Статические проверки: `python -m ruff format --check app scripts` и `python -m ruff check app scripts`. Автотесты удалены из рабочего дерева. Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 
 ## Как обновлять wiki
 

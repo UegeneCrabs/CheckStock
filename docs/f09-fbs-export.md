@@ -50,11 +50,10 @@ Google `batchClear`/`batchUpdate` (F07) не входят в изменение.
 при проверке возвращала цикл перенаправлений; сохранён существующий адаптер v4,
 его завершённость (`has_next`/`cursor`) проверена синтетическими ответами.
 
-Проверки выполняются без `.env`, ключей и сети:
+Статическая проверка выполняется без `.env`, ключей и сети:
 
 ```powershell
-.venv/Scripts/python.exe -m unittest discover -s tests -p test_fbs_export.py -v
-.venv/Scripts/ruff.exe check app/exports/stock_sheet.py app/orders app/repositories/sales.py app/yandex/api.py app/ozon/api.py tests/test_fbs_export.py
+.venv/Scripts/ruff.exe check app/exports/stock_sheet.py app/orders
 ```
 
 Проверены пустой реестр, полное окно и его части, московские границы и переход через

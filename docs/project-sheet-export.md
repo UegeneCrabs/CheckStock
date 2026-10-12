@@ -156,9 +156,4 @@ FBS-заказы записываются в существующий лист �
 
 ## Локальная проверка
 
-Тесты используют временную SQLite и подменённые ответы API, без ключей и удалённой записи:
-
-```powershell
-.venv/Scripts/python.exe -m unittest discover -s tests -p 'test_project_sheet_export*.py'
-.venv/Scripts/python.exe -m unittest discover -s tests -p 'test_fbo_transit.py'
-```
+При первоначальной локальной приёмке использовались временная SQLite и подменённые ответы API, без ключей и удалённой записи.
