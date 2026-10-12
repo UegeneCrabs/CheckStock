@@ -40,6 +40,15 @@ def _article(value) -> str:
     return str(value).strip()
 
 
+def _warehouse_id(value) -> int:
+    # Ozon uses negative IDs for pickup points. This is an identifier, not stock.
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ValueError("Ozon не вернул целый идентификатор склада")
+    if isinstance(value, str) and not value.removeprefix("-").isdecimal():
+        raise ValueError("Ozon вернул некорректный идентификатор склада")
+    return int(value)
+
+
 def _rows(value) -> list[dict]:
     if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
         raise ValueError("API вернул неполный список товаров FBO")
@@ -87,7 +96,7 @@ def _ozon(store: str) -> TransitSnapshot:
         article = _article(row.get("offer_id"))
         if sku_articles.get(sku) != article:
             raise ValueError("Ozon вернул неизвестный SKU или другой артикул в аналитике FBO")
-        identity = (sku, _quantity(row.get("warehouse_id")))
+        identity = (sku, _warehouse_id(row.get("warehouse_id")))
         if identity in seen:
             raise ValueError("Ozon повторил товар на складе в аналитике FBO")
         seen.add(identity)

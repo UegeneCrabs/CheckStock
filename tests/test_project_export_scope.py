@@ -17,6 +17,54 @@ with (
 
 
 class ProjectExportScopeTests(unittest.TestCase):
+    def ozon_snapshot(self, rows):
+        with (
+            patch.object(fbo_transit.ozon_tokens, "get_credentials", return_value=("client", "key")),
+            patch.object(
+                fbo_transit.ozon_api,
+                "get_product_stocks",
+                return_value=[{"offer_id": "001", "stocks": [{"type": "fbo", "sku": 42}]}],
+            ),
+            patch.object(fbo_transit.ozon_api, "get_stock_analytics", return_value=rows),
+        ):
+            return fbo_transit._ozon("gogol")
+
+    def ozon_row(self, **changes):
+        return {
+            "sku": 42,
+            "offer_id": "001",
+            "warehouse_id": -1028944,
+            "outbound_pending_delivery": 3,
+            "return_from_customer_stock_count": 2,
+            "item_tags": [],
+            **changes,
+        }
+
+    def test_ozon_pickup_point_ids_keep_sign_and_sum_confirmed_quantities(self):
+        result = self.ozon_snapshot(
+            [
+                self.ozon_row(),
+                self.ozon_row(warehouse_id="1028944"),
+                self.ozon_row(warehouse_id="-999", item_tags=["FBS_RETURN"]),
+            ]
+        )
+        self.assertEqual(dict(result.to_customer), {"001": 6})
+        self.assertEqual(dict(result.from_customer), {"001": 4})
+
+    def test_ozon_duplicate_pickup_point_is_still_rejected(self):
+        with self.assertRaisesRegex(ValueError, "повторил товар"):
+            self.ozon_snapshot([self.ozon_row(), self.ozon_row(warehouse_id="-1028944")])
+
+    def test_ozon_missing_or_noninteger_warehouse_still_rejected(self):
+        for value in (None, True, 1.5, "", "-", "1.5"):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "идентификатор склада"):
+                self.ozon_snapshot([self.ozon_row(warehouse_id=value)])
+
+    def test_ozon_negative_inventory_counts_still_rejected(self):
+        for field in ("outbound_pending_delivery", "return_from_customer_stock_count"):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "отрицательное количество"):
+                self.ozon_snapshot([self.ozon_row(**{field: -1})])
+
     def test_all_three_loaders_skip_only_nonexistent_yandex_account(self):
         for market, loader in (("YANDEX MARKET", "_yandex"), ("OZON", "_ozon"), ("WB", "_wb")):
             with self.subTest(market=market):
