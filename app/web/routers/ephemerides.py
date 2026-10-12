@@ -9,11 +9,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app.access.access_control import accessible_stores
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.analytics import ephemerides
 from app.core.domain import MOSCOW_TIMEZONE
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import coerce_user
 from app.repositories import ephemerides as repository
 from app.web.routers.analyzer import require_product
 from app.web.templating import fill_template, render_page
@@ -23,11 +23,7 @@ Kind = Literal["competitor", "decision", "next"]
 
 
 def authorize(request, *, write=False):
-    if not has_access(
-        request.state.user,
-        SectionName.EPHEMERIDES,
-        SectionAccessLevel.WRITE if write else SectionAccessLevel.READ,
-    ):
+    if not is_active_user(request.state.user):
         raise HTTPException(403, "Нет доступа к эфемеридам или прав на изменение комментариев")
     return accessible_stores(request.state.user, "WB")
 
@@ -48,7 +44,7 @@ async def page(request: Request):
         "analytics/ephemerides.html",
         ephemerides_config=json.dumps(
             {
-                "canEdit": has_access(request.state.user, SectionName.EPHEMERIDES, SectionAccessLevel.WRITE),
+                "canEdit": is_active_user(request.state.user),
                 "today": datetime.now(MOSCOW_TIMEZONE).date().isoformat(),
                 "history": request.url.path.endswith("/comments"),
             }

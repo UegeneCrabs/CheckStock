@@ -19,19 +19,14 @@ from app.dto.identity import (
     PasswordHash,
     PasswordHashRequest,
     PasswordVerification,
-    PermissionChange,
     SessionData,
     SessionToken,
     User,
-    UserAccessPolicyChange,
     UserActiveChange,
     UserCollection,
     UserCountQuery,
     UserId,
     UserPasswordChange,
-    UserRoleChange,
-    UserSectionAccessChange,
-    UserStoreAccessChange,
     WbTokenInfoCollection,
     WbTokenInfoCommand,
 )
@@ -61,19 +56,9 @@ class IdentityRepository(Protocol):
 
     def count_users(self) -> CountResult: ...
 
-    def count_superadmins(self, query: UserCountQuery) -> CountResult: ...
+    def count_active_users(self, query: UserCountQuery) -> CountResult: ...
 
     def set_active(self, command: UserActiveChange) -> None: ...
-
-    def set_permission(self, command: PermissionChange) -> None: ...
-
-    def set_store_access(self, command: UserStoreAccessChange) -> None: ...
-
-    def set_role(self, command: UserRoleChange) -> None: ...
-
-    def set_section_access(self, command: UserSectionAccessChange) -> None: ...
-
-    def set_access_policy(self, command: UserAccessPolicyChange) -> None: ...
 
     def update_password(self, command: UserPasswordChange) -> None: ...
 

@@ -7,7 +7,6 @@
     const buttonLabel = root.querySelector('[data-randomizer-button-label]');
     const notice = root.querySelector('[data-randomizer-notice]');
     const lastRun = root.querySelector('[data-randomizer-last-run]');
-    const readOnly = document.body.dataset.accessLevel === 'read';
 
     const escapeHtml = window.CheckStockUI.escapeHtml;
     const copyIdentifier = (kind, value, label) =>
@@ -57,7 +56,7 @@
     };
 
     const setLoading = (loading) => {
-        generateButton.disabled = loading || readOnly || !fulfillment.value;
+        generateButton.disabled = loading || !fulfillment.value;
         generateButton.classList.toggle('is-loading', loading);
         buttonLabel.textContent = loading ? 'Подбираем артикулы…' : 'Сгенерировать';
     };
@@ -111,8 +110,4 @@
     });
     generateButton.addEventListener('click', requestGeneration);
 
-    if (readOnly) {
-        generateButton.disabled = true;
-        setNotice('Раздел доступен только для просмотра. Генерация отключена.', 'warning');
-    }
 })();

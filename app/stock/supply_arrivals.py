@@ -2,10 +2,11 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from app.access.access_control import accessible_stores
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
-from app.dto.identity import Role, coerce_user
+from app.dto.identity import coerce_user
 from app.integrations.supply_arrivals_sheet import SupplySheetError, fetch_arrivals
 from app.jobs import locks
 from app.repositories import supply_arrivals as repository
@@ -53,7 +54,7 @@ def report(user) -> dict:
     snapshot = repository.read(source_key())
     normalized = coerce_user(user)
     stores = set(accessible_stores(normalized))
-    if normalized is None or normalized.role is not Role.SUPERADMIN:
+    if normalized is None or not is_active_user(normalized):
         snapshot["rows"] = [row for row in snapshot["rows"] if row["store_slug"] in stores]
     cutoff = datetime.now(UTC) - timedelta(seconds=settings.supply_arrivals_sync_interval_seconds * 2)
     return {

@@ -10,7 +10,7 @@
                 throw new Error('Сессия завершена. Войдите в аккаунт и обновите страницу.');
             }
             if (response.status === 403) {
-                throw new Error('Недостаточно прав. Выгрузка доступна суперадминистратору.');
+                throw new Error('Не удалось выполнить выгрузку. Обновите страницу и повторите вход.');
             }
             if (!(response.headers.get('Content-Type') || '').includes('application/json')) {
                 if (response.redirected) {

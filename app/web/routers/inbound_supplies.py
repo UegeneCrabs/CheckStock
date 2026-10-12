@@ -6,11 +6,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.access.access_control import ActionPermission, profile_has_permission, scope_pairs
-from app.access.sections import access_level
+from app.access.authentication import is_active_user
+from app.access.resources import store_marketplace_pairs
 from app.config import settings
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.inbound_supplies import STAGE_LABELS, InboundSyncRequest
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import queue_tracked
@@ -24,11 +23,11 @@ MARKETPLACE_LABELS = {"WB": "Wildberries", "OZON": "Ozon", "YANDEX MARKET": "Я�
 
 
 def allowed_targets(request: Request, store: str = "", marketplace: str = "") -> tuple[tuple[str, str], ...]:
-    if not profile_has_permission(request.state.user, ActionPermission.STOCK_BALANCE_VIEW):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к остаткам")
     store = store.strip().lower()
     marketplace = marketplace.strip().upper()
-    pairs = scope_pairs(request.state.user)
+    pairs = store_marketplace_pairs(request.state.user)
     filtered = tuple(
         (slug, mp)
         for slug, mp in pairs
@@ -60,9 +59,7 @@ async def inbound_page(request: Request, store: str = "", mp: str = ""):
             ((value, MARKETPLACE_LABELS[value]) for value in marketplaces), mp.strip().upper()
         ),
         scopes=html.escape(json.dumps(pairs), quote=True),
-        refresh_hidden=""
-        if access_level(request.state.user, SectionName.STOCK_INBOUND) is SectionAccessLevel.WRITE
-        else " hidden",
+        refresh_hidden="" if is_active_user(request.state.user) else " hidden",
         interval_minutes=str(settings.inbound_sync_interval_seconds // 60),
     )
     return render_page("РАКЕТА — Поставки FBO", "stock_inbound", content, request.state.user)

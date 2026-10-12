@@ -11,17 +11,16 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import db
-from app.access import auth, economics_preview
-from app.access.access_control import accessible_stores, has_scope, restricts_unit_economics_to_manager
-from app.access.sections import has_access as has_section_access
+from app.access import economics_preview
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores, has_store_marketplace
 from app.core import health
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import coerce_user
 from app.dto.unit_economics_1c import (
     UnitEconomics1CCabinetSettingsWebRequest,
     UnitEconomics1CCalculatorVerification,
-    UnitEconomics1CColumnPreferencesRequest,
     UnitEconomics1CPriceChangeRequest,
     UnitEconomics1CProductSettings,
     UnitEconomics1CProductSettingsRequest,
@@ -31,10 +30,7 @@ from app.economics import data_errors as unit_economics_data_errors
 from app.economics import ozon as unit_economics_ozon
 from app.economics.completeness import aggregate_days, annotate, describe
 from app.economics.report_cache import reports_cache, user_key
-from app.economics.reporting import (
-    _unit_profit_category_rows,
-    _unit_profit_report_totals,
-)
+from app.economics.reporting import _unit_profit_category_rows, _unit_profit_report_totals
 from app.economics.sources import purchase_prices as unit_economics_1c_source
 from app.economics.wb import calculations as unit_economics_1c
 from app.economics.wb import calculator as wb_calculator
@@ -156,26 +152,53 @@ def _report_historical_economics(
         snapshot = margin_snapshots.get(key)
         if snapshot is None and current == live_day:
             snapshot = live_snapshot
-        rows.append(unit_economics_1c_history.report_day(
-            key, snapshot, daily_orders.get(key) or {}, daily_advertising.get(key),
-            orders_known=key in (orders_days if orders_days is not None else available_days or set()),
-            ads_known=key in (advertising_days if advertising_days is not None else available_days or set()),
-            ignore_deferred_cost_warnings=ignore_deferred_cost_warnings,
-        ))
+        rows.append(
+            unit_economics_1c_history.report_day(
+                key,
+                snapshot,
+                daily_orders.get(key) or {},
+                daily_advertising.get(key),
+                orders_known=key in (orders_days if orders_days is not None else available_days or set()),
+                ads_known=key
+                in (advertising_days if advertising_days is not None else available_days or set()),
+                ignore_deferred_cost_warnings=ignore_deferred_cost_warnings,
+            )
+        )
         current += timedelta(days=1)
     period = aggregate_days(rows, [r["day"] for r in rows], unit_economics_1c.money)
     known_ads = [r["advertising_spend"] for r in rows if r["advertising_spend"] is not None]
     spend = unit_economics_1c.money(sum(known_ads)) if known_ads else None
-    bought = sum(r["expected_buyouts"] for r in rows if r["profit"] is not None and r["expected_buyouts"] is not None)
-    weights = [(r["inputs"]["buyout_percent"], r["orders_count"]) for r in rows if r["orders_count"] is not None and r["inputs"].get("buyout_percent") is not None]
+    bought = sum(
+        r["expected_buyouts"] for r in rows if r["profit"] is not None and r["expected_buyouts"] is not None
+    )
+    weights = [
+        (r["inputs"]["buyout_percent"], r["orders_count"])
+        for r in rows
+        if r["orders_count"] is not None and r["inputs"].get("buyout_percent") is not None
+    ]
     count = sum(n for _, n in weights)
-    amounts = [float((daily_orders.get(r["day"]) or {}).get("orders_amount") or 0) * r["inputs"]["buyout_percent"] / 100 for r in rows if r["orders_count"] is not None and r["inputs"].get("buyout_percent") is not None]
+    amounts = [
+        float((daily_orders.get(r["day"]) or {}).get("orders_amount") or 0)
+        * r["inputs"]["buyout_percent"]
+        / 100
+        for r in rows
+        if r["orders_count"] is not None and r["inputs"].get("buyout_percent") is not None
+    ]
     amount = sum(amounts) if amounts else None
-    return {**period, "orders": unit_economics_1c.money(bought), "advertising_spend": spend,
-            "expected_buyout_amount": unit_economics_1c.money(amount) if amount is not None else None,
-            "drr": unit_economics_1c.money(spend / amount * 100) if amount and spend is not None else 0.0 if spend == 0 else None,
-            "buyout_percent": unit_economics_1c.money(sum(q * n for q, n in weights) / count) if count else None,
-            "buyout_orders_count": count, "daily": rows}
+    return {
+        **period,
+        "orders": unit_economics_1c.money(bought),
+        "advertising_spend": spend,
+        "expected_buyout_amount": unit_economics_1c.money(amount) if amount is not None else None,
+        "drr": unit_economics_1c.money(spend / amount * 100)
+        if amount and spend is not None
+        else 0.0
+        if spend == 0
+        else None,
+        "buyout_percent": unit_economics_1c.money(sum(q * n for q, n in weights) / count) if count else None,
+        "buyout_orders_count": count,
+        "daily": rows,
+    }
 
 
 def _unit_economics_1c_mock_product(
@@ -281,16 +304,24 @@ def _unit_economics_1c_mock_product(
         1,
     )
     stock_coverage = stock_order_metrics.get("coverage")
-    stock_loaded_days = int(stock_coverage.get("days") or 0) if stock_coverage else (
-        stock_period_days if stock_order_metrics else 0
+    stock_loaded_days = (
+        int(stock_coverage.get("days") or 0)
+        if stock_coverage
+        else (stock_period_days if stock_order_metrics else 0)
     )
     stock_orders_count = max(int(stock_order_metrics.get("orders_count") or 0), 0)
-    average_daily_orders = unit_economics_1c.money(stock_orders_count / stock_loaded_days) if stock_loaded_days else None
-    stock_days = unit_economics_1c.calculate_stock_coverage_days(
-        total_stock,
-        stock_orders_count,
-        period_days=stock_loaded_days,
-    ) if stock_loaded_days else None
+    average_daily_orders = (
+        unit_economics_1c.money(stock_orders_count / stock_loaded_days) if stock_loaded_days else None
+    )
+    stock_days = (
+        unit_economics_1c.calculate_stock_coverage_days(
+            total_stock,
+            stock_orders_count,
+            period_days=stock_loaded_days,
+        )
+        if stock_loaded_days
+        else None
+    )
     measured_buyout_percent = min(
         max(float(product_metrics.get("buyout_percent") or 0), 0.0),
         100.0,
@@ -315,7 +346,9 @@ def _unit_economics_1c_mock_product(
     fulfillment_cost = _price_value(product_reference.get("fulfillment_cost"))
     source_team_commission = _price_value(product_reference.get("team_commission_percent"))
     effective_team_commission = (
-        source_team_commission if source_team_commission is not None else unit_economics_1c.money(team_commission_percent)
+        source_team_commission
+        if source_team_commission is not None
+        else unit_economics_1c.money(team_commission_percent)
     )
     category = str(product_reference.get("category") or "").strip() or None
     subject_commission_percent = _price_value(product_reference.get("subject_commission_percent"))
@@ -330,7 +363,9 @@ def _unit_economics_1c_mock_product(
         else None
     )
     storage_sum = (
-        unit_economics_1c.money(turnover_days * product_settings.storage_wb_rub) if turnover_days is not None else None
+        unit_economics_1c.money(turnover_days * product_settings.storage_wb_rub)
+        if turnover_days is not None
+        else None
     )
     vat_rate = max(float(vat_percent or 0), 0.0)
     usn_rate = max(float(usn_percent or 0), 0.0)
@@ -408,7 +443,9 @@ def _unit_economics_1c_mock_product(
             ),
             "margin_rub": day_margin,
             "margin_complete": (saved_day_economics or {}).get("complete", False),
-            "messages": (saved_day_economics or {}).get("messages", ["Недостаточно данных: нет дневного снимка"]),
+            "messages": (saved_day_economics or {}).get(
+                "messages", ["Недостаточно данных: нет дневного снимка"]
+            ),
             "advertising_rub": day_ads,
             "drr_percent": day_drr,
             "orders_count": day_orders_count,
@@ -449,9 +486,7 @@ def _unit_economics_1c_mock_product(
     period_purchase_value = (
         unit_economics_1c.money(purchase_price * period_orders_count) if purchase_price is not None else None
     )
-    current_advertising_spend = unit_economics_1c.money(
-        float(current_product_metrics.get("spend") or 0)
-    )
+    current_advertising_spend = unit_economics_1c.money(float(current_product_metrics.get("spend") or 0))
     current_advertising_per_unit = unit_economics_1c.calculate_advertising_per_unit(
         current_advertising_spend,
         orders_count,
@@ -478,7 +513,9 @@ def _unit_economics_1c_mock_product(
     if orders_count == 0 and current_advertising_spend > 0:
         current_unit_margin = -current_advertising_spend
     period_margin = (
-        unit_economics_1c.money(current_unit_margin * period_orders_count) if current_unit_margin is not None else None
+        unit_economics_1c.money(current_unit_margin * period_orders_count)
+        if current_unit_margin is not None
+        else None
     )
     if period_margin is None:
         period_roi = None
@@ -488,7 +525,10 @@ def _unit_economics_1c_mock_product(
         period_roi = 0.0
     current_unit_roi = (
         unit_economics_1c.money(current_unit_margin / purchase_price * 100)
-        if current_unit_margin is not None and purchase_price is not None and purchase_price > 0 and orders_count > 0
+        if current_unit_margin is not None
+        and purchase_price is not None
+        and purchase_price > 0
+        and orders_count > 0
         else None
     )
     if closed_period_economics is not None:
@@ -548,16 +588,25 @@ def _unit_economics_1c_mock_product(
         "advertising": {
             "spend": (
                 period_advertising_spend
-                if product_metrics.get("advertising_coverage") is None or product_metrics["advertising_coverage"]["days"] > 0
+                if product_metrics.get("advertising_coverage") is None
+                or product_metrics["advertising_coverage"]["days"] > 0
                 else None
             ),
             "average_daily_spend": average_daily_advertising,
             "spend_per_order": advertising_per_unit,
             "impressions": int(product_metrics.get("impressions") or 0),
             "clicks": int(product_metrics.get("clicks") or 0),
-            "ctr": unit_economics_1c.money(float(product_metrics.get("ctr") or 0)) if product_metrics.get("advertising_coverage") is None or product_metrics["advertising_coverage"]["days"] > 0 else None,
-            "cpc": unit_economics_1c.money(float(product_metrics.get("cpc") or 0)) if product_metrics.get("advertising_coverage") is None or product_metrics["advertising_coverage"]["days"] > 0 else None,
-            "drr": period_drr if product_metrics.get("drr_coverage") is None or product_metrics["drr_coverage"]["days"] > 0 else None,
+            "ctr": unit_economics_1c.money(float(product_metrics.get("ctr") or 0))
+            if product_metrics.get("advertising_coverage") is None
+            or product_metrics["advertising_coverage"]["days"] > 0
+            else None,
+            "cpc": unit_economics_1c.money(float(product_metrics.get("cpc") or 0))
+            if product_metrics.get("advertising_coverage") is None
+            or product_metrics["advertising_coverage"]["days"] > 0
+            else None,
+            "drr": period_drr
+            if product_metrics.get("drr_coverage") is None or product_metrics["drr_coverage"]["days"] > 0
+            else None,
             "orders": int(product_metrics.get("orders_count") or 0),
             "sold": int(product_metrics.get("sold_count") or 0),
             "buyout_percent": period_buyout_percent,
@@ -567,21 +616,33 @@ def _unit_economics_1c_mock_product(
             "buyout_period_from": product_metrics.get("buyout_period_from"),
             "buyout_period_to": product_metrics.get("buyout_period_to"),
             "buyout_updated_at": product_metrics.get("buyout_updated_at"),
-            "orders_amount": unit_economics_1c.money(float(product_metrics.get("drr_orders_amount", product_metrics.get("orders_amount")) or 0)),
-            "drr_spend": unit_economics_1c.money(float(product_metrics.get("drr_spend", period_advertising_spend) or 0)),
+            "orders_amount": unit_economics_1c.money(
+                float(product_metrics.get("drr_orders_amount", product_metrics.get("orders_amount")) or 0)
+            ),
+            "drr_spend": unit_economics_1c.money(
+                float(product_metrics.get("drr_spend", period_advertising_spend) or 0)
+            ),
             "cancel_count": int(product_metrics.get("cancel_count") or 0),
             "cancel_amount": unit_economics_1c.money(float(product_metrics.get("cancel_amount") or 0)),
             "net_orders_count": int(product_metrics.get("net_orders_count") or 0),
-            "net_orders_amount": unit_economics_1c.money(float(product_metrics.get("net_orders_amount") or 0)),
+            "net_orders_amount": unit_economics_1c.money(
+                float(product_metrics.get("net_orders_amount") or 0)
+            ),
             "funnel_updated_at": product_metrics.get("funnel_updated_at"),
             "funnel_source_version": product_metrics.get("funnel_source_version"),
             "funnel_vendor_code": product_metrics.get("funnel_vendor_code"),
             "funnel_product_name": product_metrics.get("funnel_product_name"),
-            "buyout_orders_amount": unit_economics_1c.money(float(product_metrics.get("buyout_orders_amount") or 0)),
+            "buyout_orders_amount": unit_economics_1c.money(
+                float(product_metrics.get("buyout_orders_amount") or 0)
+            ),
             "buyout_cancel_count": int(product_metrics.get("buyout_cancel_count") or 0),
-            "buyout_cancel_amount": unit_economics_1c.money(float(product_metrics.get("buyout_cancel_amount") or 0)),
+            "buyout_cancel_amount": unit_economics_1c.money(
+                float(product_metrics.get("buyout_cancel_amount") or 0)
+            ),
             "buyout_net_orders_count": int(product_metrics.get("buyout_net_orders_count") or 0),
-            "buyout_net_orders_amount": unit_economics_1c.money(float(product_metrics.get("buyout_net_orders_amount") or 0)),
+            "buyout_net_orders_amount": unit_economics_1c.money(
+                float(product_metrics.get("buyout_net_orders_amount") or 0)
+            ),
             "buyout_source_version": product_metrics.get("buyout_source_version"),
             "period_from": product_metrics.get("period_from"),
             "period_to": product_metrics.get("period_to"),
@@ -734,7 +795,21 @@ def _unit_economics_1c_product_summary(product: dict) -> dict:
     }
     summary["advertising"] = {
         key: (product.get("advertising") or {}).get(key)
-        for key in ("drr", "spend", "ctr", "cpc", "impressions", "clicks", "coverage", "drr_coverage", "buyout_percent", "period_from", "period_to", "orders_amount", "drr_spend")
+        for key in (
+            "drr",
+            "spend",
+            "ctr",
+            "cpc",
+            "impressions",
+            "clicks",
+            "coverage",
+            "drr_coverage",
+            "buyout_percent",
+            "period_from",
+            "period_to",
+            "orders_amount",
+            "drr_spend",
+        )
     }
     summary["economics_7d"] = {
         key: (product.get("economics_7d") or {}).get(key)
@@ -760,8 +835,17 @@ def _unit_economics_1c_product_summary(product: dict) -> dict:
             "buyout_percent",
             "advertising_spend",
             "purchase_value",
-            "period_to", "complete", "missing", "messages", "status", "issues", "day_profit", "expected_buyouts",
-            "daily_complete", "daily_messages", "day_purchase_value",
+            "period_to",
+            "complete",
+            "missing",
+            "messages",
+            "status",
+            "issues",
+            "day_profit",
+            "expected_buyouts",
+            "daily_complete",
+            "daily_messages",
+            "day_purchase_value",
         )
     }
     summary["price"] = {key: (product.get("price") or {}).get(key) for key in ("current", "with_spp")}
@@ -849,6 +933,7 @@ def _unit_economics_period(request: Request, last_complete_day: date):
 async def sales_unit_economics_1c(request: Request):
     if request.query_params.get("calendar") == "1":
         from app.web.routers.economics_calendar import page
+
         return page(request)
     accessible_store_slugs = accessible_stores(request.state.user, "WB")
     data_request = request.query_params.get("data") == "1"
@@ -944,24 +1029,40 @@ async def sales_unit_economics_1c(request: Request):
         for store_slug, catalog in catalogs.items():
             inbound = inbound_by_store[store_slug]
             report_catalogs[store_slug] = [
-                item for item in catalog
-                if (str(item["article"]) == detail_article if detail_article else (
-                    any((_optional_integer(item.get(field)) or 0) > 0
-                        for field in ("fbs_stock", "fbo_stock", "ff_available"))
-                    or (inbound.quantities.get(str(item["article"])) or 0) > 0
-                    or (inbound.confirmed_quantities.get(str(item["article"])) or 0) > 0
-                    or any((metrics.get((store_slug, _nm_id(item["article"]))) or {}).get(field)
-                           for field in ("orders_amount", "cancel_amount"))
-                ))
+                item
+                for item in catalog
+                if (
+                    str(item["article"]) == detail_article
+                    if detail_article
+                    else (
+                        any(
+                            (_optional_integer(item.get(field)) or 0) > 0
+                            for field in ("fbs_stock", "fbo_stock", "ff_available")
+                        )
+                        or (inbound.quantities.get(str(item["article"])) or 0) > 0
+                        or (inbound.confirmed_quantities.get(str(item["article"])) or 0) > 0
+                        or any(
+                            (metrics.get((store_slug, _nm_id(item["article"]))) or {}).get(field)
+                            for field in ("orders_amount", "cancel_amount")
+                        )
+                    )
+                )
             ]
-        report_articles = tuple(sorted({str(item["article"]) for catalog in report_catalogs.values() for item in catalog}))
+        report_articles = tuple(
+            sorted({str(item["article"]) for catalog in report_catalogs.values() for item in catalog})
+        )
         saved_margin_snapshots = db.get_unit_economics_1c_daily_margin_snapshots(
-            store_slugs, history_from.isoformat(), today.isoformat(), articles=report_articles, inputs_only=True,
+            store_slugs,
+            history_from.isoformat(),
+            today.isoformat(),
+            articles=report_articles,
+            inputs_only=True,
         )
         margin_snapshots_by_product: dict[tuple[str, str], dict[str, dict]] = {}
         for row in saved_margin_snapshots:
             margin_snapshots_by_product.setdefault(
-                (str(row["store_slug"]), str(row["article"])), {},
+                (str(row["store_slug"]), str(row["article"])),
+                {},
             )[str(row["day"])] = row
         glue_groups: dict[tuple[str, int], list[dict]] = {}
         for store_slug, catalog in catalogs.items():
@@ -1079,13 +1180,17 @@ async def sales_unit_economics_1c(request: Request):
                 drr_coverage = _period_coverage(matching_days, closed_period_from, closed_period_to)
                 period_product_metrics["advertising_coverage"] = advertising_coverage
                 period_product_metrics["drr_coverage"] = drr_coverage
-                daily_period = [row for row in period_product_metrics.get("daily") or [] if isinstance(row, dict)]
+                daily_period = [
+                    row for row in period_product_metrics.get("daily") or [] if isinstance(row, dict)
+                ]
                 period_product_metrics["drr_spend"] = sum(
-                    float(row.get("advertising_spend") or 0) for row in daily_period
+                    float(row.get("advertising_spend") or 0)
+                    for row in daily_period
                     if row.get("date") in matching_days
                 )
                 period_product_metrics["drr_orders_amount"] = sum(
-                    float(row.get("orders_amount") or 0) for row in daily_period
+                    float(row.get("orders_amount") or 0)
+                    for row in daily_period
                     if row.get("date") in matching_days
                 )
                 if not turnover_coverage["complete"]:
@@ -1096,16 +1201,15 @@ async def sales_unit_economics_1c(request: Request):
                         ("cancel_count", "cancel_count"),
                     ):
                         period_product_metrics[field] = sum(
-                            float(row.get(day_field) or 0) for row in daily_period
+                            float(row.get(day_field) or 0)
+                            for row in daily_period
                             if row.get("date") in turnover_coverage["dates"]
                         )
                     period_product_metrics["net_orders_amount"] = (
-                        period_product_metrics["orders_amount"]
-                        - period_product_metrics["cancel_amount"]
+                        period_product_metrics["orders_amount"] - period_product_metrics["cancel_amount"]
                     )
                     period_product_metrics["net_orders_count"] = (
-                        period_product_metrics["orders_count"]
-                        - period_product_metrics["cancel_count"]
+                        period_product_metrics["orders_count"] - period_product_metrics["cancel_count"]
                     )
                 product_daily_orders = daily_orders_by_product.get((store_slug, nm_id)) or {}
                 history_day_economics: dict[str, dict] = {}
@@ -1165,10 +1269,10 @@ async def sales_unit_economics_1c(request: Request):
                     inbound_quantity = inbound.confirmed_quantities.get(article) or None
                 inbound_message = (
                     "Нет полного свежего снимка поставок: количество в пути не подтверждено."
-                    if not inbound.available else
-                    "Часть количеств в поставках неизвестна."
-                    if inbound_partial else
-                    "Отправлено, ещё не принято на склад FBO."
+                    if not inbound.available
+                    else "Часть количеств в поставках неизвестна."
+                    if inbound_partial
+                    else "Отправлено, ещё не принято на склад FBO."
                 )
                 imt_id = _optional_integer(reference.get("imt_id"))
                 glued_products = (
@@ -1177,48 +1281,55 @@ async def sales_unit_economics_1c(request: Request):
                     else []
                 )
                 result = _unit_economics_1c_mock_product(
-                        store_slug=store_slug,
-                        product=product,
-                        source_states=source_states.get(store_slug, {}),
-                        price_snapshot=prices.get((store_slug, article)),
-                        acquiring_percent=cabinet.acquiring_percent,
-                        default_buyout_percent=cabinet.default_buyout_percent,
-                        product_metrics=period_product_metrics,
-                        current_product_metrics=current_product_metrics,
-                        closed_period_economics=closed_period_economics,
-                        turnover_coverage=turnover_coverage,
-                        history_product_metrics=history_product_metrics,
-                        history_day_economics=history_day_economics,
-                        history_prices_by_day=chart_prices,
-                        product_settings=effective_product_settings,
-                        acceptance_coefficient=cabinet.acceptance_coefficient,
-                        team_commission_percent=cabinet.team_commission_percent,
-                        vat_percent=cabinet.vat_percent,
-                        usn_percent=cabinet.usn_percent,
-                        osno_percent=cabinet.osno_percent,
-                        tax_system=cabinet.tax_system,
-                        product_reference=reference,
-                        wb_extra_tariff_percent=cabinet.wb_extra_tariff_percent,
-                        stock_history_by_day=stock_history.get((store_slug, article)),
-                        stock_order_metrics=stock_order_metrics.get((store_slug, nm_id)),
-                        reputation=reputations.get((store_slug, nm_id)),
-                        glued_products=glued_products,
-                        first_sale_at=sales_starts.get((store_slug, nm_id)),
-                        history_days=21 if include_history else 0,
-                        inbound_quantity=inbound_quantity,
-                        inbound_partial=inbound_partial,
-                        inbound_message=inbound_message,
-                    )
+                    store_slug=store_slug,
+                    product=product,
+                    source_states=source_states.get(store_slug, {}),
+                    price_snapshot=prices.get((store_slug, article)),
+                    acquiring_percent=cabinet.acquiring_percent,
+                    default_buyout_percent=cabinet.default_buyout_percent,
+                    product_metrics=period_product_metrics,
+                    current_product_metrics=current_product_metrics,
+                    closed_period_economics=closed_period_economics,
+                    turnover_coverage=turnover_coverage,
+                    history_product_metrics=history_product_metrics,
+                    history_day_economics=history_day_economics,
+                    history_prices_by_day=chart_prices,
+                    product_settings=effective_product_settings,
+                    acceptance_coefficient=cabinet.acceptance_coefficient,
+                    team_commission_percent=cabinet.team_commission_percent,
+                    vat_percent=cabinet.vat_percent,
+                    usn_percent=cabinet.usn_percent,
+                    osno_percent=cabinet.osno_percent,
+                    tax_system=cabinet.tax_system,
+                    product_reference=reference,
+                    wb_extra_tariff_percent=cabinet.wb_extra_tariff_percent,
+                    stock_history_by_day=stock_history.get((store_slug, article)),
+                    stock_order_metrics=stock_order_metrics.get((store_slug, nm_id)),
+                    reputation=reputations.get((store_slug, nm_id)),
+                    glued_products=glued_products,
+                    first_sale_at=sales_starts.get((store_slug, nm_id)),
+                    history_days=21 if include_history else 0,
+                    inbound_quantity=inbound_quantity,
+                    inbound_partial=inbound_partial,
+                    inbound_message=inbound_message,
+                )
                 today_key = today.isoformat()
                 current_snapshot = product_margin_snapshots.get(today_key) or live_snapshot
                 current_day = unit_economics_1c_history.report_day(
-                    today_key, current_snapshot, product_daily_orders.get(today_key) or {}, current_product_metrics.get("spend"),
+                    today_key,
+                    current_snapshot,
+                    product_daily_orders.get(today_key) or {},
+                    current_product_metrics.get("spend"),
                     orders_known=today_key in source_coverage[store_slug]["orders"],
                     ads_known=today_key in source_coverage[store_slug]["advertising"],
                     ignore_deferred_cost_warnings=True,
                 )
                 current_values, current_result = current_day["inputs"], dict(current_day["result"])
-                count, spend, bought = current_day["orders_count"], current_day["advertising_spend"], current_day["expected_buyouts"]
+                count, spend, bought = (
+                    current_day["orders_count"],
+                    current_day["advertising_spend"],
+                    current_day["expected_buyouts"],
+                )
                 current_missing = list(current_result.get("missing", []))
                 if spend is None:
                     current_missing.append("advertising_spend")
@@ -1229,22 +1340,49 @@ async def sales_unit_economics_1c(request: Request):
                     current_missing = []
                 elif current_result.get("margin") is not None:
                     if spend is not None and bought:
-                        current_result["margin"] = unit_economics_1c.money(current_result["margin"] - spend / bought)
+                        current_result["margin"] = unit_economics_1c.money(
+                            current_result["margin"] - spend / bought
+                        )
                     basis = current_values.get("purchase_price")
-                    current_result["roi"] = unit_economics_1c.money(current_result["margin"] / basis * 100) if basis else None
+                    current_result["roi"] = (
+                        unit_economics_1c.money(current_result["margin"] / basis * 100) if basis else None
+                    )
                 annotate(current_result, current_missing)
-                current_messages = ["Не учтены / неизвестны: " + ", ".join(describe(current_missing, today_key))] if current_missing else []
-                result["current_economics"].update(
-                    margin=current_result.get("margin"), roi=current_result.get("roi"), orders=count,
-                    advertising_spend=spend, complete=current_result["complete"], status=current_result["status"],
-                    purchase_value=current_values.get("purchase_price"), buyout_percent=current_values.get("buyout_percent"),
-                    day_profit=current_day["profit"], expected_buyouts=bought,
-                    daily_complete=current_day["complete"], daily_messages=current_day["messages"],
-                    day_purchase_value=current_day["purchase_value"],
-                    missing=current_missing, messages=current_messages,
-                    issues={"margin": current_messages, "roi": current_messages + (["Нет положительной закупочной цены для ROI"] if not current_values.get("purchase_price") else [])},
+                current_messages = (
+                    ["Не учтены / неизвестны: " + ", ".join(describe(current_missing, today_key))]
+                    if current_missing
+                    else []
                 )
-                for key, value in (("purchase_cost", "purchase_price"), ("fulfillment_cost", "fulfillment_cost")):
+                result["current_economics"].update(
+                    margin=current_result.get("margin"),
+                    roi=current_result.get("roi"),
+                    orders=count,
+                    advertising_spend=spend,
+                    complete=current_result["complete"],
+                    status=current_result["status"],
+                    purchase_value=current_values.get("purchase_price"),
+                    buyout_percent=current_values.get("buyout_percent"),
+                    day_profit=current_day["profit"],
+                    expected_buyouts=bought,
+                    daily_complete=current_day["complete"],
+                    daily_messages=current_day["messages"],
+                    day_purchase_value=current_day["purchase_value"],
+                    missing=current_missing,
+                    messages=current_messages,
+                    issues={
+                        "margin": current_messages,
+                        "roi": current_messages
+                        + (
+                            ["Нет положительной закупочной цены для ROI"]
+                            if not current_values.get("purchase_price")
+                            else []
+                        ),
+                    },
+                )
+                for key, value in (
+                    ("purchase_cost", "purchase_price"),
+                    ("fulfillment_cost", "fulfillment_cost"),
+                ):
                     result["details"][key] = current_values.get(value)
                 if cabinet.updated_at is None:
                     result["data_errors"].append("Не заполнены настройки кабинета WB")
@@ -1266,7 +1404,9 @@ async def sales_unit_economics_1c(request: Request):
                         "Не все дни заказов для запаса загружены: "
                         + ", ".join(stock_coverage["missing_dates"])
                     )
-                if detail_article or unit_economics_yandex.has_activity(result["stock"], result["economics_7d"]["turnover"]):
+                if detail_article or unit_economics_yandex.has_activity(
+                    result["stock"], result["economics_7d"]["turnover"]
+                ):
                     products.append(result)
 
         return products, _unit_economics_1c_price_warnings(store_slugs)
@@ -1321,11 +1461,6 @@ async def sales_unit_economics_1c(request: Request):
     ]
     unit_config = {
         "userKey": str(request.state.user["id"]),
-        "columnPreferences": await run_in_threadpool(
-            db.get_ui_preference,
-            int(request.state.user["id"]),
-            UNIT_ECONOMICS_COLUMNS_PREFERENCE_SCOPE,
-        ),
         "stores": [
             {
                 "slug": slug,
@@ -1345,11 +1480,7 @@ async def sales_unit_economics_1c(request: Request):
         "maxPeriodDays": UNIT_ECONOMICS_MAX_PERIOD_DAYS,
         "subjectCommissions": [],
         "commissionsEndpoint": "/sales/unit-economics-1c?data=1&commissions=1",
-        "canEdit": has_section_access(
-            request.state.user,
-            SectionName.UNIT_ECONOMICS_WB,
-            SectionAccessLevel.WRITE,
-        ),
+        "canEdit": is_active_user(request.state.user),
     }
     content = fill_template(
         "economics/shared/dashboard.html",
@@ -1372,8 +1503,8 @@ async def sales_unit_economics_1c(request: Request):
 
 @router.post("/api/unit-economics-1c/calculator/verify")
 async def verify_wb_calculator(request: Request, payload: UnitEconomics1CCalculatorVerification):
-    if payload.store_slug not in accessible_stores(request.state.user, "WB") or not has_section_access(
-        request.state.user, SectionName.UNIT_ECONOMICS_WB, SectionAccessLevel.READ
+    if payload.store_slug not in accessible_stores(request.state.user, "WB") or not is_active_user(
+        request.state.user
     ):
         return JSONResponse({"ok": False, "error": "Нет доступа к кабинету WB"}, status_code=403)
     result = wb_calculator.calculate(
@@ -1415,11 +1546,7 @@ async def unit_economics_1c_prices_submit(
     request: Request,
     payload: UnitEconomics1CPriceChangeRequest,
 ):
-    if not has_section_access(
-        request.state.user,
-        SectionName.UNIT_ECONOMICS_WB,
-        SectionAccessLevel.WRITE,
-    ):
+    if not is_active_user(request.state.user):
         return JSONResponse({"ok": False, "error": "Нет права изменять цены"}, status_code=403)
 
     changes_by_store: dict[str, list[dict]] = {}
@@ -1427,7 +1554,7 @@ async def unit_economics_1c_prices_submit(
         store_slug = item.store_slug.lower()
         if store_slug not in STORES:
             return JSONResponse({"ok": False, "error": f"Кабинет {store_slug} не найден"}, status_code=404)
-        if not has_scope(request.state.user, store_slug, "WB"):
+        if not has_store_marketplace(request.state.user, store_slug, "WB"):
             return JSONResponse(
                 {"ok": False, "error": f"Нет доступа к кабинету {STORES[store_slug]['name']}"},
                 status_code=403,
@@ -1596,18 +1723,14 @@ async def unit_economics_1c_prices_preview(
     request: Request,
     payload: UnitEconomics1CPriceChangeRequest,
 ):
-    if not has_section_access(
-        request.state.user,
-        SectionName.UNIT_ECONOMICS_WB,
-        SectionAccessLevel.WRITE,
-    ):
+    if not is_active_user(request.state.user):
         return JSONResponse({"ok": False, "error": "Нет права изменять цены"}, status_code=403)
 
     item = payload.data[0]
     store_slug = item.store_slug.lower()
     if store_slug not in STORES:
         return JSONResponse({"ok": False, "error": f"Кабинет {store_slug} не найден"}, status_code=404)
-    if not has_scope(request.state.user, store_slug, "WB"):
+    if not has_store_marketplace(request.state.user, store_slug, "WB"):
         return JSONResponse(
             {"ok": False, "error": f"Нет доступа к кабинету {STORES[store_slug]['name']}"},
             status_code=403,
@@ -1667,17 +1790,6 @@ def _query_values(request: Request, name: str) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _manager_identity_key(value: object) -> str:
-    return " ".join(re.sub(r"[^0-9a-zа-я]+", " ", str(value or "").casefold().replace("ё", "е")).split())
-
-
-def _manager_matches_user(manager: str, user: object) -> bool:
-    current_user = coerce_user(user)
-    if current_user is None:
-        return False
-    return _manager_identity_key(manager) == _manager_identity_key(current_user.full_name)
-
-
 def _json_mapping(value: object) -> dict:
     if isinstance(value, dict):
         return value
@@ -1689,13 +1801,30 @@ def _json_mapping(value: object) -> dict:
 
 
 def _report_daily_calculations(
-    *, date_from, date_to, daily_orders, margin_snapshots, live_day, live_snapshot,
-    daily_advertising, fallback_buyout_percent=None, orders_days=None, advertising_days=None,
+    *,
+    date_from,
+    date_to,
+    daily_orders,
+    margin_snapshots,
+    live_day,
+    live_snapshot,
+    daily_advertising,
+    fallback_buyout_percent=None,
+    orders_days=None,
+    advertising_days=None,
 ):
     period = _report_historical_economics(
-        date_from=date_from, date_to=date_to, daily_orders=daily_orders, margin_snapshots=margin_snapshots,
-        live_day=live_day, live_snapshot=live_snapshot, live_unit_margin=None, live_purchase_price=None,
-        daily_advertising=daily_advertising, orders_days=orders_days, advertising_days=advertising_days,
+        date_from=date_from,
+        date_to=date_to,
+        daily_orders=daily_orders,
+        margin_snapshots=margin_snapshots,
+        live_day=live_day,
+        live_snapshot=live_snapshot,
+        live_unit_margin=None,
+        live_purchase_price=None,
+        daily_advertising=daily_advertising,
+        orders_days=orders_days,
+        advertising_days=advertising_days,
         ignore_deferred_cost_warnings=True,
     )
     result = []
@@ -1706,19 +1835,52 @@ def _report_daily_calculations(
         unit_margin = r.get("margin")
         if unit_margin is not None and ad_unit is not None:
             unit_margin = round(unit_margin - ad_unit, 2)
-        result.append({
-            **{key: v.get(key) for key in ("vat_percent", "usn_percent", "customer_price", "retail_price", "acquiring_percent", "commission_percent", "team_commission_percent", "fulfillment_cost", "purchase_price", "buyout_percent")},
-            "date": row["day"], "available": row["profit"] is not None,
-            "complete": row["complete"], "missing": row["missing"], "messages": row["messages"],
-            "status": r["daily_status"], "snapshot_available": row["snapshot_available"],
-            "orders_count": row["orders_count"], "expected_buyouts": bought,
-            "net_orders_count": max(row["orders_count"] - int((daily_orders.get(row["day"]) or {}).get("cancel_count") or 0), 0) if row["orders_count"] is not None else None,
-            "advertising_spend": spend, "advertising_per_unit": ad_unit,
-            "logistics": v.get("delivery_with_returns"), "storage": r.get("storage"),
-            "net_profit": unit_margin, "day_profit": row["profit"], "day_purchase_value": row["purchase_value"],
-            "net_revenue": r.get("net_revenue") - (ad_unit or 0) if r.get("net_revenue") is not None else None,
-            "vat_value": r.get("vat"), "usn_value": r.get("usn"),
-        })
+        result.append(
+            {
+                **{
+                    key: v.get(key)
+                    for key in (
+                        "vat_percent",
+                        "usn_percent",
+                        "customer_price",
+                        "retail_price",
+                        "acquiring_percent",
+                        "commission_percent",
+                        "team_commission_percent",
+                        "fulfillment_cost",
+                        "purchase_price",
+                        "buyout_percent",
+                    )
+                },
+                "date": row["day"],
+                "available": row["profit"] is not None,
+                "complete": row["complete"],
+                "missing": row["missing"],
+                "messages": row["messages"],
+                "status": r["daily_status"],
+                "snapshot_available": row["snapshot_available"],
+                "orders_count": row["orders_count"],
+                "expected_buyouts": bought,
+                "net_orders_count": max(
+                    row["orders_count"] - int((daily_orders.get(row["day"]) or {}).get("cancel_count") or 0),
+                    0,
+                )
+                if row["orders_count"] is not None
+                else None,
+                "advertising_spend": spend,
+                "advertising_per_unit": ad_unit,
+                "logistics": v.get("delivery_with_returns"),
+                "storage": r.get("storage"),
+                "net_profit": unit_margin,
+                "day_profit": row["profit"],
+                "day_purchase_value": row["purchase_value"],
+                "net_revenue": r.get("net_revenue") - (ad_unit or 0)
+                if r.get("net_revenue") is not None
+                else None,
+                "vat_value": r.get("vat"),
+                "usn_value": r.get("usn"),
+            }
+        )
     return result
 
 
@@ -1757,26 +1919,8 @@ def _undercovered_margin_days(
     ]
 
 
-def _validated_column_preferences(payload: object) -> dict | None:
-    if not isinstance(payload, dict):
-        return None
-    valid_keys = set(UNIT_ECONOMICS_COLUMN_GROUPS)
-    raw_order = payload.get("order")
-    raw_hidden = payload.get("hidden")
-    if not isinstance(raw_order, list) or not isinstance(raw_hidden, list):
-        return None
-    order: list[str] = []
-    for value in raw_order:
-        key = str(value)
-        if key in valid_keys and key not in order:
-            order.append(key)
-    order.extend(key for key in UNIT_ECONOMICS_COLUMN_GROUPS if key not in order)
-    hidden = [
-        key
-        for key in UNIT_ECONOMICS_COLUMN_GROUPS
-        if key != "product" and key in {str(value) for value in raw_hidden}
-    ]
-    return {"order": order, "hidden": hidden}
+def _manager_identity_key(value: object) -> str:
+    return " ".join(re.sub(r"[^0-9a-zа-я]+", " ", str(value or "").casefold().replace("ё", "е")).split())
 
 
 def _unit_profit_report_filter_options(
@@ -1787,18 +1931,6 @@ def _unit_profit_report_filter_options(
         (str(item["store_slug"]), str(item["article"])): item
         for item in db.get_unit_economics_1c_product_reference_rows(store_slugs)
     }
-    available_managers = {
-        str(reference.get("manager") or "").strip()
-        for reference in references.values()
-        if str(reference.get("manager") or "").strip()
-    }
-    allowed_manager_keys: set[str] | None = None
-    if current_user is not None and restricts_unit_economics_to_manager(current_user):
-        allowed_manager_keys = {
-            _manager_identity_key(manager)
-            for manager in available_managers
-            if _manager_matches_user(manager, current_user)
-        }
     subjects: set[str] = set()
     managers: set[str] = set()
     articles: list[dict] = []
@@ -1808,9 +1940,6 @@ def _unit_profit_report_filter_options(
             reference = references.get((store_slug, article)) or {}
             subject = str(reference.get("category") or "").strip() or "Без предмета"
             manager = str(reference.get("manager") or "").strip()
-            manager_key = _manager_identity_key(manager)
-            if allowed_manager_keys is not None and manager_key not in allowed_manager_keys:
-                continue
             subjects.add(subject)
             if manager:
                 managers.add(manager)
@@ -1833,8 +1962,8 @@ def _unit_profit_report_filter_options(
             ),
         },
         "manager_scope": {
-            "restricted": allowed_manager_keys is not None,
-            "matched": bool(allowed_manager_keys) if allowed_manager_keys is not None else True,
+            "restricted": False,
+            "matched": True,
         },
     }
 
@@ -1847,7 +1976,7 @@ async def sales_unit_economics_1c_unit_profit_report(request: Request):
 def unit_profit_page(request: Request, *, yandex: bool = False):
     store_slugs = accessible_stores(request.state.user, "YANDEX MARKET" if yandex else "WB")
     current_user = coerce_user(request.state.user)
-    show_manager_filter = current_user is not None and not restricts_unit_economics_to_manager(current_user)
+    show_manager_filter = current_user is not None
     today = datetime.now(MOSCOW_TIMEZONE).date()
     base = "/unit-economics-1c/" + ("yandex-market/" if yandex else "") + "reports/unit-profit"
     config = {
@@ -1963,7 +2092,8 @@ async def _unit_economics_1c_unit_profit_report_data(
         )
         source_coverage = wb_days(store_slugs, date_from.isoformat(), date_to.isoformat())
         saved_funnel_daily_rows = db.get_unit_economics_1c_funnel_daily_order_rows(
-            store_slugs, date_from.isoformat(), date_to.isoformat())
+            store_slugs, date_from.isoformat(), date_to.isoformat()
+        )
         saved_margin_snapshots = db.get_unit_economics_1c_daily_margin_snapshots(
             store_slugs,
             date_from.isoformat(),
@@ -2015,18 +2145,6 @@ async def _unit_economics_1c_unit_profit_report_data(
         subjects: set[str] = set()
         managers: set[str] = set()
         article_options: list[dict] = []
-        available_managers = {
-            str(reference.get("manager") or "").strip()
-            for reference in references.values()
-            if str(reference.get("manager") or "").strip()
-        }
-        allowed_manager_keys: set[str] | None = None
-        if current_user is not None and restricts_unit_economics_to_manager(current_user):
-            allowed_manager_keys = {
-                _manager_identity_key(manager)
-                for manager in available_managers
-                if _manager_matches_user(manager, current_user)
-            }
         for store_slug in store_slugs:
             cabinet = cabinets[store_slug]
             for catalog_item in db.get_stock_items(store_slug, "WB"):
@@ -2035,8 +2153,6 @@ async def _unit_economics_1c_unit_profit_report_data(
                 subject = str(reference.get("category") or "").strip() or "Без предмета"
                 manager = str(reference.get("manager") or "").strip()
                 manager_key = _manager_identity_key(manager)
-                if allowed_manager_keys is not None and manager_key not in allowed_manager_keys:
-                    continue
                 period_product_metrics = metrics.get((store_slug, _nm_id(article))) or {}
                 activity = [
                     period_product_metrics,
@@ -2048,8 +2164,7 @@ async def _unit_economics_1c_unit_profit_report_data(
                     for item in activity
                 )
                 has_live_stock = date_from <= live_day <= date_to and any(
-                    (catalog_item.get(key) or 0) > 0
-                    for key in ("fbs_stock", "fbo_stock", "ff_available")
+                    (catalog_item.get(key) or 0) > 0 for key in ("fbs_stock", "fbo_stock", "ff_available")
                 )
                 if not (has_orders_or_ads or has_live_stock or (store_slug, article) in stocked_in_period):
                     continue
@@ -2181,15 +2296,24 @@ async def _unit_economics_1c_unit_profit_report_data(
                         historical_economics["advertising_spend"] / historical_economics["orders"],
                         2,
                     )
-                    if historical_economics["orders"] > 0 and historical_economics["advertising_spend"] is not None
-                    else 0.0 if historical_economics["advertising_spend"] == 0 else None
+                    if historical_economics["orders"] > 0
+                    and historical_economics["advertising_spend"] is not None
+                    else 0.0
+                    if historical_economics["advertising_spend"] == 0
+                    else None
                 )
-                known_counts = [r["orders_count"] for r in historical_economics["daily"] if r["orders_count"] is not None]
+                known_counts = [
+                    r["orders_count"] for r in historical_economics["daily"] if r["orders_count"] is not None
+                ]
                 funnel_totals["orders_count"] = sum(known_counts) if known_counts else None
                 if not source_coverage[store_slug]["orders"]:
                     for field in ("orders_amount", "cancel_count", "cancel_amount", "net_orders_amount"):
                         funnel_totals[field] = None
-                funnel_totals["net_orders_count"] = funnel_totals["orders_count"] - funnel_totals["cancel_count"] if funnel_totals["orders_count"] is not None and funnel_totals["cancel_count"] is not None else None
+                funnel_totals["net_orders_count"] = (
+                    funnel_totals["orders_count"] - funnel_totals["cancel_count"]
+                    if funnel_totals["orders_count"] is not None and funnel_totals["cancel_count"] is not None
+                    else None
+                )
                 daily_contexts[(store_slug, article)] = {
                     "orders_days": source_coverage[store_slug]["orders"],
                     "advertising_days": source_coverage[store_slug]["advertising"],
@@ -2293,8 +2417,20 @@ async def _unit_economics_1c_unit_profit_report_data(
                         "unavailable_days": historical_economics["unavailable_days"],
                         "purchase_complete": historical_economics["purchase_complete"],
                         "roi_purchase_value": historical_economics["roi_purchase_value"],
-                        "orders_missing_days": sorted(set(day.isoformat() for day in (date_from + timedelta(days=i) for i in range(period_days))) - source_coverage[store_slug]["orders"]),
-                        "ads_missing_days": sorted(set(day.isoformat() for day in (date_from + timedelta(days=i) for i in range(period_days))) - source_coverage[store_slug]["advertising"]),
+                        "orders_missing_days": sorted(
+                            set(
+                                day.isoformat()
+                                for day in (date_from + timedelta(days=i) for i in range(period_days))
+                            )
+                            - source_coverage[store_slug]["orders"]
+                        ),
+                        "ads_missing_days": sorted(
+                            set(
+                                day.isoformat()
+                                for day in (date_from + timedelta(days=i) for i in range(period_days))
+                            )
+                            - source_coverage[store_slug]["advertising"]
+                        ),
                         "daily_calculations": [],
                     }
                 )
@@ -2393,17 +2529,28 @@ async def _unit_economics_1c_unit_profit_report_data(
                 ),
             },
             "manager_scope": {
-                "restricted": allowed_manager_keys is not None,
-                "matched": bool(allowed_manager_keys) if allowed_manager_keys is not None else True,
+                "restricted": False,
+                "matched": True,
             },
         }
 
     return await run_in_threadpool(
         reports_cache.get,
         (
-            "wb-profit", store_slugs, date_from, date_to, datetime.now(MOSCOW_TIMEZONE).date(),
-            user_key(current_user), tuple(sorted(selected_subjects)), tuple(sorted(selected_managers)),
-            tuple(sorted(selected_articles)), group_by, include_daily_details, page, page_size, for_export,
+            "wb-profit",
+            store_slugs,
+            date_from,
+            date_to,
+            datetime.now(MOSCOW_TIMEZONE).date(),
+            user_key(current_user),
+            tuple(sorted(selected_subjects)),
+            tuple(sorted(selected_managers)),
+            tuple(sorted(selected_articles)),
+            group_by,
+            include_daily_details,
+            page,
+            page_size,
+            for_export,
         ),
         load_report,
     )
@@ -2430,23 +2577,6 @@ async def unit_economics_1c_unit_profit_report_xlsx(request: Request):
     )
 
 
-@router.put("/api/unit-economics-1c/preferences/columns")
-async def unit_economics_1c_column_preferences_save(
-    request: Request,
-    payload: UnitEconomics1CColumnPreferencesRequest,
-):
-    preferences = _validated_column_preferences(payload.model_dump(mode="json"))
-    if preferences is None:
-        return JSONResponse({"ok": False, "error": "Некорректные настройки колонок"}, status_code=422)
-    saved = await run_in_threadpool(
-        db.save_ui_preference,
-        int(request.state.user["id"]),
-        UNIT_ECONOMICS_COLUMNS_PREFERENCE_SCOPE,
-        preferences,
-    )
-    return {"ok": True, "preferences": saved}
-
-
 @router.put("/api/unit-economics-1c/product-settings/{store_slug}")
 async def unit_economics_1c_product_settings_save(
     request: Request,
@@ -2456,13 +2586,9 @@ async def unit_economics_1c_product_settings_save(
     normalized_store = store_slug.lower()
     if normalized_store not in STORES:
         return JSONResponse({"ok": False, "error": "Кабинет не найден"}, status_code=404)
-    if not has_scope(request.state.user, normalized_store, "WB"):
+    if not has_store_marketplace(request.state.user, normalized_store, "WB"):
         return JSONResponse({"ok": False, "error": "Нет доступа к этому кабинету"}, status_code=403)
-    if not has_section_access(
-        request.state.user,
-        SectionName.UNIT_ECONOMICS_WB,
-        SectionAccessLevel.WRITE,
-    ):
+    if not is_active_user(request.state.user):
         return JSONResponse({"ok": False, "error": "Нет права изменять параметры"}, status_code=403)
 
     catalog = await run_in_threadpool(db.get_catalog_items, normalized_store, "WB")
@@ -2539,17 +2665,7 @@ async def unit_economics_1c_cabinet_settings_data(request: Request, marketplace:
 
 @router.post("/api/unit-economics-1c/source-data/sync")
 async def unit_economics_1c_source_data_sync(request: Request):
-    current_user = coerce_user(request.state.user)
-    if current_user is not None and current_user.access_profile is not None:
-        return JSONResponse(
-            {"ok": False, "error": "Общую загрузку данных 1С запускает администратор"},
-            status_code=403,
-        )
-    if not has_section_access(
-        request.state.user,
-        SectionName.UNIT_ECONOMICS_WB,
-        SectionAccessLevel.WRITE,
-    ):
+    if not is_active_user(request.state.user):
         return JSONResponse(
             {"ok": False, "error": "Нет права запускать загрузку себестоимости"},
             status_code=403,
@@ -2598,7 +2714,7 @@ async def unit_economics_1c_cabinet_settings_save(
     normalized_store = store_slug.lower()
     if normalized_store not in STORES:
         return JSONResponse({"ok": False, "error": "Кабинет не найден"}, status_code=404)
-    if not has_scope(request.state.user, normalized_store, "WB"):
+    if not has_store_marketplace(request.state.user, normalized_store, "WB"):
         return JSONResponse(
             {"ok": False, "error": "Нет доступа к этому кабинету"},
             status_code=403,
@@ -2698,15 +2814,17 @@ async def sales_unit_economics_1c_ozon(request: Request):
             if not products:
                 return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)
             return JSONResponse({"ok": True, "product": products[0]})
-        return JSONResponse({
-            "ok": True,
-            "products": products,
-            "period_days": period_days,
-            "period_from": period_start.isoformat(),
-            "period_to": period_end.isoformat(),
-            "period_mode": "custom" if custom_period else "preset",
-            "last_complete_day": last_complete_day.isoformat(),
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "products": products,
+                "period_days": period_days,
+                "period_from": period_start.isoformat(),
+                "period_to": period_end.isoformat(),
+                "period_mode": "custom" if custom_period else "preset",
+                "last_complete_day": last_complete_day.isoformat(),
+            }
+        )
 
     unit_config = {
         "userKey": str(request.state.user["id"]),
@@ -2749,10 +2867,8 @@ async def yandex_buyout_settings_save(
     store_slug = store_slug.lower()
     if store_slug not in STORES:
         return JSONResponse({"ok": False, "error": "Кабинет не найден"}, status_code=404)
-    if not has_scope(request.state.user, store_slug, "YANDEX MARKET") or not has_section_access(
-        request.state.user,
-        SectionName.UNIT_ECONOMICS_YANDEX,
-        SectionAccessLevel.WRITE,
+    if not has_store_marketplace(request.state.user, store_slug, "YANDEX MARKET") or not is_active_user(
+        request.state.user
     ):
         return JSONResponse({"ok": False, "error": "Нет права изменять параметры кабинета"}, status_code=403)
     now = datetime.now(UTC).isoformat()
@@ -2772,6 +2888,7 @@ async def yandex_buyout_settings_save(
 async def sales_unit_economics_1c_yandex(request: Request):
     if request.query_params.get("calendar") == "1":
         from app.web.routers.economics_calendar import page
+
         return page(request)
     store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
     today = datetime.now(MOSCOW_TIMEZONE).date()
@@ -2822,10 +2939,8 @@ async def sales_unit_economics_1c_yandex(request: Request):
         "placeholderMode": True,
         "yandexMetrics": True,
         "yandexEconomics": True,
-        "canManageYandexSettings": auth.has_role(request.state.user, "superadmin"),
-        "canEditYandex": has_section_access(
-            request.state.user, SectionName.UNIT_ECONOMICS_YANDEX, SectionAccessLevel.WRITE
-        ),
+        "canManageYandexSettings": is_active_user(request.state.user),
+        "canEditYandex": is_active_user(request.state.user),
         "periodSelection": True,
         "periodDays": period_days,
         "lastCompleteDay": last_complete_day.isoformat(),

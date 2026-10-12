@@ -5,6 +5,7 @@
 ## Устройство проекта и эксплуатация
 
 - [Архитектура и структура](architecture.md)
+- [Учётные записи без матрицы доступа: контракт и миграция](authentication.md)
 - [Ручные и фоновые загрузки](manual-sync.md)
 - [Миграция SQLite в PostgreSQL](postgresql-migration.md)
 

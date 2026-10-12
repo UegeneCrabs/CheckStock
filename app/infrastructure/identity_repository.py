@@ -4,12 +4,10 @@ from datetime import datetime
 from types import TracebackType
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.ports import IdentityRepository
-from app.core.stores import STORES
 from app.dto.identity import (
-    AccessProfile,
     ActivityCommand,
     ActivityEntry,
     ActivityLog,
@@ -19,46 +17,23 @@ from app.dto.identity import (
     CreateUserCommand,
     ExpiredSessionsCommand,
     LoginQuery,
-    MarketplaceAccessScope,
-    PermissionChange,
-    Role,
-    SectionAccessLevel,
-    SectionName,
     SessionData,
     SessionToken,
     User,
-    UserAccessPolicyChange,
     UserActiveChange,
     UserCollection,
     UserCountQuery,
     UserId,
     UserPasswordChange,
-    UserRoleChange,
-    UserSectionAccessChange,
-    UserStoreAccessChange,
     WbTokenInfo,
     WbTokenInfoCollection,
     WbTokenInfoCommand,
 )
-from app.infrastructure.orm import (
-    ActivityLogRecord,
-    SessionRecord,
-    UserAccessProfileRecord,
-    UserMarketplaceAccessRecord,
-    UserRecord,
-    UserSectionAccessRecord,
-    UserStoreAccessRecord,
-    WbTokenInfoRecord,
-)
+from app.infrastructure.orm import ActivityLogRecord, SessionRecord, UserRecord, WbTokenInfoRecord
 
 
 def _as_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value)
-
-
-def _normalize_store_slugs(values: tuple[str, ...]) -> tuple[str, ...]:
-    requested = {value.strip().lower() for value in values}
-    return tuple(slug for slug in STORES if slug in requested) or tuple(STORES)
 
 
 def _user(record: UserRecord) -> User:
@@ -68,31 +43,8 @@ def _user(record: UserRecord) -> User:
         google_email=record.google_email,
         login=record.login,
         password_hash=record.password_hash,
-        role=Role(record.role),
         is_active=bool(record.is_active),
-        can_edit_stock=bool(record.can_edit_stock),
-        can_manage_users=bool(record.can_manage_users),
         created_at=_as_datetime(record.created_at),
-        store_slugs=tuple(access.store_slug for access in record.store_access) or tuple(STORES),
-        section_access={
-            SectionName(access.section): SectionAccessLevel(access.access_level)
-            for access in record.section_access
-            if access.section in SectionName._value2member_map_
-            and access.access_level in SectionAccessLevel._value2member_map_
-        },
-        access_profile=(
-            AccessProfile(record.access_profile_record.profile)
-            if record.access_profile_record is not None
-            and record.access_profile_record.profile in AccessProfile._value2member_map_
-            else None
-        ),
-        access_scopes=tuple(
-            MarketplaceAccessScope(
-                store_slug=access.store_slug,
-                marketplace=access.marketplace,
-            )
-            for access in record.marketplace_access
-        ),
     )
 
 
@@ -106,177 +58,57 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             google_email=command.google_email,
             login=command.login,
             password_hash=command.password_hash,
-            role=command.role.value,
             created_at=command.created_at.isoformat(),
         )
-        record.store_access = [
-            UserStoreAccessRecord(store_slug=slug) for slug in _normalize_store_slugs(command.store_slugs)
-        ]
-        if command.access_profile is not None:
-            record.access_profile_record = UserAccessProfileRecord(profile=command.access_profile.value)
-        record.marketplace_access = [
-            UserMarketplaceAccessRecord(
-                store_slug=scope.store_slug,
-                marketplace=scope.marketplace,
-            )
-            for scope in command.access_scopes
-        ]
         self._session.add(record)
         self._session.flush()
         return UserId(record.id)
 
     def get_user(self, query: UserId) -> User | None:
-        record = self._session.scalar(
-            select(UserRecord)
-            .options(
-                selectinload(UserRecord.store_access),
-                selectinload(UserRecord.section_access),
-                selectinload(UserRecord.access_profile_record),
-                selectinload(UserRecord.marketplace_access),
-            )
-            .where(UserRecord.id == query.root)
-        )
+        record = self._session.get(UserRecord, query.root)
         return _user(record) if record is not None else None
 
     def get_user_by_login(self, query: LoginQuery) -> User | None:
-        record = self._session.scalar(
-            select(UserRecord)
-            .options(
-                selectinload(UserRecord.store_access),
-                selectinload(UserRecord.section_access),
-                selectinload(UserRecord.access_profile_record),
-                selectinload(UserRecord.marketplace_access),
-            )
-            .where(UserRecord.login == query.login)
-        )
+        record = self._session.scalar(select(UserRecord).where(UserRecord.login == query.login))
         return _user(record) if record is not None else None
 
     def list_users(self) -> UserCollection:
-        records = self._session.scalars(
-            select(UserRecord)
-            .options(
-                selectinload(UserRecord.store_access),
-                selectinload(UserRecord.section_access),
-                selectinload(UserRecord.access_profile_record),
-                selectinload(UserRecord.marketplace_access),
-            )
-            .order_by(UserRecord.id)
-        )
+        records = self._session.scalars(select(UserRecord).order_by(UserRecord.id))
         return UserCollection(tuple(_user(record) for record in records))
 
     def count_users(self) -> CountResult:
         return CountResult(self._session.scalar(select(func.count(UserRecord.id))) or 0)
 
-    def count_superadmins(self, query: UserCountQuery) -> CountResult:
-        statement = select(func.count(UserRecord.id)).where(
-            UserRecord.role == Role.SUPERADMIN.value,
-            UserRecord.is_active == 1,
-        )
+    def count_active_users(self, query: UserCountQuery) -> CountResult:
+        statement = select(func.count(UserRecord.id)).where(UserRecord.is_active == 1)
         if query.exclude_user_id is not None:
             statement = statement.where(UserRecord.id != query.exclude_user_id)
         return CountResult(self._session.scalar(statement) or 0)
 
+    def _protect_last_active_user(self, user_id: int) -> None:
+        # Serialize deactivation/deletion so concurrent requests cannot remove
+        # the last two active accounts in separate transactions.
+        connection = self._session.connection()
+        if connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        else:
+            self._session.execute(select(UserRecord.id).order_by(UserRecord.id).with_for_update()).all()
+        record = self._session.get(UserRecord, user_id)
+        if (
+            record is not None
+            and record.is_active
+            and not self.count_active_users(UserCountQuery(exclude_user_id=user_id)).root
+        ):
+            raise ValueError("Нельзя удалить или заблокировать последнего активного пользователя")
+
     def set_active(self, command: UserActiveChange) -> None:
+        if not command.is_active:
+            self._protect_last_active_user(command.user_id)
         record = self._session.get(UserRecord, command.user_id)
         if record is not None:
             record.is_active = int(command.is_active)
-
-    def set_permission(self, command: PermissionChange) -> None:
-        record = self._session.get(UserRecord, command.user_id)
-        if record is not None:
-            setattr(record, command.permission.value, int(command.allowed))
-            if command.permission.value == "can_edit_stock":
-                section = self._session.get(
-                    UserSectionAccessRecord,
-                    (command.user_id, SectionName.STOCK.value),
-                )
-                level = SectionAccessLevel.WRITE if command.allowed else SectionAccessLevel.READ
-                if section is None:
-                    section = UserSectionAccessRecord(
-                        user_id=command.user_id,
-                        section=SectionName.STOCK.value,
-                        access_level=level.value,
-                    )
-                    self._session.add(section)
-                else:
-                    section.access_level = level.value
-
-    def set_store_access(self, command: UserStoreAccessChange) -> None:
-        record = self._session.scalar(
-            select(UserRecord)
-            .options(selectinload(UserRecord.store_access), selectinload(UserRecord.marketplace_access))
-            .where(UserRecord.id == command.user_id)
-        )
-        if record is not None:
-            selected = _normalize_store_slugs(command.store_slugs)
-            if record.marketplace_access:
-                previous = {(scope.store_slug, scope.marketplace) for scope in record.marketplace_access}
-                previous_stores = {store for store, _ in previous}
-                markets = {market for _, market in previous}
-                pairs = {(store, market) for store, market in previous if store in selected}
-                pairs.update(
-                    (store, market)
-                    for store in selected
-                    if store not in previous_stores
-                    for market in markets
-                )
-                record.marketplace_access = [
-                    UserMarketplaceAccessRecord(store_slug=store, marketplace=market)
-                    for store, market in sorted(pairs)
-                ]
-            record.store_access = [UserStoreAccessRecord(store_slug=slug) for slug in selected]
-
-    def set_role(self, command: UserRoleChange) -> None:
-        record = self._session.get(UserRecord, command.user_id)
-        if record is not None:
-            record.role = command.role.value
-
-    def set_section_access(self, command: UserSectionAccessChange) -> None:
-        record = self._session.scalar(
-            select(UserRecord)
-            .options(selectinload(UserRecord.section_access))
-            .where(UserRecord.id == command.user_id)
-        )
-        if record is None:
-            return
-        record.section_access = [
-            UserSectionAccessRecord(section=section.value, access_level=level.value)
-            for section, level in command.section_access.items()
-        ]
-        stock_level = command.section_access.get(SectionName.STOCK)
-        if stock_level is not None:
-            record.can_edit_stock = int(stock_level is SectionAccessLevel.WRITE)
-
-    def set_access_policy(self, command: UserAccessPolicyChange) -> None:
-        record = self._session.scalar(
-            select(UserRecord)
-            .options(
-                selectinload(UserRecord.access_profile_record),
-                selectinload(UserRecord.marketplace_access),
-                selectinload(UserRecord.store_access),
-            )
-            .where(UserRecord.id == command.user_id)
-        )
-        if record is None:
-            return
-        if command.access_profile is None:
-            record.access_profile_record = None
-        elif record.access_profile_record is None:
-            record.access_profile_record = UserAccessProfileRecord(profile=command.access_profile.value)
-        else:
-            record.access_profile_record.profile = command.access_profile.value
-        record.marketplace_access = [
-            UserMarketplaceAccessRecord(
-                store_slug=scope.store_slug,
-                marketplace=scope.marketplace,
-            )
-            for scope in command.access_scopes
-        ]
-        if command.access_scopes:
-            scoped_stores = tuple(dict.fromkeys(scope.store_slug for scope in command.access_scopes))
-            record.store_access = [
-                UserStoreAccessRecord(store_slug=slug) for slug in _normalize_store_slugs(scoped_stores)
-            ]
+        if not command.is_active:
+            self.delete_sessions_for_user(UserId(command.user_id))
 
     def update_password(self, command: UserPasswordChange) -> None:
         record = self._session.get(UserRecord, command.user_id)
@@ -285,6 +117,7 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         self.delete_sessions_for_user(UserId(command.user_id))
 
     def delete_user(self, command: UserId) -> None:
+        self._protect_last_active_user(command.root)
         self.delete_sessions_for_user(command)
         record = self._session.get(UserRecord, command.root)
         if record is not None:

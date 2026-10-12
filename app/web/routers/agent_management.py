@@ -6,10 +6,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.access.sections import has_access
 from app.agents.access import create_credential, credential_lock, read_credentials, save_credentials
 from app.config import settings
-from app.dto.identity import SectionName, User
+from app.dto.identity import User
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -19,8 +18,6 @@ def owner(request: Request):
     user = request.state.user
     if user is None or not user.is_active:
         raise HTTPException(401, "Требуется вход в систему")
-    if not has_access(user, SectionName.AI_AGENTS):
-        raise HTTPException(403, "Нет доступа к разделам аналитики")
     if request.method != "GET":
         origin = request.headers.get("origin")
         expected = f"{request.url.scheme}://{request.url.netloc}"

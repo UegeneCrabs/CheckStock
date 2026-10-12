@@ -351,7 +351,7 @@ class FinanceRepository:
             return result
 
     def unallocated(self):
-        """Superadmin-only account view; never include in scoped store read models."""
+        """Account configuration view; separate from store report read models."""
         with self.sessions() as session:
             return [
                 {

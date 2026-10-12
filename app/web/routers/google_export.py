@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app import db
-from app.access import auth
+from app.access.authentication import is_active_user
 from app.config import settings as app_settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
@@ -31,11 +31,7 @@ from app.jobs.tracking import run_tracked
 from app.repositories import google_week_freeze as freeze_repository
 from app.repositories import google_week_update as week_repository
 from app.repositories.project_sheet_export import MarketplaceExportTarget, ProjectSheetExportSettings
-from app.repositories.stock_sheet_export import (
-    ExportTarget,
-    MarketplaceSpreadsheet,
-    StockSheetExportSettings,
-)
+from app.repositories.stock_sheet_export import ExportTarget, MarketplaceSpreadsheet, StockSheetExportSettings
 from app.web.google_week_freeze import render_result as render_week_freeze_result
 from app.web.google_week_sales import render_result as render_week_sales_result
 from app.web.google_week_search import render_result as render_week_search_result
@@ -63,8 +59,8 @@ METRIC_LABELS = {
 }
 
 
-def _require_superadmin(request: Request) -> None:
-    if not auth.has_role(request.state.user, "superadmin"):
+def _require_active_account(request: Request) -> None:
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 
@@ -230,7 +226,7 @@ def _settings_from_form(
 
 @router.get("/admin/google-export", response_class=HTMLResponse)
 async def google_export_page(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     return RedirectResponse("/admin/integrations?tab=google", status_code=303)
 
 
@@ -640,13 +636,13 @@ def _render_week_update() -> str:
 
 @router.get("/admin/google-week-update")
 async def google_week_update_status(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     return JSONResponse(await run_in_threadpool(_week_payload), headers={"Cache-Control": "no-store"})
 
 
 @router.post("/admin/google-week-update")
 async def save_google_week_update(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     form = await request.form()
     try:
         try:
@@ -707,7 +703,7 @@ async def save_google_week_update(request: Request):
 
 @router.post("/admin/google-week-update/run")
 async def run_google_week_update(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     try:
         report = await run_in_threadpool(
             run_tracked,
@@ -725,7 +721,7 @@ async def run_google_week_update(request: Request):
 
 @router.post("/admin/google-week-update/search")
 async def search_google_week_headers(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     try:
         result = await run_in_threadpool(
             run_tracked,
@@ -744,7 +740,7 @@ async def search_google_week_headers(request: Request):
 
 @router.post("/admin/google-week-update/sales")
 async def export_google_week_sales(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     try:
         result = await run_in_threadpool(
             run_tracked,
@@ -765,7 +761,7 @@ async def export_google_week_sales(request: Request):
 
 @router.post("/admin/google-week-update/stock")
 async def export_google_week_stock(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     try:
         result = await run_in_threadpool(
             run_tracked,
@@ -786,7 +782,7 @@ async def export_google_week_stock(request: Request):
 
 @router.get("/admin/google-week-update/sheets")
 async def google_week_sheet_catalog(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     catalog = await run_in_threadpool(
         lambda: google_sheet_catalog.get_catalog(week_repository.get_settings())
     )
@@ -800,7 +796,7 @@ def _refresh_week_sheet_catalog() -> dict:
 
 @router.post("/admin/google-week-update/sheets/refresh")
 async def refresh_google_week_sheet_catalog(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     try:
         catalog = await run_in_threadpool(_refresh_week_sheet_catalog)
     except SyncJobBusyError:
@@ -813,7 +809,7 @@ async def refresh_google_week_sheet_catalog(request: Request):
 
 
 async def _run_week_freeze(request: Request, *, preview: bool):
-    _require_superadmin(request)
+    _require_active_account(request)
     try:
         result = await run_in_threadpool(
             run_tracked,
@@ -850,7 +846,7 @@ async def freeze_google_week_formulas(request: Request):
 
 @router.post("/admin/google-export/settings")
 async def save_project_export_settings(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     form = await request.form()
     existing = await run_in_threadpool(project_sheet_export.get_settings)
     try:
@@ -877,7 +873,7 @@ async def save_project_export_settings(request: Request):
 
 @router.post("/admin/google-export/run")
 async def run_project_export(request: Request):
-    _require_superadmin(request)
+    _require_active_account(request)
     form = await request.form()
     marketplace = _value(form, "marketplace") or None
     export_kind = _value(form, "export_kind") or None
@@ -934,11 +930,11 @@ def _retired_store_export_response() -> JSONResponse:
 
 @router.post("/admin/google-export/{store_slug}")
 async def save_google_export_settings(request: Request, store_slug: str):
-    _require_superadmin(request)
+    _require_active_account(request)
     return _retired_store_export_response()
 
 
 @router.post("/admin/google-export/{store_slug}/run")
 async def run_google_export(request: Request, store_slug: str):
-    _require_superadmin(request)
+    _require_active_account(request)
     return _retired_store_export_response()

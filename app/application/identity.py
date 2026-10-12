@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 
 from app.application.ports import IdentityUnitOfWorkFactory, PasswordService
 from app.dto.identity import (
-    AccessDecision,
     ActivityCommand,
     ActivityLog,
     ActivityLogQuery,
@@ -17,24 +16,15 @@ from app.dto.identity import (
     ExpiredSessionsCommand,
     LoginQuery,
     PasswordVerification,
-    PermissionChange,
-    Role,
-    RoleCheck,
     SessionToken,
     User,
-    UserAccessPolicyChange,
     UserActiveChange,
     UserCollection,
     UserCountQuery,
     UserId,
     UserMutationKind,
     UserPasswordChange,
-    UserRoleChange,
-    UserSectionAccessChange,
-    UserStoreAccessChange,
 )
-
-ROLE_LEVEL = {Role.USER: 1, Role.ADMIN: 2, Role.SUPERADMIN: 3}
 
 
 class IdentityService:
@@ -100,18 +90,6 @@ class IdentityService:
                 return None
             return user
 
-    def has_role(self, check: RoleCheck) -> AccessDecision:
-        if check.user is None:
-            return AccessDecision(False)
-        return AccessDecision(ROLE_LEVEL[check.user.role] >= ROLE_LEVEL[check.minimum])
-
-    def can_edit_stock(self, user: User | None) -> AccessDecision:
-        return AccessDecision(bool(user and user.can_edit_stock))
-
-    def can_manage_users(self, user: User | None) -> AccessDecision:
-        allowed = bool(user and ROLE_LEVEL[user.role] >= ROLE_LEVEL[Role.ADMIN] and user.can_manage_users)
-        return AccessDecision(allowed)
-
     def create_user(self, command: CreateUserCommand) -> UserId:
         with self._unit_of_work_factory() as unit_of_work:
             user_id = unit_of_work.identities.create_user(command)
@@ -126,6 +104,11 @@ class IdentityService:
             return user_id
 
     def mutate_user(self, command: AuditedUserMutation) -> None:
+        disabling = command.kind is UserMutationKind.DELETE or (
+            command.kind is UserMutationKind.ACTIVE and command.is_active is False
+        )
+        if disabling and command.activity.user_id == command.user_id:
+            raise ValueError("Нельзя удалить или заблокировать самого себя")
         with self._unit_of_work_factory() as unit_of_work:
             repository = unit_of_work.identities
             if command.kind is UserMutationKind.DELETE:
@@ -134,25 +117,6 @@ class IdentityService:
                 if command.is_active is None:
                     raise ValueError("is_active is required")
                 repository.set_active(UserActiveChange(user_id=command.user_id, is_active=command.is_active))
-                if not command.is_active:
-                    repository.delete_sessions_for_user(UserId(command.user_id))
-            elif command.kind is UserMutationKind.PERMISSION:
-                if command.permission is None or command.allowed is None:
-                    raise ValueError("permission and allowed are required")
-                repository.set_permission(
-                    PermissionChange(
-                        user_id=command.user_id,
-                        permission=command.permission,
-                        allowed=command.allowed,
-                    )
-                )
-            elif command.kind is UserMutationKind.STORES:
-                repository.set_store_access(
-                    UserStoreAccessChange(
-                        user_id=command.user_id,
-                        store_slugs=command.store_slugs,
-                    )
-                )
             elif command.kind is UserMutationKind.PASSWORD:
                 if not command.password_hash:
                     raise ValueError("password_hash is required")
@@ -160,25 +124,6 @@ class IdentityService:
                     UserPasswordChange(
                         user_id=command.user_id,
                         password_hash=command.password_hash,
-                    )
-                )
-            elif command.kind is UserMutationKind.ROLE:
-                if command.role is None:
-                    raise ValueError("role is required")
-                repository.set_role(UserRoleChange(user_id=command.user_id, role=command.role))
-            elif command.kind is UserMutationKind.SECTIONS:
-                repository.set_section_access(
-                    UserSectionAccessChange(
-                        user_id=command.user_id,
-                        section_access=command.section_access,
-                    )
-                )
-            elif command.kind is UserMutationKind.ACCESS_POLICY:
-                repository.set_access_policy(
-                    UserAccessPolicyChange(
-                        user_id=command.user_id,
-                        access_profile=command.access_profile,
-                        access_scopes=command.access_scopes,
                     )
                 )
             repository.add_activity(command.activity)
@@ -200,23 +145,13 @@ class IdentityService:
         with self._unit_of_work_factory() as unit_of_work:
             return unit_of_work.identities.count_users()
 
-    def count_superadmins(self, query: UserCountQuery) -> CountResult:
+    def count_active_users(self, query: UserCountQuery) -> CountResult:
         with self._unit_of_work_factory() as unit_of_work:
-            return unit_of_work.identities.count_superadmins(query)
+            return unit_of_work.identities.count_active_users(query)
 
     def set_active(self, command: UserActiveChange) -> None:
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.identities.set_active(command)
-            unit_of_work.commit()
-
-    def set_permission(self, command: PermissionChange) -> None:
-        with self._unit_of_work_factory() as unit_of_work:
-            unit_of_work.identities.set_permission(command)
-            unit_of_work.commit()
-
-    def set_store_access(self, command: UserStoreAccessChange) -> None:
-        with self._unit_of_work_factory() as unit_of_work:
-            unit_of_work.identities.set_store_access(command)
             unit_of_work.commit()
 
     def update_password(self, command: UserPasswordChange) -> None:

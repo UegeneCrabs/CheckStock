@@ -7,32 +7,8 @@ from pydantic import Field, NonNegativeInt, PositiveInt, RootModel, SecretStr
 from app.dto.common import DtoModel
 
 
-class Role(StrEnum):
-    USER = "user"
-    ADMIN = "admin"
-    SUPERADMIN = "superadmin"
-
-
-class AccessProfile(StrEnum):
-    MARKETPLACE_MANAGER = "marketplace_manager"
-    SENIOR_MARKETPLACE_MANAGER = "senior_marketplace_manager"
-    MARKETPLACE_LEAD = "marketplace_lead"
-    STORE_MANAGER = "store_manager"
-    PROCUREMENT = "procurement"
-
-
-class MarketplaceAccessScope(DtoModel):
-    store_slug: str = Field(min_length=1, max_length=100)
-    marketplace: str = Field(min_length=1, max_length=100)
-
-
-class PermissionName(StrEnum):
-    EDIT_STOCK = "can_edit_stock"
-    MANAGE_USERS = "can_manage_users"
-
-
 class SectionName(StrEnum):
-    """Persisted keys; navigable sections are defined by section_access.SECTION_PATHS."""
+    """Navigation and report identifiers; paths are defined in app.access.sections."""
 
     SALES = "sales"
     DECISION_CENTER = "decision_center"
@@ -66,31 +42,14 @@ class SectionName(StrEnum):
     ADMIN_INTEGRATIONS = "admin_integrations"
 
 
-class SectionAccessLevel(StrEnum):
-    NONE = "none"
-    READ = "read"
-    WRITE = "write"
-
-
-class StoreAccess(RootModel[tuple[str, ...]]):
-    root: tuple[str, ...] = ()
-
-
 class User(DtoModel):
     id: PositiveInt
     full_name: str = Field(min_length=1, max_length=200)
     google_email: str = Field(default="", max_length=320)
     login: str = Field(min_length=1, max_length=100)
     password_hash: str = Field(default="", repr=False)
-    role: Role
     is_active: bool = True
-    can_edit_stock: bool = True
-    can_manage_users: bool = True
     created_at: datetime
-    store_slugs: tuple[str, ...] = ()
-    section_access: dict[SectionName, SectionAccessLevel] = Field(default_factory=dict)
-    access_profile: AccessProfile | None = None
-    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class UserCollection(RootModel[tuple[User, ...]]):
@@ -119,21 +78,12 @@ class AccessDecision(RootModel[bool]):
     root: bool
 
 
-class RoleCheck(DtoModel):
-    user: User | None
-    minimum: Role
-
-
 class CreateUserCommand(DtoModel):
     full_name: str = Field(min_length=1, max_length=200)
     google_email: str = Field(default="", max_length=320)
     login: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.@+-]+$")
     password_hash: str = Field(min_length=1, repr=False)
-    role: Role
     created_at: datetime
-    store_slugs: tuple[str, ...] = ()
-    access_profile: AccessProfile | None = None
-    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class CreateUserForm(DtoModel):
@@ -141,14 +91,10 @@ class CreateUserForm(DtoModel):
     google_email: str = Field(min_length=1, max_length=320)
     login: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.@+-]+$")
     password: SecretStr = Field(min_length=8, max_length=1024)
-    role: Role
-    store_slugs: tuple[str, ...] = Field(min_length=1)
-    access_profile: AccessProfile | None = None
-    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
-class SuperadminSeed(DtoModel):
-    full_name: str = Field(default="Суперадминистратор", min_length=1, max_length=200)
+class InitialUserSeed(DtoModel):
+    full_name: str = Field(default="Сотрудник", min_length=1, max_length=200)
     google_email: str = Field(default="", max_length=320)
     login: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.@+-]+$")
     password: SecretStr = Field(min_length=1, max_length=1024)
@@ -180,12 +126,6 @@ class CreateSessionCommand(DtoModel):
     expires_at: datetime
 
 
-class PermissionChange(DtoModel):
-    user_id: PositiveInt
-    permission: PermissionName
-    allowed: bool
-
-
 class UserActiveChange(DtoModel):
     user_id: PositiveInt
     is_active: bool
@@ -194,27 +134,6 @@ class UserActiveChange(DtoModel):
 class UserPasswordChange(DtoModel):
     user_id: PositiveInt
     password_hash: str = Field(min_length=1, repr=False)
-
-
-class UserStoreAccessChange(DtoModel):
-    user_id: PositiveInt
-    store_slugs: tuple[str, ...]
-
-
-class UserRoleChange(DtoModel):
-    user_id: PositiveInt
-    role: Role
-
-
-class UserSectionAccessChange(DtoModel):
-    user_id: PositiveInt
-    section_access: dict[SectionName, SectionAccessLevel]
-
-
-class UserAccessPolicyChange(DtoModel):
-    user_id: PositiveInt
-    access_profile: AccessProfile | None = None
-    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class UserCountQuery(DtoModel):
@@ -236,12 +155,7 @@ class ActivityCommand(DtoModel):
 class UserMutationKind(StrEnum):
     DELETE = "delete"
     ACTIVE = "active"
-    PERMISSION = "permission"
-    STORES = "stores"
     PASSWORD = "password"
-    ROLE = "role"
-    SECTIONS = "sections"
-    ACCESS_POLICY = "access_policy"
 
 
 class AuditedUserMutation(DtoModel):
@@ -249,14 +163,7 @@ class AuditedUserMutation(DtoModel):
     user_id: PositiveInt
     activity: ActivityCommand
     is_active: bool | None = None
-    permission: PermissionName | None = None
-    allowed: bool | None = None
-    store_slugs: tuple[str, ...] = ()
     password_hash: str | None = Field(default=None, repr=False)
-    role: Role | None = None
-    section_access: dict[SectionName, SectionAccessLevel] = Field(default_factory=dict)
-    access_profile: AccessProfile | None = None
-    access_scopes: tuple[MarketplaceAccessScope, ...] = ()
 
 
 class AuditedCreateUser(DtoModel):
@@ -300,13 +207,7 @@ def coerce_user(value: object) -> User | None:
     raw.setdefault("login", f"user-{raw.get('id', 0)}")
     raw.setdefault("password_hash", "")
     raw.setdefault("is_active", True)
-    raw.setdefault("can_edit_stock", True)
-    raw.setdefault("can_manage_users", True)
     raw.setdefault("created_at", datetime(1970, 1, 1, tzinfo=UTC))
-    raw.setdefault("store_slugs", ())
-    raw.setdefault("section_access", {})
-    raw.setdefault("access_profile", None)
-    raw.setdefault("access_scopes", ())
     return User.model_validate(raw)
 
 

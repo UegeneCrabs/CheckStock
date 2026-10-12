@@ -4,7 +4,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 
-from app.access.access_control import ActionPermission, profile_has_permission, scope_pairs
+from app.access.authentication import is_active_user
+from app.access.resources import store_marketplace_pairs
 from app.core.stores import STORES
 from app.stock import total as stock_total_service
 from app.web.access import accessible_store_slugs
@@ -116,14 +117,14 @@ def _selected_store(store: str, accessible: tuple[str, ...]) -> str:
 
 @router.get("/stock/total", response_class=HTMLResponse)
 async def stock_total(request: Request, store: str = ""):
-    if not profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_VIEW):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к сводным остаткам")
     store_slugs = accessible_store_slugs(request.state.user)
     selected_store = _selected_store(store, store_slugs)
     rows = await run_in_threadpool(
         stock_total_service.build_rows,
         store_slugs,
-        scope_pairs(request.state.user),
+        store_marketplace_pairs(request.state.user),
         selected_store,
     )
     content = fill_template(
@@ -148,11 +149,11 @@ async def stock_total(request: Request, store: str = ""):
 
 @router.get("/stock/total.xlsx")
 async def stock_total_xlsx(request: Request, store: str = ""):
-    if not profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке сводных остатков")
     store_slugs = accessible_store_slugs(request.state.user)
     selected_store = _selected_store(store, store_slugs)
-    allowed_pairs = scope_pairs(request.state.user)
+    allowed_pairs = store_marketplace_pairs(request.state.user)
 
     def build() -> tuple[bytes, str]:
         return stock_total_service.build_xlsx(

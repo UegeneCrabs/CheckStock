@@ -546,7 +546,7 @@ def _initialize_application() -> None:
     db.init_db()
     db.seed_defaults()
     stock_sheet_export.ensure_defaults()
-    auth.seed_superadmin()
+    auth.seed_initial_user()
 
 
 @asynccontextmanager

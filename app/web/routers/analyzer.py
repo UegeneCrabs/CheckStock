@@ -9,11 +9,11 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app import db
-from app.access.access_control import accessible_stores
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.analytics import analyzer
 from app.core.domain import MOSCOW_TIMEZONE
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import coerce_user
 from app.repositories import analyzer as repository
 from app.web.templating import fill_template, render_page
 
@@ -21,8 +21,7 @@ router = APIRouter()
 
 
 def authorize(request, *, write=False):
-    level = SectionAccessLevel.WRITE if write else SectionAccessLevel.READ
-    if not has_access(request.state.user, SectionName.ANALYZER, level):
+    if not is_active_user(request.state.user):
         raise HTTPException(403, "Нет доступа к анализатору или прав на изменение записей")
     return accessible_stores(request.state.user, "WB")
 
@@ -34,7 +33,7 @@ async def analyzer_page(request: Request):
         "analytics/analyzer.html",
         analyzer_config=json.dumps(
             {
-                "canEdit": has_access(request.state.user, SectionName.ANALYZER, SectionAccessLevel.WRITE),
+                "canEdit": is_active_user(request.state.user),
                 "today": datetime.now(MOSCOW_TIMEZONE).date().isoformat(),
             }
         ).replace("</", "<\\/"),

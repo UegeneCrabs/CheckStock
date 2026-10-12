@@ -7,11 +7,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.access.sections import has_access
 from app.agents.access import create_credential, read_credentials, save_credentials
 from app.config import settings
 from app.container import ApplicationContainer
-from app.dto.identity import SectionName, UserId
+from app.dto.identity import UserId
 
 
 def main() -> None:
@@ -52,12 +51,8 @@ def main() -> None:
         if args.user_id <= 0:
             parser.error("--user-id must be positive")
         user = ApplicationContainer().identity.get_user(UserId(args.user_id))
-        if (
-            user is None
-            or not user.is_active
-            or not any(has_access(user, section) for section in SectionName)
-        ):
-            parser.error("An active user with analytics section access is required")
+        if user is None or not user.is_active:
+            parser.error("An active user is required")
         token, record = create_credential(args.user_id, datetime.now(UTC) + timedelta(days=args.days))
         # Exclusive creation avoids overwriting an existing private file.
         with args.output.open("x", encoding="utf-8") as output:

@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import inspect, select
 
-from app.core.stores import STORES
 from app.infrastructure import daily_economics_orm as daily_economics_orm
 from app.infrastructure import economics_coverage_orm as economics_coverage_orm
 from app.infrastructure import ephemerides_orm as ephemerides_orm
@@ -18,6 +17,9 @@ from app.repositories.stock_sheet_export import MARKETPLACES
 
 def init_db() -> None:
     database = database_for_path(core.DB_PATH)
+    from app.repositories.identity_migration import retire_access_control
+
+    retire_access_control(database)
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
@@ -56,7 +58,6 @@ def init_db() -> None:
         _migrate_ff_stock_marketplace(connection)
         _migrate_catalog_marketplace(connection)
         _migrate_operation_note(connection)
-        _migrate_user_permissions(connection)
         _migrate_trash_checked(connection)
         _migrate_mp_updated_at(connection)
         _migrate_image_url(connection)
@@ -280,25 +281,9 @@ def _remove_legacy_catalog_product_exclusions(database: Database) -> None:
 
 
 def _remove_legacy_unit_economics(database: Database) -> None:
-    """Remove the retired unit-economics storage while preserving 1C access rules."""
+    """Remove the retired unit-economics storage without changing current economics data."""
 
     with database.connect() as connection:
-        connection.execute(
-            """
-            INSERT INTO user_section_access (user_id, section, access_level)
-            SELECT legacy.user_id, 'unit_economics_1c', legacy.access_level
-              FROM user_section_access legacy
-             WHERE legacy.section = 'unit_economics'
-               AND NOT EXISTS (
-                   SELECT 1
-                     FROM user_section_access current
-                    WHERE current.user_id = legacy.user_id
-                      AND current.section = 'unit_economics_1c'
-               )
-            ON CONFLICT DO NOTHING
-            """
-        )
-        connection.execute("DELETE FROM user_section_access WHERE section = 'unit_economics'")
         connection.execute(
             "DELETE FROM sync_health WHERE scope IN ('unit_cost', 'unit_prices', 'unit_reference')"
         )
@@ -719,31 +704,6 @@ def _migrate_trash_checked(connection: DatabaseConnection) -> None:
     columns = _column_names(connection, "trash_stock")
     if columns and "checked" not in columns:
         connection.execute("ALTER TABLE trash_stock ADD COLUMN checked INTEGER NOT NULL DEFAULT 0")
-
-
-def _migrate_user_permissions(connection: DatabaseConnection) -> None:
-    columns = _column_names(connection, "users")
-    if not columns:
-        return
-    if "can_edit_stock" not in columns:
-        connection.execute("ALTER TABLE users ADD COLUMN can_edit_stock INTEGER NOT NULL DEFAULT 1")
-        connection.execute("UPDATE users SET can_edit_stock = 0 WHERE role = 'user'")
-    if "can_manage_users" not in columns:
-        connection.execute("ALTER TABLE users ADD COLUMN can_manage_users INTEGER NOT NULL DEFAULT 1")
-        connection.execute("UPDATE users SET can_manage_users = 0 WHERE login = 'test'")
-
-    for row in connection.execute("SELECT id FROM users"):
-        user_id = int(row["id"] or 0)
-        has_access = connection.execute(
-            "SELECT 1 FROM user_store_access WHERE user_id = ? LIMIT 1",
-            (user_id,),
-        ).fetchone()
-        if has_access:
-            continue
-        connection.executemany(
-            "INSERT OR IGNORE INTO user_store_access (user_id, store_slug) VALUES (?, ?)",
-            ((user_id, slug) for slug in STORES),
-        )
 
 
 def _migrate_operation_note(connection: DatabaseConnection) -> None:

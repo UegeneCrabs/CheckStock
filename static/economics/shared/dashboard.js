@@ -64,7 +64,6 @@
     var maxPeriodDays = Math.max(1, Number(config.maxPeriodDays) || 366);
     var toastTimer = 0;
     var rowHighlightTimer = 0;
-    var columnSaveTimer = 0;
     var draggedColumnKey = null;
     var sendingPrice = false;
     var editedPriceKind = 'retail';
@@ -242,10 +241,7 @@
         index: 25, label: 'В пути на склады FBO', number: true, width: 125,
         help: 'Утверждённые заявки и ещё не принятые товары в отправленных поставках. Черновики, отменённые и завершённые заявки исключены. Знак ≥ означает, что часть количеств пока неизвестна.',
     });
-    var savedColumns =
-        config.columnPreferences && Array.isArray(config.columnPreferences.order)
-            ? config.columnPreferences
-            : readJson(columnsKey, {});
+    var savedColumns = readJson(columnsKey, {});
     var columnPreferences = {
         order: Array.isArray(savedColumns.order)
             ? savedColumns.order.filter(function (key) {
@@ -614,19 +610,6 @@
             }),
         );
         writeJson(columnsKey, columnPreferences);
-        window.clearTimeout(columnSaveTimer);
-        columnSaveTimer = window.setTimeout(function () {
-            if (placeholderMode) return;
-            window
-                .fetch('/api/unit-economics-1c/preferences/columns', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
-                    body: JSON.stringify(columnPreferences),
-                })
-                .catch(function () {
-                    return null;
-                });
-        }, 250);
         renderTableHeader();
         renderColumnSettings();
         renderPage();

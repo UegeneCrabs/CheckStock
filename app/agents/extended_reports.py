@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
-from app.access.access_control import scope_pairs
+from app.access.resources import store_marketplace_pairs
 from app.agents import reports
 from app.config import settings
 from app.dto.identity import SectionName as S
@@ -161,7 +161,7 @@ def cost_report(query, user):
     from app.stock import cost_report as source
 
     data = source.build_report(
-        (query.store,), query.date_from, query.date_to, (query.marketplace,), scope_pairs(user)
+        (query.store,), query.date_from, query.date_to, (query.marketplace,), store_marketplace_pairs(user)
     )
     context = {
         "reconciliation": [
@@ -183,7 +183,7 @@ def cost_report(query, user):
             ]
         return rows, context
     rows = []
-    allowed = set(scope_pairs(user))
+    allowed = set(store_marketplace_pairs(user))
     for operation in source.operations_for_view(data, query.cost_view):
         platforms = {operation.get(k) for k in ("from_marketplace", "to_marketplace")} - {None, ""}
         if any((query.store, mp) not in allowed for mp in platforms):

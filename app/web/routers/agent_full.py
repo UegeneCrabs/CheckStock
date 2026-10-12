@@ -14,8 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import db
-from app.access.access_control import ActionPermission, has_action_permission, scope_pairs
-from app.access.sections import has_access
+from app.access.resources import has_store_marketplace, store_marketplace_pairs
 from app.agents import reports as reports
 from app.agents import yandex_reports
 from app.agents.extended_reports import EXTRA_SPECS
@@ -226,24 +225,12 @@ ECONOMIC = {
 COMMON = {"store", "marketplace", "limit", "offset", "sort_by", "order"}
 
 
-def permitted(user, section, store, marketplace, operation=None):
-    if not has_access(user, section) or (store, marketplace) not in scope_pairs(user):
-        return False
-    actions = {
-        S.STOCK_BALANCES: ActionPermission.STOCK_BALANCE_VIEW,
-        S.UNIT_ECONOMICS_WB: ActionPermission.UNIT_ECONOMICS_VIEW,
-        S.REPORT_UNIT_PROFIT: ActionPermission.UNIT_ECONOMICS_VIEW,
-        S.REPORT_TARGET_PRICE: ActionPermission.UNIT_ECONOMICS_VIEW,
-        S.UNIT_ECONOMICS_YANDEX: ActionPermission.UNIT_ECONOMICS_VIEW,
-        S.REPORT_UNIT_PROFIT_YANDEX: ActionPermission.UNIT_ECONOMICS_VIEW,
-        S.REPORT_TARGET_PRICE_YANDEX: ActionPermission.UNIT_ECONOMICS_VIEW,
-    }
-    action = operation or actions.get(section)
-    return action is None or has_action_permission(user, action, store_slug=store, marketplace=marketplace)
+def permitted(user, section, store, marketplace):
+    return has_store_marketplace(user, store, marketplace)
 
 
-def guard(user, section, query, operation=None):
-    if not permitted(user, section, query.store, query.marketplace, operation):
+def guard(user, section, query):
+    if not permitted(user, section, query.store, query.marketplace):
         raise HTTPException(403, "Нет доступа к разделу, магазину или площадке")
 
 
@@ -261,17 +248,15 @@ def report_permitted(user, name, store, mp):
     )
     if not supported or not permitted(user, section, store, mp):
         return False
-    if name == "supply-arrivals" and not all((store, p) in scope_pairs(user) for p in MARKETPLACES):
-        return False
-    if name == "stock-cost-report" and not permitted(
-        user, section, store, mp, ActionPermission.STOCK_OPERATIONS_VIEW
+    if name == "supply-arrivals" and (
+        not all((store, p) in store_marketplace_pairs(user) for p in MARKETPLACES)
     ):
+        return False
+    if name == "stock-cost-report" and not permitted(user, section, store, mp):
         return False
     if name == "stock-value" and not permitted(user, S.STOCK_BALANCES, store, mp):
         return False
-    if name == "stock-operations" and not permitted(
-        user, S.STOCK_OPERATIONS, store, mp, ActionPermission.STOCK_OPERATIONS_VIEW
-    ):
+    if name == "stock-operations" and not permitted(user, S.STOCK_OPERATIONS, store, mp):
         return False
     return True
 
@@ -324,7 +309,7 @@ def validate(name, query, supplied):
 async def article_stores(user: Employee, query: Annotated[ArticleLookupQuery, Query()]):
     """Find accessible stores by exact article when store is omitted. One match: use its store and marketplace for the requested report. Multiple matches: ask which one. No matches: report unavailable local catalog data, never guess."""
     matches = []
-    for store, mp in sorted(set(scope_pairs(user))):
+    for store, mp in sorted(set(store_marketplace_pairs(user))):
         if query.marketplace is not None and query.marketplace != mp:
             continue
         catalog_access = any(permitted(user, section, store, mp) for section in (S.STOCK_BALANCES, S.SALES))
@@ -389,12 +374,12 @@ async def capabilities(user: Employee):
                 "filters": sorted(allowed_fields(name)),
                 "scopes": [
                     {"store": store, "marketplace": mp}
-                    for store, mp in scope_pairs(user)
+                    for store, mp in store_marketplace_pairs(user)
                     if report_permitted(user, name, store, mp)
                 ],
             }
             for name, (section, wb_only, fields, description) in SPECS.items()
-            if any(report_permitted(user, name, store, mp) for store, mp in scope_pairs(user))
+            if any((report_permitted(user, name, store, mp) for store, mp in store_marketplace_pairs(user)))
         ]
         + [
             {
@@ -453,7 +438,7 @@ async def data_status(request: Request, user: Employee, query: Annotated[ReportQ
     """Read scoped source counts and observed dates. These dates do not prove complete coverage."""
     if set(request.query_params) - {"store", "marketplace"}:
         raise HTTPException(422, "Поддерживаются только store и marketplace")
-    if (query.store, query.marketplace) not in scope_pairs(user):
+    if (query.store, query.marketplace) not in store_marketplace_pairs(user):
         raise HTTPException(403, "Нет доступа к магазину или площадке")
     sections = [
         yandex_reports.section_for(s, query.marketplace)
@@ -465,14 +450,9 @@ async def data_status(request: Request, user: Employee, query: Annotated[ReportQ
     rows = []
     for section in sections:
         if section is S.UNIT_ECONOMICS_YANDEX:
-            from app.access.access_control import restricts_unit_economics_to_manager
-
-            if not restricts_unit_economics_to_manager(user):
-                rows.extend(await run_in_threadpool(yandex_reports.source_status, query.store))
+            rows.extend(await run_in_threadpool(yandex_reports.source_status, query.store))
             continue
         if section is S.UNIT_ECONOMICS_WB and query.marketplace != "WB":
-            continue
-        if section is S.UNIT_ECONOMICS_WB and user.role.value == "user":
             continue
         rows.extend(
             await run_in_threadpool(
@@ -550,7 +530,7 @@ async def execute(name, request, user, query, *, paginate=True):
     if name in {"stock-value", "product-details"}:
         guard(user, S.STOCK_BALANCES, query)
     if name == "stock-operations":
-        guard(user, S.STOCK_BALANCES, query, ActionPermission.STOCK_OPERATIONS_VIEW)
+        guard(user, S.STOCK_BALANCES, query)
     warnings = [
         "Отсутствующие значения не являются нулями. Время ответа не является временем загрузки источников."
     ]
@@ -796,7 +776,9 @@ async def execute(name, request, user, query, *, paginate=True):
         rows = reports.filtered(await run_in_threadpool(reports.prices, query), query)
         rows = await run_in_threadpool(reports.economic_filter, rows, user, query.store, query.manager)
     elif name == "stock-operations":
-        rows = reports.filtered(await run_in_threadpool(reports.operations, query, scope_pairs(user)), query)
+        rows = reports.filtered(
+            await run_in_threadpool(reports.operations, query, store_marketplace_pairs(user)), query
+        )
         metrics = ("quantity",)
         warnings.append("Операции без площадки и межплощадочные операции вне полного доступа исключены.")
     elif name == "supplies":
@@ -809,7 +791,7 @@ async def execute(name, request, user, query, *, paginate=True):
         context["fetched_at"] = data.get("fetched_at")
         if data.get("errors"):
             warnings.append("Не удалось получить часть данных WB о поставках. Повторите позже.")
-        if all((query.store, mp) in scope_pairs(user) for mp in MARKETPLACES):
+        if all((query.store, mp) in store_marketplace_pairs(user) for mp in MARKETPLACES):
             manual = await run_in_threadpool(db.list_manual_supplies, (query.store,))
             rows += [
                 {**r, "source": "manual"}

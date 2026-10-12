@@ -1,4 +1,4 @@
-"""Small read-only API for ChatGPT Actions, reusing the website's report and ACLs."""
+"""Small read-only API for ChatGPT Actions, reusing the website's reports and active accounts."""
 
 import logging
 import math
@@ -12,8 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.access.access_control import accessible_stores
-from app.access.sections import has_access
+from app.access.resources import accessible_stores
 from app.agents.access import resolve_credential
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
@@ -45,8 +44,6 @@ async def employee(
         raise HTTPException(
             401, "Invalid or expired employee API key", headers={"WWW-Authenticate": "Bearer"}
         )
-    if not has_access(user, SectionName.AI_AGENTS):
-        raise HTTPException(403, "No access to analytics sections")
     request.state.user = user
     logger.info("agent_access user_id=%s key_id=%s path=%s", user.id, record.key_id, request.url.path)
     return user
@@ -108,7 +105,7 @@ class LossReport(BaseModel):
 @router.get("/stores", operation_id="listAnalyticsStores", response_model=list[StoreInfo])
 async def stores(user: Employee):
     """List accessible stores and marketplaces. Permissions do not imply data is loaded."""
-    from app.access.access_control import accessible_marketplaces
+    from app.access.resources import accessible_marketplaces
 
     return [
         StoreInfo(

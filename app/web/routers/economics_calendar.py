@@ -8,12 +8,12 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 
 from app import db
-from app.access.access_control import accessible_stores, has_scope
+from app.access.authentication import is_active_user
 from app.access.economics_preview import require_preview
-from app.access.sections import has_access
+from app.access.resources import accessible_stores, has_store_marketplace
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import SectionName, coerce_user
 from app.economics.daily_calculation import fields
 from app.economics.yandex.reports import catalog as yandex_catalog
 from app.economics.yandex.reports import permitted
@@ -53,11 +53,10 @@ def section(marketplace):
 def authorize(request, store, *, write=False):
     require_preview(request.state.user)
     marketplace = market(request)
-    level = SectionAccessLevel.WRITE if write else SectionAccessLevel.READ
     if (
         store not in STORES
-        or not has_scope(request.state.user, store, marketplace)
-        or not has_access(request.state.user, section(marketplace), level)
+        or not has_store_marketplace(request.state.user, store, marketplace)
+        or (not is_active_user(request.state.user))
     ):
         raise HTTPException(403, "Нет доступа к магазину или прав на это действие.")
     return marketplace
@@ -87,7 +86,7 @@ def products(marketplace, store, user):
 def product_access(request, store, article, *, write=False):
     marketplace = authorize(request, store, write=write)
     if not any(p["article"] == article for p in products(marketplace, store, request.state.user)):
-        raise HTTPException(404, "Товар не найден или недоступен в пределах прав менеджера.")
+        raise HTTPException(404, "Товар не найден в актуальном каталоге.")
     return marketplace
 
 
@@ -99,7 +98,7 @@ def validate_day(day):
 def page(request):
     require_preview(request.state.user)
     marketplace = market(request)
-    if not has_access(request.state.user, section(marketplace), SectionAccessLevel.READ):
+    if not is_active_user(request.state.user):
         raise HTTPException(403, "Нет доступа к юнит-экономике.")
     base = "/sales/unit-economics-1c" + ("/yandex-market" if marketplace != "WB" else "")
     config = {
@@ -183,7 +182,7 @@ def listing(request, store, day, query, page_number, page_size):
         "first_day": first,
         "day": day.isoformat(),
         "preliminary": day == datetime.now(MOSCOW_TIMEZONE).date(),
-        "can_edit": has_access(request.state.user, section(marketplace), SectionAccessLevel.WRITE),
+        "can_edit": is_active_user(request.state.user),
         "fields": columns(marketplace),
     }
 

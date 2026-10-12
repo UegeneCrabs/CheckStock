@@ -1,42 +1,26 @@
-from app.core.stores import STORES
 from app.infrastructure.database import DatabaseConnection, DatabaseRow
 from app.repositories.core import get_connection
 
-ROLES = ["superadmin", "admin", "user"]
 
+def create_user(full_name: str, google_email: str, login: str, password_hash: str, created_at: str) -> int:
+    from datetime import datetime
 
-ROLE_LABELS = {
-    "superadmin": "Суперадминистратор",
-    "admin": "Администратор",
-    "user": "Сотрудник",
-}
+    from app.access.auth import _service
+    from app.dto.identity import CreateUserCommand
 
-
-def create_user(
-    full_name: str,
-    google_email: str,
-    login: str,
-    password_hash: str,
-    role: str,
-    created_at: str,
-    store_slugs: list[str] | None = None,
-) -> int:
-    conn = get_connection()
-    try:
-        cur = conn.execute(
-            """
-            INSERT INTO users (full_name, google_email, login, password_hash, role, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            (full_name, google_email, login, password_hash, role, created_at),
+    return (
+        _service()
+        .create_user(
+            CreateUserCommand(
+                full_name=full_name,
+                google_email=google_email,
+                login=login,
+                password_hash=password_hash,
+                created_at=datetime.fromisoformat(created_at),
+            )
         )
-        user_id = cur.lastrowid
-        set_user_store_access(user_id, store_slugs, conn=conn)
-        conn.commit()
-        return user_id
-    finally:
-        conn.close()
+        .root
+    )
 
 
 def get_user_by_login(login: str) -> dict | None:
@@ -55,81 +39,14 @@ def get_user(user_id: int) -> dict | None:
     return user
 
 
-def normalize_store_slugs(store_slugs: list[str] | tuple[str, ...] | None) -> list[str]:
-    if not store_slugs:
-        return list(STORES)
-    seen = set()
-    result = []
-    for slug in store_slugs:
-        key = str(slug or "").strip().lower()
-        if key in STORES and key not in seen:
-            seen.add(key)
-            result.append(key)
-    return result
-
-
-def set_user_store_access(
-    user_id: int,
-    store_slugs: list[str] | tuple[str, ...] | None,
-    conn: DatabaseConnection | None = None,
-) -> None:
-    slugs = normalize_store_slugs(store_slugs)
-    owns_conn = conn is None
-    if conn is None:
-        conn = get_connection()
-    try:
-        conn.execute("DELETE FROM user_store_access WHERE user_id = ?", (user_id,))
-        conn.executemany(
-            "INSERT INTO user_store_access (user_id, store_slug) VALUES (?, ?) ON CONFLICT DO NOTHING",
-            [(user_id, slug) for slug in slugs],
-        )
-        if owns_conn:
-            conn.commit()
-    finally:
-        if owns_conn:
-            conn.close()
-
-
-def get_user_store_access(user_id: int, conn: DatabaseConnection | None = None) -> list[str]:
-    owns_conn = conn is None
-    if conn is None:
-        conn = get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT store_slug FROM user_store_access WHERE user_id = ? ORDER BY store_slug",
-            (user_id,),
-        ).fetchall()
-        slugs = [row["store_slug"] for row in rows if row["store_slug"] in STORES]
-        return slugs or list(STORES)
-    finally:
-        if owns_conn:
-            conn.close()
-
-
 def _user_from_row(conn: DatabaseConnection, row: DatabaseRow | None) -> dict | None:
-    if row is None:
-        return None
-    user = dict(row)
-    user["store_slugs"] = get_user_store_access(user["id"], conn=conn)
-    return user
-
-
-def set_user_permission(user_id: int, field: str, allowed: bool) -> None:
-
-    if field not in ("can_edit_stock", "can_manage_users"):
-        raise ValueError(f"неизвестное разрешение {field!r}")
-
-    conn = get_connection()
-    conn.execute(f"UPDATE users SET {field} = ? WHERE id = ?", (1 if allowed else 0, user_id))
-    conn.commit()
-    conn.close()
+    return dict(row) if row is not None else None
 
 
 def list_users() -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, full_name, google_email, login, role, is_active,"
-        " can_edit_stock, can_manage_users, created_at FROM users ORDER BY id"
+        "SELECT id, full_name, google_email, login, is_active, created_at FROM users ORDER BY id"
     ).fetchall()
     users = [_user_from_row(conn, row) for row in rows]
     conn.close()
@@ -137,10 +54,10 @@ def list_users() -> list[dict]:
 
 
 def set_user_active(user_id: int, is_active: bool) -> None:
-    conn = get_connection()
-    conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if is_active else 0, user_id))
-    conn.commit()
-    conn.close()
+    from app.access.auth import _service
+    from app.dto.identity import UserActiveChange
+
+    _service().set_active(UserActiveChange(user_id=user_id, is_active=is_active))
 
 
 def count_users() -> int:
@@ -200,12 +117,10 @@ def get_activity_log(limit: int = 200) -> list[dict]:
 
 
 def delete_user(user_id: int) -> None:
+    from app.access.auth import _service
+    from app.dto.identity import UserId
 
-    conn = get_connection()
-    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    _service().delete_user(UserId(user_id))
 
 
 def update_user_password(user_id: int, password_hash: str) -> None:
@@ -215,22 +130,6 @@ def update_user_password(user_id: int, password_hash: str) -> None:
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
-
-
-def count_superadmins(exclude_user_id: int | None = None) -> int:
-
-    conn = get_connection()
-    if exclude_user_id is None:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM users WHERE role = 'superadmin' AND is_active = 1"
-        ).fetchone()
-    else:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM users WHERE role = 'superadmin' AND is_active = 1 AND id != ?",
-            (exclude_user_id,),
-        ).fetchone()
-    conn.close()
-    return row["n"]
 
 
 def delete_sessions_for_user(user_id: int) -> None:

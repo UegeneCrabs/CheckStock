@@ -183,7 +183,7 @@ def documentation(name):
 
 
 async def employee_catalog(user):
-    from app.access.access_control import scope_pairs
+    from app.access.resources import store_marketplace_pairs
     from app.agents.catalog_fields import ENVELOPE
     from app.agents.yandex_reports import SUPPORTED
     from app.web.routers.agent_analytics import action_schema
@@ -192,7 +192,7 @@ async def employee_catalog(user):
     schema = await action_schema()
     available = await capabilities(user)
     scopes = {item["report"]: item["scopes"] for item in available["reports"]}
-    common = [{"store": store, "marketplace": mp} for store, mp in scope_pairs(user)]
+    common = [{"store": store, "marketplace": mp} for store, mp in store_marketplace_pairs(user)]
     result = []
     for path, methods in schema["paths"].items():
         name = path.rsplit("/", 1)[-1]

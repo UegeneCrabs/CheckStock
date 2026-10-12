@@ -7,18 +7,17 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 
-from app.access.access_control import accessible_stores
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.analytics import sales_api
 from app.core.domain import MOSCOW_TIMEZONE
-from app.dto.identity import SectionName
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
 
 
 def authorize(request):
-    if not has_access(request.state.user, SectionName.ANALYTICS_SALES_API):
+    if not is_active_user(request.state.user):
         raise HTTPException(403, "Нет доступа к разделу «Продажи по API»")
     return accessible_stores(request.state.user, "WB")
 

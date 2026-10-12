@@ -1,4 +1,4 @@
-"""Scoped finance reads and superadmin-only setup/actions."""
+"""Finance reads and setup/actions for active accounts."""
 
 from datetime import date
 from uuid import uuid4
@@ -8,12 +8,12 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from app.access.access_control import accessible_stores, restricts_unit_economics_to_manager
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.application.finance import period, today
 from app.core.stores import STORES
 from app.dto.finance import ConnectionUpdate, CostUpdate, FinanceRunRequest
-from app.dto.identity import Role, SectionName, coerce_user
+from app.dto.identity import coerce_user
 from app.jobs import finance as finance_job
 from app.jobs import locks
 from app.jobs.tracking import queue_tracked
@@ -29,11 +29,7 @@ ADMIN = "/api/admin/integrations/yandex-finance"
 
 def scope(request):
     user = coerce_user(request.state.user)
-    if restricts_unit_economics_to_manager(user):
-        raise HTTPException(
-            403, "Финансовый итог целого магазина недоступен при ограничении по товарам менеджера"
-        )
-    if not has_access(user, SectionName.FINANCE_YANDEX):
+    if not is_active_user(user):
         raise HTTPException(403, "Нет доступа к финансовому разделу")
     stores = accessible_stores(user, "YANDEX MARKET")
     selected = request.query_params.get("store", "")
@@ -44,8 +40,8 @@ def scope(request):
 
 def admin(request):
     user = coerce_user(request.state.user)
-    if user is None or user.role is not Role.SUPERADMIN:
-        raise HTTPException(403, "Управлять финансами может только суперадминистратор")
+    if user is None or not is_active_user(user):
+        raise HTTPException(401, "Требуется вход в систему")
     return str(user.id)
 
 
@@ -82,9 +78,7 @@ async def read_report(request, container):
 async def page(request: Request):
     scope(request)
     user = coerce_user(request.state.user)
-    content = fill_template(
-        "finance/yandex.html", admin_hidden="" if user.role is Role.SUPERADMIN else "hidden"
-    )
+    content = fill_template("finance/yandex.html", admin_hidden="" if is_active_user(user) else "hidden")
     return HTMLResponse(
         render_page(
             "Финансовый отчёт · Яндекс Маркет",

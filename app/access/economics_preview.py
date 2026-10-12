@@ -1,4 +1,4 @@
-"""Account-scoped rollout of the Ozon dashboard and daily economics calendar."""
+"""Feature switch for the Ozon dashboard and daily economics calendar."""
 
 from fastapi import HTTPException
 
@@ -17,12 +17,7 @@ PRIVATE_JOB_NAMES = frozenset(
 
 def can_preview(user: User | None) -> bool:
     normalized = coerce_user(user)
-    return bool(
-        normalized
-        and normalized.is_active
-        and settings.economics_preview_user_id > 0
-        and normalized.id == settings.economics_preview_user_id
-    )
+    return bool(normalized and normalized.is_active and settings.economics_preview_enabled)
 
 
 def require_preview(user: User | None) -> None:

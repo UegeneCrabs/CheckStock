@@ -8,20 +8,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app import db
-from app.access import auth
-from app.access.access_control import (
-    ActionPermission,
-    accessible_stores,
-    has_action_permission,
-    profile_has_permission,
-    scope_pairs,
-)
-from app.access.sections import access_level, has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores, has_store_marketplace, store_marketplace_pairs
 from app.core import health
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import coerce_user
 from app.dto.stock import StockRandomizerGenerateRequest
 from app.stock import supply_planning
 from app.stock import total as stock_total_service
@@ -138,7 +131,7 @@ def _randomizer_card(store_slug: str, item: dict, month_label: str) -> str:
 async def stock(request: Request):
     allowed_stores = accessible_store_slugs(request.state.user)
     allowed_set = set(allowed_stores)
-    overview = await run_in_threadpool(db.get_stock_overview, scope_pairs(request.state.user))
+    overview = await run_in_threadpool(db.get_stock_overview, store_marketplace_pairs(request.state.user))
     overview = {slug: item for slug, item in overview.items() if slug in allowed_set}
     problems = await run_in_threadpool(health.stores_with_problems)
     problems = {
@@ -223,13 +216,9 @@ async def stock(request: Request):
         last_sync=html.escape(format_dt(last_sync)),
         stock_summary=stock_summary,
         store_cards="\n".join(cards),
-        sync_products_button=(
-            '<button class="btn-primary btn-sync" type="button" id="sync-products-btn" '
-            'aria-describedby="sync-products-status">Обновить остатки</button>'
-            if auth.has_role(request.state.user, "admin")
-            and access_level(request.state.user, SectionName.STOCK_BALANCES) is SectionAccessLevel.WRITE
-            else ""
-        ),
+        sync_products_button='<button class="btn-primary btn-sync" type="button" id="sync-products-btn" aria-describedby="sync-products-status">Обновить остатки</button>'
+        if is_active_user(request.state.user)
+        else "",
     )
     return render_page("CheckStock — Остатки", "stock", content, request.state.user)
 
@@ -255,10 +244,7 @@ async def stock_supplies(request: Request):
         wb_date_max=date_bounds["max_date"].isoformat(),
         wb_date_from=date_bounds["default_from"].isoformat(),
         wb_date_to=date_bounds["default_to"].isoformat(),
-        can_edit_supply="1"
-        if profile_has_permission(request.state.user, ActionPermission.STOCK_RECEIVE)
-        and access_level(request.state.user, SectionName.STOCK_SUPPLIES) is SectionAccessLevel.WRITE
-        else "0",
+        can_edit_supply="1" if is_active_user(request.state.user) else "0",
     )
     return render_page(
         "CheckStock — Поставки",
@@ -379,32 +365,19 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
         slug=slug.lower(),
         ff_options=render_ff_options(),
         mp_tabs=render_mp_tabs(marketplace, slug.lower(), allowed_marketplaces),
-        total_button=(
-            '            <button class="mp-tab mp-tab--total" type="button" role="tab" '
-            'aria-selected="false" data-store-total>ТОТАЛ</button>'
-            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_VIEW)
-            else ""
-        ),
-        total_download_button=(
-            f'<a class="btn-secondary stock-total-download" '
-            f'href="/stock/total.xlsx?store={html.escape(slug.lower(), quote=True)}" download>'
-            "Скачать XLSX</a>"
-            if profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_EXPORT)
-            and has_access(request.state.user, SectionName.STOCK_TOTAL)
-            else ""
-        ),
+        total_button='            <button class="mp-tab mp-tab--total" type="button" role="tab" aria-selected="false" data-store-total>ТОТАЛ</button>'
+        if is_active_user(request.state.user)
+        else "",
+        total_download_button=f'<a class="btn-secondary stock-total-download" href="/stock/total.xlsx?store={html.escape(slug.lower(), quote=True)}" download>Скачать XLSX</a>'
+        if is_active_user(request.state.user)
+        else "",
         mp_source_options=render_mp_move_options(allowed_marketplaces),
         mp_target_options=render_mp_move_options(tuple(db.MARKETPLACES)),
         marketplace=html.escape(marketplace),
         mp_ready="1" if marketplace_ready(marketplace, slug.lower()) else "0",
         can_edit_stock="1"
-        if has_access(request.state.user, SectionName.STOCK_BALANCES, SectionAccessLevel.WRITE)
-        and has_action_permission(
-            request.state.user,
-            ActionPermission.STOCK_RECEIVE,
-            store_slug=slug.lower(),
-            marketplace=marketplace,
-        )
+        if is_active_user(request.state.user)
+        and has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace)
         else "0",
         access_problems=html.escape(
             json.dumps(
@@ -417,7 +390,7 @@ async def stock_store(request: Request, slug: str, mp: str = ""):
             )
         ),
         stock_head=render_stock_head(marketplace, slug.lower()),
-        scheme_list=",".join(scheme for scheme, _ in schemes_for(marketplace, slug.lower())),
+        scheme_list=",".join((scheme for scheme, _ in schemes_for(marketplace, slug.lower()))),
         scheme_count=str(len(schemes_for(marketplace, slug.lower()))),
         stock_rows=render_stock_rows(slug.lower(), marketplace),
     )
@@ -435,12 +408,12 @@ async def stock_store_total_data(request: Request, slug: str):
     store_slug = slug.lower()
     if store_slug not in STORES:
         raise HTTPException(status_code=404, detail="Магазин не найден")
-    if not profile_has_permission(request.state.user, ActionPermission.STOCK_TOTAL_VIEW):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к сводным остаткам")
     if store_slug not in accessible_store_slugs(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
 
-    allowed_pairs = scope_pairs(request.state.user)
+    allowed_pairs = store_marketplace_pairs(request.state.user)
     rows = await run_in_threadpool(
         stock_total_service.build_rows,
         accessible_store_slugs(request.state.user),
@@ -466,12 +439,7 @@ async def stock_store_fbs_by_ff(request: Request, slug: str, ff: str = "", mp: s
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp or db.DEFAULT_MARKETPLACE
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=slug.lower(),
-        marketplace=marketplace,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     stock = await run_in_threadpool(_get_fbs_stock, slug.lower(), marketplace, ff)
     rfbs = {}
@@ -493,11 +461,8 @@ async def stock_store_ff_available(request: Request, slug: str, ff: str = "", mp
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     marketplace = mp or (accessible_marketplaces(request.state.user, slug.lower()) or ("",))[0]
-    if not marketplace or not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=slug.lower(),
-        marketplace=marketplace,
+    if not marketplace or not has_store_marketplace(
+        request.state.user, store_slug=slug.lower(), marketplace=marketplace
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     available = await run_in_threadpool(
@@ -515,11 +480,8 @@ async def stock_store_transit(request: Request, slug: str, ff: str = "", mp: str
     if store_slug not in STORES:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     marketplace = mp or (accessible_marketplaces(request.state.user, store_slug) or ("",))[0]
-    if not marketplace or not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=store_slug,
-        marketplace=marketplace,
+    if not marketplace or not has_store_marketplace(
+        request.state.user, store_slug=store_slug, marketplace=marketplace
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     totals = await run_in_threadpool(
@@ -544,12 +506,7 @@ async def stock_store_article_detail(request: Request, slug: str, article: str =
     marketplace = mp or db.DEFAULT_MARKETPLACE
     if marketplace not in db.MARKETPLACES:
         raise HTTPException(status_code=400, detail="Неизвестный маркетплейс")
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=store_slug,
-        marketplace=marketplace,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=store_slug, marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
     def load_warehouses() -> list[dict]:

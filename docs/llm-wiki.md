@@ -12,6 +12,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 |---|---|
 | Сборка приложения и список подключённых роутеров | `app/main.py`, `app/web/routers/__init__.py` |
 | URL, права и обработка запроса | `app/web/routers/`, `app/web/middleware.py`, `app/web/dependencies.py` |
+| Пользователи, сессии и удаление прежней матрицы доступа | `app/access/authentication.py`, `app/access/resources.py`, `app/repositories/identity_migration.py`, [контракт и миграция](authentication.md) |
 | Прикладной сценарий складского изменения | `app/application/`, `app/infrastructure/stock_repository.py`, [контракт транзакций](f03-stock-transactions.md) |
 | SQL, снимки и старые read-модели | `app/repositories/`, `app/db.py` |
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |

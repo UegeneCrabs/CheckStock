@@ -7,16 +7,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app import db
-from app.access.access_control import (
-    ActionPermission,
-    has_action_permission,
-    profile_has_permission,
-    scope_pairs,
-)
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import has_store_marketplace, store_marketplace_pairs
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName
 from app.stock import cost_report as stock_cost_report
 from app.stock import cost_report_export as stock_cost_report_export
 from app.stock.catalog_identity import display_barcode
@@ -260,13 +254,13 @@ async def stock_cost_report_page(
     marketplace: str = "",
     view: str = "summary",
 ):
-    if not profile_has_permission(request.state.user, ActionPermission.STOCK_OPERATIONS_VIEW):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к отчёту движения стока")
     start, end = _period(date_from, date_to)
     allowed_stores = accessible_store_slugs(request.state.user)
     store = store if store in allowed_stores else ""
     store_slugs = (store,) if store else allowed_stores
-    allowed_pairs = scope_pairs(request.state.user)
+    allowed_pairs = store_marketplace_pairs(request.state.user)
     allowed_marketplaces = tuple(
         item for item in MARKETPLACES if any(pair[1] == item for pair in allowed_pairs)
     )
@@ -307,9 +301,7 @@ async def stock_cost_report_page(
         detail = _fbs_sales_table(report)
     else:
         detail = _operation_table(
-            stock_cost_report.operations_for_view(report, view),
-            query,
-            has_access(request.state.user, SectionName.STOCK_COST_REPORT, SectionAccessLevel.WRITE),
+            stock_cost_report.operations_for_view(report, view), query, is_active_user(request.state.user)
         )
     export_url = "/stock/cost-report.xlsx?" + urlencode(query)
     content = fill_template(
@@ -321,9 +313,7 @@ async def stock_cost_report_page(
         current_week_url=html.escape(current_week_url, quote=True),
         previous_week_url=html.escape(previous_week_url, quote=True),
         export_url=html.escape(export_url, quote=True),
-        export_hidden=""
-        if profile_has_permission(request.state.user, ActionPermission.STOCK_OPERATIONS_EXPORT)
-        else " hidden",
+        export_hidden="" if is_active_user(request.state.user) else " hidden",
         tabs=_tabs(query, view),
         detail=detail,
     )
@@ -345,13 +335,13 @@ async def stock_cost_report_xlsx(
     marketplace: str = "",
     view: str = "summary",
 ):
-    if not profile_has_permission(request.state.user, ActionPermission.STOCK_OPERATIONS_EXPORT):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке отчёта")
     start, end = _period(date_from, date_to)
     allowed_stores = accessible_store_slugs(request.state.user)
     store = store if store in allowed_stores else ""
     store_slugs = (store,) if store else allowed_stores
-    allowed_pairs = scope_pairs(request.state.user)
+    allowed_pairs = store_marketplace_pairs(request.state.user)
     allowed_marketplaces = tuple(
         item for item in MARKETPLACES if any(pair[1] == item for pair in allowed_pairs)
     )
@@ -388,18 +378,15 @@ async def classify_shipment_as_fbs_transfer(
     marketplace: str = Form(""),
     view: str = Form("shipments"),
 ):
-    if not has_access(request.state.user, SectionName.STOCK_COST_REPORT, SectionAccessLevel.WRITE):
+    if not is_active_user(request.state.user):
         raise HTTPException(status_code=403, detail="Нет права изменять движение и ЗЦ")
     operation = await run_in_threadpool(db.get_operation, operation_id)
     allowed_stores = accessible_store_slugs(request.state.user)
     if operation is None or operation.get("store_slug") not in allowed_stores:
         raise HTTPException(status_code=404, detail="Операция не найдена")
     operation_marketplace = str(operation.get("from_marketplace") or operation.get("to_marketplace") or "")
-    if not operation_marketplace or not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_SHIPMENT,
-        store_slug=str(operation["store_slug"]),
-        marketplace=operation_marketplace,
+    if not operation_marketplace or not has_store_marketplace(
+        request.state.user, store_slug=str(operation["store_slug"]), marketplace=operation_marketplace
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     changed = await run_in_threadpool(

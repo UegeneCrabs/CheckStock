@@ -3,10 +3,9 @@
 import json
 
 from app import db
-from app.access.access_control import accessible_stores
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName
 from app.repositories import unit_economics_yandex
 from app.web.templating import fill_template
 
@@ -30,11 +29,7 @@ def render_cabinet_settings(user) -> str:
         cabinet_settings_config=json.dumps(
             {
                 "marketplace": "WB",
-                "canEdit": has_access(
-                    user,
-                    SectionName.UNIT_ECONOMICS_WB,
-                    SectionAccessLevel.WRITE,
-                ),
+                "canEdit": is_active_user(user),
                 "items": cabinet_settings_payload(accessible_stores(user, "WB")),
             },
             ensure_ascii=False,
@@ -54,10 +49,6 @@ def render_cabinet_settings(user) -> str:
     return wb_content + fill_template(
         "economics/yandex/settings.html",
         yandex_settings_config=json.dumps(
-            {
-                "items": yandex_items,
-                "canEdit": has_access(user, SectionName.UNIT_ECONOMICS_YANDEX, SectionAccessLevel.WRITE),
-            },
-            ensure_ascii=False,
+            {"items": yandex_items, "canEdit": is_active_user(user)}, ensure_ascii=False
         ).replace("</", "<\\/"),
     )

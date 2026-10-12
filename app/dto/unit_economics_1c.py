@@ -141,8 +141,3 @@ class UnitEconomics1CPriceChange(DtoModel):
 
 class UnitEconomics1CPriceChangeRequest(DtoModel):
     data: tuple[UnitEconomics1CPriceChange, ...] = Field(min_length=1, max_length=1)
-
-
-class UnitEconomics1CColumnPreferencesRequest(DtoModel):
-    order: tuple[str, ...] = Field(max_length=50)
-    hidden: tuple[str, ...] = Field(max_length=50)

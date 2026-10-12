@@ -8,9 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app import db
-from app.access import auth
-from app.access import notifications as access_notifications
-from app.access.access_control import ActionPermission, has_action_permission
+from app.access.authentication import is_active_user
+from app.access.resources import has_store_marketplace
 from app.application.stock_requests import (
     InvalidStockRequest,
     StockRequestConflict,
@@ -95,48 +94,15 @@ def _required_note(value: str) -> tuple[str, JSONResponse | None]:
 def _guard_stock_action(
     actor,
     *,
-    permission: ActionPermission,
     store_slug: str,
     marketplace: str,
     target_marketplace: str | None = None,
-    reason: str,
-    context: dict | None = None,
 ) -> JSONResponse | None:
-    if actor.access_profile is None:
-        denied = _guard_stock_edit(actor)
-        if denied:
-            return JSONResponse({"ok": False, "error": denied}, status_code=403)
-    if has_action_permission(
-        actor,
-        permission,
-        store_slug=store_slug,
-        marketplace=marketplace,
-        target_marketplace=target_marketplace,
-    ):
-        return None
-    if actor.access_profile is None or not accessible_marketplaces(actor, store_slug):
-        return JSONResponse({"ok": False, "error": "Нет доступа к этой площадке"}, status_code=403)
-    access_request = db.create_access_request(
-        user_id=actor.id,
-        permission=permission.value,
-        store_slug=store_slug,
-        source_marketplace=marketplace,
-        target_marketplace=target_marketplace,
-        reason=reason.strip() or "Рабочая операция со стоком",
-        context=context or {},
-        duration_days=7,
-    )
-    if access_request.get("created_new"):
-        access_notifications.notify_request_created(access_request)
-    return JSONResponse(
-        {
-            "ok": False,
-            "approval_required": True,
-            "request_id": access_request["id"],
-            "error": "Нужен доступ супер-администратора. Запрос уже отправлен; после одобрения разрешение будет действовать 7 дней.",
-        },
-        status_code=403,
-    )
+    if not is_active_user(actor):
+        return JSONResponse({"ok": False, "error": "Требуется вход в систему"}, status_code=401)
+    if not has_store_marketplace(actor, store_slug, marketplace, target_marketplace):
+        return JSONResponse({"ok": False, "error": "Магазин или площадка не найдены"}, status_code=404)
+    return None
 
 
 @router.post("/stock/{slug}/upload-ff-stock")
@@ -170,11 +136,8 @@ async def upload_ff_stock(
         denied = await run_in_threadpool(
             _guard_stock_action,
             request.state.user,
-            permission=ActionPermission.STOCK_RECEIVE,
             store_slug=slug.lower(),
             marketplace=marketplace.value,
-            reason=note_text,
-            context={"fulfillment": fulfillment.strip()},
         )
         if denied is not None:
             return denied
@@ -287,11 +250,8 @@ async def catalog_search(request: Request, slug: str, q: str = "", ff: str = "",
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     marketplace = mp or (accessible_marketplaces(request.state.user, slug.lower()) or ("",))[0]
-    if not marketplace or not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=slug.lower(),
-        marketplace=marketplace,
+    if not marketplace or not has_store_marketplace(
+        request.state.user, store_slug=slug.lower(), marketplace=marketplace
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     items = await run_in_threadpool(
@@ -328,14 +288,8 @@ async def add_ff_items(
     denied = await run_in_threadpool(
         _guard_stock_action,
         request.state.user,
-        permission=ActionPermission.STOCK_RECEIVE,
         store_slug=slug.lower(),
         marketplace=payload.marketplace.value,
-        reason=note_text,
-        context={
-            "fulfillment": payload.fulfillment,
-            "quantity": sum(item.quantity for item in payload.items),
-        },
     )
     if denied is not None:
         return denied
@@ -401,12 +355,7 @@ async def ff_cell_stock(request: Request, slug: str, ff: str = "", mp: str = "")
         raise HTTPException(status_code=404, detail="Магазин не найден")
     if not ff or not mp:
         return JSONResponse({"stock": {}})
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=slug.lower(),
-        marketplace=mp,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=mp):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
     stock = await run_in_threadpool(db.get_ff_available_totals, slug.lower(), ff, mp)
     return JSONResponse({"stock": stock})
@@ -414,7 +363,7 @@ async def ff_cell_stock(request: Request, slug: str, ff: str = "", mp: str = "")
 
 def _guard_stock_edit(actor: dict) -> str | None:
 
-    if auth.can_edit_stock(actor):
+    if is_active_user(actor):
         return None
     return "изменение остатков для вашей учётной записи пока закрыто — обратитесь к администратору"
 
@@ -483,15 +432,8 @@ async def transfer_ff_stock(
     denied = await run_in_threadpool(
         _guard_stock_action,
         actor,
-        permission=ActionPermission.STOCK_TRANSFER,
         store_slug=slug.lower(),
         marketplace=from_marketplace.value,
-        reason=note_text,
-        context={
-            "from_fulfillment": from_fulfillment,
-            "to_fulfillment": to_fulfillment,
-            "to_marketplace": to_marketplace.value,
-        },
     )
     if denied is not None:
         return denied
@@ -499,15 +441,9 @@ async def transfer_ff_stock(
         denied = await run_in_threadpool(
             _guard_stock_action,
             actor,
-            permission=ActionPermission.STOCK_TRANSFER_CROSS_MARKETPLACE,
             store_slug=slug.lower(),
             marketplace=from_marketplace.value,
             target_marketplace=to_marketplace.value,
-            reason=note_text,
-            context={
-                "from_fulfillment": from_fulfillment,
-                "to_fulfillment": to_fulfillment,
-            },
         )
         if denied is not None:
             return denied
@@ -672,12 +608,7 @@ async def list_in_transit_transfers(
         raise HTTPException(status_code=400, detail="Неизвестный маркетплейс")
     if view not in {"active", "history"}:
         raise HTTPException(status_code=400, detail="Неизвестный вид перемещений")
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=store_slug,
-        marketplace=marketplace,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=store_slug, marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
     batches = await run_in_threadpool(
@@ -688,27 +619,18 @@ async def list_in_transit_transfers(
         closed_only=view == "history",
     )
     for batch in batches:
-        batch["can_receive"] = view == "active" and has_action_permission(
-            request.state.user,
-            ActionPermission.STOCK_TRANSFER_RECEIVE,
-            store_slug=store_slug,
-            marketplace=batch["to_marketplace"],
+        batch["can_receive"] = view == "active" and has_store_marketplace(
+            request.state.user, store_slug=store_slug, marketplace=batch["to_marketplace"]
         )
-        batch["can_cancel"] = view == "active" and has_action_permission(
-            request.state.user,
-            ActionPermission.STOCK_TRANSFER_CANCEL,
-            store_slug=store_slug,
-            marketplace=batch["from_marketplace"],
+        batch["can_cancel"] = view == "active" and has_store_marketplace(
+            request.state.user, store_slug=store_slug, marketplace=batch["from_marketplace"]
         )
         batch["can_reopen"] = (
             batch["status"] in {"received", "partial"}
             and int(batch.get("received_units") or 0) > 0
-            and int(batch.get("cancelled_units") or 0) == 0
-            and has_action_permission(
-                request.state.user,
-                ActionPermission.STOCK_TRANSFER_CANCEL,
-                store_slug=store_slug,
-                marketplace=batch["to_marketplace"],
+            and (int(batch.get("cancelled_units") or 0) == 0)
+            and has_store_marketplace(
+                request.state.user, store_slug=store_slug, marketplace=batch["to_marketplace"]
             )
         )
     return JSONResponse({"ok": True, "view": view, "batches": batches})
@@ -727,12 +649,7 @@ async def receive_in_transit_transfer(
     if batch is None or batch["store_slug"] != store_slug:
         return JSONResponse({"ok": False, "error": "Перемещение не найдено"}, status_code=404)
     actor = request.state.user
-    if not has_action_permission(
-        actor,
-        ActionPermission.STOCK_TRANSFER_RECEIVE,
-        store_slug=store_slug,
-        marketplace=batch["to_marketplace"],
-    ):
+    if not has_store_marketplace(actor, store_slug=store_slug, marketplace=batch["to_marketplace"]):
         return JSONResponse(
             {"ok": False, "error": "Нет доступа к приёмке на площадке назначения"},
             status_code=403,
@@ -808,16 +725,11 @@ async def reopen_received_transfer(
     if batch is None or batch["store_slug"] != store_slug:
         return JSONResponse({"ok": False, "error": "Перемещение не найдено"}, status_code=404)
     actor = request.state.user
-    if not has_action_permission(
-        actor,
-        ActionPermission.STOCK_TRANSFER_CANCEL,
-        store_slug=store_slug,
-        marketplace=batch["to_marketplace"],
-    ):
+    if not has_store_marketplace(actor, store_slug=store_slug, marketplace=batch["to_marketplace"]):
         return JSONResponse(
             {
                 "ok": False,
-                "error": "Возвращать приёмку в путь может старший менеджер или суперадминистратор",
+                "error": "Проверьте учётную запись, магазин и площадку перемещения",
             },
             status_code=403,
         )
@@ -893,14 +805,9 @@ async def cancel_in_transit_transfer(
     if batch is None or batch["store_slug"] != store_slug:
         return JSONResponse({"ok": False, "error": "Перемещение не найдено"}, status_code=404)
     actor = request.state.user
-    if not has_action_permission(
-        actor,
-        ActionPermission.STOCK_TRANSFER_CANCEL,
-        store_slug=store_slug,
-        marketplace=batch["from_marketplace"],
-    ):
+    if not has_store_marketplace(actor, store_slug=store_slug, marketplace=batch["from_marketplace"]):
         return JSONResponse(
-            {"ok": False, "error": "Отменять перемещения может старший менеджер или суперадминистратор"},
+            {"ok": False, "error": "Проверьте учётную запись, магазин и площадку перемещения"},
             status_code=403,
         )
 
@@ -1003,15 +910,11 @@ async def ship_ff_stock(
         if fbs_transfer
         else "shipment"
     )
-    permission = ActionPermission.STOCK_WRITEOFF if trash else ActionPermission.STOCK_SHIPMENT
     denied = await run_in_threadpool(
         _guard_stock_action,
         actor,
-        permission=permission,
         store_slug=slug.lower(),
         marketplace=marketplace.value,
-        reason=note_text,
-        context={"fulfillment": fulfillment, "kind": kind},
     )
     if denied is not None:
         return denied

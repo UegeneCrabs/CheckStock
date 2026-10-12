@@ -3,20 +3,16 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 
-from app.access.identity_policy import can_edit_stock as policy_can_edit_stock
-from app.access.identity_policy import can_manage_users as policy_can_manage_users
-from app.access.identity_policy import has_role as policy_has_role
 from app.access.security import Pbkdf2PasswordService
 from app.application.identity import IdentityService
 from app.config import settings
 from app.dto.identity import (
     CreateUserCommand,
     Credentials,
+    InitialUserSeed,
     PasswordHashRequest,
     PasswordVerification,
-    Role,
     SessionToken,
-    SuperadminSeed,
     User,
     UserId,
 )
@@ -86,33 +82,17 @@ def user_for_token(token: str) -> User | None:
     return _service().user_for_token(session_token)
 
 
-def has_role(user: User | None, minimum: str) -> bool:
-    try:
-        required = Role(minimum)
-    except ValueError:
-        return False
-    return policy_has_role(user, required)
-
-
-def can_edit_stock(user: User | None) -> bool:
-    return policy_can_edit_stock(user)
-
-
-def can_manage_users(user: User | None) -> bool:
-    return policy_can_manage_users(user)
-
-
-def seed_superadmin() -> None:
+def seed_initial_user() -> None:
     service = _service()
     if service.count_users().root > 0:
         return
     if not SEED_PATH.exists():
-        logger.warning("superadmin_seed_missing path=%s", SEED_PATH)
+        logger.warning("initial_user_seed_missing path=%s", SEED_PATH)
         return
     try:
-        seed = SuperadminSeed.model_validate_json(SEED_PATH.read_text(encoding="utf-8"))
+        seed = InitialUserSeed.model_validate_json(SEED_PATH.read_text(encoding="utf-8"))
     except (OSError, ValidationError):
-        logger.exception("superadmin_seed_invalid path=%s", SEED_PATH)
+        logger.exception("initial_user_seed_invalid path=%s", SEED_PATH)
         return
 
     password_hash = Pbkdf2PasswordService(PBKDF2_ITERATIONS).hash(PasswordHashRequest(password=seed.password))
@@ -122,8 +102,7 @@ def seed_superadmin() -> None:
             google_email=seed.google_email,
             login=seed.login,
             password_hash=password_hash.root,
-            role=Role.SUPERADMIN,
             created_at=_now(),
         )
     )
-    logger.info("superadmin_seeded user_id=%s login=%s", user_id.root, seed.login)
+    logger.info("initial_user_seeded user_id=%s login=%s", user_id.root, seed.login)

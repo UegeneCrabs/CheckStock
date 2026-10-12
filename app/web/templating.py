@@ -3,8 +3,8 @@ import re
 from string import Template
 
 from app import db
-from app.access import auth
-from app.access.access_control import accessible_marketplaces
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_marketplaces
 from app.access.sections import (
     ANALYTICS_SECTIONS,
     REPORT_SECTIONS,
@@ -12,16 +12,14 @@ from app.access.sections import (
     SECTION_PARENTS,
     STOCK_SECTIONS,
     UNIT_ECONOMICS_SECTIONS,
-    access_level,
     active_section,
-    has_access,
     section_path,
 )
 from app.config import settings
 from app.core import health
 from app.core.formatting import format_dt
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName
+from app.dto.identity import SectionName
 from app.wb import token_watch
 from app.web.access import accessible_store_slugs
 from app.web.client_templates import render_client_templates
@@ -60,11 +58,11 @@ def render_access_denied_page(
         heading = heading or "Нет доступа к вкладке"
         description = description or (
             f"Вкладка «{section_label}» недоступна для вашей учётной записи. "
-            "Если она нужна для работы, обратитесь к суперадминистратору."
+            "Проверьте адрес страницы и состояние учётной записи."
         )
     else:
         heading = heading or "Нет доступных разделов"
-        description = description or ("Обратитесь к суперадминистратору, чтобы он открыл нужные разделы.")
+        description = description or "Проверьте адрес страницы и повторите вход в систему."
     content = fill_template(
         "auth/access-denied.html",
         heading=html.escape(heading),
@@ -174,7 +172,7 @@ def render_page(
     page_styles = "\n".join(dict.fromkeys(stylesheet.findall(content)))
     content = stylesheet.sub("", content)
     admin_link = ""
-    if auth.has_role(user, "admin") and has_access(user, SectionName.ADMIN_USERS):
+    if is_active_user(user):
         admin_cls = "active" if active == "admin" else ""
         admin_link = (
             f'                <a class="nav-item {admin_cls}" href="/admin" title="Админ-панель" aria-label="Админ-панель">'
@@ -183,7 +181,7 @@ def render_page(
             '<path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path>'
             "</svg><span>Админ</span></a>"
         )
-    if auth.has_role(user, "superadmin"):
+    if is_active_user(user):
         integrations_cls = "active" if active in {"admin_integrations", "admin_google_export"} else ""
         admin_link += (
             f'                <a class="nav-item {integrations_cls}" href="/admin/integrations" '
@@ -217,11 +215,8 @@ def render_page(
         "unit_1c_reports_yandex",
         "unit_1c_target_price_yandex",
     }
-    visible = {section: has_access(user, section) for section in SectionName}
+    visible = {section: is_active_user(user) for section in SectionName}
     current_section = active_section(active)
-    current_access = (
-        access_level(user, current_section) if current_section is not None else SectionAccessLevel.WRITE
-    )
 
     def hidden(allowed: bool) -> str:
         return "" if allowed else " hidden"
@@ -318,7 +313,6 @@ def render_page(
         unit_1c_target_price_hidden=hidden(visible[SectionName.REPORT_TARGET_PRICE]),
         admin_link=admin_link,
         user_name=html.escape(full_name),
-        user_role=html.escape(db.ROLE_LABELS.get(user["role"], user["role"])) if user else "",
         user_initials=html.escape(user_initials),
         profile_active="profile--active" if active == "profile" else "",
     )
@@ -333,7 +327,6 @@ def render_page(
             if current_section is not None and not active.startswith("admin")
             else active
         ),
-        access_level=current_access.value,
         client_templates=render_client_templates(read_template("layout/page.html") + content),
         page_styles=page_styles,
     )

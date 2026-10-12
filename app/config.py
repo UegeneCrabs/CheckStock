@@ -87,7 +87,7 @@ class Settings(BaseModel):
     yandex_finance_secrets_path: Path | None = None
     yandex_finance_raw_retention_days: int = Field(default=365, ge=90)
     yandex_finance_reconcile_months: int = Field(default=0, ge=0, le=12)
-    economics_preview_user_id: int = Field(default=0, ge=0)
+    economics_preview_enabled: bool = False
     funnel_orders_sync_enabled: bool
     unit_economics_1c_price_sync_enabled: bool
     unit_economics_1c_source_sync_hour: int = Field(ge=0, le=23)
@@ -143,12 +143,6 @@ class Settings(BaseModel):
     rnp_report_download_timeout_seconds: int = Field(ge=1)
     rnp_report_poll_attempts: int = Field(ge=1)
     rnp_report_poll_interval_seconds: int = Field(ge=0)
-    smtp_host: str = ""
-    smtp_port: int = Field(default=587, ge=1, le=65_535)
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_sender: str = ""
-    smtp_starttls: bool = True
 
     @model_validator(mode="after")
     def validate_runtime_settings(self) -> "Settings":
@@ -211,7 +205,11 @@ class Settings(BaseModel):
             yandex_finance_reconcile_months=_env_int(
                 "CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS", 0, maximum=12
             ),
-            economics_preview_user_id=_env_int("CHECKSTOCK_ECONOMICS_PREVIEW_USER_ID", 0),
+            economics_preview_enabled=(
+                _env_bool("CHECKSTOCK_ECONOMICS_PREVIEW_ENABLED", False)
+                if "CHECKSTOCK_ECONOMICS_PREVIEW_ENABLED" in os.environ
+                else _env_int("CHECKSTOCK_ECONOMICS_PREVIEW_USER_ID", 0) > 0
+            ),
             inbound_sync_interval_seconds=_env_int(
                 "CHECKSTOCK_INBOUND_SYNC_INTERVAL_SECONDS", 1800, minimum=300
             ),
@@ -322,12 +320,6 @@ class Settings(BaseModel):
             rnp_report_poll_interval_seconds=_env_int(
                 "CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS", 1, minimum=0
             ),
-            smtp_host=os.getenv("CHECKSTOCK_SMTP_HOST", "").strip(),
-            smtp_port=_env_int("CHECKSTOCK_SMTP_PORT", 587, minimum=1, maximum=65_535),
-            smtp_username=os.getenv("CHECKSTOCK_SMTP_USERNAME", "").strip(),
-            smtp_password=os.getenv("CHECKSTOCK_SMTP_PASSWORD", ""),
-            smtp_sender=os.getenv("CHECKSTOCK_SMTP_SENDER", "").strip(),
-            smtp_starttls=_env_bool("CHECKSTOCK_SMTP_STARTTLS", True),
         )
 
 

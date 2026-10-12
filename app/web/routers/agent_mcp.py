@@ -21,10 +21,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import ValidationError
 
 from app.access import auth
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
 from app.agents.mcp_store import OAuthError, OAuthStore, digest
 from app.config import settings
-from app.dto.identity import SectionAccessLevel, SectionName, SessionToken, UserId
+from app.dto.identity import SessionToken, UserId
 from app.web.routers.agent_management import Owner
 
 router = APIRouter()
@@ -157,18 +157,14 @@ async def browser_user(request):
     except ValidationError:
         return None
     user = await run_in_threadpool(request.app.state.container.identity.user_for_token, session)
-    if (
-        user is not None
-        and user.is_active
-        and has_access(user, SectionName.AI_AGENTS, SectionAccessLevel.WRITE)
-    ):
+    if is_active_user(user):
         return user
     return None
 
 
 async def active_user(request, user_id):
     user = await run_in_threadpool(request.app.state.container.identity.get_user, UserId(user_id))
-    return user if user is not None and user.is_active and has_access(user, SectionName.AI_AGENTS) else None
+    return user if is_active_user(user) else None
 
 
 def page(content):

@@ -2,9 +2,8 @@ from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.access.sections import access_level
+from app.access.authentication import is_active_user
 from app.config import settings
-from app.dto.identity import SectionAccessLevel, SectionName
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import queue_tracked
 from app.stock import supply_arrivals
@@ -18,9 +17,7 @@ router = APIRouter()
 async def arrivals_page(request: Request):
     content = fill_template(
         "stock/supply-arrivals.html",
-        refresh_hidden=""
-        if access_level(request.state.user, SectionName.STOCK_ARRIVALS) is SectionAccessLevel.WRITE
-        else " hidden",
+        refresh_hidden="" if is_active_user(request.state.user) else " hidden",
         interval_minutes=str(settings.supply_arrivals_sync_interval_seconds // 60),
         preference_key=str(request.state.user["id"]),
     )

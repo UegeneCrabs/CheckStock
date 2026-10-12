@@ -8,18 +8,14 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app import db
-from app.access.access_control import ActionPermission, has_action_permission, scope_pairs
+from app.access.resources import has_store_marketplace, store_marketplace_pairs
 from app.config import settings
 from app.core.formatting import format_dt
 from app.core.stores import STORES
 from app.ff_import import export as ff_export
 from app.web.common import _fmt_num
 from app.web.downloads import _download_headers
-from app.web.stock_rendering import (
-    render_trash_table,
-    render_warehouse_table,
-    schemes_for,
-)
+from app.web.stock_rendering import render_trash_table, render_warehouse_table, schemes_for
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
@@ -214,9 +210,11 @@ async def stock_store_operations(
     kinds = _history_kinds(kind)
     active = kind if kinds else ""
     marketplaces = tuple(
-        marketplace
-        for store_slug, marketplace in scope_pairs(request.state.user)
-        if store_slug == slug.lower()
+        (
+            marketplace
+            for store_slug, marketplace in store_marketplace_pairs(request.state.user)
+            if store_slug == slug.lower()
+        )
     )
     stats = await run_in_threadpool(
         db.get_store_operation_stats, slug.lower(), kinds, marketplaces=marketplaces
@@ -265,20 +263,19 @@ async def stock_store_operations_xlsx(request: Request, slug: str, kind: str = "
 
     kinds = _history_kinds(kind)
     if not any(
-        store_slug == slug.lower()
-        and has_action_permission(
-            request.state.user,
-            ActionPermission.STOCK_OPERATIONS_EXPORT,
-            store_slug=store_slug,
-            marketplace=marketplace,
+        (
+            store_slug == slug.lower()
+            and has_store_marketplace(request.state.user, store_slug=store_slug, marketplace=marketplace)
+            for store_slug, marketplace in store_marketplace_pairs(request.state.user)
         )
-        for store_slug, marketplace in scope_pairs(request.state.user)
     ):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке операций")
     marketplaces = tuple(
-        marketplace
-        for store_slug, marketplace in scope_pairs(request.state.user)
-        if store_slug == slug.lower()
+        (
+            marketplace
+            for store_slug, marketplace in store_marketplace_pairs(request.state.user)
+            if store_slug == slug.lower()
+        )
     )
 
     def _build():
@@ -322,12 +319,7 @@ async def stock_store_xlsx(request: Request, slug: str, mp: str = "", ff: str = 
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp if mp in db.MARKETPLACES else db.DEFAULT_MARKETPLACE
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_OPERATIONS_EXPORT,
-        store_slug=slug.lower(),
-        marketplace=marketplace,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке этой площадки")
     store_slug = slug.lower()
     schemes = schemes_for(marketplace, store_slug)
@@ -420,12 +412,7 @@ async def stock_store_warehouses_xlsx(request: Request, slug: str, mp: str = "")
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
     marketplace = mp or db.DEFAULT_MARKETPLACE
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_OPERATIONS_EXPORT,
-        store_slug=slug.lower(),
-        marketplace=marketplace,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к выгрузке этой площадки")
 
     def _build():
@@ -457,11 +444,8 @@ async def toggle_trash_checked(
     if slug.lower() not in STORES:
         raise HTTPException(status_code=404, detail="Магазин не найден")
 
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_WRITEOFF,
-        store_slug=slug.lower(),
-        marketplace=marketplace.strip(),
+    if not has_store_marketplace(
+        request.state.user, store_slug=slug.lower(), marketplace=marketplace.strip()
     ):
         return JSONResponse({"ok": False, "error": "Нет доступа к списанию этой площадки"}, status_code=403)
 
@@ -483,12 +467,7 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
     if store is None:
         raise HTTPException(status_code=404, detail="Магазин не найден")
     marketplace = mp or db.DEFAULT_MARKETPLACE
-    if not has_action_permission(
-        request.state.user,
-        ActionPermission.STOCK_BALANCE_VIEW,
-        store_slug=slug.lower(),
-        marketplace=marketplace,
-    ):
+    if not has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
     def build_content() -> str:
@@ -513,12 +492,7 @@ async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
             trash_table=render_trash_table(
                 slug.lower(),
                 marketplace,
-                has_action_permission(
-                    request.state.user,
-                    ActionPermission.STOCK_WRITEOFF,
-                    store_slug=slug.lower(),
-                    marketplace=marketplace,
-                ),
+                has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace),
             ),
         )
 

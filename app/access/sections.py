@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-from app.access.access_control import (
-    ActionPermission,
-    accessible_marketplaces,
-    accessible_stores,
-    profile_has_permission,
-    restricts_unit_economics_to_manager,
-)
-from app.dto.identity import Role, SectionAccessLevel, SectionName, User, coerce_user
+from app.access.resources import accessible_stores
+from app.dto.identity import SectionName, User
 
 S = SectionName
-L = SectionAccessLevel
 
 STOCK_SECTIONS = (
     S.STOCK_BALANCES,
@@ -95,7 +88,7 @@ SECTION_PATHS = {
 }
 SECTION_DESCRIPTIONS = {
     S.EPHEMERIDES: "Сравнение недель WB, оборот и комментарии с историей изменений.",
-    S.FINANCE_YANDEX: "Финансовый итог целого магазина: реализация, расходы, закупка и выплаты. Недоступен при товарных ограничениях.",
+    S.FINANCE_YANDEX: "Финансовый итог целого магазина: реализация, расходы, закупка и выплаты.",
     S.ANALYTICS_SALES_API: "Заказы и отмены из воронки WB: период, дни, фильтры и экспорт.",
     S.ANALYZER: "Товары WB, воронка, эффективность, недельные заказы и рабочие записи.",
     S.REPORT_UNIT_PROFIT_YANDEX: "Прибыль ЯМ за период, дневная история и Excel.",
@@ -115,10 +108,10 @@ SECTION_DESCRIPTIONS = {
     S.UNIT_ECONOMICS_YANDEX: "Товары Яндекс Маркета, калькулятор и настройки выкупа.",
     S.REPORT_UNIT_PROFIT: "Прибыль за выбранный период и выгрузка в Excel.",
     S.REPORT_TARGET_PRICE: "Рекомендованные цены; изменение разрешает задавать цели товара.",
-    S.AI_AGENTS: "Просмотр своих API-ключей; изменение разрешает выпуск и отзыв. Данные ограничены правами вкладок.",
-    S.ADMIN_USERS: "Доступна администраторам. Изменение — управление сотрудниками в пределах своей роли.",
-    S.ADMIN_GOOGLE_EXPORT: "Только суперадминистратор: настройки и запуск выгрузки.",
-    S.ADMIN_INTEGRATIONS: "Только суперадминистратор: ключи маркетплейсов и фоновые задания.",
+    S.AI_AGENTS: "Просмотр, выпуск и отзыв собственных API-ключей.",
+    S.ADMIN_USERS: "Создание сотрудников, блокировка, смена паролей и журнал действий.",
+    S.ADMIN_GOOGLE_EXPORT: "Настройки и запуск выгрузки.",
+    S.ADMIN_INTEGRATIONS: "Ключи маркетплейсов и фоновые задания.",
 }
 SECTION_PARENTS = {
     **{section: S.STOCK for section in STOCK_SECTIONS},
@@ -137,16 +130,6 @@ SECTION_PARENTS = {
         )
     },
 }
-READ_ONLY_SECTIONS = {
-    S.FINANCE_YANDEX,
-    S.ANALYTICS_SALES_API,
-    S.STOCK_TOTAL,
-    S.STOCK_OPERATIONS,
-    S.UNIT_ECONOMICS_OZON,
-    S.REPORT_UNIT_PROFIT,
-    S.REPORT_UNIT_PROFIT_YANDEX,
-}
-SUPERADMIN_SECTIONS = {S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS}
 SECTION_MARKETPLACES = {
     S.EPHEMERIDES: "WB",
     S.FINANCE_YANDEX: "YANDEX MARKET",
@@ -161,7 +144,6 @@ SECTION_MARKETPLACES = {
     S.REPORT_UNIT_PROFIT: "WB",
     S.REPORT_TARGET_PRICE: "WB",
 }
-_ACCESS_LEVEL = {L.NONE: 0, L.READ: 1, L.WRITE: 2}
 
 
 def _under(path: str, prefix: str) -> bool:
@@ -219,92 +201,6 @@ def section_for_path(path: str) -> SectionName | None:
     return None
 
 
-def _legacy_level(user: User, section: SectionName) -> SectionAccessLevel:
-    if user.access_profile is not None:
-        if section is S.STOCK:
-            return L.WRITE if profile_has_permission(user, ActionPermission.STOCK_BALANCE_VIEW) else L.NONE
-        markets = accessible_marketplaces(user)
-        if "WB" not in markets:
-            return (
-                L.READ
-                if "YANDEX MARKET" in markets
-                and profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW)
-                else L.NONE
-            )
-        if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_EDIT):
-            return L.WRITE
-        return L.READ if profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW) else L.NONE
-    configured = user.section_access.get(section)
-    if configured is not None:
-        return configured
-    return L.READ if section is S.STOCK and not user.can_edit_stock else L.WRITE
-
-
-def access_limit(user: User | None, section: SectionName) -> SectionAccessLevel:
-    user = coerce_user(user)
-    if user is None or section not in SECTION_PATHS:
-        return L.NONE
-    if user.role is Role.SUPERADMIN:
-        return L.READ if section in READ_ONLY_SECTIONS else L.WRITE
-    if section in SUPERADMIN_SECTIONS:
-        return L.NONE
-    if section is S.FINANCE_YANDEX and restricts_unit_economics_to_manager(user):
-        return L.NONE
-    if section is S.ADMIN_USERS:
-        return (L.WRITE if user.can_manage_users else L.READ) if user.role is Role.ADMIN else L.NONE
-    if user.access_profile is not None or user.access_scopes:
-        marketplace = SECTION_MARKETPLACES.get(section)
-        if marketplace and marketplace not in accessible_marketplaces(user):
-            return L.NONE
-        if user.access_profile is not None and (
-            section in UNIT_ECONOMICS_SECTIONS or section in REPORT_SECTIONS or section in ANALYTICS_SECTIONS
-        ):
-            if not profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_VIEW):
-                return L.NONE
-            if not profile_has_permission(user, ActionPermission.UNIT_ECONOMICS_EDIT):
-                return L.READ
-        if section is S.STOCK_TOTAL and not profile_has_permission(user, ActionPermission.STOCK_TOTAL_VIEW):
-            return L.NONE
-    return L.READ if section in READ_ONLY_SECTIONS else L.WRITE
-
-
-def default_access_level(user: User, section: SectionName) -> SectionAccessLevel:
-    if section is S.FINANCE_YANDEX:
-        return L.NONE
-    if section in ANALYTICS_SECTIONS:
-        return access_level(user, S.UNIT_ECONOMICS_WB)
-    if section is S.AI_AGENTS:
-        return (
-            L.WRITE
-            if any(
-                has_access(user, item)
-                for item in (*STOCK_SECTIONS, S.STOCK_ARRIVALS, *UNIT_ECONOMICS_SECTIONS, *REPORT_SECTIONS)
-            )
-            else L.NONE
-        )
-    if section is S.ADMIN_USERS or section in SUPERADMIN_SECTIONS:
-        return access_limit(user, section)
-    parent = SECTION_PARENTS.get(section, section)
-    return _legacy_level(user, parent)
-
-
-def access_level(user: User | None, section: SectionName) -> SectionAccessLevel:
-    user = coerce_user(user)
-    if user is None or section not in SECTION_PATHS:
-        return L.NONE
-    if user.role is Role.SUPERADMIN:
-        return L.WRITE
-    if section in {S.STOCK, S.UNIT_ECONOMICS_1C}:
-        return _legacy_level(user, section)
-    configured = user.section_access.get(section)
-    level = configured if configured is not None else default_access_level(user, section)
-    return min((level, access_limit(user, section)), key=_ACCESS_LEVEL.get)
-
-
-def has_access(user: User | None, section: SectionName, required: SectionAccessLevel = L.READ) -> bool:
-    return _ACCESS_LEVEL[access_level(user, section)] >= _ACCESS_LEVEL[required]
-
-
 def section_path(user: User | None, section: SectionName) -> str:
     if section is S.STOCK_OPERATIONS:
         stores = accessible_stores(user)
@@ -313,10 +209,7 @@ def section_path(user: User | None, section: SectionName) -> str:
 
 
 def landing_path(user: User | None) -> str:
-    for section in (item for _, group in SECTION_GROUPS for item in group):
-        if has_access(user, section):
-            return section_path(user, section)
-    return "/access-denied"
+    return "/stock"
 
 
 def active_section(active: str) -> SectionName | None:

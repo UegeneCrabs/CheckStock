@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from app import db
-from app.access.access_control import restricts_unit_economics_to_manager
+from app.access.authentication import is_active_user
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.economics.report_sources import ReportSources
@@ -19,19 +19,8 @@ from app.yandex.economics_calculation import VERSION, aggregate, calculate
 from app.yandex.economics_days import resolve_day, resolve_period
 
 
-def manager_matches(manager, user):
-    import re
-
-    def key(value):
-        return " ".join(re.sub(r"[^0-9a-zа-я]+", " ", str(value or "").casefold().replace("ё", "е")).split())
-
-    return user is not None and key(manager) == key(user.full_name)
-
-
 def permitted(manager, user):
-    return user is not None and (
-        not restricts_unit_economics_to_manager(user) or manager_matches(manager, user)
-    )
+    return is_active_user(user)
 
 
 def catalog(stores, user, *, sources=None):
@@ -76,7 +65,7 @@ def filter_options(rows, user):
                 )
             ],
         },
-        "manager_scope": {"restricted": restricts_unit_economics_to_manager(user), "matched": bool(rows)},
+        "manager_scope": {"restricted": False, "matched": bool(rows)},
     }
 
 

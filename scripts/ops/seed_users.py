@@ -22,15 +22,15 @@ PASSWORDS = {
 
 
 PEOPLE = {
-    "Bas": ("Евгений Бас", "evgeny.bas@rocketteam.info", "admin", False, True),
-    "Renata": ("Ишкуватова Рената", "renata.ishkuvatova@rocketteam.info", "admin", False, True),
-    "Kitov": ("Андрей Китов", "andrey.kitov@rocketteam.info", "user", False, True),
-    "Efimov": ("Антон Ефимов", "anton.efimov@rocketteam.info", "user", False, True),
-    "Kipke": ("Анастасия Кипке", "kipke.anastasia@rocketteam.info", "user", False, True),
-    "Baranova": ("Анна Баранова", "anna.baranova@rocketteam.info", "user", False, True),
-    "Guzova": ("Татьяна Гузова", "tatyiana.guzova@gmail.com", "user", False, True),
-    "Fomina": ("Ольга Фомина", "fominaolga226@gmail.com", "user", False, True),
-    "test": ("Тестовый стенд", "test.stend@gmail.com", "superadmin", False, False),
+    "Bas": ("Евгений Бас", "evgeny.bas@rocketteam.info"),
+    "Renata": ("Ишкуватова Рената", "renata.ishkuvatova@rocketteam.info"),
+    "Kitov": ("Андрей Китов", "andrey.kitov@rocketteam.info"),
+    "Efimov": ("Антон Ефимов", "anton.efimov@rocketteam.info"),
+    "Kipke": ("Анастасия Кипке", "kipke.anastasia@rocketteam.info"),
+    "Baranova": ("Анна Баранова", "anna.baranova@rocketteam.info"),
+    "Guzova": ("Татьяна Гузова", "tatyiana.guzova@gmail.com"),
+    "Fomina": ("Ольга Фомина", "fominaolga226@gmail.com"),
+    "test": ("Тестовый стенд", "test.stend@gmail.com"),
 }
 
 
@@ -48,14 +48,14 @@ def main() -> None:
 
     todo, skipped, no_password = [], [], []
 
-    for login, (full_name, email, role, can_edit, can_manage) in PEOPLE.items():
+    for login, (full_name, email) in PEOPLE.items():
         if login in existing:
             skipped.append(login)
             continue
         if not PASSWORDS.get(login):
             no_password.append(login)
             continue
-        todo.append((login, full_name, email, role, can_edit, can_manage))
+        todo.append((login, full_name, email))
 
     for login in skipped:
         print(f"  уже есть, пропускаю: {login}")
@@ -67,27 +67,23 @@ def main() -> None:
         return
 
     print(f"\nБудет заведено: {len(todo)}")
-    for login, full_name, _e, role, can_edit, _m in todo:
-        edit = "правка стока: да" if can_edit else "правка стока: нет"
-        print(f"  {login:<10} {full_name:<20} {role:<11} {edit}")
+    for login, full_name, _e in todo:
+        print(f"  {login:<10} {full_name:<20} ")
 
     if not args.apply:
         print("\nЭто предпросмотр. Для записи добавьте --apply")
         return
 
     now = _now()
-    for login, full_name, email, role, can_edit, can_manage in todo:
-        user_id = db.create_user(
+    for login, full_name, email in todo:
+        db.create_user(
             full_name,
             email,
             login,
             auth.hash_password(PASSWORDS[login]),
-            role,
             now,
         )
 
-        db.set_user_permission(user_id, "can_edit_stock", can_edit)
-        db.set_user_permission(user_id, "can_manage_users", can_manage)
         print(f"  создан: {login}")
 
     print(f"\nГотово. Всего в базе пользователей: {len(db.list_users())}")

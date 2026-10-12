@@ -8,12 +8,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 from pydantic import Field
 
-from app.access import auth
-from app.access.access_control import accessible_stores
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import accessible_stores
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
+from app.dto.identity import coerce_user
 from app.dto.unit_economics_1c import (
     UnitEconomics1CProductTargetRequest,
     UnitEconomics1CTargetPriceExportRequest,
@@ -100,7 +99,10 @@ async def profit_data(request, *, export=False):
         def prepare():
             collected = {}
             rows = reports.load_rows(
-                stores, user, start, end,
+                stores,
+                user,
+                start,
+                end,
                 filters={"subjects": subjects, "managers": managers, "articles": articles},
                 collected=collected,
             )
@@ -111,8 +113,17 @@ async def profit_data(request, *, export=False):
             }
 
         prepared = reports_cache.get(
-            ("ym-profit", stores, user_key(user), start, end, datetime.now(MOSCOW_TIMEZONE).date(),
-             tuple(sorted(subjects)), tuple(sorted(managers)), tuple(sorted(articles))),
+            (
+                "ym-profit",
+                stores,
+                user_key(user),
+                start,
+                end,
+                datetime.now(MOSCOW_TIMEZONE).date(),
+                tuple(sorted(subjects)),
+                tuple(sorted(managers)),
+                tuple(sorted(articles)),
+            ),
             prepare,
         )
         rows = prepared["rows"]
@@ -185,10 +196,8 @@ async def target_page(request: Request):
         "dataEndpoint": API + "/target-price",
         "exportEndpoint": API + "/target-price.xlsx",
         "stores": [{"slug": store, "name": STORES[store]["name"]} for store in stores],
-        "canEdit": has_access(
-            request.state.user, SectionName.REPORT_TARGET_PRICE_YANDEX, SectionAccessLevel.WRITE
-        ),
-        "canManageGoals": auth.has_role(request.state.user, "superadmin"),
+        "canEdit": is_active_user(request.state.user),
+        "canManageGoals": is_active_user(request.state.user),
     }
     content = fill_template(
         "economics/yandex/target-price.html",
@@ -263,8 +272,8 @@ async def target_reset(request: Request, store: str, article: str, revision: int
 
 @router.get(API + "/target-price/settings/{store}")
 async def cabinet_read(request: Request, store: str):
-    if not auth.has_role(request.state.user, "superadmin") or store not in STORES:
-        raise HTTPException(403, "Настройки целей кабинета доступны суперадминистратору")
+    if not is_active_user(request.state.user) or store not in STORES:
+        raise HTTPException(403, "Требуется активная учётная запись и существующий магазин")
     saved = await run_in_threadpool(repository.settings, store, "", target_prices.TARGET_SCOPE)
     return {
         "ok": True,

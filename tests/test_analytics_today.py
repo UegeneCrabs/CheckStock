@@ -32,9 +32,7 @@ class AnalyticsTodayTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.addCleanup(self.database.dispose)
         self.addCleanup(self.patch.stop)
-        self.user = User(
-            id=1, login="test", full_name="Test", role="superadmin", created_at=datetime.now(UTC)
-        )
+        self.user = User(id=1, login="test", full_name="Test", created_at=datetime.now(UTC))
         self.today = date(2026, 10, 7)
         with self.database.connect() as conn:
             for store, article in (("rimili", "1"), ("rimili", "2"), ("rimili", "3"), ("tris", "1")):

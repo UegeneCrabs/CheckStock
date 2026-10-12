@@ -5,18 +5,12 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.access import auth
-from app.access import notifications as access_notifications
-from app.access.access_control import PROFILE_LABELS, profile_label, scope_pairs
-from app.access.identity_policy import ROLE_LABELS
-from app.access.sections import SECTION_LABELS, SUPERADMIN_SECTIONS, access_level, access_limit, has_access
-from app.core.domain import MARKETPLACES
+from app.access.authentication import require_active_user
 from app.core.formatting import format_dt
-from app.core.stores import STORES
 from app.dto.identity import (
-    AccessProfile,
     ActivityCommand,
     ActivityLog,
     ActivityLogQuery,
@@ -25,14 +19,8 @@ from app.dto.identity import (
     CreateUserCommand,
     CreateUserForm,
     LoginQuery,
-    MarketplaceAccessScope,
     PasswordHashRequest,
-    Role,
-    SectionAccessLevel,
-    SectionName,
     User,
-    UserCollection,
-    UserCountQuery,
     UserId,
     UserMutationKind,
 )
@@ -42,8 +30,7 @@ from app.ozon import catalog as ozon_catalog
 from app.ozon import sync as ozon_sync
 from app.wb import catalog as wb_catalog
 from app.wb import sync as wb_sync
-from app.web.access import accessible_store_slugs, has_store_access
-from app.web.admin_access_rendering import PROFILE_DESCRIPTIONS, render_section_fields
+from app.web.access import accessible_store_slugs
 from app.web.dependencies import ContainerDependency, IdentityServiceDependency
 from app.web.downloads import _download_headers
 from app.web.templating import fill_template, render_page
@@ -51,6 +38,148 @@ from app.yandex import catalog as ya_catalog
 from app.yandex import sync as ya_sync
 
 router = APIRouter()
+
+
+async def _target(identities, user_id):
+    if user_id < 1:
+        raise HTTPException(404, "Сотрудник не найден")
+    target = await run_in_threadpool(identities.get_user, UserId(user_id))
+    if target is None:
+        raise HTTPException(404, "Сотрудник не найден")
+    return target
+
+
+async def _mutate(identities, command):
+    try:
+        await run_in_threadpool(identities.mutate_user, command)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    except IntegrityError:
+        return JSONResponse(
+            {"ok": False, "error": "Сотрудник связан с рабочими данными. Заблокируйте учётную запись."},
+            status_code=409,
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.post("/admin/users/{user_id}/delete")
+async def admin_delete_user(request: Request, user_id: int, identities: IdentityServiceDependency):
+    actor = require_active_user(request)
+    target = await _target(identities, user_id)
+    return await _mutate(
+        identities,
+        AuditedUserMutation(
+            kind=UserMutationKind.DELETE,
+            user_id=user_id,
+            activity=_activity(actor, "Удалён сотрудник", f"{target.full_name} ({target.login})"),
+        ),
+    )
+
+
+@router.post("/admin/users/{user_id}/toggle-active")
+async def admin_toggle_active(request: Request, user_id: int, identities: IdentityServiceDependency):
+    actor = require_active_user(request)
+    target = await _target(identities, user_id)
+    return await _mutate(
+        identities,
+        AuditedUserMutation(
+            kind=UserMutationKind.ACTIVE,
+            user_id=user_id,
+            is_active=not target.is_active,
+            activity=_activity(
+                actor,
+                "Заблокирован сотрудник" if target.is_active else "Активирован сотрудник",
+                target.full_name,
+            ),
+        ),
+    )
+
+
+@router.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(
+    request: Request,
+    user_id: int,
+    identities: IdentityServiceDependency,
+    container: ContainerDependency,
+    password: str = Form(..., min_length=8, max_length=1024),
+):
+    actor = require_active_user(request)
+    target = await _target(identities, user_id)
+    password_hash = await run_in_threadpool(container.passwords.hash, PasswordHashRequest(password=password))
+    return await _mutate(
+        identities,
+        AuditedUserMutation(
+            kind=UserMutationKind.PASSWORD,
+            user_id=user_id,
+            password_hash=password_hash.root,
+            activity=_activity(actor, "Сброшен пароль", target.full_name),
+        ),
+    )
+
+
+@router.post("/admin/users")
+async def admin_create_user(
+    request: Request, identities: IdentityServiceDependency, container: ContainerDependency
+):
+    actor = require_active_user(request)
+    form = await request.form()
+    try:
+        payload = CreateUserForm.model_validate(dict(form))
+    except ValidationError as error:
+        field = str(error.errors()[0]["loc"][0])
+        message = "Пароль: от 8 до 1024 символов" if field == "password" else f"Проверьте поле {field}"
+        return JSONResponse({"ok": False, "field": field, "error": message}, status_code=400)
+    if await run_in_threadpool(identities.get_user_by_login, LoginQuery(login=payload.login)):
+        return JSONResponse(
+            {"ok": False, "field": "login", "error": "Такой логин уже занят"}, status_code=400
+        )
+    password_hash = await run_in_threadpool(
+        container.passwords.hash, PasswordHashRequest(password=payload.password)
+    )
+    command = AuditedCreateUser(
+        user=CreateUserCommand(
+            full_name=payload.full_name,
+            google_email=payload.google_email,
+            login=payload.login,
+            password_hash=password_hash.root,
+            created_at=datetime.now(UTC),
+        ),
+        activity=_activity(actor, "Создан сотрудник", f"{payload.full_name} ({payload.login})"),
+    )
+    try:
+        await run_in_threadpool(identities.create_user_with_activity, command)
+    except IntegrityError:
+        return JSONResponse(
+            {"ok": False, "field": "login", "error": "Такой логин уже занят"}, status_code=400
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request, identities: IdentityServiceDependency):
+    actor = require_active_user(request)
+    users = await run_in_threadpool(identities.list_users)
+    activity = await run_in_threadpool(identities.get_activity, ActivityLogQuery())
+    rows = []
+    for user in users.root:
+        disabled = " disabled" if user.id == actor.id else ""
+        status = "Активен" if user.is_active else "Заблокирован"
+        toggle = "Заблокировать" if user.is_active else "Активировать"
+        rows.append(
+            f'<tr data-user-id="{user.id}"><td>{html.escape(user.full_name)}</td>'
+            f"<td>{html.escape(user.login)}</td><td>{html.escape(user.google_email)}</td><td>{status}</td>"
+            f'<td><button type="button" data-action="toggle-active"{disabled}>{toggle}</button> '
+            '<button type="button" data-action="reset-password">Сменить пароль</button> '
+            f'<button type="button" data-action="delete"{disabled}>Удалить</button></td></tr>'
+        )
+    content = fill_template(
+        "admin/index.html",
+        user_rows="".join(rows),
+        users_total=str(len(users.root)),
+        users_active=str(sum(user.is_active for user in users.root)),
+        log_rows=render_log_rows(actor, activity),
+    )
+    return render_page("CheckStock — Админ-панель", "admin", content, actor, "content--admin")
 
 
 def _activity(actor: User, action: str, details: str) -> ActivityCommand:
@@ -63,778 +192,8 @@ def _activity(actor: User, action: str, details: str) -> ActivityCommand:
     )
 
 
-def _create_user_validation_error(error: ValidationError) -> tuple[str, str]:
-    issue = error.errors()[0] if error.errors() else {}
-    field = str((issue.get("loc") or ("form",))[-1])
-    labels = {
-        "full_name": "ФИО",
-        "google_email": "электронная почта",
-        "login": "логин",
-        "password": "пароль",
-        "role": "роль",
-        "store_slugs": "кабинеты",
-    }
-    issue_type = str(issue.get("type") or "")
-    if field == "login" and issue_type == "string_pattern_mismatch":
-        message = "Логин: используйте только латинские буквы, цифры и символы . _ @ + -"
-    elif field == "password" and issue_type == "string_too_short":
-        message = "Пароль: нужно не меньше 8 символов"
-    elif issue_type in {"missing", "string_too_short", "too_short"}:
-        message = f"Поле «{labels.get(field, field)}» обязательно"
-    elif field == "role":
-        message = "Выберите допустимую роль сотрудника"
-    else:
-        message = f"Проверьте поле «{labels.get(field, field)}»"
-    return field, message
-
-
-def _access_policy_error_field(message: str) -> str:
-    normalized = message.casefold()
-    if "маркетплейс" in normalized or "площадк" in normalized:
-        return "marketplaces"
-    if "кабинет" in normalized:
-        return "stores"
-    return "access_profile"
-
-
-def _guard_user_action(actor: User, target: User | None, what: str) -> str | None:
-
-    if target is None:
-        return "сотрудник не найден"
-    if target.id == actor.id:
-        return f"нельзя {what} самого себя"
-    if not can_manage_user(actor, target):
-        return (
-            f"{what} можно только для сотрудников — администраторов и "
-            "суперадминистраторов может изменять только суперадминистратор"
-        )
-    return None
-
-
-@router.post("/admin/users/{user_id}/delete")
-async def admin_delete_user(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-):
-    actor = request.state.user
-    if not auth.can_manage_users(actor) or not has_access(
-        actor, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
-    ):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "удалить")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-
-    if target.role is Role.SUPERADMIN:
-        left = await run_in_threadpool(
-            identities.count_superadmins,
-            UserCountQuery(exclude_user_id=user_id),
-        )
-        if left.root == 0:
-            return JSONResponse(
-                {"ok": False, "error": "это последний суперадминистратор — сначала назначьте другого"},
-                status_code=400,
-            )
-
-    command = AuditedUserMutation(
-        kind=UserMutationKind.DELETE,
-        user_id=user_id,
-        activity=_activity(
-            actor,
-            "Удалён сотрудник",
-            f"{target.full_name} ({target.login})",
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True})
-
-
-@router.post("/admin/users/{user_id}/reset-password")
-async def admin_reset_password(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-    container: ContainerDependency,
-    password: str = Form(..., min_length=8, max_length=1024),
-):
-
-    actor = request.state.user
-    if not auth.has_role(actor, "admin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "сбросить пароль")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-    password_hash = await run_in_threadpool(
-        container.passwords.hash,
-        PasswordHashRequest(password=password),
-    )
-    command = AuditedUserMutation(
-        kind=UserMutationKind.PASSWORD,
-        user_id=user_id,
-        password_hash=password_hash.root,
-        activity=_activity(
-            actor,
-            "Сброшен пароль сотрудника",
-            f"{target.full_name} ({target.login})",
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True})
-
-
-@router.post("/admin/users/{user_id}/toggle-stock-edit")
-async def admin_toggle_stock_edit(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-):
-
-    actor = request.state.user
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-
-    error = _guard_user_action(actor, target, "менять права")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=403)
-
-    allowed = not auth.can_edit_stock(target)
-
-    command = AuditedUserMutation(
-        kind=UserMutationKind.SECTIONS,
-        user_id=user_id,
-        section_access={
-            **target.section_access,
-            SectionName.STOCK_BALANCES: SectionAccessLevel.WRITE if allowed else SectionAccessLevel.READ,
-        },
-        activity=_activity(
-            actor,
-            "Разрешены изменения остатков" if allowed else "Запрещены изменения остатков",
-            target.full_name,
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True, "allowed": allowed})
-
-
-@router.post("/admin/users/{user_id}/toggle-active")
-async def admin_toggle_active(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-):
-
-    actor = request.state.user
-    if not auth.has_role(actor, "admin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "заблокировать")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-
-    new_state = not target.is_active
-    if not new_state and target.role is Role.SUPERADMIN:
-        left = await run_in_threadpool(
-            identities.count_superadmins,
-            UserCountQuery(exclude_user_id=user_id),
-        )
-        if left.root == 0:
-            return JSONResponse(
-                {"ok": False, "error": "это последний суперадминистратор — сначала назначьте другого"},
-                status_code=400,
-            )
-
-    command = AuditedUserMutation(
-        kind=UserMutationKind.ACTIVE,
-        user_id=user_id,
-        is_active=new_state,
-        activity=_activity(
-            actor,
-            "Разблокирован сотрудник" if new_state else "Заблокирован сотрудник",
-            f"{target.full_name} ({target.login})",
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True, "is_active": new_state})
-
-
-@router.post("/admin/users/{user_id}/stores")
-async def admin_update_user_stores(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-):
-    actor = request.state.user
-    if not auth.has_role(actor, "admin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "изменять доступ к кабинетам")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=403)
-
-    form = await request.form()
-    store_slugs = normalize_admin_store_selection(actor, tuple(form.getlist("stores")))
-    if not store_slugs:
-        return JSONResponse({"ok": False, "error": "выберите хотя бы один кабинет"}, status_code=400)
-
-    if actor.role is not Role.SUPERADMIN:
-        markets = {market for _, market in scope_pairs(target)}
-        if not {(store, market) for store in store_slugs for market in markets}.issubset(scope_pairs(actor)):
-            return JSONResponse(
-                {"ok": False, "error": "Нет доступа к выбранным кабинетам и площадкам"}, status_code=403
-            )
-    labels = ", ".join(STORES[slug].name for slug in store_slugs)
-    command = AuditedUserMutation(
-        kind=UserMutationKind.STORES,
-        user_id=user_id,
-        store_slugs=tuple(store_slugs),
-        activity=_activity(
-            actor,
-            "Изменён доступ сотрудника к кабинетам",
-            f"{target.full_name}: {labels}",
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True, "stores": store_slugs})
-
-
-@router.post("/admin/users/{user_id}/role")
-async def admin_update_user_role(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-    role: str = Form(...),
-):
-    actor = request.state.user
-    if not auth.has_role(actor, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "менять роль")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-    try:
-        new_role = Role(role)
-    except ValueError:
-        return JSONResponse({"ok": False, "error": "неизвестная роль"}, status_code=400)
-    if target.role is Role.SUPERADMIN and new_role is not Role.SUPERADMIN:
-        left = await run_in_threadpool(
-            identities.count_superadmins,
-            UserCountQuery(exclude_user_id=user_id),
-        )
-        if left.root == 0:
-            return JSONResponse(
-                {"ok": False, "error": "это последний суперадминистратор — сначала назначьте другого"},
-                status_code=400,
-            )
-    command = AuditedUserMutation(
-        kind=UserMutationKind.ROLE,
-        user_id=user_id,
-        role=new_role,
-        activity=_activity(
-            actor,
-            "Изменена роль сотрудника",
-            f"{target.full_name}: {ROLE_LABELS[target.role]} → {ROLE_LABELS[new_role]}",
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True, "role": new_role.value})
-
-
-@router.post("/admin/users/{user_id}/access-policy")
-async def admin_update_user_access_policy(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-):
-    actor = request.state.user
-    if not auth.has_role(actor, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "изменять должность и площадки")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-    form = await request.form()
-    profile, store_slugs, scopes, policy_error = _access_policy_from_form(actor, form)
-    if policy_error:
-        return JSONResponse(
-            {
-                "ok": False,
-                "field": _access_policy_error_field(policy_error),
-                "error": policy_error,
-            },
-            status_code=400,
-        )
-    if profile is None and not store_slugs:
-        return JSONResponse(
-            {"ok": False, "error": "для старой модели прав выберите хотя бы один кабинет"},
-            status_code=400,
-        )
-    scope_labels = ", ".join(f"{STORES[item.store_slug].name}/{item.marketplace}" for item in scopes)
-    command = AuditedUserMutation(
-        kind=UserMutationKind.ACCESS_POLICY,
-        user_id=user_id,
-        access_profile=profile,
-        access_scopes=scopes,
-        activity=_activity(
-            actor,
-            "Изменён должностной профиль сотрудника",
-            f"{target.full_name}: {profile_label(profile, tuple(item.marketplace for item in scopes))}"
-            + (f" · {scope_labels}" if scope_labels else ""),
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    if not scopes and profile is None and tuple(target.store_slugs) != tuple(store_slugs):
-        await run_in_threadpool(
-            identities.mutate_user,
-            AuditedUserMutation(
-                kind=UserMutationKind.STORES,
-                user_id=user_id,
-                store_slugs=store_slugs,
-                activity=_activity(
-                    actor,
-                    "Изменён доступ сотрудника к кабинетам",
-                    f"{target.full_name}: {', '.join(STORES[slug].name for slug in store_slugs)}",
-                ),
-            ),
-        )
-    return JSONResponse({"ok": True})
-
-
-@router.post("/admin/access-requests/{request_id}/decision")
-async def admin_decide_access_request(
-    request: Request,
-    request_id: int,
-    approved: str = Form(...),
-    note: str = Form("", max_length=500),
-):
-    actor = request.state.user
-    if not auth.has_role(actor, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    is_approved = approved.strip().lower() in {"1", "true", "yes", "on"}
-    result = await run_in_threadpool(
-        db.decide_access_request,
-        request_id,
-        approved=is_approved,
-        decided_by_user_id=actor.id,
-        decision_note=note,
-    )
-    if result is None:
-        return JSONResponse({"ok": False, "error": "запрос не найден"}, status_code=404)
-    if result.get("status") not in {"approved", "rejected"}:
-        return JSONResponse({"ok": False, "error": "запрос уже обработан"}, status_code=409)
-    await run_in_threadpool(access_notifications.notify_request_decided, result)
-    return JSONResponse({"ok": True, "request": result})
-
-
-@router.post("/admin/access-grants/{grant_id}/revoke")
-async def admin_revoke_access_grant(request: Request, grant_id: int):
-    actor = request.state.user
-    if not auth.has_role(actor, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    revoked = await run_in_threadpool(
-        db.revoke_access_grant,
-        grant_id,
-        revoked_by_user_id=actor.id,
-    )
-    if not revoked:
-        return JSONResponse({"ok": False, "error": "разрешение не найдено или уже отозвано"}, status_code=404)
-    return JSONResponse({"ok": True})
-
-
-@router.post("/admin/users/{user_id}/sections")
-async def admin_update_user_sections(
-    request: Request,
-    user_id: int,
-    identities: IdentityServiceDependency,
-):
-    actor = request.state.user
-    if not auth.has_role(actor, "superadmin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-    target = await run_in_threadpool(identities.get_user, UserId(user_id))
-    error = _guard_user_action(actor, target, "изменять права доступа по разделам")
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-    if target.role is Role.SUPERADMIN:
-        return JSONResponse(
-            {"ok": False, "error": "суперадминистратору всегда предоставлен полный доступ"},
-            status_code=400,
-        )
-    form = await request.form()
-    permissions = dict(target.section_access)
-    submitted = [section for section in SECTION_LABELS if section.value in form]
-    if not submitted:
-        return JSONResponse({"ok": False, "error": "не переданы права вкладок"}, status_code=400)
-    try:
-        for section in submitted:
-            raw = str(form.get(section.value) or "")
-            if not raw:
-                permissions.pop(section, None)
-                continue
-            value = SectionAccessLevel(raw)
-            limit = access_limit(target, section)
-            if section not in {SectionName.STOCK, SectionName.UNIT_ECONOMICS_1C} and (
-                section in SUPERADMIN_SECTIONS
-                or value is SectionAccessLevel.WRITE
-                and limit is not SectionAccessLevel.WRITE
-                or value is SectionAccessLevel.READ
-                and limit is SectionAccessLevel.NONE
-            ):
-                if target.section_access.get(section) is value:
-                    continue
-                return JSONResponse(
-                    {
-                        "ok": False,
-                        "error": f"{SECTION_LABELS[section]}: это право недоступно для выбранной роли, должности или площадки",
-                        "field": section.value,
-                    },
-                    status_code=400,
-                )
-            permissions[section] = value
-    except ValueError:
-        return JSONResponse({"ok": False, "error": "проверьте права разделов"}, status_code=400)
-    details = ", ".join(
-        f"{SECTION_LABELS[section]}: {permissions[section].value if section in permissions else 'по умолчанию'}"
-        for section in submitted
-    )
-    command = AuditedUserMutation(
-        kind=UserMutationKind.SECTIONS,
-        user_id=user_id,
-        section_access=permissions,
-        activity=_activity(
-            actor,
-            "Изменены права доступа по разделам",
-            f"{target.full_name}: {details}",
-        ),
-    )
-    await run_in_threadpool(identities.mutate_user, command)
-    return JSONResponse({"ok": True})
-
-
-def creatable_roles(actor: User) -> tuple[Role, ...]:
-
-    if auth.has_role(actor, "superadmin"):
-        return tuple(Role)
-    if auth.has_role(actor, "admin"):
-        return (Role.USER,)
-    return ()
-
-
-def can_manage_user(actor: User, target: User) -> bool:
-
-    if not auth.can_manage_users(actor) or not has_access(
-        actor, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
-    ):
-        return False
-    if target.id == actor.id:
-        return False
-    if auth.has_role(actor, "superadmin"):
-        return True
-    if auth.has_role(actor, "admin"):
-        actor_stores = set(accessible_store_slugs(actor))
-        target_stores = set(target.store_slugs or tuple(STORES))
-        return (
-            target.role is Role.USER
-            and target_stores.issubset(actor_stores)
-            and set(scope_pairs(target)).issubset(scope_pairs(actor))
-        )
-    return False
-
-
-def render_role_options(actor: User) -> str:
-    return "\n".join(
-        f'                    <option value="{role.value}">{html.escape(ROLE_LABELS[role])}</option>'
-        for role in creatable_roles(actor)
-    )
-
-
-def render_profile_options(selected: AccessProfile | None = None) -> str:
-    legacy_selected = " selected" if selected is None else ""
-    options = [
-        f'<option value=""{legacy_selected} data-description="{html.escape(PROFILE_DESCRIPTIONS[None], quote=True)}">Вручную — права каждой вкладки</option>'
-    ]
-    options.extend(
-        f'<option value="{profile.value}"{" selected" if profile is selected else ""} data-description="{html.escape(PROFILE_DESCRIPTIONS[profile], quote=True)}">'
-        f"{html.escape(label)}</option>"
-        for profile, label in PROFILE_LABELS.items()
-    )
-    return "".join(options)
-
-
-def render_marketplace_checkboxes(selected: tuple[str, ...] = ()) -> str:
-    selected_set = set(selected)
-    return (
-        '<div class="u-store-grid">'
-        + "".join(
-            '<label class="u-store-option">'
-            f'<input type="checkbox" name="marketplaces" value="{html.escape(marketplace)}"'
-            f"{' checked' if marketplace in selected_set else ''}>"
-            f"<span>{html.escape(marketplace)}</span></label>"
-            for marketplace in MARKETPLACES
-        )
-        + "</div>"
-    )
-
-
-def _access_policy_from_form(
-    actor: User,
-    form,
-) -> tuple[AccessProfile | None, tuple[str, ...], tuple[MarketplaceAccessScope, ...], str | None]:
-    profile_raw = str(form.get("access_profile") or "").strip()
-    try:
-        profile = AccessProfile(profile_raw) if profile_raw else None
-    except ValueError:
-        return None, (), (), "неизвестный должностной профиль"
-    store_slugs = normalize_admin_store_selection(actor, tuple(form.getlist("stores")))
-    marketplaces = tuple(
-        marketplace
-        for marketplace in MARKETPLACES
-        if marketplace in {str(value).strip().upper() for value in form.getlist("marketplaces")}
-    )
-    if profile is None and not marketplaces and "scope_version" not in form:
-        marketplaces = tuple(MARKETPLACES)
-    if not store_slugs:
-        return None, (), (), "выберите хотя бы один кабинет"
-    if not marketplaces:
-        return None, (), (), "выберите хотя бы один маркетплейс"
-    scopes = tuple(
-        MarketplaceAccessScope(store_slug=store_slug, marketplace=marketplace)
-        for store_slug in store_slugs
-        for marketplace in marketplaces
-    )
-    if actor.role is not Role.SUPERADMIN and not {
-        (scope.store_slug, scope.marketplace) for scope in scopes
-    }.issubset(scope_pairs(actor)):
-        return None, (), (), "выберите только доступные вам кабинеты и площадки"
-    return profile, store_slugs, scopes, None
-
-
-def render_user_role_options(user: User) -> str:
-    return "".join(
-        f'<option value="{role.value}"{" selected" if user.role is role else ""}>'
-        f"{html.escape(ROLE_LABELS[role])}</option>"
-        for role in Role
-    )
-
-
-def assignable_store_slugs(actor: User) -> tuple[str, ...]:
-    if auth.has_role(actor, "superadmin"):
-        return tuple(STORES)
-    return accessible_store_slugs(actor)
-
-
-def normalize_admin_store_selection(actor: User, raw_slugs: tuple[str, ...]) -> tuple[str, ...]:
-    allowed = set(assignable_store_slugs(actor))
-    selected = []
-    seen = set()
-    for slug in raw_slugs:
-        key = str(slug or "").strip().lower()
-        if key in allowed and key not in seen:
-            seen.add(key)
-            selected.append(key)
-    return tuple(selected)
-
-
-def render_store_badges(store_slugs: tuple[str, ...]) -> str:
-    slugs = [slug for slug in store_slugs if slug in STORES]
-    if not slugs:
-        return '<span class="u-note">—</span>'
-    return "".join(f'<span class="u-store-badge">{html.escape(STORES[slug].name)}</span>' for slug in slugs)
-
-
-def render_scope_badges(scopes: tuple[MarketplaceAccessScope, ...]) -> str:
-    if not scopes:
-        return '<span class="u-note">Нет назначенных площадок</span>'
-    return "".join(
-        f'<span class="u-store-badge">{html.escape(STORES[scope.store_slug].name)} · '
-        f"{html.escape(scope.marketplace)}</span>"
-        for scope in scopes
-        if scope.store_slug in STORES
-    )
-
-
-def render_store_checkboxes(
-    actor: User,
-    selected_slugs: tuple[str, ...] | None = None,
-    name: str = "stores",
-    disabled: bool = False,
-) -> str:
-    selected = set(assignable_store_slugs(actor) if selected_slugs is None else selected_slugs)
-    disabled_attr = " disabled" if disabled else ""
-    items = []
-    for slug in assignable_store_slugs(actor):
-        store = STORES[slug]
-        checked = " checked" if slug in selected else ""
-        items.append(
-            '<label class="u-store-option">'
-            f'<input type="checkbox" name="{html.escape(name)}" value="{html.escape(slug)}"{checked}{disabled_attr}>'
-            f"<span>{html.escape(store.name)}</span>"
-            "</label>"
-        )
-    return '<div class="u-store-grid">' + "".join(items) + "</div>"
-
-
-def render_user_editor(actor: User, user: User) -> str:
-    manageable = can_manage_user(actor, user)
-    superadmin = auth.has_role(actor, "superadmin")
-    sections_editable = manageable and superadmin and user.role is not Role.SUPERADMIN
-    sections = render_section_fields(user, sections_editable)
-    policy = manageable and superadmin and user.role is not Role.SUPERADMIN
-    stores = manageable and not policy and user.access_profile is None
-    selected_marketplaces = tuple(dict.fromkeys(scope.marketplace for scope in user.access_scopes)) or (
-        tuple(MARKETPLACES) if user.access_profile is None else ()
-    )
-    stock_edit = auth.can_edit_stock(user)
-    summary = (
-        render_scope_badges(user.access_scopes)
-        if user.access_scopes
-        else render_store_badges(user.store_slugs)
-    )
-    return fill_template(
-        "admin/user-editor.html",
-        user_id=str(user.id),
-        full_name=html.escape(user.full_name),
-        email=html.escape(user.google_email),
-        login=html.escape(user.login),
-        created_at=html.escape(format_dt(user.created_at.isoformat())),
-        role_label=html.escape(ROLE_LABELS[user.role]),
-        profile_label=html.escape(profile_label(user.access_profile, selected_marketplaces)),
-        access_summary=summary,
-        stock_label="Разрешены" if stock_edit else "Запрещены",
-        readonly_hidden=" hidden" if manageable else "",
-        readonly_message="Это ваша учётная запись. Свои права здесь изменить нельзя."
-        if user.id == actor.id
-        else "У вас нет прав на изменение этой учётной записи.",
-        policy_hidden="" if policy else " hidden",
-        policy_disabled="" if policy else " disabled",
-        stores_hidden="" if stores else " hidden",
-        stores_disabled="" if stores else " disabled",
-        profile_options=render_profile_options(user.access_profile),
-        marketplace_options=render_marketplace_checkboxes(selected_marketplaces),
-        store_options=render_store_checkboxes(actor, user.store_slugs),
-        profile_description=html.escape(PROFILE_DESCRIPTIONS[user.access_profile]),
-        sections_hidden="",
-        sections_disabled="" if sections_editable else " disabled",
-        sections_save_hidden="" if sections_editable else " hidden",
-        section_fields=sections,
-        role_hidden="" if manageable and superadmin else " hidden",
-        role_disabled="" if manageable and superadmin else " disabled",
-        role_options=render_user_role_options(user),
-        actions_hidden="" if manageable else " hidden",
-        actions_disabled="" if manageable else " disabled",
-        stock_hidden="" if manageable and not superadmin else " hidden",
-        stock_action="Запретить изменения стока" if stock_edit else "Разрешить изменения стока",
-        toggle_label="Заблокировать" if user.is_active else "Разблокировать",
-        toggle_description="Сотрудник потеряет доступ до разблокировки."
-        if user.is_active
-        else "Вернуть сотруднику возможность входить в систему.",
-    )
-
-
-def render_user_rows(actor: User, users: UserCollection) -> str:
-    rows = []
-    for user in users.root:
-        stores = tuple(slug for slug in (user.store_slugs or tuple(STORES)) if slug in STORES)
-        store_names = ", ".join(STORES[slug].name for slug in stores)
-        marketplaces = tuple(dict.fromkeys(scope.marketplace for scope in user.access_scopes))
-        profile = profile_label(user.access_profile, marketplaces)
-        initials = "".join(part[0] for part in user.full_name.split()[:2]).upper()
-        active = "active" if user.is_active else "blocked"
-        status = "Активен" if user.is_active else "Заблокирован"
-        all_stores = len(stores) == len(STORES)
-        store_label = f"Все кабинеты · {len(stores)}" if all_stores else store_names or "Нет кабинетов"
-        market_label = " · ".join(marketplaces) if user.access_scopes else "Все маркетплейсы"
-        self_badge = '<span class="ad-self">это вы</span>' if user.id == actor.id else ""
-        name = html.escape(user.full_name, quote=True)
-        search = html.escape(
-            " ".join((user.full_name, user.google_email, user.login, profile, store_names)), quote=True
-        )
-        rows.append(
-            f'<tr data-user-row data-user-id="{user.id}" data-name="{name}" '
-            f'data-search="{search}" data-role="{user.role.value}" data-status="{active}" '
-            f'data-stores="{html.escape(" ".join(stores), quote=True)}">'
-            f'<td><div class="ad-person"><span class="ad-avatar ad-avatar--{user.id % 4}" aria-hidden="true">'
-            f'{html.escape(initials)}</span><div class="ad-person-copy">'
-            f'<button type="button" class="ad-name" data-open-user="{user.id}">{name}</button>{self_badge}'
-            f"<small>{html.escape(user.google_email)} · {html.escape(user.login)}</small></div></div></td>"
-            f'<td><span class="ad-role ad-role--{user.role.value}">{html.escape(ROLE_LABELS[user.role])}</span>'
-            f'<small class="ad-secondary">{html.escape(profile)}</small></td>'
-            f'<td><span class="ad-store-summary" title="{html.escape(store_names, quote=True)}">{html.escape(store_label)}</span>'
-            f'<small class="ad-secondary">{html.escape(market_label)}</small></td>'
-            f'<td><span class="ad-status ad-status--{active}">{status}</span></td>'
-            f'<td><button type="button" class="ad-manage" data-open-user="{user.id}" '
-            f'aria-label="Открыть карточку: {name}">'
-            f'{"Управлять" if can_manage_user(actor, user) else "Посмотреть"}<span aria-hidden="true"> →</span></button>'
-            f'<template id="ad-user-{user.id}">{render_user_editor(actor, user)}</template></td></tr>'
-        )
-    return "".join(rows)
-
-
-def render_access_request_rows(requests: list[dict]) -> str:
-    if not requests:
-        return '<tr class="empty-row"><td colspan="7">Запросов доступа пока нет</td></tr>'
-    permission_labels = {
-        "stock.transfer.cross_marketplace": "Перемещение на чужую площадку",
-        "stock.transfer.receive": "Приёмка перемещения или отгрузки на FBO",
-        "stock.transfer.cancel": "Отмена перемещения или отгрузки на FBO",
-        "stock.receive.create": "Добавление стока",
-        "stock.transfer.create": "Перемещение стока",
-        "stock.shipment.create": "Отгрузка",
-        "stock.writeoff.create": "Списание",
-    }
-    rows = []
-    for item in requests:
-        status = str(item.get("status") or "pending")
-        destination = str(item.get("source_marketplace") or "")
-        if item.get("target_marketplace"):
-            destination += f" → {item['target_marketplace']}"
-        controls = '<span class="u-note">—</span>'
-        if status == "pending":
-            controls = (
-                f'<div class="access-request-actions" data-request-id="{item["id"]}">'
-                '<button type="button" class="u-act access-request-approve">Разрешить на 7 дней</button>'
-                '<button type="button" class="u-act access-request-reject">Отклонить</button></div>'
-            )
-        elif status == "approved" and item.get("grant_id") and not item.get("revoked_at"):
-            controls = (
-                f'<button type="button" class="u-act access-grant-revoke" data-grant-id="{item["grant_id"]}">'
-                "Отозвать</button>"
-            )
-        status_label = {"pending": "ожидает", "approved": "разрешён", "rejected": "отклонён"}.get(
-            status, status
-        )
-        rows.append(
-            "<tr>"
-            f"<td>{html.escape(format_dt(str(item.get('created_at') or '')))}</td>"
-            f"<td>{html.escape(str(item.get('user_name') or ''))}</td>"
-            f"<td>{html.escape(STORES.get(str(item.get('store_slug')), {}).get('name', str(item.get('store_slug') or '')))}</td>"
-            f"<td>{html.escape(destination)}</td>"
-            f"<td>{html.escape(permission_labels.get(str(item.get('permission')), str(item.get('permission') or '')))}</td>"
-            f'<td><span class="u-status u-status--{"on" if status == "approved" else "off"}">{html.escape(status_label)}</span>'
-            f'<small class="access-request-reason">{html.escape(str(item.get("reason") or ""))}</small></td>'
-            f"<td>{controls}</td></tr>"
-        )
-    return "".join(rows)
-
-
 def render_log_rows(user: User, activity: ActivityLog) -> str:
     entries = activity.root
-    allowed = set(accessible_store_slugs(user))
-    if len(allowed) != len(STORES):
-        filtered = []
-        for entry in entries:
-            operation_id = entry.operation_id
-            if not operation_id:
-                filtered.append(entry)
-                continue
-            operation = db.get_operation(operation_id)
-            if operation and operation.get("store_slug") in allowed:
-                filtered.append(entry)
-        entries = tuple(filtered)
     if not entries:
         return '<tr class="empty-row"><td colspan="5">Пока пусто</td></tr>'
     rows = []
@@ -858,76 +217,10 @@ def render_log_rows(user: User, activity: ActivityLog) -> str:
     return "".join(rows)
 
 
-@router.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request, identities: IdentityServiceDependency):
-    user = request.state.user
-    if not auth.has_role(user, "admin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    read_only = not auth.can_manage_users(user) or not has_access(
-        user, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
-    )
-    users = await run_in_threadpool(identities.list_users)
-    activity = await run_in_threadpool(identities.get_activity, ActivityLogQuery())
-    log_rows = await run_in_threadpool(render_log_rows, user, activity)
-    access_requests = (
-        await run_in_threadpool(db.list_access_requests, None, 200)
-        if auth.has_role(user, "superadmin")
-        else []
-    )
-    content = fill_template(
-        "admin/index.html",
-        role_options=render_role_options(user),
-        profile_options=render_profile_options(),
-        marketplace_options=render_marketplace_checkboxes(tuple(MARKETPLACES)),
-        store_options=render_store_checkboxes(user, disabled=read_only),
-        user_rows=render_user_rows(user, users),
-        users_total=str(len(users.root)),
-        users_active=str(sum(item.is_active for item in users.root)),
-        users_blocked=str(sum(not item.is_active for item in users.root)),
-        requests_pending=str(sum(item.get("status", "pending") == "pending" for item in access_requests)),
-        filter_roles="".join(
-            f'<option value="{role.value}">{label}</option>' for role, label in ROLE_LABELS.items()
-        ),
-        filter_stores="".join(
-            f'<option value="{html.escape(slug)}">{html.escape(store.name)}</option>'
-            for slug, store in STORES.items()
-        ),
-        access_request_rows=render_access_request_rows(access_requests),
-        access_requests_hidden="" if auth.has_role(user, "superadmin") else " hidden",
-        log_rows=log_rows,
-        create_hint=(
-            '<p class="panel-desc panel-desc--warn">Режим просмотра: '
-            "создание и изменение сотрудников недоступно.</p>"
-            if read_only
-            else ""
-        ),
-        form_disabled=" disabled" if read_only else "",
-    )
-    return render_page("CheckStock — Админ-панель", "admin", content, user, "content--admin")
-
-
 @router.get("/admin/operations/{operation_id}/xlsx")
 async def download_operation(request: Request, operation_id: int):
 
-    if not auth.has_role(request.state.user, "admin"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    operation = await run_in_threadpool(db.get_operation, operation_id)
-    if operation is not None and not has_store_access(request.state.user, operation["store_slug"]):
-        raise HTTPException(status_code=403, detail="Нет доступа к этому магазину")
-    if operation is not None:
-        allowed_pairs = set(scope_pairs(request.state.user))
-        operation_marketplaces = {
-            str(value)
-            for value in (operation.get("from_marketplace"), operation.get("to_marketplace"))
-            if value
-        }
-        if operation_marketplaces and not any(
-            (str(operation["store_slug"]), marketplace) in allowed_pairs
-            for marketplace in operation_marketplaces
-        ):
-            raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
+    require_active_user(request)
 
     try:
         content, filename = await run_in_threadpool(ff_export.build_operation_xlsx, operation_id)
@@ -943,102 +236,9 @@ async def download_operation(request: Request, operation_id: int):
     )
 
 
-@router.post("/admin/users")
-async def admin_create_user(
-    request: Request,
-    identities: IdentityServiceDependency,
-    container: ContainerDependency,
-):
-    actor = request.state.user
-    if not auth.can_manage_users(actor) or not has_access(
-        actor, SectionName.ADMIN_USERS, SectionAccessLevel.WRITE
-    ):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    form = await request.form()
-    access_profile, store_slugs, access_scopes, policy_error = _access_policy_from_form(actor, form)
-    if policy_error:
-        return JSONResponse(
-            {
-                "ok": False,
-                "field": _access_policy_error_field(policy_error),
-                "error": policy_error,
-            },
-            status_code=400,
-        )
-    if not store_slugs:
-        return JSONResponse({"ok": False, "error": "выберите хотя бы один кабинет"}, status_code=400)
-    try:
-        payload = CreateUserForm(
-            full_name=str(form.get("full_name") or ""),
-            google_email=str(form.get("google_email") or ""),
-            login=str(form.get("login") or ""),
-            password=str(form.get("password") or ""),
-            role=str(form.get("role") or ""),
-            store_slugs=store_slugs,
-            access_profile=access_profile,
-            access_scopes=access_scopes,
-        )
-    except ValidationError as error:
-        field, message = _create_user_validation_error(error)
-        return JSONResponse(
-            {"ok": False, "field": field, "error": message},
-            status_code=400,
-        )
-    if payload.role not in creatable_roles(actor):
-        return JSONResponse(
-            {"ok": False, "error": "у вас нет прав заводить сотрудников с этой ролью"},
-            status_code=403,
-        )
-    existing = await run_in_threadpool(
-        identities.get_user_by_login,
-        LoginQuery(login=payload.login),
-    )
-    if existing is not None:
-        return JSONResponse(
-            {"ok": False, "field": "login", "error": "Такой логин уже занят"},
-            status_code=400,
-        )
-    password_hash = await run_in_threadpool(
-        container.passwords.hash,
-        PasswordHashRequest(password=payload.password),
-    )
-    created_at = datetime.now(UTC)
-    user_command = CreateUserCommand(
-        full_name=payload.full_name,
-        google_email=payload.google_email,
-        login=payload.login,
-        password_hash=password_hash.root,
-        role=payload.role,
-        created_at=created_at,
-        store_slugs=payload.store_slugs,
-        access_profile=payload.access_profile,
-        access_scopes=payload.access_scopes,
-    )
-    store_labels = ", ".join(STORES[slug].name for slug in payload.store_slugs)
-    command = AuditedCreateUser(
-        user=user_command,
-        activity=_activity(
-            actor,
-            "Создан сотрудник",
-            f"{payload.full_name} ({payload.login}), роль: {ROLE_LABELS[payload.role]}, "
-            f"должность: {profile_label(payload.access_profile, tuple(scope.marketplace for scope in payload.access_scopes))}, "
-            f"кабинеты: {store_labels}",
-        ),
-    )
-    await run_in_threadpool(identities.create_user_with_activity, command)
-    return JSONResponse({"ok": True})
-
-
 @router.post("/admin/sync-stock")
 async def sync_stock(request: Request):
-    actor = request.state.user
-    if (
-        not auth.has_role(actor, "admin")
-        or access_level(actor, SectionName.STOCK_BALANCES) is not SectionAccessLevel.WRITE
-    ):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
+    actor = require_active_user(request)
     store_slugs = accessible_store_slugs(actor)
 
     def sync_catalogs():

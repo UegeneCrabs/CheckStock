@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
-from app.access import auth
-from app.access.access_control import has_scope
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
+from app.access.resources import has_store_marketplace
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName
 from app.dto.yandex_economics import CalculationRequest, Scheme, SettingsChange
 from app.repositories import yandex_assortment
 from app.repositories import yandex_economics as repository
@@ -51,7 +49,7 @@ def validate_manual_costs(changes):
 
 
 def authorize_settings(request, store, article, *, write=False):
-    if not auth.has_role(request.state.user, "superadmin"):
+    if not is_active_user(request.state.user):
         raise HTTPException(403, "Параметры доступны в разделе API-ключи и фоновые выгрузки администратору")
     if store not in STORES:
         raise HTTPException(404, "Кабинет не найден")
@@ -118,9 +116,8 @@ async def update_settings(request: Request, store: str, payload: SettingsChange,
 
 
 def authorize(request, store, article, *, write=False):
-    access = SectionAccessLevel.WRITE if write else SectionAccessLevel.READ
-    if not has_scope(request.state.user, store, "YANDEX MARKET") or not has_access(
-        request.state.user, SectionName.UNIT_ECONOMICS_YANDEX, access
+    if not has_store_marketplace(request.state.user, store, "YANDEX MARKET") or not is_active_user(
+        request.state.user
     ):
         raise HTTPException(403, "Нет доступа к этому кабинету")
     if article and article not in yandex_assortment.active_articles(store):

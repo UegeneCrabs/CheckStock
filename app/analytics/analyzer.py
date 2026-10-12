@@ -3,16 +3,13 @@
 This module only reads saved sources. Opening the analyzer never starts API jobs.
 """
 
-import re
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
 from app import db
-from app.access.access_control import restricts_unit_economics_to_manager
-from app.access.sections import has_access
+from app.access.authentication import is_active_user
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SectionName, coerce_user
 from app.dto.unit_economics_1c import UnitEconomics1CProductSettings
 from app.economics.completeness import aggregate_days
 from app.economics.wb import calculations, history
@@ -21,16 +18,7 @@ from app.repositories.economics_coverage import wb_days
 
 
 def permitted(manager, user) -> bool:
-    user = coerce_user(user)
-    if user is None:
-        return False
-    if not restricts_unit_economics_to_manager(user):
-        return True
-
-    def identity(value):
-        return " ".join(re.sub(r"[^0-9a-zа-я]+", " ", str(value or "").casefold().replace("ё", "е")).split())
-
-    return identity(manager) == identity(user.full_name)
+    return is_active_user(user)
 
 
 def index(rows, article="article"):
@@ -131,7 +119,7 @@ def load(
     snapshots, coverage = sources.snapshots, sources.coverage
     cabinets, settings, current_metrics = sources.cabinets, sources.settings, sources.current_metrics
     work = defaultdict(lambda: defaultdict(list))
-    can_edit = has_access(user, SectionName.ANALYZER, SectionAccessLevel.WRITE)
+    can_edit = is_active_user(user)
     for row in repository.notes(stores, days[0], today.isoformat()) if include_notes else ():
         row["can_edit"] = can_edit and row["action_date"] == today.isoformat()
         work[(row["store_slug"], row["article"])][row["action_date"]].append(row)

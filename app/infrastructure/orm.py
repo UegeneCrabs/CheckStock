@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-from sqlalchemy import (
-    BigInteger,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-)
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import BigInteger, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class OrmBase(DeclarativeBase):
@@ -261,139 +252,8 @@ class UserRecord(OrmBase):
     google_email: Mapped[str] = mapped_column(String, nullable=False)
     login: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    role: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    can_edit_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    can_manage_users: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
-    store_access: Mapped[list[UserStoreAccessRecord]] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-    section_access: Mapped[list[UserSectionAccessRecord]] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-    access_profile_record: Mapped[UserAccessProfileRecord | None] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-        uselist=False,
-    )
-    marketplace_access: Mapped[list[UserMarketplaceAccessRecord]] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
-
-class UserStoreAccessRecord(OrmBase):
-    __tablename__ = "user_store_access"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
-    user: Mapped[UserRecord] = relationship(back_populates="store_access")
-
-
-class UserSectionAccessRecord(OrmBase):
-    __tablename__ = "user_section_access"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    section: Mapped[str] = mapped_column(String, primary_key=True)
-    access_level: Mapped[str] = mapped_column(String, nullable=False)
-    user: Mapped[UserRecord] = relationship(back_populates="section_access")
-
-
-class UserAccessProfileRecord(OrmBase):
-    __tablename__ = "user_access_profiles"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    profile: Mapped[str] = mapped_column(String, nullable=False)
-    user: Mapped[UserRecord] = relationship(back_populates="access_profile_record")
-
-
-class UserMarketplaceAccessRecord(OrmBase):
-    __tablename__ = "user_marketplace_access"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
-    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
-    user: Mapped[UserRecord] = relationship(back_populates="marketplace_access")
-
-
-class AccessRequestRecord(OrmBase):
-    __tablename__ = "access_requests"
-    __table_args__ = (
-        Index("ix_access_requests_status_created", "status", "created_at"),
-        Index("ix_access_requests_user_created", "user_id", "created_at"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    permission: Mapped[str] = mapped_column(String, nullable=False)
-    store_slug: Mapped[str] = mapped_column(String, nullable=False)
-    source_marketplace: Mapped[str] = mapped_column(String, nullable=False)
-    target_marketplace: Mapped[str | None] = mapped_column(String)
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
-    context_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default="{}")
-    duration_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7, server_default="7")
-    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", server_default="pending")
-    created_at: Mapped[str] = mapped_column(String, nullable=False)
-    decided_at: Mapped[str | None] = mapped_column(String)
-    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    decision_note: Mapped[str | None] = mapped_column(Text)
-
-
-class TemporaryAccessGrantRecord(OrmBase):
-    __tablename__ = "temporary_access_grants"
-    __table_args__ = (
-        UniqueConstraint("request_id"),
-        Index("ix_access_grants_lookup", "user_id", "permission", "valid_until"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    request_id: Mapped[int] = mapped_column(
-        ForeignKey("access_requests.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    permission: Mapped[str] = mapped_column(String, nullable=False)
-    store_slug: Mapped[str] = mapped_column(String, nullable=False)
-    source_marketplace: Mapped[str] = mapped_column(String, nullable=False)
-    target_marketplace: Mapped[str | None] = mapped_column(String)
-    valid_from: Mapped[str] = mapped_column(String, nullable=False)
-    valid_until: Mapped[str] = mapped_column(String, nullable=False)
-    granted_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
-    )
-    revoked_at: Mapped[str | None] = mapped_column(String)
-    revoked_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-
-
-class UserUiPreferenceRecord(OrmBase):
-    __tablename__ = "user_ui_preferences"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    scope: Mapped[str] = mapped_column(String, primary_key=True)
-    preference_json: Mapped[str] = mapped_column(Text, nullable=False)
-    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class SessionRecord(OrmBase):

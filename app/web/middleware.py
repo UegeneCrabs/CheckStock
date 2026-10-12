@@ -3,18 +3,13 @@ import time
 
 from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
 from app.access import auth
-from app.access.sections import has_access as has_section_access
-from app.access.sections import section_for_path
 from app.config import settings
 from app.core.logging_config import new_request_id, request_id_context
-from app.core.stores import STORES
-from app.dto.identity import SectionAccessLevel, SessionToken
-from app.web.access import has_store_access
-from app.web.templating import render_access_denied_page
+from app.dto.identity import SessionToken
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
 QUIET_PATH_PREFIXES = ("/static/",)
@@ -55,67 +50,13 @@ async def authentication_middleware(request: Request, call_next):
         user = await run_in_threadpool(request.app.state.container.identity.user_for_token, token)
     request.state.user = user
 
-    if user is None:
+    if user is None or not user.is_active:
         wants_json = "application/json" in request.headers.get("accept", "") or (
             request.headers.get("x-requested-with") == "fetch"
         )
         if wants_json or request.method != "GET":
             return JSONResponse({"ok": False, "error": "Требуется вход в систему"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
-
-    section = section_for_path(path)
-    required_access = (
-        SectionAccessLevel.READ if request.method in {"GET", "HEAD", "OPTIONS"} else SectionAccessLevel.WRITE
-    )
-    if request.method == "POST" and (
-        path.startswith("/api/unit-economics-1c/yandex-market/calculate/")
-        or path == "/api/unit-economics-1c/calculator/verify"
-        or path == "/api/unit-economics-1c/reports/target-price.xlsx"
-        or path == "/api/unit-economics-1c/yandex-market/reports/target-price.xlsx"
-        or (
-            path.startswith("/api/unit-economics-1c/yandex-market/reports/target-price/")
-            and path.endswith("/preview")
-        )
-    ):
-        required_access = SectionAccessLevel.READ
-    if section is not None and not has_section_access(user, section, required_access):
-        wants_json = "application/json" in request.headers.get("accept", "") or (
-            request.headers.get("x-requested-with") == "fetch"
-        )
-        message = (
-            "Раздел доступен только для просмотра"
-            if required_access is SectionAccessLevel.WRITE
-            and has_section_access(user, section, SectionAccessLevel.READ)
-            else "Нет доступа к этому разделу"
-        )
-        if wants_json or request.method != "GET":
-            return JSONResponse({"ok": False, "error": message}, status_code=403)
-        return HTMLResponse(
-            render_access_denied_page(user, section=section),
-            status_code=403,
-        )
-
-    if path.startswith("/stock/"):
-        parts = path.strip("/").split("/")
-        store_slug = parts[1].lower() if len(parts) > 1 else ""
-        if store_slug in STORES and not has_store_access(user, store_slug):
-            wants_json = "application/json" in request.headers.get("accept", "") or (
-                request.headers.get("x-requested-with") == "fetch"
-            )
-            if wants_json or request.method != "GET":
-                return JSONResponse({"ok": False, "error": "Нет доступа к этому магазину"}, status_code=403)
-            store_name = STORES[store_slug]["name"]
-            return HTMLResponse(
-                render_access_denied_page(
-                    user,
-                    heading="Нет доступа к кабинету",
-                    description=(
-                        f"Кабинет «{store_name}» недоступен для вашей учётной записи. "
-                        "Если он нужен для работы, обратитесь к суперадминистратору."
-                    ),
-                ),
-                status_code=403,
-            )
 
     response = await call_next(request)
     if path.startswith(

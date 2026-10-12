@@ -4,7 +4,6 @@ import math
 from datetime import UTC, datetime, timedelta
 
 from app import db
-from app.access.access_control import restricts_unit_economics_to_manager
 from app.repositories.core import get_connection
 
 TAG_LABELS = {
@@ -75,18 +74,15 @@ def catalog(store, marketplace):
 
 
 def references(user, store, manager=None):
-    from app.web.routers.unit_economics import _manager_matches_user
 
     rows = db.get_unit_economics_1c_product_reference_rows((store,))
-    if restricts_unit_economics_to_manager(user):
-        rows = [r for r in rows if _manager_matches_user(str(r.get("manager") or ""), user)]
     if manager:
         rows = [r for r in rows if str(r.get("manager") or "").casefold() == manager.casefold()]
     return rows
 
 
 def economic_filter(rows, user, store, manager=None, article_key="article"):
-    if not restricts_unit_economics_to_manager(user) and not manager:
+    if not manager:
         return rows
     allowed = {str(r["article"]) for r in references(user, store, manager)}
     all_articles = {str(r["article"]) for r in db.get_unit_economics_1c_product_reference_rows((store,))}

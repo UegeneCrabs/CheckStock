@@ -737,50 +737,6 @@ main h2 {
     margin-bottom: var(--space-lg);
 }
 
-.access-request-reason {
-    color: #7a8491;
-}
-
-.access-request-reason {
-    display: block;
-    margin-top: 3px;
-    font-size: 11px;
-}
-
-.u-role-editor {
-    display: grid;
-    grid-template-columns: minmax(9rem, 1fr) auto;
-    gap: 6px;
-}
-
-.u-role-select {
-    min-width: 0;
-    margin: 0;
-}
-
-.section-access-editor {
-    display: grid;
-    gap: 10px;
-    min-width: min(28rem, 70vw);
-}
-
-.section-access-editor label {
-    display: grid;
-    grid-template-columns: minmax(10rem, 1fr) minmax(11rem, 1fr);
-    align-items: center;
-    gap: 12px;
-    text-align: left;
-}
-
-.section-access-editor .select-control {
-    margin: 0;
-}
-
-body[data-access-level='read'] [data-dc-sync],
-body[data-access-level='read'] [data-dc-set-status] {
-    display: none !important;
-}
-
 .btn-block {
     display: block;
     width: 100%;

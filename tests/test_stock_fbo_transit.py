@@ -44,7 +44,7 @@ class StockFboTransitTests(unittest.TestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
         self.now = datetime(2026, 10, 9, 12, tzinfo=UTC)
-        self.user = User(id=1, login="test", full_name="Test", role="superadmin", created_at=self.now)
+        self.user = User(id=1, login="test", full_name="Test", created_at=self.now)
         self.service = StockMovementService(
             lambda: SqlAlchemyStockUnitOfWork(self.database.session_factory), lambda: self.now
         )
@@ -437,7 +437,7 @@ class StockFboTransitTests(unittest.TestCase):
             body={"items": [{"item_id": 1, "quantity": 1}]},
             expected=404,
         )
-        with patch.object(stock_mutations, "has_action_permission", return_value=False):
+        with patch.object(self, "user", self.user.model_copy(update={"is_active": False})):
             self.receive(batch_id, 30, expected=403)
         self.assert_stock(70, transit=30)
         self.receive(batch_id, 30)
