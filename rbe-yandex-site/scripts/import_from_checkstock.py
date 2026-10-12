@@ -5,29 +5,68 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from datetime import date
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SITE))
 from main import connection, init_database  # noqa: E402
+from recalculate_cost_of_goods import recalculate  # noqa: E402
 
 
-def main(source_path: str) -> None:
+def main(
+    source_path: str,
+    stores: tuple[str, ...] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> None:
+    """Copy only the requested official facts into the isolated RBE database.
+
+    With no filters this remains a full migration. The importer uses the
+    filters during a targeted repair so facts that are already complete are
+    not rewritten.
+    """
     source = sqlite3.connect(source_path)
     source.row_factory = sqlite3.Row
     init_database()
+    filters: list[str] = []
+    params: list[object] = []
+    if stores:
+        filters.append(f"store_slug IN ({','.join('?' for _ in stores)})")
+        params.extend(stores)
+    if date_from:
+        filters.append("report_date>=?")
+        params.append(date_from.isoformat())
+    if date_to:
+        filters.append("report_date<=?")
+        params.append(date_to.isoformat())
+    where = f" WHERE {' AND '.join(filters)}" if filters else ""
     daily = source.execute(
-        "SELECT store_slug,business_id,report_date,values_json,calculated_at FROM yandex_financial_daily_pnl"
+        "SELECT store_slug,business_id,report_date,values_json,calculated_at FROM yandex_financial_daily_pnl" + where,
+        params,
     ).fetchall()
+
+    order_filters: list[str] = ["marketplace='YANDEX MARKET'", "ordered_at IS NOT NULL"]
+    order_params: list[object] = []
+    if stores:
+        order_filters.append(f"store_slug IN ({','.join('?' for _ in stores)})")
+        order_params.extend(stores)
+    if date_from:
+        order_filters.append("substr(ordered_at,1,10)>=?")
+        order_params.append(date_from.isoformat())
+    if date_to:
+        order_filters.append("substr(ordered_at,1,10)<=?")
+        order_params.append(date_to.isoformat())
     orders = source.execute(
         """
         SELECT store_slug,substr(ordered_at,1,10) AS report_date,
                SUM(CASE WHEN order_amount-cancelled_amount>0 THEN order_amount-cancelled_amount ELSE 0 END) AS orders_amount,
                SUM(cancelled_amount) AS cancellations_amount
         FROM sales_order_lines
-        WHERE marketplace='YANDEX MARKET' AND ordered_at IS NOT NULL
+        WHERE """ + " AND ".join(order_filters) + """
         GROUP BY store_slug,substr(ordered_at,1,10)
-        """
+        """,
+        order_params,
     ).fetchall()
     with connection() as target:
         target.executemany(
@@ -44,7 +83,8 @@ def main(source_path: str) -> None:
             orders_amount=excluded.orders_amount,cancellations_amount=excluded.cancellations_amount
             """, [tuple(row) for row in orders]
         )
-    print(json.dumps({"financial_days": len(daily), "order_days": len(orders)}, ensure_ascii=False))
+    costs = recalculate(source_path, stores=stores, date_from=date_from, date_to=date_to)
+    print(json.dumps({"financial_days": len(daily), "order_days": len(orders), "costs": costs}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

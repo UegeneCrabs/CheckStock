@@ -1,0 +1,31 @@
+<link rel="stylesheet" href="/static/rbe/yandex-settings.css?v=20261009" />
+
+<section class="rbe-settings" aria-label="Подключения Яндекс Маркета">
+    <header class="rbe-settings__header">
+        <p class="rbe-settings__eyebrow">RBE</p>
+        <h1>Подключения Яндекс Маркета</h1>
+        <p>Ключ проверяется в API Яндекс Маркета до сохранения. Сохранённое значение больше не показывается.</p>
+    </header>
+
+    <section class="rbe-card">
+        <h2>Добавить или заменить подключение</h2>
+        <form id="rbe-yandex-connection-form" class="rbe-form">
+            <label>Магазин
+                <select name="store_slug" required>$stores</select>
+            </label>
+            <label>Business ID
+                <input name="business_id" type="number" min="1" step="1" inputmode="numeric" placeholder="Например, 216948789" required />
+            </label>
+            <label class="rbe-form__wide">API-ключ Яндекс Маркета
+                <span class="rbe-secret"><input name="api_key" type="password" autocomplete="new-password" placeholder="Вставьте API-ключ" required /><button type="button" data-rbe-reveal>Показать</button></span>
+            </label>
+            <div class="rbe-form__actions"><button class="rbe-primary" type="submit">Проверить и сохранить</button><p data-rbe-message aria-live="polite"></p></div>
+        </form>
+    </section>
+
+    <section class="rbe-card">
+        <div class="rbe-card__head"><div><h2>Подключённые кабинеты</h2><p>Campaign ID определяется автоматически из доступа ключа.</p></div></div>
+        <div class="rbe-table-wrap"><table class="rbe-connections"><thead><tr><th>Магазин</th><th>Business ID</th><th>Campaign ID</th><th></th></tr></thead><tbody data-rbe-connections>$connections</tbody></table></div>
+    </section>
+</section>
+<script src="/static/rbe/yandex-settings.js?v=20261009"></script>

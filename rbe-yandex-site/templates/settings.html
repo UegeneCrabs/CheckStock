@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Подключения API — RBE</title><link rel="stylesheet" href="/static/site.css?v=20261012-api-status"></head>
-<body><header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><a href="/settings">Подключения API</a></header>
+<body><header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><nav><a href="/costs">Себестоимость</a><a href="/settings">Подключения API</a><form method="post" action="/logout"><button class="logout">Выйти</button></form></nav></header>
 <main class="settings"><div class="settings-title"><div><h1>Подключения API Яндекс Маркета</h1><p class="hint">Ключ проверяется через официальный API кампаний. После сохранения он не показывается в интерфейсе.</p></div><button type="button" id="check-all" class="check-all" title="Проверить все подключения">↻ <span>Проверить все</span></button></div>
 <form id="connection-form"><label>Код магазина<input name="store_slug" required pattern="[a-z0-9][a-z0-9_-]{0,63}" placeholder="например, rimili"></label>
 <label>Business ID<input name="business_id" required type="number" min="1" placeholder="216949566"></label>

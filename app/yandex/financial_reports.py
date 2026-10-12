@@ -227,11 +227,24 @@ def _pnl_values(
     # берём все операции перечисления платежа: PiData также включает в эту
     # статью техническую операцию, если заказ позднее стал невыкупом.
     payment_transfer = total("payment_transfer")
+    # ``crossregional_delivery`` has two monetary fields.  ``servicePrice``
+    # contains the tariff component while ``netting`` contains the accrued
+    # amount for the middle mile / return delivery.  PiData includes both;
+    # omitting ``netting`` understated logistics substantially.
+    def logistics_total(sheet: str) -> float:
+        return round(
+            sum(
+                _number(row.get("servicePrice")) + _number(row.get("netting"))
+                for row in service_sheets.get(sheet, [])
+            ),
+            2,
+        )
+
     # PiData includes both legs of a transit delivery (including acceptance
     # at the transit warehouse) in logistics, not in "Other".
     logistics = round(
         signed_total("delivery")
-        + signed_total("crossregional_delivery")
+        + logistics_total("crossregional_delivery")
         + signed_total("delivery_via_transit_warehouse"),
         2,
     )
@@ -264,11 +277,18 @@ def _pnl_values(
     other = marketplace_other
     payment_adjustments = round(
         total("loyalty_and_reviews", "customerBonusAmount")
-        + total("paid_storage_after_01-06-22", "paidStorage")
-        # The business report contains one manager row without a campaign
-        # identifier. It is charged for each configured campaign, which is
-        # also how PiData displays this service for a multi-campaign cabinet.
-        + total("personal_manager") * max(campaign_count, 1)
+        # Market periodically changes the suffix in the storage sheet name.
+        # Sum every version while preserving the amount from its dedicated
+        # ``paidStorage`` field.
+        + sum(
+            total(sheet, "paidStorage")
+            for sheet in service_sheets
+            if sheet.startswith("paid_storage_after_")
+        )
+        # This is a business-level monthly service, not a campaign expense.
+        # A report has one charge for the cabinet, even when it has several
+        # campaigns; multiplying it by their count understated the payout.
+        + total("personal_manager")
         + total("reception_of_surplus")
         + total("export_from_warehouse")
         + total("order_processing")

@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Вход — RBE Яндекс Маркет</title><link rel="stylesheet" href="/static/site.css?v=20261012-auth"></head>
+<body class="login-page"><main class="login-card"><p class="login-brand">RBE <span>Яндекс Маркет</span></p><h1>Вход в отчёты</h1>
+<form method="post" action="/login"><label>Логин<input name="username" autocomplete="username" required autofocus></label><label>Пароль<input name="password" type="password" autocomplete="current-password" required></label><button>Войти</button></form><p id="login-error" class="login-error" hidden>Неверный логин или пароль.</p></main>
+<script>if(new URLSearchParams(location.search).get('error'))document.querySelector('#login-error').hidden=false;</script></body></html>
