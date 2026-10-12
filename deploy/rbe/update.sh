@@ -35,6 +35,7 @@ rollback() {
     trap - ERR
     if [[ $stopped == 1 ]]; then
         echo "Update failed; restoring code $old. Database is not automatically rolled back." >&2
+        systemctl stop rbe || true
         git reset --keep "$old" || true
         systemctl start rbe || true
     fi
