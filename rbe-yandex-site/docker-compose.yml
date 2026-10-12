@@ -1,0 +1,12 @@
+services:
+  rbe-yandex:
+    build: .
+    ports:
+      - "127.0.0.1:${RBE_PORT:-8060}:8060"
+    environment:
+      RBE_DATABASE_PATH: /app/data/rbe_yandex.db
+      RBE_CONNECTIONS_PATH: /app/secrets/yandex_connections.json
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/app/secrets
+    restart: unless-stopped

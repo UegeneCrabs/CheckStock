@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RBE Яндекс Маркет</title><link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+  <header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><a href="/settings">Подключения API</a></header>
+  <main>
+    <section class="report-head"><div><p>Финансовый отчёт</p><h1>RBE</h1></div>
+      <div class="filters"><label>Магазин<select id="store"><option value="">Все магазины</option></select></label>
+      <label>С<input id="from" type="date"></label><label>По<input id="to" type="date"></label>
+      <button id="apply">Применить</button></div>
+    </section>
+    <p id="error" role="alert"></p>
+    <section class="table-wrap"><table><thead><tr><th>Показатель</th><th id="period">Факт</th></tr></thead><tbody>
+      <tr><th>ТО заказы из воронки</th><td data-key="orders_turnover"></td></tr>
+      <tr><th>ТО выкупы-возвраты в цене селлера</th><td data-key="buyout_seller_turnover"></td></tr>
+      <tr><th>ТО выкупы-возвраты в цене покупателя</th><td data-key="buyout_buyer_turnover"></td></tr>
+      <tr><th>К-во выкупов</th><td data-key="buyout_count" data-format="integer"></td></tr>
+      <tr><th>Комиссия</th><td data-key="commission"></td></tr><tr><th>Хранение</th><td data-key="storage"></td></tr>
+      <tr><th>Логистика</th><td data-key="logistics"></td></tr><tr><th>Иное (эквайринг + другие)</th><td data-key="other_direct_expenses"></td></tr>
+      <tr><th>Реклама</th><td data-key="advertising"></td></tr><tr><th>Приход на РС</th><td data-key="bank_receipt"></td></tr>
+      <tr><th>ЗЦ проданных товаров</th><td data-key="sold_cost_of_goods"></td></tr>
+      <tr class="total"><th>Маржинальная прибыль</th><td data-key="marginal_profit"></td></tr>
+      <tr class="total"><th>Маржинальная прибыль, % от ТО выкупов в цене покупателя</th><td data-key="marginal_profit_percent" data-format="percent"></td></tr>
+    </tbody></table></section>
+  </main><script src="/static/report.js"></script>
+</body></html>
