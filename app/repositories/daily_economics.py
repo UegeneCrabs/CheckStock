@@ -369,7 +369,10 @@ def proposal(key, data, field, value, undo=False):
 
 def refresh_metrics(key, changes, raw):
     """Merge dated metrics into the latest source under CAS, never stale costs."""
-    if changes.keys() - {"orders_count", "advertising_spend"}:
+    allowed = {"orders_count", "advertising_spend"}
+    if key[0] == "YANDEX MARKET":
+        allowed.add("cancel_count")
+    if changes.keys() - allowed:
         raise ValueError("Обновление дневных метрик не может изменять цену или затраты.")
     for attempt in range(3):
         try:

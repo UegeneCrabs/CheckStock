@@ -334,7 +334,8 @@ def current_metrics(store, article, today, scheme="FBY", *, history=None):
         count = None
     if key not in ads_days:
         spend = None
-    return {"spend": spend, "orders": count, "issues": issues}
+    cancellations = sum(int(row.get("cancel_count") or 0) for row in orders if row["article"] == article) if orders_known else None
+    return {"spend": spend, "orders": count, "cancel_count": cancellations, "issues": issues}
 
 
 def detail(
@@ -376,13 +377,14 @@ def detail(
                                if not ("расходы на рекламу" in message and daily["spend"] is not None)
                                and not ("заказы за сегодня" in message and daily["orders"] is not None)]
     spend, orders = daily["spend"], daily["orders"]
+    net_orders = max(orders - (daily.get("cancel_count") or 0), 0) if orders is not None else None
     config["result"] = calculate(
-        config["values"], advertising_spend=spend, orders_count=orders, scenario=scenario
+        config["values"], advertising_spend=spend, orders_count=net_orders, scenario=scenario
     )
     calculator_result = (
         config["result"]
         if mode == "calculator"
-        else calculate(calculator["values"], advertising_spend=spend, orders_count=orders, scenario=scenario)
+        else calculate(calculator["values"], advertising_spend=spend, orders_count=net_orders, scenario=scenario)
     )
     config.update(
         {
@@ -390,6 +392,7 @@ def detail(
             "shared_schemes": True,
             "advertising_spend": spend,
             "orders_count": orders,
+            "net_orders_count": net_orders,
             "advertising_day": today.isoformat(),
             "mode": mode,
             "calculator_values": calculator["values"],
@@ -403,8 +406,10 @@ def detail(
     if mode == "current":
         from app.economics.daily_calculation import calculate as calculate_daily
 
-        config["day_result"] = calculate_daily("YANDEX MARKET", {**config["values"], "orders_count": orders, "advertising_spend": spend})[1]
-        config["current_issues"] = current_issues(config, daily)
+        config["day_result"] = calculate_daily("YANDEX MARKET", {
+            **config["values"], "orders_count": orders, "cancel_count": daily.get("cancel_count"), "advertising_spend": spend,
+        })[1]
+        config["current_issues"] = current_issues(config, {**daily, "orders": net_orders})
     if include_history:
         start, end = (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat()
         rows = repository.history(store, start, end, articles=(article,))
@@ -485,7 +490,7 @@ def attach(products, start, end, today, scheme="FBY"):
                 "day_purchase_value": config["day_result"]["purchase_value"],
                 "purchase_value": config["values"].get("purchase_price"),
                 "roi": config["result"]["roi"],
-                "orders": config["orders_count"],
+                "orders": config["net_orders_count"],
                 "buyout_percent": config["values"].get("buyout_percent"),
                 "advertising_spend": config["advertising_spend"],
                 "period_to": today.isoformat(),
@@ -545,7 +550,7 @@ def capture_today(stores, *, today=None, only_article=None):
                 continue
             state = current_inputs(store, article, shared.SCHEME, today=today, state_cache=cache)
             daily = current_metrics(store, article, today, history=(ads, ad_days, orders, order_days))
-            values = {**state["values"], "orders_count": daily["orders"], "advertising_spend": daily["spend"]}
+            values = {**state["values"], "orders_count": daily["orders"], "cancel_count": daily["cancel_count"], "advertising_spend": daily["spend"]}
             source = daily_economics.observation(
                 values, version=VERSION,
                 origins={**state["origins"], "orders_count": "ЯМ: заказы за день", "advertising_spend": "ЯМ: реклама за день"},
@@ -582,6 +587,15 @@ def close_days(stores, *, today=None):
         candidates = {(r["article"], r["day"]): r for r in daily_economics.records(
             "YANDEX MARKET", (store,), "0001-01-01", (today - timedelta(days=1)).isoformat()
         )}
+        with daily_economics.get_connection() as conn:
+            legacy = conn.execute(
+                "SELECT article,day FROM yandex_economics_daily WHERE store_slug=? AND scheme=? AND day<?",
+                (store, shared.SCHEME, today.isoformat()),
+            ).fetchall()
+        for row in legacy:
+            identity = (row["article"], row["day"])
+            if identity not in candidates:
+                candidates[identity] = daily_economics.get(("YANDEX MARKET", store, *identity))
         for (article, name), snapshot in repository.sources(store).items():
             if not name.startswith("day-input:"):
                 continue
@@ -601,12 +615,13 @@ def close_days(stores, *, today=None):
             source = saved["source"]
             v = dict(source["values"])
             count = sum(int(r.get("orders_count") or 0) for r in orders if r["article"] == article) if day in order_days else v.get("orders_count")
+            cancellations = sum(int(r.get("cancel_count") or 0) for r in orders if r["article"] == article) if day in order_days else v.get("cancel_count")
             spend = sum(float(r.get("spend") or 0) for r in ads if r["article"] == article) if day in ad_days else v.get("advertising_spend")
-            if count == v.get("orders_count") and spend == v.get("advertising_spend") and saved["revision"]:
+            if count == v.get("orders_count") and (cancellations or 0) == (v.get("cancel_count") or 0) and spend == v.get("advertising_spend") and saved["revision"]:
                 continue
             daily_economics.refresh_metrics(
                 ("YANDEX MARKET", store, article, day),
-                {"orders_count": count, "advertising_spend": spend},
+                {"orders_count": count, "cancel_count": cancellations, "advertising_spend": spend},
                 {"received_at": daily_economics.now(), "orders": [r for r in orders if r["article"] == article], "advertising": [r for r in ads if r["article"] == article]},
             )
             completed += 1

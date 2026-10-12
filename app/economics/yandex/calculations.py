@@ -17,6 +17,7 @@ from app.repositories import (
     yandex_storefront,
 )
 from app.stock.catalog_identity import display_barcode
+from app.yandex.order_basis import drr_percent, net_amount, net_count
 
 MARKETPLACE = "YANDEX MARKET"
 
@@ -290,7 +291,7 @@ def load_products(
             total = fbs + fbo + ff
             rows = by_article[sku]
             stock_orders = sum(
-                int(row.get("orders_count") or 0) for row in rows if row["day"] >= stock_start.isoformat()
+                net_count(row) for row in rows if row["day"] >= stock_start.isoformat()
             )
             inbound_quantity = inbound.quantities.get(sku)
             inbound_partial = inbound_quantity is None
@@ -335,7 +336,7 @@ def load_products(
                 continue
             drr_amount = round(
                 sum(
-                    float(row.get("orders_amount") or 0) for row in closed_rows if row["day"] in matching_days
+                    net_amount(row) for row in closed_rows if row["day"] in matching_days
                 ),
                 2,
             )
@@ -375,8 +376,8 @@ def load_products(
                         "clicks": clicks,
                         "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
                         "cpc": round(spend / clicks, 2) if clicks else 0.0,
-                        "drr": unit_economics_1c.calculate_drr_percent(
-                            drr_spend[sku], drr_amount, buyout_percent
+                        "drr": drr_percent(
+                            drr_spend[sku], drr_amount * buyout_percent / 100
                         )
                         if drr_coverage["days"]
                         else None,

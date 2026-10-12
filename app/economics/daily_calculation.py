@@ -5,6 +5,7 @@ import math
 from app.economics.completeness import annotate, describe, status
 from app.economics.wb import calculations as wb
 from app.yandex import economics_calculation as ym
+from app.yandex.order_basis import net_count
 
 # key, caption, unit. Only actual inputs are editable, never derived metrics.
 COMMON_FIELDS = [
@@ -115,6 +116,9 @@ def calculate(marketplace, values, version=None):
         v.update(ym.sheet_logistics(v, version=version))
         result = ym.calculate(v, without_advertising=True, version=version)
     count, spend, buyout = (v.get(k) for k in ("orders_count", "advertising_spend", "buyout_percent"))
+    if marketplace == "YANDEX MARKET":
+        count = net_count(v) if count is not None else None
+        v["net_orders_count"] = count
     bought = 0.0 if count == 0 else count * buyout / 100 if count is not None and buyout is not None else None
     daily_missing = [k for k in ("orders_count", "advertising_spend") if v.get(k) is None]
     if count != 0 and buyout is None:

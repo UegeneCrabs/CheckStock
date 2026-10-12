@@ -102,7 +102,7 @@
             return s + (Number(p.advertising.orders_amount) === 0 ? 0 : Number(p.advertising.orders_amount) * Number(buyout(p)) / 100);
         }, 0);
         metric(7, drrRows, boughtTurnover > 0 ? totalSpend / boughtTurnover * 100 : null,
-            'percent', 'ДРР: расходы на рекламу / Σ(сумма заказов × процент выкупа / 100) × 100%. Учитываются только дни, за которые есть и заказы, и реклама.',
+            'percent', 'ДРР: расходы на рекламу / Σ(сумма заказов после отмен × процент выкупа / 100) × 100%. Учитываются только дни, за которые есть и заказы, и реклама.',
             function (p) { return !p.advertising.drr_coverage || !p.advertising.drr_coverage.complete; });
         sum(8, function (p) { return p.advertising.spend; }, 'money', 'Общие расходы на рекламу.', function (p) { return p.advertising.coverage; });
         var clicks = products.filter(function (p) { return known(p.advertising.clicks) && known(p.advertising.impressions) && known(p.advertising.spend); });
@@ -122,7 +122,7 @@
         var stock = products.filter(function (p) { return known(p.stock.total) && known(p.stock.orders_21d); });
         ratio(22, stock, function (p) { return p.stock.total; }, function (p) {
             return Number(p.stock.average_daily_orders || 0);
-        }, 1, '', 'Запас в днях: общие остатки / сумма среднесуточных заказов по доступным дням.',
+        }, 1, '', 'Запас в днях: общие остатки / сумма среднесуточных заказов после отмен по доступным дням.',
         function (p) { return !p.stock.coverage || !p.stock.coverage.complete; });
         Object.keys(result).forEach(function (index) {
             var total = result[index];

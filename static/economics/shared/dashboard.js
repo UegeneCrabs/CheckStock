@@ -785,7 +785,7 @@
                     nullText(product.advertising.period_from) +
                     ' — ' +
                     nullText(product.advertising.period_to) +
-                    ' · сумма заказов ' +
+                    ' · сумма заказов после отмен ' +
                     nullable(product.advertising.orders_amount, preciseMoney) +
                     ' · буст продаж и показов (расходы по отчётам ЯМ)' +
                     ' · выкуп ' +

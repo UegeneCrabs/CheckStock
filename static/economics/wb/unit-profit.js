@@ -211,7 +211,7 @@
                     key: 'drr',
                     label: 'ДРР',
                     format: 'percent',
-                    help: 'Доля рекламных расходов с учётом выкупа',
+                    help: config.marketplace === 'YM' ? 'Реклама / (ТО после отмен × доля выкупа) × 100%. Без оборота после отмен ДРР не определён.' : 'Доля рекламных расходов с учётом выкупа',
                 },
             ],
         },
@@ -797,7 +797,7 @@
         total.drr = total.expected_buyout_amount
             ? Math.round((total.advertising_spend / total.expected_buyout_amount) * 10000) / 100
             : total.advertising_spend
-              ? 100
+              ? (config.marketplace === 'YM' ? null : 100)
               : 0;
         if (!total.margin_available) total.margin = null;
         if (!total.purchase_available) total.purchase_value = null;

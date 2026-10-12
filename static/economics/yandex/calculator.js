@@ -687,7 +687,7 @@
                             ? 'ДРР не определён при нулевом выкупе и положительном расходе.'
                             : rub(c.advertising) + ' / (' + n('seller_price') + ' ₽ × ' + n('buyout_percent') + '%) × 100 = ' + n('plan_drr') + '%.',
                 advertising_per_buyout: state.values.advertising_mode === 'weekly'
-                    ? charge(number(weekly.spend) + ' ₽ / (' + number(weekly.orders_count) + ' заказов × ' + n('buyout_percent') + '%)', v.advertising_per_buyout) + '. За ' + (weekly.period_from || '—') + ' — ' + (weekly.period_to || '—') + ', только дни с заказами и рекламой.'
+                    ? charge(number(weekly.spend) + ' ₽ / (' + number(weekly.orders_count) + ' заказов после отмен × ' + n('buyout_percent') + '%)', v.advertising_per_buyout) + '. За ' + (weekly.period_from || '—') + ' — ' + (weekly.period_to || '—') + ', только дни с заказами и рекламой.'
                     : 'Расход на один выкуп в сценарии: ' + rub(c.advertising) + '. ' + (v.advertising_basis === 'drr' ? 'Цена продавца × ставка ДРР / 100 × процент выкупа / 100.' : 'Задан вручную; вычитается из прибыли один раз.'),
             };
             container.querySelectorAll('[data-ym-field]').forEach(function (input) {
@@ -926,7 +926,7 @@
                                           'economics/yandex/calculator/show-history',
                                           {
                                               day: row.day,
-                                              orders_count: number(row.orders_count),
+                                              orders_count: number(row.net_orders_count),
                                               expected_buyouts: number(row.expected_buyouts),
                                               advertising_spend: number(row.advertising_spend),
                                               profit: number(row.profit),

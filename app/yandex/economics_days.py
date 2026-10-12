@@ -10,12 +10,14 @@ def resolve_day(day, saved, order, ad, orders_known, ads_known):
     overrides = saved.get("overrides") or {}
     count = overrides.get("orders_count", int(order.get("orders_count") or 0) if orders_known else None)
     spend = overrides.get("advertising_spend", float(ad.get("spend") or 0) if ads_known else None)
-    inputs.update(orders_count=count, advertising_spend=spend)
+    cancellations = int(order.get("cancel_count") or 0) if orders_known else inputs.get("cancel_count", 0)
+    inputs.update(orders_count=count, cancel_count=cancellations, advertising_spend=spend)
     version = saved.get("calculation_version") or VERSION
     values, result = calculate("YANDEX MARKET", inputs, version)
     missing = result["daily_missing"]
     return {**saved, "day": day, "inputs": values, "result": result,
-            "orders_count": count, "advertising_spend": spend, "expected_buyouts": result["expected_buyouts"],
+            "orders_count": count, "net_orders_count": values["net_orders_count"],
+            "advertising_spend": spend, "expected_buyouts": result["expected_buyouts"],
             "profit": result["day_profit"], "purchase_value": result["purchase_value"],
             "missing": missing, "complete": result["daily_complete"], "status": result["daily_status"],
             "messages": ["Не учтены / неизвестны: " + ", ".join(describe(missing, day))] if missing else [],

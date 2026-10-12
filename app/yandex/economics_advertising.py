@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from app.repositories import unit_economics_yandex as metrics
+from app.yandex.order_basis import net_amount, net_count
 
 
 def weekly_history(store, today, *, sources=None):
@@ -24,8 +25,8 @@ def weekly_history(store, today, *, sources=None):
             totals[row["article"]]["spend"] += float(row.get("spend") or 0)
     for row in orders:
         if row["day"] in available:
-            totals[row["article"]]["orders_amount"] += float(row.get("orders_amount") or 0)
-            totals[row["article"]]["orders_count"] += int(row.get("orders_count") or 0)
+            totals[row["article"]]["orders_amount"] += net_amount(row)
+            totals[row["article"]]["orders_count"] += net_count(row)
     return {
         "period_from": start,
         "period_to": end,
@@ -53,7 +54,7 @@ def product_drr(history, article, buyout_percent):
     elif spend == 0:
         drr = 0.0
     elif amount <= 0:
-        message = "Есть расходы на рекламу, но нет оборота заказов: ДРР не определён."
+        message = "Есть расходы на рекламу, но нет оборота после отмен: ДРР не определён."
     elif buyout_percent is None or buyout_percent <= 0:
         message = "Для ДРР нужен положительный процент выкупа."
     else:
