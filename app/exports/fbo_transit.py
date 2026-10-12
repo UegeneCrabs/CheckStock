@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from app.core.stores import STORES
+from app.exports.project_scope import stores_for_marketplace
 from app.exports.stock_sheet import StockSheetExportError
 from app.ozon import api as ozon_api
 from app.ozon import tokens as ozon_tokens
@@ -174,10 +175,11 @@ def _yandex(store: str) -> TransitSnapshot:
 
 def load(marketplace: str) -> dict[str, TransitSnapshot]:
     loader = {"WB": _wb, "OZON": _ozon, "YANDEX MARKET": _yandex}[marketplace]
+    stores = stores_for_marketplace(marketplace)
     snapshots = {}
     # Rate limits remain scoped to the token/client in each marketplace's API client.
-    with ThreadPoolExecutor(max_workers=len(STORES), thread_name_prefix="fbo-export") as executor:
-        futures = {executor.submit(loader, store): store for store in STORES}
+    with ThreadPoolExecutor(max_workers=len(stores), thread_name_prefix="fbo-export") as executor:
+        futures = {executor.submit(loader, store): store for store in stores}
         for future in as_completed(futures):
             store = futures[future]
             try:
@@ -186,4 +188,4 @@ def load(marketplace: str) -> dict[str, TransitSnapshot]:
                 raise StockSheetExportError(
                     f"{STORES[store].name} / {marketplace} / FBO в пути: {error}"
                 ) from error
-    return {store: snapshots[store] for store in STORES}
+    return {store: snapshots[store] for store in stores}

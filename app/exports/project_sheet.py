@@ -10,6 +10,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import PROJECT_STORE_ALIASES, STORES
 from app.exports import fbo_transit
 from app.exports import stock_sheet as legacy
+from app.exports.project_scope import stores_for_marketplace
 from app.jobs import locks as sync_locks
 from app.repositories import project_sheet_export as repository
 
@@ -155,7 +156,7 @@ def is_due(settings: ProjectSheetExportSettings, now: datetime | None = None) ->
 
 def _stock_snapshot(marketplace: str, *, now: datetime | None = None) -> list[ProjectStockSnapshot]:
     snapshots = []
-    for store_slug in STORES:
+    for store_slug in stores_for_marketplace(marketplace):
         # A separate snapshot keeps unknown inbound quantities local to this project.
         catalog, values, warnings = legacy._combined_stock_snapshot(
             (store_slug,), marketplace, now=now, allow_saved_snapshot=True
@@ -167,7 +168,7 @@ def _stock_snapshot(marketplace: str, *, now: datetime | None = None) -> list[Pr
 def _order_totals(marketplace: str, *, now: datetime | None = None) -> dict[str, dict[str, int]]:
     run = legacy._FbsExportRun(now or datetime.now(MOSCOW_TIMEZONE))
     totals = {}
-    for store_slug in STORES:
+    for store_slug in stores_for_marketplace(marketplace):
         try:
             totals[store_slug] = legacy._combined_fbs_order_totals((store_slug,), marketplace, run=run)
         except Exception as error:
@@ -282,7 +283,7 @@ def _plan_quantities(
     headers = []
     for index, row in enumerate(rows):
         normalized = [legacy._header_key(value) for value in row]
-        projects = [col for col, value in enumerate(normalized) if value in {"проект", "project"}]
+        projects = [col for col, value in enumerate(normalized) if value in {"проект", "project", "магазин"}]
         articles = [col for col, value in enumerate(normalized) if value in {"артикул", "article"}]
         if projects and articles:
             if len(projects) != 1 or len(articles) != 1:
@@ -292,13 +293,14 @@ def _plan_quantities(
             headers.append((index, projects[0], articles[0]))
     if len(headers) != 1:
         raise StockSheetExportError(
-            f"Лист «{sheet_name}»: нужна одна шапка с колонками ПРОЕКТ (Project) и АРТИКУЛ (Article)"
+            f"Лист «{sheet_name}»: нужна одна шапка с колонками ПРОЕКТ (Project, Магазин) и АРТИКУЛ (Article)"
         )
     header_row, project_column, article_column = headers[0]
     header = rows[header_row]
     if column_index < len(header) and legacy._header_key(header[column_index]) in {
         "проект",
         "project",
+        "магазин",
         "артикул",
         "article",
         "ключ",
@@ -571,7 +573,11 @@ def export_all(
         ]
         report["updated_cells"] += orders_report["updated_cells"] + fbo_report["updated_cells"]
         reports.append(report)
-    return {"spreadsheet_ids": spreadsheet_ids, "store_slugs": tuple(STORES), "marketplaces": reports}
+    return {
+        "spreadsheet_ids": spreadsheet_ids,
+        "store_slugs": stores_for_marketplace(marketplace) if marketplace else tuple(STORES),
+        "marketplaces": reports,
+    }
 
 
 def run_export(
