@@ -957,7 +957,16 @@ def get_daily_margin_snapshots(
     from app.repositories import daily_economics
 
     result = {(row["store_slug"], row["article"], row["day"]): dict(row) for row in rows}
-    for row in daily_economics.records("WB", store_slugs, date_from, date_to, articles=articles, compact=True, inputs_only=inputs_only, include_reference=include_reference):
+    for row in daily_economics.records(
+        "WB",
+        store_slugs,
+        date_from,
+        date_to,
+        articles=articles,
+        compact=True,
+        inputs_only=inputs_only,
+        include_reference=include_reference,
+    ):
         snapshot = daily_economics.wb_report_row(row)
         if include_reference:
             snapshot["reference_json"] = row["reference_json"]

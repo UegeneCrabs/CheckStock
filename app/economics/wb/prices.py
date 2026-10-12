@@ -975,8 +975,7 @@ def _sync_store(
         if len(retail_missing_targets) > 5:
             examples += ", …"
         errors.append(
-            f"цена без СПП: нет значения для {len(retail_missing_targets)} товаров "
-            f"(артикулы: {examples})"
+            f"цена без СПП: нет значения для {len(retail_missing_targets)} товаров (артикулы: {examples})"
         )
 
     orders_ok = storefront_ok

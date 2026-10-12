@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
@@ -33,6 +34,13 @@ class SppSortField(StrEnum):
 class SppSortOrder(StrEnum):
     ASC = "asc"
     DESC = "desc"
+
+
+class SppHistoryPeriod(StrEnum):
+    DAYS_7 = "7d"
+    DAYS_30 = "30d"
+    MONTHS_6 = "6m"
+    YEAR_1 = "1y"
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,9 +95,29 @@ class SppReportResult:
     sort_order: SppSortOrder
 
 
+@dataclass(frozen=True, slots=True)
+class SppDailyPoint:
+    date: str
+    average_spp: float | None
+    observations: int
+
+
 def previous_period(date_from: date, date_to: date) -> tuple[date, date]:
     duration = date_to - date_from + timedelta(days=1)
     return date_from - duration, date_from - timedelta(days=1)
+
+
+def history_dates(period: SppHistoryPeriod, today: date) -> tuple[date, date]:
+    if period is SppHistoryPeriod.DAYS_7:
+        return today - timedelta(days=6), today
+    if period is SppHistoryPeriod.DAYS_30:
+        return today - timedelta(days=29), today
+    months = 6 if period is SppHistoryPeriod.MONTHS_6 else 12
+    month_index = today.year * 12 + today.month - 1 - months
+    year, month_zero = divmod(month_index, 12)
+    month = month_zero + 1
+    matching_day = date(year, month, min(today.day, monthrange(year, month)[1]))
+    return matching_day + timedelta(days=1), today
 
 
 def _utc_boundary(day: date) -> str:
@@ -181,6 +209,27 @@ def _latest_spp(stores: tuple[str, ...], date_from: date, date_to: date) -> dict
     }
 
 
+def daily_history(store: str, article: str, date_from: date, date_to: date) -> tuple[SppDailyPoint, ...]:
+    """Average actual observations within each Moscow calendar day."""
+    with db.get_connection() as connection:
+        rows = connection.execute(
+            """SELECT observed_at, spp_percent FROM wb_hourly_prices
+                 WHERE store_slug=? AND article=? AND observed_at>=? AND observed_at<?
+                   AND spp_percent IS NOT NULL ORDER BY observed_at""",
+            (store, article, _utc_boundary(date_from), _utc_boundary(date_to + timedelta(days=1))),
+        ).fetchall()
+    totals: dict[date, tuple[float, int]] = {}
+    for row in rows:
+        day = datetime.fromisoformat(row["observed_at"]).astimezone(MOSCOW_TIMEZONE).date()
+        total, count = totals.get(day, (0.0, 0))
+        totals[day] = (total + float(row["spp_percent"]), count + 1)
+    return tuple(
+        SppDailyPoint(day.isoformat(), total / count if count else None, count)
+        for day in (date_from + timedelta(days=offset) for offset in range((date_to - date_from).days + 1))
+        for total, count in (totals.get(day, (0.0, 0)),)
+    )
+
+
 def load(
     stores: tuple[str, ...],
     date_from: date,
@@ -188,6 +237,7 @@ def load(
     filters: SppFilters,
     *,
     manager_scope: str | None = None,
+    tolerance: float = 0,
     page: int = 1,
     page_size: int = 50,
     sort_by: SppSortField = SppSortField.TURNOVER,
@@ -239,7 +289,7 @@ def load(
             "no_data"
             if current is None or previous is None
             else "problem"
-            if current < previous
+            if current < previous - tolerance
             else "healthy"
         )
         products.append(

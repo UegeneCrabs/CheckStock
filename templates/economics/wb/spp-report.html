@@ -1,15 +1,15 @@
-<link rel="stylesheet" href="/static/economics/wb/spp-report.css?v=3" />
+<link rel="stylesheet" href="/static/economics/wb/spp-report.css?v=16" />
 <section class="spp-report" id="spp-report" aria-label="Отчёт по СПП">
     <header class="spp-report__heading">
-        <div><h1>Отчёт по СПП</h1><p>Wildberries · сравнение с предшествующим периодом той же длины</p></div>
+        <h1>Отчёт по СПП</h1>
     </header>
     <div class="spp-report__top">
         <form class="spp-card spp-filters" id="spp-filters">
-            <h2>Фильтры</h2>
-            <fieldset class="spp-period"><legend>Период</legend>
-                <label>От<input type="date" name="date_from" id="spp-date-from" required /></label>
-                <label>До<input type="date" name="date_to" id="spp-date-to" required /></label>
-            </fieldset>
+            <div class="spp-filters__header"><h2>Фильтры</h2></div>
+            <div class="spp-period"><div class="spp-period__title">Период</div>
+                <label>От<span class="spp-date-control"><input type="text" id="spp-date-from" inputmode="numeric" placeholder="ДД.ММ.ГГГГ" autocomplete="off" required /><button type="button" class="spp-date-picker" data-date-target="spp-date-from" aria-label="Выбрать дату начала в календаре">▦</button><input type="date" class="spp-date-native" id="spp-date-from-native" tabindex="-1" aria-hidden="true" /></span></label>
+                <label>До<span class="spp-date-control"><input type="text" id="spp-date-to" inputmode="numeric" placeholder="ДД.ММ.ГГГГ" autocomplete="off" required /><button type="button" class="spp-date-picker" data-date-target="spp-date-to" aria-label="Выбрать дату окончания в календаре">▦</button><input type="date" class="spp-date-native" id="spp-date-to-native" tabindex="-1" aria-hidden="true" /></span></label>
+            </div>
             <div class="spp-filters__grid">
                 <label>Магазин<select name="store" id="spp-store"><option value="">Все</option></select></label>
                 <label>Бренд<select name="brand" id="spp-brand"><option value="">Все</option></select></label>
@@ -18,7 +18,8 @@
                 <label>Артикул<select name="article" id="spp-article"><option value="">Все</option></select></label>
                 <label>Поиск по слову<input type="search" name="search" id="spp-search" placeholder="Введите слово" /></label>
             </div>
-            <button type="submit" class="spp-button">Сформировать</button>
+            <div class="spp-tolerance"><div class="spp-tolerance__heading"><label for="spp-tolerance-value">Допустимое снижение СПП</label><div class="spp-tolerance__value"><input type="number" name="tolerance" id="spp-tolerance-value" min="0" step="any" value="0" required autocomplete="off" /><span>п. п.</span></div></div><input type="range" id="spp-tolerance" min="0" max="100" step="0.5" value="0" autocomplete="off" aria-label="Допустимое снижение СПП, от 0 до 100 п. п." /><div class="spp-tolerance__scale"><span>Строгое сравнение</span><span>100 п. п. на ползунке</span></div><p>Можно ввести значение больше 100 п. п. Товар требует внимания, если СПП снизился больше выбранного порога.</p></div>
+            <div class="spp-filters__actions"><button type="submit" class="spp-button">Сформировать отчёт</button></div>
         </form>
         <section class="spp-card spp-health" aria-labelledby="spp-health-title">
             <h2 id="spp-health-title">Здоровье по СПП</h2>
@@ -54,4 +55,4 @@
     </section>
 </section>
 <script type="application/json" id="spp-config">$spp_report_config</script>
-<script src="/static/economics/wb/spp-report.js?v=3"></script>
+<script src="/static/economics/wb/spp-report.js?v=16"></script>

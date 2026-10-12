@@ -113,6 +113,68 @@ class SppReportTests(unittest.TestCase):
         self.assertEqual([(row["store_slug"], row["article"]) for row in result["rows"]], [("rimili", "101")])
         self.assertEqual(result["options"]["brands"], ["Свет"])
 
+    def test_daily_history_averages_moscow_days_and_keeps_missing_days(self):
+        with self.database.connect() as connection:
+            for observed, spp in (
+                ("2026-09-01T20:30:00+00:00", 10),  # 23:30 in Moscow
+                ("2026-09-01T21:30:00+00:00", 30),  # 00:30 on the next day
+                ("2026-09-02T09:30:00+00:00", 50),
+            ):
+                connection.execute(
+                    "INSERT INTO wb_hourly_prices "
+                    "(store_slug, article, observed_hour, observed_at, nm_id, "
+                    "customer_price_with_spp, spp_percent, product_kopecks, "
+                    "logistics_kopecks, price_fields_json, sale_conditions) "
+                    "VALUES ('rimili', '101', ?, ?, '101', 100, ?, 10000, 0, '{}', 0)",
+                    (observed, observed, spp),
+                )
+            connection.commit()
+        history = spp_report.daily_history("rimili", "101", date(2026, 9, 1), date(2026, 9, 3))
+        self.assertEqual(
+            [(point.date, point.average_spp, point.observations) for point in history],
+            [("2026-09-01", 13, 2), ("2026-09-02", 40, 2), ("2026-09-03", None, 0)],
+        )
+
+    def test_history_periods_are_rolling_calendar_windows(self):
+        today = date(2026, 10, 12)
+        self.assertEqual(
+            spp_report.history_dates(spp_report.SppHistoryPeriod.DAYS_7, today), (date(2026, 10, 6), today)
+        )
+        self.assertEqual(
+            spp_report.history_dates(spp_report.SppHistoryPeriod.DAYS_30, today), (date(2026, 9, 13), today)
+        )
+        self.assertEqual(
+            spp_report.history_dates(spp_report.SppHistoryPeriod.MONTHS_6, today), (date(2026, 4, 13), today)
+        )
+        self.assertEqual(
+            spp_report.history_dates(spp_report.SppHistoryPeriod.YEAR_1, today), (date(2025, 10, 13), today)
+        )
+        leap_day = date(2024, 2, 29)
+        self.assertEqual(
+            spp_report.history_dates(spp_report.SppHistoryPeriod.YEAR_1, leap_day),
+            (date(2023, 3, 1), leap_day),
+        )
+
+    def test_tolerance_changes_status_and_summary(self):
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+            result = spp_report.load(
+                ("rimili",),
+                date(2026, 9, 1),
+                date(2026, 9, 30),
+                spp_report.SppFilters(),
+                tolerance=5,
+            )
+        self.assertEqual(result.summary.problem, 0)
+        self.assertEqual(result.summary.healthy, 2)
+        self.assertEqual(result.summary.no_data, 1)
+        self.assertEqual(result.summary.health_percent, 100)
+        self.assertEqual(result.rows[0].status, "healthy")
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+            above_slider = spp_report.load(
+                ("rimili",), date(2026, 9, 1), date(2026, 9, 30), spp_report.SppFilters(), tolerance=150
+            )
+        self.assertEqual(above_slider.summary.problem, 0)
+
     def test_each_column_sorts_before_pagination_in_both_directions(self):
         orders = [
             {"store_slug": "rimili", "article": "101", "net_orders_amount": 1250},
@@ -226,6 +288,25 @@ class SppReportTests(unittest.TestCase):
             denied = client.get("/api/unit-economics-1c/reports/spp?store=unknown")
             invalid = client.get("/api/unit-economics-1c/reports/spp?date_from=2026-09-30&date_to=2026-09-01")
             invalid_sort = client.get("/api/unit-economics-1c/reports/spp?sort_by=unknown")
+            invalid_tolerance = client.get("/api/unit-economics-1c/reports/spp?tolerance=-1")
+            history = client.get(
+                "/api/unit-economics-1c/reports/spp/history"
+                "?store=rimili&article=101&date_from=2026-09-01&date_to=2026-09-02"
+            )
+            rolling_history = client.get(
+                "/api/unit-economics-1c/reports/spp/history?store=rimili&article=101&period=7d"
+            )
+            invalid_history_period = client.get(
+                "/api/unit-economics-1c/reports/spp/history?store=rimili&article=101&period=2y"
+            )
+            denied_history = client.get(
+                "/api/unit-economics-1c/reports/spp/history"
+                "?store=unknown&article=101&date_from=2026-09-01&date_to=2026-09-02"
+            )
+            missing_history = client.get(
+                "/api/unit-economics-1c/reports/spp/history"
+                "?store=rimili&article=unknown&date_from=2026-09-01&date_to=2026-09-02"
+            )
             self.assertEqual(page_response.status_code, 200)
             self.assertIn("Отчёт по СПП", page_response.text)
             self.assertEqual(report_response.status_code, 200)
@@ -233,6 +314,20 @@ class SppReportTests(unittest.TestCase):
             self.assertEqual(denied.status_code, 403)
             self.assertEqual(invalid.status_code, 422)
             self.assertEqual(invalid_sort.status_code, 422)
+            self.assertEqual(invalid_tolerance.status_code, 422)
+            self.assertEqual(history.status_code, 200)
+            self.assertEqual(rolling_history.status_code, 200)
+            self.assertEqual(len(rolling_history.json()["days"]), 7)
+            self.assertEqual(invalid_history_period.status_code, 422)
+            self.assertEqual(
+                history.json()["days"],
+                [
+                    {"date": "2026-09-01", "average_spp": 16, "observations": 1},
+                    {"date": "2026-09-02", "average_spp": None, "observations": 0},
+                ],
+            )
+            self.assertEqual(denied_history.status_code, 403)
+            self.assertEqual(missing_history.status_code, 404)
         self.assertEqual(
             section_for_path("/api/unit-economics-1c/reports/spp"),
             SectionName.REPORT_SPP,
