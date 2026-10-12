@@ -12,8 +12,8 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.exports import stock_sheet_inbound
 from app.ff_import import google_service_account
+from app.orders import sync as orders_sync
 from app.repositories import stock_sheet_export as repository
-from app.stock import sales
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
@@ -372,7 +372,7 @@ def _wb_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[s
 def _ozon_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
     """Refresh and read Ozon FBS units in the configured export statuses."""
     start, end = fbs_completed_period(now)
-    return sales.refresh_fbs_order_totals(
+    return orders_sync.refresh_fbs_order_totals(
         store_slug,
         "OZON",
         start,
@@ -384,7 +384,7 @@ def _ozon_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict
 def _yandex_fbs_order_totals(store_slug: str, now: datetime | None = None) -> dict[str, int]:
     """Refresh and read Yandex Market FBS units in the configured export statuses."""
     start, end = fbs_completed_period(now)
-    return sales.refresh_fbs_order_totals(
+    return orders_sync.refresh_fbs_order_totals(
         store_slug,
         "YANDEX MARKET",
         start,

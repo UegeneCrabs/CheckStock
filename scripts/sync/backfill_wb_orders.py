@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.stock import sales
+from app.orders import sync as orders_sync
 
 
 def _sync_store(
@@ -20,11 +20,11 @@ def _sync_store(
 ) -> tuple[str, dict]:
     if period is None:
         print(f"[{store_slug}] WB orders: start, days={days}", flush=True)
-        result = sales.sync_store(store_slug, "WB", days)
+        result = orders_sync.sync_store(store_slug, "WB", days)
     else:
         start, end = period
         print(f"[{store_slug}] WB orders: start, period={start}..{end - timedelta(days=1)}", flush=True)
-        result = sales.sync_store_period(store_slug, "WB", start, end)
+        result = orders_sync.sync_store_period(store_slug, "WB", start, end)
     state = "ok" if result.get("ok") else "error"
     print(f"[{store_slug}] WB orders: {state}, rows={result.get('rows', 0)}", flush=True)
     return store_slug, result
@@ -41,7 +41,7 @@ def main() -> int:
     parser.add_argument("--date-to", help="Inclusive end date")
     args = parser.parse_args()
     days = max(int(args.days), 1)
-    configured_stores = sales._configured_stores("WB")
+    configured_stores = orders_sync._configured_stores("WB")
     stores = list(dict.fromkeys(args.stores or configured_stores))
     unknown_stores = sorted(set(stores) - set(configured_stores))
     if unknown_stores:

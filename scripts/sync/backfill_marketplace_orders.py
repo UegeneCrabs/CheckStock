@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.stock import sales
+from app.orders import sync as orders_sync
 
 SUPPORTED_MARKETPLACES = ("OZON", "YANDEX MARKET")
 
@@ -20,7 +20,7 @@ def _sync_target(store_slug: str, marketplace: str, start: date, end: date) -> t
         f"[{marketplace}/{store_slug}] start, period={start}..{end - timedelta(days=1)}",
         flush=True,
     )
-    result = sales.sync_store_period(store_slug, marketplace, start, end)
+    result = orders_sync.sync_store_period(store_slug, marketplace, start, end)
     state = "ok" if result.get("ok") else "error"
     print(
         f"[{marketplace}/{store_slug}] {state}, rows={result.get('rows', 0)}",
@@ -57,7 +57,7 @@ def main() -> int:
     marketplaces = tuple(dict.fromkeys(args.marketplaces or SUPPORTED_MARKETPLACES))
     tasks: list[tuple[str, str]] = []
     for marketplace in marketplaces:
-        configured_stores = sales._configured_stores(marketplace)
+        configured_stores = orders_sync._configured_stores(marketplace)
         selected_stores = args.stores or configured_stores
         missing_credentials = sorted(set(selected_stores) - set(configured_stores))
         if missing_credentials:

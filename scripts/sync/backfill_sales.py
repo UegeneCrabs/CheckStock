@@ -9,9 +9,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app import db
-from app.stock import sales
+from app.orders import sync as orders_sync
 
-TARGET_DAYS = dict(sales.INITIAL_LOOKBACK_DAYS)
+TARGET_DAYS = dict(orders_sync.INITIAL_LOOKBACK_DAYS)
 
 
 def _is_complete(store_slug: str, marketplace: str, days: int) -> bool:
@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument(
         "--marketplace",
         action="append",
-        choices=sales.MARKETPLACES,
+        choices=orders_sync.MARKETPLACES,
         help="Limit the backfill to one or more marketplaces.",
     )
     parser.add_argument(
@@ -34,13 +34,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    marketplaces = args.marketplace or list(sales.MARKETPLACES)
+    marketplaces = args.marketplace or list(orders_sync.MARKETPLACES)
     report: dict[str, dict[str, dict]] = {}
 
     for marketplace in marketplaces:
         days = TARGET_DAYS[marketplace]
         platform_report: dict[str, dict] = {}
-        stores = sales._configured_stores(marketplace)
+        stores = orders_sync._configured_stores(marketplace)
         print(f"\n[{marketplace}] target={days} days, stores={len(stores)}", flush=True)
 
         for store_slug in stores:
@@ -52,7 +52,7 @@ def main() -> None:
 
             started = time.monotonic()
             print(f"  START {store_slug}", flush=True)
-            result = sales.sync_store(store_slug, marketplace, days)
+            result = orders_sync.sync_store(store_slug, marketplace, days)
             result["elapsed_seconds"] = round(time.monotonic() - started, 1)
             platform_report[store_slug] = result
             status = "OK" if result.get("ok") else "ERROR"

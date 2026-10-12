@@ -18,9 +18,9 @@ from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.jobs import locks as sync_locks
+from app.orders.normalizers import yandex as order_normalizer
 from app.repositories import unit_economics_yandex as repository
 from app.repositories import yandex_report_limits as report_limits
-from app.stock import sales
 from app.yandex import api, tokens
 from app.yandex.accounts import resolve_business_id
 
@@ -232,7 +232,7 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
     orders = api.get_business_orders(
         api_key, business_id, start.isoformat(), (end + timedelta(days=1)).isoformat()
     )
-    lines = sales._normalize_yandex(store_slug, orders)
+    lines = order_normalizer.normalize(store_slug, orders)
     unique_lines = {(line["order_key"], line["line_key"]): line for line in lines}
     grouped = defaultdict(
         lambda: dict.fromkeys(
