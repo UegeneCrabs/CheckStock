@@ -64,12 +64,12 @@ def startup_delay_seconds(now: datetime | None = None) -> float:
     return max(0.0, (_next_start(current, start) - current).total_seconds())
 
 
-def next_delay_seconds(job_name: str, now: datetime | None = None) -> float:
+def next_delay_seconds(job_name: str, now: datetime | None = None, *, succeeded: bool = False) -> float:
     current = (now or _now()).astimezone(MOSCOW_TIMEZONE)
     start, deadline = _window(current)
     if current < start:
         return max(0.0, (start - current).total_seconds())
-    if current >= deadline or succeeded_in_current_window(job_name, current):
+    if current >= deadline or succeeded or succeeded_in_current_window(job_name, current):
         return max(0.0, (start + timedelta(days=1) - current).total_seconds())
 
     retry_at = current + timedelta(seconds=settings.ftp_export_retry_interval_seconds)

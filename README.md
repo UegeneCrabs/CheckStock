@@ -24,6 +24,14 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 
 Перед запуском положите реальные файлы доступов в `secrets/` по образцам из `secrets/example/`. `.env`, база и реальные секреты исключены из Git.
 
+Во втором терминале с тем же виртуальным окружением запустите автоматические загрузки:
+
+```powershell
+python -m app.jobs.worker
+```
+
+Веб-сервер выполняет HTTP-запросы и ручные загрузки; автоматическое расписание обслуживает отдельный процесс. Оба процесса должны использовать одну БД и одинаковые настройки. Подробности повторов, восстановления и перехода со старой версии — в [инструкции планировщика](docs/background-jobs.md).
+
 ## Проверки
 
 ```powershell
@@ -31,7 +39,7 @@ python -m ruff format --check app scripts
 python -m ruff check app scripts
 ```
 
-При наличии `make` доступны цели `run`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
+При наличии `make` доступны цели `run`, `scheduler`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
 Автотесты удалены из рабочего дерева; команды выше выполняют статические проверки кода.
 
 ## Поставки на ФФ
@@ -54,10 +62,12 @@ python -m ruff check app scripts
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build -d
-docker compose logs --follow app
+docker compose logs --follow app scheduler
 ```
 
 Перед запуском задайте `POSTGRES_PASSWORD` в `.env`. Приложение доступно на `http://localhost:8000`. Docker Compose использует PostgreSQL: база хранится в именованном volume `postgres-data`, секреты подключаются read-only из локального каталога `secrets/`. `/healthz` проверяет процесс, `/readyz` дополнительно проверяет соединение с настроенной БД. При обычном локальном запуске без `CHECKSTOCK_DATABASE_URL` используется SQLite в `data/checkstock.db`.
+
+Сервис `scheduler` запускается на том же образе и имеет отдельную проверку здоровья: `python -m app.jobs.worker --healthcheck`. Перезапуск `app` не перезапускает автоматические загрузки. При первом переходе остановите старый `app` со встроенными задачами перед запуском новой версии и `scheduler`.
 
 Остановка:
 

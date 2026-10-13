@@ -146,7 +146,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "ozon_unit_economics_turnover_sync",
             "ТО заказов Ozon",
             "Обновляет заказы Ozon за последние 21 день и считает ТО за 7 дней после отмен.",
-            "Ежедневно в 03:00 МСК",
+            "Ежедневно в 03:00 МСК; при ошибке до 3 повторов через 1, 5 и 15 мин.",
             base,
             "store_marketplaces",
             ("OZON",),

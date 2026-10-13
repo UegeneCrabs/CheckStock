@@ -153,6 +153,10 @@ class DatabaseConnection(AbstractContextManager["DatabaseConnection"]):
     def rollback(self) -> None:
         self._connection.rollback()
 
+    def detach(self) -> None:
+        """Keep this connection open without occupying a slot in the shared pool."""
+        self._connection.detach()
+
     def close(self) -> None:
         self._connection.close()
 

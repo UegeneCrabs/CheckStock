@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 
+from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.core import WRITE_LOCK, get_connection
 
 SYNC_RUN_RETENTION_DAYS = 30
 
 
-def record_started(name: str, trigger: str, started_at: str, run_id: str) -> None:
-    with WRITE_LOCK, get_connection() as connection:
+def record_started(
+    name: str, trigger: str, started_at: str, run_id: str, *, connection: DatabaseConnection | None = None
+) -> None:
+    with (
+        WRITE_LOCK if connection is None else nullcontext(),
+        repository_connection(connection) as connection,
+    ):
         connection.execute(
             """
             INSERT INTO sync_job_states (
@@ -38,10 +45,14 @@ def record_started(name: str, trigger: str, started_at: str, run_id: str) -> Non
             datetime.fromisoformat(started_at).astimezone(UTC) - timedelta(days=SYNC_RUN_RETENTION_DAYS)
         ).isoformat()
         connection.execute(
-            "DELETE FROM sync_job_runs WHERE started_at < ?",
+            """
+            DELETE FROM sync_job_runs WHERE started_at < ?
+            AND id NOT IN (
+                SELECT active_run_id FROM sync_job_schedules WHERE active_run_id IS NOT NULL
+            )
+            """,
             (retention_cutoff,),
         )
-        connection.commit()
 
 
 def record_finished(
@@ -52,8 +63,12 @@ def record_finished(
     finished_at: str,
     duration_ms: int,
     error: str | None,
+    connection: DatabaseConnection | None = None,
 ) -> None:
-    with WRITE_LOCK, get_connection() as connection:
+    with (
+        WRITE_LOCK if connection is None else nullcontext(),
+        repository_connection(connection) as connection,
+    ):
         connection.execute(
             """
             UPDATE sync_job_states
@@ -64,8 +79,9 @@ def record_finished(
                    error = ?,
                    updated_at = ?
              WHERE name = ?
+               AND last_started_at = (SELECT started_at FROM sync_job_runs WHERE id = ?)
             """,
-            (status, finished_at, status, finished_at, duration_ms, error, finished_at, name),
+            (status, finished_at, status, finished_at, duration_ms, error, finished_at, name, run_id),
         )
         connection.execute(
             """
@@ -78,11 +94,19 @@ def record_finished(
             """,
             (status, finished_at, duration_ms, error, run_id),
         )
-        connection.commit()
 
 
-def record_next_run(name: str, next_run_at: str) -> None:
-    with WRITE_LOCK, get_connection() as connection:
+def record_next_run(
+    name: str,
+    next_run_at: str,
+    *,
+    reschedule: bool = False,
+    connection: DatabaseConnection | None = None,
+) -> None:
+    with (
+        WRITE_LOCK if connection is None else nullcontext(),
+        repository_connection(connection) as connection,
+    ):
         connection.execute(
             """
             INSERT INTO sync_job_states (name, next_run_at, updated_at)
@@ -93,7 +117,14 @@ def record_next_run(name: str, next_run_at: str) -> None:
             """,
             (name, next_run_at, next_run_at),
         )
-        connection.commit()
+        if reschedule:
+            connection.execute(
+                """
+                UPDATE sync_job_schedules SET next_run_at = ?, attempt_number = 0, updated_at = ?
+                 WHERE name = ? AND active_run_id IS NULL
+                """,
+                (next_run_at, datetime.now(UTC).isoformat(), name),
+            )
 
 
 def list_states() -> list[dict]:

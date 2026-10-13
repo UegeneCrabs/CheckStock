@@ -19,6 +19,8 @@ data/*.db-shm
 data/*.tmp
 data/*.dump
 data/exports/
+data/scheduler-heartbeat.json
+data/.scheduler-heartbeat.json.*.tmp
 data/yandex-storefront/
 data/wb-storefront/
 data/.sync-locks/

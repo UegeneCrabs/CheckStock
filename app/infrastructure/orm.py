@@ -200,6 +200,18 @@ class SyncJobStateRecord(OrmBase):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class SyncJobScheduleRecord(OrmBase):
+    """Durable automatic schedule, independent of manual execution history."""
+
+    __tablename__ = "sync_job_schedules"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    next_run_at: Mapped[str] = mapped_column(String, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    active_run_id: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class SyncJobRunRecord(OrmBase):
     """One execution in the retained synchronization history."""
 

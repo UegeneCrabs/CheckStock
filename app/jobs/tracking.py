@@ -63,12 +63,12 @@ def _result_failure_details(result: object, prefix: str = "") -> list[str]:
     return []
 
 
-def _result_error(result: object) -> str | None:
+def result_error(result: object) -> str | None:
     unique_details = list(dict.fromkeys(_result_failure_details(result)))
     return _trim_error("; ".join(unique_details)) or None
 
 
-def _exception_error(error: Exception) -> str:
+def exception_error(error: Exception) -> str:
     message = str(error).strip()
     return _trim_error(f"{type(error).__name__}: {message}" if message else type(error).__name__)
 
@@ -118,7 +118,7 @@ def queue_tracked(name: str, callback: Callable[[], object]) -> str:
                 status="error",
                 finished_at=_now().isoformat(),
                 duration_ms=0,
-                error=_exception_error(error),
+                error=exception_error(error),
             )
         finally:
             handle.close()
@@ -138,22 +138,22 @@ def _finish_run(name: str, run_id: str, started_clock: float, callback: Callable
                 status="error",
                 finished_at=finished_at.isoformat(),
                 duration_ms=max(0, round((monotonic() - started_clock) * 1000)),
-                error=_exception_error(error),
+                error=exception_error(error),
             )
         except Exception:
             logger.exception("sync_job_failure_tracking_failed job=%s", name)
         raise
 
-    result_error = _result_error(result)
+    error = result_error(result)
     finished_at = _now()
     try:
         db.record_sync_job_finished(
             name,
             run_id,
-            status="error" if result_error else "success",
+            status="error" if error else "success",
             finished_at=finished_at.isoformat(),
             duration_ms=max(0, round((monotonic() - started_clock) * 1000)),
-            error=result_error,
+            error=error,
         )
     except Exception:
         logger.exception("sync_job_success_tracking_failed job=%s", name)
@@ -163,6 +163,6 @@ def _finish_run(name: str, run_id: str, started_clock: float, callback: Callable
 def set_next_run(name: str, delay_seconds: float) -> None:
     next_run = _now() + timedelta(seconds=max(0, delay_seconds))
     try:
-        db.record_sync_job_next_run(name, next_run.isoformat())
+        db.record_sync_job_next_run(name, next_run.isoformat(), reschedule=True)
     except Exception:
         logger.exception("sync_job_next_run_tracking_failed job=%s", name)

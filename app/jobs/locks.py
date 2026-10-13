@@ -25,13 +25,16 @@ class _PostgresLock:
             self.connection.close()
 
 
-def acquire(name: str):
+def acquire(name: str, *, detached: bool = True):
     digest = hashlib.sha256(("checkstock-sync:" + name).encode()).digest()
     database = database_for_path(core.DB_PATH)
     if database.dialect_name == "postgresql":
         connection = database.connect()
         key = int.from_bytes(digest[:8], "big", signed=True)
         try:
+            if detached:
+                # A running loader needs pooled connections for its own writes.
+                connection.detach()
             acquired = connection.execute("SELECT pg_try_advisory_lock(?) AS acquired", (key,)).fetchone()[
                 "acquired"
             ]
@@ -76,7 +79,7 @@ def hold(name: str):
 
 def is_running(name: str) -> bool:
     try:
-        handle = acquire(name)
+        handle = acquire(name, detached=False)
     except SyncJobBusyError:
         return True
     handle.close()

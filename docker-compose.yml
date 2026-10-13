@@ -22,14 +22,14 @@ services:
     init: true
     restart: unless-stopped
     shm_size: 1gb
-    security_opt:
+    security_opt: &app-security
       - seccomp=./deploy/yandex-parser/seccomp_profile.json
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
-    environment:
+    environment: &app-environment
       CHECKSTOCK_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-checkstock}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-checkstock}
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       CHECKSTOCK_AGENT_PUBLIC_URL: ${CHECKSTOCK_AGENT_PUBLIC_URL:-}
@@ -103,11 +103,31 @@ services:
       CHECKSTOCK_RNP_REPORT_DOWNLOAD_TIMEOUT_SECONDS: ${CHECKSTOCK_RNP_REPORT_DOWNLOAD_TIMEOUT_SECONDS:-45}
       CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS: ${CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS:-18}
       CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS: ${CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS:-1}
-    volumes:
+    volumes: &app-volumes
       - ./secrets:/app/secrets:ro
       - yandex-finance-credentials:/app/finance-credentials
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
+    stop_grace_period: 60s
+
+  scheduler:
+    image: paketa-app
+    init: true
+    restart: unless-stopped
+    shm_size: 1gb
+    security_opt: *app-security
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-environment
+    volumes: *app-volumes
+    command: ["python", "-m", "app.jobs.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.jobs.worker", "--healthcheck"]
+      interval: 30s
+      timeout: 40s
+      start_period: 60s
+      retries: 3
     stop_grace_period: 60s
 
   watchdog:

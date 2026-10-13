@@ -1,7 +1,7 @@
 PYTHON ?= python
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev run format lint check docker-build docker-up docker-down docker-logs
+.PHONY: install install-dev run scheduler format lint check docker-build docker-up docker-down docker-logs
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -11,6 +11,9 @@ install-dev:
 
 run:
 	$(PYTHON) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
+
+scheduler:
+	$(PYTHON) -m app.jobs.worker
 
 format:
 	$(PYTHON) -m ruff format app scripts
@@ -32,4 +35,4 @@ docker-down:
 	docker compose down
 
 docker-logs:
-	docker compose logs --follow app
+	docker compose logs --follow app scheduler

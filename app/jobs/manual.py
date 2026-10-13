@@ -8,7 +8,7 @@ from app.exports import ftp_schedule as ftp_export_schedule
 from app.jobs import background
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
-from app.jobs.tracking import set_next_run
+from app.jobs.tracking import result_error, set_next_run
 from app.repositories import core
 
 
@@ -116,10 +116,13 @@ def callback_for(name: str) -> Callable[[], object]:
 
     def run():
         with sync_settings.manual_run(name):
+            succeeded = False
             try:
-                return callback()
+                result = callback()
+                succeeded = result_error(result) is None
+                return result
             finally:
                 if ftp_export.platform_for_job(name):
-                    set_next_run(name, ftp_export_schedule.next_delay_seconds(name))
+                    set_next_run(name, ftp_export_schedule.next_delay_seconds(name, succeeded=succeeded))
 
     return run

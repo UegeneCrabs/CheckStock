@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from time import sleep
 
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
@@ -24,9 +25,10 @@ from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
 from app.integrations import google_sheet_catalog, google_week_update
 from app.jobs import finance as finance_sync
+from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs import wb_transit
-from app.jobs.scheduling import BackgroundJob, run_background_job
+from app.jobs.scheduling import BackgroundJob
 from app.ozon import catalog as ozon_catalog
 from app.ozon import reputation as ozon_reputation
 from app.ozon import sync as ozon_sync
@@ -322,6 +324,9 @@ def _ftp_export_jobs() -> tuple[BackgroundJob, ...]:
                 is_enabled=lambda current_job=job_name: (
                     _job_enabled(current_job) and ftp_export_schedule.should_attempt(current_job)
                 ),
+                next_delay_after_success=lambda current_job=job_name: ftp_export_schedule.next_delay_seconds(
+                    current_job, succeeded=True
+                ),
             )
         )
     return tuple(jobs)
@@ -447,6 +452,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             run_callback=lambda: ozon_turnover.sync_all(
                 sync_settings.enabled_stores(ozon_turnover.JOB_NAME, "OZON")
             ),
+            retry_delays=(60, 300, 900),
         ),
         BackgroundJob(
             ozon_advertising.JOB_NAME,
@@ -543,34 +549,40 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
 
 
 def _initialize_application() -> None:
-    db.init_db()
-    db.seed_defaults()
-    stock_sheet_export.ensure_defaults()
-    auth.seed_initial_user()
+    while True:
+        try:
+            handle = sync_locks.acquire("application_initialization")
+            break
+        except sync_locks.SyncJobBusyError:
+            sleep(1)
+    try:
+        db.init_db()
+        db.seed_defaults()
+        stock_sheet_export.ensure_defaults()
+        auth.seed_initial_user()
+    finally:
+        handle.close()
 
 
-@asynccontextmanager
-async def lifespan(application: FastAPI):
-    await run_in_threadpool(_initialize_application)
-    catalog_ready = asyncio.Event()
+def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
     if not settings.background_sync_enabled and settings.funnel_orders_sync_enabled:
         jobs += _funnel_jobs()
     if settings.unit_economics_1c_price_sync_enabled:
         jobs += _unit_economics_1c_price_jobs()
-    tasks = [asyncio.create_task(run_background_job(job), name=f"checkstock:{job.name}") for job in jobs]
-    application.state.background_jobs = jobs
-    application.state.background_tasks = tasks
+    return jobs
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    await run_in_threadpool(_initialize_application)
+    application.state.background_jobs = ()
+    application.state.background_tasks = ()
     logger.info(
-        "application_started background_jobs=%s database=%s",
-        len(tasks),
+        "application_started scheduler=external database=%s",
         "postgresql" if settings.database_url else settings.database_path,
     )
     try:
         yield
     finally:
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        logger.info("application_stopped background_jobs=%s", len(tasks))
+        logger.info("application_stopped")

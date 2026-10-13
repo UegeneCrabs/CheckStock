@@ -17,6 +17,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | SQL, снимки и старые read-модели | `app/repositories/`, `app/db.py` |
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
+| Автоматическое расписание, повторы и восстановление | `app/jobs/worker.py`, `app/jobs/scheduling.py`, `app/repositories/job_schedules.py`, [контракт планировщика](background-jobs.md) |
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
@@ -29,7 +30,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Поток запроса и данных
 
-`app.main:create_app` создаёт приложение и `ApplicationContainer`, подключает middleware и роутеры. Для части новых сценариев маршрут вызывает сервис из `app/application`, а тот работает через порт и SQLAlchemy Unit of Work в `app/infrastructure`. Часть аналитических чтений и загрузчиков по-прежнему использует `app/repositories` и фасад `app/db.py`; поэтому не следует предполагать, что весь код проходит через один слой. Инициализация БД и запуск фоновых задач находятся в `app/jobs/background.py`.
+`app.main:create_app` создаёт приложение и `ApplicationContainer`, подключает middleware и роутеры. Для части новых сценариев маршрут вызывает сервис из `app/application`, а тот работает через порт и SQLAlchemy Unit of Work в `app/infrastructure`. Часть аналитических чтений и загрузчиков по-прежнему использует `app/repositories` и фасад `app/db.py`; поэтому не следует предполагать, что весь код проходит через один слой. `app/jobs/background.py` содержит общую инициализацию и описания задач. Автоматические задачи запускает отдельный `app/jobs/worker.py`; вебовый `lifespan` их не запускает.
 
 Складские HTTP-изменения требуют `Idempotency-Key`; повтор с тем же ключом не должен повторять начисление. Подробности и границы транзакции — в [F03](f03-stock-transactions.md). Для экономических отчётов различайте отсутствие данных и подтверждённый ноль; источники и полнота описаны в [F05](f05-economics-completeness.md).
 
@@ -37,12 +38,13 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 - Локально по умолчанию используется SQLite `data/checkstock.db`; при `CHECKSTOCK_DATABASE_URL` — PostgreSQL. В `docker-compose.yml` PostgreSQL хранится в томе `postgres-data`.
 - Настройки окружения и значения по умолчанию определены в `app/config.py`; образец — `.env.example`. Настройки отдельных фоновых задач дополнительно хранятся в БД через `app/jobs/settings.py`.
+- Сроки и попытки автоматических загрузок хранятся в `sync_job_schedules`; история и отображаемые статусы — в `sync_job_runs` и `sync_job_states`. Они переживают перезапуск планировщика.
 - Секреты берутся из `secrets/` или путей, заданных переменными окружения. Образцы файлов — в `secrets/example/`; реальные секреты и локальные данные не коммитятся.
 - Шаблоны страниц находятся в `templates/`, клиентский код — в `static/`. Состояние браузерных сборщиков хранится в `data/` или Docker volumes.
 
 ## Запуск и проверка
 
-Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log`. Для Docker используйте `docker compose up --build -d`; Compose требует `POSTGRES_PASSWORD` в `.env`. Для локальной диагностики доступны `/healthz` и `/readyz`.
+Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log`. Во втором терминале с той же БД запустите `python -m app.jobs.worker`. Для Docker используйте `docker compose up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
 
 Статические проверки: `python -m ruff format --check app scripts` и `python -m ruff check app scripts`. Автотесты удалены из рабочего дерева. Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 

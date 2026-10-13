@@ -2,6 +2,8 @@
 
 Запускайте из корня проекта: `python -m scripts.<папка>.<имя>`.
 
+Автоматическое расписание запускается отдельно от веб-сервера командой `python -m app.jobs.worker`; проверка здоровья — `python -m app.jobs.worker --healthcheck`. Это точка входа приложения, а не скрипт разовой выгрузки. В Docker используется сервис `scheduler`. [Запуск и восстановление](../docs/background-jobs.md).
+
 Удаление прежней матрицы доступа SQLite: `python -m scripts.ops.retire_account_acl
 --database data/checkstock.db`. Без `--apply` команда только читает схему; с `--apply`
 создаёт и проверяет backup, мигрирует и проверяет сохранность данных. Перед применением
