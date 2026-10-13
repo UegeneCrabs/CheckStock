@@ -534,6 +534,7 @@ def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calcu
         events = yandex_financial.buyer_refund_events(store_slug, business_id, stored[0]['report_date'],
                                                      stored[-1]['report_date'], source=conn)
         plan = []
+        archive_cache = {}
         for fact in stored:
             day = fact['report_date']
             if date_from.isoformat() <= day <= date_to.isoformat():
@@ -551,6 +552,10 @@ def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calcu
                     (store_slug, business_id, kind, day, day)).fetchone()
                 if version is None:
                     raise ValueError(f'Нет сохранённого отчёта для пересчёта возвратов за {day}')
+                archive_key = (kind, version['period_from'], version['period_to'], version['imported_at'])
+                if archive_key in archive_cache:
+                    reports[kind] = archive_cache[archive_key]
+                    continue
                 sheets = {}
                 for row in conn.execute('SELECT sheet,payload_json FROM yandex_financial_report_rows '
                         'WHERE store_slug=? AND business_id=? AND report_kind=? AND period_from=? AND period_to=? AND imported_at=?',
@@ -558,6 +563,7 @@ def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calcu
                     sheets.setdefault(row['sheet'], []).append(json.loads(row['payload_json']))
                 if not sheets:
                     raise ValueError(f'Не удалось прочитать сохранённый отчёт для пересчёта возвратов за {day}')
+                archive_cache[archive_key] = sheets
                 reports[kind] = sheets
             plan.append((date.fromisoformat(day), reports, {k:v for k,v in old.items() if k.startswith('payment_')}))
     finally:
