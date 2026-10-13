@@ -67,7 +67,6 @@
       var missing = document.createElement('p'); missing.textContent = 'Подробности расчёта пока недоступны.'; entry.content.append(missing); return;
     }
     entry.help.dataset.tip = detail.description;
-    var description = document.createElement('p'); description.className = 'breakdown-description'; description.textContent = detail.description; entry.content.append(description);
     if (detail.note || !state.complete) {
       var note = document.createElement('p'); note.className = 'breakdown-note';
       note.textContent = [detail.note, !state.complete ? 'Данные за выбранный период неполные. Расчёт может измениться после обновления.' : ''].filter(Boolean).join(' '); entry.content.append(note);
@@ -77,6 +76,12 @@
       var item = document.createElement('div'), label = document.createElement('dt'), amount = document.createElement('dd');
       label.textContent = (part.sign ? part.sign + ' ' : '') + part.label;
       if (cell.dataset.format === 'integer') amount.dataset.format = 'integer';
+      // Colour the contribution to the total, not the copy button or label.
+      // A negative deduction increases the total; unknown values stay neutral.
+      var direction = part.sign === '+' ? 1 : (part.sign === '−' || part.sign === '-' ? -1 : 0);
+      if (direction && typeof part.value === 'number' && Number.isFinite(part.value) && part.value !== 0) {
+        amount.dataset.effect = direction * part.value > 0 ? 'positive' : 'negative';
+      }
       renderValue(amount, part.value); item.append(label); item.append(amount); list.append(item);
     });
     if ((detail.rows || []).length) {

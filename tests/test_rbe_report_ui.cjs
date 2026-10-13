@@ -27,7 +27,7 @@ async function test() {
   const metric = element('metric'); metric.textContent = 'Заказы ⓘ';
   const row = element('row'); row.querySelector = selector => selector === '.metric' ? metric : element('help');
   cell.closest = () => row;
-  let admin = true, state = 'running', value = 204008, fallbackOK = true;
+  let admin = true, state = 'running', value = 204008, fallbackOK = true, sign = '+', detailNote = '';
   const copied = [];
   const posts = [], timeouts = [], storage = new Map();
   const context = {
@@ -45,7 +45,7 @@ async function test() {
     fetch: async (url, options) => {
       let payload;
       if (url === '/api/stores') payload = {stores:['tris','rimili']};
-      else if (url.startsWith('/api/report?')) payload = {can_sync:admin,sync_running:false,values:{orders_turnover:value},quality:{orders_turnover:{complete:true}},details:{orders_turnover:{description:'Заказы включая отменённые',available:true,rows:[{sign:'+',label:'Заказы',value}],note:''}}};
+      else if (url.startsWith('/api/report?')) payload = {can_sync:admin,sync_running:false,values:{orders_turnover:value},quality:{orders_turnover:{complete:true}},details:{orders_turnover:{description:'Заказы включая отменённые',available:true,rows:[{sign,label:'Заказы',value}],note:detailNote}}};
       else if (url === '/api/sync-status') payload = {automatic:true,interval_minutes:30,lookback_days:14,pending_store_days:6,running:false};
       else if (url === '/api/sync') { posts.push(JSON.parse(options.body)); payload={run_id:7}; }
       else if (url === '/api/targeted-sync/7') payload = {run:{status:state,detail:'Даты сохранены для автоповтора'}};
@@ -82,7 +82,20 @@ async function test() {
   assert.equal(button.hidden,true);
   const html = fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/templates/index.html'),'utf8');
   assert.match(html,/id="refresh-period"[^>]*hidden/);
-  assert.match(html,/report\.js\?v=20261013-breakdowns/);
+  assert.match(html,/report\.js\?v=20261013-breakdown-colors/);
+  assert.doesNotMatch(html, /<p>Финансовый отчёт<\/p>|<h1>RBE<\/h1>/);
+  assert.match(html, /class="brand"/); // Header branding is unchanged.
+  assert.equal(row.sibling.children[0].children.length, 1); // Only the calculation list, no description.
+  for (const [operation, input, effect] of [['+',20,'positive'], ['−',20,'negative'], ['+',-20,'negative'], ['−',-20,'positive'], ['+',0,undefined], ['−',null,undefined], ['÷',20,undefined], ['×',100,undefined]]) {
+    sign = operation; value = input; await element('#apply').onclick();
+    const list = row.sibling.children[0].children[0];
+    assert.equal(list.children[0].children[1].dataset.effect, effect);
+    assert.equal(list.children[1].children[1].dataset.effect, undefined); // Total stays neutral.
+    assert.equal(element('help').dataset.tip, 'Заказы включая отменённые');
+  }
+  detailNote = 'Не хватает данных'; await element('#apply').onclick();
+  assert.equal(row.sibling.children[0].children[0].textContent, detailNote);
+  detailNote = ''; sign = '+';
   assert.equal(metric.children.length, 1); // Refreshing must not duplicate toggles.
   assert.equal(row.sibling.hidden, false); // Preserve expanded state after refresh.
   toggle.onclick(); assert.equal(row.sibling.hidden, true);
