@@ -12,10 +12,47 @@
   function setDefaults() { var today = new Date(), finish = new Date(today), start; finish.setDate(today.getDate() - 1); start = new Date(finish); start.setDate(finish.getDate() - 6); from.value = dateKey(start); to.value = dateKey(finish); }
   function valueText(cell, value) { if (value === null || value === undefined) return '—'; if (cell.dataset.format === 'integer') return new Intl.NumberFormat('ru-RU').format(value); if (cell.dataset.format === 'percent') return formatter.format(value) + '%'; return formatter.format(value); }
 
+  var copyIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>';
+  async function copyNumber(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); return; } catch (_) { /* Try the HTTP-compatible fallback. */ }
+    }
+    var input = document.createElement('textarea'), focused = document.activeElement;
+    input.value = text; input.readOnly = true; input.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.append(input);
+    try {
+      input.select(); input.setSelectionRange(0, text.length);
+      if (!document.execCommand('copy')) throw Error('Не удалось скопировать число');
+    } finally { input.remove(); if (focused && focused.focus) focused.focus({preventScroll:true}); }
+  }
+  function renderValue(cell, value) {
+    var text = valueText(cell, value), wrap = document.createElement('div'), number = document.createElement('span');
+    wrap.className = 'report-value'; number.textContent = text; wrap.append(number);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      var copy = document.createElement('button');
+      copy.type = 'button'; copy.className = 'copy-number'; copy.innerHTML = copyIcon;
+      copy.title = 'Копировать число'; copy.setAttribute('aria-label', 'Копировать число ' + text);
+      copy.onclick = async function () {
+        copy.disabled = true;
+        var notice = document.querySelector('#copy-status'); notice.textContent = '';
+        try {
+          await copyNumber(text.replace(/[\s%]/g, ''));
+          copy.textContent = '✓'; copy.classList.add('copied'); copy.title = 'Скопировано'; notice.textContent = 'Число скопировано';
+        } catch (_) { copy.title = 'Не удалось скопировать. Попробуйте ещё раз'; notice.textContent = copy.title; }
+        finally {
+          copy.disabled = false;
+          window.setTimeout(function () { copy.innerHTML = copyIcon; copy.classList.remove('copied'); copy.title = 'Копировать число'; }, 1500);
+        }
+      };
+      wrap.append(copy);
+    }
+    cell.replaceChildren(wrap);
+  }
+
   function render(values, quality, syncRunning) {
     document.querySelectorAll('[data-key]').forEach(function (cell) {
       var key = cell.dataset.key, state = quality[key] || {}, status = document.querySelector('[data-status-for="' + key + '"]'), badge = document.createElement('span');
-      cell.textContent = valueText(cell, values[key]); badge.textContent = state.complete ? 'Полные' : 'Неполные'; badge.className = 'status ' + (state.complete ? 'status--complete' : 'status--incomplete'); badge.title = state.detail || 'Статус данных неизвестен'; status.className = 'status-cell'; status.replaceChildren(badge);
+      renderValue(cell, values[key]); badge.textContent = state.complete ? 'Полные' : 'Неполные'; badge.className = 'status ' + (state.complete ? 'status--complete' : 'status--incomplete'); badge.title = state.detail || 'Статус данных неизвестен'; status.className = 'status-cell'; status.replaceChildren(badge);
       if (!state.complete && canSync && state.can_repair) {
         var repair = document.createElement('button'); repair.type = 'button'; repair.className = 'repair'; repair.textContent = syncRunning ? 'Загрузка…' : 'Загрузить'; repair.disabled = Boolean(syncRunning); repair.title = 'Загрузить только отсутствующие данные для этого показателя'; repair.onclick = function () { upload(key, repair); }; status.append(repair);
       }
