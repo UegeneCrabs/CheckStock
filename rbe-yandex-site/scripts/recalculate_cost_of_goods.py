@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SITE))
 
 from app.yandex import financial_reports  # noqa: E402
+from app.repositories import yandex_financial  # noqa: E402
 from main import connection  # noqa: E402
 
 ORDER_KIND = "united-orders"
@@ -118,6 +119,14 @@ def recalculate(
             "SELECT store_slug,business_id,report_date,values_json FROM daily_financial" + where,
             params,
         ).fetchall()
+        refunds = {}
+        if daily_rows:
+            first_day = min(str(r["report_date"]) for r in daily_rows)
+            last_day = max(str(r["report_date"]) for r in daily_rows)
+            for store, business in {(str(r["store_slug"]), int(r["business_id"])) for r in daily_rows}:
+                refunds[(store, business)] = yandex_financial.buyer_refund_events(
+                    store, business, first_day, last_day, source=source
+                )
         for row in daily_rows:
             key = (str(row["store_slug"]), int(row["business_id"]))
             report_set = reports.get(key)
@@ -125,7 +134,7 @@ def recalculate(
                 without_source += 1
                 continue
             day = str(row["report_date"])
-            daily_orders, _ = financial_reports._daily_order_sheets(report_set[ORDER_KIND], day)
+            daily_orders, _ = financial_reports._daily_order_sheets(report_set[ORDER_KIND], day, refunds[key])
             daily_services = financial_reports._daily_service_sheets(report_set[SERVICE_KIND], day)
             redeemed, returned = financial_reports._buyout_basket(daily_services, daily_orders)
             sold_cost = financial_reports._cost_for_items(redeemed, _prices_for_day(target, key[0], day))

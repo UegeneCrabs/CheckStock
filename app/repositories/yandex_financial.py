@@ -6,22 +6,6 @@ from datetime import datetime
 
 from app.repositories.core import WRITE_LOCK, get_connection
 
-_REPORTABLE_RETURN_OFFER_STATUSES = {
-    "Возврат оформлен",
-    "Возврат отправлен",
-    "Возврат готов к передаче вам",
-    "Возврат передан вам",
-    "Возврат принят",
-    "Возврат принят на складе",
-    "Полный возврат принят на складе",
-}
-_FINANCIALLY_REVERSED_OFFER_STATUSES = {
-    "Отменён",
-    "Невыкуп отправлен",
-    "Невыкуп принят на складе",
-    "Невыкуп готов к передаче вам",
-}
-
 
 def replace_report_rows(
     store_slug: str,
@@ -36,6 +20,8 @@ def replace_report_rows(
     # Their natural key is the sheet plus the payload hash, which is also the
     # database primary key for a report row.
     unique_rows = list({(str(row["sheet"]), str(row["row_key"])): row for row in rows}.values())
+    if report_kind == "united-netting":
+        unique_rows.append({"sheet": "__coverage__", "row_key": "coverage", "payload": {}})
     with WRITE_LOCK:
         conn = get_connection()
         try:
@@ -205,59 +191,92 @@ def pnl_summary(date_from: str, date_to: str, store_slug: str | None = None) -> 
     return _sum_values(range_rows) if range_rows else None
 
 
-def financial_return_count(date_from: str, date_to: str, store_slugs: list[str]) -> int:
-    """Count completed financial returns from the stored source archive.
+def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_to: str, *, source=None) -> list[dict]:
+    """Read canonical buyer-money operations, isolated by store and business.
 
-    Daily P&L snapshots created before return tracking was introduced do not
-    contain ``returned_count``. The raw united-orders archive is retained, so
-    it is safe to use it as the source for both old and new reporting periods.
-    PiData reports a return in the period in which the return event occurred,
-    not in the earlier period of the original delivery.  ``statusChanged`` is
-    the event timestamp supplied by the official Marketplace report.
-    Overlapping report downloads contain the same operation repeatedly; the
-    return key prevents counting it more than once.
+    Newer exports replace older overlapping snapshots, including deletions.
+    The internal coverage row records successfully downloaded empty reports.
     """
+    from app.yandex.buyer_refunds import build_refunds, operation_key, source_day
 
-    if not store_slugs:
-        return 0
-    placeholders = ", ".join("?" for _ in store_slugs)
-    conn = get_connection()
+    conn = source if source is not None else get_connection()
     try:
         rows = conn.execute(
-            f"""
-            SELECT payload_json
-            FROM yandex_financial_report_rows
-            WHERE report_kind='united-orders'
-              AND sheet='orders_and_offers_transactions'
-              AND store_slug IN ({placeholders})
-            """,
-            store_slugs,
+            """SELECT report_kind,sheet,payload_json,period_from,period_to,imported_at
+               FROM yandex_financial_report_rows
+               WHERE store_slug=? AND business_id=?
+                 AND report_kind IN ('united-orders','united-netting')
+               ORDER BY imported_at,period_from,period_to""",
+            (store_slug, business_id),
         ).fetchall()
     finally:
-        conn.close()
-
-    # A marketplace can emit several lifecycle statuses for the same return.
-    # PiData records it once, on the first return event.  Keep that earliest
-    # event instead of summing every later logistics confirmation.
-    events: dict[tuple[str, str], tuple[str, int]] = {}
+        if source is None:
+            conn.close()
+    orders = {}
+    snapshots = {}
     for row in rows:
         payload = json.loads(row["payload_json"])
-        status = str(payload.get("offerStatus") or "").strip()
-        event_day = _source_day(payload.get("statusChanged"))
-        if not event_day:
-            continue
-        has_financial_refund = _number(payload.get("refundBuyerPaymentAmount")) != 0
-        delivered = _source_day(payload.get("deliveryDate")) is not None
-        is_return = status in _REPORTABLE_RETURN_OFFER_STATUSES or (
-            status in _FINANCIALLY_REVERSED_OFFER_STATUSES and delivered and has_financial_refund
+        if row["report_kind"] == "united-orders" and row["sheet"] == "orders_and_offers_transactions":
+            key = (str(payload.get("orderId") or ""), str(payload.get("shopSku") or ""))
+            orders[key] = payload
+        elif row["report_kind"] == "united-netting":
+            version = (str(row["imported_at"]), str(row["period_from"]), str(row["period_to"]))
+            bucket = snapshots.setdefault(version, [])
+            if row["sheet"] == "transaction_date":
+                bucket.append(payload)
+    if not snapshots:
+        raise ValueError("Нет отчёта united-netting для проверки возвратов денег покупателю")
+    # An explicit ID can be corrected onto a different day. Remember its
+    # newest version before filtering dates, so an old window cannot retain
+    # the same transaction on its former day.
+    latest_ids = {}
+    for version, bucket in snapshots.items():
+        for payload in bucket:
+            if payload.get("transactionId") not in (None, ""):
+                latest_ids[operation_key(payload)] = (version, source_day(payload.get("transactionDate")))
+    payments = []
+    winners = {}
+    for version, bucket in snapshots.items():
+        for payload in bucket:
+            day = source_day(payload.get("transactionDate"))
+            if payload.get("transactionId") not in (None, ""):
+                latest = latest_ids[operation_key(payload)]
+                if day != latest[1]:
+                    continue
+            if not day or not date_from <= day <= date_to:
+                continue
+            if day not in winners:
+                covered = [v for v in snapshots if v[1] <= day <= v[2]]
+                # Older operation dates can appear outside an export's period.
+                # Prefer a covering snapshot, or the newest one containing it.
+                winners[day] = max(covered) if covered else max(
+                    v for v, rr in snapshots.items()
+                    if any(source_day(p.get("transactionDate")) == day for p in rr)
+                )
+            if version == winners[day]:
+                payments.append(payload)
+    return build_refunds(list(orders.values()), payments, date_from, date_to)
+
+
+def financial_return_count(date_from: str, date_to: str, store_slugs: list[str]) -> int:
+    """Same buyer-payment events as turnover and COGS; never logistics dates."""
+    if not store_slugs:
+        return 0
+    conn = get_connection()
+    try:
+        accounts = conn.execute(
+            "SELECT DISTINCT store_slug,business_id FROM yandex_financial_report_rows "
+            f"WHERE store_slug IN ({','.join('?' for _ in store_slugs)})",
+            store_slugs,
+        ).fetchall()
+        return sum(
+            event["count"]
+            for account in accounts
+            for event in buyer_refund_events(account["store_slug"], account["business_id"],
+                                              date_from, date_to, source=conn)
         )
-        if not is_return:
-            continue
-        event_key = (str(payload.get("orderId") or ""), str(payload.get("shopSku") or payload.get("offerId") or ""))
-        candidate = (event_day, _as_quantity(payload.get("count")))
-        if event_key not in events or candidate[0] < events[event_key][0]:
-            events[event_key] = candidate
-    return sum(quantity for event_day, quantity in events.values() if date_from <= event_day <= date_to)
+    finally:
+        conn.close()
 
 
 def financial_delivery_count(date_from: str, date_to: str, store_slugs: list[str]) -> int:
@@ -345,12 +364,7 @@ def financial_buyout_count(date_from: str, date_to: str, store_slugs: list[str])
 
 
 def rebuild_daily_buyout_counts(store_slug: str, date_from: str, date_to: str) -> int:
-    """Backfill daily P&L quantities with PiData-style source events.
-
-    Sales are read from stored official Business Orders events. Returns use
-    the status-change date in the official financial archive.  Monetary
-    fields remain untouched because they are settled by other report sheets.
-    """
+    """Legacy count-only maintenance using the same buyer-money refund events."""
 
     conn = get_connection()
     try:
@@ -365,35 +379,14 @@ def rebuild_daily_buyout_counts(store_slug: str, date_from: str, date_to: str) -
             (store_slug, date_from, f"{date_to}T23:59:59"),
         ).fetchall()
         sales_by_day = {str(row["day"]): _as_quantity(row["quantity"]) for row in sales_rows}
-        raw_rows = conn.execute(
-            """
-            SELECT payload_json FROM yandex_financial_report_rows
-            WHERE store_slug=? AND report_kind='united-orders'
-              AND sheet='orders_and_offers_transactions'
-            """,
+        accounts = conn.execute(
+            "SELECT DISTINCT business_id FROM yandex_financial_report_rows WHERE store_slug=?",
             (store_slug,),
         ).fetchall()
-        return_events: dict[tuple[str, str], tuple[str, int]] = {}
-        for row in raw_rows:
-            payload = json.loads(row["payload_json"])
-            event_day = _source_day(payload.get("statusChanged"))
-            if not event_day:
-                continue
-            status = str(payload.get("offerStatus") or "").strip()
-            delivered = _source_day(payload.get("deliveryDate")) is not None
-            has_financial_refund = _number(payload.get("refundBuyerPaymentAmount")) != 0
-            if status not in _REPORTABLE_RETURN_OFFER_STATUSES and not (
-                status in _FINANCIALLY_REVERSED_OFFER_STATUSES and delivered and has_financial_refund
-            ):
-                continue
-            key = (str(payload.get("orderId") or ""), str(payload.get("shopSku") or payload.get("offerId") or ""))
-            candidate = (event_day, _as_quantity(payload.get("count")))
-            if key not in return_events or candidate[0] < return_events[key][0]:
-                return_events[key] = candidate
-        returns_by_day: defaultdict[str, int] = defaultdict(int)
-        for event_day, quantity in return_events.values():
-            if date_from <= event_day <= date_to:
-                returns_by_day[event_day] += quantity
+        returns_by_day = defaultdict(int)
+        for account in accounts:
+            for event in buyer_refund_events(store_slug, account["business_id"], date_from, date_to, source=conn):
+                returns_by_day[event["refund_day"]] += event["count"]
 
         rows = conn.execute(
             """
@@ -407,7 +400,7 @@ def rebuild_daily_buyout_counts(store_slug: str, date_from: str, date_to: str) -
         for row in rows:
             day = str(row["report_date"])
             values = json.loads(row["values_json"])
-            values["buyout_count"] = max(0, sales_by_day.get(day, 0) - returns_by_day.get(day, 0))
+            values["buyout_count"] = sales_by_day.get(day, 0) - returns_by_day.get(day, 0)
             updates.append((json.dumps(values), now, store_slug, day))
         if updates:
             conn.executemany(
@@ -451,6 +444,32 @@ def placement_commissions_by_order(
         if amount > 0:
             result[order_id] = max(result.get(order_id, 0.0), amount)
     return result
+
+
+def buyer_refund_commission(store_slug: str, business_id: int, events: list[dict]) -> float:
+    """Allocate the original SKU commission once per refunded quantity."""
+    if not events:
+        return 0.0
+    wanted = {(str(e.get("orderId")), str(e.get("shopSku"))) for e in events}
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT payload_json FROM yandex_financial_report_rows
+               WHERE store_slug=? AND business_id=? AND report_kind='united-services'
+                 AND sheet='placement' ORDER BY imported_at""", (store_slug, business_id)
+        ).fetchall()
+    finally:
+        conn.close()
+    rates = {}
+    for row in rows:
+        p = json.loads(row["payload_json"])
+        key = (str(p.get("orderId")), str(p.get("shopSku")))
+        amount = _number(p.get("amountWithoutBonuses"))
+        quantity = _number(p.get("count"))
+        if key in wanted and amount > 0 and quantity > 0:
+            rates[key] = amount / quantity
+    return round(sum(rates.get((str(e.get("orderId")), str(e.get("shopSku"))), 0) * e["count"]
+                     for e in events), 2)
 
 
 def daily_bank_receipts(date_from: str, date_to: str) -> list[dict]:
@@ -626,12 +645,17 @@ def refresh_pnl_costs(store_slug: str, date_from: str, date_to: str, calculated_
                 bucket["missing"].add(sku)
             else:
                 bucket["sold"] += price * count
-        elif str(payload.get("orderStatus") or "").startswith("Полный возврат"):
-            if price is None:
+
+
+    for row in summaries:
+        business_id = int(row["business_id"])
+        bucket = costs[business_id]
+        for event in buyer_refund_events(store_slug, business_id, date_from, date_to):
+            sku = str(event["shopSku"])
+            if sku not in prices:
                 bucket["missing"].add(sku)
             else:
-                bucket["returned"] += price * count
-
+                bucket["returned"] += prices[sku] * event["count"]
     updated = 0
     for row in summaries:
         business_id = int(row["business_id"])

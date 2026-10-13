@@ -27,45 +27,19 @@ def _number(value: object) -> float:
         return 0.0
 
 
-_REPORTABLE_RETURN_OFFER_STATUSES = {
-    "Возврат оформлен",
-    "Возврат отправлен",
-    "Возврат готов к передаче вам",
-    "Возврат передан вам",
-    "Возврат принят",
-    "Возврат принят на складе",
-    "Полный возврат принят на складе",
-}
 _FINANCIALLY_REVERSED_OFFER_STATUSES = {
     "Отменён",
     "Невыкуп отправлен",
     "Невыкуп принят на складе",
     "Невыкуп готов к передаче вам",
 }
-_REALISATION_RETURN_STATUS_PREFIX = "Полный возврат"
 
 
 def _is_financial_return(row: dict) -> bool:
-    """Whether an order row reverses an already accounted buyout.
-
-    Regular cancellation and unredeemed statuses do not affect a buyout: the
-    item may never have been delivered or paid for. They become a reversal
-    only where the same transaction has a delivery date and Market provides a
-    non-zero refund to the buyer. Explicit return statuses are retained even
-    while the refund amount is still absent from a report row.
-    """
-
-    status = str(row.get("offerStatus") or "").strip()
-    # PiData's «Возвращено» is posted when a redeemed product enters the
-    # return lifecycle.  A later acceptance or handover is the same return,
-    # and is deduplicated by order and SKU before a daily report is built.
-    if status in _REPORTABLE_RETURN_OFFER_STATUSES:
-        return True
-    return (
-        status in _FINANCIALLY_REVERSED_OFFER_STATUSES
-        and _source_day(row.get("deliveryDate")) is not None
-        and _number(row.get("refundBuyerPaymentAmount")) != 0
-    )
+    """Only normalized buyer-money events authorize a sales reversal."""
+    return bool(row.get("refund_event_key") and row.get("refund_day")) and _number(
+        row.get("refundBuyerPaymentAmount")
+    ) < 0
 
 
 def _is_unredeemed_order(row: dict) -> bool:
@@ -81,21 +55,6 @@ def _is_unredeemed_order(row: dict) -> bool:
         and _source_day(row.get("deliveryDate")) is None
     )
 
-
-def _realisation_returns(order_sheets: dict[str, list[dict]]) -> list[dict]:
-    """Return completed returns from the Marketplace realisation report.
-
-    The transactions sheet describes the current order state and is useful as
-    a fallback for daily snapshots. The realisation sheet is authoritative for
-    a selected period: it contains only items that were first delivered and
-    then accepted back by Market.
-    """
-
-    return [
-        row
-        for row in order_sheets.get("services_and_orders_margin", [])
-        if str(row.get("orderStatus") or "").strip().startswith(_REALISATION_RETURN_STATUS_PREFIX)
-    ]
 
 
 def _cost_for_items(items: list[dict], purchase_prices: dict[str, float]) -> float | None:
@@ -140,7 +99,7 @@ def _redeemed_payment_transfer_rows(
 def _buyout_return_rows(order_sheets: dict[str, list[dict]]) -> list[dict]:
     """Return exactly the financial reversals subtracted from buyout turnover."""
 
-    return _realisation_returns(order_sheets) or order_sheets.get("returns", [])
+    return order_sheets.get("returns", [])
 
 
 def _buyout_basket(
@@ -347,10 +306,9 @@ def _pnl_values(
         "sales": net_sales,
         "buyout_seller_turnover": net_sales,
         "buyout_buyer_turnover": round(buyer_buyout_turnover - returned_buyer_turnover, 2),
-        "buyout_count": max(
-            0,
+        "buyout_count": (
             round(sum(_number(row.get("quantity")) for row in payment_transfer_rows))
-            - round(sum(_number(row.get("count") or row.get("quantity") or 1) for row in return_rows)),
+            - round(sum(_number(row.get("count") or row.get("quantity") or 1) for row in return_rows))
         ),
         "returned_count": sum(_number(row.get("count") or 1) for row in return_rows),
         "commission": commission,
@@ -401,34 +359,20 @@ def _daily_service_sheets(service_sheets: dict[str, list[dict]], day: str) -> di
     }
 
 
-def _daily_order_sheets(order_sheets: dict[str, list[dict]], day: str) -> tuple[dict[str, list[dict]], list[dict]]:
-    """Build one reporting day from Market's order facts.
-
-    PiData shows a return in the period of the return event.  Market's
-    ``statusChanged`` is the corresponding official event timestamp; the
-    original delivery stays a separate sale event.
-    """
-
+def _daily_order_sheets(
+    order_sheets: dict[str, list[dict]], day: str, refund_events: list[dict] | None = None
+) -> tuple[dict[str, list[dict]], list[dict]]:
+    """Sales retain their delivery date; returns use buyer-payment dates only."""
     transactions = order_sheets.get("orders_and_offers_transactions", [])
-    return_events: dict[tuple[str, str], dict] = {}
-    for row in transactions:
-        if not _is_financial_return(row):
-            continue
-        event_day = _source_day(row.get("statusChanged"))
-        if not event_day:
-            continue
-        key = (str(row.get("orderId") or ""), str(row.get("shopSku") or row.get("offerId") or ""))
-        previous = return_events.get(key)
-        if previous is None or event_day < _source_day(previous.get("statusChanged")):
-            return_events[key] = row
     daily_orders = {
         "orders_and_offers_transactions": [
             row for row in transactions if _source_day(row.get("deliveryDate")) == day
         ],
-        # A non-redemption has no delivery date. Retain all statuses only for
-        # excluding its technical payment-transfer operation from turnover.
         "payment_transfer_order_statuses": transactions,
-        "returns": [row for row in return_events.values() if _source_day(row.get("statusChanged")) == day],
+        "returns": [
+            row for row in (refund_events or [])
+            if row.get("refund_day") == day and _is_financial_return(row)
+        ],
     }
     created_orders = [
         row for row in transactions if _source_day(row.get("creationDate")) == day
@@ -467,22 +411,22 @@ def _store_daily_pnl(
         for article, row in yandex_source_values.get_values(store_slug).items()
         if row.get("purchase_price") is not None
     }
+    refund_events = yandex_financial.buyer_refund_events(
+        store_slug, business_id, date_from.isoformat(), date_to.isoformat()
+    )
     current_day = date_from
     while current_day <= date_to:
         day = current_day.isoformat()
-        daily_orders, created_orders = _daily_order_sheets(order_sheets, day)
+        daily_orders, created_orders = _daily_order_sheets(order_sheets, day, refund_events)
         daily_services = _daily_service_sheets(service_sheets, day)
         values = _pnl_values(
             daily_services,
             daily_orders,
             campaign_count=campaign_count,
         )
-        return_commissions = yandex_financial.placement_commissions_by_order(
-            store_slug,
-            business_id,
-            [row.get("orderId") for row in daily_orders["returns"]],
-        )
-        _apply_return_commission(values, round(sum(return_commissions.values()), 2))
+        _apply_return_commission(values, yandex_financial.buyer_refund_commission(
+            store_slug, business_id, daily_orders["returns"]
+        ))
         values["orders_turnover"] = round(
             sum(_number(row.get("partnerPriceForDelivery")) for row in created_orders), 2
         )
@@ -722,20 +666,18 @@ def import_period(store_slug: str, date_from: date, date_to: date) -> dict:
                 "rows": saved,
                 "sheets": {name: len(rows) for name, rows in report_sheets.items()},
             }
-            if report_kind == SERVICES_REPORT_KIND:
-                yandex_financial.replace_pnl_summary(
-                    store_slug,
-                    business_id,
-                    date_from.isoformat(),
-                    date_to.isoformat(),
-                    _pnl_values(
-                        report_sheets,
-                        sheets,
-                        campaign_count=len(account.get("campaign_ids") or []),
-                    ),
-                    now,
-                )
         imported.append(imported_report)
+        # Save every raw report first: the common refund reader needs the
+        # successfully downloaded netting snapshot, including an empty one.
+        range_orders = dict(sheets)
+        range_orders["returns"] = yandex_financial.buyer_refund_events(
+            store_slug, business_id, date_from.isoformat(), date_to.isoformat()
+        )
+        yandex_financial.replace_pnl_summary(
+            store_slug, business_id, date_from.isoformat(), date_to.isoformat(),
+            _pnl_values(service_sheets, range_orders,
+                        campaign_count=len(account.get("campaign_ids") or [])), now,
+        )
         yandex_financial.refresh_pnl_costs(store_slug, date_from.isoformat(), date_to.isoformat(), now)
         _store_daily_pnl(
             store_slug,

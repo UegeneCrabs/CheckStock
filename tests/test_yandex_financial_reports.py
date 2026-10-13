@@ -54,67 +54,31 @@ def test_buyout_turnover_subtracts_returned_goods() -> None:
     assert values["buyout_buyer_turnover"] == 630
 
 
-def test_realisation_report_is_authoritative_for_completed_returns() -> None:
+def test_logistics_status_does_not_authorize_a_financial_return() -> None:
     values = _pnl_values(
         {"payment_transfer": [{"merchantPrice": 1_000}]},
-        {
-            "orders_and_offers_transactions": [],
-            "returns": [{"partnerPriceForDelivery": 300}],
-            "services_and_orders_margin": [
-                {
-                    "orderStatus": "Полный возврат принят на складе",
-                    "sumBillingPriceOfItems": 250,
-                    "buyerPayment": 200,
-                }
-            ],
-        },
+        {"services_and_orders_margin": [
+            {"orderStatus": "Полный возврат принят на складе", "sumBillingPriceOfItems": 250}
+        ]},
     )
-
-    assert values["buyout_seller_turnover"] == 750
-    assert values["returned_count"] == 1
-
-
-def test_return_is_posted_to_the_return_event_day() -> None:
-    order_sheets = {
-        "orders_and_offers_transactions": [
-            {
-                "orderId": 1,
-                "offerStatus": "Возврат принят на складе",
-                "deliveryDate": "2026-09-07 13:00:00",
-                "statusChanged": "2026-09-15 08:00:00",
-                "partnerPriceForDelivery": 1_000,
-            }
-        ]
-    }
-
-    delivery_day, _ = _daily_order_sheets(order_sheets, "2026-09-07")
-    status_day, _ = _daily_order_sheets(order_sheets, "2026-09-15")
-
-    assert delivery_day["returns"] == []
-    assert status_day["returns"] == order_sheets["orders_and_offers_transactions"]
+    assert values["buyout_seller_turnover"] == 1_000
+    assert values["returned_count"] == 0
+    for status in ("Возврат оформлен", "Возврат отправлен", "Возврат принят на складе"):
+        assert not _is_financial_return({"offerStatus": status, "refundBuyerPaymentAmount": -500})
 
 
-def test_only_financial_cancellations_are_counted_as_returns() -> None:
-    assert _is_financial_return({"offerStatus": "Возврат оформлен"})
-    assert _is_financial_return(
-        {
-            "offerStatus": "Отменён",
-            "deliveryDate": "2026-09-20",
-            "refundBuyerPaymentAmount": -500,
-        }
-    )
-    assert _is_financial_return(
-        {
-            "offerStatus": "Невыкуп отправлен",
-            "deliveryDate": "2026-09-20",
-            "refundBuyerPaymentAmount": -500,
-        }
-    )
-    assert not _is_financial_return(
-        {"offerStatus": "Отменён", "refundBuyerPaymentAmount": -500}
-    )
-    assert not _is_financial_return({"offerStatus": "Невыкуп принят на складе"})
-    assert _is_financial_return({"offerStatus": "Возврат отправлен"})
+def test_return_is_posted_to_buyer_payment_date_only() -> None:
+    row = {"orderId": 1, "shopSku": "sku", "offerStatus": "Возврат принят на складе",
+           "deliveryDate": "2026-09-07", "statusChanged": "2026-09-15",
+           "partnerPriceForDelivery": 1000}
+    event = {**row, "refund_event_key": "payment-1", "refund_day": "2026-09-10",
+             "refundBuyerPaymentAmount": -500, "count": 1}
+    sheets = {"orders_and_offers_transactions": [row]}
+    for day in ("2026-09-07", "2026-09-15"):
+        daily, _ = _daily_order_sheets(sheets, day, [event])
+        assert daily["returns"] == []
+    daily, _ = _daily_order_sheets(sheets, "2026-09-10", [event])
+    assert daily["returns"] == [event]
 
 
 def test_unredeemed_payment_transfer_is_not_buyout_turnover() -> None:

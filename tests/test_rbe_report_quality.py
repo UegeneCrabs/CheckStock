@@ -156,6 +156,7 @@ def test_cost_recalculation_preserves_source_proof(site, tmp_path, monkeypatch, 
     monkeypatch.setattr(costs, '_source_reports', lambda source: {
         ('tris', 1): {costs.ORDER_KIND: {}, costs.SERVICE_KIND: {}}
     })
+    monkeypatch.setattr(costs.yandex_financial, 'buyer_refund_events', lambda *args, **kwargs: [])
     fact(site, complete=complete)
     before = site.report_completeness(date(2026,10,12), date(2026,10,12), None)
     costs.recalculate(tmp_path / 'source.db')

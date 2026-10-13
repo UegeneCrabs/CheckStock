@@ -23,7 +23,7 @@ sys.path.insert(0, str(SITE))
 from app.yandex import financial_reports, tokens  # noqa: E402
 from import_from_checkstock import main as copy_into_rbe  # noqa: E402
 
-KINDS = ("united-orders", "united-services")
+KINDS = ("united-orders", "united-services", "united-netting")
 
 
 def _identity(payload: dict) -> str:
@@ -41,7 +41,7 @@ def _latest_reports(
     for row in source.execute(
         """SELECT report_kind,sheet,payload_json,period_to,imported_at
            FROM yandex_financial_report_rows
-           WHERE store_slug=? AND business_id=? AND report_kind IN (?,?)
+           WHERE store_slug=? AND business_id=? AND report_kind IN (?,?,?)
              AND period_from=? AND period_to=?""",
         (store, business_id, *KINDS, report_from.isoformat(), report_to.isoformat()),
     ):
@@ -69,7 +69,7 @@ def rebuild(
                 reports = _latest_reports(source, store, business_id, date_from, report_to)
                 services = reports.get("united-services", {})
                 orders = reports.get("united-orders", {})
-                if not services or not orders:
+                if not services or not orders or not reports.get("united-netting"):
                     print(json.dumps({"store": store, "business_id": business_id, "rebuilt": False, "reason": "no archived reports"}, ensure_ascii=False))
                     continue
                 financial_reports._store_daily_pnl(
