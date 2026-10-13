@@ -36,7 +36,7 @@ rollback() {
     if [[ $stopped == 1 ]]; then
         echo "Update failed; restoring code $old. Database is not automatically rolled back." >&2
         systemctl stop rbe || true
-        git reset --keep "$old" || true
+        (umask 022; git reset --keep "$old") || true
         systemctl start rbe || true
     fi
     exit "$result"
@@ -46,7 +46,8 @@ trap rollback ERR
 systemctl stop rbe
 stopped=1
 systemctl start rbe-backup.service
-git merge --ff-only "$target"
+# Tracked code must be readable by the rbe service; secrets/backups keep umask 077.
+(umask 022; git merge --ff-only "$target")
 systemctl start rbe
 healthy=0
 for attempt in {1..30}; do

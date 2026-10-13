@@ -12,7 +12,7 @@ import json
 import sqlite3
 import sys
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parents[1]
@@ -101,7 +101,6 @@ def recalculate(
     source.row_factory = sqlite3.Row
     reports = _source_reports(source)
     recalculated = incomplete = without_source = 0
-    now = datetime.now(UTC).isoformat()
     with connection() as target:
         filters: list[str] = []
         params: list[object] = []
@@ -144,9 +143,12 @@ def recalculate(
                 })
                 recalculated += 1
             target.execute(
-                """UPDATE daily_financial SET values_json=?,calculated_at=?
+                # Cost-only recalculation does not change the financial-source
+                # version. Otherwise it invalidates daily_source_quality just
+                # written by the importer, including confirmed zero order days.
+                """UPDATE daily_financial SET values_json=?
                    WHERE store_slug=? AND business_id=? AND report_date=?""",
-                (json.dumps(values, ensure_ascii=False), now, key[0], key[1], day),
+                (json.dumps(values, ensure_ascii=False), key[0], key[1], day),
             )
     source.close()
     return {"recalculated": recalculated, "incomplete": incomplete, "without_source": without_source}

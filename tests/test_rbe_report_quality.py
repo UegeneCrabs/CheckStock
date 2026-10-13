@@ -145,3 +145,21 @@ def test_no_data_response_is_explicit_and_not_downloaded(monkeypatch):
     monkeypatch.setattr(financial_reports, '_download_archive', lambda *a: pytest.fail('No download for NO_DATA'))
     with pytest.raises(RuntimeError, match='NO_DATA'):
         financial_reports._load_report('test-key','test-endpoint',{})
+
+
+@pytest.mark.parametrize('complete', [False, True])
+def test_cost_recalculation_preserves_source_proof(site, tmp_path, monkeypatch, complete):
+    spec = importlib.util.spec_from_file_location('rbe_cost_quality_test', SITE / 'scripts' / 'recalculate_cost_of_goods.py')
+    costs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(costs)
+    monkeypatch.setattr(costs, 'connection', site.connection)
+    monkeypatch.setattr(costs, '_source_reports', lambda source: {
+        ('tris', 1): {costs.ORDER_KIND: {}, costs.SERVICE_KIND: {}}
+    })
+    fact(site, complete=complete)
+    before = site.report_completeness(date(2026,10,12), date(2026,10,12), None)
+    costs.recalculate(tmp_path / 'source.db')
+    after = site.report_completeness(date(2026,10,12), date(2026,10,12), None)
+    assert after == before
+    with site.connection() as db:
+        assert db.execute('SELECT calculated_at FROM daily_financial').fetchone()[0] == 'v1'
