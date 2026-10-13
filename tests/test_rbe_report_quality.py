@@ -47,7 +47,7 @@ def test_breakdown_arithmetic_for_every_calculated_metric():
         'payment_transfer': [{'merchantPrice': 1000, 'quantity': 3, 'servicePrice': 10}],
         'export_from_warehouse': [{'serviceName':'Доставка грузоместа до склада назначения','servicePrice':20}, {'serviceName':'Возврат товара заказчику','servicePrice':15}],
         'loyalty_and_reviews': [{'customerBonusAmount':5}],
-        'placement': [{'lateOrderExecutionFeeTariff':7}],
+        'placement': [{'lateOrderExecutionFeeTariff':7, 'qualityIndexAmount':11}],
         'shelf': [{'payment':2}],
         'boost': [{'postpaid':3}],
     }, {'returns':[{'count':1,'sumBillingPriceOfItems':100,'refundBuyerPaymentAmount':-50}]})

@@ -101,7 +101,7 @@ def test_unredeemed_payment_transfer_is_not_buyout_turnover() -> None:
     assert values["other_direct_expenses"] == 287.49
 
 
-def test_other_combines_acquiring_and_marketplace_other_credit() -> None:
+def test_other_does_not_treat_late_tariff_percentage_as_money() -> None:
     values = _pnl_values(
         {
             "payment_transfer": [{"servicePrice": 8_800.36}],
@@ -111,7 +111,66 @@ def test_other_combines_acquiring_and_marketplace_other_credit() -> None:
         {"orders_and_offers_transactions": []},
     )
 
-    assert values["other_direct_expenses"] == 9_241.20
+    assert values["other_direct_expenses"] == 8_816.20
+    assert values["detail_late_fees"] == 0
+    assert values["bank_receipt"] == -8_816.20
+
+
+def test_quality_adjustments_are_signed_money_deducted_exactly_once() -> None:
+    values = _pnl_values({
+        "payment_transfer": [{"orderId": 1, "merchantPrice": 10_000, "servicePrice": 100}],
+        "placement": [
+            {"orderId": 1, "amountWithoutBonuses": 2_000,
+             "lateOrderExecutionFeeTariff": 25, "qualityIndexAmount": 500},
+            # Cancellation fee still applies without a redeemed order.
+            {"orderId": 2, "amountWithoutBonuses": 1_000,
+             "cancellationOrderFeeTariff": 50, "qualityIndexAmount": 300},
+            {"qualityIndexAmount": -125},
+            {"lateOrderExecutionFeeTariff": 50, "qualityIndexAmount": 0},
+            {"lateOrderExecutionFeeTariff": 25, "qualityIndexAmount": None},
+        ],
+        "loyalty_and_reviews": [{"customerBonusAmount": 20}],
+        "shelf": [{"payment": 10}],
+    }, {})
+    assert values["commission"] == 2_000
+    assert values["detail_late_fees"] == values["other"] == 675
+    assert values["detail_other_withheld"] == 695
+    assert values["other_direct_expenses"] == 795
+    assert values["bank_receipt"] == 7_195
+    assert round(values["sales"] - values["commission"] - values["logistics"]
+                 - values["other_direct_expenses"] - values["marketing"], 2) == values["bank_receipt"]
+
+
+def test_negative_quality_adjustment_reduces_expenses_and_increases_receipt() -> None:
+    values = _pnl_values({"placement": [{"qualityIndexAmount": -125}]}, {})
+    assert values["other_direct_expenses"] == -125
+    assert values["detail_late_fees"] == -125
+    assert values["bank_receipt"] == 125
+
+
+def test_october_5_11_reconciliation_uses_money_not_325_tariff_points() -> None:
+    # Aggregated archived 2026-10-05..11 amounts, all stores. The former
+    # percentage sums were RIMILI 225, SOKOLOFF 75, TRUST 25.
+    values = _pnl_values({
+        "payment_transfer": [{"orderId": 1, "merchantPrice": 1_573_364,
+                              "servicePrice": 27_088.37}],
+        "placement": [
+            {"orderId": 1, "amountWithoutBonuses": 740_340.06,
+             "lateOrderExecutionFeeTariff": 225, "qualityIndexAmount": 7_525.32},
+            {"lateOrderExecutionFeeTariff": 75, "qualityIndexAmount": 1_427.38},
+            {"lateOrderExecutionFeeTariff": 25, "qualityIndexAmount": 645.58},
+        ],
+        "delivery": [{"servicePrice": 138_480.90}],
+        "boost": [{"postpaid": 235_085.51}],
+        "order_processing": [{"servicePrice": 3_123.08}],
+    }, {})
+    assert values["detail_late_fees"] == 9_598.28
+    assert values["other_direct_expenses"] == 39_809.73
+    assert values["bank_receipt"] == 419_647.80
+    remainder = (values["sales"] - values["commission"] - values["logistics"]
+                 - values["other_direct_expenses"] - values["advertising"]
+                 - values["bank_receipt"])
+    assert round(remainder, 2) == 0
 
 
 def test_payment_forecast_includes_all_pidata_marketing_and_processing_services() -> None:

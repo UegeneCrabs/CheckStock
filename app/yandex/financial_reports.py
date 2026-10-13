@@ -235,11 +235,13 @@ def _pnl_values(
         2,
     )
     paid_acceptance = total("payment_accepting")
-    # В P&L PiData строка «Другие → полученные с МП» соответствует
-    # вознаграждению/корректировке за просроченное исполнение заказа из
-    # placement-отчёта. Это отдельная от эквайринга статья, но в компактной
-    # таблице мы показываем их одной строкой «Иное».
-    marketplace_other = total("placement", "lateOrderExecutionFeeTariff")
+    # lateOrderExecutionFeeTariff / cancellationOrderFeeTariff are percentages,
+    # not money. qualityIndexAmount is the actual signed monetary adjustment.
+    # Commission above uses amountWithoutBonuses (before discounts/markups),
+    # so this adjustment is charged separately, once, on its service date.
+    # Include cancellations even without a matching redeemed order. Do not
+    # derive an amount from a tariff: Market applies monetary caps as well.
+    marketplace_other = signed_total("placement", "qualityIndexAmount")
     # The payment fields, not technical ``servicePrice``, are the actual
     # marketing withholding. PiData's «Маркетинг» includes every one of these
     # services: boost sales, boost with payment for impressions and product
@@ -256,11 +258,12 @@ def _pnl_values(
     # PiData treats the paid shelf as marketing alongside all promotion
     # formats.  It is not a storage charge despite its historical name.
     marketing = round(advertising + total("shelf", "payment"), 2)
-    # Keep the existing marketplace adjustment separately for compatibility.
+    # Keep the monetary adjustment separately for compatibility/detail display.
     # The visible Other metric also includes all remaining charges below.
     other = marketplace_other
     payment_adjustments = round(
-        total("loyalty_and_reviews", "customerBonusAmount")
+        marketplace_other
+        + total("loyalty_and_reviews", "customerBonusAmount")
         # Market periodically changes the suffix in the storage sheet name.
         # Sum every version while preserving the amount from its dedicated
         # ``paidStorage`` field.
@@ -283,7 +286,7 @@ def _pnl_values(
     # Show previously hidden payout deductions in Other. They are already
     # subtracted via payment_adjustments below: do not deduct them twice.
     acquiring = round(payment_transfer + paid_acceptance, 2)
-    other_direct = round(acquiring + other + payment_adjustments, 2)
+    other_direct = round(acquiring + payment_adjustments, 2)
     direct = round(commission + logistics + acquiring, 2)
     # Use the buyer amount from the matching order + SKU line.  It is the
     # same basket as seller turnover, rather than one arbitrary line per
