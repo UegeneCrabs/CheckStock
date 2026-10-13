@@ -56,6 +56,14 @@ async function test() {
   const settle = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setImmediate(resolve)); };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/report.js'),'utf8'),context);
   await settle();
+  element('#sync-tools').open = true;
+  element('#sync-tools-close').onclick();
+  assert.equal(element('#sync-tools').open, false);
+  element('#sync-tools').open = true;
+  let escaped = false;
+  element('#sync-tools').onkeydown({key:'Escape',preventDefault() { escaped = true; }});
+  assert.equal(element('#sync-tools').open, false);
+  assert.equal(escaped, true);
   assert.match(element('#sync-queue-summary').textContent, /Очередь проверок \(1\)/);
   assert.match(element('#sync-guide-state').textContent, /Автопроверка включена/);
   for (const [name, value] of [['interval','45'], ['lookback','10'], ['jobs','8'], ['batch','7'], ['cooldown','180'], ['cutoff','15.07.2026']]) {
@@ -93,7 +101,7 @@ async function test() {
   assert.equal(button.hidden,true);
   const html = fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/templates/index.html'),'utf8');
   assert.match(html,/id="refresh-period"[^>]*hidden/);
-  assert.match(html,/report\.js\?v=20261013-sync-queue/);
+  assert.match(html,/report\.js\?v=20261013-sync-tools/);
   assert.match(html, /<details id="sync-guide"/);
   assert.match(html, /Как работает автообновление/);
   assert.match(html, /Это не число потерянных дней/);

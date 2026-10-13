@@ -122,6 +122,58 @@ def test_archive_evidence_uses_latest_snapshot_available_at_calculation():
     db.close()
 
 
+@pytest.mark.parametrize('money_rows', [[], [{'transactionDate':'10.10.2026'}], [{'transactionDate':'12.10.2026','transactionSource':'Оплата'}]])
+def test_received_netting_without_refunds_is_not_incomplete(money_rows):
+    db = sqlite3.connect(':memory:')
+    db.execute('CREATE TABLE yandex_financial_report_rows(store_slug,business_id,report_kind,period_from,period_to,imported_at,sheet,payload_json)')
+    def add(kind, sheet, value, start='2026-10-05', end='2026-10-12', imported='2026-10-13T06:00:00+00:00'):
+        db.execute('INSERT INTO yandex_financial_report_rows VALUES(?,?,?,?,?,?,?,?)',
+                   ('tris',1,kind,start,end,imported,sheet,json.dumps(value)))
+    add('united-orders', 'orders_and_offers_transactions', {'deliveryDate':'12.10.2026'})
+    add('united-services', 'payment_transfer', {'serviceDateTime':'12.10.2026','orderId':1,'shopSku':'sku','count':1})
+    add('united-services', 'placement', {'serviceDateTime':'12.10.2026','orderId':1,'shopSku':'sku','count':1,'amountWithoutBonuses':10})
+    row = {'store_slug':'tris','business_id':1,'report_date':'2026-10-12','calculated_at':'2026-10-13T07:00:00+00:00'}
+    # Missing is not the same as a successfully downloaded empty report.
+    assert quality.build_quality(db, [row])[0][5] == 0
+    add('united-netting', '__coverage__', {})
+    for operation in money_rows:
+        add('united-netting', 'transaction_date', operation)
+    assert quality.build_quality(db, [row])[0][5] == 1
+    # Coverage must include the day and predate the financial calculation.
+    db.execute("UPDATE yandex_financial_report_rows SET period_to='2026-10-11' WHERE report_kind='united-netting'")
+    assert quality.build_quality(db, [row])[0][5] == 0
+    db.execute("UPDATE yandex_financial_report_rows SET period_to='2026-10-12',imported_at='2026-10-13T08:00:00+00:00' WHERE report_kind='united-netting'")
+    assert quality.build_quality(db, [row])[0][5] == 0
+    db.execute("UPDATE yandex_financial_report_rows SET imported_at='2026-10-13T06:00:00+00:00' WHERE report_kind='united-netting'")
+    db.execute("DELETE FROM yandex_financial_report_rows WHERE sheet='placement'")
+    assert quality.build_quality(db, [row])[0][5] == 0
+    db.close()
+
+
+def test_auto_update_help_is_inside_toolbar_not_above_table():
+    from html.parser import HTMLParser
+    class Structure(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack, self.parents = [], {}
+        def handle_starttag(self, tag, attrs):
+            values = dict(attrs)
+            if values.get('id'):
+                self.parents[values['id']] = list(self.stack)
+            if tag not in {'meta','link','input','br','hr','img'}:
+                self.stack.append((tag, values.get('id'), values.get('class')))
+        def handle_endtag(self, tag):
+            assert self.stack[-1][0] == tag
+            self.stack.pop()
+    parser = Structure()
+    parser.feed((SITE / 'templates' / 'index.html').read_text(encoding='utf-8'))
+    assert not parser.stack
+    assert ('div',None,'filters') in parser.parents['sync-tools']
+    for key in ('sync-info','sync-guide','sync-queue'):
+        assert ('details','sync-tools','sync-tools') in parser.parents[key]
+    assert ('details','sync-tools','sync-tools') not in parser.parents['error']
+
+
 @pytest.fixture
 def site(tmp_path, monkeypatch):
     monkeypatch.setattr(dashboard, 'DATABASE_PATH', tmp_path / 'site.db')

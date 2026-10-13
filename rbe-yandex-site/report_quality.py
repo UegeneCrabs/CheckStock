@@ -130,8 +130,11 @@ def build_quality(source, daily_rows):
                 if start <= day <= end and imported <= row['calculated_at']), None)
         complete, detail = financial_evidence(day, selected['united-orders'], selected['united-services'])
         netting = selected['united-netting']
-        if complete and (netting is None or max(netting['days'], default='') < day):
-            complete, detail = False, 'Отчёт о денежных операциях ещё не подтверждает выбранный день; сведения о возвратах могут дополниться'
+        # A successfully downloaded report covers its requested period, even
+        # when no money operations occurred on a particular day. Only a missing
+        # report is missing evidence; a quiet day is not a missing refund.
+        if complete and netting is None:
+            complete, detail = False, 'Нет полученного финансового отчёта для проверки возвратов за выбранный день'
         result.append((row['store_slug'], row['business_id'], day, row['calculated_at'],
                        int(selected['united-orders'] is not None), int(complete), detail))
     return result

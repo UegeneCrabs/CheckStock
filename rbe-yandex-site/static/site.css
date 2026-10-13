@@ -12,3 +12,14 @@
 .sync-guide h3 { margin: 18px 0 6px; font-size: 15px; }
 .sync-guide p { margin: 8px 0; }
 .sync-guide summary:focus-visible, .sync-queue summary:focus-visible { outline: 2px solid #4659bc; outline-offset: 3px; }
+.report-head .filters { width: 100%; }
+.sync-tools { position: relative; margin-left: auto; }
+.sync-tools > summary { cursor: pointer; border: 1px solid #d5dbea; border-radius: 7px; padding: 0 12px; height: 42px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #4659bc; background: #fff; list-style: none; white-space: nowrap; }
+.sync-tools > summary::-webkit-details-marker { display: none; }
+.sync-tools > summary::before { content: '▸'; }
+.sync-tools[open] > summary::before { content: '▾'; }
+.sync-tools > summary:focus-visible { outline: 2px solid #4659bc; outline-offset: 3px; }
+.sync-tools-panel { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: min(680px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; padding: 16px; border: 1px solid #d5dbea; border-radius: 10px; background: #f8f9ff; box-shadow: 0 10px 32px #17234233; }
+.sync-tools-panel #sync-info { clear: both; line-height: 1.5; margin-top: 10px; }
+.sync-tools-panel .sync-tools-close { display: block; margin-left: auto; height: 28px; padding: 0 8px; font-size: 12px; color: #4659bc; background: transparent; }
+.sync-tools-panel .sync-queue:last-child { margin-bottom: 0; }

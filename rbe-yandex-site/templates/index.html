@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>RBE Яндекс Маркет</title><link rel="stylesheet" href="/static/site.css?v=20261013-sync-queue">
+  <title>RBE Яндекс Маркет</title><link rel="stylesheet" href="/static/site.css?v=20261013-sync-tools">
   <style>header{padding:0 24px}header nav{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:10px;align-items:center}header nav form{display:block!important}.status-cell{width:160px;text-align:center}.status{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:800;white-space:nowrap}.status:before{content:'●';font-size:14px}.status--complete{background:#dff3e6;color:#17623a}.status--incomplete{color:#a12c2c;background:#fbe1e1}.status[title]{cursor:help}.repair{margin-top:4px;padding:3px 7px;border:0;border-radius:5px;background:#4659bc;color:#fff;font-size:10px;font-weight:800;white-space:nowrap}.repair:disabled{opacity:.65;cursor:wait}.metric{position:relative;display:inline-flex;align-items:center;gap:7px}.metric-help{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#e1e7fb;color:#4659bc;font-size:12px;font-weight:900;cursor:help}.metric-help:focus{outline:2px solid #4659bc;outline-offset:2px}.metric-help:hover:after,.metric-help:focus:after{content:attr(data-tip);position:absolute;z-index:10;left:25px;top:22px;width:350px;padding:10px 12px;border-radius:7px;background:#172342;color:#fff;font-size:12px;font-weight:500;line-height:1.35;white-space:pre-line;box-shadow:0 8px 22px #17234255}.range-wrap{position:relative}.range-trigger{width:290px;text-align:left;background:#fff;color:#15213c;border:1px solid #d5dbea}.calendar{position:absolute;z-index:5;top:58px;left:0;width:290px;padding:10px;background:#fff;border:1px solid #d5dbea;border-radius:10px;box-shadow:0 12px 30px #15213c33}.calendar[hidden]{display:none}.cal-nav{display:flex;justify-content:space-between;align-items:center;font-weight:800}.cal-nav button{height:27px;padding:0 9px}.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-top:8px}.cal-grid span{font-size:11px;text-align:center;color:#69748c}.cal-grid button{height:31px;padding:0;border-radius:5px;background:transparent;color:#15213c;font-size:12px}.cal-grid button:hover,.cal-grid .in-range{background:#e4e9ff}.cal-grid .edge{background:#4659bc;color:#fff}</style>
 </head>
 <body>
@@ -11,9 +11,11 @@
     <section class="report-head" aria-label="Фильтры отчёта">
       <div class="filters"><label>Магазин<select id="store"><option value="">Все магазины</option></select></label>
       <label class="range-wrap">Период<input id="from" type="hidden"><input id="to" type="hidden"><button id="range" type="button" class="range-trigger"></button><div id="calendar" class="calendar" hidden><div class="cal-nav"><button id="prev" type="button">‹</button><span id="month"></span><button id="next" type="button">›</button></div><div id="grid" class="cal-grid"></div></div></label>
-      <button id="apply">Применить</button><button id="refresh-period" type="button" hidden title="Повторно запросить API для выбранного магазина и периода, включая ранее загруженные данные">Обновить по API</button></div>
-    </section>
-    <p id="error" role="alert"></p>
+      <button id="apply">Применить</button><button id="refresh-period" type="button" hidden title="Повторно запросить API для выбранного магазина и периода, включая ранее загруженные данные">Обновить по API</button>
+      <details id="sync-tools" class="sync-tools">
+        <summary title="Состояние автообновления, очередь и инструкция">Автообновление ⓘ</summary>
+        <div class="sync-tools-panel">
+          <button id="sync-tools-close" class="sync-tools-close" type="button">Закрыть</button>
     <p id="sync-info" role="status" style="font-size:12px;color:#69748c"></p>
     <details id="sync-guide" class="sync-queue sync-guide">
       <summary>Как работает автообновление</summary>
@@ -36,7 +38,7 @@
         <p>Точный остаток разрешённых Яндексом запросов система не знает: соблюдает паузы и реагирует на ограничения. Последовательная обработка и ограничение числа заданий снижают нагрузку, но сами по себе не задают жёсткий предел расхода памяти сервера.</p>
         <h3>Если Яндекс не отдал данные</h3>
         <p>При ошибке загрузки или ограничении запросов сохраняем задание в очереди. Более ранние задания этого магазина пропускаем до следующего цикла; другие магазины продолжаем проверять.</p>
-        <p>Если отчёты получены, но данных всё ещё недостаточно — например, не появилась комиссия, — дата остаётся на повторную проверку. При отключённой автопроверке очередь хранится, но автоматически не выполняется.</p>
+        <p>Если отчёты получены, но данных всё ещё недостаточно — например, не появилась комиссия, — дата остаётся на повторную проверку. Если финансовый отчёт за нужный период получен и возвратов в нём нет, это ноль возвратов, а не причина красного статуса. Отсутствие самого отчёта — другая ситуация: возвраты ещё не проверены. При отключённой автопроверке очередь хранится, но автоматически не выполняется.</p>
         <h3>Как читать очередь</h3>
         <p>Откройте «Очередь проверок» ниже. Там есть группы по причинам ожидания, а внутри — магазин, дата, пояснение и время последней попытки. Для старого задания без записанной причины прямо указываем, что причина неизвестна.</p>
         <p>Одна запись — сочетание «магазин + день». Например, одна дата для шести магазинов — шесть записей. Это не число потерянных дней и не число ошибок в расчётах. Плановая сверка уже полных дней не означает, что данных не хватает.</p>
@@ -53,6 +55,11 @@
       <p>Сначала проверяем свежие даты, затем более ранние. Правила и паузы описаны в инструкции «Как работает автообновление» выше.</p>
       <div id="sync-queue-items"></div>
     </details>
+        </div>
+      </details>
+      </div>
+    </section>
+    <p id="error" role="alert"></p>
     <span id="copy-status" class="sr-only" role="status" aria-live="polite"></span>
     <section class="table-wrap"><table><thead><tr><th>Показатель</th><th id="period">Факт</th><th>Статус</th></tr></thead><tbody>
       <tr><th><span class="metric">ТО заказы из воронки <span class="metric-help" tabindex="0" data-tip="Стоимость заказов, созданных за выбранные дни, включая впоследствии отменённые. Это ещё не выручка: часть заказов покупатели могут не забрать.">ⓘ</span></span></th><td data-key="orders_turnover"></td><td data-status-for="orders_turnover"></td></tr>
@@ -66,5 +73,5 @@
       <tr class="total"><th><span class="metric">Маржинальная прибыль <span class="metric-help" tabindex="0" data-tip="Сколько остаётся от расчётной суммы к перечислению после вычета закупочной стоимости проданных товаров с учётом возвратов. Это не чистая прибыль: налоги, зарплаты и прочие расходы вне этого отчёта здесь не вычитаются.">ⓘ</span></span></th><td data-key="marginal_profit"></td><td data-status-for="marginal_profit"></td></tr>
       <tr class="total"><th><span class="metric">Маржинальная прибыль, % от ТО выкупов в цене покупателя <span class="metric-help" tabindex="0" data-tip="Доля маржинальной прибыли в обороте по цене покупателя. Прибыль делится на сумму выкупов минус возвраты в цене покупателя и умножается на 100. При нулевом обороте процент не рассчитывается.">ⓘ</span></span></th><td data-key="marginal_profit_percent" data-format="percent"></td><td data-status-for="marginal_profit_percent"></td></tr>
     </tbody></table></section>
-  </main><script src="/static/report.js?v=20261013-sync-queue"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
+  </main><script src="/static/report.js?v=20261013-sync-tools"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
 </body></html>

@@ -171,6 +171,9 @@
   }
   async function loadStores() { var payload = await (await fetch('/api/stores')).json(); (payload.stores || []).forEach(function (name) { var option = document.createElement('option'); option.value = name; option.textContent = name.toUpperCase(); store.append(option); }); }
   refresh.onclick = function () { upload(null, refresh); };
+  var syncTools = document.querySelector('#sync-tools');
+  document.querySelector('#sync-tools-close').onclick = function () { syncTools.open = false; };
+  syncTools.onkeydown = function (event) { if (event.key === 'Escape') { syncTools.open = false; event.preventDefault(); } };
   document.querySelector('#apply').onclick = load; store.onchange = load; setDefaults();
   loadStores().then(load).then(function () { var saved = sessionStorage.getItem('rbe-sync-run'); if (saved) { activeRun = Number(saved); pollRun(activeRun, refresh); } updateSyncInfo(); });
   window.setInterval(updateSyncInfo, 15000);
