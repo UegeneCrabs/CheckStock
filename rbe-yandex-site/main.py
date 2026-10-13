@@ -29,6 +29,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
+from report_quality import SCHEMA as QUALITY_SCHEMA
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("RBE_DATABASE_PATH", ROOT / "data" / "rbe_yandex.db"))
@@ -84,6 +85,7 @@ def connection() -> sqlite3.Connection:
 
 def init_database() -> None:
     with connection() as conn:
+        conn.executescript(QUALITY_SCHEMA)
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS daily_financial (
@@ -306,17 +308,21 @@ def report_completeness(date_from: date, date_to: date, store_slug: str | None) 
     expected = set(_date_range(date_from, date_to))
     if not stores:
         empty = {"complete": False, "detail": "Нет подключённых магазинов"}
-        return {"orders": empty, "financial": empty}
+        return {"orders": empty, "financial": empty, "cost": empty}
 
     placeholders = ",".join("?" for _ in stores)
     params: list[object] = [date_from.isoformat(), date_to.isoformat(), *stores]
     with connection() as conn:
         financial_rows = conn.execute(
-            f"SELECT store_slug, report_date, values_json FROM daily_financial WHERE report_date>=? AND report_date<=? AND store_slug IN ({placeholders})",
+            f"SELECT store_slug, business_id, report_date, values_json, calculated_at FROM daily_financial WHERE report_date>=? AND report_date<=? AND store_slug IN ({placeholders})",
             params,
         ).fetchall()
         order_rows = conn.execute(
             f"SELECT store_slug, report_date FROM daily_orders WHERE report_date>=? AND report_date<=? AND store_slug IN ({placeholders})",
+            params,
+        ).fetchall()
+        quality_rows = conn.execute(
+            f"SELECT * FROM daily_source_quality WHERE report_date>=? AND report_date<=? AND store_slug IN ({placeholders})",
             params,
         ).fetchall()
 
@@ -330,13 +336,46 @@ def report_completeness(date_from: date, date_to: date, store_slug: str | None) 
         detail = "; ".join(f"{store.upper()}: {_format_missing_days(days)}" for store, days in missing.items())
         return {"complete": False, "detail": f"Неполные данные: {detail}", "missing": missing}
 
-    financial_status = status(financial_rows)
-    cost_actual: defaultdict[str, set[str]] = defaultdict(set)
+    quality = {(r['store_slug'], r['business_id'], r['report_date']): r for r in quality_rows}
+    accounts: defaultdict[str, set[int]] = defaultdict(set)
+    for item in load_connections():
+        if item.get('store_slug') in stores and item.get('business_id'):
+            accounts[item['store_slug']].add(int(item['business_id']))
     for row in financial_rows:
-        values = json.loads(row["values_json"])
-        if values.get("sold_cost_of_goods") is not None:
-            cost_actual[str(row["store_slug"])].add(str(row["report_date"]))
-    missing_costs = {store: sorted(expected - cost_actual[store]) for store in stores if expected - cost_actual[store]}
+        accounts[row['store_slug']].add(row['business_id'])
+    facts = {(r['store_slug'], r['business_id'], r['report_date']): r for r in financial_rows}
+    financial_missing: defaultdict[str, list[str]] = defaultdict(list)
+    cost_missing: defaultdict[str, list[str]] = defaultdict(list)
+    reasons = []
+    order_confirmed = []
+    for store in stores:
+        for day in sorted(expected):
+            day_ready = bool(accounts[store])
+            orders_ready = bool(accounts[store])
+            costs_ready = bool(accounts[store])
+            if not accounts[store]:
+                reasons.append(f"{store.upper()}: нет подключённого кабинета или загруженных источников за {day}")
+            for business in sorted(accounts[store]):
+                key = (store, business, day)
+                fact, proof = facts.get(key), quality.get(key)
+                valid = fact is not None and proof is not None and proof['calculated_at'] == fact['calculated_at']
+                ready = bool(valid and proof['financial_complete'])
+                orders_ready = orders_ready and bool(valid and proof['orders_complete'])
+                if not ready:
+                    detail = proof['detail'] if valid else f"Источники данных за {day} не проверены или не загружены"
+                    reasons.append(f"{store.upper()} ({business}): {detail}")
+                day_ready = day_ready and ready
+                costs_ready = costs_ready and fact is not None and json.loads(fact['values_json']).get('sold_cost_of_goods') is not None
+            if not day_ready:
+                financial_missing[store].append(day)
+            if not costs_ready:
+                cost_missing[store].append(day)
+            if orders_ready:
+                order_confirmed.append({'store_slug': store, 'report_date': day})
+    financial_status = {'complete': not financial_missing, 'detail': 'Исходные отчёты проверены'}
+    if financial_missing:
+        financial_status.update(detail='Неполные данные. ' + '; '.join(dict.fromkeys(reasons)), missing=dict(financial_missing))
+    missing_costs = dict(cost_missing)
     if missing_costs:
         cost_detail = "; ".join(
             f"{store.upper()}: {_format_missing_days(days)}" for store, days in missing_costs.items()
@@ -348,12 +387,22 @@ def report_completeness(date_from: date, date_to: date, store_slug: str | None) 
         }
     else:
         cost_status = {"complete": True, "detail": "Закупочные цены заполнены"}
-    # A Market report is generated for every requested calendar day.  If it
-    # contains no order rows, daily_orders is intentionally empty; that is a
-    # confirmed zero, not a missing import.  A financial daily row is the
-    # durable proof that the official report for that store/day was received.
-    order_coverage = [*order_rows, *financial_rows]
+    if not financial_status['complete']:
+        missing = {store: sorted(set(financial_missing.get(store, []) + missing_costs.get(store, [])))
+                   for store in set(financial_missing) | set(missing_costs)}
+        cost_status = {'complete': False, 'missing': missing,
+                       'detail': 'ЗЦ и прибыль предварительные: ' + financial_status['detail'] +
+                                 ('; ' + cost_status['detail'] if missing_costs else '')}
+    # Empty order days need independent report evidence, not a placeholder P&L row.
+    order_coverage = [*order_rows, *order_confirmed]
     return {"orders": status(order_coverage), "financial": financial_status, "cost": cost_status}
+
+
+def repair_source(metric: str, completeness: dict) -> str | None:
+    source = METRIC_SOURCES.get(metric)
+    if source == 'cost' and not completeness['financial']['complete']:
+        return 'financial'
+    return source
 
 
 def load_connections() -> list[dict]:
@@ -521,6 +570,10 @@ def _run_targeted_sync(
                 continue
             message = "Лимит API Яндекс Маркета: три попытки не прошли. Повторите позже."
         else:
+            if 'NO_DATA' in details:
+                with connection() as conn:
+                    conn.execute("UPDATE targeted_sync_runs SET status='no_data',finished_at=?,detail=? WHERE id=?", (datetime.now(UTC).isoformat(), "Яндекс пока не вернул финансовые данные за выбранный период. Расчёт остаётся неполным; повторите позже.", run_id))
+                return
             message = "Ошибка загрузки: " + (details[-500:] or "Яндекс Маркет не вернул описание ошибки")
         with connection() as conn:
             conn.execute("UPDATE targeted_sync_runs SET status='failed',finished_at=?,detail=? WHERE id=?", (datetime.now(UTC).isoformat(), message, run_id))
@@ -858,7 +911,7 @@ def report(request: Request, date_from: date, date_to: date, store_slug: str | N
         "date_to": date_to.isoformat(),
         "values": sum_daily(date_from.isoformat(), date_to.isoformat(), store_slug),
         "quality": {
-            metric: {**completeness[source], "can_repair": source in {"orders", "financial"}}
+            metric: {**completeness[source], "can_repair": repair_source(metric, completeness) in {"orders", "financial"}}
             for metric, source in METRIC_SOURCES.items()
         },
         "can_sync": user["role"] == "admin",
@@ -900,6 +953,7 @@ def start_sync(request: Request, payload: SyncRequest) -> dict:
         if source is None:
             raise HTTPException(422, "Неизвестный показатель отчёта")
         completeness = report_completeness(payload.date_from, payload.date_to, payload.store_slug)
+        source = repair_source(payload.metric, completeness)
         missing = completeness[source].get("missing", {})
         if not missing:
             return {"ok": True, "detail": "Для этого показателя пропусков уже нет"}

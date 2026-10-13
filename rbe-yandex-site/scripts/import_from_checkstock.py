@@ -12,6 +12,7 @@ SITE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SITE))
 from main import connection, init_database  # noqa: E402
 from recalculate_cost_of_goods import recalculate  # noqa: E402
+from report_quality import build_quality, save_quality  # noqa: E402
 
 
 def main(
@@ -26,8 +27,10 @@ def main(
     filters during a targeted repair so facts that are already complete are
     not rewritten.
     """
-    source = sqlite3.connect(source_path)
+    source = sqlite3.connect(f"file:{Path(source_path).resolve().as_posix()}?mode=ro", uri=True)
     source.row_factory = sqlite3.Row
+    source.execute('PRAGMA query_only=ON')
+    source.execute('BEGIN')
     init_database()
     filters: list[str] = []
     params: list[object] = []
@@ -68,6 +71,8 @@ def main(
         """,
         order_params,
     ).fetchall()
+    quality = build_quality(source, daily)
+    source.close()
     with connection() as target:
         target.executemany(
             """
@@ -83,6 +88,7 @@ def main(
             orders_amount=excluded.orders_amount,cancellations_amount=excluded.cancellations_amount
             """, [tuple(row) for row in orders]
         )
+        save_quality(target, quality)
     costs = recalculate(source_path, stores=stores, date_from=date_from, date_to=date_to)
     print(json.dumps({"financial_days": len(daily), "order_days": len(orders), "costs": costs}, ensure_ascii=False))
 

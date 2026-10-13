@@ -598,6 +598,8 @@ def _load_report(api_key: str, endpoint: str, payload: dict[str, object]) -> dic
         raise ValueError("Яндекс не вернул идентификатор финансового отчёта")
     for attempt in range(121):
         info = api.request(f"/v2/reports/info/{report_id}", api_key, method="GET")
+        if info.get("subStatus") == "NO_DATA":
+            raise RuntimeError("Яндекс Маркет: NO_DATA — нет данных для отчёта за выбранный период")
         if info.get("status") == "DONE":
             return _download_archive(str(info.get("file") or ""))
         if info.get("status") == "FAILED":
