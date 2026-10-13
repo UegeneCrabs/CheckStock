@@ -10,6 +10,7 @@ import pytest
 SITE = Path(__file__).resolve().parents[1] / 'rbe-yandex-site'
 sys.path.insert(0, str(SITE))
 import report_quality as quality
+from report_details import build_details, SPECS
 
 spec = importlib.util.spec_from_file_location('rbe_dashboard_quality_test', SITE / 'main.py')
 dashboard = importlib.util.module_from_spec(spec)
@@ -24,6 +25,49 @@ def test_trailing_day_is_not_a_confirmed_zero_even_without_orders():
     ready, reason = quality.financial_evidence('2026-10-12', summary(), summary(['2026-10-11']))
     assert not ready
     assert '12.10.2026' in reason and '11.10.2026' in reason
+
+
+def test_all_metrics_have_plain_language_explanations():
+    assert set(SPECS) == set(dashboard.METRIC_SOURCES)
+    for description, _ in SPECS.values():
+        assert len(description) > 40
+        assert not any(word in description.lower() for word in ('api', 'united-', 'payment_', 'sku', 'бэкенд'))
+
+
+def test_missing_detail_is_not_reported_as_zero():
+    detail = build_details({'buyout_count': 16})['buyout_count']
+    assert not detail['available']
+    assert all(row['value'] is None for row in detail['rows'])
+    assert detail['note']
+
+
+def test_breakdown_arithmetic_for_every_calculated_metric():
+    from app.yandex.financial_reports import _pnl_values, _apply_return_commission
+    values = _pnl_values({
+        'payment_transfer': [{'merchantPrice': 1000, 'quantity': 3, 'servicePrice': 10}],
+        'export_from_warehouse': [{'serviceName':'Доставка грузоместа до склада назначения','servicePrice':20}, {'serviceName':'Возврат товара заказчику','servicePrice':15}],
+        'loyalty_and_reviews': [{'customerBonusAmount':5}],
+        'placement': [{'lateOrderExecutionFeeTariff':7}],
+        'shelf': [{'payment':2}],
+        'boost': [{'postpaid':3}],
+    }, {'returns':[{'count':1,'sumBillingPriceOfItems':100,'refundBuyerPaymentAmount':-50}]})
+    _apply_return_commission(values, 4)
+    values.update(detail_orders_remaining=100, detail_orders_cancelled=20, orders_turnover=120,
+                  sold_cost_of_goods=60, returned_cost_of_goods=20)
+    values['marginal_profit'] = values['bank_receipt'] - 60
+    values['marginal_profit_percent'] = round(values['marginal_profit']/values['buyout_buyer_turnover']*100,2)
+    details = build_details(values)
+    for key, detail in details.items():
+        if key == 'storage':
+            assert not detail['rows']
+            continue
+        assert detail['available'], key
+        rows = detail['rows']
+        if key == 'marginal_profit_percent':
+            calculated = rows[0]['value']/rows[1]['value']*rows[2]['value']
+        else:
+            calculated = sum((-1 if row['sign']=='−' else 1)*row['value'] for row in rows)
+        assert round(calculated,2) == round(values[key],2), key
 
 
 def test_interior_zero_day_is_valid():
@@ -73,6 +117,23 @@ def fact(site, business=1, complete=False, proof=True, cost=0):
                    ('tris',business,'2026-10-12',json.dumps({'sold_cost_of_goods':cost}), 'v1'))
         if proof:
             quality.save_quality(db, [('tris',business,'2026-10-12','v1',1,int(complete),'Нет финансовых операций за 12.10.2026')])
+
+
+def test_detail_totals_do_not_hide_missing_days_or_stores(site):
+    with site.connection() as db:
+        for store, day, values in [
+            ('tris', '2026-10-10', {'detail_redeemed_count':20, 'detail_returned_count':4, 'buyout_count':16}),
+            ('tris', '2026-10-11', {'buyout_count':2}),
+            ('rimili', '2026-10-10', {'buyout_count':3}),
+        ]:
+            db.execute('INSERT INTO daily_financial VALUES(?,?,?,?,?)', (store,1,day,json.dumps(values),'v1'))
+    one = site.sum_daily('2026-10-10','2026-10-10','tris')
+    assert build_details(one)['buyout_count']['available']
+    assert one['detail_redeemed_count'] == 20
+    for end, store in [('2026-10-11','tris'), ('2026-10-10',None)]:
+        combined = site.sum_daily('2026-10-10',end,store)
+        assert combined['detail_redeemed_count'] is None
+        assert not build_details(combined)['buyout_count']['available']
 
 
 def test_placeholder_is_not_green_and_cost_inherits_financial_gaps(site):

@@ -12,6 +12,8 @@ async function test() {
       classList:{add() {}, remove() {}},
       setAttribute(name, value) { this[name] = value; },
       append(child) { this.children.push(child); },
+      prepend(child) { this.children.unshift(child); },
+      after(child) { this.sibling = child; },
       replaceChildren(...children) { this.children = children; },
       select() {}, setSelectionRange() {},
       remove() { context.document.body.children = context.document.body.children.filter(child => child !== this); },
@@ -22,6 +24,9 @@ async function test() {
     return elements.get(id);
   }
   const cell = element('value'); cell.dataset.key = 'orders_turnover';
+  const metric = element('metric'); metric.textContent = 'Заказы ⓘ';
+  const row = element('row'); row.querySelector = selector => selector === '.metric' ? metric : element('help');
+  cell.closest = () => row;
   let admin = true, state = 'running', value = 204008, fallbackOK = true;
   const copied = [];
   const posts = [], timeouts = [], storage = new Map();
@@ -40,7 +45,7 @@ async function test() {
     fetch: async (url, options) => {
       let payload;
       if (url === '/api/stores') payload = {stores:['tris','rimili']};
-      else if (url.startsWith('/api/report?')) payload = {can_sync:admin,sync_running:false,values:{orders_turnover:value},quality:{orders_turnover:{complete:true}}};
+      else if (url.startsWith('/api/report?')) payload = {can_sync:admin,sync_running:false,values:{orders_turnover:value},quality:{orders_turnover:{complete:true}},details:{orders_turnover:{description:'Заказы включая отменённые',available:true,rows:[{sign:'+',label:'Заказы',value}],note:''}}};
       else if (url === '/api/sync-status') payload = {automatic:true,interval_minutes:30,lookback_days:14,pending_store_days:6,running:false};
       else if (url === '/api/sync') { posts.push(JSON.parse(options.body)); payload={run_id:7}; }
       else if (url === '/api/targeted-sync/7') payload = {run:{status:state,detail:'Даты сохранены для автоповтора'}};
@@ -51,6 +56,13 @@ async function test() {
   const settle = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setImmediate(resolve)); };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/report.js'),'utf8'),context);
   await settle();
+  const toggle = metric.children[0];
+  assert.equal(toggle['aria-expanded'], 'false');
+  assert.equal(row.sibling.hidden, true);
+  toggle.onclick();
+  assert.equal(toggle['aria-expanded'], 'true');
+  assert.equal(row.sibling.hidden, false);
+  assert.equal(element('help').dataset.tip, 'Заказы включая отменённые');
   const button = element('#refresh-period');
   assert.equal(button.hidden,false);
   element('#store').value = 'tris';
@@ -70,7 +82,10 @@ async function test() {
   assert.equal(button.hidden,true);
   const html = fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/templates/index.html'),'utf8');
   assert.match(html,/id="refresh-period"[^>]*hidden/);
-  assert.match(html,/report\.js\?v=20261013-copy-number/);
+  assert.match(html,/report\.js\?v=20261013-breakdowns/);
+  assert.equal(metric.children.length, 1); // Refreshing must not duplicate toggles.
+  assert.equal(row.sibling.hidden, false); // Preserve expanded state after refresh.
+  toggle.onclick(); assert.equal(row.sibling.hidden, true);
   const copyButton = () => cell.children[0].children[1];
   for (const [input, format, expected] of [[2181892,'','2181892'], [740340.1,'','740340,1'], [-125.5,'','-125,5'], [0,'','0'], [303,'integer','303'], [-4.7,'percent','-4,7']]) {
     value = input; cell.dataset.format = format; await element('#apply').onclick();

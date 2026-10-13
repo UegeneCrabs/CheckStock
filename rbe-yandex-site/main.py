@@ -260,12 +260,15 @@ def sum_daily(date_from: str, date_to: str, store_slug: str | None) -> dict:
     with connection() as conn:
         financial = conn.execute(f"SELECT values_json FROM daily_financial WHERE {where}", params).fetchall()
         orders = conn.execute(
-            f"SELECT SUM(orders_amount + cancellations_amount) AS total FROM daily_orders WHERE {where}", params
+            f"SELECT SUM(orders_amount + cancellations_amount) AS total, SUM(orders_amount) AS remaining, SUM(cancellations_amount) AS cancelled FROM daily_orders WHERE {where}", params
         ).fetchone()
     totals: defaultdict[str, float] = defaultdict(float)
     null_costs: set[str] = set()
+    detail_presence: defaultdict[str, int] = defaultdict(int)
     for row in financial:
         for key, value in json.loads(row["values_json"]).items():
+            if key.startswith("detail_") and value is not None:
+                detail_presence[key] += 1
             if value is None and key in {"cost_of_goods", "sold_cost_of_goods", "returned_cost_of_goods"}:
                 null_costs.add(key)
             elif value is not None:
@@ -273,7 +276,13 @@ def sum_daily(date_from: str, date_to: str, store_slug: str | None) -> dict:
     result = dict(totals)
     for key in null_costs:
         result[key] = None
+    # Never show a partial breakdown as a full period: older rows have no details.
+    for key, count in detail_presence.items():
+        if count != len(financial):
+            result[key] = None
     result["orders_turnover"] = round(number(orders["total"] if orders else 0), 2) if orders else None
+    result["detail_orders_remaining"] = orders["remaining"] if orders else None
+    result["detail_orders_cancelled"] = orders["cancelled"] if orders else None
     if "bank_receipt" in result and result.get("sold_cost_of_goods") is not None:
         result["marginal_profit"] = round(result["bank_receipt"] - number(result["sold_cost_of_goods"]), 2)
         buyer = result.get("buyout_buyer_turnover")
@@ -1028,11 +1037,14 @@ def report(request: Request, date_from: date, date_to: date, store_slug: str | N
     if date_to < date_from or date_to - date_from > timedelta(days=366):
         raise HTTPException(422, "Выберите период от 1 до 367 дней")
     completeness = report_completeness(date_from, date_to, store_slug)
+    from report_details import build_details
+    values = sum_daily(date_from.isoformat(), date_to.isoformat(), store_slug)
     return {
         "ok": True,
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
-        "values": sum_daily(date_from.isoformat(), date_to.isoformat(), store_slug),
+        "values": values,
+        "details": build_details(values),
         "quality": {
             metric: {**completeness[source], "can_repair": repair_source(metric, completeness) in {"orders", "financial"}}
             for metric, source in METRIC_SOURCES.items()

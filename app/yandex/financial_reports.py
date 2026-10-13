@@ -199,12 +199,39 @@ def _pnl_values(
             2,
         )
 
+    def named_logistics(sheet: str, name: str, *, include_netting: bool = False) -> float:
+        return round(sum(
+            _number(row.get("servicePrice")) + (_number(row.get("netting")) if include_netting else 0)
+            for row in service_sheets.get(sheet, [])
+            if " ".join(str(row.get("serviceName") or "").split()).casefold() == name.casefold()
+        ), 2)
+
+    middle_mile = named_logistics("crossregional_delivery", "Доставка покупателю (средняя миля)", include_netting=True)
+    return_delivery = named_logistics("crossregional_delivery", "Доставка невыкупов и возвратов", include_netting=True)
+    transit_delivery = named_logistics("delivery_via_transit_warehouse", "Доставка грузоместа до склада назначения")
+    transit_acceptance = named_logistics("delivery_via_transit_warehouse", "Приём грузоместа для транзитной поставки")
+
+    # The export sheet mixes actual goods returns with cargo delivery.
+    # Classify by service name, not by sheet name or tariff unit. Preserve
+    # the existing charge amounts: this is a reclassification, not a change
+    # to the payout formula. Unknown export services remain in Other.
+    export_delivery = 0.0
+    export_other = 0.0
+    for row in service_sheets.get("export_from_warehouse", []):
+        name = " ".join(str(row.get("serviceName") or "").split()).casefold()
+        amount = abs(_number(row.get("servicePrice")))
+        if name == "доставка грузоместа до склада назначения":
+            export_delivery += amount
+        else:
+            export_other += amount
+
     # PiData includes both legs of a transit delivery (including acceptance
     # at the transit warehouse) in logistics, not in "Other".
     logistics = round(
         signed_total("delivery")
         + logistics_total("crossregional_delivery")
-        + signed_total("delivery_via_transit_warehouse"),
+        + signed_total("delivery_via_transit_warehouse")
+        + export_delivery,
         2,
     )
     paid_acceptance = total("payment_accepting")
@@ -229,10 +256,8 @@ def _pnl_values(
     # PiData treats the paid shelf as marketing alongside all promotion
     # formats.  It is not a storage charge despite its historical name.
     marketing = round(advertising + total("shelf", "payment"), 2)
-    # ``Другие → полученные с МП`` is a distinct PiData article.  The
-    # compact table combines that article with acquiring, but unrelated
-    # service charges must not inflate the displayed value or be deducted a
-    # second time from the projected transfer.
+    # Keep the existing marketplace adjustment separately for compatibility.
+    # The visible Other metric also includes all remaining charges below.
     other = marketplace_other
     payment_adjustments = round(
         total("loyalty_and_reviews", "customerBonusAmount")
@@ -249,16 +274,16 @@ def _pnl_values(
         # campaigns; multiplying it by their count understated the payout.
         + total("personal_manager")
         + total("reception_of_surplus")
-        + total("export_from_warehouse")
+        + export_other
         + total("order_processing")
         + total("order_processing_on_warehouse")
         + total("storage_of_returns"),
         2,
     )
-    # PIData splits these figures into «Эквайринг» and «Другие». The compact
-    # RBE table deliberately combines exactly those two articles in «Иное».
+    # Show previously hidden payout deductions in Other. They are already
+    # subtracted via payment_adjustments below: do not deduct them twice.
     acquiring = round(payment_transfer + paid_acceptance, 2)
-    other_direct = round(acquiring + other, 2)
+    other_direct = round(acquiring + other + payment_adjustments, 2)
     direct = round(commission + logistics + acquiring, 2)
     # Use the buyer amount from the matching order + SKU line.  It is the
     # same basket as seller turnover, rather than one arbitrary line per
@@ -311,6 +336,37 @@ def _pnl_values(
             - round(sum(_number(row.get("count") or row.get("quantity") or 1) for row in return_rows))
         ),
         "returned_count": sum(_number(row.get("count") or 1) for row in return_rows),
+        "detail_redeemed_count": round(sum(_number(row.get("quantity")) for row in payment_transfer_rows)),
+        "detail_returned_count": sum(_number(row.get("count") or 1) for row in return_rows),
+        "detail_seller_sales": round(net_sales + returned_seller_turnover, 2),
+        "detail_seller_returns": returned_seller_turnover,
+        "detail_buyer_sales": buyer_buyout_turnover,
+        "detail_buyer_returns": returned_buyer_turnover,
+        "detail_commission_charged": commission,
+        "detail_commission_returned": 0.0,
+        "detail_delivery": signed_total("delivery"),
+        "detail_middle_mile_and_returns": logistics_total("crossregional_delivery"),
+        "detail_transit": signed_total("delivery_via_transit_warehouse"),
+        "detail_middle_mile": middle_mile,
+        "detail_return_delivery": return_delivery,
+        "detail_transit_delivery": transit_delivery,
+        "detail_transit_acceptance": transit_acceptance,
+        "detail_other_delivery": round(logistics_total("crossregional_delivery") - middle_mile - return_delivery + signed_total("delivery_via_transit_warehouse") - transit_delivery - transit_acceptance, 2),
+        "detail_export_delivery": round(export_delivery, 2),
+        "detail_acquiring": acquiring,
+        "detail_late_fees": marketplace_other,
+        "detail_reviews": total("loyalty_and_reviews", "customerBonusAmount"),
+        "detail_storage": round(sum(total(s, "paidStorage") for s in service_sheets if s.startswith("paid_storage_after_")), 2),
+        "detail_manager": total("personal_manager"),
+        "detail_surplus": total("reception_of_surplus"),
+        "detail_export_other": round(export_other, 2),
+        "detail_processing": round(total("order_processing") + total("order_processing_on_warehouse"), 2),
+        "detail_return_storage": total("storage_of_returns"),
+        "detail_other_withheld": payment_adjustments,
+        "detail_boost": total("boost", "postpaid"),
+        "detail_impressions": total("cpm-boost", "payment"),
+        "detail_banners": round(total("product-banners") * max(campaign_count, 1), 2),
+        "detail_shelf": total("shelf", "payment"),
         "commission": commission,
         "commission_with_spp": commission,
         "spp": 0.0,
@@ -383,6 +439,8 @@ def _daily_order_sheets(
 def _apply_return_commission(values: dict[str, float | None], reversed_commission: float) -> None:
     """Apply an earlier placement-fee reversal to the day of the return."""
 
+    if "detail_commission_returned" in values:
+        values["detail_commission_returned"] = round(float(values["detail_commission_returned"] or 0) + reversed_commission, 2)
     if not reversed_commission:
         return
     values["commission"] = round(float(values["commission"] or 0) - reversed_commission, 2)

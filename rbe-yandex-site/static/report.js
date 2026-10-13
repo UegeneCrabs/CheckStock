@@ -49,10 +49,49 @@
     cell.replaceChildren(wrap);
   }
 
-  function render(values, quality, syncRunning) {
+  var breakdowns = new Map();
+  function renderBreakdown(cell, value, detail, state) {
+    var key = cell.dataset.key, entry = breakdowns.get(key);
+    if (!entry) {
+      var row = cell.closest('tr'), metric = row.querySelector('.metric'), toggle = document.createElement('button'), panel = document.createElement('tr'), content = document.createElement('td');
+      toggle.type = 'button'; toggle.className = 'metric-toggle'; toggle.textContent = '▸';
+      toggle.setAttribute('aria-label', 'Расчёт: ' + metric.textContent.replace('ⓘ', '').trim());
+      toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', 'breakdown-' + key);
+      panel.id = 'breakdown-' + key; panel.className = 'breakdown-row'; panel.hidden = true; content.colSpan = 3; panel.append(content);
+      metric.prepend(toggle); row.after(panel);
+      toggle.onclick = function () { panel.hidden = !panel.hidden; toggle.textContent = panel.hidden ? '▸' : '▾'; toggle.setAttribute('aria-expanded', String(!panel.hidden)); };
+      entry = {panel:panel, content:content, help:row.querySelector('.metric-help')}; breakdowns.set(key, entry);
+    }
+    entry.content.replaceChildren();
+    if (!detail) {
+      var missing = document.createElement('p'); missing.textContent = 'Подробности расчёта пока недоступны.'; entry.content.append(missing); return;
+    }
+    entry.help.dataset.tip = detail.description;
+    var description = document.createElement('p'); description.className = 'breakdown-description'; description.textContent = detail.description; entry.content.append(description);
+    if (detail.note || !state.complete) {
+      var note = document.createElement('p'); note.className = 'breakdown-note';
+      note.textContent = [detail.note, !state.complete ? 'Данные за выбранный период неполные. Расчёт может измениться после обновления.' : ''].filter(Boolean).join(' '); entry.content.append(note);
+    }
+    var list = document.createElement('dl'); list.className = 'breakdown-list';
+    (detail.rows || []).forEach(function (part) {
+      var item = document.createElement('div'), label = document.createElement('dt'), amount = document.createElement('dd');
+      label.textContent = (part.sign ? part.sign + ' ' : '') + part.label;
+      if (cell.dataset.format === 'integer') amount.dataset.format = 'integer';
+      renderValue(amount, part.value); item.append(label); item.append(amount); list.append(item);
+    });
+    if ((detail.rows || []).length) {
+      var total = document.createElement('div'), totalLabel = document.createElement('dt'), totalValue = document.createElement('dd');
+      total.className = 'breakdown-total'; totalLabel.textContent = '= Итог'; totalValue.dataset.format = cell.dataset.format || '';
+      renderValue(totalValue, value); total.append(totalLabel); total.append(totalValue); list.append(total);
+    }
+    entry.content.append(list);
+  }
+
+  function render(values, quality, syncRunning, details) {
     document.querySelectorAll('[data-key]').forEach(function (cell) {
       var key = cell.dataset.key, state = quality[key] || {}, status = document.querySelector('[data-status-for="' + key + '"]'), badge = document.createElement('span');
       renderValue(cell, values[key]); badge.textContent = state.complete ? 'Полные' : 'Неполные'; badge.className = 'status ' + (state.complete ? 'status--complete' : 'status--incomplete'); badge.title = state.detail || 'Статус данных неизвестен'; status.className = 'status-cell'; status.replaceChildren(badge);
+      renderBreakdown(cell, values[key], (details || {})[key], state);
       if (!state.complete && canSync && state.can_repair) {
         var repair = document.createElement('button'); repair.type = 'button'; repair.className = 'repair'; repair.textContent = syncRunning ? 'Загрузка…' : 'Загрузить'; repair.disabled = Boolean(syncRunning); repair.title = 'Загрузить только отсутствующие данные для этого показателя'; repair.onclick = function () { upload(key, repair); }; status.append(repair);
       }
@@ -62,7 +101,7 @@
   async function load() {
     error.textContent = '';
     var query = new URLSearchParams({date_from: from.value, date_to: to.value}); if (store.value) query.set('store_slug', store.value);
-    try { var response = await fetch('/api/report?' + query), payload = await response.json(); if (!response.ok) throw Error(payload.detail || 'Отчёт не загружен'); canSync = Boolean(payload.can_sync); refresh.hidden = !canSync; refresh.disabled = Boolean(payload.sync_running || activeRun); refresh.textContent = refresh.disabled ? 'Обновление…' : 'Обновить по API'; document.querySelector('#period').textContent = parseDate(from.value).toLocaleDateString('ru-RU') + ' — ' + parseDate(to.value).toLocaleDateString('ru-RU'); render(payload.values, payload.quality || {}, payload.sync_running || activeRun); } catch (exception) { error.textContent = exception.message; }
+    try { var response = await fetch('/api/report?' + query), payload = await response.json(); if (!response.ok) throw Error(payload.detail || 'Отчёт не загружен'); canSync = Boolean(payload.can_sync); refresh.hidden = !canSync; refresh.disabled = Boolean(payload.sync_running || activeRun); refresh.textContent = refresh.disabled ? 'Обновление…' : 'Обновить по API'; document.querySelector('#period').textContent = parseDate(from.value).toLocaleDateString('ru-RU') + ' — ' + parseDate(to.value).toLocaleDateString('ru-RU'); render(payload.values, payload.quality || {}, payload.sync_running || activeRun, payload.details); } catch (exception) { error.textContent = exception.message; }
   }
   async function upload(metric, button) {
     button.disabled = true; button.textContent = 'Загрузка…'; error.textContent = '';

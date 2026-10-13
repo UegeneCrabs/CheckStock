@@ -29,7 +29,7 @@ def test_pidata_transfer_to_account_formula() -> None:
 
     assert values["commission"] == 146_542.75
     assert values["logistics"] == 20_881.25
-    assert values["other_direct_expenses"] == 4_289.62
+    assert values["other_direct_expenses"] == 4_539.62
     assert values["advertising"] == 16_354.27
     assert values["bank_receipt"] == 79_167.11
 
@@ -155,6 +155,43 @@ def test_payment_forecast_includes_all_pidata_other_marketplace_services() -> No
 
     assert values["other"] == 0
     assert values["bank_receipt"] == 362_400
+    assert values["other_direct_expenses"] == 37_600
+
+
+def test_export_delivery_is_logistics_and_remaining_charges_are_other() -> None:
+    values = _pnl_values({
+        "payment_transfer": [{"merchantPrice": 100_000, "servicePrice": 200}],
+        "delivery": [{"servicePrice": 1_000}],
+        "delivery_via_transit_warehouse": [{"servicePrice": 262.95}],
+        "export_from_warehouse": [
+            {"serviceName": "Доставка грузоместа до склада назначения", "servicePrice": 4_288},
+            {"serviceName": "Возврат товара заказчику", "servicePrice": 828},
+        ],
+        "loyalty_and_reviews": [{"customerBonusAmount": 150, "servicePrice": 150}],
+        "paid_storage_after_01-09-26": [{"paidStorage": 1_125.08}],
+        "order_processing": [{"servicePrice": 495}],
+        "order_processing_on_warehouse": [{"servicePrice": 480}],
+        "storage_of_returns": [{"servicePrice": 45}],
+    }, {})
+    assert values["logistics"] == 5_550.95
+    assert values["other_direct_expenses"] == 3_323.08
+    # Exactly the previous payout, with no second deduction for visible Other.
+    assert values["bank_receipt"] == 91_125.97
+    assert round(100_000 - values["logistics"] - values["other_direct_expenses"], 2) == values["bank_receipt"]
+
+
+def test_export_classification_handles_unknown_names_and_preserves_amounts() -> None:
+    values = _pnl_values({"export_from_warehouse": [
+        {"serviceName": "  ДОСТАВКА  ГРУЗОМЕСТА\nдо склада назначения ", "servicePrice": 10},
+        {"serviceName": "Возврат товара заказчику", "measurementUnit": "литр", "servicePrice": 20},
+        {"serviceName": "Другая услуга", "servicePrice": 30},
+        {"servicePrice": 40},
+        # Retain the pre-existing absolute-charge convention in this release.
+        {"serviceName": "Доставка грузоместа до склада назначения", "servicePrice": -5},
+    ]}, {})
+    assert values["logistics"] == 15
+    assert values["other_direct_expenses"] == 90
+    assert values["bank_receipt"] == -105
 
 
 def test_personal_manager_is_charged_for_each_configured_campaign() -> None:
