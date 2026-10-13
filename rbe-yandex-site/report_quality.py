@@ -10,6 +10,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
+from math import isfinite
 
 
 SCHEMA = """
@@ -49,7 +50,13 @@ def financial_evidence(day, orders, services):
         return False, (f"Нет финансовых операций за {label}. "
                        f"В отчёте по услугам данные только до {until}; нулевой день не подтверждён")
     if day in orders['deliveries'] and day not in services['payments']:
-        return False, f"За {label} есть доставки, но нет операций выкупа payment_transfer"
+        return False, f"За {label} есть доставки, но ещё нет сведений об оплате выкупов"
+    if day in services['payments']:
+        expected = services.get('payment_items', {}).get(day, {})
+        commissions = services.get('commission_items', {}).get(day, {})
+        if not expected or any(not all(item) or commissions.get(item, 0) < quantity
+                               for item, quantity in expected.items()):
+            return False, f"За {label} есть выкупы, но комиссия получена не по всем товарам. Отсутствие данных не означает нулевую комиссию"
     return True, "Исходные отчёты проверены"
 
 
@@ -67,13 +74,17 @@ def build_quality(source, daily_rows):
     snapshots = {}
     for store, business, kind, start, end, imported, sheet, raw in source.execute(
         """SELECT store_slug,business_id,report_kind,period_from,period_to,imported_at,sheet,payload_json
-           FROM yandex_financial_report_rows WHERE report_kind IN ('united-orders','united-services')
+           FROM yandex_financial_report_rows WHERE report_kind IN ('united-orders','united-services','united-netting')
            AND period_from<=? AND period_to>=?""", (last, first)
     ):
         if (store, business) not in accounts:
             continue
         key = (store, business, kind, start, end, imported)
-        summary = snapshots.setdefault(key, {'days': set(), 'payments': set(), 'deliveries': set()})
+        summary = snapshots.setdefault(key, {'days': set(), 'payments': set(), 'deliveries': set(),
+                                            'payment_items': {}, 'commission_items': {}, 'seen': set()})
+        if (sheet, raw) in summary['seen']:
+            continue
+        summary['seen'].add((sheet, raw))
         row = json.loads(raw)
         if kind == 'united-services':
             day = source_day(row.get('serviceDateTime') or row.get('serviceDate'))
@@ -81,6 +92,21 @@ def build_quality(source, daily_rows):
                 summary['days'].add(day)
                 if sheet == 'payment_transfer':
                     summary['payments'].add(day)
+                if sheet in {'payment_transfer', 'placement'}:
+                    item = (str(row.get('orderId') or ''), str(row.get('shopSku') or ''))
+                    field = 'payment_items' if sheet == 'payment_transfer' else 'commission_items'
+                    try:
+                        amount = float(row['amountWithoutBonuses']) if sheet == 'placement' else 0
+                        quantity = float(row.get('count') or row.get('quantity') or 1)
+                    except (ValueError, TypeError, KeyError):
+                        continue
+                    if isfinite(amount) and isfinite(quantity) and quantity > 0:
+                        items = summary[field].setdefault(day, {})
+                        items[item] = items.get(item, 0) + quantity
+        elif kind == 'united-netting' and sheet == 'transaction_date':
+            day = source_day(row.get('transactionDate'))
+            if day:
+                summary['days'].add(day)
         elif sheet == 'orders_and_offers_transactions':
             day = source_day(row.get('deliveryDate'))
             if day:
@@ -95,11 +121,14 @@ def build_quality(source, daily_rows):
     for row in daily_rows:
         day = row['report_date']
         selected = {}
-        for kind in ('united-orders', 'united-services'):
+        for kind in ('united-orders', 'united-services', 'united-netting'):
             selected[kind] = next((summary for imported, end, start, summary
                 in grouped[row['store_slug'], row['business_id'], kind]
                 if start <= day <= end and imported <= row['calculated_at']), None)
         complete, detail = financial_evidence(day, selected['united-orders'], selected['united-services'])
+        netting = selected['united-netting']
+        if complete and (netting is None or max(netting['days'], default='') < day):
+            complete, detail = False, 'Отчёт о денежных операциях ещё не подтверждает выбранный день; сведения о возвратах могут дополниться'
         result.append((row['store_slug'], row['business_id'], day, row['calculated_at'],
                        int(selected['united-orders'] is not None), int(complete), detail))
     return result

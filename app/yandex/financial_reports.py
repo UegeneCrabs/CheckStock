@@ -12,6 +12,7 @@ from io import BytesIO
 from app.repositories import yandex_financial, yandex_source_values
 from app.stock import sales as sales_sync
 from app.yandex import api, tokens
+from app.yandex.buyer_refunds import refund_revision
 
 REPORT_KIND = "united-orders"
 SERVICES_REPORT_KIND = "united-services"
@@ -36,10 +37,10 @@ _FINANCIALLY_REVERSED_OFFER_STATUSES = {
 
 
 def _is_financial_return(row: dict) -> bool:
-    """Only normalized buyer-money events authorize a sales reversal."""
+    """Only canonical financial events authorize a sales reversal, even at zero cash."""
     return bool(row.get("refund_event_key") and row.get("refund_day")) and _number(
-        row.get("refundBuyerPaymentAmount")
-    ) < 0
+        row.get("count")
+    ) > 0
 
 
 def _is_unredeemed_order(row: dict) -> bool:
@@ -464,6 +465,7 @@ def _store_daily_pnl(
     calculated_at: str,
     *,
     campaign_count: int = 1,
+    refund_events: list[dict] | None = None,
 ) -> None:
     """Persist facts per day; selected ranges are later just sums of these rows."""
 
@@ -472,9 +474,10 @@ def _store_daily_pnl(
         for article, row in yandex_source_values.get_values(store_slug).items()
         if row.get("purchase_price") is not None
     }
-    refund_events = yandex_financial.buyer_refund_events(
-        store_slug, business_id, date_from.isoformat(), date_to.isoformat()
-    )
+    if refund_events is None:
+        refund_events = yandex_financial.buyer_refund_events(
+            store_slug, business_id, date_from.isoformat(), date_to.isoformat()
+        )
     current_day = date_from
     while current_day <= date_to:
         day = current_day.isoformat()
@@ -485,6 +488,8 @@ def _store_daily_pnl(
             daily_orders,
             campaign_count=campaign_count,
         )
+        # Internal revision only, never displayed as a financial indicator.
+        values['refund_revision'] = refund_revision(daily_orders['returns'])
         _apply_return_commission(values, yandex_financial.buyer_refund_commission(
             store_slug, business_id, daily_orders["returns"]
         ))
@@ -511,6 +516,56 @@ def _store_daily_pnl(
             store_slug, business_id, day, values, calculated_at
         )
         current_day += timedelta(days=1)
+
+
+def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calculated_at, *, campaign_count=1):
+    """Repair old recognition dates when a new cash/points component arrives.
+
+    Rebuild from archived reports, never request ancient API periods. Return
+    the full persisted range for copying: this also heals an interrupted prior
+    copy to the isolated site DB even if the source was already repaired.
+    """
+    conn = yandex_financial.get_connection()
+    try:
+        stored = conn.execute('SELECT report_date,values_json FROM yandex_financial_daily_pnl '
+            'WHERE store_slug=? AND business_id=? ORDER BY report_date', (store_slug, business_id)).fetchall()
+        if not stored:
+            return []
+        events = yandex_financial.buyer_refund_events(store_slug, business_id, stored[0]['report_date'],
+                                                     stored[-1]['report_date'], source=conn)
+        plan = []
+        for fact in stored:
+            day = fact['report_date']
+            if date_from.isoformat() <= day <= date_to.isoformat():
+                continue
+            daily = [e for e in events if e['refund_day'] == day]
+            old = json.loads(fact['values_json'])
+            if (old.get('refund_revision', 0) == refund_revision(daily)
+                    and old.get('returned_count', 0) == sum(e['count'] for e in daily)):
+                continue
+            reports = {}
+            for kind in (REPORT_KIND, SERVICES_REPORT_KIND):
+                version = conn.execute('SELECT period_from,period_to,imported_at FROM yandex_financial_report_rows '
+                    'WHERE store_slug=? AND business_id=? AND report_kind=? AND period_from<=? AND period_to>=? '
+                    'ORDER BY imported_at DESC,period_to DESC,period_from DESC LIMIT 1',
+                    (store_slug, business_id, kind, day, day)).fetchone()
+                if version is None:
+                    raise ValueError(f'Нет сохранённого отчёта для пересчёта возвратов за {day}')
+                sheets = {}
+                for row in conn.execute('SELECT sheet,payload_json FROM yandex_financial_report_rows '
+                        'WHERE store_slug=? AND business_id=? AND report_kind=? AND period_from=? AND period_to=? AND imported_at=?',
+                        (store_slug, business_id, kind, *version)):
+                    sheets.setdefault(row['sheet'], []).append(json.loads(row['payload_json']))
+                reports[kind] = sheets
+            plan.append((date.fromisoformat(day), reports, {k:v for k,v in old.items() if k.startswith('payment_')}))
+    finally:
+        conn.close()
+    for day, reports, settlement in plan:
+        _store_daily_pnl(store_slug, business_id, day, day, reports[SERVICES_REPORT_KIND], reports[REPORT_KIND],
+                         calculated_at, campaign_count=campaign_count, refund_events=events)
+        if settlement:
+            yandex_financial.update_daily_pnl_fields(store_slug, business_id, day.isoformat(), settlement, calculated_at)
+    return [stored[0]['report_date'], stored[-1]['report_date']]
 
 
 def _store_daily_netting(
@@ -751,6 +806,9 @@ def import_period(store_slug: str, date_from: date, date_to: date) -> dict:
             campaign_count=len(account.get("campaign_ids") or []),
         )
         _store_daily_netting(store_slug, business_id, date_from, date_to, netting_sheets, now)
+        imported_report['reconciled_dates'] = _reconcile_refund_history(
+            store_slug, business_id, date_from, date_to, now,
+            campaign_count=len(account.get('campaign_ids') or []))
     if not imported:
         raise ValueError("Для магазина не настроен Business ID и API-ключ Яндекс Маркета")
     return {

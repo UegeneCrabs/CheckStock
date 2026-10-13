@@ -194,3 +194,16 @@ def test_importer_never_copies_failed_store_as_fresh(monkeypatch, successful):
     monkeypatch.setattr(runner, 'copy_into_rbe', lambda *args, **kwargs: copied.append(kwargs['stores']))
     assert runner.run(DAY, DAY, ('tris','rimili')) == 1
     assert copied == ([successful] if successful else [])
+
+
+def test_runner_copies_old_refund_dates_to_site(monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('rbe_refund_history_runner_test', SITE / 'scripts' / 'refresh_official_period.py')
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    monkeypatch.setattr(runner, '_import_store', lambda store, *args:
+        {'store':store, 'ok':True, 'report':{'reports':[{'reconciled_dates':['2026-09-01','2026-10-12']}]}})
+    copied = []
+    monkeypatch.setattr(runner, 'copy_into_rbe', lambda *a, **kw: copied.append(kw))
+    assert runner.run(DAY, DAY, ('tris',)) == 0
+    assert copied == [{'stores':('tris',), 'date_from':date(2026,9,1), 'date_to':date(2026,10,12)}]

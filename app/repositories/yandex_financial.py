@@ -243,7 +243,7 @@ def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_
                 latest = latest_ids[operation_key(payload)]
                 if day != latest[1]:
                     continue
-            if not day or not date_from <= day <= date_to:
+            if not day:
                 continue
             if day not in winners:
                 covered = [v for v in snapshots if v[1] <= day <= v[2]]

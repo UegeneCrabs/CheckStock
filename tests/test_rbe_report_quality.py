@@ -17,8 +17,10 @@ dashboard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dashboard)
 
 
-def summary(days=(), deliveries=(), payments=()):
-    return {'days': set(days), 'deliveries': set(deliveries), 'payments': set(payments)}
+def summary(days=(), deliveries=(), payments=(), commissions=()):
+    return {'days': set(days), 'deliveries': set(deliveries), 'payments': set(payments),
+            'payment_items': {d:{('1','sku'):1} for d in payments},
+            'commission_items': {d:{('1','sku'):1} for d in commissions}}
 
 
 def test_trailing_day_is_not_a_confirmed_zero_even_without_orders():
@@ -79,7 +81,18 @@ def test_orders_without_payment_operations_stay_incomplete():
 
 
 def test_services_arrive_and_day_becomes_complete():
-    assert quality.financial_evidence('2026-10-12', summary(deliveries=['2026-10-12']), summary(['2026-10-12'], payments=['2026-10-12']))[0]
+    assert quality.financial_evidence('2026-10-12', summary(deliveries=['2026-10-12']), summary(['2026-10-12'], payments=['2026-10-12'], commissions=['2026-10-12']))[0]
+
+
+def test_missing_or_partial_commissions_do_not_turn_finances_green():
+    day = '2026-10-12'
+    services = summary([day], payments=[day])
+    assert not quality.financial_evidence(day, summary(), services)[0]
+    services['commission_items'] = {day:{('1','sku'):1}}
+    services['payment_items'][day][('2','other')] = 1
+    assert not quality.financial_evidence(day, summary(), services)[0]
+    services['commission_items'][day][('2','other')] = 1
+    assert quality.financial_evidence(day, summary(), services)[0]
 
 
 @pytest.mark.parametrize('orders,services', [(None, summary()), (summary(), None), (summary(), summary())])
@@ -95,11 +108,17 @@ def test_archive_evidence_uses_latest_snapshot_available_at_calculation():
                    ('tris', 1, kind, '2026-10-01', '2026-10-12', imported, sheet, json.dumps(payload)))
     add('united-orders', '2026-10-13T06:00:00+00:00', 'orders_and_offers_transactions', {'deliveryDate':'12.10.2026'})
     add('united-services', '2026-10-13T06:00:00+00:00', 'payment_transfer', {'serviceDateTime':'11.10.2026 10:00:00'})
-    add('united-services', '2026-10-13T09:00:00+00:00', 'payment_transfer', {'serviceDateTime':'2026-10-12 10:00:00'})
+    add('united-services', '2026-10-13T09:00:00+00:00', 'payment_transfer', {'orderId':1,'shopSku':'sku','serviceDateTime':'2026-10-12 10:00:00'})
+    add('united-services', '2026-10-13T09:00:00+00:00', 'placement', {'orderId':1,'shopSku':'sku','serviceDateTime':'2026-10-12 10:00:00','amountWithoutBonuses':0})
+    add('united-netting', '2026-10-13T09:00:00+00:00', 'transaction_date', {'transactionDate':'12.10.2026 10:00:00'})
     row = {'store_slug':'tris','business_id':1,'report_date':'2026-10-12','calculated_at':'2026-10-13T07:00:00+00:00'}
     assert quality.build_quality(db, [row])[0][5] == 0
     row['calculated_at'] = '2026-10-13T10:00:00+00:00'
     assert quality.build_quality(db, [row])[0][5] == 1
+    db.execute("DELETE FROM yandex_financial_report_rows WHERE sheet='placement'")
+    assert quality.build_quality(db, [row])[0][5] == 0
+    add('united-services', '2026-10-13T09:00:00+00:00', 'placement', {'orderId':1,'shopSku':'sku','serviceDateTime':'2026-10-12 10:00:00','amountWithoutBonuses':None})
+    assert quality.build_quality(db, [row])[0][5] == 0
     db.close()
 
 

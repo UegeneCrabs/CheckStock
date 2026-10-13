@@ -52,7 +52,12 @@ def run(date_from: date, date_to: date, stores: tuple[str, ...] = STORES, worker
     successful = tuple(item['store'] for item in results if item['ok'])
     # A failed API call must not masquerade as a fresh update of cached facts.
     if successful:
-        copy_into_rbe(str(ROOT / "data" / "checkstock.db"), stores=successful, date_from=date_from, date_to=date_to)
+        dates = [date_from, date_to]
+        for item in results:
+            if item['ok']:
+                for account in item.get('report', {}).get('reports', []):
+                    dates.extend(date.fromisoformat(d) for d in account.get('reconciled_dates', []))
+        copy_into_rbe(str(ROOT / "data" / "checkstock.db"), stores=successful, date_from=min(dates), date_to=max(dates))
     print(json.dumps({"copied_to_rbe": bool(successful), "successful": len(successful)}, ensure_ascii=True))
     return 0 if all(item["ok"] for item in results) else 1
 
