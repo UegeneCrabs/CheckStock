@@ -124,11 +124,50 @@
   async function updateSyncInfo() {
     try {
       var response = await fetch('/api/sync-status'); if (!response.ok) return; var state = await response.json();
-      syncInfo.textContent = (state.automatic ? 'Автопроверка: пауза ' + state.interval_minutes + ' мин. между циклами. Повторная сверка последних ' + state.lookback_days + ' дней.' : 'Автопроверка выключена.') + ' В очереди: ' + state.pending_store_days + ' дней по магазинам.' + (state.running ? ' Загрузка выполняется.' : '');
+      syncInfo.textContent = (state.automatic ? 'Автопроверка включена. Сначала свежие даты. Пауза между циклами: ' + state.interval_minutes + ' мин.' : 'Автопроверка выключена.') + ' Ожидают проверки: ' + state.pending_store_days + ' записей «магазин + день».' + (state.running ? ' Загрузка выполняется.' : '');
+      renderQueue(state.queue || []);
+      renderSyncGuide(state);
       if (wasSyncRunning && !state.running && !activeRun) await load();
       wasSyncRunning = Boolean(state.running);
       if (canSync && !activeRun) { refresh.disabled = state.running; refresh.textContent = state.running ? 'Обновление…' : 'Обновить по API'; document.querySelectorAll('.repair').forEach(function (button) { button.disabled = state.running; button.textContent = state.running ? 'Загрузка…' : 'Загрузить'; }); }
-    } catch (_) { syncInfo.textContent = 'Не удалось проверить состояние автозагрузки.'; }
+    } catch (_) {
+      syncInfo.textContent = 'Не удалось проверить состояние автозагрузки.';
+      document.querySelector('#sync-guide-state').textContent = 'Не удалось получить текущее состояние. Инструкция ниже описывает правила, но не подтверждает, что автопроверка сейчас включена.';
+    }
+  }
+  function renderSyncGuide(state) {
+    document.querySelector('#sync-guide-state').textContent = state.automatic
+      ? 'Автопроверка включена. Эти правила применяются к автоматическим загрузкам.'
+      : 'Автопроверка сейчас выключена. Сайт показывает сохранённые данные, очередь ждёт. Правила ниже начнут действовать после включения автоматики. Обновление вручную доступно администратору.';
+    [['lookback', state.lookback_days], ['batch', state.max_batch_days],
+      ['jobs', state.max_cycle_jobs], ['interval', state.interval_minutes],
+      ['cooldown', state.cooldown_seconds]].forEach(function (pair) {
+      document.querySelector('#sync-guide-' + pair[0]).textContent = pair[1] == null ? '—' : String(pair[1]);
+    });
+    document.querySelector('#sync-guide-cutoff').textContent = state.cutoff ? parseDate(state.cutoff).toLocaleDateString('ru-RU') : '—';
+  }
+  var queueGroupsOpen = {};
+  function renderQueue(items) {
+    var box = document.querySelector('#sync-queue-items');
+    if (!box) return;
+    box.replaceChildren();
+    document.querySelector('#sync-queue-summary').textContent = 'Очередь проверок (' + items.length + ') — магазины, даты и причины';
+    if (!items.length) { box.textContent = 'Незавершённых проверок нет. Плановая сверка выполняется отдельно, если автопроверка включена.'; return; }
+    var groups = {};
+    items.forEach(function (item) { var key = item.type; if (!groups[key]) groups[key] = []; groups[key].push(item); });
+    Object.keys(groups).forEach(function (key) {
+      var group = document.createElement('details'), title = document.createElement('summary'), list = document.createElement('ul');
+      group.open = Boolean(queueGroupsOpen[key]);
+      group.ontoggle = function () { queueGroupsOpen[key] = group.open; };
+      title.textContent = groups[key][0].title + ' — ' + groups[key].length; group.append(title);
+      groups[key].forEach(function (item) {
+        var row = document.createElement('li');
+        row.textContent = item.store.toUpperCase() + ' · ' + parseDate(item.date).toLocaleDateString('ru-RU') + ' — ' + item.detail;
+        if (item.last_attempt) row.textContent += ' Последняя попытка: ' + new Date(item.last_attempt).toLocaleString('ru-RU') + '.';
+        list.append(row);
+      });
+      group.append(list); box.append(group);
+    });
   }
   async function loadStores() { var payload = await (await fetch('/api/stores')).json(); (payload.stores || []).forEach(function (name) { var option = document.createElement('option'); option.value = name; option.textContent = name.toUpperCase(); store.append(option); }); }
   refresh.onclick = function () { upload(null, refresh); };

@@ -715,7 +715,7 @@ def _load_united_netting_report(
     return _load_report(api_key, "/v2/reports/united-netting/generate", payload)
 
 
-def import_period(store_slug: str, date_from: date, date_to: date) -> dict:
+def import_period(store_slug: str, date_from: date, date_to: date, *, orders_lookback_days: int = FINANCIAL_REPORT_LOOKBACK_DAYS) -> dict:
     if date_to < date_from:
         raise ValueError("Дата окончания раньше даты начала")
     now = datetime.now(UTC).isoformat(timespec="seconds")
@@ -726,7 +726,7 @@ def import_period(store_slug: str, date_from: date, date_to: date) -> dict:
     orders_sync = sales_sync.sync_store_period(
         store_slug,
         "YANDEX MARKET",
-        date_from - timedelta(days=FINANCIAL_REPORT_LOOKBACK_DAYS),
+        date_from - timedelta(days=orders_lookback_days),
         date_to + timedelta(days=1),
     )
     if not orders_sync.get("ok"):

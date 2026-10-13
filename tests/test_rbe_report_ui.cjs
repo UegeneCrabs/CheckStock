@@ -27,7 +27,7 @@ async function test() {
   const metric = element('metric'); metric.textContent = 'Заказы ⓘ';
   const row = element('row'); row.querySelector = selector => selector === '.metric' ? metric : element('help');
   cell.closest = () => row;
-  let admin = true, state = 'running', value = 204008, fallbackOK = true, sign = '+', detailNote = '';
+  let admin = true, automatic = true, state = 'running', value = 204008, fallbackOK = true, sign = '+', detailNote = '';
   const copied = [];
   const posts = [], timeouts = [], storage = new Map();
   const context = {
@@ -46,7 +46,7 @@ async function test() {
       let payload;
       if (url === '/api/stores') payload = {stores:['tris','rimili']};
       else if (url.startsWith('/api/report?')) payload = {can_sync:admin,sync_running:false,values:{orders_turnover:value},quality:{orders_turnover:{complete:true}},details:{orders_turnover:{description:'Заказы включая отменённые',available:true,rows:[{sign,label:'Заказы',value}],note:detailNote}}};
-      else if (url === '/api/sync-status') payload = {automatic:true,interval_minutes:30,lookback_days:14,pending_store_days:6,running:false};
+      else if (url === '/api/sync-status') payload = {automatic,interval_minutes:45,lookback_days:10,max_cycle_jobs:8,max_batch_days:7,cooldown_seconds:180,cutoff:'2026-07-15',pending_store_days:1,running:false,queue:[{store:'tris',date:'2026-10-12',type:'rate_limit',title:'Пауза по ограничению Яндекса',detail:'Нужна пауза. <script>bad</script>',last_attempt:null}]};
       else if (url === '/api/sync') { posts.push(JSON.parse(options.body)); payload={run_id:7}; }
       else if (url === '/api/targeted-sync/7') payload = {run:{status:state,detail:'Даты сохранены для автоповтора'}};
       else throw Error('Unexpected URL ' + url);
@@ -56,6 +56,15 @@ async function test() {
   const settle = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setImmediate(resolve)); };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/report.js'),'utf8'),context);
   await settle();
+  assert.match(element('#sync-queue-summary').textContent, /Очередь проверок \(1\)/);
+  assert.match(element('#sync-guide-state').textContent, /Автопроверка включена/);
+  for (const [name, value] of [['interval','45'], ['lookback','10'], ['jobs','8'], ['batch','7'], ['cooldown','180'], ['cutoff','15.07.2026']]) {
+    assert.equal(element('#sync-guide-' + name).textContent, value);
+  }
+  const queueGroup = element('#sync-queue-items').children[0];
+  assert.match(queueGroup.children[0].textContent, /Пауза по ограничению Яндекса/);
+  assert.match(queueGroup.children[1].children[0].textContent, /TRIS.*12.10.2026/);
+  assert.match(queueGroup.children[1].children[0].textContent, /<script>bad<\/script>/); // text, never HTML
   const toggle = metric.children[0];
   assert.equal(toggle['aria-expanded'], 'false');
   assert.equal(row.sibling.hidden, true);
@@ -71,7 +80,9 @@ async function test() {
   assert.deepEqual(posts[0],{date_from:'2026-10-12',date_to:'2026-10-12',store_slug:'tris'});
   assert.equal(button.disabled,true);
   assert.equal(storage.get('rbe-sync-run'),'7');
+  automatic = false;
   state = 'waiting'; timeouts.shift()(); await settle();
+  assert.match(element('#sync-guide-state').textContent, /Автопроверка сейчас выключена/);
   assert.equal(button.disabled,false);
   assert.equal(storage.has('rbe-sync-run'),false);
   assert.equal(element('#error').textContent,'Даты сохранены для автоповтора');
@@ -82,7 +93,11 @@ async function test() {
   assert.equal(button.hidden,true);
   const html = fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/templates/index.html'),'utf8');
   assert.match(html,/id="refresh-period"[^>]*hidden/);
-  assert.match(html,/report\.js\?v=20261013-breakdown-colors/);
+  assert.match(html,/report\.js\?v=20261013-sync-queue/);
+  assert.match(html, /<details id="sync-guide"/);
+  assert.match(html, /Как работает автообновление/);
+  assert.match(html, /Это не число потерянных дней/);
+  assert.match(html, /не запрашиваем и убираем из очереди/);
   assert.doesNotMatch(html, /<p>Финансовый отчёт<\/p>|<h1>RBE<\/h1>/);
   assert.match(html, /class="brand"/); // Header branding is unchanged.
   assert.equal(row.sibling.children[0].children.length, 1); // Only the calculation list, no description.

@@ -12,7 +12,8 @@ import argparse
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parents[1]
@@ -35,14 +36,18 @@ def _import_store(store_slug: str, date_from: date, date_to: date) -> dict:
     """
 
     try:
-        return {"store": store_slug, "ok": True, "report": financial_reports.import_period(store_slug, date_from, date_to)}
+        # RBE uses these orders only for the creation-date funnel. Delivered
+        # items and returns come from the independent financial reports.
+        return {"store": store_slug, "ok": True, "report": financial_reports.import_period(store_slug, date_from, date_to, orders_lookback_days=0)}
     except Exception as error:  # a temporary API error must not stop other cabinets
         return {"store": store_slug, "ok": False, "error": str(error)}
 
 
-def run(date_from: date, date_to: date, stores: tuple[str, ...] = STORES, workers: int = 6) -> int:
+def run(date_from: date, date_to: date, stores: tuple[str, ...] = STORES, workers: int = 1) -> int:
+    if date_from < datetime.now(ZoneInfo('Europe/Moscow')).date() - timedelta(days=90):
+        raise ValueError('Даты старше 90 дней не запрашиваются. Сохранённые данные остаются доступны.')
     results: list[dict] = []
-    with ThreadPoolExecutor(max_workers=min(max(1, workers), len(stores))) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         futures = {executor.submit(_import_store, store_slug, date_from, date_to): store_slug for store_slug in stores}
         for future in as_completed(futures):
             results.append(future.result())
@@ -67,7 +72,7 @@ if __name__ == "__main__":
     parser.add_argument("--date-from", required=True, type=date.fromisoformat)
     parser.add_argument("--date-to", required=True, type=date.fromisoformat)
     parser.add_argument("--stores", nargs="+", choices=STORES, default=STORES)
-    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
     if args.date_to < args.date_from:
         parser.error("Дата окончания раньше даты начала")

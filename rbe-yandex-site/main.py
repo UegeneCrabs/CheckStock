@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 from report_quality import SCHEMA as QUALITY_SCHEMA
+from sync_queue import SCHEMA as SYNC_QUEUE_SCHEMA, REASONS, MAX_BATCH_DAYS, error_reason, newest_ranges, automatic_plan
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("RBE_DATABASE_PATH", ROOT / "data" / "rbe_yandex.db"))
@@ -39,8 +40,9 @@ USERS_PATH = Path(os.getenv("RBE_USERS_PATH", ROOT / "secrets" / "users.json"))
 SESSION_TTL_HOURS = int(os.getenv("RBE_SESSION_TTL_HOURS", "12"))
 AUTO_SYNC_ENABLED = os.getenv("RBE_AUTO_SYNC", "true").lower() in {"1", "true", "yes"}
 SYNC_INTERVAL_MINUTES = max(5, int(os.getenv("RBE_SYNC_INTERVAL_MINUTES", "30")))
-SYNC_LOOKBACK_DAYS = max(1, int(os.getenv("RBE_SYNC_LOOKBACK_DAYS", "14")))
+SYNC_LOOKBACK_DAYS = min(90, max(1, int(os.getenv("RBE_SYNC_LOOKBACK_DAYS", "14"))))
 SYNC_COOLDOWN_SECONDS = 125
+SYNC_CYCLE_MAX_JOBS = max(1, min(90, int(os.getenv('RBE_SYNC_CYCLE_MAX_JOBS', '12'))))
 GOOGLE_SHEET_ID = os.getenv("RBE_COST_GOOGLE_SHEET_ID", "1q0WL6OB3Edh2O1ogqx7CK3MAij3O6xjD6gE0i3q3qEY")
 COST_SYNC_HOUR_MSK = min(23, max(0, int(os.getenv("RBE_COST_SYNC_HOUR_MSK", "2"))))
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -88,6 +90,7 @@ def connection() -> sqlite3.Connection:
 def init_database() -> None:
     with connection() as conn:
         conn.executescript(QUALITY_SCHEMA)
+        conn.executescript(SYNC_QUEUE_SCHEMA)
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS daily_financial (
@@ -481,8 +484,31 @@ def _sync_period() -> tuple[date, date]:
     return last_day - timedelta(days=SYNC_LOOKBACK_DAYS - 1), last_day
 
 
+def _api_cutoff() -> date:
+    return datetime.now(MOSCOW).date() - timedelta(days=90)
+
+
+def _prune_retry_queue() -> None:
+    # Remove jobs only. Historical reports and financial facts are preserved.
+    with connection() as conn:
+        conn.execute('DELETE FROM sync_retry_days WHERE report_date<?', (_api_cutoff().isoformat(),))
+
+
+def _record_check(stores, start, end, reason, completed=False):
+    stamp = datetime.now(UTC).isoformat() if completed else None
+    with connection() as conn:
+        conn.executemany('''INSERT INTO sync_day_checks VALUES(?,?,?,?)
+            ON CONFLICT(store_slug,report_date) DO UPDATE SET
+            checked_at=COALESCE(excluded.checked_at,sync_day_checks.checked_at),reason=excluded.reason''',
+            [(s, d, stamp, reason) for s in stores for d in _date_range(start, end)])
+
+
 def _refresh_retry_queue(date_from: date, date_to: date, stores: tuple[str, ...]) -> None:
     """Persist API gaps, including older dates; missing purchase prices are not API gaps."""
+    _prune_retry_queue()
+    date_from = max(date_from, _api_cutoff())
+    if date_from > date_to:
+        return
     for store in stores:
         states = report_completeness(date_from, date_to, store)
         missing = set(states['orders'].get('missing', {}).get(store, []))
@@ -498,6 +524,7 @@ def _refresh_retry_queue(date_from: date, date_to: date, stores: tuple[str, ...]
 
 def _discover_retry_days() -> None:
     """Recover the queue from known history after restarts, including holes between facts."""
+    _prune_retry_queue()
     start, end = _sync_period()
     for store in _report_stores(None):
         with connection() as conn:
@@ -505,7 +532,7 @@ def _discover_retry_days() -> None:
                 SELECT report_date FROM daily_financial WHERE store_slug=? UNION ALL
                 SELECT report_date FROM daily_orders WHERE store_slug=? UNION ALL
                 SELECT report_date FROM sync_retry_days WHERE store_slug=?)''', (store, store, store)).fetchone()[0]
-        cursor = min(start, date.fromisoformat(first)) if first else start
+        cursor = max(_api_cutoff(), min(start, date.fromisoformat(first)) if first else start)
         while cursor <= end:
             finish = min(cursor + timedelta(days=366), end)
             _refresh_retry_queue(cursor, finish, (store,))
@@ -513,23 +540,16 @@ def _discover_retry_days() -> None:
 
 
 def _older_retry_ranges(before: date) -> list[tuple[str, date, date]]:
-    """One bounded, least-recently-attempted range per store avoids starving old gaps."""
+    """Newest eligible dates first, in bounded chunks."""
     with connection() as conn:
-        rows = conn.execute('SELECT * FROM sync_retry_days WHERE report_date<? ORDER BY COALESCE(last_attempt,\'\'),report_date', (before.isoformat(),)).fetchall()
-    selected = {}
+        rows = conn.execute('SELECT * FROM sync_retry_days WHERE report_date<? AND report_date>=?',
+                            (before.isoformat(), _api_cutoff().isoformat())).fetchall()
     available = defaultdict(set)
     enabled = set(_report_stores(None))
     for row in rows:
         if row['store_slug'] in enabled:
-            selected.setdefault(row['store_slug'], date.fromisoformat(row['report_date']))
             available[row['store_slug']].add(row['report_date'])
-    result = []
-    for store, start in selected.items():
-        end = start
-        while (end - start).days < 13 and (end + timedelta(days=1)).isoformat() in available[store]:
-            end += timedelta(days=1)
-        result.append((store, start, end))
-    return result
+    return newest_ranges(available)
 
 
 def _run_official_sync(
@@ -540,7 +560,7 @@ def _run_official_sync(
 ) -> dict[str, str]:
     """Run the official importer once and persist a non-sensitive audit record.
 
-    The worker imports cabinets concurrently; an API 420 becomes a failed run
+    The worker imports cabinets sequentially; an API 420 becomes a failed run
     and is retried by the loop, rather than being treated as a broken key.
     """
 
@@ -550,6 +570,9 @@ def _run_official_sync(
     stores = stores or tuple(_report_stores(None))
     started_at = datetime.now(UTC).isoformat()
     try:
+        _prune_retry_queue()
+        if date_from < _api_cutoff():
+            return {'status': 'skipped', 'detail': 'Даты старше 90 дней не запрашиваются.'}
         # Persist before requesting: interrupted/failed manual refreshes survive restart.
         with connection() as conn:
             conn.executemany('''INSERT INTO sync_retry_days(store_slug,report_date,force_retry)
@@ -573,7 +596,7 @@ def _run_official_sync(
         command = [
             sys.executable,
             str(ROOT / "scripts" / "refresh_official_period.py"),
-            "--date-from", date_from.isoformat(), "--date-to", date_to.isoformat(), "--workers", "6",
+            "--date-from", date_from.isoformat(), "--date-to", date_to.isoformat(), "--workers", "1",
         ]
         if stores:
             command.extend(["--stores", *stores])
@@ -585,10 +608,19 @@ def _run_official_sync(
             status = "retrying"
             detail = f"Не удалось завершить импорт: {error}"[-4000:]
         if status == 'completed':
+            _record_check(stores, date_from, date_to, 'complete', completed=True)
             with connection() as conn:
                 for store in stores:
                     conn.execute('UPDATE sync_retry_days SET force_retry=0 WHERE store_slug=? AND report_date BETWEEN ? AND ?', (store, date_from.isoformat(), date_to.isoformat()))
             _refresh_retry_queue(date_from, date_to, stores)
+            with connection() as conn:
+                for store in stores:
+                    conn.execute('''UPDATE sync_day_checks SET reason='incomplete' WHERE store_slug=?
+                        AND report_date BETWEEN ? AND ? AND report_date IN
+                        (SELECT report_date FROM sync_retry_days WHERE store_slug=?)''',
+                        (store, date_from.isoformat(), date_to.isoformat(), store))
+        else:
+            _record_check(stores, date_from, date_to, error_reason(detail))
         with connection() as conn:
             conn.executemany('INSERT OR REPLACE INTO sync_store_attempts VALUES(?,?)',
                              [(store, datetime.now(UTC).isoformat()) for store in stores])
@@ -596,7 +628,7 @@ def _run_official_sync(
                 "UPDATE sync_runs SET finished_at=?,status=?,detail=? WHERE id=?",
                 (datetime.now(UTC).isoformat(), status, detail, run_id),
             )
-        return {"status": status, "detail": detail}
+        return {"status": status, "detail": detail, "reason": error_reason(detail) if status != 'completed' else 'complete'}
     finally:
         if not lock_already_held:
             SYNC_LOCK.release()
@@ -605,20 +637,7 @@ def _run_official_sync(
 def _missing_ranges(missing: dict[str, list[str]]) -> list[tuple[str, date, date]]:
     """Compact absent days into store-specific date ranges for a repair run."""
 
-    result: list[tuple[str, date, date]] = []
-    for store, values in missing.items():
-        days = sorted(date.fromisoformat(value) for value in values)
-        if not days:
-            continue
-        start = previous = days[0]
-        for current in days[1:]:
-            if current == previous + timedelta(days=1):
-                previous = current
-                continue
-            result.append((store, start, previous))
-            start = previous = current
-        result.append((store, start, previous))
-    return result
+    return newest_ranges({s: [d for d in ds if d >= _api_cutoff().isoformat()] for s, ds in missing.items()})
 
 
 def _run_missing_sync(missing: dict[str, list[str]], lock_already_held: bool = False) -> list[dict[str, str]]:
@@ -627,10 +646,17 @@ def _run_missing_sync(missing: dict[str, list[str]], lock_already_held: bool = F
     if not lock_already_held and not SYNC_LOCK.acquire(blocking=False):
         return [{"status": "busy", "detail": "Загрузка уже выполняется"}]
     try:
-        return [
-            _run_official_sync(date_from, date_to, stores=(store,), lock_already_held=True)
-            for store, date_from, date_to in _missing_ranges(missing)
-        ]
+        results, blocked = [], set()
+        for store, date_from, date_to in _missing_ranges(missing):
+            if SYNC_STOP_EVENT.is_set():
+                break
+            if store in blocked:
+                continue
+            result = _run_official_sync(date_from, date_to, stores=(store,), lock_already_held=True)
+            results.append(result)
+            if result.get('status') != 'completed':
+                blocked.add(store)
+        return results
     finally:
         if not lock_already_held:
             SYNC_LOCK.release()
@@ -674,7 +700,7 @@ def _finish_manual_run(run_id: int, results: list[dict], complete: bool) -> None
         reason = 'Другая загрузка уже выполняется.'
     else:
         reason = 'Не все запросы API завершились успешно. Подробности — в журнале загрузок.'
-    retry = ('Незавершённые даты сохранены. Автоповторы продолжатся без ограничения числа попыток; '
+    retry = ('Незавершённые даты сохранены. Автоповторы продолжатся для дат не старше 90 дней; '
              f'пауза между циклами — {SYNC_INTERVAL_MINUTES} мин.') if AUTO_SYNC_ENABLED else 'Автозагрузка выключена. Повторите обновление вручную.'
     _set_manual_run(run_id, 'waiting', reason + ' ' + retry)
 
@@ -682,10 +708,10 @@ def _finish_manual_run(run_id: int, results: list[dict], complete: bool) -> None
 def _run_period_sync(run_id: int, date_from: date, date_to: date, stores: tuple[str, ...], lock_already_held: bool = False) -> None:
     try:
         _set_manual_run(run_id, 'running', 'Обновляем выбранный период по API. При необходимости ожидаем снятия лимита…')
-        result = _run_official_sync(date_from, date_to, stores, lock_already_held)
+        results = _run_missing_sync({s: _date_range(date_from, date_to) for s in stores}, lock_already_held)
         complete = all(all(report_completeness(date_from, date_to, store)[source]['complete']
                            for source in ('orders', 'financial')) for store in stores)
-        _finish_manual_run(run_id, [result], complete)
+        _finish_manual_run(run_id, results, complete)
     except Exception:
         logging.exception('RBE period refresh failed')
         _set_manual_run(run_id, 'failed', 'Ошибка обновления. Проверьте журнал сервера; незавершённые даты сохранены в очереди.')
@@ -698,13 +724,26 @@ def _sync_loop() -> None:
     while not SYNC_STOP_EVENT.is_set():
         try:
             _discover_retry_days()
-            _run_official_sync()
-            # Keep refreshing recent COMPLETE dates too, to pick up API corrections.
-            # Older gaps are retried in bounded, fair batches and never expire.
-            for store, start, end in _older_retry_ranges(_sync_period()[0]):
+            start, end = _sync_period()
+            with connection() as conn:
+                pending = conn.execute('SELECT * FROM sync_retry_days').fetchall()
+                checked = {(r['store_slug'],r['report_date']):r['checked_at'] for r in conn.execute('SELECT * FROM sync_day_checks')}
+            plan = automatic_plan(_report_stores(None), pending, checked, start, end, _api_cutoff(), datetime.now(UTC))
+            blocked = set()
+            attempted = 0
+            for store, start, end in plan:
                 if SYNC_STOP_EVENT.is_set():
                     break
-                _run_official_sync(start, end, (store,))
+                if store in blocked:
+                    continue
+                if attempted >= SYNC_CYCLE_MAX_JOBS:
+                    break
+                attempted += 1
+                result = _run_official_sync(start, end, (store,))
+                if result.get('status') == 'busy':
+                    break
+                if result.get('status') != 'completed':
+                    blocked.add(store)
         except Exception:
             logging.exception('RBE automatic refresh failed; next cycle will retry')
         SYNC_STOP_EVENT.wait(SYNC_INTERVAL_MINUTES * 60)
@@ -946,6 +985,7 @@ async def authenticate(request: Request, call_next):
 @app.on_event("startup")
 def on_startup() -> None:
     init_database()
+    _prune_retry_queue()
     SYNC_STOP_EVENT.clear()
     with connection() as conn:
         conn.execute("UPDATE targeted_sync_runs SET status='waiting',finished_at=?,detail=? WHERE status IN ('queued','running','retrying')", (datetime.now(UTC).isoformat(), 'Сервер был перезапущен. Незавершённые даты сохранены в очереди автозагрузки.'))
@@ -1061,9 +1101,31 @@ def sync_status(request: Request) -> dict:
         row = conn.execute(
             "SELECT started_at,finished_at,status,detail FROM sync_runs ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        pending = conn.execute('SELECT COUNT(*) FROM sync_retry_days').fetchone()[0]
+        queued = conn.execute('''SELECT q.*,c.reason FROM sync_retry_days q LEFT JOIN sync_day_checks c
+            ON c.store_slug=q.store_slug AND c.report_date=q.report_date
+            WHERE q.report_date>=? ORDER BY q.report_date DESC,q.store_slug''', (_api_cutoff().isoformat(),)).fetchall()
+        items = []
+        enabled = set(_report_stores(None))
+        for q in queued:
+            reason = q['reason'] or ('unknown' if q['force_retry'] else 'incomplete')
+            if reason == 'complete':
+                reason = 'incomplete'
+            title, description = REASONS.get(reason, REASONS['unknown'])
+            if q['store_slug'] not in enabled:
+                title, description = 'Магазин отключён', 'Проверка не запускается, пока магазин не подключён.'
+            issues = []
+            if reason == 'incomplete':
+                states = report_completeness(date.fromisoformat(q['report_date']), date.fromisoformat(q['report_date']), q['store_slug'])
+                for source, label in [('orders', 'Заказы'), ('financial', 'Финансовые показатели')]:
+                    if not states[source]['complete']:
+                        issues.append(label + ': ' + states[source]['detail'])
+            items.append({'store':q['store_slug'], 'date':q['report_date'], 'type':reason,
+                          'title':title, 'detail':' '.join(issues) or description, 'last_attempt':q['last_attempt']})
     return {"ok": True, "automatic": AUTO_SYNC_ENABLED, "interval_minutes": SYNC_INTERVAL_MINUTES,
-            "lookback_days": SYNC_LOOKBACK_DAYS, "pending_store_days": pending,
+            "lookback_days": SYNC_LOOKBACK_DAYS, "pending_store_days": len(items), "queue": items,
+            "cutoff": _api_cutoff().isoformat(),
+            "max_batch_days": MAX_BATCH_DAYS, "max_cycle_jobs": SYNC_CYCLE_MAX_JOBS,
+            "cooldown_seconds": SYNC_COOLDOWN_SECONDS,
             "running": SYNC_LOCK.locked(), "last_run": dict(row) if row else None}
 
 
@@ -1082,6 +1144,8 @@ def targeted_sync_status(request: Request, run_id: int) -> dict:
 @app.post("/api/sync", status_code=202)
 def start_sync(request: Request, payload: SyncRequest) -> dict:
     _require_admin(request)
+    if payload.date_from < _api_cutoff():
+        raise HTTPException(422, f'Можно обновлять даты начиная с {_api_cutoff():%d.%m.%Y}. Данные старше 90 дней сохранены, но не запрашиваются заново.')
     if payload.date_to < payload.date_from or payload.date_to - payload.date_from > timedelta(days=366):
         raise HTTPException(422, "Выберите период от 1 до 367 дней")
     if payload.date_to > datetime.now(MOSCOW).date():
@@ -1115,6 +1179,10 @@ def start_sync(request: Request, payload: SyncRequest) -> dict:
             wanted = missing or {store: _date_range(payload.date_from, payload.date_to) for store in selected}
             conn.executemany('INSERT INTO sync_retry_days(store_slug,report_date,force_retry) VALUES(?,?,1) ON CONFLICT(store_slug,report_date) DO UPDATE SET force_retry=1',
                              [(store, day) for store, days in wanted.items() for day in days])
+        for name, days in wanted.items():
+            for day in days:
+                d = date.fromisoformat(day)
+                _record_check((name,), d, d, 'requested')
         if payload.metric:
             worker = _run_targeted_sync
             kwargs = {
