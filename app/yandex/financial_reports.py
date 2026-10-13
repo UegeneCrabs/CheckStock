@@ -554,8 +554,10 @@ def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calcu
                 sheets = {}
                 for row in conn.execute('SELECT sheet,payload_json FROM yandex_financial_report_rows '
                         'WHERE store_slug=? AND business_id=? AND report_kind=? AND period_from=? AND period_to=? AND imported_at=?',
-                        (store_slug, business_id, kind, *version)):
+                        (store_slug, business_id, kind, version['period_from'], version['period_to'], version['imported_at'])):
                     sheets.setdefault(row['sheet'], []).append(json.loads(row['payload_json']))
+                if not sheets:
+                    raise ValueError(f'Не удалось прочитать сохранённый отчёт для пересчёта возвратов за {day}')
                 reports[kind] = sheets
             plan.append((date.fromisoformat(day), reports, {k:v for k,v in old.items() if k.startswith('payment_')}))
     finally:

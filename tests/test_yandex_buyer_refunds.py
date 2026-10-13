@@ -249,11 +249,15 @@ def test_store_and_business_isolation(archive, store):
     assert repository.buyer_refund_events(store, 1, "2026-10-05", "2026-10-11", source=archive)[0]["refundBuyerPaymentAmount"] == -2339
 
 
-def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp_path, monkeypatch):
+@pytest.mark.parametrize('production_adapter', [False, True])
+def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp_path, monkeypatch, production_adapter):
     from datetime import date
     from app.yandex import financial_reports as reports
     path = tmp_path / 'history.db'
     def connect():
+        if production_adapter:
+            from app.infrastructure.database import database_for_path
+            return database_for_path(path).connect()
         c = sqlite3.connect(path)
         c.row_factory = sqlite3.Row
         return c
@@ -263,11 +267,14 @@ def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp
         for day in ('2026-09-10', '2026-10-12'):
             save(c, 'united-orders', order(deliveryDate='01.09.2026'), start=day, end=day)
             save(c, 'united-services', {}, sheet='__coverage__', start=day, end=day)
+            save(c, 'united-services', {'orderId':1,'shopSku':'sku','count':1,'merchantPrice':5752,
+                                      'serviceDateTime':day}, sheet='payment_transfer', start=day, end=day)
             c.execute('INSERT INTO yandex_financial_daily_pnl VALUES(?,?,?,?,?)',
                       ('tris',1,day,json.dumps({'returned_count':1,'detail_seller_returns':5752,'payment_deductions':42}),'old'))
         save(c, 'united-netting', payment(transactionSource='Возврат баллов за скидку Маркета',
               transactionDate='10.09.2026 09:00'), start='2026-09-10', end='2026-09-10')
         save(c, 'united-netting', payment(transactionDate='12.10.2026 09:00'), start='2026-10-12', end='2026-10-12')
+        c.commit()
     monkeypatch.setattr(repository, 'get_connection', connect)
     monkeypatch.setattr(repository, 'buyer_refund_commission', lambda *args: 0)
     monkeypatch.setattr(reports.yandex_source_values, 'get_values', lambda *args: {'sku':{'purchase_price':500}})
@@ -277,5 +284,7 @@ def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp
             old = json.loads(c.execute("SELECT values_json FROM yandex_financial_daily_pnl WHERE report_date='2026-09-10'").fetchone()[0])
             assert old['returned_count'] == 0
             assert old['detail_seller_returns'] == 0
-            assert old['cost_of_goods'] == 0
+            assert old['detail_redeemed_count'] == 1
+            assert old['detail_seller_sales'] == 5752
+            assert old['cost_of_goods'] == 500
             assert old['payment_deductions'] == 42
