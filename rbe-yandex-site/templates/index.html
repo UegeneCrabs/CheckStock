@@ -11,9 +11,10 @@
     <section class="report-head"><div><p>Финансовый отчёт</p><h1>RBE</h1></div>
       <div class="filters"><label>Магазин<select id="store"><option value="">Все магазины</option></select></label>
       <label class="range-wrap">Период<input id="from" type="hidden"><input id="to" type="hidden"><button id="range" type="button" class="range-trigger"></button><div id="calendar" class="calendar" hidden><div class="cal-nav"><button id="prev" type="button">‹</button><span id="month"></span><button id="next" type="button">›</button></div><div id="grid" class="cal-grid"></div></div></label>
-      <button id="apply">Применить</button></div>
+      <button id="apply">Применить</button><button id="refresh-period" type="button" hidden title="Повторно запросить API для выбранного магазина и периода, включая ранее загруженные данные">Обновить по API</button></div>
     </section>
     <p id="error" role="alert"></p>
+    <p id="sync-info" role="status" style="font-size:12px;color:#69748c"></p>
     <section class="table-wrap"><table><thead><tr><th>Показатель</th><th id="period">Факт</th><th>Статус</th></tr></thead><tbody>
       <tr><th><span class="metric">ТО заказы из воронки <span class="metric-help" tabindex="0" data-tip="Стоимость заказов, созданных в выбранный период.&#10;Формула: сумма стоимости заказов до отмен.&#10;Источник: официальный API заказов Яндекс Маркета.">ⓘ</span></span></th><td data-key="orders_turnover"></td><td data-status-for="orders_turnover"></td></tr>
       <tr><th><span class="metric">ТО выкупы-возвраты в цене селлера <span class="metric-help" tabindex="0" data-tip="Оборот по фактически выкупленным товарам в цене продавца.&#10;Формула: сумма merchantPrice по payment_transfer − стоимость возвращённых товаров.&#10;Источник: united-services и united-orders Яндекс Маркета.">ⓘ</span></span></th><td data-key="buyout_seller_turnover"></td><td data-status-for="buyout_seller_turnover"></td></tr>
@@ -26,5 +27,5 @@
       <tr class="total"><th><span class="metric">Маржинальная прибыль <span class="metric-help" tabindex="0" data-tip="Прибыль после прямых расходов Маркета и закупочной стоимости товаров.&#10;Формула: Приход на РС − ЗЦ проданных товаров.">ⓘ</span></span></th><td data-key="marginal_profit"></td><td data-status-for="marginal_profit"></td></tr>
       <tr class="total"><th><span class="metric">Маржинальная прибыль, % от ТО выкупов в цене покупателя <span class="metric-help" tabindex="0" data-tip="Доля маржинальной прибыли в обороте по цене покупателя.&#10;Формула: Маржинальная прибыль ÷ ТО выкупы-возвраты в цене покупателя × 100%.">ⓘ</span></span></th><td data-key="marginal_profit_percent" data-format="percent"></td><td data-status-for="marginal_profit_percent"></td></tr>
     </tbody></table></section>
-  </main><script src="/static/report.js?v=20261012-metric-help"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
+  </main><script src="/static/report.js?v=20261013-period-refresh"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
 </body></html>

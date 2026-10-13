@@ -49,8 +49,11 @@ def run(date_from: date, date_to: date, stores: tuple[str, ...] = STORES, worker
             # Windows service logs can use a legacy code page; keep the worker
             # alive even if an API error contains Cyrillic text.
             print(json.dumps(results[-1], ensure_ascii=True), flush=True)
-    copy_into_rbe(str(ROOT / "data" / "checkstock.db"), stores=stores, date_from=date_from, date_to=date_to)
-    print(json.dumps({"copied_to_rbe": True, "successful": sum(item["ok"] for item in results)}, ensure_ascii=True))
+    successful = tuple(item['store'] for item in results if item['ok'])
+    # A failed API call must not masquerade as a fresh update of cached facts.
+    if successful:
+        copy_into_rbe(str(ROOT / "data" / "checkstock.db"), stores=successful, date_from=date_from, date_to=date_to)
+    print(json.dumps({"copied_to_rbe": bool(successful), "successful": len(successful)}, ensure_ascii=True))
     return 0 if all(item["ok"] for item in results) else 1
 
 
