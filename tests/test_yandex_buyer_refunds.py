@@ -249,6 +249,18 @@ def test_store_and_business_isolation(archive, store):
     assert repository.buyer_refund_events(store, 1, "2026-10-05", "2026-10-11", source=archive)[0]["refundBuyerPaymentAmount"] == -2339
 
 
+def test_refund_archive_is_streamed_without_raw_buffer(archive):
+    save(archive, 'united-orders', order())
+    save(archive, 'united-netting', payment())
+
+    class StreamingOnly:
+        def execute(self, *args):
+            return iter(row for row in archive.execute(*args))
+
+    assert repository.buyer_refund_events('tris', 1, '2026-10-05', '2026-10-11',
+                                         source=StreamingOnly())[0]['count'] == 1
+
+
 @pytest.mark.parametrize('production_adapter', [False, True])
 def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp_path, monkeypatch, production_adapter):
     from datetime import date

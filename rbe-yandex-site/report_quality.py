@@ -10,6 +10,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
+from hashlib import sha256
 from math import isfinite
 
 
@@ -82,9 +83,11 @@ def build_quality(source, daily_rows):
         key = (store, business, kind, start, end, imported)
         summary = snapshots.setdefault(key, {'days': set(), 'payments': set(), 'deliveries': set(),
                                             'payment_items': {}, 'commission_items': {}, 'seen': set()})
-        if (sheet, raw) in summary['seen']:
+        # Keep a compact identity, not another full copy of every archived row.
+        identity = (sheet, sha256(raw.encode('utf-8')).digest())
+        if identity in summary['seen']:
             continue
-        summary['seen'].add((sheet, raw))
+        summary['seen'].add(identity)
         row = json.loads(raw)
         if kind == 'united-services':
             day = source_day(row.get('serviceDateTime') or row.get('serviceDate'))

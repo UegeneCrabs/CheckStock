@@ -200,6 +200,8 @@ def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_
     from app.yandex.buyer_refunds import build_refunds, operation_key, source_day
 
     conn = source if source is not None else get_connection()
+    orders = {}
+    snapshots = {}
     try:
         rows = conn.execute(
             """SELECT report_kind,sheet,payload_json,period_from,period_to,imported_at
@@ -208,22 +210,22 @@ def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_
                  AND report_kind IN ('united-orders','united-netting')
                ORDER BY imported_at,period_from,period_to""",
             (store_slug, business_id),
-        ).fetchall()
+        )
+        # Consume archive rows while the connection is open. Keeping the full
+        # raw result alongside parsed snapshots can double peak memory.
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if row["report_kind"] == "united-orders" and row["sheet"] == "orders_and_offers_transactions":
+                key = (str(payload.get("orderId") or ""), str(payload.get("shopSku") or ""))
+                orders[key] = payload
+            elif row["report_kind"] == "united-netting":
+                version = (str(row["imported_at"]), str(row["period_from"]), str(row["period_to"]))
+                bucket = snapshots.setdefault(version, [])
+                if row["sheet"] == "transaction_date":
+                    bucket.append(payload)
     finally:
         if source is None:
             conn.close()
-    orders = {}
-    snapshots = {}
-    for row in rows:
-        payload = json.loads(row["payload_json"])
-        if row["report_kind"] == "united-orders" and row["sheet"] == "orders_and_offers_transactions":
-            key = (str(payload.get("orderId") or ""), str(payload.get("shopSku") or ""))
-            orders[key] = payload
-        elif row["report_kind"] == "united-netting":
-            version = (str(row["imported_at"]), str(row["period_from"]), str(row["period_to"]))
-            bucket = snapshots.setdefault(version, [])
-            if row["sheet"] == "transaction_date":
-                bucket.append(payload)
     if not snapshots:
         raise ValueError("Нет отчёта united-netting для проверки возвратов денег покупателю")
     # An explicit ID can be corrected onto a different day. Remember its

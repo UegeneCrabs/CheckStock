@@ -233,7 +233,7 @@ def test_cost_recalculation_preserves_source_proof(site, tmp_path, monkeypatch, 
     costs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(costs)
     monkeypatch.setattr(costs, 'connection', site.connection)
-    monkeypatch.setattr(costs, '_source_reports', lambda source: {
+    monkeypatch.setattr(costs, '_source_reports', lambda source, stores=None: {
         ('tris', 1): {costs.ORDER_KIND: {}, costs.SERVICE_KIND: {}}
     })
     monkeypatch.setattr(costs.yandex_financial, 'buyer_refund_events', lambda *args, **kwargs: [])
@@ -244,3 +244,26 @@ def test_cost_recalculation_preserves_source_proof(site, tmp_path, monkeypatch, 
     assert after == before
     with site.connection() as db:
         assert db.execute('SELECT calculated_at FROM daily_financial').fetchone()[0] == 'v1'
+
+
+def test_cost_archive_streams_only_requested_stores():
+    spec = importlib.util.spec_from_file_location('rbe_cost_stream_test', SITE / 'scripts' / 'recalculate_cost_of_goods.py')
+    costs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(costs)
+    db = sqlite3.connect(':memory:')
+    db.row_factory = sqlite3.Row
+    db.execute('CREATE TABLE yandex_financial_report_rows (store_slug,business_id,report_kind,sheet,payload_json,period_to,imported_at)')
+    for store in ('tris', 'rimili'):
+        for version in ('old', 'new'):
+            db.execute('INSERT INTO yandex_financial_report_rows VALUES (?,?,?,?,?,?,?)',
+                       (store, 1, 'united-services', 'payment_transfer', '{"count":1}', '2026-10-12', version))
+
+    class StreamingOnly:
+        def execute(self, *args):
+            # A generator has no fetchall: regressions must not buffer raw rows.
+            return iter(row for row in db.execute(*args))
+
+    reports = costs._source_reports(StreamingOnly(), ('tris',))
+    assert set(reports) == {('tris', 1)}
+    assert reports[('tris', 1)]['united-services']['payment_transfer'] == [{'count': 1}]
+    db.close()

@@ -42,13 +42,18 @@ def _stable_archive_key(payload: dict) -> str:
     return json.dumps(operation, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _source_reports(source: sqlite3.Connection) -> dict[tuple[str, int], dict[str, dict[str, list[dict]]]]:
+def _source_reports(source: sqlite3.Connection, stores: tuple[str, ...] | None = None) -> dict[tuple[str, int], dict[str, dict[str, list[dict]]]]:
+    store_filter = ''
+    params = [ORDER_KIND, SERVICE_KIND]
+    if stores:
+        store_filter = f" AND store_slug IN ({','.join('?' for _ in stores)})"
+        params.extend(stores)
     rows = source.execute(
         """SELECT store_slug,business_id,report_kind,sheet,payload_json,period_to,imported_at
            FROM yandex_financial_report_rows
-           WHERE report_kind IN (?,?)""",
-        (ORDER_KIND, SERVICE_KIND),
-    ).fetchall()
+           WHERE report_kind IN (?,?)""" + store_filter,
+        params,
+    )
     grouped: dict[tuple[str, int], dict[str, dict[str, dict[str, tuple[str, str, dict]]]]] = defaultdict(
         lambda: {ORDER_KIND: defaultdict(dict), SERVICE_KIND: defaultdict(dict)}
     )
@@ -100,7 +105,7 @@ def recalculate(
 ) -> dict[str, int]:
     source = sqlite3.connect(source_path)
     source.row_factory = sqlite3.Row
-    reports = _source_reports(source)
+    reports = _source_reports(source, stores)
     recalculated = incomplete = without_source = 0
     with connection() as target:
         filters: list[str] = []
