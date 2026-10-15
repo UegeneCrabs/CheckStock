@@ -18,6 +18,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
 | Автоматическое расписание, повторы и восстановление | `app/jobs/worker.py`, `app/jobs/scheduling.py`, `app/repositories/job_schedules.py`, [контракт планировщика](background-jobs.md) |
+| Локальный запуск сайта и загрузчика одной командой | `run.py`, `app/development.py`, `app/infrastructure/process_job.py`, [запуск и остановка](background-jobs.md#запуск) |
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
@@ -44,9 +45,9 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Запуск и проверка
 
-Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log`. Во втором терминале с той же БД запустите `python -m app.jobs.worker`. Для Docker используйте `docker compose up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
+Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
 
-Статические проверки: `python -m ruff format --check app scripts` и `python -m ruff check app scripts`. Автотесты удалены из рабочего дерева. Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
+Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Автотесты удалены из рабочего дерева. Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 
 ## Как обновлять wiki
 

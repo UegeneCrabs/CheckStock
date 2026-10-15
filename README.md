@@ -19,14 +19,21 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+python run.py
 ```
 
 Перед запуском положите реальные файлы доступов в `secrets/` по образцам из `secrets/example/`. `.env`, база и реальные секреты исключены из Git.
 
-Во втором терминале с тем же виртуальным окружением запустите автоматические загрузки:
+Для последующих запусков достаточно `python run.py` из корня проекта с активированным `.venv`.
+Команда запускает сайт на `http://127.0.0.1:8000` и автоматические загрузки в одном терминале.
+Изменения Python-файлов в `app/` перезагружают сайт; загрузчик продолжает работать.
+`Ctrl+C` останавливает оба процесса: на штатное завершение отводится до 60 секунд.
+Если один процесс завершается, команда останавливает второй и возвращает ошибку.
+
+При необходимости процессы можно запускать отдельно, в разных терминалах:
 
 ```powershell
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 python -m app.jobs.worker
 ```
 
@@ -35,11 +42,11 @@ python -m app.jobs.worker
 ## Проверки
 
 ```powershell
-python -m ruff format --check app scripts
-python -m ruff check app scripts
+python -m ruff format --check app scripts run.py
+python -m ruff check app scripts run.py
 ```
 
-При наличии `make` доступны цели `run`, `scheduler`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
+При наличии `make` доступны цели `run` (только сайт), `scheduler`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
 Автотесты удалены из рабочего дерева; команды выше выполняют статические проверки кода.
 
 ## Поставки на ФФ
