@@ -57,3 +57,13 @@
 .spp-history__header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;color:#284882}
 .spp-history__periods{display:flex;gap:6px;flex-wrap:wrap}.spp-history__periods button{border:1px solid #cbd9ee;border-radius:7px;background:#fff;color:#234378;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}
 .spp-history__periods button:hover,.spp-history__periods button[aria-pressed="true"]{background:#315bc2;border-color:#315bc2;color:#fff}.spp-history__periods button:focus-visible{outline:2px solid #315efb;outline-offset:2px}
+.spp-filter{position:relative;min-width:0;display:flex;flex-direction:column;gap:5px;color:#607395;font-size:14px}
+.spp-filter__control{position:relative;min-width:0}
+.spp-filters .spp-filter__control input{padding-right:38px}
+.spp-filter__toggle{position:absolute;right:3px;top:3px;bottom:3px;width:32px;border:0;border-radius:7px;background:transparent;color:#40557a;font-size:18px;cursor:pointer}
+.spp-filter__toggle:hover{background:#e8effc}
+.spp-filter__options{position:absolute;z-index:20;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;margin-top:3px;padding:4px;background:#fff;border:1px solid #cfdbec;border-radius:9px;box-shadow:0 8px 20px #10224c24}
+.spp-filter__options[hidden]{display:none}
+.spp-filter__options [role="option"]{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:#fff;color:#10224c;text-align:left;font:inherit;cursor:pointer;overflow-wrap:anywhere}
+.spp-filter__options [role="option"]:hover,.spp-filter__options [role="option"].is-active{background:#e8effc}
+.spp-filter__empty{padding:8px 10px;color:#607395}
