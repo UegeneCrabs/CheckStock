@@ -30,7 +30,9 @@
 .spp-filters .spp-tolerance input[type="range"]{width:100%;min-height:28px;padding:0;margin:8px 0 0;accent-color:#315bc2;cursor:pointer}
 .spp-tolerance__scale{color:#64789c;font-size:12px}
 .spp-tolerance p{color:#52698e;font-size:13px;margin:8px 0 0}
-.spp-filters__actions{display:flex;padding-top:2px}
+.spp-filters__actions{display:flex;gap:10px;flex-wrap:wrap;padding-top:2px}
+.spp-button--reset{background:#e8effc;color:#234378}
+.spp-button--reset:hover{background:#dce8fc}
 @media(max-width:440px){.spp-tolerance__heading{align-items:flex-start;flex-direction:column}}
 .content--spp-report{padding-top:8px}
 .spp-report{padding-top:0}

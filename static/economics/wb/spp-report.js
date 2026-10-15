@@ -91,6 +91,7 @@
         values.forEach((value, index) => select.add(new Option(labels ? labels[index] : value, value)));
         select.value = Array.from(select.options).some((option) => option.value === previous) ? previous : '';
         select.syncSearch?.();
+        return select.value !== previous;
     }
 
     function setupSearchableSelect(select) {
@@ -207,6 +208,7 @@
             if (open && !container.contains(event.relatedTarget)) close();
         });
         select.syncSearch = () => { sync(); if (open) draw(); };
+        select.resetSearch = close;
         sync();
     }
     root.querySelectorAll('[data-spp-filter] select').forEach(setupSearchableSelect);
@@ -542,10 +544,15 @@
             button.closest('th').setAttribute('aria-sort', active ? (sortOrder === 'desc' ? 'descending' : 'ascending') : 'none');
         });
         const options = data.options;
-        setOptions(byId('spp-brand'), options.brands);
-        setOptions(byId('spp-manager'), options.managers);
-        setOptions(byId('spp-subject'), options.subjects);
-        setOptions(byId('spp-article'), options.articles);
+        const storeNames = new Map(config.stores.map((store) => [store.slug, store.name]));
+        const changed = [
+            setOptions(byId('spp-store'), options.stores, options.stores.map((store) => storeNames.get(store) || store)),
+            setOptions(byId('spp-brand'), options.brands),
+            setOptions(byId('spp-manager'), options.managers),
+            setOptions(byId('spp-subject'), options.subjects),
+            setOptions(byId('spp-article'), options.articles),
+        ].some(Boolean);
+        if (changed) { currentPage = 1; load(); return; }
 
         const summary = data.summary;
         const comparable = summary.comparable;
@@ -617,6 +624,23 @@
     }
 
     form.addEventListener('submit', (event) => { event.preventDefault(); currentPage = 1; load(); });
+    byId('spp-reset').addEventListener('click', () => {
+        root.querySelectorAll('[data-spp-filter] select').forEach((select) => {
+            select.value = '';
+            select.resetSearch();
+        });
+        byId('spp-search').value = '';
+        dateFrom.value = displayDate(config.dateFrom);
+        dateTo.value = displayDate(config.dateTo);
+        sessionStorage.removeItem(storageKey);
+        tolerance.value = '0';
+        toleranceValue.value = '0';
+        currentPage = 1;
+        load();
+    });
+    root.querySelectorAll('[data-spp-filter] select').forEach((select) => {
+        select.addEventListener('change', () => { currentPage = 1; load(); });
+    });
     root.querySelectorAll('[data-spp-sort]').forEach((button) => {
         button.addEventListener('click', () => {
             const field = button.dataset.sppSort;

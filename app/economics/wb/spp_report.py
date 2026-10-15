@@ -76,6 +76,7 @@ class SppPeriod:
 
 @dataclass(frozen=True, slots=True)
 class SppOptions:
+    stores: list[str]
     brands: list[str]
     managers: list[str]
     subjects: list[str]
@@ -248,11 +249,30 @@ def load(
         catalog = [
             row for row in catalog if _identity(str(row.get("manager") or "")) == _identity(manager_scope)
         ]
+
+    def facet(field: str) -> list[str]:
+        selected = {
+            "store_slug": filters.store,
+            "brand": filters.brand,
+            "manager": filters.manager,
+            "subject": filters.subject,
+        }
+        matching = [
+            row
+            for row in catalog
+            if all(
+                not value or key == field or str(row.get(key) or "").casefold() == value.casefold()
+                for key, value in selected.items()
+            )
+        ]
+        return sorted({str(row[field]) for row in matching if row.get(field)}, key=str.casefold)
+
     options = SppOptions(
-        brands=sorted({str(row["brand"]) for row in catalog if row.get("brand")}, key=str.casefold),
-        managers=sorted({str(row["manager"]) for row in catalog if row.get("manager")}, key=str.casefold),
-        subjects=sorted({str(row["subject"]) for row in catalog if row.get("subject")}, key=str.casefold),
-        articles=sorted({str(row["article"]) for row in catalog}, key=str.casefold),
+        stores=facet("store_slug"),
+        brands=facet("brand"),
+        managers=facet("manager"),
+        subjects=facet("subject"),
+        articles=facet("article"),
     )
     if filters.store:
         catalog = [row for row in catalog if row["store_slug"] == filters.store]

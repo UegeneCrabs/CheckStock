@@ -113,6 +113,40 @@ class SppReportTests(unittest.TestCase):
         self.assertEqual([(row["store_slug"], row["article"]) for row in result["rows"]], [("rimili", "101")])
         self.assertEqual(result["options"]["brands"], ["Свет"])
 
+    def test_filter_options_follow_other_selections_except_article(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO unit_economics_1c_product_categories "
+                "(stock_item_id, category, brand, synced_at) VALUES (2, 'Техника', 'Дом', '2026-10-01')"
+            )
+            connection.execute(
+                "INSERT INTO unit_economics_1c_source_values "
+                "(stock_item_id, manager, source_sheet_id, source_sheet_title, source_row, synced_at) "
+                "VALUES (2, 'Менеджер Два', 1, 'WB', 2, '2026-10-01')"
+            )
+            connection.commit()
+
+        def options(filters):
+            with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+                return asdict(
+                    spp_report.load(("rimili", "tris"), date(2026, 9, 1), date(2026, 9, 30), filters)
+                )["options"]
+
+        by_store = options(spp_report.SppFilters(store="rimili"))
+        self.assertEqual(by_store["brands"], ["Дом", "Свет"])
+        self.assertEqual(by_store["managers"], ["Менеджер Два", "Менеджер Один"])
+        self.assertEqual(by_store["subjects"], ["Лампы", "Техника"])
+        self.assertEqual(by_store["articles"], ["101", "102", "103"])
+
+        by_brand = options(spp_report.SppFilters(brand="Дом"))
+        self.assertEqual(by_brand["stores"], ["rimili"])
+        self.assertEqual(by_brand["managers"], ["Менеджер Два"])
+        self.assertEqual(by_brand["subjects"], ["Техника"])
+        self.assertEqual(by_brand["articles"], ["102"])
+
+        by_article = options(spp_report.SppFilters(article="102"))
+        self.assertEqual(by_article, options(spp_report.SppFilters()))
+
     def test_daily_history_averages_moscow_days_and_keeps_missing_days(self):
         with self.database.connect() as connection:
             for observed, spp in (
