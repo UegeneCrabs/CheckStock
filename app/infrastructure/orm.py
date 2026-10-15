@@ -1010,6 +1010,8 @@ class WbHourlyPriceRecord(OrmBase):
     tech_size_name: Mapped[str | None] = mapped_column(String)
     customer_price_with_spp: Mapped[float] = mapped_column(Float, nullable=False)
     spp_percent: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_rub: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_updated_at: Mapped[str | None] = mapped_column(String)
     customer_price_with_wallet: Mapped[float | None] = mapped_column(Float)
     wallet_discount_percent: Mapped[float | None] = mapped_column(Float)
     product_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)

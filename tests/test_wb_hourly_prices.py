@@ -11,7 +11,7 @@ from app.infrastructure.database import Database
 from app.infrastructure.orm import OrmBase
 from app.infrastructure.wb_hourly_price_repository import SqlAlchemyHourlyPriceWriter
 from app.jobs import background
-from app.repositories.schema import _migrate_wb_hourly_spp_percent
+from app.repositories.schema import _migrate_wb_hourly_spp_percent, _migrate_wb_hourly_turnover
 from app.wb import api
 from app.wb.hourly_prices import (
     WbHourlyPriceService,
@@ -133,6 +133,52 @@ class HourlyPriceTests(unittest.TestCase):
         self.service.collect(("tris",))
         self.assertEqual(len(self.rows()), 2)
 
+    def test_hourly_price_keeps_daily_turnover_at_collection_time(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                """INSERT INTO wb_funnel_daily_orders
+                   (store_slug, day, article, orders_count, orders_amount,
+                    cancel_count, cancel_amount, updated_at)
+                   VALUES ('rimili', '2026-10-09', '123', 3, 3000, 1, 1000,
+                           '2026-10-09T10:00:00+00:00')"""
+            )
+            connection.commit()
+        self.service.collect(("rimili",))
+        rows = self.rows()
+        self.assertEqual([row["orders_turnover_rub"] for row in rows], [2000, 2000])
+        self.assertEqual(rows[0]["orders_turnover_updated_at"], "2026-10-09T10:00:00+00:00")
+
+        with self.database.connect() as connection:
+            connection.execute(
+                """UPDATE wb_funnel_daily_orders
+                   SET orders_amount=3500, updated_at='2026-10-09T11:00:00+00:00'
+                   WHERE store_slug='rimili' AND day='2026-10-09' AND article='123'"""
+            )
+            connection.commit()
+        self.now = datetime(2026, 10, 9, 11, 15, tzinfo=UTC)
+        self.service.collect(("rimili",))
+        rows = self.rows()
+        self.assertEqual([row["orders_turnover_rub"] for row in rows], [2000, 2500, 2000, 2500])
+
+    def test_missing_daily_turnover_stays_unknown(self):
+        self.service.collect(("tris",))
+        self.assertIsNone(self.rows()[0]["orders_turnover_rub"])
+        self.assertIsNone(self.rows()[0]["orders_turnover_updated_at"])
+
+    def test_turnover_day_follows_moscow_date(self):
+        self.now = datetime(2026, 10, 9, 21, 15, tzinfo=UTC)
+        with self.database.connect() as connection:
+            connection.execute(
+                """INSERT INTO wb_funnel_daily_orders
+                   (store_slug, day, article, orders_count, orders_amount,
+                    cancel_count, cancel_amount, updated_at)
+                   VALUES ('tris', '2026-10-10', '123', 1, 500, 0, 0,
+                           '2026-10-09T21:05:00+00:00')"""
+            )
+            connection.commit()
+        self.service.collect(("tris",))
+        self.assertEqual(self.rows()[0]["orders_turnover_rub"], 500)
+
     def test_missing_price_is_not_replaced_with_estimate(self):
         self.response["products"] = []
         report = self.service.collect(("tris",))
@@ -172,9 +218,15 @@ class HourlyPriceTests(unittest.TestCase):
             connection.commit()
         _migrate_wb_hourly_spp_percent(legacy)
         _migrate_wb_hourly_spp_percent(legacy)
+        _migrate_wb_hourly_turnover(legacy)
+        _migrate_wb_hourly_turnover(legacy)
         with legacy.connect() as connection:
-            row = connection.execute("SELECT spp_percent FROM wb_hourly_prices").fetchone()
+            row = connection.execute(
+                "SELECT spp_percent, orders_turnover_rub, orders_turnover_updated_at FROM wb_hourly_prices"
+            ).fetchone()
         self.assertIsNone(row["spp_percent"])
+        self.assertIsNone(row["orders_turnover_rub"])
+        self.assertIsNone(row["orders_turnover_updated_at"])
 
     def test_unmatched_or_invalid_seller_price_keeps_spp_unknown(self):
         self.seller_goods[0]["sizes"] = [

@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app import db
-from app.dto.wb_hourly_prices import WbCatalogItem, WbHourlyPriceObservation
+from app.dto.wb_hourly_prices import WbCatalogItem, WbHourlyPriceObservation, WbHourlyTurnover
 from app.infrastructure.database import database_for_path
-from app.infrastructure.orm import WbHourlyPriceRecord
+from app.infrastructure.orm import WbFunnelDailyOrderRecord, WbHourlyPriceRecord
 
 
 class SqlAlchemyHourlyPriceWriter:
@@ -39,6 +41,30 @@ class SqlAlchemyHourlyPriceWriter:
                 session.execute(statement)
             session.commit()
         return len(rows)
+
+    def daily_turnover(self, store_slug: str, day: date) -> tuple[WbHourlyTurnover, ...]:
+        database = database_for_path(self.database_path())
+        table = WbFunnelDailyOrderRecord
+        statement = select(
+            table.article,
+            table.orders_amount,
+            table.cancel_amount,
+            table.updated_at,
+        ).where(
+            table.store_slug == store_slug,
+            table.day == day.isoformat(),
+            table.source_version >= 3,
+        )
+        with database.session_factory() as session:
+            rows = session.execute(statement).all()
+        return tuple(
+            WbHourlyTurnover(
+                article=article,
+                net_orders_amount=round(orders_amount - cancel_amount, 2),
+                updated_at=updated_at,
+            )
+            for article, orders_amount, cancel_amount, updated_at in rows
+        )
 
 
 def catalog_items(store: str) -> tuple[WbCatalogItem, ...]:

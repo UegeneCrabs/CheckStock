@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from time import monotonic
 
 from app.application.ports import HourlyPriceWriter
+from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.wb_hourly_prices import (
     WbCatalogItem,
     WbHourlyCollection,
@@ -255,6 +256,16 @@ class WbHourlyPriceService:
                 )
             observed_at = self.clock().astimezone(UTC)
             hour = observed_at.replace(minute=0, second=0, microsecond=0).isoformat()
+            try:
+                daily_turnover = {
+                    row.article: row
+                    for row in self.writer.daily_turnover(
+                        store, observed_at.astimezone(MOSCOW_TIMEZONE).date()
+                    )
+                }
+            except Exception as error:
+                logger.warning("Почасовые цены WB: оборот недоступен, магазин=%s: %s", store, error)
+                daily_turnover = {}
             rows: list[WbHourlyPriceObservation] = []
             missing = 0
             for item in items:
@@ -271,6 +282,7 @@ class WbHourlyPriceService:
                     size, seller_by_nm.get(nm_id, []), len(by_nm.get(nm_id, []))
                 )
                 conditions = size.sale_conditions
+                turnover = daily_turnover.get(nm_id)
                 rows.append(
                     WbHourlyPriceObservation(
                         store_slug=store,
@@ -282,6 +294,8 @@ class WbHourlyPriceService:
                         tech_size_name=size.tech_size_name,
                         customer_price_with_spp=spp,
                         spp_percent=self._spp_percent(seller_price, spp),
+                        orders_turnover_rub=turnover.net_orders_amount if turnover is not None else None,
+                        orders_turnover_updated_at=turnover.updated_at if turnover is not None else None,
                         customer_price_with_wallet=(
                             self.wallet_price(spp, discount, conditions) if discount is not None else None
                         ),

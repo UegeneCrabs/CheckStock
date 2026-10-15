@@ -47,12 +47,21 @@ class WbHourlyPriceObservation:
     tech_size_name: str
     customer_price_with_spp: float
     spp_percent: float | None
+    orders_turnover_rub: float | None
+    orders_turnover_updated_at: str | None
     customer_price_with_wallet: float | None
     wallet_discount_percent: float | None
     product_kopecks: int
     logistics_kopecks: int
     price_fields_json: str
     sale_conditions: int
+
+
+@dataclass(frozen=True, slots=True)
+class WbHourlyTurnover:
+    article: str
+    net_orders_amount: float
+    updated_at: str
 
 
 @dataclass(frozen=True, slots=True)

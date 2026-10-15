@@ -25,6 +25,7 @@ def init_db() -> None:
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
     _migrate_wb_hourly_spp_percent(database)
+    _migrate_wb_hourly_turnover(database)
     _index_wb_hourly_report(database)
     _migrate_project_sheet_export_urls(database)
     _migrate_project_sheet_export_orders_column(database)
@@ -78,6 +79,16 @@ def _migrate_wb_hourly_spp_percent(database: Database) -> None:
         if "spp_percent" in connection.column_names("wb_hourly_prices"):
             return
         connection.execute("ALTER TABLE wb_hourly_prices ADD COLUMN spp_percent FLOAT")
+        connection.commit()
+
+
+def _migrate_wb_hourly_turnover(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        columns = connection.column_names("wb_hourly_prices")
+        if "orders_turnover_rub" not in columns:
+            connection.execute("ALTER TABLE wb_hourly_prices ADD COLUMN orders_turnover_rub FLOAT")
+        if "orders_turnover_updated_at" not in columns:
+            connection.execute("ALTER TABLE wb_hourly_prices ADD COLUMN orders_turnover_updated_at VARCHAR")
         connection.commit()
 
 
