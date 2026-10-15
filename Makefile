@@ -16,12 +16,12 @@ scheduler:
 	$(PYTHON) -m app.jobs.worker
 
 format:
-	$(PYTHON) -m ruff format app scripts
-	$(PYTHON) -m ruff check --fix app scripts
+	$(PYTHON) -m ruff format app scripts run.py
+	$(PYTHON) -m ruff check --fix app scripts run.py
 
 lint:
-	$(PYTHON) -m ruff format --check app scripts
-	$(PYTHON) -m ruff check app scripts
+	$(PYTHON) -m ruff format --check app scripts run.py
+	$(PYTHON) -m ruff check app scripts run.py
 
 check: lint
 
