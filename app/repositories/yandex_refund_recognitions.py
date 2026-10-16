@@ -5,6 +5,7 @@ API return IDs are used only to verify cancellation, never to date a refund.
 """
 
 import json
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -271,10 +272,14 @@ def sync(store_slug, business_id, api_key, campaign_ids, now, *, current_day: da
     recent = {key: e for key, e in units.items() if e['refund_day'] >= cutoff}
     order_ids = sorted({int(key[0]) for key in recent})
     returns = []
+    unavailable = set()
     if order_ids:
         campaigns = [r for r in api.get_campaigns(api_key)
                      if int((r.get('business') or {}).get('id') or 0) == business_id
                      and (not campaign_ids or int(r['id']) in campaign_ids)]
+        unavailable = {int(r['id']) for r in campaigns
+                       if r.get('apiAvailability', 'AVAILABLE') != 'AVAILABLE'}
+        campaigns = [r for r in campaigns if int(r['id']) not in unavailable]
         if not campaigns:
             raise ValueError('Нет магазина нужного кабинета для проверки отмены возвратов')
         for campaign in campaigns:
@@ -282,8 +287,16 @@ def sync(store_slug, business_id, api_key, campaign_ids, now, *, current_day: da
                 returns.extend({**r, 'campaign_id': int(campaign['id'])} for r in
                     api.get_returns(api_key, int(campaign['id']), order_ids[offset:offset + 50]))
     links = cancellation_links(recent, saved, returns, incoming=split_units(events))
-    # Only persist after all API pages succeeded. Missing responses cannot
-    # silently cancel goods or overwrite a known cancellation.
+    if unavailable:
+        previous = {(r['order_id'], r['shop_sku'], r['unit_index']): r for r in saved}
+        for key in recent:
+            campaign = links.get(key, (previous.get(key, {}).get('campaign_id'),))[0]
+            if campaign is None or campaign in unavailable:
+                raise ValueError(f'Недоступен API части магазинов; нельзя проверить отмену возврата: заказ {key[0]}, артикул {key[1]}')
+        logging.getLogger(__name__).warning('Skipped unavailable campaigns %s: all recent financial refunds belong to available campaigns', sorted(unavailable))
+    # Only persist after all required API pages succeeded. An unavailable
+    # campaign may be omitted only if every financial unit belongs elsewhere.
+    # Missing responses cannot cancel goods or become a confirmed zero.
     with WRITE_LOCK:
         conn = get_connection()
         try:

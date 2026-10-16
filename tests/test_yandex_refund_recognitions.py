@@ -225,6 +225,43 @@ def test_old_refunds_are_preserved_without_old_api_requests(archive, monkeypatch
     assert financial.buyer_refund_events('tris', 1, '2026-10-12', '2026-10-12')[0]['count'] == 1
 
 
+@pytest.mark.parametrize('has_match', [True, False])
+def test_disabled_campaign_is_skipped_only_when_refunds_belong_to_available_campaign(archive, monkeypatch, has_match):
+    ledger.seed('tris', 1, 'v1')
+    monkeypatch.setattr(api, 'get_campaigns', lambda key: [
+        {'id': 100, 'business': {'id': 1}, 'apiAvailability': 'AVAILABLE'},
+        {'id': 999, 'business': {'id': 1}, 'apiAvailability': 'MANUALLY_DISABLED'}])
+    calls = []
+    def returns(key, campaign, orders):
+        calls.append(campaign)
+        assert campaign == 100
+        return [application()] if has_match else []
+    monkeypatch.setattr(api, 'get_returns', returns)
+    if has_match:
+        ledger.sync('tris', 1, 'secret', [], 'v2', current_day=date(2026, 10, 16))
+    else:
+        with pytest.raises(ValueError, match='Недоступен API'):
+            ledger.sync('tris', 1, 'secret', [], 'v2', current_day=date(2026, 10, 16))
+    assert calls == [100]
+    with archive() as conn:
+        row = ledger.read(conn, 'tris', 1)[0]
+        assert row['return_id'] == (10 if has_match else None)
+        assert not row['cancelled']
+
+
+def test_known_refund_from_disabled_campaign_cannot_be_treated_as_checked(archive, monkeypatch):
+    ledger.seed('tris', 1, 'v1')
+    with archive() as conn:
+        conn.execute('UPDATE yandex_refund_recognitions SET campaign_id=999,return_id=10')
+        conn.commit()
+    monkeypatch.setattr(api, 'get_campaigns', lambda key: [
+        {'id': 100, 'business': {'id': 1}, 'apiAvailability': 'AVAILABLE'},
+        {'id': 999, 'business': {'id': 1}, 'apiAvailability': 'MANUALLY_DISABLED'}])
+    monkeypatch.setattr(api, 'get_returns', lambda *args: [])
+    with pytest.raises(ValueError, match='Недоступен API'):
+        ledger.sync('tris', 1, 'secret', [], 'v2', current_day=date(2026, 10, 16))
+
+
 def test_returns_api_paginates_without_excluding_cancelled_applications(monkeypatch):
     calls = []
     def request(path, key, **kw):
