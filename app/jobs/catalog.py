@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import settings
+from app.core.constants import JOBS
 from app.yandex.category_commissions import JOB as YANDEX_CATEGORY_COMMISSIONS_JOB
 from app.yandex.product_novelty import SYNC_INTERVAL_SECONDS as YANDEX_NOVELTY_INTERVAL_SECONDS
 from app.yandex.unit_economics_sync import SYNC_INTERVAL_SECONDS as YANDEX_SYNC_INTERVAL_SECONDS
@@ -38,6 +39,19 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
     funnel = base or settings.funnel_orders_sync_enabled
     prices = settings.unit_economics_1c_price_sync_enabled
     return (
+        *(
+            SyncJobDefinition(
+                name=metadata.name,
+                title=metadata.title,
+                description=metadata.description,
+                schedule=metadata.schedule or "",
+                enabled=base,
+                scope=metadata.scope,
+                marketplaces=metadata.marketplaces,
+                manual_run=metadata.manual_run,
+            )
+            for metadata in JOBS.google_weeks
+        ),
         SyncJobDefinition(
             "wb_customer_transit_sync",
             "Возвраты WB в пути",

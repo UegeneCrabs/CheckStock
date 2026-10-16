@@ -23,12 +23,12 @@ from app.economics.wb import reference_data as unit_reference_sync
 from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
-from app.integrations import google_sheet_catalog, google_week_update
+from app.infrastructure.async_resources import AsyncResources
 from app.jobs import finance as finance_sync
+from app.jobs import google_weeks, wb_transit
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
-from app.jobs import wb_transit
-from app.jobs.scheduling import BackgroundJob
+from app.jobs.scheduling import BackgroundJob, ScheduledJob
 from app.ozon import catalog as ozon_catalog
 from app.ozon import reputation as ozon_reputation
 from app.ozon import sync as ozon_sync
@@ -354,7 +354,7 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
     )
 
 
-def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
+def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     return (
         BackgroundJob(
             wb_transit.JOB,
@@ -371,20 +371,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
             startup_delay_seconds=_seconds_until_next_moscow_run(5),
             is_enabled=lambda: settings.background_sync_enabled and _job_enabled(finance_sync.JOB),
         ),
-        BackgroundJob(
-            google_sheet_catalog.JOB_NAME,
-            google_sheet_catalog.refresh_if_due,
-            _fixed_delay(60),
-            startup_delay_seconds=15,
-            is_enabled=google_sheet_catalog.is_due,
-        ),
-        BackgroundJob(
-            google_week_update.JOB_NAME,
-            google_week_update.run_due,
-            _fixed_delay(60),
-            startup_delay_seconds=10,
-            is_enabled=google_week_update.is_due,
-        ),
+        *google_weeks.jobs(),
         BackgroundJob(
             "catalog_sync",
             _sync_catalogs,
@@ -564,7 +551,7 @@ def _initialize_application() -> None:
         handle.close()
 
 
-def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
+def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
     if not settings.background_sync_enabled and settings.funnel_orders_sync_enabled:
         jobs += _funnel_jobs()
@@ -583,6 +570,8 @@ async def lifespan(application: FastAPI):
         "postgresql" if settings.database_url else settings.database_path,
     )
     try:
-        yield
+        async with AsyncResources() as resources:
+            application.state.async_resources = resources
+            yield
     finally:
         logger.info("application_stopped")

@@ -1,15 +1,19 @@
-"""Non-blocking job locks shared by web workers and local scheduled collectors."""
-
 import hashlib
 import os
 from contextlib import contextmanager
+from pathlib import Path
+from typing import BinaryIO
 
+from app.core.constants import (
+    LOCKS,
+    DatabaseDialect,
+)
 from app.infrastructure.database import database_for_path
 from app.repositories import core
 
 
 class SyncJobBusyError(RuntimeError):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("Эта выгрузка уже выполняется")
 
 
@@ -25,15 +29,18 @@ class _PostgresLock:
             self.connection.close()
 
 
+def lock_digest(name: str) -> bytes:
+    return hashlib.sha256((LOCKS.namespace + name).encode()).digest()
+
+
 def acquire(name: str, *, detached: bool = True):
-    digest = hashlib.sha256(("checkstock-sync:" + name).encode()).digest()
+    digest = lock_digest(name)
     database = database_for_path(core.DB_PATH)
-    if database.dialect_name == "postgresql":
+    if database.dialect_name == DatabaseDialect.POSTGRESQL:
         connection = database.connect()
-        key = int.from_bytes(digest[:8], "big", signed=True)
+        key = int.from_bytes(digest[: LOCKS.postgres_key_bytes], LOCKS.postgres_byte_order, signed=True)
         try:
             if detached:
-                # A running loader needs pooled connections for its own writes.
                 connection.detach()
             acquired = connection.execute("SELECT pg_try_advisory_lock(?) AS acquired", (key,)).fetchone()[
                 "acquired"
@@ -45,9 +52,13 @@ def acquire(name: str, *, detached: bool = True):
             connection.close()
             raise
         return _PostgresLock(connection, key)
-    directory = core.DB_PATH.parent / ".sync-locks"
+    return acquire_file(name, core.DB_PATH)
+
+
+def acquire_file(name: str, database_path: Path) -> BinaryIO:
+    directory = database_path.parent / LOCKS.directory
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / (digest.hex() + ".lock")
+    path = directory / (lock_digest(name).hex() + LOCKS.file_suffix)
     handle = path.open("a+b")
     if path.stat().st_size == 0:
         handle.write(b"0")
@@ -57,7 +68,7 @@ def acquire(name: str, *, detached: bool = True):
         if os.name == "nt":
             import msvcrt
 
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, LOCKS.file_length_bytes)
         else:
             import fcntl
 

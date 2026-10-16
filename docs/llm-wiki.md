@@ -25,6 +25,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Финансовый отчёт Яндекс Маркета | `app/application/finance.py`, `app/finance/`, `app/infrastructure/finance_*`, [финансовый учёт](yandex-finance.md), [ТЗ](yandex-finance-spec.md) |
 | Веб-интерфейс | `templates/`, `static/`, соответствующий файл в `app/web/routers/` |
 | Выгрузки и Google-интеграция | `app/exports/`, `app/integrations/`, [формат выгрузки](project-sheet-export.md) |
+| Недельные блоки WB/Ozon/ЯМ | `app/application/google_weeks.py`, `app/infrastructure/google_week_repository.py`, `app/integrations/google_week_plans.py`, [контракт](google-week-update.md) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |
 | Статические проверки | `pyproject.toml`, цели `lint` и `check` в `Makefile` |

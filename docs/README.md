@@ -18,7 +18,7 @@
 - [Табло поставок](supply-arrivals.md)
 - [Общая Google-выгрузка проектов](project-sheet-export.md)
 - [Проверка периода заказов перед FBS-выгрузкой](f09-fbs-export.md)
-- [Автообновление недели в Google Таблице](google-week-update.md)
+- [Недельные блоки WB, Ozon и Яндекс Маркета в Google Таблицах](google-week-update.md)
 
 ## Экономика и цены
 

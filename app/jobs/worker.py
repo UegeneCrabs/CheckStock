@@ -1,5 +1,3 @@
-"""Run automatic synchronization independently of the HTTP server."""
-
 import argparse
 import asyncio
 import json
@@ -12,18 +10,23 @@ from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.core.constants import (
+    SCHEDULER,
+)
 from app.core.logging_config import configure_logging
+from app.infrastructure.async_resources import AsyncResources
 from app.jobs.background import _initialize_application, scheduled_jobs
-from app.jobs.scheduling import ERROR_RETRY_SECONDS, run_background_job, wait_for_stop
+from app.jobs.scheduling import run_background_job, wait_for_stop
 from app.repositories.core import get_connection
 
+HEARTBEAT_INTERVAL_SECONDS = SCHEDULER.heartbeat_interval_seconds
+HEARTBEAT_MAX_AGE_SECONDS = SCHEDULER.heartbeat_max_age_seconds
+
 logger = logging.getLogger(__name__)
-HEARTBEAT_INTERVAL_SECONDS = 10
-HEARTBEAT_MAX_AGE_SECONDS = 60
 
 
 def heartbeat_path() -> Path:
-    return settings.database_path.parent / "scheduler-heartbeat.json"
+    return settings.database_path.parent / SCHEDULER.heartbeat_filename
 
 
 def _check_database() -> None:
@@ -47,7 +50,7 @@ def healthcheck(path: Path) -> bool:
         heartbeat = json.loads(path.read_text(encoding="utf-8"))
         updated = datetime.fromisoformat(heartbeat["updated_at"])
         age = (datetime.now(UTC) - updated).total_seconds()
-        if not -5 <= age <= HEARTBEAT_MAX_AGE_SECONDS:
+        if not -SCHEDULER.heartbeat_clock_skew_seconds <= age <= HEARTBEAT_MAX_AGE_SECONDS:
             raise ValueError("Scheduler heartbeat is stale")
         _check_database()
         return True
@@ -80,12 +83,18 @@ async def run(stop: asyncio.Event, path: Path) -> None:
             break
         except Exception:
             logger.exception("scheduler_initialization_failed")
-            await wait_for_stop(stop, ERROR_RETRY_SECONDS)
+            await wait_for_stop(stop, SCHEDULER.error_retry_seconds)
     if stop.is_set():
         return
+    async with AsyncResources() as resources:
+        await _run_jobs(stop, path, resources)
+
+
+async def _run_jobs(stop: asyncio.Event, path: Path, resources: AsyncResources) -> None:
     jobs = scheduled_jobs(asyncio.Event())
     tasks = [
-        asyncio.create_task(run_background_job(job, stop), name=f"checkstock:{job.name}") for job in jobs
+        asyncio.create_task(run_background_job(job, stop, resources), name=f"checkstock:{job.name}")
+        for job in jobs
     ]
     tasks.append(asyncio.create_task(_heartbeat(stop, path), name="checkstock:scheduler_heartbeat"))
     stopping = asyncio.create_task(stop.wait())

@@ -1,0 +1,105 @@
+import asyncio
+import logging
+from collections.abc import Callable, Coroutine
+from types import TracebackType
+from typing import Self
+
+import httpx
+
+from app.config import settings
+from app.core.constants import (
+    HTTP,
+)
+from app.infrastructure.async_database import AsyncDatabase
+from app.infrastructure.async_http import AsyncHttp
+from app.infrastructure.async_job_repository import AsyncJobRepository
+
+logger = logging.getLogger(__name__)
+Finalizer = Callable[[asyncio.Task[None]], Coroutine[object, object, None]]
+
+
+class AsyncResources:
+    def __init__(
+        self, *, database: AsyncDatabase | None = None, transport: httpx.AsyncBaseTransport | None = None
+    ) -> None:
+        self.database = database or AsyncDatabase()
+        self.client = httpx.AsyncClient(
+            timeout=settings.ozon_request_timeout_seconds,
+            limits=httpx.Limits(
+                max_connections=None, max_keepalive_connections=HTTP.max_keepalive_connections
+            ),
+            transport=transport,
+        )
+        self.http = AsyncHttp(self.client)
+        self.jobs = AsyncJobRepository(self.database)
+        self.tasks: set[asyncio.Task[None]] = set()
+        self._finalizers: set[asyncio.Task[None]] = set()
+        self.closing = False
+
+    def spawn(
+        self,
+        coroutine: Coroutine[object, object, None],
+        *,
+        name: str,
+        finalize: Finalizer | None = None,
+    ) -> asyncio.Task[None]:
+        if self.closing:
+            coroutine.close()
+            raise RuntimeError("Async job runtime is stopping")
+        task = asyncio.create_task(coroutine, name=name)
+        self.tasks.add(task)
+        task.add_done_callback(lambda done: self._completed(done, finalize))
+        return task
+
+    def _completed(self, task: asyncio.Task[None], finalize: Finalizer | None = None) -> None:
+        self.tasks.discard(task)
+        if finalize is not None:
+            cleanup = asyncio.create_task(finalize(task), name=f"finish:{task.get_name()}")
+            self._finalizers.add(cleanup)
+            cleanup.add_done_callback(self._finalized)
+        self._log_error(task)
+
+    def _finalized(self, task: asyncio.Task[None]) -> None:
+        self._finalizers.discard(task)
+        self._log_error(task)
+
+    @staticmethod
+    def _log_error(task: asyncio.Task[None]) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.error(
+                "async_job_task_failed task=%s",
+                task.get_name(),
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        self.closing = True
+        shutdown = asyncio.create_task(self._shutdown(cancel=exc_type is not None))
+        try:
+            await asyncio.shield(shutdown)
+        except asyncio.CancelledError:
+            for task in tuple(self.tasks):
+                task.cancel()
+            await shutdown
+            raise
+
+    async def _shutdown(self, *, cancel: bool) -> None:
+        tasks = tuple(self.tasks)
+        if cancel:
+            for task in tasks:
+                task.cancel()
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            if self._finalizers:
+                await asyncio.gather(*tuple(self._finalizers), return_exceptions=True)
+        finally:
+            try:
+                await self.client.aclose()
+            finally:
+                await self.database.close()
