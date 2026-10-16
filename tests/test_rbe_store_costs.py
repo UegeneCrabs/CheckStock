@@ -14,6 +14,7 @@ from cost_snapshots import split_costs_by_store, write_store_costs, prices_for_d
 
 spec = importlib.util.spec_from_file_location('rbe_store_costs_test', SITE / 'main.py')
 dashboard = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = dashboard
 spec.loader.exec_module(dashboard)
 
 DAY = date(2026, 10, 13)
@@ -67,7 +68,6 @@ def test_equal_prices_also_remain_scoped(db, monkeypatch):
 
 def test_same_store_conflict_blocks_old_price_and_fallback_then_recovers(db, monkeypatch):
     run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 10)])))
-    dashboard._write_costs(DAY, [{'article': SKU, 'cost': 15, 'sheet_name': None}], 'manual', 'tester')
     run_snapshot(monkeypatch, workbook(
         ('GOGOL WB', [(SKU, 11)]), ('GOGOL WB extra', [(SKU, 12)]), ('TRIS WB', [(SKU, 20)])))
     assert prices_for_day(db, 'gogol', str(DAY)) == {}
@@ -90,20 +90,20 @@ def test_snapshots_are_idempotent_and_date_specific(db, monkeypatch):
     assert prices_for_day(db, 'gogol', '2026-10-15') == {}
 
 
-def test_legacy_fallback_cannot_leak_another_stores_google_price(db):
-    dashboard._write_costs(DAY, [{'article': SKU, 'cost': 350.36, 'sheet_name': 'ROCKKIDDO + TOYKA WB'}], 'google', None)
+def test_legacy_prices_are_never_used(db):
+    db.execute('INSERT INTO product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY), SKU, 350.36, 'google', 'ROCKKIDDO + TOYKA WB', 'old', None))
+    db.execute('INSERT INTO product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY), 'manual', 5, 'manual', None, 'old', 'tester'))
     assert prices_for_day(db, 'gogol', str(DAY)) == {}
-    assert prices_for_day(db, 'rockkiddo', str(DAY)) == {SKU: 350.36}
-    dashboard._write_costs(DAY, [{'article': 'manual', 'cost': 5, 'sheet_name': None}], 'manual', 'tester')
-    assert prices_for_day(db, 'gogol', str(DAY)) == {'manual': 5}
+    assert prices_for_day(db, 'rockkiddo', str(DAY)) == {}
 
 
-def test_unscoped_prices_and_explicit_edits_are_preserved(db, monkeypatch):
-    dashboard._write_costs(DAY, [{'article': 'global', 'cost': 42, 'sheet_name': None}], 'manual', 'tester')
+def test_unscoped_google_prices_are_skipped_and_explicit_edits_preserved(db, monkeypatch):
     db.execute('INSERT INTO store_product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY), 'gogol', SKU, 77, 'excel', 'GOGOL WB', 'before'))
     db.commit()
     run_snapshot(monkeypatch, workbook(('General WB', [('global', 10)]), ('GOGOL WB', [(SKU, 20)])))
-    assert prices_for_day(db, 'gogol', str(DAY)) == {SKU: 77, 'global': 42}
+    assert prices_for_day(db, 'gogol', str(DAY)) == {SKU: 77}
+    assert db.execute('SELECT COUNT(*) FROM product_costs').fetchone()[0] == 0
+    assert json.loads(db.execute('SELECT detail FROM cost_import_runs').fetchone()[0])['skipped_without_store'] == 1
 
 
 def test_failed_store_write_rolls_back_entire_snapshot(db, monkeypatch):
@@ -127,7 +127,7 @@ def test_costs_range_includes_both_ends_and_scopes_conflicts_by_date(db, monkeyp
     monkeypatch.setattr(dashboard, '_require_user', lambda _: {})
     for day in (date(2026, 10, 12), DAY, date(2026, 10, 14), date(2026, 10, 15)):
         run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, day.day)])), day)
-        dashboard._write_costs(day, [{'article': 'common', 'cost': 5, 'sheet_name': None}], 'manual', 'tester')
+        dashboard._write_costs(day, [{'article': 'common', 'cost': 5, 'sheet_name': None}], 'manual', 'tester', 'tris')
     run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 20)]), ('GOGOL extra WB', [(SKU, 30)])), DAY)
     result = dashboard.costs(None, date_from=DAY, date_to=date(2026, 10, 14))
     assert result['total'] == 4
@@ -142,7 +142,7 @@ def test_costs_range_includes_both_ends_and_scopes_conflicts_by_date(db, monkeyp
 
 def test_costs_pagination_reaches_every_saved_price(db, monkeypatch):
     monkeypatch.setattr(dashboard, '_require_user', lambda _: {})
-    dashboard._write_costs(DAY, [{'article': f'{i:04}', 'cost': i, 'sheet_name': None} for i in range(405)], 'manual', 'tester')
+    dashboard._write_costs(DAY, [{'article': f'{i:04}', 'cost': i, 'sheet_name': None} for i in range(405)], 'manual', 'tester', 'tris')
     pages = [dashboard.costs(None, DAY, limit=200, offset=i) for i in (0, 200, 400)]
     assert [len(p['rows']) for p in pages] == [200, 200, 5]
     assert all(p['total'] == 405 for p in pages)
@@ -189,14 +189,53 @@ def test_excel_template_has_exact_headers_no_sample_prices_and_imports(db, monke
     wb.save(data)
     data.seek(0)
     monkeypatch.setattr(dashboard, '_require_admin', lambda _: {'username': 'tester'})
+    monkeypatch.setattr(dashboard, 'stores', lambda _: {'stores':['gogol', 'tris']})
     # In-memory UploadFile completes without a thread pool or network-backed event loop.
-    call = dashboard.import_costs_excel(None, DAY, UploadFile(file=data, filename='template.xlsx'))
+    call = dashboard.import_costs_excel(None, DAY, UploadFile(file=data, filename='template.xlsx'), store_slug='gogol')
     with pytest.raises(StopIteration) as completed:
         call.send(None)
     result = completed.value.value
     data.close()
     assert result['accepted'] == 1
     assert prices_for_day(db, 'gogol', str(DAY)) == {'001234': 123.45}
+    assert prices_for_day(db, 'tris', str(DAY)) == {}
+    assert db.execute('SELECT COUNT(*) FROM product_costs').fetchone()[0] == 0
+
+
+def test_manual_prices_require_store_and_do_not_cross_stores(db, monkeypatch):
+    monkeypatch.setattr(dashboard, '_require_admin', lambda _: {'username':'tester'})
+    monkeypatch.setattr(dashboard, 'stores', lambda _: {'stores':['gogol','tris']})
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        dashboard.CostRequest(cost_date=DAY, article=SKU, cost=15)
+    for store, price in [('gogol',15),('tris',25)]:
+        dashboard.save_cost(None, dashboard.CostRequest(cost_date=DAY, article=SKU, cost=price, store_slug=store))
+    assert prices_for_day(db, 'gogol', str(DAY)) == {SKU:15}
+    assert prices_for_day(db, 'tris', str(DAY)) == {SKU:25}
+    assert prices_for_day(db, 'rimili', str(DAY)) == {}
+    assert db.execute('SELECT COUNT(*) FROM cost_changes').fetchone()[0] == 0
+    assert db.execute('SELECT COUNT(DISTINCT store_slug) FROM store_cost_changes').fetchone()[0] == 2
+    with pytest.raises(dashboard.HTTPException):
+        dashboard.save_cost(None, dashboard.CostRequest(cost_date=DAY, article=SKU, cost=1, store_slug='unknown'))
+
+
+@pytest.mark.parametrize('store', ['', ' ', 'unknown'])
+def test_excel_rejects_missing_or_unknown_store_before_reading_file(db, monkeypatch, store):
+    monkeypatch.setattr(dashboard, '_require_admin', lambda _: {'username':'tester'})
+    monkeypatch.setattr(dashboard, 'stores', lambda _: {'stores':['gogol']})
+    call = dashboard.import_costs_excel(None, DAY, None, store_slug=store)
+    with pytest.raises(dashboard.HTTPException) as error:
+        call.send(None)
+    assert error.value.status_code == 422
+    assert db.execute('SELECT COUNT(*) FROM store_product_costs').fetchone()[0] == 0
+
+
+def test_store_correction_resolves_google_conflict_and_survives_sync(db, monkeypatch):
+    run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 10)]), ('GOGOL extra WB', [(SKU, 20)])))
+    dashboard._write_costs(DAY, [{'article':SKU, 'cost':12, 'sheet_name':'File'}], 'excel', 'tester', 'gogol')
+    assert prices_for_day(db, 'gogol', str(DAY)) == {SKU:12}
+    run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 10)]), ('GOGOL extra WB', [(SKU, 20)])))
+    assert prices_for_day(db, 'gogol', str(DAY)) == {SKU:12}
 
 
 def test_cogs_uses_selling_store_price_for_sales_and_returns(db, tmp_path, monkeypatch):
@@ -261,3 +300,48 @@ def test_repair_refuses_truncated_history_without_writing(db):
     with pytest.raises(ValueError):
         module.repair(dashboard.DATABASE_PATH, str(DAY), str(DAY), apply=True)
     assert db.execute('SELECT COUNT(*) FROM store_product_costs').fetchone()[0] == 0
+
+
+def cleanup_module():
+    spec = importlib.util.spec_from_file_location('cost_cleanup_test', SITE / 'scripts/remove_unscoped_costs.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_cleanup_backups_removes_only_unscoped_and_prevents_recreation(db, tmp_path, monkeypatch):
+    run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 12)])))
+    db.execute('INSERT INTO product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY), SKU, 10, 'google', 'GOGOL WB', 'old', None))
+    db.execute('INSERT INTO cost_changes(changed_at,cost_date,article,new_cost,source) VALUES(?,?,?,?,?)', ('old',str(DAY),SKU,10,'google'))
+    db.execute('INSERT INTO daily_financial VALUES(?,?,?,?,?)', ('gogol',1,str(DAY),'{}','old'))
+    db.commit()
+    cleanup = cleanup_module()
+    assert cleanup.remove(dashboard.DATABASE_PATH)['unscoped_prices'] == 1
+    assert db.execute('SELECT COUNT(*) FROM product_costs').fetchone()[0] == 1
+    backup = tmp_path / 'backup.db'
+    result = cleanup.remove(dashboard.DATABASE_PATH, apply=True, backup=backup, expected_count=1)
+    assert result['applied'] and result['financial_rows_unchanged'] and result['scoped_prices_unchanged']
+    assert db.execute('SELECT COUNT(*) FROM product_costs').fetchone()[0] == 0
+    assert db.execute('SELECT COUNT(*) FROM cost_changes').fetchone()[0] == 0
+    assert prices_for_day(db, 'gogol', str(DAY)) == {SKU:12}
+    with sqlite3.connect(backup) as saved:
+        assert saved.execute('SELECT COUNT(*) FROM product_costs').fetchone()[0] == 1
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute('INSERT INTO product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY),SKU,10,'google','GOGOL WB','old',None))
+    db.rollback()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute('INSERT INTO store_product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY),'',SKU,10,'manual',None,'old'))
+    db.rollback()
+
+
+def test_cleanup_refuses_unmatched_prices_or_unconfirmed_count(db, tmp_path, monkeypatch):
+    cleanup = cleanup_module()
+    db.execute('INSERT INTO product_costs VALUES(?,?,?,?,?,?,?)', (str(DAY),SKU,10,'google','GOGOL WB','old',None))
+    db.commit()
+    with pytest.raises(ValueError, match='lack a scoped copy'):
+        cleanup.remove(dashboard.DATABASE_PATH, apply=True, backup=tmp_path/'no.db', expected_count=1)
+    assert not (tmp_path/'no.db').exists()
+    run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 12)])))
+    with pytest.raises(ValueError, match='count changed'):
+        cleanup.remove(dashboard.DATABASE_PATH, apply=True, backup=tmp_path/'no.db', expected_count=2)
+    assert db.execute('SELECT COUNT(*) FROM product_costs').fetchone()[0] == 1

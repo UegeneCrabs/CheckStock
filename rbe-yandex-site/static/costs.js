@@ -36,6 +36,7 @@
       try {
         const detail = JSON.parse(last.detail || '{}');
         if (detail.conflicts && detail.conflicts.length) runText += '. Расхождений: ' + detail.conflicts.length;
+        if (detail.skipped_without_store) runText += '. Пропущено цен без магазина: ' + detail.skipped_without_store;
       } catch (ignore) { /* Older runs can have a plain-text description. */ }
     }
     $('#last-run').textContent = runText;
@@ -52,7 +53,7 @@
     const timestamp = new Date(row.imported_at);
     const updated = Number.isNaN(timestamp.getTime()) ? '—' : timestamp.toLocaleString('ru-RU', {timeZone: 'Europe/Moscow'});
     return '<tr><td>' + esc(dateLabel(row.cost_date)) + '</td><td>' + esc(row.article) + '</td><td>' +
-      esc(row.store_slug ? row.store_slug.toUpperCase() : 'Общая (запасная)') + '</td><td>' + esc(source(row.source)) +
+      esc(row.store_slug.toUpperCase()) + '</td><td>' + esc(source(row.source)) +
       '</td><td>' + esc(row.sheet_name || '—') + '</td><td>' + esc(updated) + '</td><td>' +
       (row.conflict ? '<span class="error-text">Разные цены — не используется</span>' : money(row.cost)) + '</td></tr>';
   }
@@ -98,11 +99,12 @@
   $('#manual-form').onsubmit = async event => {
     event.preventDefault();
     const form = event.currentTarget, button = form.querySelector('button'), data = Object.fromEntries(new FormData(form));
+    if (!data.store_slug) { setMessage('Выберите магазин.', true); return; }
     data.cost = Number(data.cost);
     button.disabled = true;
     try {
       await response('/api/costs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
-      setMessage('Себестоимость сохранена на ' + dateLabel(data.cost_date) + '.');
+      setMessage('Себестоимость сохранена на ' + dateLabel(data.cost_date) + ' для ' + data.store_slug.toUpperCase() + '.');
       await loadCosts();
       await loadStatus();
     } catch (error) { setMessage(error.message, true); }
@@ -111,10 +113,11 @@
   $('#excel-form').onsubmit = async event => {
     event.preventDefault();
     const form = event.currentTarget, button = form.querySelector('button'), data = new FormData(form);
+    if (!data.get('store_slug')) { setMessage('Выберите магазин.', true); return; }
     button.disabled = true;
     try {
-      const p = await response('/api/costs/import-excel?cost_date=' + encodeURIComponent(data.get('cost_date')), {method: 'POST', body: data});
-      setMessage('На ' + dateLabel(data.get('cost_date')) + ' импортировано: ' + p.accepted + '. Добавлено: ' + p.inserted + ', обновлено: ' + p.updated + '.');
+      const p = await response('/api/costs/import-excel?' + new URLSearchParams({cost_date: data.get('cost_date'), store_slug: data.get('store_slug')}), {method: 'POST', body: data});
+      setMessage('На ' + dateLabel(data.get('cost_date')) + ' импортировано: ' + p.accepted + ' для ' + data.get('store_slug').toUpperCase() + '. Добавлено: ' + p.inserted + ', обновлено: ' + p.updated + '.');
       await loadCosts();
       await loadStatus();
     } catch (error) { setMessage(error.message, true); }
@@ -133,6 +136,11 @@
     }
   };
   from.value = to.value = today();
+  response('/api/stores').then(p => {
+    document.querySelectorAll('select[name="store_slug"]').forEach(select => {
+      select.innerHTML = '<option value="" disabled selected>Выберите магазин</option>' + p.stores.map(store => '<option value="' + esc(store) + '">' + esc(store.toUpperCase()) + '</option>').join('');
+    });
+  }).catch(error => setMessage('Не удалось загрузить список магазинов. ' + error.message, true));
   document.querySelectorAll('input[name="cost_date"]').forEach(input => { input.value = today(); });
   applyFilters();
   loadStatus().catch(error => setMessage(error.message, true));

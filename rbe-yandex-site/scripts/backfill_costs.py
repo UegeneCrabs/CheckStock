@@ -36,7 +36,7 @@ def main_cli() -> int:
 
     main.init_database()
     rows, conflicts, articles = main._read_google_costs()
-    rows, scoped_rows, conflicts = main.split_costs_by_store(rows, conflicts)
+    skipped_rows, scoped_rows, conflicts = main.split_costs_by_store(rows, conflicts)
     now = datetime.now(UTC).isoformat()
     inserted = store_inserted = 0
     with main.connection() as conn:
@@ -47,17 +47,6 @@ def main_cli() -> int:
         for article in articles:
             main._upsert_product(conn, article, now)
         for current in days(arguments.date_from, arguments.date_to):
-            params = [
-                (current.isoformat(), row["article"], row["cost"], "google", row["sheet_name"], now, "initial-backfill")
-                for row in rows
-            ]
-            before = conn.total_changes
-            conn.executemany(
-                """INSERT OR IGNORE INTO product_costs(cost_date,article,cost,source,sheet_name,imported_at,updated_by)
-                   VALUES(?,?,?,?,?,?,?)""",
-                params,
-            )
-            inserted += conn.total_changes - before
             store_params = [
                 (current.isoformat(), row["store_slug"], row["article"], row["cost"], "google", row["sheet_name"], now)
                 for row in scoped_rows
@@ -78,6 +67,7 @@ def main_cli() -> int:
             "date_from": arguments.date_from.isoformat(), "date_to": arguments.date_to.isoformat(),
             "known_articles": len(articles), "inserted_daily_costs": inserted,
             "inserted_store_daily_costs": store_inserted,
+            "skipped_without_store": len(skipped_rows),
             "conflicts": conflicts[:100],
         }, ensure_ascii=False)
         conn.execute(

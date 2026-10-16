@@ -778,10 +778,13 @@ def _write_costs(
     rows: list[dict[str, Any]],
     source: str,
     changed_by: str | None,
+    store_slug: str,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, int]:
     """Persist a dated snapshot and retain a compact audit trail for every change."""
 
+    if not store_slug or not store_slug.strip():
+        raise ValueError("Выберите магазин")
     now = datetime.now(UTC).isoformat()
     inserted = updated = unchanged = 0
     with connection() if conn is None else nullcontext(conn) as conn:
@@ -792,8 +795,8 @@ def _write_costs(
                 continue
             _upsert_product(conn, article, now)
             previous = conn.execute(
-                "SELECT cost,source FROM product_costs WHERE cost_date=? AND article=?",
-                (cost_date.isoformat(), article),
+                "SELECT cost,source FROM store_product_costs WHERE cost_date=? AND store_slug=? AND article=?",
+                (cost_date.isoformat(), store_slug, article),
             ).fetchone()
             # Explicitly supplied values have priority over a later automatic
             # refresh: manual > Excel > Google for the same article and day.
@@ -807,19 +810,21 @@ def _write_costs(
                 unchanged += 1
                 continue
             conn.execute(
-                """INSERT INTO product_costs(cost_date,article,cost,source,sheet_name,imported_at,updated_by)
+                """INSERT INTO store_product_costs(cost_date,store_slug,article,cost,source,sheet_name,imported_at)
                    VALUES(?,?,?,?,?,?,?)
-                   ON CONFLICT(cost_date,article) DO UPDATE SET
+                   ON CONFLICT(cost_date,store_slug,article) DO UPDATE SET
                      cost=excluded.cost,source=excluded.source,sheet_name=excluded.sheet_name,
-                     imported_at=excluded.imported_at,updated_by=excluded.updated_by""",
-                (cost_date.isoformat(), article, cost, source, row.get("sheet_name"), now, changed_by),
+                     imported_at=excluded.imported_at""",
+                (cost_date.isoformat(), store_slug, article, cost, source, row.get("sheet_name"), now),
             )
             conn.execute(
-                """INSERT INTO cost_changes(changed_at,cost_date,article,old_cost,new_cost,source,sheet_name,changed_by)
-                   VALUES(?,?,?,?,?,?,?,?)""",
-                (now, cost_date.isoformat(), article, previous["cost"] if previous else None, cost, source,
+                """INSERT INTO store_cost_changes(changed_at,cost_date,store_slug,article,old_cost,new_cost,source,sheet_name,changed_by)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (now, cost_date.isoformat(), store_slug, article, previous["cost"] if previous else None, cost, source,
                  row.get("sheet_name"), changed_by),
             )
+            conn.execute('DELETE FROM store_cost_conflicts WHERE cost_date=? AND store_slug=? AND article=?',
+                         (cost_date.isoformat(), store_slug, article))
             if previous:
                 updated += 1
             else:
@@ -897,15 +902,15 @@ def _run_cost_google_sync(cost_date: date | None = None) -> bool:
             ).lastrowid)
         try:
             rows, conflicts, seen_articles = _read_google_costs()
-            global_rows, store_rows, conflicts = split_costs_by_store(rows, conflicts)
+            skipped_rows, store_rows, conflicts = split_costs_by_store(rows, conflicts)
             now = datetime.now(UTC).isoformat()
             with connection() as conn:
                 for article in seen_articles:
                     _upsert_product(conn, article, now)
-                result = _write_costs(cost_date, global_rows, "google", None, conn=conn)
-                result.update(write_store_costs(conn, cost_date.isoformat(), store_rows, conflicts, now))
-            status = "partial" if conflicts else "completed"
-            detail = json.dumps({"scanned_articles": len(seen_articles), "conflicts": conflicts[:100], **result}, ensure_ascii=False)
+                result = write_store_costs(conn, cost_date.isoformat(), store_rows, conflicts, now)
+            status = "partial" if conflicts or skipped_rows else "completed"
+            detail = json.dumps({"scanned_articles": len(seen_articles), "conflicts": conflicts[:100],
+                                 "skipped_without_store": len(skipped_rows), **result}, ensure_ascii=False)
         except (httpx.HTTPError, OSError, RuntimeError, ValueError) as error:
             status, detail = "retrying", str(error)
         with connection() as conn:
@@ -952,6 +957,7 @@ class SyncRequest(BaseModel):
 
 class CostRequest(BaseModel):
     cost_date: date
+    store_slug: str = Field(min_length=1, max_length=64)
     article: str = Field(min_length=1, max_length=255)
     cost: float = Field(ge=0, le=10_000_000)
 
@@ -1207,23 +1213,19 @@ def costs(request: Request, cost_date: date | None = None, query: str = "",
         raise HTTPException(422, "Укажите начало и конец периода в правильном порядке")
     if offset < 0 or (limit is not None and not 1 <= limit <= 500):
         raise HTTPException(422, "Неверный размер или номер страницы")
-    where = "cost_date BETWEEN ? AND ?"
+    where = "cost_date BETWEEN ? AND ? AND length(trim(store_slug)) > 0"
     params: list[object] = [date_from.isoformat(), date_to.isoformat()]
     if query.strip():
         where += " AND article LIKE ?"
         params.append(f"%{query.strip()}%")
     with connection() as conn:
-        total = sum(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", params).fetchone()[0]
-                    for table in ("product_costs", "store_product_costs"))
+        total = conn.execute(f"SELECT COUNT(*) FROM store_product_costs WHERE {where}", params).fetchone()[0]
         paging = " LIMIT ? OFFSET ?" if limit is not None else ""
         rows = conn.execute(
-            f"""SELECT cost_date,article,cost,source,sheet_name,imported_at,updated_by,'' AS store_slug
-                 FROM product_costs WHERE {where}
-                 UNION ALL
-                 SELECT cost_date,article,cost,source,sheet_name,imported_at,NULL AS updated_by,store_slug
+            f"""SELECT cost_date,article,cost,source,sheet_name,imported_at,NULL AS updated_by,store_slug
                  FROM store_product_costs WHERE {where}
                  ORDER BY cost_date DESC,article,store_slug""" + paging,
-            params + params + ([limit, offset] if limit is not None else []),
+            params + ([limit, offset] if limit is not None else []),
         ).fetchall()
         conflicts = conn.execute(
             f"""SELECT cost_date,store_slug,article,values_json FROM store_cost_conflicts WHERE {where}
@@ -1258,9 +1260,15 @@ def costs_status(request: Request) -> dict:
     }
 
 
+def _validate_cost_store(request: Request, store_slug: str) -> None:
+    if not store_slug or store_slug not in stores(request)['stores']:
+        raise HTTPException(422, "Выберите магазин из списка")
+
+
 @app.post("/api/costs")
 def save_cost(request: Request, payload: CostRequest) -> dict:
     user = _require_admin(request)
+    _validate_cost_store(request, payload.store_slug)
     article = _normalise_article(payload.article)
     if not article:
         raise HTTPException(422, "Укажите АртикулВБ")
@@ -1269,13 +1277,15 @@ def save_cost(request: Request, payload: CostRequest) -> dict:
         [{"article": article, "cost": payload.cost, "sheet_name": None}],
         "manual",
         user["username"],
+        payload.store_slug,
     )
     return {"ok": True, **result}
 
 
 @app.post("/api/costs/import-excel")
-async def import_costs_excel(request: Request, cost_date: date, file: UploadFile = File(...)) -> dict:
+async def import_costs_excel(request: Request, cost_date: date, file: UploadFile = File(...), store_slug: str = "") -> dict:
     user = _require_admin(request)
+    _validate_cost_store(request, store_slug)
     if not (file.filename or "").lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(422, "Загрузите файл Excel формата .xlsx или .xlsm")
     try:
@@ -1309,7 +1319,7 @@ async def import_costs_excel(request: Request, cost_date: date, file: UploadFile
             imported.append({"article": article, "cost": cost, "sheet_name": sheet.title})
     if not imported:
         raise HTTPException(422, "В файле не найдены колонки «АртикулВБ» и «Себес, руб» с корректными значениями")
-    result = _write_costs(cost_date, imported, "excel", user["username"])
+    result = _write_costs(cost_date, imported, "excel", user["username"], store_slug)
     return {"ok": True, "accepted": len(imported), "invalid_rows": invalid_rows[:100], **result}
 
 

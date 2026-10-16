@@ -17,7 +17,7 @@
             <h2>Как загружаются цены</h2>
             <p>Каждую ночь цены сохраняются на дату загрузки из вкладок Google Sheets с «WB» в названии, отдельно для каждого магазина. Для расчёта берётся цена магазина, в котором произошла продажа или возврат. Разные цены у разных магазинов допустимы.</p>
             <p>Кнопка «Загрузить принудительно» запускает загрузку из Google Sheets на сегодня. Диапазон над таблицей влияет только на просмотр: он не меняет дату сохранения цен.</p>
-            <p>Для ручного ввода и Excel дата сохранения выбирается в соответствующей форме. Эти цены общие: они используются, если для магазина нет своей цены. Цена магазина имеет приоритет. Если внутри одного магазина и дня для артикула указаны разные цены, их нужно уточнить в исходной таблице.</p>
+            <p>Для ручного ввода и Excel обязательно выберите магазин и дату сохранения. Цены других магазинов не изменятся. В расчёте используется только цена нужного магазина на нужный день. Если её нет, себестоимость считается неполной. Вкладки Google Sheets без распознанного названия магазина пропускаются.</p>
             <div class="cost-summary">
               <span>Уникальных артикулов: <b id="known-count">—</b></span>
               <span>Ночная загрузка: <b id="nightly">—</b></span>
@@ -32,6 +32,7 @@
     <section class="cost-edit-grid">
       <form id="manual-form" class="cost-card">
         <h2>Изменить вручную</h2>
+        <label>Магазин<select name="store_slug" required><option value="" disabled selected>Выберите магазин</option></select></label>
         <label>АртикулВБ<input name="article" required></label>
         <label>Себес, руб<input name="cost" type="number" required min="0" step="0.01"></label>
         <label>Дата сохранения<input name="cost_date" type="date" required></label>
@@ -39,7 +40,8 @@
       </form>
       <form id="excel-form" class="cost-card">
         <div class="cost-card-heading"><h2>Загрузить Excel</h2><a href="/static/templates/costs-import-template.xlsx" download="Шаблон себестоимости.xlsx">Скачать шаблон</a></div>
-        <p class="hint">Заполните в шаблоне «АртикулВБ» и «Себес, руб». Цены сохранятся на дату, указанную ниже.</p>
+        <p class="hint">Заполните в шаблоне «АртикулВБ» и «Себес, руб». Цены сохранятся только для выбранного магазина на указанную дату.</p>
+        <label>Магазин<select name="store_slug" required><option value="" disabled selected>Выберите магазин</option></select></label>
         <label>Файл Excel<input name="file" required type="file" accept=".xlsx,.xlsm"></label>
         <label>Дата сохранения<input name="cost_date" type="date" required></label>
         <button>Импортировать</button>
@@ -57,5 +59,5 @@
     <section class="table-wrap"><table class="cost-table"><thead><tr><th>Дата цены</th><th>АртикулВБ</th><th>Магазин</th><th>Источник</th><th>Вкладка / файл</th><th>Обновлено</th><th>Себес, руб</th></tr></thead><tbody id="costs"></tbody></table></section>
     <div class="cost-pagination"><span id="cost-count" aria-live="polite"></span><button id="cost-prev" type="button" disabled>Назад</button><button id="cost-next" type="button" disabled>Далее</button></div>
   </main>
-  <script src="/static/costs.js?v=20261016-costs-range"></script>
+  <script src="/static/costs.js?v=20261016-store-only"></script>
 </body></html>

@@ -15,13 +15,14 @@ async function test() {
   const dates = [node(), node()];
   let fail = false, conflicts = [], pending, delayNext = false, running = false;
   const context = {
-    document: {querySelector: $, querySelectorAll: () => dates, createElement() {
+    document: {querySelector: $, querySelectorAll: selector => selector.startsWith('input') ? dates : [$('#manual-store'), $('#excel-store')], createElement() {
       const n = node(); Object.defineProperty(n, 'innerHTML', {get() {return n.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');}}); return n;
     }},
     FormData: class extends Map {constructor(form) {super(Object.entries(form.data));}},
     Date, Intl, URLSearchParams, setTimeout: fn => {timers.push(fn); return timers.length;}, clearTimeout() {},
     fetch: async (url, options) => {
       requests.push({url, options});
+      if (url === '/api/stores') return {ok:true, json:async()=>({stores:['gogol','tris']})};
       if (url === '/api/costs/status') return {ok: true, json: async () => ({known_articles: 401, nightly_hour_msk: 2, sync_running: running})};
       if (options?.method === 'POST') return {ok: true, json: async () => ({accepted: 1, inserted: 1, updated: 0, detail: 'Загрузка запущена'})};
       if (delayNext) { delayNext = false; await new Promise(resolve => {pending = resolve;}); }
@@ -57,17 +58,24 @@ async function test() {
   assert.equal(requests.length, before);
   assert.match($('#message').textContent, /правильном порядке/);
   $('#cost-from').value = '2026-10-12';
-  const manual = $('#manual-form'); manual.data = {article: '001234', cost: '12.50', cost_date: '2026-10-11'};
+  const manual = $('#manual-form'); manual.data = {article: '001234', cost: '12.50', cost_date: '2026-10-11', store_slug:'gogol'};
   await manual.onsubmit({preventDefault() {}, currentTarget: manual});
   const post = requests.find(r => r.url === '/api/costs' && r.options);
   assert.equal(JSON.parse(post.options.body).cost_date, '2026-10-11');
   assert.equal(JSON.parse(post.options.body).cost, 12.5);
+  assert.equal(JSON.parse(post.options.body).store_slug, 'gogol');
   assert.match($('#message').textContent, /сохранена на 11.10.2026/);
   assert.equal(manual.button.disabled, false);
-  const excel = $('#excel-form'); excel.data = {file: 'file', cost_date: '2026-10-10'};
+  const excel = $('#excel-form'); excel.data = {file: 'file', cost_date: '2026-10-10', store_slug:'tris'};
   await excel.onsubmit({preventDefault() {}, currentTarget: excel});
-  assert.ok(requests.some(r => r.url === '/api/costs/import-excel?cost_date=2026-10-10'));
+  assert.ok(requests.some(r => r.url === '/api/costs/import-excel?cost_date=2026-10-10&store_slug=tris'));
   assert.match($('#message').textContent, /10.10.2026 импортировано/);
+  const postCount = requests.filter(r=>r.options?.method==='POST').length;
+  excel.data.store_slug = ''; manual.data.store_slug = '';
+  await excel.onsubmit({preventDefault() {}, currentTarget:excel});
+  await manual.onsubmit({preventDefault() {}, currentTarget:manual});
+  assert.equal(requests.filter(r=>r.options?.method==='POST').length, postCount);
+  assert.match($('#message').textContent, /Выберите магазин/);
   fail = true; $('#cost-from').onchange(); await settle();
   assert.match($('#message').textContent, /Ошибка проверки/);
   assert.match($('#costs').innerHTML, /Не удалось загрузить/);

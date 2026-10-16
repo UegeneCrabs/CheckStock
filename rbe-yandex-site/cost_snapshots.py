@@ -7,6 +7,13 @@ from collections import defaultdict
 STORE_SHEET_MARKERS = ('rimili', 'tris', 'rockkiddo', 'trusthome', 'sokoloff', 'gogol', 'toyka')
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS store_cost_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    changed_at TEXT NOT NULL, cost_date TEXT NOT NULL,
+    store_slug TEXT NOT NULL CHECK(length(trim(store_slug)) > 0), article TEXT NOT NULL,
+    old_cost REAL, new_cost REAL NOT NULL, source TEXT NOT NULL,
+    sheet_name TEXT, changed_by TEXT
+);
 CREATE TABLE IF NOT EXISTS store_cost_conflicts (
     cost_date TEXT NOT NULL,
     store_slug TEXT NOT NULL,
@@ -24,7 +31,7 @@ def stores_for_sheet(sheet_name: str) -> list[str]:
 
 
 def split_costs_by_store(rows, legacy_conflicts):
-    """Resolve duplicates only within the same store (or unscoped source).
+    """Return skipped unscoped rows, store prices, and same-store conflicts.
 
     The existing workbook reader preserves differing source values in its
     conflicts list. A shared tab explicitly assigns its price to both stores.
@@ -34,23 +41,25 @@ def split_costs_by_store(rows, legacy_conflicts):
     for row in [*rows, *(v for conflict in legacy_conflicts for v in conflict['values'])]:
         for store in stores_for_sheet(row['sheet_name']) or ['']:
             grouped[store, row['article']].append(row)
-    global_rows, store_rows, conflicts = [], [], []
+    skipped_rows, store_rows, conflicts = [], [], []
     for (store, article), values in sorted(grouped.items()):
+        if not store:
+            skipped_rows.extend(values)
+            continue
         if len({v['cost'] for v in values}) != 1:
             conflicts.append({'store_slug': store, 'article': article, 'values': values})
             continue
         row = {'article': article, 'cost': values[0]['cost'],
                'sheet_name': ', '.join(sorted({v['sheet_name'] for v in values}))}
-        if store:
-            store_rows.append({**row, 'store_slug': store})
-        else:
-            global_rows.append(row)
-    return global_rows, store_rows, conflicts
+        store_rows.append({**row, 'store_slug': store})
+    return skipped_rows, store_rows, conflicts
 
 
 def write_store_costs(conn, cost_date, rows, conflicts, now):
     """Write one Google snapshot in the caller's transaction; keep explicit edits."""
     inserted = updated = unchanged = 0
+    if any(not row['store_slug'].strip() for row in [*rows, *conflicts]):
+        raise ValueError('Для каждой цены необходимо указать магазин')
     for row in rows:
         key = (cost_date, row['store_slug'], row['article'])
         old = conn.execute('SELECT cost,source,sheet_name FROM store_product_costs '
@@ -67,11 +76,13 @@ def write_store_costs(conn, cost_date, rows, conflicts, now):
             (*key, row['cost'], 'google', row['sheet_name'], now))
         updated += bool(old)
         inserted += not bool(old)
-    # A conflict must also block an older price or an unrelated global fallback.
+    # Preserve explicit Excel/manual corrections even when Google disagrees.
     conn.execute('DELETE FROM store_cost_conflicts WHERE cost_date=?', (cost_date,))
     conn.executemany('INSERT INTO store_cost_conflicts VALUES(?,?,?,?,?)',
         [(cost_date, row['store_slug'], row['article'],
-          json.dumps(row['values'], ensure_ascii=False), now) for row in conflicts])
+          json.dumps(row['values'], ensure_ascii=False), now) for row in conflicts
+         if not conn.execute("SELECT 1 FROM store_product_costs WHERE cost_date=? AND store_slug=? AND article=? AND source IN ('manual','excel')",
+                             (cost_date, row['store_slug'], row['article'])).fetchone()])
     return {'store_inserted': inserted, 'store_updated': updated, 'store_unchanged': unchanged}
 
 
@@ -81,15 +92,4 @@ def prices_for_day(conn, store, day):
     prices = {str(r['article']): float(r['cost']) for r in conn.execute(
         'SELECT article,cost FROM store_product_costs WHERE store_slug=? AND cost_date=?', (store, day))
         if (store, r['article']) not in blocked}
-    for row in conn.execute('SELECT article,cost,source,sheet_name FROM product_costs WHERE cost_date=?', (day,)):
-        article = str(row['article'])
-        if (store, article) in blocked or ('', article) in blocked:
-            continue
-        # Compatibility with older snapshots: a Google price from another
-        # store's tab is never a valid fallback. Manual/Excel unscoped prices
-        # retain their existing fallback behaviour.
-        assigned = stores_for_sheet(row['sheet_name'] or '')
-        if row['source'] == 'google' and assigned and store not in assigned:
-            continue
-        prices.setdefault(article, float(row['cost']))
     return prices
