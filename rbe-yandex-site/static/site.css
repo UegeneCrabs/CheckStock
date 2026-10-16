@@ -25,6 +25,42 @@
 .sync-tools-panel .sync-queue:last-child { margin-bottom: 0; }
 /* Empty notifications must not reserve a blank row above the report. */
 #error:empty { display: none; }
+/* Cost history: compact header, separate write dates, and browsing controls. */
+.costs-page #message:empty, #cost-warning:empty { display: none; }
+.costs-page #message { min-height: 0; color: #22624c; }
+.costs-page #message.error-text, #cost-warning, .cost-table .error-text { color: #ba3030; }
+.costs-page .costs-title { align-items: center; }
+.costs-page .cost-actions { flex-direction: row; flex-wrap: wrap; }
+.cost-actions > button { white-space: nowrap; }
+.cost-help { position: relative; }
+.cost-help > summary { cursor: pointer; border: 1px solid #dbe2f0; border-radius: 8px; padding: 11px 14px; color: #4659bc; background: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.cost-help > summary:focus-visible { outline: 2px solid #4659bc; outline-offset: 2px; }
+.cost-help-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; width: min(560px, calc(100vw - 48px)); max-height: 70vh; overflow: auto; padding: 20px; border: 1px solid #dbe2f0; border-radius: 12px; box-shadow: 0 10px 30px #15213c20; background: #fff; }
+.cost-help-panel h2 { font-size: 17px; margin: 0 0 12px; }
+.costs-title .cost-help-panel p { font-size: 14px; font-weight: 400; color: #24344f; line-height: 1.5; margin: 0 0 12px; }
+.cost-help-panel .cost-summary { display: grid; gap: 8px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid #e1e6f0; }
+.cost-card-heading { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.cost-card-heading a { color: #4659bc; font-size: 13px; }
+.cost-card input { min-width: 0; width: 100%; }
+.cost-card input[type="file"] { height: auto; padding: 8px; }
+.cost-period { display: flex; gap: 8px; border: 0; padding: 0; margin: 0; }
+.cost-period legend { color: #69748c; font-size: 12px; font-weight: 700; padding: 0 0 6px; }
+.costs-page .cost-tools { margin-top: 28px; }
+.cost-table th:first-child { width: auto; }
+.cost-table th, .cost-table td { font-size: 13px; }
+.cost-table td:first-child, .cost-table td:last-child { white-space: nowrap; }
+.cost-table th:last-child, .cost-table td:last-child { text-align: right; }
+.cost-pagination { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 14px; font-size: 13px; color: #69748c; }
+.cost-pagination span { margin-right: auto; }
+.cost-pagination button { height: 32px; font-size: 12px; padding: 0 12px; }
+@media (max-width: 720px) {
+  .costs-page .costs-title { align-items: stretch; }
+  .cost-help { position: static; }
+  .cost-help-panel { right: 24px; top: auto; margin-top: 8px; }
+  .costs-page .cost-tools { gap: 12px; }
+  .cost-period { flex-wrap: wrap; }
+  .cost-table { min-width: 850px; }
+}
 /* Keep the status and its compact retry action on one line. */
 td.status-cell { width: 1%; white-space: nowrap; }
 .status-cell .status { vertical-align: middle; }

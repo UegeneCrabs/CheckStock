@@ -1,37 +1,139 @@
 (function () {
   'use strict';
-  var dateInput = document.querySelector('#cost-date'), query = document.querySelector('#query'), table = document.querySelector('#costs');
-  var message = document.querySelector('#message'), sync = document.querySelector('#sync-costs'), refresh = document.querySelector('#refresh');
-  function today() { return new Date().toLocaleDateString('en-CA', {timeZone: 'Europe/Moscow'}); }
-  function esc(value) { var node = document.createElement('span'); node.textContent = String(value == null ? '' : value); return node.innerHTML; }
-  function money(value) { return new Intl.NumberFormat('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(Number(value)) + ' ₽'; }
-  function source(value) { return {google: 'Google Sheets', excel: 'Excel', manual: 'Вручную'}[value] || value; }
-  function setMessage(text, error) { message.textContent = text || ''; message.className = error ? 'error-text' : ''; }
+  const $ = selector => document.querySelector(selector);
+  const from = $('#cost-from'), to = $('#cost-to'), query = $('#query'), table = $('#costs');
+  const message = $('#message'), warning = $('#cost-warning'), sync = $('#sync-costs');
+  const previous = $('#cost-prev'), next = $('#cost-next'), count = $('#cost-count');
+  const pageSize = 200;
+  let offset = 0, requestId = 0, selected = null, statusTimer;
+  const today = () => new Date().toLocaleDateString('en-CA', {timeZone: 'Europe/Moscow'});
+  const dateLabel = value => value ? value.split('-').reverse().join('.') : '—';
+  function esc(value) {
+    const node = document.createElement('span');
+    node.textContent = String(value == null ? '' : value);
+    return node.innerHTML;
+  }
+  const money = value => new Intl.NumberFormat('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(Number(value)) + ' ₽';
+  const source = value => ({google: 'Google Sheets', excel: 'Excel', manual: 'Вручную'}[value] || value);
+  function setMessage(text, error = false) {
+    message.textContent = text || '';
+    message.className = error ? 'error-text' : '';
+  }
+  async function response(url, options) {
+    const r = await fetch(url, options), p = await r.json();
+    if (!r.ok) throw Error(typeof p.detail === 'string' ? p.detail : 'Не удалось выполнить запрос. Проверьте введённые данные.');
+    return p;
+  }
   async function loadStatus() {
-    var r = await fetch('/api/costs/status'), p = await r.json();
-    if (!r.ok) throw Error(p.detail || 'Не удалось получить статус');
-    document.querySelector('#known-count').textContent = p.known_articles;
-    document.querySelector('#nightly').textContent = 'каждый день в ' + String(p.nightly_hour_msk).padStart(2, '0') + ':00 МСК';
-    var last = p.last_run, runText = 'Загрузка ещё не запускалась';
+    const p = await response('/api/costs/status');
+    $('#known-count').textContent = p.known_articles;
+    $('#nightly').textContent = 'каждый день в ' + String(p.nightly_hour_msk).padStart(2, '0') + ':00 МСК';
+    const labels = {completed: 'завершена', partial: 'есть расхождения', retrying: 'ожидает повторной попытки', running: 'выполняется', failed: 'не удалась'};
+    const last = p.last_run;
+    let runText = 'Загрузка ещё не запускалась';
     if (last) {
-      runText = 'Последняя загрузка: ' + last.status + ', ' + last.cost_date;
-      try { var detail = JSON.parse(last.detail || '{}'); if (detail.conflicts && detail.conflicts.length) runText += '. Конфликтов: ' + detail.conflicts.length; } catch (ignore) {}
+      runText = 'Последняя загрузка: ' + (labels[last.status] || last.status) + ', дата цен: ' + dateLabel(last.cost_date);
+      try {
+        const detail = JSON.parse(last.detail || '{}');
+        if (detail.conflicts && detail.conflicts.length) runText += '. Расхождений: ' + detail.conflicts.length;
+      } catch (ignore) { /* Older runs can have a plain-text description. */ }
     }
-    document.querySelector('#last-run').textContent = runText;
-    document.querySelector('#sync-state').textContent = p.public_sheet_access ? 'Источник: общедоступная Google Sheets' : '';
+    $('#last-run').textContent = runText;
+    $('#sync-state').textContent = p.sync_running ? 'Сейчас идёт загрузка из Google Sheets.' : (p.public_sheet_access ? 'Источник: общедоступная Google Sheets' : '');
     sync.disabled = Boolean(p.sync_running);
+    sync.textContent = p.sync_running ? 'Загрузка…' : 'Загрузить принудительно';
+    clearTimeout(statusTimer);
+    if (p.sync_running) statusTimer = setTimeout(async () => {
+      try { await loadStatus(); if (!sync.disabled) await loadCosts(); }
+      catch (error) { setMessage(error.message, true); }
+    }, 5000);
+  }
+  function rowHtml(row) {
+    const timestamp = new Date(row.imported_at);
+    const updated = Number.isNaN(timestamp.getTime()) ? '—' : timestamp.toLocaleString('ru-RU', {timeZone: 'Europe/Moscow'});
+    return '<tr><td>' + esc(dateLabel(row.cost_date)) + '</td><td>' + esc(row.article) + '</td><td>' +
+      esc(row.store_slug ? row.store_slug.toUpperCase() : 'Общая (запасная)') + '</td><td>' + esc(source(row.source)) +
+      '</td><td>' + esc(row.sheet_name || '—') + '</td><td>' + esc(updated) + '</td><td>' +
+      (row.conflict ? '<span class="error-text">Разные цены — не используется</span>' : money(row.cost)) + '</td></tr>';
   }
   async function loadCosts() {
-    var params = new URLSearchParams({cost_date: dateInput.value, query: query.value.trim()}), r = await fetch('/api/costs?' + params), p = await r.json();
-    if (!r.ok) throw Error(p.detail || 'Не удалось загрузить данные');
-    table.innerHTML = p.rows.map(function (row) { return '<tr><td>' + esc(row.article) + '</td><td>' + esc(row.store_slug ? row.store_slug.toUpperCase() : 'Общая (запасная)') + '</td><td>' + (row.conflict ? 'Разные цены — не используется' : money(row.cost)) + '</td><td>' + esc(source(row.source)) + '</td><td>' + esc(row.sheet_name || '—') + '</td><td>' + esc(new Date(row.imported_at).toLocaleString('ru-RU')) + '</td></tr>'; }).join('') || '<tr><td colspan="6">На выбранную дату себестоимость ещё не загружена.</td></tr>';
-    if (p.conflicts && p.conflicts.length) {
-      setMessage('Есть разные цены для одного магазина и артикула: ' + p.conflicts.map(function (row) { return (row.store_slug ? row.store_slug.toUpperCase() : 'Общая цена') + ' — ' + row.article; }).join('; ') + '. Уточните цену в исходной таблице.', true);
-    } else { setMessage(''); }
+    const id = ++requestId;
+    previous.disabled = next.disabled = true;
+    count.textContent = 'Загрузка…';
+    table.setAttribute('aria-busy', 'true');
+    try {
+      const params = new URLSearchParams({...selected, limit: pageSize, offset});
+      const p = await response('/api/costs?' + params);
+      if (id !== requestId) return;
+      table.innerHTML = p.rows.map(rowHtml).join('') || '<tr><td colspan="7">За выбранный период и по этому поиску сохранённых цен нет.</td></tr>';
+      count.textContent = p.total ? 'Показано ' + (offset + 1) + '–' + (offset + p.rows.length) + ' из ' + p.total : 'Найдено записей: 0';
+      previous.disabled = offset === 0;
+      next.disabled = offset + p.rows.length >= p.total;
+      warning.textContent = p.conflicts && p.conflicts.length ? 'В выбранном периоде есть расхождения цен для одного магазина и артикула (' + p.conflicts.length + '). Такие цены не используются. Уточните их в исходной таблице.' : '';
+    } catch (error) {
+      if (id !== requestId) return;
+      table.innerHTML = '<tr><td colspan="7">Не удалось загрузить цены. Нажмите «Показать», чтобы повторить.</td></tr>';
+      count.textContent = '';
+      warning.textContent = '';
+      setMessage(error.message, true);
+    } finally {
+      if (id === requestId) table.setAttribute('aria-busy', 'false');
+    }
   }
-  async function reload() { try { await Promise.all([loadStatus(), loadCosts()]); } catch (error) { setMessage(error.message, true); } }
-  document.querySelector('#manual-form').onsubmit = async function (event) { event.preventDefault(); var data = Object.fromEntries(new FormData(event.currentTarget)); data.cost_date = dateInput.value; data.cost = Number(data.cost); try { var r = await fetch('/api/costs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}), p = await r.json(); if (!r.ok) throw Error(p.detail || 'Не удалось сохранить'); setMessage('Себестоимость сохранена.'); event.currentTarget.reset(); reload(); } catch (error) { setMessage(error.message, true); } };
-  document.querySelector('#excel-form').onsubmit = async function (event) { event.preventDefault(); var form = new FormData(event.currentTarget); try { var r = await fetch('/api/costs/import-excel?cost_date=' + encodeURIComponent(dateInput.value), {method: 'POST', body: form}), p = await r.json(); if (!r.ok) throw Error(p.detail || 'Не удалось импортировать'); setMessage('Импортировано: ' + p.accepted + '. Добавлено: ' + p.inserted + ', обновлено: ' + p.updated + '.'); event.currentTarget.reset(); reload(); } catch (error) { setMessage(error.message, true); } };
-  sync.onclick = async function () { sync.disabled = true; setMessage('Загрузка из Google Sheets запущена…'); try { var r = await fetch('/api/costs/sync', {method: 'POST'}), p = await r.json(); if (!r.ok) throw Error(p.detail || 'Не удалось запустить загрузку'); setMessage(p.detail + ' Результат появится после завершения.'); } catch (error) { setMessage(error.message, true); } finally { setTimeout(reload, 1000); } };
-  refresh.onclick = reload; dateInput.onchange = reload; dateInput.value = today(); reload();
+  function applyFilters() {
+    if (!from.value || !to.value || from.value > to.value) {
+      setMessage('Укажите начало и конец периода в правильном порядке.', true);
+      return;
+    }
+    setMessage('');
+    selected = {date_from: from.value, date_to: to.value, query: query.value.trim()};
+    offset = 0;
+    loadCosts();
+  }
+  $('#cost-filter').onsubmit = event => { event.preventDefault(); applyFilters(); };
+  from.onchange = to.onchange = applyFilters;
+  previous.onclick = () => { offset = Math.max(0, offset - pageSize); loadCosts(); };
+  next.onclick = () => { offset += pageSize; loadCosts(); };
+
+  $('#manual-form').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget, button = form.querySelector('button'), data = Object.fromEntries(new FormData(form));
+    data.cost = Number(data.cost);
+    button.disabled = true;
+    try {
+      await response('/api/costs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+      setMessage('Себестоимость сохранена на ' + dateLabel(data.cost_date) + '.');
+      await loadCosts();
+      await loadStatus();
+    } catch (error) { setMessage(error.message, true); }
+    finally { button.disabled = false; }
+  };
+  $('#excel-form').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget, button = form.querySelector('button'), data = new FormData(form);
+    button.disabled = true;
+    try {
+      const p = await response('/api/costs/import-excel?cost_date=' + encodeURIComponent(data.get('cost_date')), {method: 'POST', body: data});
+      setMessage('На ' + dateLabel(data.get('cost_date')) + ' импортировано: ' + p.accepted + '. Добавлено: ' + p.inserted + ', обновлено: ' + p.updated + '.');
+      await loadCosts();
+      await loadStatus();
+    } catch (error) { setMessage(error.message, true); }
+    finally { button.disabled = false; }
+  };
+  sync.onclick = async () => {
+    sync.disabled = true;
+    setMessage('Загрузка из Google Sheets запущена…');
+    try {
+      const p = await response('/api/costs/sync', {method: 'POST'});
+      setMessage(p.detail + ' Результат появится после завершения.');
+    } catch (error) { setMessage(error.message, true); }
+    finally {
+      try { await loadStatus(); if (!sync.disabled) await loadCosts(); }
+      catch (error) { sync.disabled = false; setMessage(error.message, true); }
+    }
+  };
+  from.value = to.value = today();
+  document.querySelectorAll('input[name="cost_date"]').forEach(input => { input.value = today(); });
+  applyFilters();
+  loadStatus().catch(error => setMessage(error.message, true));
 }());

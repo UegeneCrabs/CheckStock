@@ -123,6 +123,82 @@ def test_costs_api_shows_store_for_each_variant(db, monkeypatch):
     assert {(r['store_slug'], r['cost']) for r in response['rows']} == {('gogol', 466.36), ('rockkiddo', 350.36), ('toyka', 350.36)}
 
 
+def test_costs_range_includes_both_ends_and_scopes_conflicts_by_date(db, monkeypatch):
+    monkeypatch.setattr(dashboard, '_require_user', lambda _: {})
+    for day in (date(2026, 10, 12), DAY, date(2026, 10, 14), date(2026, 10, 15)):
+        run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, day.day)])), day)
+        dashboard._write_costs(day, [{'article': 'common', 'cost': 5, 'sheet_name': None}], 'manual', 'tester')
+    run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 20)]), ('GOGOL extra WB', [(SKU, 30)])), DAY)
+    result = dashboard.costs(None, date_from=DAY, date_to=date(2026, 10, 14))
+    assert result['total'] == 4
+    assert [r['cost_date'] for r in result['rows']] == ['2026-10-14'] * 2 + ['2026-10-13'] * 2
+    blocked = [r for r in result['rows'] if r['conflict']]
+    assert [(r['cost_date'], r['store_slug'], r['article']) for r in blocked] == [(str(DAY), 'gogol', SKU)]
+    assert result['conflicts'][0]['cost_date'] == str(DAY)
+    filtered = dashboard.costs(None, date_from=DAY, date_to=date(2026, 10, 14), query='common')
+    assert filtered['total'] == 2
+    assert filtered['conflicts'] == []
+
+
+def test_costs_pagination_reaches_every_saved_price(db, monkeypatch):
+    monkeypatch.setattr(dashboard, '_require_user', lambda _: {})
+    dashboard._write_costs(DAY, [{'article': f'{i:04}', 'cost': i, 'sheet_name': None} for i in range(405)], 'manual', 'tester')
+    pages = [dashboard.costs(None, DAY, limit=200, offset=i) for i in (0, 200, 400)]
+    assert [len(p['rows']) for p in pages] == [200, 200, 5]
+    assert all(p['total'] == 405 for p in pages)
+    assert len({r['article'] for p in pages for r in p['rows']}) == 405
+    assert dashboard.costs(None, DAY, query='040', limit=200)['total'] == 6
+
+
+@pytest.mark.parametrize('kwargs', [
+    {}, {'date_from': DAY}, {'date_to': DAY},
+    {'date_from': date(2026, 10, 14), 'date_to': DAY},
+    {'cost_date': DAY, 'date_from': DAY, 'date_to': DAY},
+    {'cost_date': DAY, 'limit': 0}, {'cost_date': DAY, 'limit': 501},
+    {'cost_date': DAY, 'offset': -1},
+])
+def test_costs_range_rejects_invalid_queries(db, monkeypatch, kwargs):
+    monkeypatch.setattr(dashboard, '_require_user', lambda _: {})
+    with pytest.raises(dashboard.HTTPException) as error:
+        dashboard.costs(None, **kwargs)
+    assert error.value.status_code == 422
+
+
+def test_costs_range_keeps_authentication(monkeypatch):
+    def reject(_):
+        raise dashboard.HTTPException(401, 'Войдите')
+    monkeypatch.setattr(dashboard, '_require_user', reject)
+    with pytest.raises(dashboard.HTTPException) as error:
+        dashboard.costs(None, date_from=DAY, date_to=DAY)
+    assert error.value.status_code == 401
+
+
+def test_excel_template_has_exact_headers_no_sample_prices_and_imports(db, monkeypatch):
+    from tempfile import SpooledTemporaryFile
+    from openpyxl import load_workbook
+    from starlette.datastructures import UploadFile
+
+    wb = load_workbook(SITE / 'static/templates/costs-import-template.xlsx')
+    sheet = wb.active
+    assert [sheet.cell(1, c).value for c in (1, 2)] == ['АртикулВБ', 'Себес, руб']
+    assert all(sheet.cell(r, 1).value is None and sheet.cell(r, 2).value is None for r in range(2, sheet.max_row + 1))
+    assert sheet['A2'].number_format == '@'
+    # Simulate filling the downloaded template; the packaged artifact stays blank.
+    sheet['A2'], sheet['B2'] = '001234', 123.45
+    data = SpooledTemporaryFile(max_size=1024 * 1024)
+    wb.save(data)
+    data.seek(0)
+    monkeypatch.setattr(dashboard, '_require_admin', lambda _: {'username': 'tester'})
+    # In-memory UploadFile completes without a thread pool or network-backed event loop.
+    call = dashboard.import_costs_excel(None, DAY, UploadFile(file=data, filename='template.xlsx'))
+    with pytest.raises(StopIteration) as completed:
+        call.send(None)
+    result = completed.value.value
+    data.close()
+    assert result['accepted'] == 1
+    assert prices_for_day(db, 'gogol', str(DAY)) == {'001234': 123.45}
+
+
 def test_cogs_uses_selling_store_price_for_sales_and_returns(db, tmp_path, monkeypatch):
     run_snapshot(monkeypatch, workbook(('GOGOL WB', [(SKU, 466.36)]), ('ROCKKIDDO + TOYKA WB', [(SKU, 350.36)])))
     spec = importlib.util.spec_from_file_location('rbe_scoped_recalc_test', SITE / 'scripts' / 'recalculate_cost_of_goods.py')

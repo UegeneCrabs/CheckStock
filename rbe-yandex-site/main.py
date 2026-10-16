@@ -1195,31 +1195,47 @@ def start_sync(request: Request, payload: SyncRequest) -> dict:
 
 
 @app.get("/api/costs")
-def costs(request: Request, cost_date: date, query: str = "") -> dict:
+def costs(request: Request, cost_date: date | None = None, query: str = "",
+          date_from: date | None = None, date_to: date | None = None,
+          limit: int | None = None, offset: int = 0) -> dict:
     _require_user(request)
-    where = "cost_date=?"
-    params: list[object] = [cost_date.isoformat()]
+    if cost_date is not None:
+        if date_from is not None or date_to is not None:
+            raise HTTPException(422, "Выберите одну дату или диапазон дат")
+        date_from = date_to = cost_date
+    if date_from is None or date_to is None or date_from > date_to:
+        raise HTTPException(422, "Укажите начало и конец периода в правильном порядке")
+    if offset < 0 or (limit is not None and not 1 <= limit <= 500):
+        raise HTTPException(422, "Неверный размер или номер страницы")
+    where = "cost_date BETWEEN ? AND ?"
+    params: list[object] = [date_from.isoformat(), date_to.isoformat()]
     if query.strip():
         where += " AND article LIKE ?"
         params.append(f"%{query.strip()}%")
     with connection() as conn:
+        total = sum(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", params).fetchone()[0]
+                    for table in ("product_costs", "store_product_costs"))
+        paging = " LIMIT ? OFFSET ?" if limit is not None else ""
         rows = conn.execute(
             f"""SELECT cost_date,article,cost,source,sheet_name,imported_at,updated_by,'' AS store_slug
                  FROM product_costs WHERE {where}
                  UNION ALL
                  SELECT cost_date,article,cost,source,sheet_name,imported_at,NULL AS updated_by,store_slug
                  FROM store_product_costs WHERE {where}
-                 ORDER BY article,store_slug""",
-            params + params,
+                 ORDER BY cost_date DESC,article,store_slug""" + paging,
+            params + params + ([limit, offset] if limit is not None else []),
         ).fetchall()
         conflicts = conn.execute(
-            f"""SELECT store_slug,article,values_json FROM store_cost_conflicts WHERE {where}""",
+            f"""SELECT cost_date,store_slug,article,values_json FROM store_cost_conflicts WHERE {where}
+                 ORDER BY cost_date DESC,store_slug,article""",
             params,
         ).fetchall()
         known = conn.execute("SELECT COUNT(*) AS count FROM cost_products").fetchone()["count"]
-    blocked = {(r['store_slug'], r['article']) for r in conflicts}
-    return {"ok": True, "cost_date": cost_date.isoformat(), "known_articles": known,
-            "rows": [{**dict(row), "conflict": (row['store_slug'], row['article']) in blocked} for row in rows],
+    blocked = {(r['cost_date'], r['store_slug'], r['article']) for r in conflicts}
+    return {"ok": True, "cost_date": cost_date.isoformat() if cost_date else None,
+            "date_from": date_from.isoformat(), "date_to": date_to.isoformat(),
+            "total": total, "offset": offset, "limit": limit, "known_articles": known,
+            "rows": [{**dict(row), "conflict": (row['cost_date'], row['store_slug'], row['article']) in blocked} for row in rows],
             "conflicts": [dict(row) for row in conflicts]}
 
 

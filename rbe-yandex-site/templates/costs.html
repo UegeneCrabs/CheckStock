@@ -2,20 +2,60 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Себестоимость — RBE</title><link rel="stylesheet" href="/static/site.css?v=20261012-costs">
+  <title>Себестоимость — RBE</title><link rel="stylesheet" href="/static/site.css?v=20261016-costs-range">
 </head>
 <body>
   <header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><nav><a href="/costs">Себестоимость</a><a href="/settings">Подключения API</a><form method="post" action="/logout"><button class="logout">Выйти</button></form></nav></header>
   <main class="costs-page">
-    <section class="costs-title"><div><p>Справочник закупочных цен</p><h1>Себестоимость</h1><p class="hint">Каждую ночь цены сохраняются на дату загрузки из вкладок Google Sheets с «WB» в названии, отдельно для каждого магазина. Для расчёта берётся цена магазина, в котором произошла продажа или возврат. Разные цены у разных магазинов допустимы.</p></div><div class="cost-actions"><button id="sync-costs">Загрузить на сегодня</button><span id="sync-state" class="hint"></span></div></section>
-    <section class="cost-summary"><span>Уникальных артикулов: <b id="known-count">—</b></span><span>Ночная загрузка: <b id="nightly">—</b></span><span id="last-run">Загрузка ещё не запускалась</span></section>
-    <section class="cost-tools"><label>Дата себестоимости<input id="cost-date" type="date"></label><label>Поиск артикула<input id="query" placeholder="АртикулВБ"></label><button id="refresh" type="button">Показать</button></section>
-    <p id="message" role="status"></p>
-    <section class="cost-edit-grid">
-      <form id="manual-form" class="cost-card"><h2>Изменить вручную</h2><label>АртикулВБ<input name="article" required></label><label>Себес, руб<input name="cost" type="number" required min="0" step="0.01"></label><button>Сохранить на выбранную дату</button></form>
-      <form id="excel-form" class="cost-card"><h2>Загрузить Excel</h2><p class="hint">Колонки: «АртикулВБ» и «Себес, руб». Значения будут сохранены на выбранную дату.</p><input name="file" required type="file" accept=".xlsx,.xlsm"><button>Импортировать</button></form>
+    <section class="costs-title">
+      <h1>Себестоимость</h1>
+      <div class="cost-actions">
+        <button id="sync-costs" type="button">Загрузить принудительно</button>
+        <details class="cost-help">
+          <summary>Справка ⓘ</summary>
+          <div class="cost-help-panel">
+            <h2>Как загружаются цены</h2>
+            <p>Каждую ночь цены сохраняются на дату загрузки из вкладок Google Sheets с «WB» в названии, отдельно для каждого магазина. Для расчёта берётся цена магазина, в котором произошла продажа или возврат. Разные цены у разных магазинов допустимы.</p>
+            <p>Кнопка «Загрузить принудительно» запускает загрузку из Google Sheets на сегодня. Диапазон над таблицей влияет только на просмотр: он не меняет дату сохранения цен.</p>
+            <p>Для ручного ввода и Excel дата сохранения выбирается в соответствующей форме. Эти цены общие: они используются, если для магазина нет своей цены. Цена магазина имеет приоритет. Если внутри одного магазина и дня для артикула указаны разные цены, их нужно уточнить в исходной таблице.</p>
+            <div class="cost-summary">
+              <span>Уникальных артикулов: <b id="known-count">—</b></span>
+              <span>Ночная загрузка: <b id="nightly">—</b></span>
+              <span id="last-run">Загрузка ещё не запускалась</span>
+              <span id="sync-state"></span>
+            </div>
+          </div>
+        </details>
+      </div>
     </section>
-    <section class="table-wrap"><table><thead><tr><th>АртикулВБ</th><th>Магазин</th><th>Себес, руб</th><th>Источник</th><th>Вкладка / файл</th><th>Обновлено</th></tr></thead><tbody id="costs"></tbody></table></section>
+    <p id="message" role="status" aria-live="polite"></p>
+    <section class="cost-edit-grid">
+      <form id="manual-form" class="cost-card">
+        <h2>Изменить вручную</h2>
+        <label>АртикулВБ<input name="article" required></label>
+        <label>Себес, руб<input name="cost" type="number" required min="0" step="0.01"></label>
+        <label>Дата сохранения<input name="cost_date" type="date" required></label>
+        <button>Сохранить</button>
+      </form>
+      <form id="excel-form" class="cost-card">
+        <div class="cost-card-heading"><h2>Загрузить Excel</h2><a href="/static/templates/costs-import-template.xlsx" download="Шаблон себестоимости.xlsx">Скачать шаблон</a></div>
+        <p class="hint">Заполните в шаблоне «АртикулВБ» и «Себес, руб». Цены сохранятся на дату, указанную ниже.</p>
+        <label>Файл Excel<input name="file" required type="file" accept=".xlsx,.xlsm"></label>
+        <label>Дата сохранения<input name="cost_date" type="date" required></label>
+        <button>Импортировать</button>
+      </form>
+    </section>
+    <form id="cost-filter" class="cost-tools">
+      <fieldset class="cost-period"><legend>Период себестоимости</legend>
+        <label>С<input id="cost-from" type="date" required></label>
+        <label>По<input id="cost-to" type="date" required></label>
+      </fieldset>
+      <label>Поиск артикула<input id="query" placeholder="АртикулВБ"></label>
+      <button id="refresh" type="submit">Показать</button>
+    </form>
+    <p id="cost-warning" role="status"></p>
+    <section class="table-wrap"><table class="cost-table"><thead><tr><th>Дата цены</th><th>АртикулВБ</th><th>Магазин</th><th>Источник</th><th>Вкладка / файл</th><th>Обновлено</th><th>Себес, руб</th></tr></thead><tbody id="costs"></tbody></table></section>
+    <div class="cost-pagination"><span id="cost-count" aria-live="polite"></span><button id="cost-prev" type="button" disabled>Назад</button><button id="cost-next" type="button" disabled>Далее</button></div>
   </main>
-  <script src="/static/costs.js?v=20261016-store-costs"></script>
+  <script src="/static/costs.js?v=20261016-costs-range"></script>
 </body></html>
