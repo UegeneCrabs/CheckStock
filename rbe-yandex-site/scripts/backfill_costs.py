@@ -36,9 +36,7 @@ def main_cli() -> int:
 
     main.init_database()
     rows, conflicts, articles = main._read_google_costs()
-    # Keep every source value per cabinet as well. This preserves cases where
-    # the same АртикулВБ has a different purchase price in another store tab.
-    scoped_rows = rows + [item for conflict in conflicts for item in conflict["values"]]
+    rows, scoped_rows, conflicts = main.split_costs_by_store(rows, conflicts)
     now = datetime.now(UTC).isoformat()
     inserted = store_inserted = 0
     with main.connection() as conn:
@@ -61,9 +59,8 @@ def main_cli() -> int:
             )
             inserted += conn.total_changes - before
             store_params = [
-                (current.isoformat(), store, row["article"], row["cost"], "google", row["sheet_name"], now)
+                (current.isoformat(), row["store_slug"], row["article"], row["cost"], "google", row["sheet_name"], now)
                 for row in scoped_rows
-                for store in main.stores_for_sheet(str(row["sheet_name"]))
             ]
             before = conn.total_changes
             conn.executemany(
@@ -72,6 +69,11 @@ def main_cli() -> int:
                 store_params,
             )
             store_inserted += conn.total_changes - before
+            conn.executemany(
+                'INSERT OR IGNORE INTO store_cost_conflicts VALUES(?,?,?,?,?)',
+                [(current.isoformat(), row['store_slug'], row['article'],
+                  json.dumps(row['values'], ensure_ascii=False), now) for row in conflicts],
+            )
         detail = json.dumps({
             "date_from": arguments.date_from.isoformat(), "date_to": arguments.date_to.isoformat(),
             "known_articles": len(articles), "inserted_daily_costs": inserted,

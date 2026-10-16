@@ -20,6 +20,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from contextlib import nullcontext
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 from report_quality import SCHEMA as QUALITY_SCHEMA
+from cost_snapshots import SCHEMA as COST_SNAPSHOT_SCHEMA, stores_for_sheet, split_costs_by_store, write_store_costs
 from sync_queue import SCHEMA as SYNC_QUEUE_SCHEMA, REASONS, MAX_BATCH_DAYS, error_reason, newest_ranges, automatic_plan
 
 ROOT = Path(__file__).resolve().parent
@@ -50,15 +52,6 @@ YANDEX_API = "https://api.partner.market.yandex.ru"
 SYNC_STOP_EVENT = threading.Event()
 SYNC_LOCK = threading.Lock()
 COST_SYNC_LOCK = threading.Lock()
-SHEET_STORE_SLUGS = {
-    "rimili": "rimili",
-    "tris": "tris",
-    "rockkiddo": "rockkiddo",
-    "trusthome": "trusthome",
-    "sokoloff": "sokoloff",
-    "gogol": "gogol",
-    "toyka": "toyka",
-}
 
 # Every indicator is based on one of two official daily source sets.  Keeping
 # this mapping here makes the completeness label follow the calculation, not a
@@ -90,6 +83,7 @@ def connection() -> sqlite3.Connection:
 def init_database() -> None:
     with connection() as conn:
         conn.executescript(QUALITY_SCHEMA)
+        conn.executescript(COST_SNAPSHOT_SCHEMA)
         conn.executescript(SYNC_QUEUE_SCHEMA)
         conn.executescript(
             """
@@ -759,11 +753,6 @@ def _normalise_article(value: object) -> str:
     return str(value or "").strip()
 
 
-def stores_for_sheet(sheet_name: str) -> list[str]:
-    name = sheet_name.lower()
-    return [slug for marker, slug in SHEET_STORE_SLUGS.items() if marker in name]
-
-
 def _parse_cost(value: object) -> float | None:
     if isinstance(value, (int, float)):
         return round(float(value), 2) if float(value) >= 0 else None
@@ -789,12 +778,13 @@ def _write_costs(
     rows: list[dict[str, Any]],
     source: str,
     changed_by: str | None,
+    conn: sqlite3.Connection | None = None,
 ) -> dict[str, int]:
     """Persist a dated snapshot and retain a compact audit trail for every change."""
 
     now = datetime.now(UTC).isoformat()
     inserted = updated = unchanged = 0
-    with connection() as conn:
+    with connection() if conn is None else nullcontext(conn) as conn:
         for row in rows:
             article = _normalise_article(row.get("article"))
             cost = _parse_cost(row.get("cost"))
@@ -907,11 +897,13 @@ def _run_cost_google_sync(cost_date: date | None = None) -> bool:
             ).lastrowid)
         try:
             rows, conflicts, seen_articles = _read_google_costs()
+            global_rows, store_rows, conflicts = split_costs_by_store(rows, conflicts)
             now = datetime.now(UTC).isoformat()
             with connection() as conn:
                 for article in seen_articles:
                     _upsert_product(conn, article, now)
-            result = _write_costs(cost_date, rows, "google", None)
+                result = _write_costs(cost_date, global_rows, "google", None, conn=conn)
+                result.update(write_store_costs(conn, cost_date.isoformat(), store_rows, conflicts, now))
             status = "partial" if conflicts else "completed"
             detail = json.dumps({"scanned_articles": len(seen_articles), "conflicts": conflicts[:100], **result}, ensure_ascii=False)
         except (httpx.HTTPError, OSError, RuntimeError, ValueError) as error:
@@ -1212,12 +1204,23 @@ def costs(request: Request, cost_date: date, query: str = "") -> dict:
         params.append(f"%{query.strip()}%")
     with connection() as conn:
         rows = conn.execute(
-            f"""SELECT cost_date,article,cost,source,sheet_name,imported_at,updated_by
-                 FROM product_costs WHERE {where} ORDER BY article""",
+            f"""SELECT cost_date,article,cost,source,sheet_name,imported_at,updated_by,'' AS store_slug
+                 FROM product_costs WHERE {where}
+                 UNION ALL
+                 SELECT cost_date,article,cost,source,sheet_name,imported_at,NULL AS updated_by,store_slug
+                 FROM store_product_costs WHERE {where}
+                 ORDER BY article,store_slug""",
+            params + params,
+        ).fetchall()
+        conflicts = conn.execute(
+            f"""SELECT store_slug,article,values_json FROM store_cost_conflicts WHERE {where}""",
             params,
         ).fetchall()
         known = conn.execute("SELECT COUNT(*) AS count FROM cost_products").fetchone()["count"]
-    return {"ok": True, "cost_date": cost_date.isoformat(), "known_articles": known, "rows": [dict(row) for row in rows]}
+    blocked = {(r['store_slug'], r['article']) for r in conflicts}
+    return {"ok": True, "cost_date": cost_date.isoformat(), "known_articles": known,
+            "rows": [{**dict(row), "conflict": (row['store_slug'], row['article']) in blocked} for row in rows],
+            "conflicts": [dict(row) for row in conflicts]}
 
 
 @app.get("/api/costs/status")

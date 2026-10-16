@@ -24,7 +24,10 @@
   async function loadCosts() {
     var params = new URLSearchParams({cost_date: dateInput.value, query: query.value.trim()}), r = await fetch('/api/costs?' + params), p = await r.json();
     if (!r.ok) throw Error(p.detail || 'Не удалось загрузить данные');
-    table.innerHTML = p.rows.map(function (row) { return '<tr><td>' + esc(row.article) + '</td><td>' + money(row.cost) + '</td><td>' + esc(source(row.source)) + '</td><td>' + esc(row.sheet_name || '—') + '</td><td>' + esc(new Date(row.imported_at).toLocaleString('ru-RU')) + '</td></tr>'; }).join('') || '<tr><td colspan="5">На выбранную дату себестоимость ещё не загружена.</td></tr>';
+    table.innerHTML = p.rows.map(function (row) { return '<tr><td>' + esc(row.article) + '</td><td>' + esc(row.store_slug ? row.store_slug.toUpperCase() : 'Общая (запасная)') + '</td><td>' + (row.conflict ? 'Разные цены — не используется' : money(row.cost)) + '</td><td>' + esc(source(row.source)) + '</td><td>' + esc(row.sheet_name || '—') + '</td><td>' + esc(new Date(row.imported_at).toLocaleString('ru-RU')) + '</td></tr>'; }).join('') || '<tr><td colspan="6">На выбранную дату себестоимость ещё не загружена.</td></tr>';
+    if (p.conflicts && p.conflicts.length) {
+      setMessage('Есть разные цены для одного магазина и артикула: ' + p.conflicts.map(function (row) { return (row.store_slug ? row.store_slug.toUpperCase() : 'Общая цена') + ' — ' + row.article; }).join('; ') + '. Уточните цену в исходной таблице.', true);
+    } else { setMessage(''); }
   }
   async function reload() { try { await Promise.all([loadStatus(), loadCosts()]); } catch (error) { setMessage(error.message, true); } }
   document.querySelector('#manual-form').onsubmit = async function (event) { event.preventDefault(); var data = Object.fromEntries(new FormData(event.currentTarget)); data.cost_date = dateInput.value; data.cost = Number(data.cost); try { var r = await fetch('/api/costs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}), p = await r.json(); if (!r.ok) throw Error(p.detail || 'Не удалось сохранить'); setMessage('Себестоимость сохранена.'); event.currentTarget.reset(); reload(); } catch (error) { setMessage(error.message, true); } };

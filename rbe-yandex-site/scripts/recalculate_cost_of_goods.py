@@ -23,6 +23,7 @@ sys.path.insert(0, str(SITE))
 from app.yandex import financial_reports  # noqa: E402
 from app.repositories import yandex_financial  # noqa: E402
 from main import connection  # noqa: E402
+from cost_snapshots import prices_for_day  # noqa: E402
 
 ORDER_KIND = "united-orders"
 SERVICE_KIND = "united-services"
@@ -84,17 +85,7 @@ def _source_reports(source: sqlite3.Connection, stores: tuple[str, ...] | None =
 
 
 def _prices_for_day(target: sqlite3.Connection, store: str, day: str) -> dict[str, float]:
-    prices = {
-        str(row["article"]): float(row["cost"])
-        for row in target.execute(
-            "SELECT article,cost FROM store_product_costs WHERE store_slug=? AND cost_date=?", (store, day)
-        )
-    }
-    # A global manual/Excel price is a fallback only where the store tab does
-    # not contain this SKU.
-    for row in target.execute("SELECT article,cost FROM product_costs WHERE cost_date=?", (day,)):
-        prices.setdefault(str(row["article"]), float(row["cost"]))
-    return prices
+    return prices_for_day(target, store, day)
 
 
 def recalculate(
