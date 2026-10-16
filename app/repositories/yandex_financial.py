@@ -191,18 +191,22 @@ def pnl_summary(date_from: str, date_to: str, store_slug: str | None = None) -> 
     return _sum_values(range_rows) if range_rows else None
 
 
-def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_to: str, *, source=None) -> list[dict]:
+def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_to: str, *, source=None,
+                        pinned=True) -> list[dict]:
     """Read canonical buyer-money operations, isolated by store and business.
 
-    Newer exports replace older overlapping snapshots, including deletions.
-    The internal coverage row records successfully downloaded empty reports.
+    Newer exports correct the financial components. The recognition ledger
+    retains the first date even after snapshot replacement; only a confirmed
+    cancellation removes the saved returned unit. Coverage records empty reports.
     """
     from app.yandex.buyer_refunds import build_refunds, operation_key, source_day
+    from app.repositories import yandex_refund_recognitions as recognitions
 
     conn = source if source is not None else get_connection()
     orders = {}
     snapshots = {}
     try:
+        saved = recognitions.read(conn, store_slug, business_id) if pinned else []
         rows = conn.execute(
             """SELECT report_kind,sheet,payload_json,period_from,period_to,imported_at
                FROM yandex_financial_report_rows
@@ -257,7 +261,9 @@ def buyer_refund_events(store_slug: str, business_id: int, date_from: str, date_
                 )
             if version == winners[day]:
                 payments.append(payload)
-    return build_refunds(list(orders.values()), payments, date_from, date_to)
+    events = build_refunds(list(orders.values()), payments,
+                          '0001-01-01' if saved else date_from, '9999-12-31' if saved else date_to)
+    return recognitions.visible(events, saved, date_from, date_to)
 
 
 def financial_return_count(date_from: str, date_to: str, store_slugs: list[str]) -> int:

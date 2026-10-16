@@ -71,7 +71,8 @@ def build_refunds(order_rows, payment_rows, date_from, date_to):
     """Match component quantity streams before selecting a reporting period.
 
     Cash and points describe the same units, not additional returned goods.
-    For each unit cash takes precedence, otherwise use the earliest component.
+    Recognition stays on the earliest financial component for each unit.
+    Cash confirms the buyer amount, but must not move the recognition date.
     Ambiguous excess quantities fail closed instead of silently overcounting.
     Call with the complete authoritative history for this store/business.
     """
@@ -153,21 +154,28 @@ def build_refunds(order_rows, payment_rows, date_from, date_to):
                 if offset + quantity > delivered:
                     raise ValueError(f"Количество финансовых возвратов превышает количество товара заказа {item[0]}; требуется сверка операций")
                 for unit in range(offset, offset + quantity):
-                    slots[unit].append((source != cash_source, source_day(payment['transactionDate']), key, payment))
+                    slots[unit].append((source_day(payment['transactionDate']), key, payment))
                 offset += quantity
         # Aggregate units back to operations, preserving partial quantities.
         selected = {}
-        for candidates in slots.values():
-            _, day, key, payment = min(candidates, key=lambda c: (c[0], c[1], repr(c[2])))
+        for unit, candidates in slots.items():
+            day, key, payment = min(candidates, key=lambda c: (
+                c[0], str(c[2]['transactionDate'])[10:], repr(c[1])))
             if not date_from <= day <= date_to:
                 continue
-            if key not in selected:
-                selected[key] = [day, payment, 0]
-            selected[key][2] += 1
-        for key, (day, payment, quantity) in selected.items():
-            confirmed = payment['transactionSource'] == cash_source
+            cash = [c for c in candidates if c[2]['transactionSource'] == cash_source]
+            cash_payment = min(cash, key=lambda c: (c[0], repr(c[1])))[2] if cash else None
+            # Different units of the same points operation can have different
+            # cash confirmations (partial returns). Keep those amounts separate.
+            group_key = (key, operation_key(cash_payment) if cash_payment else None)
+            if group_key not in selected:
+                selected[group_key] = [day, payment, cash_payment, []]
+            selected[group_key][3].append(unit)
+        for (key, _), (day, payment, cash_payment, units) in selected.items():
+            quantity = len(units)
+            confirmed = cash_payment is not None
             if confirmed:
-                buyer_amount = abs(float(payment['transactionSum'])) * quantity / float(payment['count'])
+                buyer_amount = abs(float(cash_payment['transactionSum'])) * quantity / float(cash_payment['count'])
             else:
                 original = order.get('buyerPaymentAmount')
                 rates = unit_amounts[item, cash_source]
@@ -180,6 +188,8 @@ def build_refunds(order_rows, payment_rows, date_from, date_to):
             events.append({
                 **order, 'refund_event_key': repr(key), 'refund_day': day,
                 'refund_basis': payment['transactionSource'], 'refund_money_confirmed': confirmed,
+                'refund_unit_indexes': units,
+                'refund_first_at': payment['transactionDate'],
                 'count': quantity, 'quantity': quantity,
                 'sumBillingPriceOfItems': round(price * quantity, 2),
                 'refundBuyerPaymentAmount': -round(buyer_amount, 2),

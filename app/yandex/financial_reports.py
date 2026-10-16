@@ -422,7 +422,7 @@ def _daily_service_sheets(service_sheets: dict[str, list[dict]], day: str) -> di
 def _daily_order_sheets(
     order_sheets: dict[str, list[dict]], day: str, refund_events: list[dict] | None = None
 ) -> tuple[dict[str, list[dict]], list[dict]]:
-    """Sales retain their delivery date; returns use buyer-payment dates only."""
+    """Sales retain their delivery date; returns keep first financial recognition."""
     transactions = order_sheets.get("orders_and_offers_transactions", [])
     daily_orders = {
         "orders_and_offers_transactions": [
@@ -518,8 +518,9 @@ def _store_daily_pnl(
         current_day += timedelta(days=1)
 
 
-def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calculated_at, *, campaign_count=1):
-    """Repair old recognition dates when a new cash/points component arrives.
+def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calculated_at, *, campaign_count=1,
+                              refund_events=None):
+    """Rebuild affected old days after confirmations or cancellations arrive.
 
     Rebuild from archived reports, never request ancient API periods. Return
     the full persisted range for copying: this also heals an interrupted prior
@@ -531,8 +532,8 @@ def _reconcile_refund_history(store_slug, business_id, date_from, date_to, calcu
             'WHERE store_slug=? AND business_id=? ORDER BY report_date', (store_slug, business_id)).fetchall()
         if not stored:
             return []
-        events = yandex_financial.buyer_refund_events(store_slug, business_id, stored[0]['report_date'],
-                                                     stored[-1]['report_date'], source=conn)
+        events = refund_events if refund_events is not None else yandex_financial.buyer_refund_events(
+            store_slug, business_id, stored[0]['report_date'], stored[-1]['report_date'], source=conn)
         plan = []
         archive_cache = {}
         for fact in stored:
@@ -738,6 +739,8 @@ def import_period(store_slug: str, date_from: date, date_to: date, *, orders_loo
     imported: list[dict] = []
     for account in tokens.get_accounts(store_slug):
         business_id = int(account["business_id"])
+        from app.repositories import yandex_refund_recognitions
+        yandex_refund_recognitions.seed(store_slug, business_id, now)
         sheets = _load_united_orders_report(
             str(account["api_key"]),
             business_id,
@@ -791,12 +794,13 @@ def import_period(store_slug: str, date_from: date, date_to: date, *, orders_loo
                 "sheets": {name: len(rows) for name, rows in report_sheets.items()},
             }
         imported.append(imported_report)
+        refund_events = yandex_refund_recognitions.sync(store_slug, business_id, str(account['api_key']),
+                                                      list(account.get('campaign_ids') or []), now)
         # Save every raw report first: the common refund reader needs the
         # successfully downloaded netting snapshot, including an empty one.
         range_orders = dict(sheets)
-        range_orders["returns"] = yandex_financial.buyer_refund_events(
-            store_slug, business_id, date_from.isoformat(), date_to.isoformat()
-        )
+        range_orders['returns'] = [e for e in refund_events
+                                  if date_from.isoformat() <= e['refund_day'] <= date_to.isoformat()]
         yandex_financial.replace_pnl_summary(
             store_slug, business_id, date_from.isoformat(), date_to.isoformat(),
             _pnl_values(service_sheets, range_orders,
@@ -812,11 +816,12 @@ def import_period(store_slug: str, date_from: date, date_to: date, *, orders_loo
             sheets,
             now,
             campaign_count=len(account.get("campaign_ids") or []),
+            refund_events=refund_events,
         )
         _store_daily_netting(store_slug, business_id, date_from, date_to, netting_sheets, now)
         imported_report['reconciled_dates'] = _reconcile_refund_history(
             store_slug, business_id, date_from, date_to, now,
-            campaign_count=len(account.get('campaign_ids') or []))
+            campaign_count=len(account.get('campaign_ids') or []), refund_events=refund_events)
     if not imported:
         raise ValueError("Для магазина не настроен Business ID и API-ключ Яндекс Маркета")
     return {

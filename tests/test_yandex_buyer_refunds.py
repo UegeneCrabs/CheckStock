@@ -47,13 +47,16 @@ def test_buyer_money_dates_both_turnovers_count_and_costs_together():
     assert _daily_order_sheets({}, "2026-10-12", ee)[0]["returns"] == []
 
 
-def test_cash_overrides_points_across_months_without_duplicate_goods():
+def test_later_cash_confirms_amount_without_moving_first_points_across_months():
     rows = [payment(transactionSource='Возврат баллов за скидку Маркета', transactionDate='28.09.2026 10:00'),
             payment(transactionSource='Возврат баллов за скидку Яндекс Плюс', transactionDate='29.09.2026 10:00'),
             payment()]
-    assert build_refunds([order()], rows, '2026-09-01', '2026-09-30') == []
-    assert len(events(payments=rows)) == 1
-    assert events(payments=rows)[0]['refund_day'] == '2026-10-11'
+    september = build_refunds([order()], rows, '2026-09-01', '2026-09-30')
+    assert len(september) == 1
+    assert september[0]['refund_day'] == '2026-09-28'
+    assert september[0]['refund_money_confirmed']
+    assert september[0]['refundBuyerPaymentAmount'] == -2339
+    assert events(payments=rows) == []
 
 
 def test_partial_cash_and_points_components_share_units():
@@ -64,7 +67,8 @@ def test_partial_cash_and_points_components_share_units():
                 transactionType='Возврат списания', transactionDate='10.10.2026 09:00')])
     assert sum(e['count'] for e in ee) == 3
     assert sum(e['refundBuyerPaymentAmount'] for e in ee) == -7017
-    assert {e['refund_day']:e['count'] for e in ee} == {'2026-10-10':2, '2026-10-11':1}
+    assert {e['refund_day'] for e in ee} == {'2026-10-10'}
+    assert sum(e['count'] for e in ee if e['refund_money_confirmed']) == 1
 
 
 def test_zero_buyer_price_is_still_a_return_and_nonpurchase_points_are_not():
@@ -186,8 +190,10 @@ def test_repository_matches_components_outside_requested_window(archive):
     save(archive, 'united-netting', payment(transactionSource='Возврат баллов за скидку Маркета'))
     save(archive, 'united-netting', payment(transactionDate='12.10.2026 10:00'),
          version='2026-10-13', start='2026-10-12', end='2026-10-12')
-    assert repository.buyer_refund_events('tris', 1, '2026-10-05', '2026-10-11', source=archive) == []
-    assert len(repository.buyer_refund_events('tris', 1, '2026-10-12', '2026-10-12', source=archive)) == 1
+    first = repository.buyer_refund_events('tris', 1, '2026-10-05', '2026-10-11', source=archive)
+    assert len(first) == 1 and first[0]['refund_day'] == '2026-10-11'
+    assert first[0]['refund_money_confirmed']
+    assert repository.buyer_refund_events('tris', 1, '2026-10-12', '2026-10-12', source=archive) == []
 
 
 def test_old_operation_repeated_outside_new_export_period_is_not_lost(archive):
@@ -262,7 +268,7 @@ def test_refund_archive_is_streamed_without_raw_buffer(archive):
 
 
 @pytest.mark.parametrize('production_adapter', [False, True])
-def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp_path, monkeypatch, production_adapter):
+def test_first_points_date_is_kept_when_cash_arrives_outside_refresh_window(tmp_path, monkeypatch, production_adapter):
     from datetime import date
     from app.yandex import financial_reports as reports
     path = tmp_path / 'history.db'
@@ -294,9 +300,9 @@ def test_old_points_date_is_rebuilt_when_cash_arrives_outside_refresh_window(tmp
         assert reports._reconcile_refund_history('tris', 1, date(2026,10,12), date(2026,10,12), 'new') == ['2026-09-10','2026-10-12']
         with connect() as c:
             old = json.loads(c.execute("SELECT values_json FROM yandex_financial_daily_pnl WHERE report_date='2026-09-10'").fetchone()[0])
-            assert old['returned_count'] == 0
-            assert old['detail_seller_returns'] == 0
+            assert old['returned_count'] == 1
+            assert old['detail_seller_returns'] == 5752
             assert old['detail_redeemed_count'] == 1
             assert old['detail_seller_sales'] == 5752
-            assert old['cost_of_goods'] == 500
+            assert old['cost_of_goods'] == 0
             assert old['payment_deductions'] == 42

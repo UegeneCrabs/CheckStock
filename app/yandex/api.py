@@ -239,6 +239,31 @@ def get_campaigns(api_key: str) -> list[dict]:
             return campaigns
 
 
+def get_returns(api_key: str, campaign_id: int, order_ids: list[int]) -> list[dict]:
+    """All current return applications for at most 50 explicitly scoped orders."""
+    if not order_ids:
+        return []
+    if len(order_ids) > 50:
+        raise ValueError('Для проверки возвратов допускается не более 50 заказов за запрос')
+    rows = {}
+    params = {'orderIds': ','.join(str(i) for i in order_ids), 'type': 'RETURN', 'limit': 100}
+    seen = set()
+    while True:
+        data = _request(f'/v2/campaigns/{campaign_id}/returns', api_key, params=params, method='GET')
+        chunk = data.get('returns')
+        if not isinstance(chunk, list):
+            raise YandexApiError(None, 'Яндекс не передал список возвратов; отмены не проверены')
+        for row in chunk:
+            if (not isinstance(row, dict) or not row.get('id') or not isinstance(row.get('items'), list)
+                    or int(row.get('orderId') or 0) not in order_ids):
+                raise YandexApiError(None, 'Некорректная заявка при проверке отмены возвратов')
+            rows[row['id']] = row
+        token = _next_page_token(data, seen)
+        if not token:
+            return list(rows.values())
+        params['pageToken'] = token
+
+
 def normalize_campaign(row: dict) -> dict:
 
     business = row.get("business") or {}

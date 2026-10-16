@@ -63,7 +63,9 @@ def init_db() -> None:
 
 
 def _create_yandex_financial_report_storage(database: Database) -> None:
+    from app.repositories.yandex_refund_recognitions import SCHEMA as REFUND_RECOGNITION_SCHEMA
     with core.WRITE_LOCK, database.connect() as connection:
+        connection.execute(REFUND_RECOGNITION_SCHEMA)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS yandex_financial_report_rows (
