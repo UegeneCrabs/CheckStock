@@ -145,6 +145,29 @@ def _created_before(row, event):
         return True
 
 
+def _cancelled_before_new_application(cancelled, current):
+    """A cancelled attempt followed by a new application is not that return.
+
+    updateDate is only an upper bound on the cancellation time. It is safe
+    to discard the cancelled attempt from matching only when even this last
+    update predates creation of the replacement application.
+    """
+    if not (cancelled.get('refundStatus') == 'CANCELLED'
+            or cancelled.get('shipmentStatus') == 'CANCELLED'):
+        return False
+    if current.get('refundStatus') == 'CANCELLED' or current.get('shipmentStatus') == 'CANCELLED':
+        return False
+    try:
+        ended = datetime.fromisoformat(str(cancelled['updateDate']))
+        started = datetime.fromisoformat(str(current['creationDate']))
+        zone = ZoneInfo('Europe/Moscow')
+        ended = ended if ended.tzinfo else ended.replace(tzinfo=zone)
+        started = started if started.tzinfo else started.replace(tzinfo=zone)
+        return ended < started
+    except (KeyError, ValueError):
+        return False
+
+
 def cancellation_links(units, saved, returns, *, incoming=None):
     """Match a financial unit to a return ID before interpreting cancellation.
 
@@ -193,6 +216,8 @@ def cancellation_links(units, saved, returns, *, incoming=None):
         candidates = [(r, count) for r, count in by_item[key[:2]]
                       if used[(r['campaign_id'], r['id'], *key[:2])] < count]
         eligible = [(r, count) for r, count in candidates if _created_before(r, event)]
+        eligible = [(r, count) for r, count in eligible if not any(
+            _cancelled_before_new_application(r, replacement) for replacement, _ in eligible)]
         if not eligible:
             continue
         if len(eligible) != 1:

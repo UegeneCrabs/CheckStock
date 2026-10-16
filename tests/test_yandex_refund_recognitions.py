@@ -105,6 +105,23 @@ def test_application_created_after_first_financial_operation_is_not_its_cancella
         application(created='2026-10-12T12:00:00+03:00', status='CANCELLED')]) == {}
 
 
+def test_tris_cancelled_attempt_before_recreated_paid_application_does_not_remove_goods():
+    units = ledger.split_units(events([payment(transactionDate='18.07.2026 14:51')]))
+    cancelled = application(id=27037563, created='2026-07-14T12:34:01.037+03:00', status='CANCELLED',
+                            updateDate='2026-07-14T13:10:43.968+03:00')
+    paid = application(id=27041611, created='2026-07-14T17:55:38.570+03:00', status='REFUNDED',
+                       updateDate='2026-07-24T08:32:37.832+03:00')
+    assert ledger.cancellation_links(units, [], [cancelled, paid])[('1', 'sku', 0)] == (100, 27041611, False)
+
+
+def test_cancellation_after_other_application_started_is_still_ambiguous():
+    with pytest.raises(ValueError, match='однозначно'):
+        ledger.cancellation_links(ledger.split_units(events()), [], [
+            application(created='2026-10-10T12:00:00+03:00', status='CANCELLED',
+                        updateDate='2026-10-12T09:00:00+03:00'),
+            application(id=11, created='2026-10-11T12:00:00+03:00')])
+
+
 def test_new_return_after_cancelled_operation_disappears_requires_matching():
     saved = saved_units(events())
     saved[0].update(campaign_id=100, return_id=10, cancelled=1)
