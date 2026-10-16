@@ -147,6 +147,21 @@ def test_new_return_after_cancelled_operation_disappears_requires_matching():
             incoming=incoming)
 
 
+def test_tris_cancelled_attempt_before_same_day_financial_payment():
+    units = ledger.split_units(events([payment(transactionDate='29.09.2026 18:52',
+        transactionSource='Возврат платежа покупателя', transactionSum=-1655)],
+        billingPrice=2000, buyerPaymentAmount=1655))
+    cancelled = application(id=28142205, created='2026-09-29T18:22:57.769+03:00',
+        status='CANCELLED', updateDate='2026-09-29T18:31:20.933+03:00')
+    paid = application(id=28142314, created='2026-09-29T18:27:35.380+03:00',
+        status='REFUNDED', amount={'value': 1655, 'currencyId': 'RUR'})
+    assert ledger.cancellation_links(units, [], [cancelled, paid])[('1', 'sku', 0)] == (100, 28142314, False)
+    # A cancellation within the financial export's minute is not proven earlier.
+    cancelled['updateDate'] = '2026-09-29T18:52:00.000+03:00'
+    with pytest.raises(ValueError, match='однозначно'):
+        ledger.cancellation_links(units, [], [cancelled, paid])
+
+
 @pytest.fixture
 def archive(tmp_path, monkeypatch):
     path = tmp_path / 'refunds.db'

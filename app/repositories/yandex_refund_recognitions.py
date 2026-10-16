@@ -148,9 +148,10 @@ def _created_before(row, event):
 def _cancelled_before_new_application(cancelled, current, event):
     """A cancelled attempt followed by a new application is not that return.
 
-    updateDate is only an upper bound on the cancellation time. It is safe
-    to discard the cancelled attempt from matching only when even this last
-    update predates creation of the replacement application.
+    updateDate is only an upper bound on the cancellation time. Discard an
+    abandoned attempt when its last update predates the replacement, or
+    predates the first financial operation and a paid replacement agrees
+    with the confirmed financial amount.
     """
     if not (cancelled.get('refundStatus') == 'CANCELLED'
             or cancelled.get('shipmentStatus') == 'CANCELLED'):
@@ -173,8 +174,11 @@ def _cancelled_before_new_application(cancelled, current, event):
         created = datetime.fromisoformat(str(cancelled['creationDate']))
         created = created if created.tzinfo else created.replace(tzinfo=zone)
         amount = current.get('amount') or {}
+        first_at = event.get('refund_first_at')
+        first = (datetime.strptime(first_at, '%d.%m.%Y %H:%M').replace(tzinfo=zone)
+                 if first_at else datetime.fromisoformat(event['refund_day']).replace(tzinfo=zone))
         if (event.get('refund_money_confirmed') and current.get('refundStatus') == 'REFUNDED'
-                and ended.date().isoformat() < event['refund_day'] and created < started
+                and ended < first and created < started
                 and len(items) == 1 and str(items[0].get('shopSku')) == str(event.get('shopSku'))
                 and int(items[0].get('count') or 0) > 0 and amount.get('currencyId') == 'RUR'):
             unit_amount = float(amount['value']) / int(items[0]['count'])
