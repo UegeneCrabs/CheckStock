@@ -145,7 +145,7 @@ def _created_before(row, event):
         return True
 
 
-def _cancelled_before_new_application(cancelled, current):
+def _cancelled_before_new_application(cancelled, current, event):
     """A cancelled attempt followed by a new application is not that return.
 
     updateDate is only an upper bound on the cancellation time. It is safe
@@ -163,7 +163,23 @@ def _cancelled_before_new_application(cancelled, current):
         zone = ZoneInfo('Europe/Moscow')
         ended = ended if ended.tzinfo else ended.replace(tzinfo=zone)
         started = started if started.tzinfo else started.replace(tzinfo=zone)
-        return ended < started
+        if ended < started:
+            return True
+        # Sometimes a replacement is created before the abandoned attempt is
+        # finally cancelled. Match the one paid application only when the old
+        # attempt ended before financial recognition and its per-unit cash
+        # amount exactly agrees with the confirmed financial payment.
+        items = current.get('items') or []
+        created = datetime.fromisoformat(str(cancelled['creationDate']))
+        created = created if created.tzinfo else created.replace(tzinfo=zone)
+        amount = current.get('amount') or {}
+        if (event.get('refund_money_confirmed') and current.get('refundStatus') == 'REFUNDED'
+                and ended.date().isoformat() < event['refund_day'] and created < started
+                and len(items) == 1 and str(items[0].get('shopSku')) == str(event.get('shopSku'))
+                and int(items[0].get('count') or 0) > 0 and amount.get('currencyId') == 'RUR'):
+            unit_amount = float(amount['value']) / int(items[0]['count'])
+            return abs(unit_amount - abs(float(event['refundBuyerPaymentAmount']))) <= 0.02
+        return False
     except (KeyError, ValueError):
         return False
 
@@ -217,7 +233,7 @@ def cancellation_links(units, saved, returns, *, incoming=None):
                       if used[(r['campaign_id'], r['id'], *key[:2])] < count]
         eligible = [(r, count) for r, count in candidates if _created_before(r, event)]
         eligible = [(r, count) for r, count in eligible if not any(
-            _cancelled_before_new_application(r, replacement) for replacement, _ in eligible)]
+            _cancelled_before_new_application(r, replacement, event) for replacement, _ in eligible)]
         if not eligible:
             continue
         if len(eligible) != 1:
