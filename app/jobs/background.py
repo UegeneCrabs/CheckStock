@@ -319,6 +319,17 @@ def _wb_hourly_price_job(service: WbHourlyPriceService) -> BackgroundJob:
     )
 
 
+def _wb_daily_price_close_job() -> BackgroundJob:
+    name = "wb_daily_prices_close_00_msk"
+    return BackgroundJob(
+        name,
+        ApplicationContainer().wb_daily_price_closer.close,
+        _moscow_daily_delay(0, 5),
+        startup_delay_seconds=_seconds_until_next_moscow_run(0, 5),
+        is_enabled=lambda: _job_enabled(name),
+    )
+
+
 def _wb_stock_history_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -589,6 +600,7 @@ def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
         jobs += _unit_economics_1c_price_jobs()
     if settings.wb_hourly_prices_enabled:
         jobs += (_wb_hourly_price_job(ApplicationContainer().wb_hourly_prices),)
+        jobs += (_wb_daily_price_close_job(),)
     return jobs
 
 

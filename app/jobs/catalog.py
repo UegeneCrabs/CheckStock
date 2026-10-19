@@ -271,6 +271,13 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "stores",
         ),
         SyncJobDefinition(
+            "wb_daily_prices_close_00_msk",
+            "Дневные цены витрины WB",
+            "Сворачивает завершённые дни почасовой истории цен и удаляет перенесённые часы.",
+            "Ежедневно в 00:05 МСК",
+            settings.wb_hourly_prices_enabled,
+        ),
+        SyncJobDefinition(
             "unit_economics_1c_daily_margin_snapshot_00_msk",
             "Дневная маржа WB",
             "Сохраняет наблюдения текущего дня, включая неполные параметры; история не восстанавливается текущими настройками.",

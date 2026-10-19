@@ -14,7 +14,10 @@ from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
-from app.infrastructure.wb_hourly_price_repository import SqlAlchemyHourlyPriceWriter
+from app.infrastructure.wb_hourly_price_repository import (
+    SqlAlchemyDailyPriceCloser,
+    SqlAlchemyHourlyPriceWriter,
+)
 from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
@@ -69,6 +72,7 @@ class ApplicationContainer:
             wallet_price=calculate_wallet_price,
             writer=SqlAlchemyHourlyPriceWriter(self._database_path),
         )
+        self.wb_daily_price_closer = SqlAlchemyDailyPriceCloser(self._database_path)
 
     def _identity_unit_of_work(self) -> SqlAlchemyIdentityUnitOfWork:
         database = database_for_path(self._database_path())

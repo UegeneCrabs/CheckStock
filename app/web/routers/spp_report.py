@@ -132,3 +132,22 @@ async def history(
         "date_to": date_to.isoformat(),
         "days": [asdict(point) for point in points],
     }
+
+
+@router.get("/api/unit-economics-1c/reports/spp/hourly-history")
+async def hourly_history(request: Request, store: str, article: str, day: date | None = None):
+    stores = _stores(request)
+    day = day or datetime.now(MOSCOW_TIMEZONE).date()
+    _period(day, day)
+    if store not in stores:
+        raise HTTPException(403, "Нет доступа к кабинету")
+
+    def authorized_history() -> spp_report.SppHourlyHistory | None:
+        if any(product["article"] == article for product in spp_report._catalog((store,))):
+            return spp_report.hourly_history(store, article, day)
+        return None
+
+    result = await run_in_threadpool(authorized_history)
+    if result is None:
+        raise HTTPException(404, "Товар не найден")
+    return asdict(result)

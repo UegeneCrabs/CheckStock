@@ -2,14 +2,17 @@
 
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.dto.wb_hourly_prices import WbCatalogItem, WbHourlyCollection, WbHourlyStoreReport
 from app.infrastructure.database import Database
 from app.infrastructure.orm import OrmBase
-from app.infrastructure.wb_hourly_price_repository import SqlAlchemyHourlyPriceWriter
+from app.infrastructure.wb_hourly_price_repository import (
+    SqlAlchemyDailyPriceCloser,
+    SqlAlchemyHourlyPriceWriter,
+)
 from app.jobs import background
 from app.repositories.schema import _migrate_wb_hourly_spp_percent, _migrate_wb_hourly_turnover
 from app.wb import api
@@ -314,6 +317,63 @@ class HourlyPriceTests(unittest.TestCase):
         self.assertEqual(prices[0].nm_id, "123")
         self.assertEqual(prices[0].size_id, 11)
         self.assertEqual(prices[0].discounted_price, 1200)
+
+    def test_close_uses_turnover_weights_and_keeps_new_moscow_day(self):
+        with self.database.connect() as connection:
+            for observed, spp, turnover, price, article in (
+                ("2026-10-09T20:00:00+00:00", 10, 10, 100, "123 / M"),
+                ("2026-10-09T20:30:00+00:00", 30, 30, 200, "123 / M"),
+                ("2026-10-09T20:30:00+00:00", 20, None, 300, "123 / L"),
+                ("2026-10-09T20:45:00+00:00", 40, 0, 100, "123 / L"),
+                ("2026-10-09T21:00:00+00:00", 40, 40, 400, "123 / M"),
+            ):
+                connection.execute(
+                    "INSERT INTO wb_hourly_prices (store_slug, article, observed_hour, observed_at, nm_id, "
+                    "customer_price_with_spp, spp_percent, orders_turnover_rub, customer_price_with_wallet, "
+                    "wallet_discount_percent, product_kopecks, logistics_kopecks, price_fields_json, "
+                    "sale_conditions) VALUES ('tris', ?, ?, ?, '123', ?, ?, ?, ?, 5, ?, 0, '{}', 0)",
+                    (article, observed, observed, price, spp, turnover, price - 10, price * 100),
+                )
+            connection.commit()
+        closer = SqlAlchemyDailyPriceCloser(lambda: Path(self.directory.name) / "prices.sqlite")
+        self.assertEqual(closer.close(date(2026, 10, 10)), 2)
+        self.assertEqual(closer.close(date(2026, 10, 10)), 0)
+        with self.database.connect() as connection:
+            daily = connection.execute(
+                "SELECT article, observed_day, customer_price_with_spp, spp_percent, "
+                "product_kopecks FROM wb_daily_prices ORDER BY article"
+            ).fetchall()
+            hourly = connection.execute("SELECT observed_at FROM wb_hourly_prices").fetchall()
+        self.assertEqual(len(daily), 2)
+        self.assertEqual(daily[0]["observed_day"], "2026-10-09")
+        self.assertEqual(daily[0]["customer_price_with_spp"], 200)
+        self.assertEqual(daily[0]["spp_percent"], 30)
+        self.assertEqual(daily[1]["customer_price_with_spp"], 175)
+        self.assertEqual(daily[1]["spp_percent"], 25)
+        self.assertEqual(daily[1]["product_kopecks"], 17500)
+        self.assertEqual([row["observed_at"] for row in hourly], ["2026-10-09T21:00:00+00:00"])
+
+    def test_close_rolls_back_if_daily_row_already_exists(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO wb_hourly_prices (store_slug, article, observed_hour, observed_at, nm_id, "
+                "customer_price_with_spp, product_kopecks, logistics_kopecks, price_fields_json, "
+                "sale_conditions) VALUES ('tris', '123', '2026-10-09T20:00:00+00:00', "
+                "'2026-10-09T20:00:00+00:00', '123', 100, 10000, 0, '{}', 0)"
+            )
+            connection.execute(
+                "INSERT INTO wb_daily_prices (store_slug, article, observed_day, observed_at, nm_id, "
+                "customer_price_with_spp, product_kopecks, logistics_kopecks, price_fields_json, "
+                "sale_conditions) VALUES ('tris', '123', '2026-10-09', "
+                "'2026-10-09T19:00:00+00:00', '123', 100, 10000, 0, '{}', 0)"
+            )
+            connection.commit()
+        closer = SqlAlchemyDailyPriceCloser(lambda: Path(self.directory.name) / "prices.sqlite")
+        with self.assertRaisesRegex(RuntimeError, "Late hourly price"):
+            closer.close(date(2026, 10, 10))
+        with self.database.connect() as connection:
+            count = connection.execute("SELECT COUNT(*) AS count FROM wb_hourly_prices").fetchone()
+        self.assertEqual(count["count"], 1)
 
 
 if __name__ == "__main__":

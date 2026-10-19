@@ -3,7 +3,7 @@
 import tempfile
 import unittest
 from dataclasses import asdict
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.access.sections import section_for_path
+from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.identity import SectionName, User
 from app.economics.wb import reference_data, spp_report
 from app.infrastructure.database import Database
@@ -63,21 +64,23 @@ class SppReportTests(unittest.TestCase):
                 ("tris", "101", "2026-09-30T10:00:00+00:00", 15),
             ):
                 connection.execute(
-                    "INSERT INTO wb_hourly_prices "
-                    "(store_slug, article, observed_hour, observed_at, nm_id, "
+                    "INSERT INTO wb_daily_prices "
+                    "(store_slug, article, observed_day, observed_at, nm_id, "
                     "customer_price_with_spp, spp_percent, product_kopecks, "
                     "logistics_kopecks, price_fields_json, sale_conditions) "
                     "VALUES (?, ?, ?, ?, ?, 100, ?, 10000, 0, '{}', 0)",
-                    (store, article, observed, observed, article, spp),
+                    (store, article, observed[:10], observed, article, spp),
                 )
             connection.commit()
 
     def test_adjacent_period_last_valid_observation_and_summary(self):
         orders = [
-            {"store_slug": "rimili", "article": "101", "net_orders_amount": 1250},
-            {"store_slug": "rimili", "article": "102", "net_orders_amount": 980},
+            {"store_slug": "rimili", "article": "101", "day": "2026-09-30", "net_orders_amount": 1250},
+            {"store_slug": "rimili", "article": "102", "day": "2026-09-30", "net_orders_amount": 980},
         ]
-        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=orders):
+        with patch.object(
+            spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=orders
+        ):
             result = asdict(
                 spp_report.load(("rimili",), date(2026, 9, 1), date(2026, 9, 30), spp_report.SppFilters())
             )
@@ -85,7 +88,7 @@ class SppReportTests(unittest.TestCase):
         self.assertEqual(result["period"]["previous_to"], "2026-08-31")
         self.assertEqual([row["article"] for row in result["rows"]], ["101", "102", "103"])
         self.assertEqual(result["rows"][0]["current_spp"], 12)
-        self.assertEqual(result["rows"][0]["previous_spp"], 17)
+        self.assertEqual(result["rows"][0]["previous_spp"], 17.5)
         self.assertEqual([row["status"] for row in result["rows"]], ["problem", "healthy", "no_data"])
         self.assertEqual(
             result["summary"],
@@ -99,8 +102,121 @@ class SppReportTests(unittest.TestCase):
         )
         self.assertIsNone(result["rows"][2]["turnover"])
 
+    def test_period_spp_is_weighted_by_daily_turnover_and_sizes_use_nm_id(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO wb_daily_prices "
+                "(store_slug, article, observed_day, observed_at, nm_id, customer_price_with_spp, "
+                "spp_percent, product_kopecks, logistics_kopecks, price_fields_json, sale_conditions) "
+                "VALUES ('rimili', '101', '2026-09-29', '2026-09-29T10:00:00+00:00', "
+                "'101', 100, 20, 10000, 0, '{}', 0)"
+            )
+            connection.execute(
+                "INSERT INTO stock_items (store_slug, marketplace, article, barcode, name) "
+                "VALUES ('rimili', 'WB', '101 / M', '101-M', 'Лампа M')"
+            )
+            for day, spp in (("2026-09-29", 30), ("2026-09-30", 10)):
+                connection.execute(
+                    "INSERT INTO wb_daily_prices "
+                    "(store_slug, article, observed_day, observed_at, nm_id, customer_price_with_spp, "
+                    "spp_percent, product_kopecks, logistics_kopecks, price_fields_json, sale_conditions) "
+                    "VALUES ('rimili', '101 / M', ?, ?, '101', 100, ?, 10000, 0, '{}', 0)",
+                    (day, f"{day}T10:00:00+00:00", spp),
+                )
+            connection.commit()
+        orders = [
+            {"store_slug": "rimili", "article": "101", "day": "2026-09-29", "net_orders_amount": 10},
+            {"store_slug": "rimili", "article": "101", "day": "2026-09-30", "net_orders_amount": 30},
+        ]
+        with patch.object(
+            spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=orders
+        ):
+            report = spp_report.load(
+                ("rimili",), date(2026, 9, 29), date(2026, 9, 30), spp_report.SppFilters()
+            )
+            history = spp_report.daily_history("rimili", "101 / M", date(2026, 9, 29), date(2026, 9, 30))
+        products = {row.article: row for row in report.rows}
+        self.assertEqual(products["101"].current_spp, 14)
+        self.assertEqual(products["101 / M"].current_spp, 15)
+        self.assertEqual(products["101 / M"].turnover, 40)
+        self.assertEqual([point.turnover_rub for point in history], [10, 30])
+
+    def test_open_day_is_excluded_without_changing_selected_dates(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO wb_daily_prices "
+                "(store_slug, article, observed_day, observed_at, nm_id, customer_price_with_spp, "
+                "spp_percent, product_kopecks, logistics_kopecks, price_fields_json, sale_conditions) "
+                "VALUES ('rimili', '101', '2026-09-29', '2026-09-29T10:00:00+00:00', "
+                "'101', 100, 20, 10000, 0, '{}', 0)"
+            )
+            connection.execute(
+                "INSERT INTO wb_hourly_prices (store_slug, article, observed_hour, observed_at, nm_id, "
+                "customer_price_with_spp, spp_percent, orders_turnover_rub, product_kopecks, "
+                "logistics_kopecks, price_fields_json, sale_conditions) "
+                "VALUES ('rimili', '101', '2026-09-30T11:00:00+00:00', "
+                "'2026-09-30T11:00:00+00:00', '101', 100, 5, 30, 10000, 0, '{}', 0)"
+            )
+            connection.commit()
+        orders = [
+            {"store_slug": "rimili", "article": "101", "day": "2026-09-29", "net_orders_amount": 10},
+            {"store_slug": "rimili", "article": "101", "day": "2026-09-30", "net_orders_amount": 30},
+        ]
+        with patch.object(
+            spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=orders
+        ):
+            report = spp_report.load(
+                ("rimili",), date(2026, 9, 29), date(2026, 9, 30), spp_report.SppFilters()
+            )
+        product = next(row for row in report.rows if row.article == "101")
+        self.assertEqual(product.current_spp, 20)
+        self.assertEqual(product.turnover, 10)
+        self.assertEqual(report.period.date_to, "2026-09-30")
+        self.assertEqual(report.period.excluded_days, ("2026-09-30",))
+
+    def test_today_only_uses_hourly_turnover_for_spp_and_price(self):
+        today = datetime.now(MOSCOW_TIMEZONE).date()
+        yesterday = today - timedelta(days=1)
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO wb_daily_prices "
+                "(store_slug, article, observed_day, observed_at, nm_id, customer_price_with_spp, "
+                "spp_percent, product_kopecks, logistics_kopecks, price_fields_json, sale_conditions) "
+                "VALUES ('rimili', '101', ?, ?, '101', 100, 15, 10000, 0, '{}', 0)",
+                (yesterday.isoformat(), f"{yesterday}T10:00:00+00:00"),
+            )
+            for hour, spp, price, turnover in ((9, 10, 100, 10), (10, 30, 200, 30)):
+                observed = (
+                    datetime.combine(today, datetime.min.time(), MOSCOW_TIMEZONE)
+                    .replace(hour=hour)
+                    .astimezone(UTC)
+                    .isoformat()
+                )
+                connection.execute(
+                    "INSERT INTO wb_hourly_prices (store_slug, article, observed_hour, observed_at, nm_id, "
+                    "customer_price_with_spp, spp_percent, orders_turnover_rub, product_kopecks, "
+                    "logistics_kopecks, price_fields_json, sale_conditions) "
+                    "VALUES ('rimili', '101', ?, ?, '101', ?, ?, ?, 10000, 0, '{}', 0)",
+                    (observed, observed, price, spp, turnover),
+                )
+            connection.commit()
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]):
+            report = spp_report.load(("rimili",), today, today, spp_report.SppFilters())
+            mixed = spp_report.load(("rimili",), yesterday, today, spp_report.SppFilters())
+        current_product = next(row for row in report.rows if row.article == "101")
+        self.assertEqual(current_product.current_spp, 25)
+        self.assertEqual(current_product.turnover, 30)
+        self.assertTrue(report.period.hourly_today)
+        self.assertEqual(report.period.excluded_days, ())
+        self.assertEqual(next(row.current_spp for row in mixed.rows if row.article == "101"), 15)
+        self.assertEqual(mixed.period.excluded_days, (today.isoformat(),))
+        self.assertEqual(mixed.period.date_to, today.isoformat())
+        history = spp_report.hourly_history("rimili", "101", today)
+        self.assertEqual(history.average_spp, 25)
+        self.assertEqual(history.average_price, 175)
+
     def test_store_and_manager_scope(self):
-        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]):
             result = asdict(
                 spp_report.load(
                     ("rimili", "tris"),
@@ -127,7 +243,9 @@ class SppReportTests(unittest.TestCase):
             connection.commit()
 
         def options(filters):
-            with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+            with patch.object(
+                spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]
+            ):
                 return asdict(
                     spp_report.load(("rimili", "tris"), date(2026, 9, 1), date(2026, 9, 30), filters)
                 )["options"]
@@ -147,7 +265,7 @@ class SppReportTests(unittest.TestCase):
         by_article = options(spp_report.SppFilters(article="102"))
         self.assertEqual(by_article, options(spp_report.SppFilters()))
 
-    def test_daily_history_averages_moscow_days_and_keeps_missing_days(self):
+    def test_daily_history_excludes_open_day_and_keeps_missing_days(self):
         with self.database.connect() as connection:
             for observed, spp in (
                 ("2026-09-01T20:30:00+00:00", 10),  # 23:30 in Moscow
@@ -165,9 +283,29 @@ class SppReportTests(unittest.TestCase):
             connection.commit()
         history = spp_report.daily_history("rimili", "101", date(2026, 9, 1), date(2026, 9, 3))
         self.assertEqual(
-            [(point.date, point.average_spp, point.observations) for point in history],
-            [("2026-09-01", 13, 2), ("2026-09-02", 40, 2), ("2026-09-03", None, 0)],
+            [(point.date, point.average_spp, point.open) for point in history],
+            [("2026-09-01", None, True), ("2026-09-02", None, True), ("2026-09-03", None, False)],
         )
+        hourly = spp_report.hourly_history("rimili", "101", date(2026, 9, 2))
+        self.assertEqual(len(hourly.hours), 24)
+        self.assertEqual(hourly.hours[0].spp_percent, 30)
+        self.assertEqual(hourly.hours[12].spp_percent, 50)
+        self.assertEqual(hourly.average_spp, 40)
+
+    def test_closed_day_is_read_from_daily_prices(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE wb_daily_prices SET spp_percent=14 "
+                "WHERE store_slug='rimili' AND article='101' AND observed_day='2026-09-30'"
+            )
+            connection.commit()
+        history = spp_report.daily_history("rimili", "101", date(2026, 9, 30), date(2026, 9, 30))
+        self.assertEqual((history[0].average_spp, history[0].observations), (14, 1))
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]):
+            report = spp_report.load(
+                ("rimili",), date(2026, 9, 1), date(2026, 9, 30), spp_report.SppFilters()
+            )
+        self.assertEqual(next(row.current_spp for row in report.rows if row.article == "101"), 15)
 
     def test_history_periods_are_rolling_calendar_windows(self):
         today = date(2026, 10, 12)
@@ -190,7 +328,7 @@ class SppReportTests(unittest.TestCase):
         )
 
     def test_tolerance_changes_status_and_summary(self):
-        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]):
             result = spp_report.load(
                 ("rimili",),
                 date(2026, 9, 1),
@@ -203,7 +341,7 @@ class SppReportTests(unittest.TestCase):
         self.assertEqual(result.summary.no_data, 1)
         self.assertEqual(result.summary.health_percent, 100)
         self.assertEqual(result.rows[0].status, "healthy")
-        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]):
             above_slider = spp_report.load(
                 ("rimili",), date(2026, 9, 1), date(2026, 9, 30), spp_report.SppFilters(), tolerance=150
             )
@@ -211,8 +349,8 @@ class SppReportTests(unittest.TestCase):
 
     def test_each_column_sorts_before_pagination_in_both_directions(self):
         orders = [
-            {"store_slug": "rimili", "article": "101", "net_orders_amount": 1250},
-            {"store_slug": "rimili", "article": "102", "net_orders_amount": 980},
+            {"store_slug": "rimili", "article": "101", "day": "2026-09-30", "net_orders_amount": 1250},
+            {"store_slug": "rimili", "article": "102", "day": "2026-09-30", "net_orders_amount": 980},
         ]
         expected = {
             "article": (["101", "102", "103"], ["103", "102", "101"]),
@@ -222,7 +360,9 @@ class SppReportTests(unittest.TestCase):
             "previous_spp": (["101", "102", "103"], ["102", "101", "103"]),
             "status": (["102", "103", "101"], ["101", "103", "102"]),
         }
-        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=orders):
+        with patch.object(
+            spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=orders
+        ):
             for field, (ascending, descending) in expected.items():
                 for order, articles in (
                     (spp_report.SppSortOrder.ASC, ascending),
@@ -265,7 +405,7 @@ class SppReportTests(unittest.TestCase):
                     (article, article, article),
                 )
             connection.commit()
-        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_order_totals", return_value=[]):
+        with patch.object(spp_report.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]):
             result = spp_report.load(
                 ("rimili",),
                 date(2026, 9, 1),
@@ -341,6 +481,16 @@ class SppReportTests(unittest.TestCase):
                 "/api/unit-economics-1c/reports/spp/history"
                 "?store=rimili&article=unknown&date_from=2026-09-01&date_to=2026-09-02"
             )
+            hourly = client.get(
+                "/api/unit-economics-1c/reports/spp/hourly-history?store=rimili&article=101&day=2026-09-01"
+            )
+            denied_hourly = client.get(
+                "/api/unit-economics-1c/reports/spp/hourly-history?store=unknown&article=101&day=2026-09-01"
+            )
+            missing_hourly = client.get(
+                "/api/unit-economics-1c/reports/spp/hourly-history"
+                "?store=rimili&article=unknown&day=2026-09-01"
+            )
             self.assertEqual(page_response.status_code, 200)
             self.assertIn("Отчёт по СПП", page_response.text)
             self.assertEqual(report_response.status_code, 200)
@@ -356,12 +506,30 @@ class SppReportTests(unittest.TestCase):
             self.assertEqual(
                 history.json()["days"],
                 [
-                    {"date": "2026-09-01", "average_spp": 16, "observations": 1},
-                    {"date": "2026-09-02", "average_spp": None, "observations": 0},
+                    {
+                        "date": "2026-09-01",
+                        "average_spp": 16,
+                        "observations": 1,
+                        "average_price": 100,
+                        "turnover_rub": None,
+                        "open": False,
+                    },
+                    {
+                        "date": "2026-09-02",
+                        "average_spp": None,
+                        "observations": 0,
+                        "average_price": None,
+                        "turnover_rub": None,
+                        "open": False,
+                    },
                 ],
             )
             self.assertEqual(denied_history.status_code, 403)
             self.assertEqual(missing_history.status_code, 404)
+            self.assertEqual(hourly.status_code, 200)
+            self.assertEqual(len(hourly.json()["hours"]), 24)
+            self.assertEqual(denied_hourly.status_code, 403)
+            self.assertEqual(missing_hourly.status_code, 404)
         self.assertEqual(
             section_for_path("/api/unit-economics-1c/reports/spp"),
             SectionName.REPORT_SPP,

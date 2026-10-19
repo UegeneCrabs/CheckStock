@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import re
 from calendar import monthrange
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
+from math import fsum
 
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
@@ -72,6 +74,9 @@ class SppPeriod:
     date_to: str
     previous_from: str
     previous_to: str
+    excluded_days: tuple[str, ...] = ()
+    previous_excluded_days: tuple[str, ...] = ()
+    hourly_today: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +106,53 @@ class SppDailyPoint:
     date: str
     average_spp: float | None
     observations: int
+    average_price: float | None = None
+    turnover_rub: float | None = None
+    open: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SppHourlyPoint:
+    hour: str
+    observed_at: str | None
+    spp_percent: float | None
+    customer_price_with_spp: float | None
+    orders_turnover_rub: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class SppHourlyHistory:
+    day: str
+    hours: tuple[SppHourlyPoint, ...]
+    average_spp: float | None
+    average_price: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DailyPrice:
+    store_slug: str
+    article: str
+    nm_id: str
+    day: date
+    spp_percent: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _HourlySnapshot:
+    store_slug: str
+    article: str
+    observed_at: str
+    spp_percent: float | None
+    customer_price_with_spp: float
+    orders_turnover_rub: float | None
+
+
+def _weighted_average(values: list[tuple[float | None, float | None]]) -> float | None:
+    available = [(value, weight) for value, weight in values if value is not None]
+    weighted = [(value, weight) for value, weight in available if weight is not None and weight > 0]
+    if weighted:
+        return fsum(value * weight for value, weight in weighted) / fsum(weight for _, weight in weighted)
+    return fsum(value for value, _ in available) / len(available) if available else None
 
 
 def previous_period(date_from: date, date_to: date) -> tuple[date, date]:
@@ -179,55 +231,144 @@ def _catalog(stores: tuple[str, ...]) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def _latest_spp(stores: tuple[str, ...], date_from: date, date_to: date) -> dict[tuple[str, str, int], float]:
+def _daily_prices(stores: tuple[str, ...], date_from: date, date_to: date) -> tuple[_DailyPrice, ...]:
     if not stores:
-        return {}
-    previous_from, _ = previous_period(date_from, date_to)
-    start = _utc_boundary(previous_from)
-    split = _utc_boundary(date_from)
-    end = _utc_boundary(date_to + timedelta(days=1))
+        return ()
     placeholders = ",".join("?" for _ in stores)
     with db.get_connection() as connection:
         rows = connection.execute(
-            f"""SELECT store_slug, article, period, spp_percent FROM (
-                    SELECT store_slug, article, spp_percent,
-                           CASE WHEN observed_at < ? THEN 0 ELSE 1 END AS period,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY store_slug, article,
-                                            CASE WHEN observed_at < ? THEN 0 ELSE 1 END
-                               ORDER BY observed_at DESC
-                           ) AS rank
-                      FROM wb_hourly_prices
-                     WHERE store_slug IN ({placeholders})
-                       AND observed_at >= ? AND observed_at < ?
-                       AND spp_percent IS NOT NULL
-                ) ranked WHERE rank=1""",
-            (split, split, *stores, start, end),
+            f"""SELECT store_slug, article, nm_id, observed_day, spp_percent
+                  FROM wb_daily_prices
+                 WHERE store_slug IN ({placeholders})
+                   AND observed_day>=? AND observed_day<=?""",
+            (*stores, date_from.isoformat(), date_to.isoformat()),
         ).fetchall()
-    return {
-        (str(row["store_slug"]), str(row["article"]), int(row["period"])): float(row["spp_percent"])
+    return tuple(
+        _DailyPrice(
+            store_slug=str(row["store_slug"]),
+            article=str(row["article"]),
+            nm_id=str(row["nm_id"]),
+            day=date.fromisoformat(str(row["observed_day"])),
+            spp_percent=float(row["spp_percent"]) if row["spp_percent"] is not None else None,
+        )
         for row in rows
-    }
+    )
+
+
+def _hourly_snapshots(stores: tuple[str, ...], day: date) -> tuple[_HourlySnapshot, ...]:
+    if not stores:
+        return ()
+    placeholders = ",".join("?" for _ in stores)
+    with db.get_connection() as connection:
+        rows = connection.execute(
+            f"""SELECT store_slug, article, observed_at, spp_percent,
+                       customer_price_with_spp, orders_turnover_rub
+                  FROM wb_hourly_prices
+                 WHERE store_slug IN ({placeholders})
+                   AND observed_at>=? AND observed_at<?
+                 ORDER BY observed_at""",
+            (*stores, _utc_boundary(day), _utc_boundary(day + timedelta(days=1))),
+        ).fetchall()
+    return tuple(
+        _HourlySnapshot(
+            store_slug=str(row["store_slug"]),
+            article=str(row["article"]),
+            observed_at=str(row["observed_at"]),
+            spp_percent=float(row["spp_percent"]) if row["spp_percent"] is not None else None,
+            customer_price_with_spp=float(row["customer_price_with_spp"]),
+            orders_turnover_rub=(
+                float(row["orders_turnover_rub"]) if row["orders_turnover_rub"] is not None else None
+            ),
+        )
+        for row in rows
+    )
+
+
+def _open_days(stores: tuple[str, ...], date_from: date, date_to: date) -> tuple[date, ...]:
+    if not stores:
+        return ()
+    placeholders = ",".join("?" for _ in stores)
+    with db.get_connection() as connection:
+        rows = connection.execute(
+            f"""SELECT observed_at FROM wb_hourly_prices
+                 WHERE store_slug IN ({placeholders}) AND observed_at>=? AND observed_at<?""",
+            (*stores, _utc_boundary(date_from), _utc_boundary(date_to + timedelta(days=1))),
+        ).fetchall()
+    return tuple(
+        sorted(
+            {
+                datetime.fromisoformat(str(row["observed_at"])).astimezone(MOSCOW_TIMEZONE).date()
+                for row in rows
+            }
+        )
+    )
 
 
 def daily_history(store: str, article: str, date_from: date, date_to: date) -> tuple[SppDailyPoint, ...]:
-    """Average actual observations within each Moscow calendar day."""
+    """Show finalized daily prices; hourly dates belong to the separate chart."""
+    open_days = set(_open_days((store,), date_from, date_to))
     with db.get_connection() as connection:
-        rows = connection.execute(
-            """SELECT observed_at, spp_percent FROM wb_hourly_prices
-                 WHERE store_slug=? AND article=? AND observed_at>=? AND observed_at<?
-                   AND spp_percent IS NOT NULL ORDER BY observed_at""",
-            (store, article, _utc_boundary(date_from), _utc_boundary(date_to + timedelta(days=1))),
+        daily = connection.execute(
+            """SELECT observed_day, nm_id, spp_percent, customer_price_with_spp FROM wb_daily_prices
+                 WHERE store_slug=? AND article=? AND observed_day>=? AND observed_day<=?""",
+            (store, article, date_from.isoformat(), date_to.isoformat()),
         ).fetchall()
-    totals: dict[date, tuple[float, int]] = {}
-    for row in rows:
-        day = datetime.fromisoformat(row["observed_at"]).astimezone(MOSCOW_TIMEZONE).date()
-        total, count = totals.get(day, (0.0, 0))
-        totals[day] = (total + float(row["spp_percent"]), count + 1)
+    by_day = {date.fromisoformat(str(row["observed_day"])): row for row in daily}
+    daily_turnover = {
+        (date.fromisoformat(str(row["day"])), str(row["article"])): float(row["net_orders_amount"])
+        for row in db.get_unit_economics_1c_funnel_daily_order_rows(
+            (store,), date_from.isoformat(), date_to.isoformat()
+        )
+        if row.get("net_orders_amount") is not None
+    }
     return tuple(
-        SppDailyPoint(day.isoformat(), total / count if count else None, count)
+        SppDailyPoint(
+            date=day.isoformat(),
+            average_spp=(
+                float(by_day[day]["spp_percent"])
+                if day not in open_days and day in by_day and by_day[day]["spp_percent"] is not None
+                else None
+            ),
+            observations=(
+                1 if day not in open_days and day in by_day and by_day[day]["spp_percent"] is not None else 0
+            ),
+            average_price=(
+                float(by_day[day]["customer_price_with_spp"])
+                if day not in open_days and day in by_day
+                else None
+            ),
+            turnover_rub=(
+                daily_turnover.get((day, str(by_day[day]["nm_id"])))
+                if day not in open_days and day in by_day
+                else None
+            ),
+            open=day in open_days,
+        )
         for day in (date_from + timedelta(days=offset) for offset in range((date_to - date_from).days + 1))
-        for total, count in (totals.get(day, (0.0, 0)),)
+    )
+
+
+def hourly_history(store: str, article: str, day: date) -> SppHourlyHistory:
+    snapshots = tuple(row for row in _hourly_snapshots((store,), day) if row.article == article)
+    by_hour = {
+        datetime.fromisoformat(row.observed_at).astimezone(MOSCOW_TIMEZONE).hour: row for row in snapshots
+    }
+    return SppHourlyHistory(
+        day=day.isoformat(),
+        hours=tuple(
+            SppHourlyPoint(
+                hour=datetime.combine(day, time(hour=hour), MOSCOW_TIMEZONE).isoformat(),
+                observed_at=row.observed_at if (row := by_hour.get(hour)) is not None else None,
+                spp_percent=row.spp_percent if row is not None else None,
+                customer_price_with_spp=row.customer_price_with_spp if row is not None else None,
+                orders_turnover_rub=row.orders_turnover_rub if row is not None else None,
+            )
+            for hour in range(24)
+        ),
+        average_spp=_weighted_average([(row.spp_percent, row.orders_turnover_rub) for row in snapshots]),
+        average_price=_weighted_average(
+            [(row.customer_price_with_spp, row.orders_turnover_rub) for row in snapshots]
+        ),
     )
 
 
@@ -293,18 +434,57 @@ def load(
             if term in str(row["article"]).casefold() or term in str(row["name"]).casefold()
         ]
 
-    spp = _latest_spp(stores, date_from, date_to)
-    turnovers = {
-        (str(row["store_slug"]), str(row["article"])): float(row["net_orders_amount"])
-        for row in db.get_unit_economics_1c_funnel_order_totals(
-            stores, date_from.isoformat(), date_to.isoformat()
+    active_stores = (filters.store,) if filters.store and filters.store in stores else stores
+    previous_from, previous_to = previous_period(date_from, date_to)
+    open_current = set(_open_days(active_stores, date_from, date_to))
+    open_previous = set(_open_days(active_stores, previous_from, previous_to))
+    today_only = date_from == date_to == datetime.now(MOSCOW_TIMEZONE).date()
+    hourly_today = today_only and date_from in open_current
+    if today_only:
+        open_current.discard(date_from)
+
+    turnover_by_day = {
+        (str(row["store_slug"]), str(row["article"]), date.fromisoformat(str(row["day"]))): float(
+            row["net_orders_amount"]
+        )
+        for row in db.get_unit_economics_1c_funnel_daily_order_rows(
+            active_stores, previous_from.isoformat(), date_to.isoformat()
         )
         if row.get("net_orders_amount") is not None
     }
+    period_values: dict[tuple[str, str, int], list[tuple[float | None, float | None]]] = defaultdict(list)
+    for row in _daily_prices(active_stores, previous_from, date_to):
+        if row.day in open_current or row.day in open_previous:
+            continue
+        if today_only and row.day == date_from:
+            continue
+        period = 1 if date_from <= row.day <= date_to else 0
+        period_values[(row.store_slug, row.article, period)].append(
+            (row.spp_percent, turnover_by_day.get((row.store_slug, row.nm_id, row.day)))
+        )
+    today_snapshots = _hourly_snapshots(active_stores, date_from) if today_only else ()
+    if today_only:
+        for row in today_snapshots:
+            period_values[(row.store_slug, row.article, 1)].append((row.spp_percent, row.orders_turnover_rub))
+    spp = {key: _weighted_average(values) for key, values in period_values.items()}
+    turnovers: dict[tuple[str, str], float] = defaultdict(float)
+    for (store_slug, nm_id, day), amount in turnover_by_day.items():
+        if date_from <= day <= date_to and day not in open_current:
+            turnovers[(store_slug, nm_id)] += amount
+    if today_only:
+        latest_hourly_turnover: dict[tuple[str, str], float] = {}
+        for row in today_snapshots:
+            if row.orders_turnover_rub is not None:
+                latest_hourly_turnover[(row.store_slug, row.article.partition(" / ")[0].strip())] = (
+                    row.orders_turnover_rub
+                )
+        for key, amount in latest_hourly_turnover.items():
+            turnovers.setdefault(key, amount)
     products: list[SppProduct] = []
     for row in catalog:
         key = (str(row["store_slug"]), str(row["article"]))
         current, previous = spp.get((*key, 1)), spp.get((*key, 0))
+        nm_id = key[1].partition(" / ")[0].strip()
         status = (
             "no_data"
             if current is None or previous is None
@@ -320,7 +500,7 @@ def load(
                 brand=row.get("brand"),
                 subject=row.get("subject"),
                 manager=row.get("manager"),
-                turnover=turnovers.get(key),
+                turnover=turnovers.get((key[0], nm_id)),
                 current_spp=current,
                 previous_spp=previous,
                 status=status,
@@ -330,7 +510,6 @@ def load(
     problem = sum(item.status == "problem" for item in products)
     healthy = sum(item.status == "healthy" for item in products)
     comparable = problem + healthy
-    previous_from, previous_to = previous_period(date_from, date_to)
     return SppReportResult(
         rows=tuple(products[(page - 1) * page_size : page * page_size]),
         total=len(products),
@@ -348,6 +527,9 @@ def load(
             date_to=date_to.isoformat(),
             previous_from=previous_from.isoformat(),
             previous_to=previous_to.isoformat(),
+            excluded_days=tuple(day.isoformat() for day in sorted(open_current)),
+            previous_excluded_days=tuple(day.isoformat() for day in sorted(open_previous)),
+            hourly_today=hourly_today,
         ),
         options=options,
         sort_by=sort_by,

@@ -6,6 +6,7 @@
     const form = byId('spp-filters');
     const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
     const money = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 });
+    const priceMoney = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 });
     const plural = new Intl.PluralRules('ru-RU');
     const observationCount = (count) => `${count} ${{ one: 'замер', few: 'замера', many: 'замеров', other: 'замера' }[plural.select(count)]}`;
     const historyPeriods = [
@@ -221,16 +222,19 @@
         return td;
     }
 
-    function renderHistory(container, days, viewStart = 0, viewEnd = days.length - 1) {
+    function renderHistory(container, days, mode = 'daily', viewStart = 0, viewEnd = days.length - 1) {
         container.replaceChildren();
         const observed = days.filter((day) => day.average_spp !== null);
         if (!observed.length) {
-            container.textContent = 'За этот срок нет замеров СПП.';
+            container.textContent = mode === 'hourly'
+                ? 'За выбранный день нет почасовых замеров СПП.'
+                : 'За этот срок нет закрытых дневных замеров СПП.';
             return;
         }
+        const label = (point) => mode === 'hourly' ? point.date.slice(11, 16) : displayDate(point.date);
         const title = document.createElement('p');
         title.className = 'spp-history__title';
-        title.textContent = 'Средний СПП по дням, %';
+        title.textContent = mode === 'hourly' ? 'СПП по часам, %' : 'Средневзвешенный СПП по дням, %';
         container.append(title);
         const values = observed.map((day) => day.average_spp);
         const minimum = Math.max(0, Math.floor(Math.min(...values) - 2));
@@ -259,18 +263,18 @@
             if (nextCount === currentCount) return;
             const relative = (anchorIndex - viewStart) / Math.max(1, currentCount - 1);
             const nextStart = clamp(Math.round(anchorIndex - relative * (nextCount - 1)), 0, days.length - nextCount);
-            renderHistory(container, days, nextStart, nextStart + nextCount - 1);
+            renderHistory(container, days, mode, nextStart, nextStart + nextCount - 1);
         };
         const controls = document.createElement('div');
         controls.className = 'spp-history__controls';
         const range = document.createElement('span');
-        range.textContent = `${displayDate(days[viewStart].date)} — ${displayDate(days[viewEnd].date)}`;
+        range.textContent = `${label(days[viewStart])} — ${label(days[viewEnd])}`;
         const buttons = document.createElement('div');
         buttons.className = 'spp-history__zoom-buttons';
         for (const [label, action, disabled] of [
             ['−', () => zoom(1.5), viewStart === 0 && viewEnd === days.length - 1],
             ['+', () => zoom(0.67), viewEnd - viewStart < 3],
-            ['Весь период', () => renderHistory(container, days), viewStart === 0 && viewEnd === days.length - 1],
+            ['Весь период', () => renderHistory(container, days, mode), viewStart === 0 && viewEnd === days.length - 1],
         ]) {
             const button = document.createElement('button');
             button.type = 'button';
@@ -285,7 +289,7 @@
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.setAttribute('role', 'img');
-        svg.setAttribute('aria-label', 'История СПП по дням. Используйте стрелки для просмотра значений.');
+        svg.setAttribute('aria-label', `История СПП по ${mode === 'hourly' ? 'часам' : 'дням'}. Используйте стрелки для просмотра значений.`);
         svg.setAttribute('tabindex', '0');
         svg.classList.add('spp-history__chart');
         const frame = document.createElement('div');
@@ -312,9 +316,15 @@
         const showTooltip = (index) => {
             const day = days[index];
             selectedIndex = index;
+            const moment = mode === 'hourly' ? `${displayDate(day.date.slice(0, 10))} ${label(day)}` : label(day);
+            const price = day.average_price === null || day.average_price === undefined
+                ? '' : ` · Цена ${priceMoney.format(day.average_price)}`;
+            const turnoverValue = mode === 'hourly' ? day.turnover : day.turnover_rub;
+            const turnover = turnoverValue === null || turnoverValue === undefined
+                ? '' : ` · ТО ${money.format(turnoverValue)}`;
             tooltip.textContent = day.average_spp === null
-                ? `${displayDate(day.date)} · нет замеров СПП`
-                : `${displayDate(day.date)} · ${number.format(day.average_spp)}% · ${observationCount(day.observations)}`;
+                ? `${moment} · ${day.open ? 'неполный день' : 'нет замеров СПП'}${price}${turnover}`
+                : `${moment} · СПП ${number.format(day.average_spp)}%${price}${turnover} · ${observationCount(day.observations)}`;
             tooltip.hidden = false;
             const frameBounds = frame.getBoundingClientRect();
             const chartBounds = svg.getBoundingClientRect();
@@ -387,7 +397,7 @@
                     if (start !== lastStart || start + count - 1 !== lastEnd) {
                         lastStart = start;
                         lastEnd = start + count - 1;
-                        renderHistory(container, days, start, start + count - 1);
+                        renderHistory(container, days, mode, start, start + count - 1);
                     }
                 };
                 const onEnd = (endEvent) => {
@@ -415,7 +425,7 @@
                 if (start !== lastStart) {
                     moved = true;
                     lastStart = start;
-                    renderHistory(container, days, start, start + count - 1);
+                    renderHistory(container, days, mode, start, start + count - 1);
                 }
             };
             const onEnd = (endEvent) => {
@@ -453,14 +463,15 @@
         visibleDays.forEach((day, offset) => {
             if (offset % labelInterval !== 0 && offset !== visibleDays.length - 1) return;
             if (offset !== visibleDays.length - 1 && offset !== 0 && x(viewEnd) - x(viewStart + offset) < 85) return;
-            element('text', { x: x(viewStart + offset), y: height - 8, 'text-anchor': offset === 0 ? 'start' : offset === visibleDays.length - 1 ? 'end' : 'middle', class: 'spp-history__label' }, displayDate(day.date));
+            element('text', { x: x(viewStart + offset), y: height - 8, 'text-anchor': offset === 0 ? 'start' : offset === visibleDays.length - 1 ? 'end' : 'middle', class: 'spp-history__label' }, label(day));
         });
         scroll.append(svg);
         frame.append(scroll, tooltip);
         container.append(frame);
         const note = document.createElement('p');
         note.className = 'spp-history__note';
-        note.textContent = `Точки: среднее арифметическое всех замеров за день по Москве. Дней с данными: ${visibleDays.filter((day) => day.average_spp !== null).length} из ${visibleDays.length}. Потяните ось дат для масштаба. Зажмите область графика и двигайте мышь, чтобы просматривать даты.`;
+        const units = mode === 'hourly' ? 'Часов' : 'Дней';
+        note.textContent = `${units} с данными: ${visibleDays.filter((day) => day.average_spp !== null).length} из ${visibleDays.length}. Потяните ось ${mode === 'hourly' ? 'времени' : 'дат'} для масштаба. Зажмите область графика и двигайте мышь для просмотра.`;
         container.append(note);
     }
 
@@ -470,7 +481,7 @@
         button.type = 'button';
         button.className = 'spp-history-toggle';
         button.textContent = '▸';
-        button.setAttribute('aria-label', `Показать график СПП по дням для артикула ${product.article}`);
+        button.setAttribute('aria-label', `Показать дневной и почасовой графики СПП для артикула ${product.article}`);
         button.setAttribute('aria-expanded', 'false');
         articleCell.prepend(button);
         const detailRow = document.createElement('tr');
@@ -491,8 +502,25 @@
         periodButtons.setAttribute('aria-label', 'Период истории СПП');
         const chart = document.createElement('div');
         chart.className = 'spp-history__body';
+        const hourlyHeader = document.createElement('div');
+        hourlyHeader.className = 'spp-history__hourly-header';
+        const hourlyHeading = document.createElement('strong');
+        hourlyHeading.textContent = 'Почасовая история СПП';
+        const hourlyLabel = document.createElement('label');
+        hourlyLabel.textContent = 'День';
+        const hourlyDate = document.createElement('input');
+        hourlyDate.type = 'date';
+        hourlyDate.value = config.dateTo;
+        hourlyDate.max = config.dateTo;
+        hourlyDate.min = '2000-01-01';
+        hourlyLabel.append(hourlyDate);
+        hourlyHeader.append(hourlyHeading, hourlyLabel);
+        const hourlySummary = document.createElement('p');
+        hourlySummary.className = 'spp-history__summary';
+        const hourlyChart = document.createElement('div');
+        hourlyChart.className = 'spp-history__body';
         header.append(heading, periodButtons);
-        detailCell.append(header, chart);
+        detailCell.append(header, chart, hourlyHeader, hourlySummary, hourlyChart);
         const cache = new Map();
         let selectedPeriod = '7d';
         let requestId = 0;
@@ -503,7 +531,7 @@
             });
             const sequence = ++requestId;
             if (cache.has(value)) {
-                renderHistory(chart, cache.get(value));
+                renderHistory(chart, cache.get(value), 'daily');
                 return;
             }
             chart.textContent = 'Загрузка графика…';
@@ -513,7 +541,7 @@
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить историю СПП');
                 cache.set(value, data.days);
-                if (detailRow.isConnected && sequence === requestId) renderHistory(chart, data.days);
+                if (detailRow.isConnected && sequence === requestId) renderHistory(chart, data.days, 'daily');
             } catch (error) {
                 if (detailRow.isConnected && sequence === requestId) chart.textContent = error.message;
             }
@@ -527,12 +555,43 @@
             option.addEventListener('click', () => selectPeriod(period.value));
             periodButtons.append(option);
         });
+        let hourlyRequestId = 0;
+        async function loadHourly() {
+            const sequence = ++hourlyRequestId;
+            const day = hourlyDate.value;
+            hourlySummary.textContent = '';
+            hourlyChart.textContent = 'Загрузка почасового графика…';
+            const params = new URLSearchParams({ store: product.store_slug, article: product.article, day });
+            try {
+                const response = await fetch(`/api/unit-economics-1c/reports/spp/hourly-history?${params}`);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить почасовую историю');
+                if (!detailRow.isConnected || sequence !== hourlyRequestId) return;
+                hourlySummary.textContent = data.average_spp === null
+                    ? 'Средневзвешенный СПП за день: нет данных.'
+                    : `Средневзвешенный СПП за день: ${number.format(data.average_spp)}%. Средневзвешенная цена: ${data.average_price === null ? 'нет данных' : priceMoney.format(data.average_price)}.`;
+                const points = data.hours.map((hour) => ({
+                    date: hour.hour,
+                    average_spp: hour.spp_percent,
+                    average_price: hour.customer_price_with_spp,
+                    turnover: hour.orders_turnover_rub,
+                    observations: hour.spp_percent === null ? 0 : 1,
+                }));
+                renderHistory(hourlyChart, points, 'hourly');
+            } catch (error) {
+                if (detailRow.isConnected && sequence === hourlyRequestId) hourlyChart.textContent = error.message;
+            }
+        }
+        hourlyDate.addEventListener('change', loadHourly);
         button.addEventListener('click', () => {
             const opening = detailRow.hidden;
             detailRow.hidden = !opening;
             button.setAttribute('aria-expanded', String(opening));
             button.textContent = opening ? '▾' : '▸';
-            if (opening && !chart.hasChildNodes()) selectPeriod(selectedPeriod);
+            if (opening) {
+                if (!chart.hasChildNodes()) selectPeriod(selectedPeriod);
+                loadHourly();
+            }
         });
     }
 
@@ -567,6 +626,18 @@
         byId('spp-overall').textContent = goodPercent === null ? 'Нет данных' : `${goodPercent}%`;
         byId('spp-missing').textContent = summary.no_data ? `Без сравнения: ${summary.no_data} товаров` : '';
         byId('spp-period-note').textContent = `Сравнение: ${displayDate(data.period.previous_from)} — ${displayDate(data.period.previous_to)}. Торговый оборот за ${displayDate(data.period.date_from)} — ${displayDate(data.period.date_to)}. Допустимое снижение: ${number.format(Number(toleranceValue.value))} п. п.`;
+        const warnings = [];
+        if (data.period.excluded_days.length) {
+            warnings.push(`Неполные дни не учитываются при расчёте за выбранный период: ${data.period.excluded_days.map(displayDate).join(', ')}.`);
+            if (data.period.excluded_days.includes(config.dateTo)) {
+                warnings.push('Чтобы посмотреть данные за сегодня, выберите только сегодняшний день: укажите его дату в полях «От» и «До».');
+            }
+        }
+        if (data.period.previous_excluded_days.length) warnings.push(`Неполные дни не учитываются при расчёте за предыдущий период: ${data.period.previous_excluded_days.map(displayDate).join(', ')}.`);
+        if (data.period.hourly_today) warnings.push('Сегодняшний день неполный: СПП рассчитан по почасовым записям.');
+        const openDaysNote = byId('spp-open-days-note');
+        openDaysNote.textContent = warnings.join(' ');
+        openDaysNote.hidden = !warnings.length;
 
         const tbody = byId('spp-rows');
         tbody.replaceChildren();

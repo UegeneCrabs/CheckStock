@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/economics/wb/spp-report.css?v=18" />
+<link rel="stylesheet" href="/static/economics/wb/spp-report.css?v=19" />
 <section class="spp-report" id="spp-report" aria-label="Отчёт по СПП">
     <header class="spp-report__heading">
         <h1>Отчёт по СПП</h1>
@@ -37,6 +37,7 @@
     <section class="spp-card spp-table-card" aria-labelledby="spp-table-title">
         <h2 id="spp-table-title">Товары</h2>
         <p id="spp-period-note">Аналогичный период рассчитывается автоматически</p>
+        <div class="spp-period-warning" id="spp-open-days-note" role="status" hidden></div>
         <div class="spp-message" id="spp-message" role="status"></div>
         <div class="spp-table-wrap"><table><colgroup>
             <col style="width:12%" /><col style="width:25%" /><col style="width:14%" />
@@ -55,4 +56,4 @@
     </section>
 </section>
 <script type="application/json" id="spp-config">$spp_report_config</script>
-<script src="/static/economics/wb/spp-report.js?v=19"></script>
+<script src="/static/economics/wb/spp-report.js?v=21"></script>

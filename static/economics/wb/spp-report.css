@@ -69,3 +69,10 @@
 .spp-filter__options [role="option"]{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:#fff;color:#10224c;text-align:left;font:inherit;cursor:pointer;overflow-wrap:anywhere}
 .spp-filter__options [role="option"]:hover,.spp-filter__options [role="option"].is-active{background:#e8effc}
 .spp-filter__empty{padding:8px 10px;color:#607395}
+.spp-period-warning{margin:0 0 12px;padding:10px 13px;border:1px solid #f1c874;border-radius:9px;background:#fff8e8;color:#674a12}
+.spp-period-warning[hidden]{display:none}
+.spp-history__hourly-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:24px 0 10px;padding-top:18px;border-top:1px solid #d8e3f3;color:#284882}
+.spp-history__hourly-header label{display:flex;align-items:center;gap:8px;color:#607395;font-size:14px}
+.spp-history__hourly-header input{border:1px solid #cbd9ee;border-radius:7px;padding:5px 8px;color:#234378;font:inherit}
+.spp-history__summary{margin:0 0 10px;color:#40557a;font-size:14px}
+.spp-history__tooltip{white-space:normal;max-width:min(320px,calc(100% - 16px));min-width:180px}
