@@ -90,6 +90,7 @@ class Settings(BaseModel):
     economics_preview_enabled: bool = False
     funnel_orders_sync_enabled: bool
     unit_economics_1c_price_sync_enabled: bool
+    wb_hourly_prices_enabled: bool = True
     unit_economics_1c_source_sync_hour: int = Field(ge=0, le=23)
     ftp_export_enabled: bool
     ftp_export_start_hour: int = Field(ge=0, le=23)
@@ -121,9 +122,12 @@ class Settings(BaseModel):
     wb_funnel_orders_sync_interval_seconds: int = Field(ge=1)
     unit_economics_1c_price_sync_interval_seconds: int = Field(ge=1)
     unit_economics_1c_wallet_sync_interval_seconds: int = Field(ge=1)
+    wb_hourly_prices_interval_seconds: int = Field(default=3600, ge=1)
     wb_storefront_dest: str = Field(min_length=1)
     wb_storefront_batch_size: int = Field(ge=1, le=1_000)
     wb_storefront_auto_refresh: bool = True
+    wb_storefront_browser_headless: bool = True
+    wb_storefront_browser_no_sandbox: bool = False
     session_ttl_days: int = Field(ge=1)
     session_cookie_secure: bool
     pbkdf2_iterations: int = Field(ge=MIN_PBKDF2_ITERATIONS, le=MAX_PBKDF2_ITERATIONS)
@@ -224,6 +228,7 @@ class Settings(BaseModel):
             unit_economics_1c_price_sync_enabled=_env_bool(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_PRICE_SYNC_ENABLED", True
             ),
+            wb_hourly_prices_enabled=_env_bool("CHECKSTOCK_WB_HOURLY_PRICES_ENABLED", True),
             unit_economics_1c_source_sync_hour=_env_int(
                 "CHECKSTOCK_UNIT_ECONOMICS_1C_SOURCE_SYNC_HOUR", 2, maximum=23
             ),
@@ -285,11 +290,16 @@ class Settings(BaseModel):
                 5 * 60,
                 minimum=1,
             ),
+            wb_hourly_prices_interval_seconds=_env_int(
+                "CHECKSTOCK_WB_HOURLY_PRICES_INTERVAL_SECONDS", 60 * 60, minimum=1
+            ),
             wb_storefront_dest=os.getenv("CHECKSTOCK_WB_STOREFRONT_DEST", "-1257786").strip() or "-1257786",
             wb_storefront_batch_size=_env_int(
                 "CHECKSTOCK_WB_STOREFRONT_BATCH_SIZE", 1_000, minimum=1, maximum=1_000
             ),
             wb_storefront_auto_refresh=_env_bool("CHECKSTOCK_WB_STOREFRONT_AUTO_REFRESH", True),
+            wb_storefront_browser_headless=_env_bool("CHECKSTOCK_WB_BROWSER_HEADLESS", True),
+            wb_storefront_browser_no_sandbox=_env_bool("CHECKSTOCK_WB_BROWSER_NO_SANDBOX", False),
             session_ttl_days=_env_int("CHECKSTOCK_SESSION_TTL_DAYS", 14, minimum=1),
             session_cookie_secure=_env_bool("CHECKSTOCK_SESSION_COOKIE_SECURE", False),
             pbkdf2_iterations=_env_int(

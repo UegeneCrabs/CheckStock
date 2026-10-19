@@ -2,11 +2,19 @@ import contextvars
 import logging
 import sys
 import uuid
+from copy import copy
 
 from app.config import Settings, settings
 from app.integrations.bitrix import bitrix_handler_from_env
 
 request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+LEVEL_COLORS = {
+    logging.DEBUG: "\x1b[36m",
+    logging.INFO: "\x1b[32m",
+    logging.WARNING: "\x1b[33m",
+    logging.ERROR: "\x1b[31m",
+    logging.CRITICAL: "\x1b[91m",
+}
 
 
 class RequestContextFilter(logging.Filter):
@@ -16,10 +24,17 @@ class RequestContextFilter(logging.Filter):
 
 
 class CompactFormatter(logging.Formatter):
+    def __init__(self, fmt: str, *, datefmt: str, use_colors: bool) -> None:
+        super().__init__(fmt, datefmt=datefmt)
+        self.use_colors = use_colors
+
     def format(self, record: logging.LogRecord) -> str:
+        record = copy(record)
         record.short_name = record.name.removeprefix("app.")
         request_id = getattr(record, "request_id", "-")
         record.request_context = f" request={request_id[:8]}" if request_id != "-" else ""
+        if self.use_colors and (color := LEVEL_COLORS.get(record.levelno)):
+            record.levelname = f"{color}{record.levelname}\x1b[0m"
         return super().format(record)
 
 
@@ -31,6 +46,7 @@ def configure_logging(app_settings: Settings = settings) -> None:
         CompactFormatter(
             "%(asctime)s %(levelname)s %(short_name)s%(request_context)s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
+            use_colors=sys.stdout.isatty(),
         )
     )
     root = logging.getLogger()

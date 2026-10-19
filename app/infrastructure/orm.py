@@ -918,6 +918,7 @@ class UnitEconomics1CProductCategoryRecord(OrmBase):
     wb_subject_id: Mapped[int | None] = mapped_column(Integer)
     imt_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
     category: Mapped[str | None] = mapped_column(String)
+    brand: Mapped[str | None] = mapped_column(String)
     category_key: Mapped[str | None] = mapped_column(String, index=True)
     created_at: Mapped[str | None] = mapped_column(String)
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -991,6 +992,57 @@ class UnitEconomics1CDailyPriceRecord(OrmBase):
     orders_synced_at: Mapped[str | None] = mapped_column(String)
     retail_synced_at: Mapped[str | None] = mapped_column(String)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class WbHourlyPriceRecord(OrmBase):
+    __tablename__ = "wb_hourly_prices"
+    __table_args__ = (
+        Index("idx_wb_hourly_prices_nm", "nm_id", "observed_hour"),
+        Index("idx_wb_hourly_prices_store_time", "store_slug", "observed_at"),
+    )
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_hour: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_at: Mapped[str] = mapped_column(String, nullable=False)
+    nm_id: Mapped[str] = mapped_column(String, nullable=False)
+    size_id: Mapped[int | None] = mapped_column(BigInteger)
+    tech_size_name: Mapped[str | None] = mapped_column(String)
+    customer_price_with_spp: Mapped[float] = mapped_column(Float, nullable=False)
+    spp_percent: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_rub: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_updated_at: Mapped[str | None] = mapped_column(String)
+    customer_price_with_wallet: Mapped[float | None] = mapped_column(Float)
+    wallet_discount_percent: Mapped[float | None] = mapped_column(Float)
+    product_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    logistics_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_fields_json: Mapped[str] = mapped_column(Text, nullable=False)
+    sale_conditions: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class WbDailyPriceRecord(OrmBase):
+    __tablename__ = "wb_daily_prices"
+    __table_args__ = (
+        Index("idx_wb_daily_prices_nm", "nm_id", "observed_day"),
+        Index("idx_wb_daily_prices_store_time", "store_slug", "observed_at"),
+    )
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_day: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_at: Mapped[str] = mapped_column(String, nullable=False)
+    nm_id: Mapped[str] = mapped_column(String, nullable=False)
+    size_id: Mapped[int | None] = mapped_column(BigInteger)
+    tech_size_name: Mapped[str | None] = mapped_column(String)
+    customer_price_with_spp: Mapped[float] = mapped_column(Float, nullable=False)
+    spp_percent: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_updated_at: Mapped[str | None] = mapped_column(String)
+    customer_price_with_wallet: Mapped[float | None] = mapped_column(Float)
+    wallet_discount_percent: Mapped[float | None] = mapped_column(Float)
+    product_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    logistics_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_fields_json: Mapped[str] = mapped_column(Text, nullable=False)
+    sale_conditions: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class UnitEconomics1CPriceSyncStateRecord(OrmBase):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
 
@@ -43,6 +44,13 @@ from app.dto.stock import (
     StockQuantityQuery,
     TransitActionResult,
 )
+from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
+
+
+class HourlyPriceWriter(Protocol):
+    def upsert(self, rows: list[WbHourlyPriceObservation]) -> int: ...
+
+    def daily_turnover(self, store_slug: str, day: date) -> tuple[WbHourlyTurnover, ...]: ...
 
 
 class IdentityRepository(Protocol):

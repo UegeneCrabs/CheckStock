@@ -204,9 +204,9 @@ def replace_product_categories(store_slug: str, rows: list[dict], synced_at: str
             conn.executemany(
                 """
                 INSERT INTO unit_economics_1c_product_categories
-                    (stock_item_id, wb_subject_id, imt_id, category, category_key,
+                    (stock_item_id, wb_subject_id, imt_id, category, brand, category_key,
                      created_at, synced_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -214,6 +214,7 @@ def replace_product_categories(store_slug: str, rows: list[dict], synced_at: str
                         row.get("wb_subject_id"),
                         row.get("imt_id"),
                         row.get("category"),
+                        row.get("brand"),
                         row.get("category_key"),
                         row.get("created_at"),
                         synced_at,
@@ -293,7 +294,7 @@ def get_product_reference_rows(store_slugs: tuple[str, ...]) -> list[dict]:
                source.stock_status, source.stock_end_week,
                source.supplier_external_raw, source.fact_sales, source.plan_sales,
                source.source_sheet_title, source.source_row, source.synced_at AS source_synced_at,
-               category.wb_subject_id, category.imt_id, category.category,
+               category.wb_subject_id, category.imt_id, category.category, category.brand,
                category.created_at AS card_created_at,
                commission.commission_percent AS subject_commission_percent
           FROM stock_items items
@@ -956,7 +957,16 @@ def get_daily_margin_snapshots(
     from app.repositories import daily_economics
 
     result = {(row["store_slug"], row["article"], row["day"]): dict(row) for row in rows}
-    for row in daily_economics.records("WB", store_slugs, date_from, date_to, articles=articles, compact=True, inputs_only=inputs_only, include_reference=include_reference):
+    for row in daily_economics.records(
+        "WB",
+        store_slugs,
+        date_from,
+        date_to,
+        articles=articles,
+        compact=True,
+        inputs_only=inputs_only,
+        include_reference=include_reference,
+    ):
         snapshot = daily_economics.wb_report_row(row)
         if include_reference:
             snapshot["reference_json"] = row["reference_json"]

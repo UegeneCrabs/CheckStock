@@ -7,13 +7,42 @@ from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
 from app.config import settings
+from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
+from app.economics.wb.prices import calculate_wallet_price
 from app.infrastructure.database import database_for_path
 from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
+from app.infrastructure.wb_hourly_price_repository import (
+    SqlAlchemyDailyPriceCloser,
+    SqlAlchemyHourlyPriceWriter,
+)
+from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
+from app.wb import api as wb_api
+from app.wb import tokens as wb_tokens
+from app.wb.hourly_prices import (
+    WbHourlyPriceService,
+    seller_prices_from_payload,
+    storefront_result_from_payload,
+)
+
+
+def _wb_storefront_products(nm_ids: tuple[str, ...]) -> WbStorefrontResult:
+    return storefront_result_from_payload(wb_api.get_storefront_products(nm_ids))
+
+
+def _wb_seller_prices(store_slug: str, nm_ids: tuple[str, ...]) -> tuple[WbSellerPrice, ...]:
+    if not nm_ids:
+        return ()
+    token = wb_tokens.get_token(store_slug)
+    goods: list[dict] = []
+    for start in range(0, len(nm_ids), wb_api.PRICES_PAGE_LIMIT):
+        batch = [int(nm_id) for nm_id in nm_ids[start : start + wb_api.PRICES_PAGE_LIMIT]]
+        goods.extend(wb_api.get_goods_prices_by_nm_ids(token, batch))
+    return seller_prices_from_payload(goods)
 
 
 class ApplicationContainer:
@@ -35,6 +64,15 @@ class ApplicationContainer:
             unit_of_work_factory=self._stock_unit_of_work,
             clock=lambda: datetime.now(UTC),
         )
+        self.wb_hourly_prices = WbHourlyPriceService(
+            catalog_items=wb_catalog_items,
+            storefront_products=_wb_storefront_products,
+            seller_prices=_wb_seller_prices,
+            wallet_discount=wb_api.get_default_wallet_discount_percent,
+            wallet_price=calculate_wallet_price,
+            writer=SqlAlchemyHourlyPriceWriter(self._database_path),
+        )
+        self.wb_daily_price_closer = SqlAlchemyDailyPriceCloser(self._database_path)
 
     def _identity_unit_of_work(self) -> SqlAlchemyIdentityUnitOfWork:
         database = database_for_path(self._database_path())

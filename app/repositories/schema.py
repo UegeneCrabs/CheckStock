@@ -24,6 +24,9 @@ def init_db() -> None:
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
+    _migrate_wb_hourly_spp_percent(database)
+    _migrate_wb_hourly_turnover(database)
+    _index_wb_hourly_report(database)
     _migrate_project_sheet_export_urls(database)
     _migrate_project_sheet_export_orders_column(database)
     _migrate_project_sheet_export_fbo_columns(database)
@@ -69,6 +72,33 @@ def init_db() -> None:
         connection.commit()
 
     _sync_yandex_assortment(database)
+
+
+def _migrate_wb_hourly_spp_percent(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        if "spp_percent" in connection.column_names("wb_hourly_prices"):
+            return
+        connection.execute("ALTER TABLE wb_hourly_prices ADD COLUMN spp_percent FLOAT")
+        connection.commit()
+
+
+def _migrate_wb_hourly_turnover(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        columns = connection.column_names("wb_hourly_prices")
+        if "orders_turnover_rub" not in columns:
+            connection.execute("ALTER TABLE wb_hourly_prices ADD COLUMN orders_turnover_rub FLOAT")
+        if "orders_turnover_updated_at" not in columns:
+            connection.execute("ALTER TABLE wb_hourly_prices ADD COLUMN orders_turnover_updated_at VARCHAR")
+        connection.commit()
+
+
+def _index_wb_hourly_report(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_wb_hourly_prices_store_time "
+            "ON wb_hourly_prices (store_slug, observed_at)"
+        )
+        connection.commit()
 
 
 def _migrate_project_sheet_export_urls(database: Database) -> None:
@@ -422,6 +452,9 @@ def _migrate_unit_economics_1c_product_categories(database: Database) -> None:
             connection.execute(f"ALTER TABLE {table_name} ALTER COLUMN imt_id TYPE BIGINT")
         if columns and "created_at" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN created_at TEXT")
+            connection.execute(f"UPDATE {table_name} SET synced_at='' ")
+        if columns and "brand" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN brand TEXT")
             connection.execute(f"UPDATE {table_name} SET synced_at='' ")
         connection.commit()
 

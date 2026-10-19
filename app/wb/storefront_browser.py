@@ -34,21 +34,20 @@ def browser_path(configured: Path | None) -> Path:
     if configured:
         candidates = [configured]
     else:
-        candidates = [
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            candidates = [Path(playwright.chromium.executable_path)]
+        candidates.extend(
             Path(os.environ[name]) / "Yandex/YandexBrowser/Application/browser.exe"
             for name in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)")
             if os.environ.get(name)
-        ]
-        if os.name != "nt":
-            from playwright.sync_api import sync_playwright
-
-            with sync_playwright() as playwright:
-                candidates.append(Path(playwright.chromium.executable_path))
+        )
     for path in candidates:
         if path.is_file():
             return path.resolve()
     raise RuntimeError(
-        "Браузер WB не найден. Установите Яндекс Браузер (Windows) или Chromium Playwright (Linux), "
+        "Браузер WB не найден. Установите Яндекс Браузер или Chromium Playwright, "
         "либо задайте CHECKSTOCK_WB_BROWSER_PATH."
     )
 
@@ -59,7 +58,6 @@ def verify_session(data: dict, article: str, *, params: dict | None = None) -> N
         "curr": "rub",
         "dest": settings.wb_storefront_dest,
         "lang": "ru",
-        "spp": 30,
         "nm": article,
     }
     headers = {
@@ -189,6 +187,33 @@ def _prepare_browser_in_environment(
         )
 
 
+def _browser_command(
+    executable: Path, profile: Path, port: int, article: str, *, headless: bool, no_sandbox: bool = False
+) -> list[str]:
+    command = [
+        str(executable),
+        "--user-data-dir=" + str(profile),
+        "--remote-debugging-port=" + str(port),
+        "--remote-debugging-address=127.0.0.1",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+    if headless:
+        command.append("--headless=new")
+    if no_sandbox:
+        command.append("--no-sandbox")
+    command.append(f"https://www.wildberries.ru/catalog/{article}/detail.aspx")
+    return command
+
+
+def _wait_for_browser_start(process: subprocess.Popen, seconds: int = 25) -> None:
+    try:
+        exit_code = process.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return
+    raise RuntimeError(f"Браузер WB завершился до подключения Playwright (код {exit_code}).")
+
+
 def _prepare_browser_in_profile(
     article: str,
     executable_path: Path | None,
@@ -208,16 +233,16 @@ def _prepare_browser_in_profile(
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
+    command = _browser_command(
+        executable,
+        profile,
+        port,
+        article,
+        headless=settings.wb_storefront_browser_headless,
+        no_sandbox=settings.wb_storefront_browser_no_sandbox,
+    )
     process = subprocess.Popen(
-        [
-            str(executable),
-            "--user-data-dir=" + str(profile),
-            "--remote-debugging-port=" + str(port),
-            "--remote-debugging-address=127.0.0.1",
-            "--no-first-run",
-            "--no-default-browser-check",
-            f"https://www.wildberries.ru/catalog/{article}/detail.aspx",
-        ],
+        command,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         startupinfo=startupinfo,
@@ -227,7 +252,7 @@ def _prepare_browser_in_profile(
     try:
         logger.info("Ожидаем автоматическую проверку WB в отдельном профиле браузера")
         # Let the regular browser finish its first navigation before attaching CDP.
-        time.sleep(25)
+        _wait_for_browser_start(process)
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=15000)
