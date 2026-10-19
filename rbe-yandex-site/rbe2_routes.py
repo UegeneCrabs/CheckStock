@@ -73,6 +73,8 @@ def install(app, site):
                         # page succeeded. Other cabinets may finish separately.
                         save_snapshot(conn,account,start,end,packet)
                     succeeded.append(store)
+                    if packet.get('expenses',{}).get('load_error'):
+                        failed.append({'store':store,'detail':packet['expenses']['load_error']})
                 except Exception as error:
                     failed.append({'store':store,'detail':str(error)[:500]})
                 finally:
@@ -108,7 +110,7 @@ def install(app, site):
         try:
             with site['connection']() as conn:
                 row = conn.execute('INSERT INTO rbe2_runs(started_at,status,detail) VALUES(?,?,?)',
-                    (datetime.now(UTC).isoformat(),'queued','Загружаем только операционные заказы и возвраты'))
+                    (datetime.now(UTC).isoformat(),'queued','Загружаем операционные заказы, возвраты и полные начисления услуг'))
                 run_id = row.lastrowid
             thread = threading.Thread(target=worker,args=(run_id,payload.date_from,payload.date_to,selected_accounts),daemon=True)
             thread.start()

@@ -7,9 +7,9 @@ async function run(preview=false) {
     setAttribute(key,value){this[key]=value;}};}
   function element(key){if(!elements.has(key))elements.set(key,node());return elements.get(key);}
   const payload={date_from:'2026-10-12',date_to:'2026-10-18',can_sync:true,sync_running:false,
-    values:{orders_turnover:557540,detail_redeemed_count:131,detail_returned_count:27,marginal_profit:null},
+    values:{orders_turnover:557540,detail_redeemed_count:131,detail_returned_count:27,commission:null,marginal_profit:null},
     quality:{orders_turnover:{complete:true},marginal_profit:{complete:false}},
-    notes:['<script>untrusted</script>'],events:{returns:[{store:'tris',date:'2026-10-18',order_id:'1',return_id:10,sku:'<b>sku</b>',count:1,seller_amount:4051}]},campaigns:[]};
+    notes:['<script>untrusted</script>'],expenses:{known_subtotals:{commission:500},breakdown:[{store:'tris',date:'2026-10-12',sheet:'<b>placement</b>',order_id:'1',sku:'sku',amount:500}]},events:{returns:[{store:'tris',date:'2026-10-18',order_id:'1',return_id:10,sku:'<b>sku</b>',count:1,seller_amount:4051}]},campaigns:[]};
   let admin=true;
   const context={document:{querySelector:element,createElement:node},window:{RBE2_PREVIEW_DATA:preview?payload:null,setTimeout:fn=>timeouts.push(fn)},
     sessionStorage:{getItem:key=>storage.get(key),setItem:(key,v)=>storage.set(key,v),removeItem:key=>storage.delete(key)},
@@ -26,9 +26,14 @@ async function run(preview=false) {
     }};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/rbe2.js'),'utf8'),context);
   for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(element('#metrics').children.length,18);
+  assert.equal(element('#metrics').children.length,19);
   assert.equal(element('#notes').children[0].textContent,'<script>untrusted</script>');
   assert.equal(element('#events').children[0].children[4].textContent,'<b>sku</b>');
+  assert.equal(element('#expense-details').children[0].children[2].textContent,'<b>placement</b>');
+  const commission=element('#metrics').children[10];
+  assert.equal(commission.children[1].textContent,'500');
+  assert.equal(commission.children[1].children[0].textContent,'подтверждённая часть');
+  assert.equal(commission.children[2].children[0].textContent,'Не готово');
   const profit=element('#metrics').children.at(-1);
   assert.equal(profit.children[1].textContent,'—');
   assert.equal(profit.children[2].children[0].textContent,'Не готово');

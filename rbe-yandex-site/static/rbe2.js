@@ -12,10 +12,10 @@
     ['detail_seller_sales','Выкуплено в цене продавца, ₽'], ['detail_seller_returns','Возвращено в цене продавца, ₽'],
     ['buyout_seller_turnover','Выкупы минус возвраты в цене продавца, ₽'],
     ['buyout_buyer_turnover','Выкупы минус возвраты в цене покупателя, ₽'],
-    ['commission','Комиссия по заказам после зачёта баллов, ₽'],
-    ['logistics','Логистика в составе заказов, ₽'], ['advertising','Продвижение в составе заказов, ₽'],
-    ['other_direct_expenses','Иные услуги в составе заказов, ₽'],
-    ['order_expenses','Всего услуг по заказам после зачёта баллов, ₽'],
+    ['commission','Комиссия до зачёта баллов минус возвраты, ₽'],
+    ['logistics','Логистика, ₽'], ['advertising','Реклама и продвижение, ₽'],
+    ['other_direct_expenses','Эквайринг и другие услуги, ₽'],
+    ['order_expenses','Всего расходов Маркета, ₽'], ['revenue','Выручка после комиссии и логистики, ₽'],
     ['bank_receipt','Расчётная сумма к перечислению, ₽'],
     ['sold_cost_of_goods','Себестоимость выкупов минус возвраты, ₽'], ['marginal_profit','Маржинальная прибыль, ₽']
   ];
@@ -33,6 +33,11 @@
     definitions.forEach(function(pair) {
       var key=pair[0], row=document.createElement('tr'), label=cell(pair[1],'th');
       var value=cell(amount(payload.values[key])), state=(payload.quality||{})[key]||{};
+      var known=((payload.expenses||{}).known_subtotals||{})[key];
+      if(payload.values[key]==null && known>0) {
+        value.textContent=amount(known);
+        var partial=cell('подтверждённая часть','small'); partial.className='rbe2-partial'; value.append(partial);
+      }
       var status=document.createElement('td'), badge=document.createElement('span');
       value.className='rbe2-value'; if(key==='marginal_profit') row.className='total';
       badge.className='rbe2-status '+(!state.complete?'missing':state.estimated?'estimate':'complete');
@@ -51,6 +56,12 @@
     });
     var notes=document.querySelector('#notes'); notes.replaceChildren();
     (payload.notes||[]).forEach(function(text) { notes.append(cell(text,'li')); });
+    var expenseBody=document.querySelector('#expense-details'); expenseBody.replaceChildren();
+    (((payload.expenses||{}).breakdown)||[]).forEach(function(item) {
+      var row=document.createElement('tr');
+      [item.store.toUpperCase(),dateText(item.date),item.sheet,item.order_id||'Без заказа',item.sku||'—',amount(item.amount)].forEach(function(text) { row.append(cell(text)); });
+      expenseBody.append(row);
+    });
     var events=document.querySelector('#events'); events.replaceChildren();
     [['sales','Выкуп'],['returns','Возврат'],['cancellations','Отмена']].forEach(function(pair) {
       ((payload.events||{})[pair[0]]||[]).forEach(function(item) {

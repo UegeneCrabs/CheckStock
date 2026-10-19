@@ -8,7 +8,21 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-RETURN_STATUSES = {'REFUNDED', 'REFUND_IN_PROGRESS'}
+RETURN_STATUSES = {'REFUNDED','REFUNDED_WITH_BONUSES','REFUNDED_BY_SHOP','REFUND_IN_PROGRESS'}
+HANDOVER_STATUSES = {'RECEIVED','IN_TRANSIT','READY_FOR_PICKUP','PICKED','LOST',
+    'FULFILMENT_RECEIVED','PREPARED_FOR_UTILIZATION','UTILIZED',
+    'READY_FOR_EXPROPRIATION','RECEIVED_FOR_EXPROPRIATION','NOT_IN_DEMAND'}
+
+
+def recognized_return(row):
+    if row.get('returnType')!='RETURN' or row.get('shipmentStatus') in {'CANCELLED','EXPIRED'}:
+        return False
+    status = row.get('refundStatus')
+    if status=='REFUND_IN_PROGRESS':
+        # A claim alone is not a returned product. Already refunded fast
+        # returns below need not have a physical shipment.
+        return row.get('shipmentStatus') in HANDOVER_STATUSES
+    return status in RETURN_STATUSES
 RETURNED = {'Возврат оформлен', 'Возврат отправлен', 'Возврат готов к передаче вам',
             'Возврат передан вам', 'Возврат принят', 'Возврат принят на складе',
             'Полный возврат принят на складе'}
@@ -20,7 +34,7 @@ METRICS = ('orders_turnover', 'cancelled_count', 'cancelled_turnover',
            'detail_seller_sales', 'detail_seller_returns', 'buyout_seller_turnover',
            'detail_buyer_sales', 'detail_buyer_returns', 'buyout_buyer_turnover',
            'commission', 'logistics', 'advertising', 'other_direct_expenses',
-           'order_expenses', 'bank_receipt', 'sold_cost_of_goods', 'marginal_profit')
+           'order_expenses', 'revenue', 'bank_receipt', 'sold_cost_of_goods', 'marginal_profit')
 FEE_GROUPS = {
     'commission': ('saleCommission', 'expropriationResale'),
     'logistics': ('buyerDelivery', 'crossregionalDelivery', 'buyerExpressDelivery',
@@ -85,14 +99,15 @@ def canonical(snapshots):
                 coverage.add((*owner, report_day))
         notes.extend(packet.get('notes', []))
     # A document returned on two API days is not two returned products.
-    applications = {}
+    applications, pending = {}, {}
     duplicate_days = defaultdict(set)
     for (store, business, report_day), rows in sorted(daily_returns.items()):
         for row in rows:
             identity = (store,business,int(row['campaign_id']),int(row['id']))
             row = latest_return_state[identity]
-            if (row.get('returnType') != 'RETURN' or row.get('refundStatus') not in RETURN_STATUSES
-                    or row.get('shipmentStatus') in {'CANCELLED','EXPIRED'}):
+            if not recognized_return(row):
+                if row.get('returnType')=='RETURN' and row.get('refundStatus')=='REFUND_IN_PROGRESS' and row.get('shipmentStatus') not in {'CANCELLED','EXPIRED'}:
+                    pending.setdefault(identity,(report_day,row))
                 continue
             key = identity
             duplicate_days[key].add(report_day)
@@ -101,22 +116,26 @@ def canonical(snapshots):
     for key, days in duplicate_days.items():
         if len(days) > 1:
             notes.append(f'{key[0].upper()}: возврат {key[3]} получен для нескольких дней; учтён один раз за {min(days)}. Нужна сверка даты с Pidata.')
-    return orders, margins, stats, applications, coverage, list(dict.fromkeys(notes))
+    return orders, margins, stats, applications, coverage, list(dict.fromkeys(notes)), pending
 
 
 def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
-    """Sum independent operational events. Missing prices/inputs are not zero.
+    """Operational basket plus independently verified gross expenses.
 
-    Fees in the order report are current cumulative order fees, without their
-    own operation dates. Attribute each order once to delivery (or cancellation)
-    day. This is an explicit estimate, NOT financial accrual or exact PiData P&L.
+    Cumulative paid fees of the order report remain diagnostic only: gross
+    seller revenue must not be reduced by fees after Market bonus offsets.
     """
-    orders, margins, stats, applications, coverage, notes = canonical(snapshots)
+    orders, margins, stats, applications, coverage, notes, pending = canonical(snapshots)
     owners = {(a['store_slug'], int(a['business_id'])) for a in accounts}
+    selected_models = {(s['store_slug'],int(s['business_id'])):c.get('placementType')
+                       for s in snapshots for c in s['data'].get('campaigns',[])
+                       if campaign_id is not None and int(c['id'])==campaign_id}
     expected = {(*owner, d) for owner in owners for d in date_range(start, end)}
     missing = sorted(expected - coverage)
     unknown_campaign = campaign_id is not None and any(
         key[:2] in owners and row.get('campaign_id') is None
+        and (not selected_models.get(key[:2]) or not row.get('model')
+             or row['model']==selected_models[key[:2]])
         and any(start.isoformat() <= (day(row.get(field)) or '') <= end.isoformat()
                 for field in ('deliveryDate','creationDate')) for key,row in orders.items())
     if unknown_campaign:
@@ -211,7 +230,8 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
         totals['detail_redeemed_count'] += count
         if in_period(fee_anchors.get((*owner,order_id))):
             fee_orders[(*owner, order_id)] = fee_anchors[(*owner,order_id)]
-        event = {'store':owner[0], 'order_id':order_id, 'sku':sku, 'count':count, 'date':delivery}
+        event = {'store':owner[0], 'business_id':owner[1], 'campaign_id':row.get('campaign_id'),
+                 'order_id':order_id, 'sku':sku, 'count':count, 'date':delivery}
         try:
             seller, buyer = prices(row, stat)
             totals['detail_seller_sales'] += seller*count
@@ -239,7 +259,7 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
             known_count = row.get('deliveredOrReturned') if row else (stat or {}).get('initialCount',(stat or {}).get('count'))
             if known_count is not None and returned_units[unit_key] > quantity(known_count):
                 issues['return_quantity'].add(f'{owner[0]} · заказ {order_id}, {sku}: заявки превышают количество купленных товаров')
-            event = {'store':owner[0], 'order_id':order_id, 'sku':sku, 'count':count,
+            event = {'store':owner[0], 'business_id':owner[1], 'order_id':order_id, 'sku':sku, 'count':count,
                      'date':report_day, 'return_id':key[3], 'campaign_id':key[2]}
             try:
                 if row:
@@ -315,20 +335,56 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
     if missing:
         values['marginal_profit'] = None
     for field, items in issues.items():
-        if items:
+        if items and field!='expenses':
             notes.append('Не хватает данных: ' + '; '.join(sorted(items)[:12]))
     if missing:
         notes.append('Не загружены магазин/день: ' + '; '.join(f'{s.upper()} · {d}' for s,b,d in missing[:14]))
-    # Operational fees can already have Market bonuses deducted (on the real
-    # TRIS control week they are far below PiData's gross marketplace fee).
-    # Subtracting such fees from full seller turnover would count subsidies
-    # twice and overstate profit. Never publish that plausible but wrong result.
-    values['bank_receipt'] = values['marginal_profit'] = None
-    estimate = 'В отчёте по заказам расходы уже могут быть уменьшены баллами Маркета. Они не равны комиссии до зачёта баллов в Pidata. Сумму к перечислению и прибыль пока не рассчитываем: сначала нужно подтвердить источник полных комиссий и рекламы. Расходы вне заказов, налоги и зарплаты здесь не учтены.'
-    notes.insert(0, estimate)
+    from rbe2_expenses import calculate_expenses, EXPENSE_METRICS
+    expense_result = calculate_expenses(snapshots,accounts,start,end,
+        {'sales':sales,'returns':returns},campaign_id)
+    # Preserve the net/paid order summary for reconciliation, but never mix
+    # its groups with gross service costs or use it as a fallback to profit.
+    diagnostic_order_fees = {k:float(totals[k]) for k in
+        ('commission','logistics','advertising','other_direct_expenses','order_expenses')}
+    values.update(expense_result['values'])
+    if values['detail_redeemed_count'] is None or values['detail_returned_count'] is None:
+        values['commission'] = None
+        expense_result['issues'].setdefault('commission',[]).append('Не определено количество товаров операционной корзины')
+    def difference(base, *costs):
+        if base is None or any(c is None for c in costs):
+            return None
+        return float((money(base)-sum((money(c) for c in costs),Decimal(0))).quantize(Decimal('.01')))
+    cost_values = [values[k] for k in ('commission','logistics','advertising','other_direct_expenses')]
+    values['order_expenses'] = None if any(v is None for v in cost_values) else float(sum(map(money,cost_values)))
+    values['revenue'] = difference(values['buyout_seller_turnover'],values['commission'],values['logistics'])
+    values['bank_receipt'] = difference(values['revenue'],values['advertising'],values['other_direct_expenses'])
+    values['marginal_profit'] = difference(values['bank_receipt'],values['sold_cost_of_goods'])
+    if missing or unknown_campaign:
+        values['revenue'] = values['bank_receipt'] = values['marginal_profit'] = None
+    notes.extend(expense_result['notes'])
+    pending_events = []
+    for key,(report_day,row) in pending.items():
+        if key[:2] in owners and in_period(report_day) and (campaign_id is None or key[2]==campaign_id):
+            pending_events.append({'store':key[0],'business_id':key[1],'campaign_id':key[2],
+                'return_id':key[3],'order_id':str(row['orderId']),'date':report_day,
+                'refund_status':row['refundStatus'],'shipment_status':row.get('shipmentStatus'),
+                'items':row['items']})
+    if pending_events:
+        notes.append('Заявки без подтверждения передачи товара/возврата денег пока не уменьшают продажи: '+
+                     '; '.join(f"{r['store'].upper()} · возврат {r['return_id']} · заказ {r['order_id']}" for r in pending_events))
+    expense_detail = ('Выкупы и возвраты — операционные. Комиссия — исходное начисление до баллов по заказу и артикулу, '
+                      'за минусом комиссии возвратов. Прочие услуги — по датам начисления. '
+                      'Реклама кабинета учитывается один раз. Налоги и расходы вне Маркета не включены. '
+                      'Совпадение с Pidata проверяется отдельно, по одинаковому составу и моменту выгрузки.')
+    notes.insert(0, expense_detail)
     quality = {metric:{'complete':not missing and not unknown_campaign and values[metric] is not None,
-                       'estimated':metric in {'commission','logistics','advertising','other_direct_expenses','order_expenses','bank_receipt','marginal_profit'},
-                       'detail':estimate if metric in {'commission','logistics','advertising','other_direct_expenses','order_expenses','bank_receipt','marginal_profit'} else 'Выкупы — по дате доставки; возвраты — по дневной выборке API, без финансового отчёта.'} for metric in METRICS}
+                       'estimated':False,
+                       'detail':expense_detail if metric in EXPENSE_METRICS else 'Выкупы — по дате доставки; возвраты — по дневной выборке API, без финансового отчёта.'} for metric in METRICS}
+    for metric,messages in expense_result['issues'].items():
+        quality[metric]['detail'] = '; '.join(messages[:6])
     return {'values':values, 'quality':quality, 'notes':list(dict.fromkeys(notes)),
             'events':{'sales':sales,'returns':returns,'cancellations':cancellations,'expenses':fees},
+            'expenses':expense_result, 'order_report_expenses':diagnostic_order_fees,
+            'order_report_missing_expenses':sorted(issues['expenses']),
+            'pending_returns':pending_events,
             'missing_days':[{'store':s,'business_id':b,'date':d} for s,b,d in missing]}

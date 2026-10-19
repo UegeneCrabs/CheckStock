@@ -1,6 +1,7 @@
-"""Operational-only loader and isolated storage for RBE 2.
+"""Operational basket and independent gross-expense loader for RBE 2.
 
-No financial import, first-financial-date ledger, or legacy daily table writes.
+No legacy financial import, first-financial-date ledger or daily table writes.
+Service reports supply costs only; they never determine the buyout basket.
 Opening a report reads snapshots; API requests require an explicit admin action.
 """
 import json
@@ -71,7 +72,7 @@ def report_rows(value):
         for row in value:
             yield from report_rows(row)
     elif isinstance(value,dict):
-        if 'orderId' in value:
+        if 'orderId' in value or 'businessId' in value:
             yield value
         else:
             for child in value.values():
@@ -79,10 +80,8 @@ def report_rows(value):
                     yield from report_rows(child)
 
 
-def orders_report(api, account, start, end, campaigns, sleep=time.sleep):
-    result = api.request('/v2/reports/united-orders/generate',account['api_key'],
-        payload={'businessId':int(account['business_id']),'dateFrom':start.isoformat(),
-                 'dateTo':end.isoformat(),'campaignIds':[int(c['id']) for c in campaigns]},
+def load_report(api, account, endpoint, payload, keep_sheets=None, sleep=time.sleep):
+    result = api.request(endpoint,account['api_key'],payload=payload,
         params={'format':'JSON','language':'RU'})
     report_id = result.get('reportId')
     if not report_id:
@@ -105,7 +104,7 @@ def orders_report(api, account, start, end, campaigns, sleep=time.sleep):
                     raise ValueError('Слишком большой распакованный отчёт')
                 for name in archive.namelist():
                     sheet = name.rsplit('/',1)[-1].removesuffix('.json')
-                    if name.endswith('.json') and sheet in {'orders_and_offers_transactions','services_and_orders_margin'}:
+                    if name.endswith('.json') and (keep_sheets is None or sheet in keep_sheets):
                         data = json.loads(archive.read(name).decode('utf-8-sig'))
                         if not isinstance(data,(dict,list)):
                             raise ValueError('Изменилась структура операционного отчёта')
@@ -113,19 +112,33 @@ def orders_report(api, account, start, end, campaigns, sleep=time.sleep):
                         if not sheets[sheet] and data not in ({},[]) and any(
                                 not isinstance(v,(dict,list)) for v in (data.values() if isinstance(data,dict) else data)):
                             raise ValueError('Не удалось прочитать строки операционного отчёта')
-            if 'orders_and_offers_transactions' not in sheets:
-                raise ValueError('В операционном отчёте нет списка товаров заказов')
             return sheets
         if attempt < 120:
             sleep(5)
     raise TimeoutError('Операционный отчёт ещё формируется; повторите загрузку позже')
 
 
-def fetch_packet(account, start, end, *, api=None, report_loader=orders_report):
+def orders_report(api, account, start, end, campaigns, sleep=time.sleep):
+    sheets = load_report(api,account,'/v2/reports/united-orders/generate',
+        {'businessId':int(account['business_id']),'dateFrom':start.isoformat(),
+         'dateTo':end.isoformat(),'campaignIds':[int(c['id']) for c in campaigns]},
+        {'orders_and_offers_transactions','services_and_orders_margin'},sleep)
+    if 'orders_and_offers_transactions' not in sheets:
+        raise ValueError('В операционном отчёте нет списка товаров заказов')
+    return sheets
+
+
+def services_report(api,account,start,end):
+    return load_report(api,account,'/v2/reports/united-marketplace-services/generate',
+        {'businessId':int(account['business_id']),'dateFrom':start.isoformat(),'dateTo':end.isoformat()})
+
+
+def fetch_packet(account, start, end, *, api=None, report_loader=orders_report, expense_loader=None):
     api = api or api_module()
     business = int(account['business_id'])
     own = [c for c in api.get_campaigns(account['api_key'])
            if int((c.get('business') or {}).get('id') or 0) == business]
+    business_campaigns = [selected(c,('id','domain','placementType')) for c in own]
     configured = {int(c) for c in account.get('campaign_ids',[]) or []}
     if configured - {int(c['id']) for c in own}:
         raise ValueError('Кампания не принадлежит выбранному кабинету')
@@ -137,6 +150,7 @@ def fetch_packet(account, start, end, *, api=None, report_loader=orders_report):
     raw = report_loader(api,account,start,end,campaigns)
     packet = {'orders':[], 'margins':[], 'stats':[], 'returns_by_day':{},
               'campaigns':[selected(c,('id','domain','placementType')) for c in campaigns],
+              'business_campaigns':business_campaigns,
               'complete':not unavailable,
               'notes':[f"Отключён API магазина {c['id']}; данные кабинета могут быть неполными." for c in unavailable]}
     order_campaigns = {}
@@ -210,6 +224,11 @@ def fetch_packet(account, start, end, *, api=None, report_loader=orders_report):
         packet['orders'].append({**selected(row,ORDER_FIELDS),'campaign_id':campaign_id})
     packet['margins'] = [selected(row,MARGIN_FIELDS) for row in raw.get('services_and_orders_margin',[])
                          if int(row['orderId']) not in fake_orders]
+    if expense_loader is None:
+        from rbe2_expenses import fetch_expenses
+        packet['expenses'] = fetch_expenses(account,start,end,packet,api,services_report)
+    else:
+        packet['expenses'] = expense_loader(account,start,end,packet)
     return packet
 
 

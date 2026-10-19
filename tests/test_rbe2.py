@@ -116,12 +116,13 @@ def test_cost_uses_exact_store_and_recognition_day_no_general_price():
 
 def test_paid_fees_are_not_subtracted_from_gross_turnover_to_fake_profit():
     result=report([snapshot()])
-    assert result['values']['order_expenses']==160
-    assert sum(result['values'][k] for k in ('commission','logistics','advertising','other_direct_expenses'))==160
+    assert result['order_report_expenses']['order_expenses']==160
+    assert sum(result['order_report_expenses'][k] for k in ('commission','logistics','advertising','other_direct_expenses'))==160
+    assert result['values']['order_expenses'] is None
     assert result['values']['bank_receipt'] is None
     assert result['values']['marginal_profit'] is None
     assert not result['quality']['marginal_profit']['complete']
-    assert result['quality']['commission']['estimated']
+    assert not result['quality']['commission']['complete']
 
 
 def test_partial_cancellation_counts_original_creation_cohort_not_returns():
@@ -149,10 +150,10 @@ def test_disabled_campaign_never_makes_the_whole_cabinet_complete():
 def test_one_order_expense_is_additive_across_separate_delivery_days():
     rows=[order(),order(shopSku='other',deliveryDate='13.10.2026')]
     data=snapshot(orders=rows)
-    first=report([data],start=START,end=START)['values']['order_expenses']
-    second=report([data],start=date(2026,10,13),end=date(2026,10,13))['values']['order_expenses']
+    first=report([data],start=START,end=START)['order_report_expenses']['order_expenses']
+    second=report([data],start=date(2026,10,13),end=date(2026,10,13))['order_report_expenses']['order_expenses']
     assert first==160 and second==0
-    assert report([data])['values']['order_expenses']==first+second
+    assert report([data])['order_report_expenses']['order_expenses']==first+second
 
 
 def test_missing_delivered_quantity_is_not_a_confirmed_zero():
@@ -192,7 +193,7 @@ def test_fake_orders_are_not_added_from_the_operational_report():
         return {'orders':[{'id':1,'fake':True}]} if path.endswith('/stats/orders') else {'returns':[]}
     api=SimpleNamespace(get_campaigns=lambda key:[{'id':100,'business':{'id':1},'placementType':'FBY'}],request=request)
     packet=service.fetch_packet({'business_id':1,'api_key':'secret'},START,END,api=api,
-        report_loader=lambda *args:{'orders_and_offers_transactions':[order()]})
+            report_loader=lambda *args:{'orders_and_offers_transactions':[order()]},expense_loader=lambda *args:{})
     assert packet['orders']==[] and packet['stats']==[]
 
 
@@ -205,7 +206,7 @@ def test_pages_reject_missing_array_and_repeated_token():
         service.pages(fake,'/returns','secret','returns')
 
 
-def test_operational_loader_never_requests_financial_reports_or_netting():
+def test_operational_basket_loader_never_requests_netting_or_legacy_financial_facts():
     calls=[]
     def request(path,key,**kwargs):
         calls.append((path,kwargs))
@@ -217,7 +218,7 @@ def test_operational_loader_never_requests_financial_reports_or_netting():
     api=SimpleNamespace(get_campaigns=lambda key:[{'id':100,'business':{'id':1},'placementType':'FBY'}],request=request)
     account={'business_id':1,'api_key':'secret'}
     packet=service.fetch_packet(account,START,END,api=api,
-        report_loader=lambda *args:{'orders_and_offers_transactions':[],'services_and_orders_margin':[]})
+        report_loader=lambda *args:{'orders_and_offers_transactions':[],'services_and_orders_margin':[]},expense_loader=lambda *args:{})
     assert packet['complete']
     assert len(calls)==9
     assert [kw['params']['fromDate'] for path,kw in calls if path.endswith('/returns')][:-1]==list(reversed(calculation.date_range(START,END)))
