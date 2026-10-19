@@ -73,6 +73,7 @@ def test_duplicate_pages_and_days_count_one_application_once():
     result=report([snapshot(returns={'2026-10-12':[returned(),returned()],'2026-10-16':[returned()]})])
     assert result['values']['detail_returned_count']==1
     assert any('нескольких дней' in n for n in result['notes'])
+    assert 'Pidata' not in json.dumps(result,ensure_ascii=False)
 
 
 def test_distinct_applications_over_original_quantity_are_unavailable_not_double_counted():
@@ -145,6 +146,8 @@ def test_empty_success_is_zero_missing_snapshot_is_not_zero():
 def test_disabled_campaign_never_makes_the_whole_cabinet_complete():
     result=report([snapshot(complete=False)])
     assert not result['quality']['detail_redeemed_count']['complete']
+    assert 'TRIS · 2026-10-12–2026-10-18' in result['quality']['bank_receipt']['detail']
+    assert result['values']['bank_receipt'] is None
 
 
 def test_one_order_expense_is_additive_across_separate_delivery_days():

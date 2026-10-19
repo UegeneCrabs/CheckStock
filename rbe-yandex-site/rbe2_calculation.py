@@ -115,7 +115,7 @@ def canonical(snapshots):
                 applications[key] = (report_day, row)
     for key, days in duplicate_days.items():
         if len(days) > 1:
-            notes.append(f'{key[0].upper()}: возврат {key[3]} получен для нескольких дней; учтён один раз за {min(days)}. Нужна сверка даты с Pidata.')
+            notes.append(f'{key[0].upper()}: возврат {key[3]} получен для нескольких дней; учтён один раз за {min(days)}. Дату нужно проверить по исходному заказу и данным Маркета.')
     return orders, margins, stats, applications, coverage, list(dict.fromkeys(notes)), pending
 
 
@@ -383,8 +383,7 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
                      '; '.join(f"{r['store'].upper()} · возврат {r['return_id']} · заказ {r['order_id']}" for r in pending_events))
     expense_detail = ('Выкупы и возвраты — операционные. Комиссия — исходное начисление до баллов по заказу и артикулу, '
                       'за минусом комиссии возвратов. Прочие услуги — по датам начисления. '
-                      'Реклама кабинета учитывается один раз. Налоги и расходы вне Маркета не включены. '
-                      'Совпадение с Pidata проверяется отдельно, по одинаковому составу и моменту выгрузки.')
+                      'Реклама кабинета учитывается один раз. Налоги и расходы вне Маркета не включены.')
     notes.insert(0, expense_detail)
     quality = {metric:{'complete':not missing and not unknown_campaign and values[metric] is not None,
                        'estimated':False,
@@ -399,6 +398,17 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
                  'Если оборот равен нулю или прибыль неполная, процент не рассчитывается.'}
     for metric,messages in expense_result['issues'].items():
         quality[metric]['detail'] = '; '.join(messages[:6])
+    if missing:
+        by_store = defaultdict(list)
+        for store, business, report_day in missing:
+            by_store[store].append(report_day)
+        unavailable = '; '.join(
+            f'{store.upper()} · {days[0]}' + (f'–{days[-1]}' if len(days)>1 else '')
+            for store, days in sorted(by_store.items()))
+        reason = 'Нет полного ответа API для ' + unavailable + '. Общий итог и расчётная сумма к перечислению не подтверждены.'
+        for state in quality.values():
+            if not state['complete']:
+                state['detail'] = reason + ' ' + state['detail']
     return {'values':values, 'quality':quality, 'notes':list(dict.fromkeys(notes)),
             'events':{'sales':sales,'returns':returns,'cancellations':cancellations,'expenses':fees},
             'expenses':expense_result, 'order_report_expenses':diagnostic_order_fees,
