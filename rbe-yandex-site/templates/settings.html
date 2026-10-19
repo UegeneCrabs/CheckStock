@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Подключения API — RBE</title><link rel="stylesheet" href="/static/site.css?v=20261012-api-status"></head>
+<title>Подключения API — RBE</title><link rel="stylesheet" href="/static/site.css?v=20261012-api-status"><link rel="stylesheet" href="/static/access-status.css?v=20261019-shop-access"></head>
 <body><header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><nav><a href="/costs">Себестоимость</a><a href="/settings">Подключения API</a><form method="post" action="/logout"><button class="logout">Выйти</button></form></nav></header>
 <main class="settings"><div class="settings-title"><div><h1>Подключения API Яндекс Маркета</h1><p class="hint">Ключ проверяется через официальный API кампаний. После сохранения он не показывается в интерфейсе.</p></div><button type="button" id="check-all" class="check-all" title="Проверить все подключения">↻ <span>Проверить все</span></button></div>
 <form id="connection-form"><label>Код магазина<input name="store_slug" required pattern="[a-z0-9][a-z0-9_-]{0,63}" placeholder="например, rimili"></label>
 <label>Business ID<input name="business_id" required type="number" min="1" placeholder="216949566"></label>
 <label>API-ключ<input name="api_key" required type="password" autocomplete="new-password"></label><button>Проверить и сохранить</button></form>
 <p id="message" role="status"></p><h2>Подключённые кабинеты</h2><div class="table-wrap"><table><thead><tr><th>Магазин</th><th>Business ID</th><th>Статус API</th><th></th></tr></thead><tbody id="connections"></tbody></table></div>
-</main><script src="/static/settings.js?v=20261012-api-status"></script></body></html>
+</main><script src="/static/settings.js?v=20261019-shop-access"></script></body></html>

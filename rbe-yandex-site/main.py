@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field, SecretStr
 from report_quality import SCHEMA as QUALITY_SCHEMA
 from cost_snapshots import SCHEMA as COST_SNAPSHOT_SCHEMA, stores_for_sheet, split_costs_by_store, write_store_costs
 from sync_queue import SCHEMA as SYNC_QUEUE_SCHEMA, REASONS, MAX_BATCH_DAYS, error_reason, newest_ranges, automatic_plan
+from campaign_access import connection_access_status
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.getenv("RBE_DATABASE_PATH", ROOT / "data" / "rbe_yandex.db"))
@@ -443,31 +444,44 @@ def save_connections(items: list[dict]) -> None:
     temporary.replace(CONNECTIONS_PATH)
 
 
-def check_connection(item: dict) -> dict:
-    """Verify a key without creating a financial report."""
-
-    try:
+def connection_campaigns(api_key: str) -> list[dict]:
+    """Read every campaign page; one business can span more than 100 shops."""
+    campaigns: list[dict] = []
+    token = ""
+    seen: set[str] = set()
+    while True:
+        params = {"limit": 100}
+        if token:
+            params["pageToken"] = token
         response = httpx.get(
             f"{YANDEX_API}/v2/campaigns",
-            params={"limit": 100},
-            headers={"Api-Key": str(item.get("api_key") or ""), "Accept": "application/json"},
+            params=params,
+            headers={"Api-Key": api_key, "Accept": "application/json"},
             timeout=30,
         )
-        if response.status_code in (420, 429):
-            return {"status": "limited", "detail": "Лимит API: повторите проверку позже"}
         response.raise_for_status()
         payload = response.json()
-        campaigns = (payload.get("result") or payload).get("campaigns") or []
-        has_business = any(
-            int((row.get("business") or {}).get("id") or row.get("businessId") or 0)
-            == int(item.get("business_id") or 0)
-            for row in campaigns
-        )
-        return {
-            "status": "connected" if has_business else "error",
-            "detail": "Подключён" if has_business else "Нет доступа к указанному Business ID",
-        }
+        result = payload.get("result") or payload
+        page = result.get("campaigns")
+        if not isinstance(page, list):
+            raise ValueError("Яндекс не передал список магазинов")
+        campaigns.extend(page)
+        token = (result.get("paging") or {}).get("nextPageToken") or ""
+        if not token:
+            return campaigns
+        if token in seen:
+            raise ValueError("Яндекс повторил страницу списка магазинов")
+        seen.add(token)
+
+
+def check_connection(item: dict) -> dict:
+    """Verify both the cabinet key and availability of its individual shops."""
+    try:
+        campaigns = connection_campaigns(str(item.get("api_key") or ""))
+        return connection_access_status(campaigns, int(item.get("business_id") or 0))
     except httpx.HTTPStatusError as error:
+        if error.response.status_code in (420, 429):
+            return {"status": "limited", "detail": "Лимит API: повторите проверку позже"}
         return {"status": "error", "detail": f"Яндекс Маркет вернул {error.response.status_code}"}
     except (httpx.HTTPError, ValueError):
         return {"status": "error", "detail": "Не удалось связаться с API Яндекс Маркета"}
@@ -1357,14 +1371,7 @@ def add_connection(request: Request, payload: ConnectionRequest) -> dict:
     _require_admin(request)
     api_key = payload.api_key.get_secret_value().strip()
     try:
-        response = httpx.get(
-            f"{YANDEX_API}/v2/campaigns",
-            params={"limit": 100},
-            headers={"Api-Key": api_key, "Accept": "application/json"},
-            timeout=30,
-        )
-        response.raise_for_status()
-        campaigns = (response.json().get("result") or response.json()).get("campaigns") or []
+        campaigns = connection_campaigns(api_key)
     except httpx.HTTPStatusError as error:
         raise HTTPException(400, f"Яндекс Маркет вернул {error.response.status_code}; ключ не сохранён") from error
     except (httpx.HTTPError, ValueError) as error:
@@ -1376,6 +1383,7 @@ def add_connection(request: Request, payload: ConnectionRequest) -> dict:
     )
     if not campaign_ids:
         raise HTTPException(400, "У ключа нет доступа к указанному Business ID")
+    access = connection_access_status(campaigns, payload.business_id)
     entries = [
         item for item in load_connections()
         if not (item.get("store_slug") == payload.store_slug and item.get("business_id") == payload.business_id)
@@ -1385,8 +1393,7 @@ def add_connection(request: Request, payload: ConnectionRequest) -> dict:
         "business_id": payload.business_id,
         "campaign_ids": campaign_ids,
         "api_key": api_key,
-        "status": "connected",
-        "detail": "Подключён",
+        **access,
     })
     save_connections(entries)
     return {"ok": True, "store_slug": payload.store_slug, "business_id": payload.business_id, "campaign_ids": campaign_ids}

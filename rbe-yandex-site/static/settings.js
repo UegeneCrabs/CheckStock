@@ -1,1 +1,82 @@
-(function(){'use strict';var form=document.querySelector('#connection-form'),body=document.querySelector('#connections'),message=document.querySelector('#message'),checkAll=document.querySelector('#check-all');function esc(v){var n=document.createElement('span');n.textContent=String(v);return n.innerHTML}function status(x){var labels={connected:'Подключён',limited:'Лимит API',error:'Ошибка проверки'};return '<span class="api-status api-status--'+esc(x.status||'unknown')+'" title="'+esc(x.detail||'Проверка ещё не выполнялась')+'">'+esc(labels[x.status]||'Не проверен')+'</span>'}async function load(){var p=await (await fetch('/api/connections')).json();body.innerHTML=(p.connections||[]).map(function(x){return '<tr><td>'+esc(x.store_slug).toUpperCase()+'</td><td>'+esc(x.business_id)+'</td><td>'+status(x)+'</td><td><button class="remove" data-store="'+esc(x.store_slug)+'" data-id="'+esc(x.business_id)+'">Удалить</button></td></tr>'}).join('')||'<tr><td colspan="4">Подключений пока нет.</td></tr>'}form.onsubmit=async function(e){e.preventDefault();message.textContent='Проверяем ключ…';var data=Object.fromEntries(new FormData(form));data.business_id=Number(data.business_id);try{var r=await fetch('/api/connections',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}),p=await r.json();if(!r.ok)throw Error(p.detail||'Не удалось сохранить ключ');message.textContent='Ключ сохранён, доступ к Business ID подтверждён.';form.reset();load()}catch(x){message.textContent=x.message}};checkAll.onclick=async function(){checkAll.disabled=true;message.textContent='Проверяем все подключения…';try{var r=await fetch('/api/connections/check',{method:'POST'}),p=await r.json();if(!r.ok)throw Error(p.detail||'Не удалось проверить подключения');message.textContent='Проверка завершена.';load()}catch(x){message.textContent=x.message}finally{checkAll.disabled=false}};body.onclick=async function(e){var b=e.target.closest('button[data-store]');if(!b)return;if(!confirm('Удалить подключение?'))return;await fetch('/api/connections/'+encodeURIComponent(b.dataset.store)+'/'+b.dataset.id,{method:'DELETE'});load()};load()})();
+(function () {
+  'use strict';
+  const form = document.querySelector('#connection-form');
+  const body = document.querySelector('#connections');
+  const message = document.querySelector('#message');
+  const checkAll = document.querySelector('#check-all');
+
+  function esc(value) {
+    const node = document.createElement('span');
+    node.textContent = String(value);
+    return node.innerHTML;
+  }
+
+  function status(item) {
+    const labels = {
+      connected: 'Доступны все', partial: 'Доступны не все',
+      unavailable: 'Недоступны', limited: 'Лимит API', error: 'Ошибка проверки',
+    };
+    const state = item.status || 'unknown';
+    const detail = item.detail || 'Проверка ещё не выполнялась';
+    return '<span class="api-status api-status--' + esc(state) + '" title="' + esc(detail) + '">' +
+      esc(labels[state] || 'Не проверен') + '</span>' +
+      (state !== 'connected' ? '<small class="api-status-detail">' + esc(detail) + '</small>' : '');
+  }
+
+  async function load() {
+    const result = await (await fetch('/api/connections')).json();
+    body.innerHTML = (result.connections || []).map(function (item) {
+      return '<tr><td>' + esc(item.store_slug).toUpperCase() + '</td><td>' + esc(item.business_id) +
+        '</td><td>' + status(item) + '</td><td><button class="remove" data-store="' +
+        esc(item.store_slug) + '" data-id="' + esc(item.business_id) + '">Удалить</button></td></tr>';
+    }).join('') || '<tr><td colspan="4">Подключений пока нет.</td></tr>';
+  }
+
+  form.onsubmit = async function (event) {
+    event.preventDefault();
+    message.textContent = 'Проверяем ключ…';
+    const data = Object.fromEntries(new FormData(form));
+    data.business_id = Number(data.business_id);
+    try {
+      const response = await fetch('/api/connections', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.detail || 'Не удалось сохранить ключ');
+      message.textContent = 'Ключ сохранён. Доступность магазинов показана ниже.';
+      form.reset();
+      await load();
+    } catch (error) {
+      message.textContent = error.message;
+    }
+  };
+
+  checkAll.onclick = async function () {
+    checkAll.disabled = true;
+    message.textContent = 'Проверяем все подключения…';
+    try {
+      const response = await fetch('/api/connections/check', {method: 'POST'});
+      const result = await response.json();
+      if (!response.ok) throw Error(result.detail || 'Не удалось проверить подключения');
+      message.textContent = result.connections.some(item => item.status !== 'connected')
+        ? 'Проверка завершена: есть магазины с ограниченным доступом. Подробности в таблице.'
+        : 'Проверка завершена: API доступно для всех магазинов.';
+      await load();
+    } catch (error) {
+      message.textContent = error.message;
+    } finally {
+      checkAll.disabled = false;
+    }
+  };
+
+  body.onclick = async function (event) {
+    const button = event.target.closest('button[data-store]');
+    if (!button) return;
+    if (!confirm('Удалить подключение?')) return;
+    await fetch('/api/connections/' + encodeURIComponent(button.dataset.store) + '/' + button.dataset.id,
+      {method: 'DELETE'});
+    await load();
+  };
+
+  load();
+})();

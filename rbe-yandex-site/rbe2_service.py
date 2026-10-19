@@ -15,6 +15,7 @@ from io import BytesIO
 from pathlib import Path
 
 from rbe2_calculation import date_range
+from campaign_access import campaign_access_issue
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rbe2_snapshots (
@@ -152,7 +153,8 @@ def fetch_packet(account, start, end, *, api=None, report_loader=orders_report, 
               'campaigns':[selected(c,('id','domain','placementType')) for c in campaigns],
               'business_campaigns':business_campaigns,
               'complete':not unavailable,
-              'notes':[f"Отключён API магазина {c['id']}; данные кабинета могут быть неполными." for c in unavailable]}
+              'notes':[f"{campaign_access_issue(c)}; данные кабинета могут быть неполными."
+                       for c in unavailable]}
     order_campaigns = {}
     # Update-date filtering, not creation-date filtering: older orders can be
     # redeemed during this week. Explicit IDs below fill return price lookups.
