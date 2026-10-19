@@ -54,22 +54,6 @@
       }
       row.append(label,value,status); body.append(row);
     });
-    var notes=document.querySelector('#notes'); notes.replaceChildren();
-    (payload.notes||[]).forEach(function(text) { notes.append(cell(text,'li')); });
-    var expenseBody=document.querySelector('#expense-details'); expenseBody.replaceChildren();
-    (((payload.expenses||{}).breakdown)||[]).forEach(function(item) {
-      var row=document.createElement('tr');
-      [item.store.toUpperCase(),dateText(item.date),item.sheet,item.order_id||'Без заказа',item.sku||'—',amount(item.amount)].forEach(function(text) { row.append(cell(text)); });
-      expenseBody.append(row);
-    });
-    var events=document.querySelector('#events'); events.replaceChildren();
-    [['sales','Выкуп'],['returns','Возврат'],['cancellations','Отмена']].forEach(function(pair) {
-      ((payload.events||{})[pair[0]]||[]).forEach(function(item) {
-        var row=document.createElement('tr');
-        [pair[1],item.store.toUpperCase(),dateText(item.date),item.order_id+(item.return_id?' / '+item.return_id:''),item.sku,amount(item.count),amount(item.seller_amount)].forEach(function(text) { row.append(cell(text)); });
-        events.append(row);
-      });
-    });
     document.querySelector('#period').textContent=dateText(from.value)+' — '+dateText(to.value);
     document.querySelector('#range').textContent=dateText(from.value)+' — '+dateText(to.value);
     document.querySelector('#last-loaded').textContent=payload.last_loaded_at?'Загружено: '+new Date(payload.last_loaded_at).toLocaleString('ru-RU'):'Данные ещё не загружены';

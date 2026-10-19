@@ -27,9 +27,7 @@ async function run(preview=false) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/rbe2.js'),'utf8'),context);
   for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));
   assert.equal(element('#metrics').children.length,19);
-  assert.equal(element('#notes').children[0].textContent,'<script>untrusted</script>');
-  assert.equal(element('#events').children[0].children[4].textContent,'<b>sku</b>');
-  assert.equal(element('#expense-details').children[0].children[2].textContent,'<b>placement</b>');
+  for(const removed of ['#notes','#events','#expense-details'])assert.equal(elements.has(removed),false);
   const commission=element('#metrics').children[10];
   assert.equal(commission.children[1].textContent,'500');
   assert.equal(commission.children[1].children[0].textContent,'подтверждённая часть');
@@ -47,4 +45,6 @@ async function run(preview=false) {
   admin=false;await element('#apply').onclick();
   assert.equal(element('#refresh-rbe2').hidden,true);
 }
-run().then(()=>run(true)).then(()=>console.log('RBE 2 UI unit checks passed: isolated endpoints, viewer mode, no preview requests, escaped text, unknown profit.')).catch(e=>{console.error(e);process.exitCode=1;});
+const html=fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/templates/rbe2.html'),'utf8');
+for(const removed of ['Операционный расчёт · в разработке','Источники и правила расчёта','Что требует проверки','Товары и заказы расчёта','Комиссии, реклама и остальные начисления'])assert.equal(html.includes(removed),false);
+run().then(()=>run(true)).then(()=>console.log('RBE 2 UI unit checks passed: compact layout, isolated endpoints, viewer mode, no preview requests, unknown profit.')).catch(e=>{console.error(e);process.exitCode=1;});

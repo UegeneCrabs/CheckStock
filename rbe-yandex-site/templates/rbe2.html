@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>RBE 2 — по заказам</title>
   <link rel="stylesheet" href="/static/site.css?v=20261019-rbe2">
-  <link rel="stylesheet" href="/static/rbe2.css?v=20261019">
+  <link rel="stylesheet" href="/static/rbe2.css?v=20261019-compact">
 </head>
 <body>
   <header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><nav><a href="/costs">Себестоимость</a><a href="/settings">Подключения API</a><form method="post" action="/logout"><button class="logout">Выйти</button></form></nav></header>
@@ -16,20 +16,9 @@
       <label class="range-wrap">Период<input id="from" type="hidden"><input id="to" type="hidden"><button id="range" type="button" class="range-trigger"></button><div id="calendar" class="calendar" hidden><div class="cal-nav"><button id="prev" type="button">‹</button><span id="month"></span><button id="next" type="button">›</button></div><div id="grid" class="cal-grid"></div></div></label>
       <button id="apply" type="button">Применить</button><button id="refresh-rbe2" type="button" hidden>Загрузить по API</button>
     </div></section>
-    <div class="rbe2-intro"><strong>Операционный расчёт · в разработке</strong><span id="last-loaded">Ожидаем сохранённые данные</span></div>
-    <details class="rbe2-guide"><summary>Источники и правила расчёта</summary>
-      <p>Выкупы берём из операционного отчёта по заказам: по дате доставки покупателю. Дата заказа, дата изменения статуса и дата перечисления денег не заменяют дату доставки. Возвращённый впоследствии товар остаётся в исходных выкупах.</p>
-      <p>Возвраты берём из дневного списка возвратов Яндекса: тип «возврат», состояния «деньги возвращены» и «возврат рассматривается». Невыкупы и отменённые заявки исключаются. Одна заявка и её товары не прибавляются повторно. Даты из финансового расчёта RBE здесь не используются.</p>
-      <p>Отмены показаны отдельно для заказов, оформленных в выбранный период. Это не возвраты ранее выкупленных товаров. Себестоимость берётся только для соответствующего магазина на день выкупа или возврата.</p>
-      <p>Комиссия берётся до зачёта баллов из исходного начисления за конкретный заказ и артикул. При возврате вычитается комиссия тех же товаров, без повторного вычитания технической отмены начисления. Логистика, реклама и остальные расходы берутся из сохранённых отчётов по стоимости услуг по дате начисления, а не из уменьшенной баллами суммы в заказе. Финансовый отчёт не определяет состав выкупов RBE 2.</p>
-      <p>В рекламе отдельно учитываются буст продаж, показы, полки и баннеры. Общая реклама кабинета не умножается на число магазинов. Если выбран конкретный склад, а у списания нет привязки к нему, оно не распределяется произвольно: сумма требует проверки. Без исходной комиссии или нужного отчёта прибыль не выводится. Расчётная сумма к перечислению — не фактическая выплата банка; маржинальная прибыль не включает налоги, зарплаты и другие расходы вне Маркета.</p>
-      <p>Загрузка этой версии выполняется вручную, отдельно от финансового RBE. Просмотр страницы не отправляет запросы в Яндекс. Для загрузки выбирайте до 7 дней, не старше 90 дней. Более новые дни запрашиваются первыми.</p>
-    </details>
+    <div class="rbe2-intro"><span id="last-loaded">Ожидаем сохранённые данные</span></div>
     <p id="error" role="alert"></p>
     <section class="table-wrap"><table><thead><tr><th>Показатель</th><th id="period">Период</th><th>Статус</th></tr></thead><tbody id="metrics"></tbody></table></section>
-    <details class="rbe2-findings" open><summary>Что требует проверки</summary><ul id="notes"></ul></details>
-    <details class="rbe2-events"><summary>Товары и заказы расчёта</summary><p class="hint">Здесь видно, какие товары вошли в выкупы и возвраты. Данные можно сверить с выгрузкой Pidata по артикулу.</p><div class="table-wrap"><table><thead><tr><th>Тип</th><th>Магазин</th><th>Дата</th><th>Заказ / возврат</th><th>Артикул</th><th>Шт.</th><th>Цена продавца, ₽</th></tr></thead><tbody id="events"></tbody></table></div></details>
-    <details class="rbe2-events"><summary>Комиссии, реклама и остальные начисления</summary><p class="hint">Комиссия связана с товарами операционного расчёта. У других услуг показана дата начисления. Неопределённые суммы и привязки перечислены в блоке проверки.</p><div class="table-wrap"><table><thead><tr><th>Магазин</th><th>Дата</th><th>Источник услуги</th><th>Заказ</th><th>Артикул</th><th>Сумма, ₽</th></tr></thead><tbody id="expense-details"></tbody></table></div></details>
   </main>
-  <script src="/static/rbe2.js?v=20261019"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
+  <script src="/static/rbe2.js?v=20261019-compact"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
 </body></html>
