@@ -30,6 +30,10 @@ def test_gross_fees_enable_profit_without_using_paid_order_margin():
     assert values['order_expenses']==560
     assert values['revenue']==480 and values['bank_receipt']==440
     assert values['marginal_profit']==340
+    assert values['marginal_profit_percent']==68
+    assert result['quality']['marginal_profit_percent']['complete']
+    assert values['storage'] is None  # storage stays inside other direct expenses
+    assert result['quality']['storage']['complete']
     assert result['quality']['marginal_profit']['complete']
 
 
@@ -39,6 +43,13 @@ def test_missing_paid_order_margin_does_not_block_confirmed_gross_costs():
     assert result['quality']['marginal_profit']['complete']
     assert result['order_report_missing_expenses']
     assert not any(n.startswith('Не хватает данных:') for n in result['notes'])
+
+
+def test_margin_percent_is_unavailable_for_zero_buyer_turnover():
+    result=report([snapshot(orders=[order(buyerPaymentAmount=0)],expenses=source())])
+    assert result['values']['marginal_profit'] is not None
+    assert result['values']['marginal_profit_percent'] is None
+    assert not result['quality']['marginal_profit_percent']['complete']
 
 
 def test_unknown_fbs_campaign_does_not_invalidate_known_fbo_deliveries():

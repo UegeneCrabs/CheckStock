@@ -361,6 +361,15 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
     values['marginal_profit'] = difference(values['bank_receipt'],values['sold_cost_of_goods'])
     if missing or unknown_campaign:
         values['revenue'] = values['bank_receipt'] = values['marginal_profit'] = None
+    # Match the financial dashboard's ratio while retaining RBE 2's own sources.
+    buyer_turnover = values['buyout_buyer_turnover']
+    profit = values['marginal_profit']
+    values['marginal_profit_percent'] = (
+        float((money(profit) / money(buyer_turnover) * 100).quantize(Decimal('.01')))
+        if profit is not None and buyer_turnover is not None and buyer_turnover != 0 else None
+    )
+    # Storage is already included in other direct expenses; never deduct it twice.
+    values['storage'] = None
     notes.extend(expense_result['notes'])
     pending_events = []
     for key,(report_day,row) in pending.items():
@@ -380,6 +389,14 @@ def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
     quality = {metric:{'complete':not missing and not unknown_campaign and values[metric] is not None,
                        'estimated':False,
                        'detail':expense_detail if metric in EXPENSE_METRICS else 'Выкупы — по дате доставки; возвраты — по дневной выборке API, без финансового отчёта.'} for metric in METRICS}
+    quality['storage'] = {'complete':quality['other_direct_expenses']['complete'], 'estimated':False,
+                          'detail':'Хранение включено в строку «Иное» и здесь не прибавляется второй раз.'}
+    quality['marginal_profit_percent'] = {
+        'complete':quality['marginal_profit']['complete'] and quality['buyout_buyer_turnover']['complete']
+                   and values['marginal_profit_percent'] is not None,
+        'estimated':False,
+        'detail':'Маржинальная прибыль / выкупы минус возвраты в цене покупателя × 100. '
+                 'Если оборот равен нулю или прибыль неполная, процент не рассчитывается.'}
     for metric,messages in expense_result['issues'].items():
         quality[metric]['detail'] = '; '.join(messages[:6])
     return {'values':values, 'quality':quality, 'notes':list(dict.fromkeys(notes)),
