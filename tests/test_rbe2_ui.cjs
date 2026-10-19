@@ -1,8 +1,8 @@
 // Unit-level DOM model, not browser/computer automation.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 async function run(preview=false) {
-  const elements=new Map(),posts=[],timeouts=[],storage=new Map();
-  function node(){return {value:'',textContent:'',children:[],hidden:false,disabled:false,
+  const elements=new Map(),posts=[],timeouts=[],storage=new Map(),copied=[];
+  function node(){return {value:'',textContent:'',children:[],hidden:false,disabled:false,dataset:{},classList:{add(){},remove(){}},
     append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},
     setAttribute(key,value){this[key]=value;}};}
   function element(key){if(!elements.has(key))elements.set(key,node());return elements.get(key);}
@@ -13,7 +13,7 @@ async function run(preview=false) {
   let admin=true;
   const context={document:{querySelector:element,createElement:node},window:{RBE2_PREVIEW_DATA:preview?payload:null,setTimeout:fn=>timeouts.push(fn)},
     sessionStorage:{getItem:key=>storage.get(key),setItem:(key,v)=>storage.set(key,v),removeItem:key=>storage.delete(key)},
-    navigator:{clipboard:{writeText:async()=>{}}},Intl,Date,URLSearchParams,Option:function(text,value){return {textContent:text,value};},
+    navigator:{clipboard:{writeText:async value=>{copied.push(value);}}},Intl,Date,URLSearchParams,Option:function(text,value){return {textContent:text,value};},
     fetch:async(url,options)=>{
       if(preview)throw Error('Preview must not request any URL');
       let result;
@@ -26,15 +26,24 @@ async function run(preview=false) {
     }};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/rbe2.js'),'utf8'),context);
   for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(element('#metrics').children.length,19);
+  assert.equal(element('#metrics').children.length,38);
   for(const removed of ['#notes','#events','#expense-details'])assert.equal(elements.has(removed),false);
-  const commission=element('#metrics').children[10];
-  assert.equal(commission.children[1].textContent,'500');
-  assert.equal(commission.children[1].children[0].textContent,'подтверждённая часть');
-  assert.equal(commission.children[2].children[0].textContent,'Не готово');
-  const profit=element('#metrics').children.at(-1);
-  assert.equal(profit.children[1].textContent,'—');
-  assert.equal(profit.children[2].children[0].textContent,'Не готово');
+  const commission=element('#metrics').children[20];
+  assert.equal(commission.children[1].children[0].children[0].textContent,'500');
+  assert.equal(commission.children[1].children[1].textContent,'подтверждённая часть');
+  assert.equal(commission.children[2].children[0].textContent,'Неполные');
+  const profit=element('#metrics').children.at(-2);
+  assert.equal(profit.children[1].children[0].children[0].textContent,'—');
+  assert.equal(profit.children[2].children[0].textContent,'Неполные');
+  assert.equal(element('#metrics').children[0].children[0].children[0].children[2].dataset.tip.includes('операционному API'),true);
+  assert.equal(element('#metrics').children[0].children[1].children[0].children[1].className,'copy-number');
+  await element('#metrics').children[0].children[1].children[0].children[1].onclick();
+  assert.deepEqual(copied,['557540']);
+  assert.equal(element('#copy-status').textContent,'Число скопировано');
+  assert.equal(element('#metrics').children[1].hidden,true);
+  element('#metrics').children[0].children[0].children[0].children[0].onclick();
+  assert.equal(element('#metrics').children[1].hidden,false);
+  assert.equal(element('#metrics').children[1].children[0].children[0].textContent.includes('операционному API'),true);
   if(preview){assert.equal(element('#refresh-rbe2').hidden,true);return;}
   element('#store').value='tris';element('#from').value='2026-10-12';element('#to').value='2026-10-18';
   await element('#refresh-rbe2').onclick();

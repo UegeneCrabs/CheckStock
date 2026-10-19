@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>RBE 2 — по заказам</title>
   <link rel="stylesheet" href="/static/site.css?v=20261019-rbe2">
-  <link rel="stylesheet" href="/static/rbe2.css?v=20261019-compact">
+  <link rel="stylesheet" href="/static/rbe2.css?v=20261019-parity">
 </head>
 <body>
   <header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><nav><a href="/costs">Себестоимость</a><a href="/settings">Подключения API</a><form method="post" action="/logout"><button class="logout">Выйти</button></form></nav></header>
@@ -18,7 +18,8 @@
     </div></section>
     <div class="rbe2-intro"><span id="last-loaded">Ожидаем сохранённые данные</span></div>
     <p id="error" role="alert"></p>
+    <span id="copy-status" class="sr-only" role="status" aria-live="polite"></span>
     <section class="table-wrap"><table><thead><tr><th>Показатель</th><th id="period">Период</th><th>Статус</th></tr></thead><tbody id="metrics"></tbody></table></section>
   </main>
-  <script src="/static/rbe2.js?v=20261019-compact"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
+  <script src="/static/rbe2.js?v=20261019-parity"></script><script src="/static/calendar.js?v=20261012-local-date"></script>
 </body></html>
