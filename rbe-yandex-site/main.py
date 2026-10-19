@@ -82,6 +82,8 @@ def connection() -> sqlite3.Connection:
 
 def init_database() -> None:
     with connection() as conn:
+        from rbe2_service import SCHEMA as RBE2_SCHEMA
+        conn.executescript(RBE2_SCHEMA)
         conn.executescript(QUALITY_SCHEMA)
         conn.executescript(COST_SNAPSHOT_SCHEMA)
         conn.executescript(SYNC_QUEUE_SCHEMA)
@@ -986,6 +988,8 @@ def on_startup() -> None:
     _prune_retry_queue()
     SYNC_STOP_EVENT.clear()
     with connection() as conn:
+        conn.execute("UPDATE rbe2_runs SET status='interrupted',finished_at=?,detail=? WHERE status IN ('queued','running')",
+                     (datetime.now(UTC).isoformat(),'Загрузка RBE 2 прервана перезапуском. Сохранённые снимки не удалены.'))
         conn.execute("UPDATE targeted_sync_runs SET status='waiting',finished_at=?,detail=? WHERE status IN ('queued','running','retrying')", (datetime.now(UTC).isoformat(), 'Сервер был перезапущен. Незавершённые даты сохранены в очереди автозагрузки.'))
     if AUTO_SYNC_ENABLED:
         threading.Thread(target=_sync_loop, name="rbe-official-sync", daemon=True).start()
@@ -1417,3 +1421,8 @@ def remove_connection(request: Request, store_slug: str, business_id: int) -> di
         raise HTTPException(404, "Подключение не найдено")
     save_connections(after)
     return {"ok": True}
+
+
+# The financial report above does not use the operational snapshots.
+from rbe2_routes import install as install_rbe2
+install_rbe2(app, globals())

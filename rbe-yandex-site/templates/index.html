@@ -8,6 +8,7 @@
 <body>
   <header><a class="brand" href="/">RBE <span>Яндекс Маркет</span></a><nav><a href="/costs">Себестоимость</a><a href="/settings">Подключения API</a><form method="post" action="/logout"><button class="logout">Выйти</button></form></nav></header>
   <main>
+    <nav class="report-tabs" aria-label="Способ расчёта"><a href="/" aria-current="page">RBE · финансовый</a><a href="/rbe2">RBE 2 · по заказам</a></nav>
     <section class="report-head" aria-label="Фильтры отчёта">
       <div class="filters"><label>Магазин<select id="store"><option value="">Все магазины</option></select></label>
       <label class="range-wrap">Период<input id="from" type="hidden"><input id="to" type="hidden"><button id="range" type="button" class="range-trigger"></button><div id="calendar" class="calendar" hidden><div class="cal-nav"><button id="prev" type="button">‹</button><span id="month"></span><button id="next" type="button">›</button></div><div id="grid" class="cal-grid"></div></div></label>

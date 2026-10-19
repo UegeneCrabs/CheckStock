@@ -75,3 +75,4 @@ td.status-cell { width: 1%; white-space: nowrap; }
   .report-head .range-trigger { width: 100%; white-space: nowrap; }
   .report-head .sync-tools { flex: 0 0 auto; }
 }
+.report-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 24px}.report-tabs a{padding:9px 13px;border:1px solid #d5dbea;border-radius:7px;color:#4659bc;background:#fff;text-decoration:none;font-size:13px;font-weight:700}.report-tabs a[aria-current="page"]{color:#fff;background:#4659bc;border-color:#4659bc}.report-tabs a:focus-visible{outline:2px solid #4659bc;outline-offset:3px}
