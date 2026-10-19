@@ -46,6 +46,10 @@ SYNC_INTERVAL_MINUTES = max(5, int(os.getenv("RBE_SYNC_INTERVAL_MINUTES", "30"))
 SYNC_LOOKBACK_DAYS = min(90, max(1, int(os.getenv("RBE_SYNC_LOOKBACK_DAYS", "14"))))
 SYNC_COOLDOWN_SECONDS = 125
 SYNC_CYCLE_MAX_JOBS = max(1, min(90, int(os.getenv('RBE_SYNC_CYCLE_MAX_JOBS', '12'))))
+RBE2_AUTO_SYNC_ENABLED = os.getenv('RBE2_AUTO_SYNC', 'true').lower() in {'1', 'true', 'yes'}
+RBE2_SYNC_INTERVAL_MINUTES = max(5, int(os.getenv('RBE2_SYNC_INTERVAL_MINUTES', '30')))
+RBE2_SYNC_LOOKBACK_DAYS = min(90, max(1, int(os.getenv('RBE2_SYNC_LOOKBACK_DAYS', str(SYNC_LOOKBACK_DAYS)))))
+RBE2_CYCLE_MAX_JOBS = max(1, min(24, int(os.getenv('RBE2_CYCLE_MAX_JOBS', '6'))))
 GOOGLE_SHEET_ID = os.getenv("RBE_COST_GOOGLE_SHEET_ID", "1q0WL6OB3Edh2O1ogqx7CK3MAij3O6xjD6gE0i3q3qEY")
 COST_SYNC_HOUR_MSK = min(23, max(0, int(os.getenv("RBE_COST_SYNC_HOUR_MSK", "2"))))
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -84,7 +88,9 @@ def connection() -> sqlite3.Connection:
 def init_database() -> None:
     with connection() as conn:
         from rbe2_service import SCHEMA as RBE2_SCHEMA
+        from rbe2_scheduler import SCHEMA as RBE2_SCHEDULER_SCHEMA
         conn.executescript(RBE2_SCHEMA)
+        conn.executescript(RBE2_SCHEDULER_SCHEMA)
         conn.executescript(QUALITY_SCHEMA)
         conn.executescript(COST_SNAPSHOT_SCHEMA)
         conn.executescript(SYNC_QUEUE_SCHEMA)
@@ -1007,6 +1013,9 @@ def on_startup() -> None:
         conn.execute("UPDATE targeted_sync_runs SET status='waiting',finished_at=?,detail=? WHERE status IN ('queued','running','retrying')", (datetime.now(UTC).isoformat(), 'Сервер был перезапущен. Незавершённые даты сохранены в очереди автозагрузки.'))
     if AUTO_SYNC_ENABLED:
         threading.Thread(target=_sync_loop, name="rbe-official-sync", daemon=True).start()
+    if RBE2_AUTO_SYNC_ENABLED:
+        from rbe2_scheduler import start_background
+        start_background(globals())
     threading.Thread(target=_cost_sync_loop, name="rbe-cost-sync", daemon=True).start()
 
 

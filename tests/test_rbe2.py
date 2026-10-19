@@ -253,7 +253,11 @@ def test_routes_read_separate_tables_and_do_not_leak_keys_or_start_sync(dashboar
     result=endpoint(dashboard,'/api/rbe2/report')(None,START,END,'tris',None)
     assert result['values']['buyout_count']==1
     assert not result['can_sync']
-    assert not result['automatic']
+    assert result['automatic']
+    queue_status=endpoint(dashboard,'/api/rbe2/sync-status')(None)
+    assert queue_status['automatic']
+    assert queue_status['pending_jobs']>0
+    assert queue_status['next_jobs'][0]['store']=='tris'
     assert 'secret' not in json.dumps(result)
     with dashboard.connection() as conn:
         assert json.loads(conn.execute('SELECT values_json FROM daily_financial').fetchone()[0])['buyout_count']==999

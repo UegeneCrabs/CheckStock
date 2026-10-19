@@ -159,6 +159,10 @@
     if(campaign.value) params.set('campaign_id',campaign.value);
     try { var payload=await json('/api/rbe2/report?'+params); if(version===loadVersion)render(payload); }
     catch(e) { if(version===loadVersion)error.textContent=e.message; }
+    try {
+      var queue=await json('/api/rbe2/sync-status'), label=document.querySelector('#auto-status');
+      if(version===loadVersion) label.textContent=queue.automatic?'Автозагрузка включена · в очереди '+queue.pending_jobs+' заданий':'Автозагрузка выключена';
+    } catch(_) { /* The saved report remains usable if queue status is unavailable. */ }
   }
   async function poll(id) {
     try {

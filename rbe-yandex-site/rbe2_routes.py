@@ -1,7 +1,7 @@
 """Routes for the development-only independent operational report."""
 import json
 import threading
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse
@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 from cost_snapshots import prices_for_day
 from rbe2_calculation import calculate
-from rbe2_service import fetch_packet, read_snapshots, save_snapshot
+from rbe2_service import read_snapshots
+from rbe2_scheduler import load_account, plan
 
 
 class Rbe2SyncRequest(BaseModel):
@@ -51,7 +52,7 @@ def install(app, site):
                 lambda store,day:prices_for_day(conn,store,day),campaign_id=campaign_id)
         return {'ok':True,'mode':'operational','date_from':date_from.isoformat(),'date_to':date_to.isoformat(),
                 **result,'can_sync':user['role']=='admin','sync_running':site['SYNC_LOCK'].locked(),
-                'campaigns':list(campaigns.values()),'automatic':False,
+                'campaigns':list(campaigns.values()),'automatic':site['RBE2_AUTO_SYNC_ENABLED'],
                 'last_loaded_at':max((s['fetched_at'] for s in snapshots),default=None)}
 
     def worker(run_id,start,end,selected_accounts):
@@ -61,26 +62,11 @@ def install(app, site):
                 conn.execute("UPDATE rbe2_runs SET status='running' WHERE id=?",(run_id,))
             for account in selected_accounts:
                 store = account['store_slug']
-                with site['connection']() as conn:
-                    row = conn.execute('SELECT attempted_at FROM sync_store_attempts WHERE store_slug=?',(store,)).fetchone()
-                wait = max(0,site['SYNC_COOLDOWN_SECONDS']-(datetime.now(UTC)-datetime.fromisoformat(row[0])).total_seconds()) if row else 0
-                if wait and site['SYNC_STOP_EVENT'].wait(wait):
-                    raise RuntimeError('Сервер остановлен; запустите загрузку RBE 2 повторно')
-                try:
-                    packet = fetch_packet(account,start,end)
-                    with site['connection']() as conn:
-                        # Commit a cabinet only after its report and every API
-                        # page succeeded. Other cabinets may finish separately.
-                        save_snapshot(conn,account,start,end,packet)
+                outcome, problem = load_account(site,account,start,end)
+                if outcome != 'failed':
                     succeeded.append(store)
-                    if packet.get('expenses',{}).get('load_error'):
-                        failed.append({'store':store,'detail':packet['expenses']['load_error']})
-                except Exception as error:
-                    failed.append({'store':store,'detail':str(error)[:500]})
-                finally:
-                    with site['connection']() as conn:
-                        conn.execute('INSERT OR REPLACE INTO sync_store_attempts VALUES(?,?)',
-                                     (store,datetime.now(UTC).isoformat()))
+                if outcome != 'completed':
+                    failed.append({'store':store,'detail':problem})
             status = 'completed' if not failed else 'partial' if succeeded else 'failed'
             detail = json.dumps({'loaded':succeeded,'errors':failed},ensure_ascii=False)
         except Exception as error:
@@ -118,6 +104,21 @@ def install(app, site):
             site['SYNC_LOCK'].release()
             raise
         return {'ok':True,'run_id':run_id,'detail':'Загрузка RBE 2 запущена. Финансовый расчёт RBE не изменяется.'}
+
+    @app.get('/api/rbe2/sync-status')
+    def rbe2_sync_queue(request:Request):
+        site['_require_user'](request)
+        end = datetime.now(site['MOSCOW']).date() - timedelta(days=1)
+        with site['connection']() as conn:
+            jobs = plan(conn, [a['store_slug'] for a in accounts()], site['_api_cutoff'](), end,
+                        datetime.now(UTC), retry_minutes=0,
+                        lookback_days=site['RBE2_SYNC_LOOKBACK_DAYS'], limit=1000)
+            run = conn.execute('SELECT status,detail FROM rbe2_runs ORDER BY id DESC LIMIT 1').fetchone()
+        return {'ok':True,'automatic':site['RBE2_AUTO_SYNC_ENABLED'],
+                'pending_jobs':len(jobs),'next_jobs':[
+                    {'store':store,'date_from':start.isoformat(),'date_to':finish.isoformat()}
+                    for store,start,finish in jobs[:10]],
+                'latest_run':dict(run) if run else None}
 
     @app.get('/api/rbe2/sync/{run_id}')
     def rbe2_sync_status(request:Request,run_id:int):

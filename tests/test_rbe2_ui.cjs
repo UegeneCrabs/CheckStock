@@ -20,6 +20,7 @@ async function run(preview=false) {
       let result;
       if(url==='/api/stores')result={stores:['tris','rimili']};
       else if(url.startsWith('/api/rbe2/report?'))result={...payload,can_sync:admin};
+      else if(url==='/api/rbe2/sync-status')result={automatic:true,pending_jobs:12};
       else if(url==='/api/rbe2/sync'){posts.push(JSON.parse(options.body));result={run_id:7,detail:'Начато'};}
       else if(url==='/api/rbe2/sync/7')result={status:'completed',detail:'Загружено'};
       else throw Error('Unexpected URL '+url);
@@ -28,6 +29,7 @@ async function run(preview=false) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/static/rbe2.js'),'utf8'),context);
   for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));
   assert.equal(element('#metrics').children.length,26);
+  if(!preview)assert.equal(element('#auto-status').textContent,'Автозагрузка включена · в очереди 12 заданий');
   const rbe1=fs.readFileSync(path.join(__dirname,'../rbe-yandex-site/templates/index.html'),'utf8');
   const original=[...rbe1.matchAll(/<tr(?: class="total")?><th><span class="metric">([^<]+) <span class="metric-help"[^>]*>ⓘ<\/span><\/span><\/th><td data-key="([^"]+)"/g)].map(m=>[m[2],m[1]]);
   const actual=element('#metrics').children.filter((_,i)=>i%2===0).map(row=>[row.children[1].dataset.key,row.children[0].children[0].children[1].textContent]);

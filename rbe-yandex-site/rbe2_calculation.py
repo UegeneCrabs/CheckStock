@@ -78,7 +78,7 @@ def date_range(start, end):
 
 def canonical(snapshots):
     """Latest entity versions; replace whole daily return responses, including []."""
-    orders, margins, stats, daily_returns, coverage = {}, {}, {}, {}, set()
+    orders, margins, stats, daily_returns, coverage = {}, {}, {}, {}, {}
     latest_return_state = {}
     notes = []
     for snapshot in sorted(snapshots, key=lambda s: (s['fetched_at'], s['date_to'], s['date_from'])):
@@ -95,8 +95,7 @@ def canonical(snapshots):
             for row in returns:
                 latest_return_state[(*owner,int(row['campaign_id']),int(row['id']))] = row
         for report_day in date_range(date.fromisoformat(snapshot['date_from']), date.fromisoformat(snapshot['date_to'])):
-            if packet.get('complete',True):
-                coverage.add((*owner, report_day))
+            coverage[(*owner, report_day)] = packet.get('complete',True)
         notes.extend(packet.get('notes', []))
     # A document returned on two API days is not two returned products.
     applications, pending = {}, {}
@@ -116,7 +115,7 @@ def canonical(snapshots):
     for key, days in duplicate_days.items():
         if len(days) > 1:
             notes.append(f'{key[0].upper()}: возврат {key[3]} получен для нескольких дней; учтён один раз за {min(days)}. Дату нужно проверить по исходному заказу и данным Маркета.')
-    return orders, margins, stats, applications, coverage, list(dict.fromkeys(notes)), pending
+    return orders, margins, stats, applications, {key for key, complete in coverage.items() if complete}, list(dict.fromkeys(notes)), pending
 
 
 def calculate(snapshots, accounts, start, end, price_for_day, campaign_id=None):
