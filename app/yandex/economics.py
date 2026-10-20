@@ -1,5 +1,6 @@
 """Persistent YM economics. Reads never call marketplace APIs or write snapshots."""
 
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from app.core.domain import MOSCOW_TIMEZONE
@@ -27,10 +28,11 @@ from app.yandex.economics_diagnostics import current_issues
 from app.yandex.price_calculation import discounted_price
 
 
-def context(store, *, sources=None, articles=None):
+def context(store, *, sources=None, articles=None, include_day_inputs=True):
     read = sources.read if sources is not None else lambda loader, *args: loader(*args)
+    source_loader = repository.sources if include_day_inputs else repository.current_sources
     return {
-        "sources": read(repository.sources, store, articles) if articles is not None else read(repository.sources, store),
+        "sources": read(source_loader, store, articles) if articles is not None else read(source_loader, store),
         "settings": read(repository.all_settings, store),
         "source_1c": read(yandex_source_values.get_values, store),
         "prices": read(yandex_storefront.get_prices, store),
@@ -41,7 +43,7 @@ def context(store, *, sources=None, articles=None):
 
 def effective(store, article, scheme, *, scenario=None, state_cache=None, estimate_tariff=False):
     """Current quotes must match; planning can keep the last compatible saved tariff."""
-    cache = state_cache if state_cache is not None else context(store)
+    cache = state_cache if state_cache is not None else context(store, articles=(article,), include_day_inputs=False)
     saved_sources = cache["sources"]
     seed = saved_sources.get((article, "initial:FBY"), {}) or saved_sources.get((article, "initial:FBS"), {})
     catalog = saved_sources.get((article, "catalog"), {})
@@ -253,7 +255,7 @@ def current_inputs(store, article, scheme, *, today, scenario=None, state_cache=
     """Today's metrics and standing costs, with explicit price estimates when needed.
 
     A price scenario is never a current marketplace observation. A stored tariff must have been quoted today for these observed prices."""
-    cache = state_cache if state_cache is not None else context(store)
+    cache = state_cache if state_cache is not None else context(store, articles=(article,), include_day_inputs=False)
 
     scenario = {
         key: value
@@ -319,8 +321,8 @@ def allocate_today(ads, orders, article, scheme):
 def current_metrics(store, article, today, scheme="FBY", *, history=None):
     key = today.isoformat()
     if history is None:
-        ads, ads_days = metrics.get_history(store, "advertising", key, key)
-        orders, order_days = metrics.get_history(store, "orders", key, key)
+        ads, ads_days = metrics.get_history(store, "advertising", key, key, article=article)
+        orders, order_days = metrics.get_history(store, "orders", key, key, article=article)
     else:
         ads, ads_days, orders, order_days = history
     issues = []
@@ -351,7 +353,7 @@ def detail(
     mode="current",
 ):
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
-    cache = state_cache if state_cache is not None else context(store)
+    cache = state_cache if state_cache is not None else context(store, articles=(article,), include_day_inputs=False)
     calculator = effective(store, article, scheme, scenario=scenario, state_cache=cache, estimate_tariff=True)
     if cache.get("advertising_week", {}).get("period_to") != (today - timedelta(days=1)).isoformat():
         cache["advertising_week"] = weekly_history(store, today)
@@ -366,7 +368,11 @@ def detail(
     if mode == "current":
         from app.repositories import daily_economics
 
-        ledger = daily_economics.get(("YANDEX MARKET", store, article, today.isoformat()))
+        ledger = (
+            cache["day_records"].get(article)
+            if cache.get("day_records_day") == today.isoformat()
+            else daily_economics.get(("YANDEX MARKET", store, article, today.isoformat()))
+        )
         if ledger:
             config["values"] = dict(ledger["values"])
             daily = dict(daily)
@@ -420,7 +426,7 @@ def detail(
 
 
 def break_even_scenario(store, article, scheme, *, scenario=None):
-    cache = context(store)
+    cache = context(store, articles=(article,), include_day_inputs=False)
     state = detail(store, article, scheme, scenario=scenario, state_cache=cache, mode="calculator")
     prices = break_even_prices(state["values"], scenario=scenario)
     # The button keeps the displayed expense basis, like the WB calculator.
@@ -444,23 +450,45 @@ def break_even_scenario(store, article, scheme, *, scenario=None):
 
 
 def attach(products, start, end, today, scheme="FBY"):
+    from app.repositories import daily_economics
+
+    def by_article(rows: list[dict]) -> dict[str, list[dict]]:
+        result = defaultdict(list)
+        for row in rows:
+            result[row["article"]].append(row)
+        return result
+
     histories, contexts, current, period_sources = {}, {}, {}, {}
     for store in {product["store_slug"] for product in products}:
         articles = tuple(product["article"] for product in products if product["store_slug"] == store)
-        histories[store] = repository.history(store, start.isoformat(), end.isoformat(), articles=articles)
-        contexts[store] = context(store, articles=articles)
+        histories[store] = by_article(
+            repository.history(store, start.isoformat(), end.isoformat(), articles=articles)
+        )
+        contexts[store] = context(store, articles=articles, include_day_inputs=False)
         key = today.isoformat()
+        contexts[store]["day_records"] = daily_economics.day_records(
+            "YANDEX MARKET", store, key, articles=articles
+        )
+        contexts[store]["day_records_day"] = key
         ads, ad_days = metrics.get_history(store, "advertising", key, key)
         orders, order_days = metrics.get_history(store, "orders", key, key)
-        current[store] = (ads, ad_days, orders, order_days)
+        current[store] = (by_article(ads), ad_days, by_article(orders), order_days)
+        period_orders, period_order_days = metrics.get_history(
+            store, "orders", start.isoformat(), end.isoformat()
+        )
+        period_ads, period_ad_days = metrics.get_history(
+            store, "advertising", start.isoformat(), end.isoformat()
+        )
         period_sources[store] = (
-            metrics.get_history(store, "orders", start.isoformat(), end.isoformat()),
-            metrics.get_history(store, "advertising", start.isoformat(), end.isoformat()),
+            by_article(period_orders), period_order_days, by_article(period_ads), period_ad_days
         )
     expected = metrics.days_between(start.isoformat(), end.isoformat())
     for product in products:
         store, article = product["store_slug"], product["article"]
-        daily = current_metrics(store, article, today, scheme, history=current[store])
+        ads, ad_days, orders, order_days = current[store]
+        daily = current_metrics(
+            store, article, today, scheme, history=(ads[article], ad_days, orders[article], order_days)
+        )
         config = detail(
             store,
             article,
@@ -499,7 +527,11 @@ def attach(products, start, end, today, scheme="FBY"):
                 "messages": config["result"]["messages"], "missing": config["result"]["missing"],
             }
         )
-        daily = resolved_history(store, article, histories[store], expected, sources=period_sources[store])
+        orders, order_days, ads, ad_days = period_sources[store]
+        daily = resolved_history(
+            store, article, histories[store][article], expected,
+            sources=((orders[article], order_days), (ads[article], ad_days)),
+        )
         period = aggregate(daily, expected)
         product["economics_7d"].update(
             {
@@ -521,8 +553,8 @@ def attach(products, start, end, today, scheme="FBY"):
 
 def resolved_history(store, article, rows, days, *, sources=None):
     (orders, order_days), (ads, ad_days) = sources or (
-        metrics.get_history(store, "orders", days[0], days[-1]),
-        metrics.get_history(store, "advertising", days[0], days[-1]),
+        metrics.get_history(store, "orders", days[0], days[-1], article=article),
+        metrics.get_history(store, "advertising", days[0], days[-1], article=article),
     )
     saved = {r["day"]: r for r in shared.history(rows, article)}
     return list(resolve_period(days, saved,

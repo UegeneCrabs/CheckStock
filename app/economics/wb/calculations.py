@@ -338,6 +338,7 @@ def load_product_metrics(
     *,
     period_days: int = DEFAULT_PERIOD_DAYS,
     today: date | None = None,
+    article: str | None = None,
 ) -> dict[tuple[str, str], dict]:
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     date_from = today - timedelta(days=max(1, period_days) - 1)
@@ -367,6 +368,7 @@ def load_product_metrics(
         store_slugs,
         date_from.isoformat(),
         today.isoformat(),
+        article=article,
     ):
         key = (str(row["store_slug"]), str(row["nm_id"]))
         daily[key][str(row["day"])]["advertising_spend"] += _number(row.get("spend"))
@@ -377,6 +379,7 @@ def load_product_metrics(
         store_slugs,
         date_from.isoformat(),
         today.isoformat(),
+        article=article,
     ):
         key = (str(row["store_slug"]), str(row["article"]))
         ordered_day = str(row["day"])
@@ -411,7 +414,7 @@ def load_product_metrics(
 
     funnel_metrics = {
         (str(row["store_slug"]), str(row["article"])): row
-        for row in db.get_unit_economics_1c_funnel_product_metrics(store_slugs)
+        for row in db.get_unit_economics_1c_funnel_product_metrics(store_slugs, article=article)
     }
     for key in funnel_metrics:
         daily[key]

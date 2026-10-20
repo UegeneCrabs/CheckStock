@@ -172,12 +172,17 @@ def get_daily_stock_history(
     marketplace: str,
     date_from: str,
     date_to: str,
+    *,
+    article: str | None = None,
 ) -> list[dict]:
     if not store_slugs:
         return []
 
     placeholders = ", ".join("?" for _ in store_slugs)
     params = (*store_slugs, marketplace, date_from, date_to)
+    article_filter = " AND article=?" if article is not None else ""
+    if article is not None:
+        params += (article,)
     conn = get_connection()
     try:
         marketplace_rows = conn.execute(
@@ -187,7 +192,7 @@ def get_daily_stock_history(
                    SUM(CASE WHEN scheme='fbo' THEN quantity END) AS fbo
               FROM marketplace_stock_daily_history
              WHERE store_slug IN ({placeholders}) AND marketplace=?
-               AND day>=? AND day<=?
+               AND day>=? AND day<=?{article_filter}
              GROUP BY store_slug, article, day
             """,
             params,
@@ -197,7 +202,7 @@ def get_daily_stock_history(
             SELECT store_slug, article, day, SUM(quantity) AS fulfillment
               FROM fulfillment_stock_daily_history
              WHERE store_slug IN ({placeholders}) AND marketplace=?
-               AND day>=? AND day<=?
+               AND day>=? AND day<=?{article_filter}
              GROUP BY store_slug, article, day
             """,
             params,

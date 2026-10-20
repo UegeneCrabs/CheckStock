@@ -50,7 +50,13 @@ def attach_barcodes(conn, store_slug: str, marketplace: str, items: list[dict]) 
         item["article_aliases"] = article_aliases.get(item["article"], [])
 
 
-def get_stock_items(store_slug: str, marketplace: str, schemes: tuple[str, ...] | None = None) -> list[dict]:
+def get_stock_items(
+    store_slug: str,
+    marketplace: str,
+    schemes: tuple[str, ...] | None = None,
+    *,
+    article: str | None = None,
+) -> list[dict]:
 
     schemes = tuple(schemes or ("fbs", "rfbs", "fbo"))
 
@@ -70,6 +76,9 @@ def get_stock_items(store_slug: str, marketplace: str, schemes: tuple[str, ...] 
 
     params.append(marketplace)
     params.extend([store_slug, marketplace])
+    article_filter = " AND si.article=?" if article is not None else ""
+    if article is not None:
+        params.append(article)
 
     sql = f"""
         SELECT
@@ -88,7 +97,7 @@ def get_stock_items(store_slug: str, marketplace: str, schemes: tuple[str, ...] 
             GROUP BY store_slug, article
         ) ff
             ON ff.store_slug = si.store_slug AND ff.article = si.article
-        WHERE si.store_slug = ? AND si.marketplace = ? AND si.is_service = 0
+        WHERE si.store_slug = ? AND si.marketplace = ? AND si.is_service = 0{article_filter}
         ORDER BY si.id
     """
 

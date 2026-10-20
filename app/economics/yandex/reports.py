@@ -31,7 +31,7 @@ def catalog(stores, user, *, sources=None):
     for store in stores:
         active = sources.read(yandex_assortment.active_articles, store)
         source = sources.read(yandex_source_values.get_values, store)
-        saved = sources.read(repository.sources, store)
+        saved = sources.read(repository.current_sources, store)
         for product in sources.read(db.get_catalog_items, store, MARKETPLACE):
             article = str(product["article"])
             reference = source.get(article, {})
@@ -211,10 +211,11 @@ def load_rows(
         for row in ads:
             by_ad[row["article"]][row["day"]] = row
         by_history = defaultdict(list)
-        for row in repository.history(store, days[0], days[-1]):
+        articles = tuple(product["article"] for product in products if product["store_slug"] == store)
+        for row in repository.history(store, days[0], days[-1], articles=articles):
             by_history[row["article"]].append(row)
         caches[store] = (
-            economics.context(store, sources=sources),
+            economics.context(store, sources=sources, include_day_inputs=False),
             by_history,
             by_order,
             order_days,

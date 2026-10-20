@@ -235,27 +235,34 @@ def records(marketplace, stores, start, end, *, articles=None, compact=False, in
     return result
 
 
-def day_records(marketplace, store, day):
+def day_records(marketplace, store, day, *, articles=None):
     """Bulk reads, including real legacy records. No synthetic backfill on GET."""
+    if articles is not None and not articles:
+        return {}
+    article_filter = ""
+    article_parameters = ()
+    if articles is not None:
+        article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
+        article_parameters = tuple(articles)
     with get_connection() as conn:
         if marketplace == "WB":
             rows = conn.execute(
-                "SELECT * FROM unit_economics_1c_daily_margin_snapshots WHERE store_slug=? AND day=?",
-                (store, day),
+                "SELECT * FROM unit_economics_1c_daily_margin_snapshots WHERE store_slug=? AND day=?" + article_filter,
+                (store, day, *article_parameters),
             ).fetchall()
             result = {r["article"]: from_wb(r) for r in rows}
         else:
             rows = conn.execute(
-                "SELECT * FROM yandex_economics_sources WHERE store_slug=? AND source=?",
-                (store, "day-input:" + day + ":COMMON"),
+                "SELECT * FROM yandex_economics_sources WHERE store_slug=? AND source=?" + article_filter,
+                (store, "day-input:" + day + ":COMMON", *article_parameters),
             ).fetchall()
             result = {r["article"]: from_yandex(r, day_input=True) for r in rows}
             rows = conn.execute(
-                "SELECT * FROM yandex_economics_daily WHERE store_slug=? AND day=? AND scheme='COMMON'",
-                (store, day),
+                "SELECT * FROM yandex_economics_daily WHERE store_slug=? AND day=? AND scheme='COMMON'" + article_filter,
+                (store, day, *article_parameters),
             ).fetchall()
             result.update({r["article"]: from_yandex(r) for r in rows})
-    result.update({r["article"]: r for r in records(marketplace, (store,), day, day)})
+    result.update({r["article"]: r for r in records(marketplace, (store,), day, day, articles=articles)})
     return result
 
 

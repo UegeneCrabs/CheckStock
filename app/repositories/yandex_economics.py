@@ -147,7 +147,7 @@ def source(store, article, name):
     return {"values": json.loads(row["payload_json"]), "updated_at": row["updated_at"]} if row else {}
 
 
-def sources(store, articles=None):
+def sources(store, articles=None, *, include_day_inputs=True):
     if articles is not None and not articles:
         return {}
     article_filter = ""
@@ -155,6 +155,9 @@ def sources(store, articles=None):
     if articles is not None:
         article_filter = " AND article IN (" + ",".join("?" for _ in articles) + ")"
         parameters += tuple(articles)
+    if not include_day_inputs:
+        article_filter += " AND source NOT LIKE ?"
+        parameters += ("day-input:%",)
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM yandex_economics_sources WHERE store_slug=?" + article_filter, parameters).fetchall()
     return {
@@ -164,6 +167,10 @@ def sources(store, articles=None):
         }
         for row in rows
     }
+
+
+def current_sources(store, articles=None):
+    return sources(store, articles, include_day_inputs=False)
 
 
 def catalog_group_ids(store):
