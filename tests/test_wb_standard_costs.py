@@ -1,7 +1,12 @@
 import copy
 import unittest
 
-from app.economics.wb.standard_costs import build
+from app.dto.wb_standard_costs import CalculatorProduct, SourceBundle
+from app.economics.wb.standard_costs import build as build_report
+
+
+def build(raw):
+    return build_report(SourceBundle.model_validate(raw))
 
 
 def fixture():
@@ -73,7 +78,9 @@ class CostsTests(unittest.TestCase):
                 )
                 row = build(raw)["rows"][0]
                 self.assertAlmostEqual(row["volume"], volume)
-                result = logistics_with_returns(row, {"details": {"buyout_percent": 80}})
+                result = logistics_with_returns(
+                    row, CalculatorProduct.model_validate({"details": {"buyout_percent": 80}})
+                )
                 self.assertAlmostEqual(result["reverse"], 46 + 14 * max(volume - 1, 0))
                 self.assertIsNotNone(result["total"])
 

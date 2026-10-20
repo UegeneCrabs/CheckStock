@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from test_wb_standard_costs import fixture
 
+from app.dto.wb_standard_costs import Snapshot
 from app.repositories import wb_standard_costs as repository
 from app.web.routers.wb_standard_costs import load_reports
 
@@ -10,16 +11,18 @@ from app.web.routers.wb_standard_costs import load_reports
 class ReadTests(unittest.TestCase):
     def test_failed_store_does_not_hide_healthy_store(self):
         with (
-            patch.object(repository, "load", side_effect=[ValueError("private diagnostic"), {"rows": []}]),
-            patch("app.web.routers.wb_standard_costs.enrich", return_value={"rows": []}),
+            patch.object(
+                repository, "load", side_effect=[ValueError("private diagnostic"), Snapshot(rows=[])]
+            ),
+            patch("app.web.routers.wb_standard_costs.enrich", return_value=Snapshot(rows=[])),
             self.assertLogs("app.web.routers.wb_standard_costs", level="ERROR"),
         ):
             result = load_reports(("tris", "rimili"))["stores"]
         self.assertIsNone(result[0]["report"])
-        self.assertIn("error", result[0])
+        self.assertIsNotNone(result[0].error)
         self.assertNotIn("private diagnostic", result[0]["error"])
-        self.assertEqual(result[1]["report"], {"rows": []})
-        self.assertNotIn("error", result[1])
+        self.assertEqual(result[1]["report"], Snapshot(rows=[]))
+        self.assertIsNone(result[1].error)
 
     def test_old_snapshot_rebuilt_without_writes(self):
         import json

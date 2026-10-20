@@ -1,5 +1,6 @@
 """Delivery and repeat-trip estimate, independent of calculator and persistence."""
 
+from app.dto.wb_standard_costs import CalculatorProduct, LogisticsReturns, ReportRow
 from app.economics.wb.standard_costs import number
 
 # Explicit user-approved defaults; not rates downloaded from WB.
@@ -7,11 +8,11 @@ RETURN_BASE_RUB = 46
 RETURN_EXTRA_LITER_RUB = 14
 
 
-def logistics_with_returns(row, product):
+def logistics_with_returns(row: ReportRow, product: CalculatorProduct) -> LogisticsReturns:
     """Expected delivery cost per buyout; return rates are explicit report defaults."""
-    forward = number(row.get("logistics"))
-    volume = number(row.get("volume"))
-    buyout = number((product.get("details") or {}).get("buyout_percent"))
+    forward = number(row.logistics)
+    volume = number(row.volume)
+    buyout = number(product.details.buyout_percent)
     reverse = (
         RETURN_BASE_RUB + RETURN_EXTRA_LITER_RUB * max(volume - 1, 0)
         if volume is not None and volume > 0
@@ -26,7 +27,7 @@ def logistics_with_returns(row, product):
     if reverse is None and retries != 0:
         missing.append("Нет объёма товара для обратной доставки")
     total = None if missing else forward + (forward + (reverse or 0)) * retries
-    return dict(
+    return LogisticsReturns(
         forward=forward,
         reverse=reverse,
         volume=volume,
