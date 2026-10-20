@@ -63,35 +63,43 @@ def product_history(store, article, scheme, *, today=None):
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     start, end = (today - timedelta(days=20)).isoformat(), today.isoformat()
     saved_rows = repository.history(
-        store, (today - timedelta(days=30)).isoformat(), today.isoformat()
+        store, (today - timedelta(days=30)).isoformat(), today.isoformat(), articles=(article,)
     )
     history = shared.history(saved_rows, article)
     chart_prices = _chart_prices_by_day(saved_rows, article)
     closed = {row["day"]: row for row in history}
     history_start = (today - timedelta(days=30)).isoformat()
-    ads, ads_days = metrics.get_history(store, "advertising", history_start, end)
-    orders, order_days = metrics.get_history(store, "orders", history_start, end)
+    ads, ads_days = metrics.get_history(store, "advertising", history_start, end, article=article)
+    orders, order_days = metrics.get_history(store, "orders", history_start, end, article=article)
     ads = {row["day"]: row for row in ads if row["article"] == article}
     orders = {row["day"]: row for row in orders if row["article"] == article}
     history = [
-        resolve_day(row["day"], row, orders.get(row["day"], {}), ads.get(row["day"], {}),
-                    row["day"] in order_days, row["day"] in ads_days)
+        resolve_day(
+            row["day"],
+            row,
+            orders.get(row["day"], {}),
+            ads.get(row["day"], {}),
+            row["day"] in order_days,
+            row["day"] in ads_days,
+        )
         for row in history
     ]
     stocks = {
         row["day"]: row
-        for row in stock_history.get_daily_stock_history((store,), metrics.MARKETPLACE, start, end)
+        for row in stock_history.get_daily_stock_history(
+            (store,), metrics.MARKETPLACE, start, end, article=article
+        )
         if row["article"] == article
     }
     current_stock = next(
         (
             row
-            for row in catalog.get_stock_items(store, metrics.MARKETPLACE, ("fbs", "fbo"))
+            for row in catalog.get_stock_items(store, metrics.MARKETPLACE, ("fbs", "fbo"), article=article)
             if row["article"] == article
         ),
         {},
     )
-    cache = economics.context(store)
+    cache = economics.context(store, articles=(article,))
     current = economics.current_inputs(store, article, scheme, today=today, state_cache=cache)
     live = {"inputs": current["values"], "calculation_version": VERSION}
     chart = []
@@ -102,8 +110,17 @@ def product_history(store, article, scheme, *, today=None):
         )
         if snapshot.get("basis") not in {"today_prices", "today_observations"}:
             snapshot = {}
-        baseline = live if day == end else {"inputs": snapshot.get("values") or {}, "calculation_version": snapshot.get("version") or VERSION}
-        resolved = resolve_day(day, saved or baseline, orders.get(day, {}), ads.get(day, {}), day in order_days, day in ads_days)
+        baseline = (
+            live
+            if day == end
+            else {
+                "inputs": snapshot.get("values") or {},
+                "calculation_version": snapshot.get("version") or VERSION,
+            }
+        )
+        resolved = resolve_day(
+            day, saved or baseline, orders.get(day, {}), ads.get(day, {}), day in order_days, day in ads_days
+        )
         inputs = resolved["inputs"]
         buyout = inputs.get("buyout_percent")
         count, spend, profit = resolved["net_orders_count"], resolved["advertising_spend"], resolved["profit"]
@@ -133,7 +150,8 @@ def product_history(store, article, scheme, *, today=None):
                 if spend is not None and amount is not None and (buyout is not None or amount == 0)
                 else None,
                 "margin_rub": profit,
-                "margin_complete": resolved["complete"], "messages": resolved["messages"],
+                "margin_complete": resolved["complete"],
+                "messages": resolved["messages"],
                 **quantities,
                 "stock_units": sum(available_stock) if available_stock else None,
             }

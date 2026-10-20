@@ -158,16 +158,22 @@ def migrate_order_snapshot(conn, snapshot: dict) -> None:
             )
 
 
-def get_history(store: str, source: str, start: str, end: str) -> tuple[list[dict], set[str]]:
+def get_history(
+    store: str, source: str, start: str, end: str, *, article: str | None = None
+) -> tuple[list[dict], set[str]]:
+    article_filter = " AND article=?" if article is not None else ""
+    parameters = (store, source, start, end)
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT data_json FROM unit_economics_yandex_daily_metrics "
-            "WHERE store_slug=? AND source=? AND day>=? AND day<=? ORDER BY day,article",
-            (store, source, start, end),
+            "WHERE store_slug=? AND source=? AND day>=? AND day<=?"
+            + article_filter
+            + " ORDER BY day,article",
+            (*parameters, article) if article is not None else parameters,
         ).fetchall()
         loaded = conn.execute(
             "SELECT day FROM unit_economics_yandex_loaded_days WHERE store_slug=? AND source=? AND day>=? AND day<=?",
-            (store, source, start, end),
+            parameters,
         ).fetchall()
     return [json.loads(row["data_json"]) for row in rows], {row["day"] for row in loaded}
 
