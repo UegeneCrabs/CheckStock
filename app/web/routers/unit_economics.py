@@ -2967,7 +2967,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
         loading_description="Загружаем товары из каталога.",
         unit_1c_notice="",
     )
-    content += '<link rel="stylesheet" href="/static/economics/yandex/calculator.css?v=20260923-calculator-v14"><script src="/static/economics/yandex/fields.js?v=20260923-calculator-linked-prices"></script><script src="/static/economics/yandex/categories.js?v=20260923-calculator-v14"></script><script src="/static/economics/yandex/calculator.js?v=20261012-net-orders"></script>'
+    content += '<link rel="stylesheet" href="/static/economics/yandex/calculator.css?v=20261020-category-picker"><script src="/static/economics/yandex/fields.js?v=20260923-calculator-linked-prices"></script><script src="/static/economics/yandex/categories.js?v=20261020-category-picker"></script><script src="/static/economics/yandex/calculator.js?v=20261012-net-orders"></script>'
     return render_page(
         "CheckStock — Юнит-экономика 1С — Яндекс Маркет",
         "unit_1c_yandex",

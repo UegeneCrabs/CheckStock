@@ -36,5 +36,11 @@
 
 Полная ветка категории и даты проверок видны в параметрах товара калькулятора YM.
 
+Поиск и переходы по дереву в калькуляторе используют переиспользуемый компонент
+`static/economics/shared/categories.js` и `categories.css` с шаблонами в
+`templates/economics/shared/client/categories.html`. Адаптер ЯМ
+`static/economics/yandex/categories.js` сохраняет загрузку дерева по кабинету,
+выбор листовой категории и прежний обработчик пересчёта комиссии.
+
 Документация: [дерево категорий](https://yandex.ru/dev/market/partner-api/doc/ru/reference/categories/getCategoriesTree),
 [расчёт стоимости услуг](https://yandex.ru/dev/market/partner-api/doc/ru/reference/tariffs/calculateTariffs).
