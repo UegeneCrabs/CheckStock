@@ -18,6 +18,18 @@
     try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch (_) { /* Ignore invalid state. */ }
     const dateFrom = byId('rating-date-from');
     const dateTo = byId('rating-date-to');
+    const tolerance = byId('rating-tolerance');
+    const toleranceValue = byId('rating-tolerance-value');
+    tolerance.addEventListener('input', () => { toleranceValue.value = tolerance.value; });
+    toleranceValue.addEventListener('input', () => {
+        const value = toleranceValue.valueAsNumber;
+        if (Number.isFinite(value) && value >= 0 && value <= 5) tolerance.value = String(Math.round(value * 10) / 10);
+    });
+    toleranceValue.addEventListener('change', () => {
+        const value = toleranceValue.valueAsNumber;
+        tolerance.value = String(Number.isFinite(value) ? Math.round(Math.max(0, Math.min(5, value)) * 10) / 10 : 0);
+        toleranceValue.value = tolerance.value;
+    });
     dateFrom.value = displayDate(saved?.from || config.dateFrom);
     dateTo.value = displayDate(saved?.to || config.dateTo);
     [dateFrom, dateTo].forEach(window.CheckStockReportDaily.bindDatePicker);
@@ -211,6 +223,7 @@
         const sequence = ++requestNumber;
         const from = isoDate(dateFrom.value); const to = isoDate(dateTo.value);
         if (!from || !to || from > to) { byId('rating-message').textContent = 'Выберите корректные даты в формате ДД.ММ.ГГГГ'; return; }
+        if (!toleranceValue.checkValidity()) { byId('rating-message').textContent = 'Укажите порог от 0 до 5 баллов с шагом 0,1'; return; }
         const params = new URLSearchParams(new FormData(form));
         params.set('date_from', from); params.set('date_to', to);
         params.set('page', String(page)); params.set('sort_by', sortBy); params.set('sort_order', sortOrder);
@@ -225,7 +238,7 @@
     form.addEventListener('submit', (event) => { event.preventDefault(); page = 1; load(); });
     byId('rating-reset').addEventListener('click', () => {
         root.querySelectorAll('[data-wb-filter] select').forEach((select) => { select.value = ''; select.resetSearch?.(); });
-        byId('rating-search').value = ''; byId('rating-tolerance').value = '0';
+        byId('rating-search').value = ''; tolerance.value = '0'; toleranceValue.value = '0';
         dateFrom.value = displayDate(config.dateFrom); dateTo.value = displayDate(config.dateTo);
         sessionStorage.removeItem(storageKey); page = 1; load();
     });

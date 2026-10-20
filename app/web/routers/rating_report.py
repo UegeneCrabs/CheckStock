@@ -58,7 +58,7 @@ async def data(
     subject: str = "",
     article: str = "",
     search: str = "",
-    tolerance: float = Query(default=0, ge=0, allow_inf_nan=False),
+    tolerance: float = Query(default=0, ge=0, le=5, allow_inf_nan=False),
     page: int = Query(default=1, ge=1),
     sort_by: rating_report.RatingSortField = rating_report.RatingSortField.CHANGE,
     sort_order: rating_report.RatingSortOrder = rating_report.RatingSortOrder.ASC,
