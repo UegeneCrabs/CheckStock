@@ -965,14 +965,17 @@ async def sales_unit_economics_1c(request: Request):
             store_slugs,
             period_days=period_days,
             today=closed_period_to,
+            article=_nm_id(detail_article) if detail_article else None,
         )
         current_metrics = unit_economics_1c.load_product_metrics(
             store_slugs,
             period_days=1,
             today=today,
+            article=_nm_id(detail_article) if detail_article else None,
         )
         chart_metrics = (
-            unit_economics_1c.load_product_metrics(store_slugs, period_days=21) if include_history else {}
+            unit_economics_1c.load_product_metrics(store_slugs, period_days=21, article=_nm_id(detail_article))
+            if include_history else {}
         )
         chart_prices = (
             {
@@ -986,6 +989,7 @@ async def sales_unit_economics_1c(request: Request):
             store_slugs,
             history_from.isoformat(),
             today.isoformat(),
+            article=_nm_id(detail_article) if detail_article else None,
         )
         source_coverage = wb_days(store_slugs, history_from.isoformat(), today.isoformat())
         advertising_days_by_store = {store: days["advertising"] for store, days in source_coverage.items()}
@@ -1086,6 +1090,7 @@ async def sales_unit_economics_1c(request: Request):
                 "WB",
                 (history_to - timedelta(days=20)).isoformat(),
                 history_to.isoformat(),
+                article=detail_article,
             )
             if include_history
             else []
@@ -1154,7 +1159,7 @@ async def sales_unit_economics_1c(request: Request):
                     product_reference=reference,
                     cabinet=cabinet,
                     captured_at=datetime.now(UTC).isoformat(),
-                )
+                ) if today.isoformat() not in product_margin_snapshots else None
                 first_sale_day = _optional_day(sales_starts.get((store_slug, nm_id)))
                 turnover_coverage_from = closed_period_from
                 if first_sale_day is not None and first_sale_day > turnover_coverage_from:
@@ -2098,6 +2103,7 @@ async def _unit_economics_1c_unit_profit_report_data(
             store_slugs,
             date_from.isoformat(),
             date_to.isoformat(),
+            inputs_only=True,
         )
         daily_orders_by_product: dict[tuple[str, str], dict[str, dict]] = {}
         for row in saved_funnel_daily_rows:
