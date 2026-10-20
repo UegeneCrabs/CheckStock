@@ -6,6 +6,7 @@ from app.access.security import Pbkdf2PasswordService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
+from app.application.wb_standard_costs import WbStandardCostsService
 from app.config import settings
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
 from app.economics.wb.prices import calculate_wallet_price
@@ -19,6 +20,7 @@ from app.infrastructure.wb_hourly_price_repository import (
     SqlAlchemyHourlyPriceWriter,
 )
 from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
+from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
 from app.wb import api as wb_api
@@ -64,6 +66,7 @@ class ApplicationContainer:
             unit_of_work_factory=self._stock_unit_of_work,
             clock=lambda: datetime.now(UTC),
         )
+        self.wb_standard_costs = WbStandardCostsService(self._wb_standard_costs_unit_of_work)
         self.wb_hourly_prices = WbHourlyPriceService(
             catalog_items=wb_catalog_items,
             storefront_products=_wb_storefront_products,
@@ -81,3 +84,7 @@ class ApplicationContainer:
     def _stock_unit_of_work(self) -> SqlAlchemyStockUnitOfWork:
         database = database_for_path(self._database_path())
         return SqlAlchemyStockUnitOfWork(database.session_factory)
+
+    def _wb_standard_costs_unit_of_work(self) -> SqlAlchemyWbStandardCostsUnitOfWork:
+        database = database_for_path(self._database_path())
+        return SqlAlchemyWbStandardCostsUnitOfWork(database.session_factory)

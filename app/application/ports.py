@@ -45,6 +45,32 @@ from app.dto.stock import (
     TransitActionResult,
 )
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
+from app.dto.wb_standard_costs import PublishSnapshot
+
+
+class WbStandardCostsRepository(Protocol):
+    def save(self, command: PublishSnapshot) -> None: ...
+
+
+class WbStandardCostsUnitOfWork(Protocol):
+    repository: WbStandardCostsRepository
+
+    def __enter__(self) -> WbStandardCostsUnitOfWork: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None: ...
+
+    def commit(self) -> None: ...
+
+    def rollback(self) -> None: ...
+
+
+class WbStandardCostsUnitOfWorkFactory(Protocol):
+    def __call__(self) -> WbStandardCostsUnitOfWork: ...
 
 
 class HourlyPriceWriter(Protocol):
