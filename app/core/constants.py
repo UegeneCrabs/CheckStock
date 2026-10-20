@@ -65,6 +65,11 @@ class WbAnalyzerConstants:
 WB_ANALYZER: Final = WbAnalyzerConstants()
 
 
+class SupplyStockAction(StrEnum):
+    MARK = "supply_arrival_stock_mark"
+    UNMARK = "supply_arrival_stock_unmark"
+
+
 class Marketplace(StrEnum):
     WB = "WB"
     OZON = "OZON"

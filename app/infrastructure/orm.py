@@ -33,6 +33,18 @@ class SupplyArrivalsSnapshotRecord(OrmBase):
     error: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 
+class SupplyArrivalStockRecord(OrmBase):
+    __tablename__ = "supply_arrival_stock"
+
+    source_key: Mapped[str] = mapped_column(String, primary_key=True)
+    supply_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    checked: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    marked_at: Mapped[str | None] = mapped_column(String)
+    marked_by: Mapped[str | None] = mapped_column(String)
+    marked_by_id: Mapped[int | None] = mapped_column(Integer)
+
+
 class InboundSupplySnapshotRecord(OrmBase):
     __tablename__ = "inbound_supply_snapshots"
 
