@@ -71,6 +71,12 @@
 .arrivals-delay { display: block; color: var(--ar-danger); font-size: 9px; font-weight: 700; margin-top: 4px; }
 .arrivals-group-toggle { width: 25px; height: 25px; padding: 0; margin: 0 7px 0 0; border: 1px solid var(--ar-border); border-radius: 6px; background: var(--ar-card); color: var(--ar-link); font-size: 16px; font-weight: 600; cursor: pointer; }
 .arrivals-table .arrivals-empty { padding: 52px 20px; text-align: center; color: var(--ar-muted); }
+.arrivals-stock-cell { min-width: 210px; }
+.arrivals-stock-item + .arrivals-stock-item { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ar-border); }
+.arrivals-stock-label { display: inline-flex; align-items: center; gap: 9px; margin: 0; color: var(--ar-text); font-size: 12px; cursor: pointer; }
+.arrivals-stock-label:has(input:disabled) { cursor: default; }
+.arrivals-stock-label input[type='checkbox'] { width: 18px; height: 18px; margin: 0; flex: none; accent-color: #23866a; }
+.arrivals-stock-meta { display: block; margin-top: 5px; color: #23866a; font-size: 10px; font-weight: 400; }
 .arrivals-empty strong { display: block; color: var(--ar-text); margin-bottom: 8px; font-size: 15px; }
 .arrivals-notice { border: 1px solid #cba964; border-radius: 8px; background: var(--ar-warning); padding: 12px 15px; margin-bottom: 18px; color: var(--ar-text); font-size: 12px; line-height: 1.6; }
 .arrivals-page [hidden] { display: none !important; }

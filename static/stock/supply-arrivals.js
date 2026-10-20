@@ -11,6 +11,53 @@
     let rows = [], today = '', snapshot = null, loading = false, timer;
     let initialized = false, pendingRefresh = false;
     const expanded = new Set();
+    const pendingStock = new Set();
+    let stockError = '';
+    const stockDate = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+    function stockControl(row, showOrder) {
+        const stock = row.stock;
+        const pending = pendingStock.has(row.supply_id);
+        const editable = snapshot.can_edit_stock && row.stock_editable;
+        const author = stock.checked && stock.marked_at && stock.marked_by
+            ? `<span class="arrivals-stock-meta">${esc(stockDate.format(new Date(stock.marked_at)).replace(', ', ' '))} · ${esc(stock.marked_by)}</span>` : '';
+        return `<div class="arrivals-stock-item"${pending ? ' aria-busy="true"' : ''}>
+            ${showOrder ? `<span class="arrivals-muted">${esc(row.order)}</span>` : ''}
+            <label class="arrivals-stock-label"><input type="checkbox" data-arrivals-stock="${esc(row.supply_id)}" aria-label="Поставлена на сток: ${esc(row.order)}"${stock.checked ? ' checked' : ''}${!editable || pending ? ' disabled' : ''} />
+            <span>${stock.checked ? 'На стоке' : 'Отметить'}</span></label>${author}
+            ${pending ? '<span class="arrivals-muted">Сохраняем…</span>' : !row.stock_editable && snapshot.can_edit_stock ? '<span class="arrivals-muted">Повтор номера заказа в проекте</span>' : ''}</div>`;
+    }
+
+    async function changeStock(input) {
+        const id = input.dataset.arrivalsStock;
+        const row = rows.find((item) => item.supply_id === id);
+        if (!row) return;
+        const checked = input.checked;
+        input.checked = row.stock.checked;
+        if (pendingStock.has(id) || !snapshot.can_edit_stock || !row.stock_editable) return;
+        pendingStock.add(id);
+        stockError = '';
+        showState();
+        render();
+        try {
+            const stock = await request(`/supply-schedule/${encodeURIComponent(id)}/stock`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ checked, expected_version: row.stock.version }),
+            });
+            rows = rows.map((item) => item.supply_id === id && item.stock.version <= stock.version ? { ...item, stock } : item);
+        } catch (error) {
+            stockError = error.status === 409 ? 'Отметка уже изменена или номер заказа повторяется. Данные обновлены — проверьте состояние перед повтором.'
+                : error.status === 404 ? 'Поставка больше не найдена в реестре. Обновите данные.'
+                : error.status === 401 || error.status === 403 ? error.message
+                : 'Не удалось подтвердить сохранение отметки. Проверьте состояние после обновления данных и повторите попытку.';
+            await load();
+        } finally {
+            pendingStock.delete(id);
+            showState();
+            render();
+            [...root.querySelectorAll('[data-arrivals-stock]')].find((el) => el.dataset.arrivalsStock === id)?.focus({ preventScroll: true });
+        }
+    }
 
     function readPreferences() {
         try { return JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { return {}; }
@@ -132,7 +179,8 @@
             <td>${group ? '<span class="arrivals-muted">Внутри группы</span>' : fileLink(first)}</td><td>${join('category')}</td><td>${join('warehouse')}</td>
             <td><span class="arrivals-status">${join('status')}</span>${items.some(delayed) ? '<span class="arrivals-delay">ОПАЗДЫВАЕТ</span>' : ''}</td>
             <td>${date}${dates.length < items.length && items.some((row) => !row.arrival) ? '<span class="arrivals-muted">Есть заказы без даты</span>' : ''}</td>
-            ${numberCell(items, 'volume')}${numberCell(items, 'weight')}${numberCell(items, 'boxes')}<td>${join('shipping')}</td>`;
+            ${numberCell(items, 'volume')}${numberCell(items, 'weight')}${numberCell(items, 'boxes')}<td>${join('shipping')}</td>
+            <td class="arrivals-stock-cell">${items.map((row) => stockControl(row, Boolean(group))).join('')}</td>`;
     }
     function renderTable(filtered) {
         const sorted = [...filtered].sort((a, b) => (epoch(a.arrival) || Infinity) - (epoch(b.arrival) || Infinity) || a.row - b.row);
@@ -148,7 +196,7 @@
             html += `<tr class="is-group ${rowClass(members)}">${cells(members, group)}</tr>`;
             if (expanded.has(group)) members.forEach((child) => { html += `<tr class="is-child ${rowClass([child])}">${cells([child])}</tr>`; });
         });
-        if (!filtered.length) html = `<tr><td colspan="12" class="arrivals-empty"><strong>${snapshot?.last_success ? 'Поставок по этим фильтрам нет' : 'Поставки ещё не загружены'}</strong>${snapshot?.last_success ? 'Выберите другие недели или сбросьте фильтры.' : 'Первое обновление заполняет реестр из Google Таблицы.'}</td></tr>`;
+        if (!filtered.length) html = `<tr><td colspan="13" class="arrivals-empty"><strong>${snapshot?.last_success ? 'Поставок по этим фильтрам нет' : 'Поставки ещё не загружены'}</strong>${snapshot?.last_success ? 'Выберите другие недели или сбросьте фильтры.' : 'Первое обновление заполняет реестр из Google Таблицы.'}</td></tr>`;
         q('[data-arrivals-body]').innerHTML = html;
     }
     function render() {
@@ -183,15 +231,19 @@
         q('[data-arrivals-updated]').textContent = stamp ? `Обновлено ${stamp} МСК${running ? ' · загружаем свежие данные…' : ''}` : running ? 'Загружаем данные из Google Таблицы…' : 'Ожидаем первую загрузку';
         const text = snapshot.error ? `${snapshot.error}${stamp ? ' Показана последняя успешная загрузка.' : ''}`
             : snapshot.stale && stamp ? 'Данные давно не обновлялись. Показана последняя успешная загрузка.' : '';
-        notice(text);
+        notice(stockError || text);
         if (snapshot.source_url && /^https:\/\/docs\.google\.com\//.test(snapshot.source_url)) {
             q('[data-arrivals-source]').href = snapshot.source_url;
             q('[data-arrivals-source]').hidden = false;
         }
     }
     async function request(url, options = {}) {
-        const response = await fetch(url, { ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' }, signal: AbortSignal.timeout(20000) });
-        if (!response.ok) throw new Error(response.status === 401 ? 'Сессия завершена. Войдите на сайт заново.' : response.status === 403 ? 'Нет доступа к этому действию.' : 'Не удалось получить данные. Повторите попытку.');
+        const response = await fetch(url, { ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'fetch', ...options.headers }, signal: AbortSignal.timeout(20000) });
+        if (!response.ok) {
+            const error = new Error(response.status === 401 ? 'Сессия завершена. Войдите на сайт заново.' : response.status === 403 ? 'Нет доступа к этому действию.' : 'Не удалось получить данные. Повторите попытку.');
+            error.status = response.status;
+            throw error;
+        }
         return response.json();
     }
     async function load() {
@@ -201,7 +253,11 @@
         try {
             const data = await request('/supply-schedule/data');
             snapshot = data;
-            rows = data.rows;
+            const currentStock = new Map(rows.map((row) => [row.supply_id, row.stock]));
+            rows = data.rows.map((row) => {
+                const current = currentStock.get(row.supply_id);
+                return current && current.version > row.stock.version ? { ...row, stock: current } : row;
+            });
             today = data.today;
             pendingRefresh = false;
             normalizeWeeks();
@@ -221,7 +277,7 @@
             pendingRefresh = false;
             q('[data-arrivals-refresh]').disabled = false;
             q('[data-arrivals-refresh]').textContent = 'Повторить обновление';
-            if (!snapshot) q('[data-arrivals-body]').innerHTML = '<tr><td colspan="12" class="arrivals-empty">Данные недоступны. Повторите загрузку.</td></tr>';
+            if (!snapshot) q('[data-arrivals-body]').innerHTML = '<tr><td colspan="13" class="arrivals-empty">Данные недоступны. Повторите загрузку.</td></tr>';
         } finally {
             loading = false;
             timer = setTimeout(load, snapshot?.running ? 2000 : 60000);
@@ -230,6 +286,8 @@
     q('[data-arrivals-search]').addEventListener('input', (event) => { state.search = event.target.value; persist(); render(); });
     for (const field of ['project', 'warehouse']) q(`[data-arrivals-${field}]`).addEventListener('change', (event) => { state[field] = event.target.value; persist(); render(); });
     root.addEventListener('change', (event) => {
+        const stock = event.target.closest('[data-arrivals-stock]');
+        if (stock) { changeStock(stock); return; }
         const input = event.target.closest('[data-pick]');
         if (!input) return;
         const field = input.dataset.pick;

@@ -6,6 +6,7 @@ from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
 from app.container import ApplicationContainer
 from app.dto.identity import User
+from app.infrastructure.async_resources import AsyncResources
 
 
 def get_container(request: Request) -> ApplicationContainer:
@@ -22,6 +23,10 @@ def get_current_user(request: Request) -> User:
     return request.state.user
 
 
+def get_async_resources(request: Request) -> AsyncResources:
+    return request.app.state.async_resources
+
+
 def get_stock_movement_service(
     container: Annotated[ApplicationContainer, Depends(get_container)],
 ) -> StockMovementService:
@@ -31,6 +36,7 @@ def get_stock_movement_service(
 ContainerDependency = Annotated[ApplicationContainer, Depends(get_container)]
 IdentityServiceDependency = Annotated[IdentityService, Depends(get_identity_service)]
 CurrentUserDependency = Annotated[User, Depends(get_current_user)]
+AsyncResourcesDependency = Annotated[AsyncResources, Depends(get_async_resources)]
 StockMovementServiceDependency = Annotated[
     StockMovementService,
     Depends(get_stock_movement_service),

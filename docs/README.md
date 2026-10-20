@@ -15,7 +15,7 @@
 
 - [Атомарность складских операций и повторы запросов](f03-stock-transactions.md)
 - [Поставки на склады маркетплейсов](inbound-supplies.md)
-- [Табло поставок](supply-arrivals.md)
+- [Табло поставок и серверная отметка «Поставлена на сток»](supply-arrivals.md)
 - [Общая Google-выгрузка проектов](project-sheet-export.md)
 - [Проверка периода заказов перед FBS-выгрузкой](f09-fbs-export.md)
 - [Недельные блоки WB, Ozon и Яндекс Маркета в Google Таблицах](google-week-update.md)

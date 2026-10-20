@@ -14,6 +14,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | URL, права и обработка запроса | `app/web/routers/`, `app/web/middleware.py`, `app/web/dependencies.py` |
 | Пользователи, сессии и удаление прежней матрицы доступа | `app/access/authentication.py`, `app/access/resources.py`, `app/repositories/identity_migration.py`, [контракт и миграция](authentication.md) |
 | Прикладной сценарий складского изменения | `app/application/`, `app/infrastructure/stock_repository.py`, [контракт транзакций](f03-stock-transactions.md) |
+| Расписание поставок и отметка «Поставлена на сток» | `app/application/supply_arrival_stock.py`, `app/infrastructure/supply_arrival_stock_repository.py`, `static/stock/supply-arrivals.js`, [хранение, ID и API](supply-arrivals.md#отметка-поставлена-на-сток) |
 | SQL, снимки и старые read-модели | `app/repositories/`, `app/db.py` |
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
