@@ -308,13 +308,6 @@ class GoogleWeeks:
         report.unchanged_cells = len(plan.writes) - len(changed)
         if not changed:
             return report
-        quoted = "'" + sheet.properties.title.replace("'", "''") + "'"
-        payload = {
-            "valueInputOption": "RAW",
-            "data": [{"range": f"{quoted}!{entry.cell}", "values": [[entry.value]]} for entry in changed],
-        }
-        if len(json.dumps(payload).encode()) > GOOGLE_WEEK.max_payload_bytes:
-            raise WeekError(WeekIssue.TOO_LARGE)
         fresh = await self._sheet(doc_id, sheet.properties.title)
         fresh_grid = plans.cells(fresh)
         watched = {entry.cell for entry in plan.writes} | {entry.cell for entry in header.headers}
