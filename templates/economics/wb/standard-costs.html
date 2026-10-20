@@ -1,6 +1,7 @@
-<link rel="stylesheet" href="/static/economics/wb/standard-costs.css?v=26">
-<section id="standard-costs">
-  <div class="sc-heading"><h1>Сравнение ИУ и без ИУ на 1 шт.</h1><button id="sc-method-open" type="button" aria-haspopup="dialog" aria-controls="sc-method-dialog"><span aria-hidden="true">ⓘ</span> Как считаем</button></div>
+<link rel="stylesheet" href="/static/economics/wb/standard-costs.css?v=31">
+<section id="standard-costs" class="sc-loading" aria-busy="true">
+  <div id="sc-loading" class="sc-loading-overlay" role="status" aria-live="polite"><div class="sc-loading-card"><span class="sc-loading-spinner" aria-hidden="true"></span><strong>Загружаем отчёт…</strong><span>Получаем данные и рассчитываем показатели</span></div></div>
+  <div class="sc-heading"><h1>Сравнение ИУ и без ИУ на 1 шт.</h1><div class="sc-heading-actions"><button id="sc-export" type="button" disabled>Скачать Excel</button><button id="sc-method-open" type="button" aria-haspopup="dialog" aria-controls="sc-method-dialog"><span aria-hidden="true">ⓘ</span> Как считаем</button></div></div>
   <div class="sc-filters">
     <label>Магазин<select id="sc-store" aria-label="Магазин"></select></label>
     <label>Артикул или название<input id="sc-search" type="search" placeholder="Поиск товара"></label>
@@ -10,6 +11,7 @@
     <label>Менеджер<select id="sc-manager"><option value="">Все менеджеры</option></select></label>
   </div>
   <p id="sc-error" role="alert" hidden></p>
+  <button id="sc-retry" type="button" hidden>Повторить загрузку</button>
   <div class="sc-table-wrap"><table id="sc-table"><thead></thead><tbody></tbody></table></div>
   <div class="sc-footer"><button id="sc-prev">← Назад</button><span id="sc-page"></span><button id="sc-next">Вперёд →</button></div>
 
@@ -21,7 +23,7 @@
     <ol class="sc-method-grid">
       <li class="sc-method-card"><h3><span>01</span> Комиссия WB</h3><div class="sc-formula">Цена до СПП × ставка предмета ÷ 100</div><p>Ставка зависит от предмета и схемы FBW / FBS. Используем текущую ставку на дату загрузки, а не архивную ставку недели.</p><small>Источник: цена калькулятора и API комиссий WB.</small></li>
       <li class="sc-method-card"><h3><span>02</span> Логистика</h3><div class="sc-formula">Туда + (Туда + Обратно) × (1 − p) ÷ p</div><p>p — процент выкупа из калькулятора ÷ 100. Учитываем возвраты и повторные отправки на одну выкупленную штуку.</p><p>Обратно = 46 + max(объём − 1, 0) × 14 ₽. Это тариф по умолчанию, без коэффициента склада и ИЛ; до 1 л — 46 ₽. Объём берём из карточки WB в БД.</p><p>Для объёма больше 1 л: первый литр + (объём − 1) × дополнительный литр. Ставки API уже включают коэффициент склада.</p><p>Тариф на конец недели усредняем по дневным остаткам. При отсутствии остатков — по складам продаж и объёму карточки. Для FBS используем отдельные ставки.</p><small>ИЛ = 1 задан по умолчанию. Усреднение — метод оценки отчёта.</small></li>
-      <li class="sc-method-card"><h3><span>03</span> Хранение</h3><div class="sc-formula">Начисления до скидок ИУ ÷ проданные штуки</div><p>Суммируем базовое хранение за неделю, исключая строки скидок. Делим на продажи той же схемы. Для FBS в модели — 0 ₽.</p><small>Источник: отчёты хранения и реализации WB. Поддерживаются короба.</small></li>
+      <li class="sc-method-card"><h3><span>03</span> Хранение</h3><p class="sc-assumption-note">† Хранение принято за 0 ₽: API WB не вернул начисления. Отметка также стоит у зависящих от этого результатов.</p><div class="sc-formula">Начисления до скидок ИУ ÷ проданные штуки</div><p>Суммируем базовое хранение за неделю, исключая строки скидок. Делим на продажи той же схемы. Для FBS в модели — 0 ₽.</p><small>Источник: отчёты хранения и реализации WB. Поддерживаются короба.</small></li>
       <li class="sc-method-card"><h3><span>04</span> Чистая прибыль и ROI</h3><div class="sc-formula">Прибыль = цена до СПП − все расходы<br>ROI = прибыль ÷ закупка × 100%</div><p>В расходы входят закупка, ФФ, реклама, эквайринг, комиссия компании, налоги, комиссия WB, логистика и хранение.</p><small>Одинаковая формула для обоих сценариев. Для ROI нужна положительная закупка.</small></li>
       <li class="sc-method-card"><h3><span>05</span> Разница</h3><div class="sc-formula">Без ИУ − с ИУ</div><p>Разница прибыли — в рублях на штуку. Разница ROI — в процентных пунктах.</p><div class="sc-method-legend"><span>− Снижение</span><span>+ Рост</span></div></li>
       <li class="sc-method-card"><h3><span>06</span> Оборот и пропуски</h3><div class="sc-formula">ТО = заказы − отмены за период</div><p>Оборот из юнит-экономики общий для схем одного артикула. Звёздочка означает неполный период.</p><small>Прочерк — недостаточно исходных данных. Наведите на число или прочерк для подробной расшифровки.</small></li>
@@ -31,4 +33,4 @@
   </div>
 </dialog>
 <dialog id="sc-detail"><button id="sc-close">Закрыть</button><div id="sc-detail-body"></div></dialog>
-<script src="/static/economics/wb/standard-costs.js?v=26" defer></script>
+<script src="/static/economics/wb/standard-costs.js?v=30" defer></script>

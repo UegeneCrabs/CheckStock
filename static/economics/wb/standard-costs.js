@@ -2,8 +2,8 @@
   'use strict';
   const el = id => document.getElementById('sc-' + id);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const fmt = v => v == null ? '—' : Number(v).toLocaleString('ru-RU',{maximumFractionDigits:0});
-  const delta = v => v == null ? '—' : (v>0?'+':'')+fmt(v);
+  const fmt = v => v == null ? '—' : (Math.abs(Number(v))<0.5?0:Number(v)).toLocaleString('ru-RU',{maximumFractionDigits:0});
+  const delta = v => v == null ? '—' : (v>=0.5?'+':'')+fmt(v);
   const deltaClass = value => typeof value !== 'number' || !Number.isFinite(value) || value === 0 ? '' : value < 0 ? 'sc-delta-negative' : 'sc-delta-positive';
   const fields = [['retail','Цена'],['purchase','Закупка'],['fulfillment','ФФ'],['advertising','Реклама'],['acquiring','Эквайринг'],['team','Комиссия компании'],['vat','НДС'],['tax','УСН / ОСНО'],['commission','Комиссия WB'],['logistics','Логистика'],['storage_total','Хранение'],['total_cost','Все расходы']];
   const precise = v => v == null ? '—' : Number(v).toLocaleString('ru-RU',{maximumFractionDigits:6});
@@ -75,12 +75,17 @@
       calculation=`${fmt(r.profit?.[key])} − ${fmt(r.current_profit?.[key])} = ${delta(value)} ${key==='margin'?'₽/шт.':'п.п.'}`;
       source='Оба сценария расчёта этой строки.';
     }
+    if(r.storage_calculation?.warning && ['profit','delta'].includes(group)) {
+      source+='\n\n'+r.storage_calculation.warning;
+      if(key==='storage_total' && group==='profit'){formula='При отсутствии начислений API принимаем хранение за 0 ₽.';calculation='0 ₽ — условное значение, а не подтверждённое бесплатное хранение.';}
+    }
     return `Формула\n${formula}\n\nРасчёт\n${calculation}\n\nИсточник данных\n${source}`+(value==null?'\n\nНе рассчитано: '+(p.missing?.join('; ')||r.missing?.join('; ')||'не хватает исходных данных'):'')+'\n\nПромежуточные значения показаны до 6 знаков; результат — до целого числа.';
   }
   function numericCell(r,key,group='profit',cls='') {
     const value=r[group]?.[key];
+    const assumedStorage=r.storage_calculation?.warning && ((group==='profit' && ['storage_total','total_cost','margin','roi'].includes(key)) || group==='delta');
     if(['profit','current_profit'].includes(group)&&['margin','roi'].includes(key)&&r[group]?.margin<0) cls+=' sc-loss';
-    return `<td class="${cls}"><span class="sc-value" tabindex="0" data-help="${esc(valueHelp(r,key,group))}">${group==='delta'?delta(value):fmt(value)}${group==='calculator_turnover'&&value!=null&&r[group]?.coverage&&!r[group].coverage.complete?' *':''}</span></td>`;
+    return `<td class="${cls}"><span class="sc-value" tabindex="0" data-help="${esc(valueHelp(r,key,group))}">${group==='delta'?delta(value):fmt(value)}${assumedStorage&&value!=null?' <sup class="sc-assumption">†</sup>':''}${group==='calculator_turnover'&&value!=null&&r[group]?.coverage&&!r[group].coverage.complete?' *':''}</span></td>`;
   }
   const fieldHelp = {
     retail:'Цена продавца до СПП из БД калькулятора.',
@@ -117,6 +122,7 @@
   el('table').addEventListener('focusout',hideHelp);
   document.addEventListener('keydown',e=>{if(e.key==='Escape')hideHelp();});
   window.addEventListener('resize',hideHelp);document.addEventListener('scroll',e=>{if(e.target!==tooltip)hideHelp();},true);
+  let exporting=false;
   let stores=[], rows=[], page=1, expanded=false, sortKey='calculator_turnover.value', sortAscending=false;
   function filterOptions(id, values, allLabel, emptyLabel, hasEmpty) {
     const select=el(id), previous=select.value;
@@ -193,11 +199,33 @@
       return `<tr><td class="sc-photo">${url?`<img src="${esc(url)}" alt="${esc(r.name)}" loading="lazy" referrerpolicy="no-referrer">`:'—'}</td><td class="sc-article" title="${esc(r.name)}"><strong>${esc(r.article)}</strong><small>${allStores?esc(r.store_name)+' · ':''}${esc(r.scheme)}</small></td>${numericCell(r,'value','calculator_turnover')}${expanded?fields.map(([key])=>numericCell(r,key)).join(''):''}${numericCell(r,'margin','profit','sc-without')}${numericCell(r,'roi','profit','sc-without')}${numericCell(r,'margin','current_profit','sc-current')}${numericCell(r,'roi','current_profit','sc-current')}${numericCell(r,'margin','delta',deltaClass(d.margin))}${numericCell(r,'roi','delta',deltaClass(d.roi))}<td><button data-row="${(page-1)*50+i}">${p.complete&&c.complete?'Расчёт':'Нет данных'}</button></td></tr>`;
     }).join('')||`<tr><td colspan="${expanded?22:10}">Нет товаров по выбранным условиям</td></tr>`;
     el('page').textContent=`${page} / ${pages} · ${rows.length} позиций`;
+    el('export').disabled=exporting||rows.length===0;
     el('prev').disabled=page===1;el('next').disabled=page===pages;
   }
+  el('export').onclick=async()=>{
+    if(exporting)return;
+    exporting=true;
+    const button=el('export');
+    button.disabled=true;button.textContent='Подготовка…';
+    try {
+      const response=await fetch('/api/unit-economics-1c/reports/standard-costs.xlsx',{
+        method:'POST',signal:AbortSignal.timeout(120000),headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({rows:rows.map(r=>({store_slug:r.store_slug,article:String(r.article),scheme:r.scheme,period_from:r.period_from,period_to:r.period_to}))})
+      });
+      if(!response.ok){
+        const error=await response.json().catch(()=>({}));
+        throw new Error(typeof error.detail==='string'?error.detail:'Не удалось выгрузить Excel. Повторите позже.');
+      }
+      if(!response.headers.get('content-type')?.includes('spreadsheetml'))throw new Error('Сессия истекла. Войдите в сайт и обновите отчёт.');
+      const url=URL.createObjectURL(await response.blob()), link=document.createElement('a');
+      link.href=url;link.download='wb-conditions.xlsx';document.body.appendChild(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    } catch(error){el('error').hidden=false;el('error').textContent=error.name==='TimeoutError'?'Сервер не ответил вовремя. Повторите попытку.':error.message;}
+    finally {exporting=false;button.disabled=rows.length===0;button.textContent='Скачать Excel';}
+  };
   function detail(r) {
     const p=r.profit||{}, c=r.current_profit||{};
-    el('detail-body').innerHTML=`<h2>${esc(r.name)}</h2><p>${esc(r.store_name)} · ${esc(r.article)} · ${esc(r.scheme)}</p><p>Источник: БД калькулятора. Дата цены: ${esc(r.calculator_date||'нет данных')}.</p><p>${esc([...new Set([...(p.missing||[]),...(c.missing||[])])].join('; '))}</p><table><thead><tr><th>На 1 шт.</th><th>Без ИУ, ₽</th><th>С ИУ, ₽</th></tr></thead><tbody>${[...fields,['margin','Чистая прибыль'],['roi','ROI, %']].map(([key,name])=>`<tr><td>${name}</td><td>${fmt(p[key])}</td><td>${fmt(c[key])}</td></tr>`).join('')}</tbody></table><p>Хранение без ИУ: ${r.storage_calculation?.basis==='estimate_90_days'?`оценка на 90 дней: ${precise(r.storage_unit_day)} ₽/шт./день × 90`:`${fmt(r.storage)} ₽ / ${fmt(r.sales)} проданных шт.`} = ${fmt(p.storage_total)} ₽/шт.</p><p>Логистика на выкупленную штуку: ${fmt(p.logistics)} ₽. Туда: ${fmt(r.logistics_returns?.forward)} ₽; обратно за поездку: ${fmt(r.logistics_returns?.reverse)} ₽; выкуп: ${fmt(r.logistics_returns?.buyout_percent)}%. Формула: туда + (туда + обратно) × (1 − p) / p. Обратный тариф по умолчанию: 46/14 ₽.</p><p>Комиссия без ИУ: ${fmt(p.retail)} ₽ × ${fmt(r.commission_rate)}% = ${fmt(p.commission)} ₽.</p>`;
+    el('detail-body').innerHTML=`<h2>${esc(r.name)}</h2>${r.storage_calculation?.warning?`<p class="sc-assumption">† ${esc(r.storage_calculation.warning)}</p>`:''}<p>${esc(r.store_name)} · ${esc(r.article)} · ${esc(r.scheme)}</p><p>Источник: БД калькулятора. Дата цены: ${esc(r.calculator_date||'нет данных')}.</p><p>${esc([...new Set([...(p.missing||[]),...(c.missing||[])])].join('; '))}</p><table><thead><tr><th>На 1 шт.</th><th>Без ИУ, ₽</th><th>С ИУ, ₽</th></tr></thead><tbody>${[...fields,['margin','Чистая прибыль'],['roi','ROI, %']].map(([key,name])=>`<tr><td>${name}</td><td>${fmt(p[key])}</td><td>${fmt(c[key])}</td></tr>`).join('')}</tbody></table><p>Хранение без ИУ: ${r.storage_calculation?.basis==='missing_api_zero'?'условно 0 ₽ — нет начислений API':r.storage_calculation?.basis==='estimate_90_days'?`оценка на 90 дней: ${precise(r.storage_unit_day)} ₽/шт./день × 90`:`${fmt(r.storage)} ₽ / ${fmt(r.sales)} проданных шт.`} = ${fmt(p.storage_total)} ₽/шт.</p><p>Логистика на выкупленную штуку: ${fmt(p.logistics)} ₽. Туда: ${fmt(r.logistics_returns?.forward)} ₽; обратно за поездку: ${fmt(r.logistics_returns?.reverse)} ₽; выкуп: ${fmt(r.logistics_returns?.buyout_percent)}%. Формула: туда + (туда + обратно) × (1 − p) / p. Обратный тариф по умолчанию: 46/14 ₽.</p><p>Комиссия без ИУ: ${fmt(p.retail)} ₽ × ${fmt(r.commission_rate)}% = ${fmt(p.commission)} ₽.</p>`;
     el('detail').showModal();
   }
   for(const id of ['store','search','scheme','activity','subject','manager']) el(id).addEventListener('input',()=>{page=1;render();});
@@ -207,8 +235,13 @@
   el('method-dialog').addEventListener('click',e=>{if(e.target!==el('method-dialog'))return;const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();});
   el('table').onclick=e=>{if(e.target.closest('.sc-help, .sc-value'))return;const sort=e.target.closest('th[data-sort]');if(sort){const key=sort.dataset.sort;sortAscending=sortKey===key?!sortAscending:key!=='calculator_turnover.value';sortKey=key;page=1;render();el('table').querySelector(`th[data-sort="${key}"] .sc-sort`).focus();return;}if(e.target.closest('#sc-toggle')){expanded=!expanded;render();el('toggle').focus();return;}const b=e.target.closest('[data-row]');if(b)detail(rows[Number(b.dataset.row)]);};
   el('table').addEventListener('error',e=>{if(e.target.tagName==='IMG'){e.target.style.display='none';e.target.parentElement.textContent='Нет фото';}},true);
-  fetch('/api/unit-economics-1c/reports/standard-costs').then(async response=>{
+  function loadReport(){
+    const report=document.getElementById('standard-costs');
+    report.classList.add('sc-loading');report.setAttribute('aria-busy','true');
+    el('loading').hidden=false;el('retry').hidden=true;el('error').hidden=true;
+    return fetch('/api/unit-economics-1c/reports/standard-costs',{signal:AbortSignal.timeout(120000)}).then(async response=>{
     if(!response.ok)throw new Error('Ошибка загрузки: '+response.status);
+    if(!response.headers.get('content-type')?.includes('application/json'))throw new Error('Сессия истекла. Войдите в сайт и обновите отчёт.');
     stores=(await response.json()).stores;
     const failed=stores.filter(s=>s.error);
     el('error').hidden=failed.length===0;
@@ -216,5 +249,13 @@
     el('store').innerHTML='<option value="">Все магазины</option>'+stores.map(s=>`<option value="${esc(s.slug)}" ${s.report?'':'disabled'}>${esc(s.name)}</option>`).join('');
     el('store').value='';
     render();
-  }).catch(error=>{el('error').hidden=false;el('error').textContent=error.message;});
+  }).catch(error=>{el('error').hidden=false;el('error').textContent=error.name==='TimeoutError'?'Сервер не ответил вовремя. Повторите попытку.':error.message;el('retry').hidden=false;})
+    .finally(()=>{
+      el('loading').hidden=true;
+      const report=document.getElementById('standard-costs');
+      report.classList.remove('sc-loading');report.setAttribute('aria-busy','false');
+    });
+  }
+  el('retry').onclick=loadReport;
+  loadReport();
 })();
