@@ -41,6 +41,8 @@ REQUEST_ATTEMPTS = settings.wb_request_attempts
 RETRY_BACKOFF_SECONDS = settings.wb_retry_backoff_seconds
 
 _WB_RATE_LIMIT_RULES: tuple[tuple[str, str, float], ...] = (
+    ("finance_detailed", "finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed", 61.0),
+    ("common_tariffs", "common-api.wildberries.ru/api/v1/tariffs/", 1.1),
     ("advert_stats", "advert-api.wildberries.ru/adv/v3/fullstats", 20.1),
     ("advertising", "advert-api.wildberries.ru/", 0.21),
     ("analytics", "seller-analytics-api.wildberries.ru/", 20.1),
