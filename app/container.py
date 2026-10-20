@@ -6,6 +6,7 @@ from app.access.security import Pbkdf2PasswordService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
+from app.application.wb_product_rating import WbProductRatingService
 from app.config import settings
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
 from app.economics.wb.prices import calculate_wallet_price
@@ -19,6 +20,7 @@ from app.infrastructure.wb_hourly_price_repository import (
     SqlAlchemyHourlyPriceWriter,
 )
 from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
+from app.infrastructure.wb_product_rating_repository import SqlAlchemyWbRatingWriter
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
 from app.wb import api as wb_api
@@ -43,6 +45,10 @@ def _wb_seller_prices(store_slug: str, nm_ids: tuple[str, ...]) -> tuple[WbSelle
         batch = [int(nm_id) for nm_id in nm_ids[start : start + wb_api.PRICES_PAGE_LIMIT]]
         goods.extend(wb_api.get_goods_prices_by_nm_ids(token, batch))
     return seller_prices_from_payload(goods)
+
+
+def wb_product_rating_service(database_path: Callable[[], Path] | None = None) -> WbProductRatingService:
+    return WbProductRatingService(SqlAlchemyWbRatingWriter(database_path or (lambda: core.DB_PATH)))
 
 
 class ApplicationContainer:
@@ -73,6 +79,7 @@ class ApplicationContainer:
             writer=SqlAlchemyHourlyPriceWriter(self._database_path),
         )
         self.wb_daily_price_closer = SqlAlchemyDailyPriceCloser(self._database_path)
+        self.wb_product_rating = wb_product_rating_service(self._database_path)
 
     def _identity_unit_of_work(self) -> SqlAlchemyIdentityUnitOfWork:
         database = database_for_path(self._database_path())

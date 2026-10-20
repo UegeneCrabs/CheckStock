@@ -45,6 +45,15 @@ from app.dto.stock import (
     TransitActionResult,
 )
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
+from app.dto.wb_product_rating import WbRatingObservation
+
+
+class WbRatingWriter(Protocol):
+    def upsert(
+        self,
+        observations: tuple[WbRatingObservation, ...],
+        valid_ratings: tuple[WbRatingObservation, ...],
+    ) -> int: ...
 
 
 class HourlyPriceWriter(Protocol):

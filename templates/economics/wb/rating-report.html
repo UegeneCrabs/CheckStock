@@ -1,0 +1,47 @@
+<link rel="stylesheet" href="/static/common/wb-report.css?v=1" />
+<link rel="stylesheet" href="/static/economics/wb/rating-report.css?v=1" />
+<section class="wb-report rating-report" id="rating-report" aria-label="Рейтинг товаров WB">
+    <header class="wb-report__heading"><h1>Рейтинг товаров WB</h1></header>
+    <div class="wb-report__top">
+        <form class="wb-card wb-filters" id="rating-filters">
+            <div class="wb-filters__header"><h2>Фильтры</h2></div>
+            <div class="wb-period"><div class="wb-period__title">Период</div>
+                <label>От<span class="wb-date-control"><input type="text" id="rating-date-from" inputmode="numeric" placeholder="ДД.ММ.ГГГГ" autocomplete="off" required /><button type="button" class="wb-date-picker" aria-label="Выбрать дату начала в календаре">▦</button><input type="date" class="wb-date-native" id="rating-date-from-native" tabindex="-1" aria-hidden="true" /></span></label>
+                <label>До<span class="wb-date-control"><input type="text" id="rating-date-to" inputmode="numeric" placeholder="ДД.ММ.ГГГГ" autocomplete="off" required /><button type="button" class="wb-date-picker" aria-label="Выбрать дату окончания в календаре">▦</button><input type="date" class="wb-date-native" id="rating-date-to-native" tabindex="-1" aria-hidden="true" /></span></label>
+            </div>
+            <div class="wb-filters__grid">
+                <div class="wb-filter" data-wb-filter><label for="rating-store-search">Магазин</label><select name="store" id="rating-store"><option value="">Все</option></select></div>
+                <div class="wb-filter" data-wb-filter><label for="rating-brand-search">Бренд</label><select name="brand" id="rating-brand"><option value="">Все</option></select></div>
+                <div class="wb-filter" data-wb-filter><label for="rating-manager-search">Менеджер</label><select name="manager" id="rating-manager"><option value="">Все</option></select></div>
+                <div class="wb-filter" data-wb-filter><label for="rating-subject-search">Предмет товара</label><select name="subject" id="rating-subject"><option value="">Все</option></select></div>
+                <div class="wb-filter" data-wb-filter><label for="rating-article-search">Артикул</label><select name="article" id="rating-article"><option value="">Все</option></select></div>
+                <label>Поиск по слову<input type="search" name="search" id="rating-search" placeholder="Введите слово" /></label>
+            </div>
+            <div class="wb-tolerance"><div class="wb-tolerance__heading"><label for="rating-tolerance">Допустимое снижение рейтинга</label><div class="wb-tolerance__value"><input type="number" name="tolerance" id="rating-tolerance" min="0" step="any" value="0" required /><span>балла</span></div></div><p>Товар требует внимания, если рейтинг снизился строго больше порога.</p></div>
+            <div class="wb-filters__actions"><button type="submit" class="wb-button">Сформировать отчёт</button><button type="button" class="wb-button wb-button--reset" id="rating-reset">Сбросить фильтры</button></div>
+        </form>
+        <section class="wb-card wb-health" aria-labelledby="rating-health-title"><h2 id="rating-health-title">Состояние рейтинга</h2>
+            <div class="wb-health__cards"><div class="wb-health__metric wb-health__metric--bad"><strong>Требуют внимания</strong><b id="rating-problem">—</b></div><div class="wb-health__metric wb-health__metric--good"><strong>Без проблем</strong><b id="rating-healthy">—</b></div></div>
+            <p class="wb-health__missing" id="rating-no-data"></p>
+        </section>
+    </div>
+    <section class="wb-card wb-table-card" aria-labelledby="rating-table-title"><h2 id="rating-table-title">Товары</h2>
+        <p id="rating-period-note">Предыдущий равный период рассчитывается автоматически</p>
+        <div class="wb-message" id="rating-message" role="status"></div>
+        <div class="wb-table-wrap"><table><thead><tr>
+            <th><button type="button" data-rating-sort="article">Артикул</button></th>
+            <th><button type="button" data-rating-sort="name">Название</button></th>
+            <th><button type="button" data-rating-sort="latest_rating">Свежий рейтинг</button></th>
+            <th><button type="button" data-rating-sort="reviews_count">Отзывы</button></th>
+            <th><button type="button" data-rating-sort="current_rating">Конец периода</button></th>
+            <th><button type="button" data-rating-sort="previous_rating">Предыдущий период</button></th>
+            <th><button type="button" data-rating-sort="change">Изменение</button></th>
+            <th><button type="button" data-rating-sort="status">Статус</button></th>
+        </tr></thead><tbody id="rating-rows"></tbody></table></div>
+        <nav class="wb-pagination" aria-label="Страницы отчёта"><button type="button" id="rating-prev">Назад</button><span id="rating-page-label"></span><button type="button" id="rating-next">Далее</button></nav>
+    </section>
+</section>
+<script type="application/json" id="rating-config">$rating_report_config</script>
+<script src="/static/common/report-select.js?v=1"></script>
+<script src="/static/common/report-daily.js?v=1"></script>
+<script src="/static/economics/wb/rating-report.js?v=1"></script>
