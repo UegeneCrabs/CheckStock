@@ -1172,7 +1172,9 @@ def replace_daily_advertising(
     return len(rows)
 
 
-def get_daily_advertising(store_slugs: tuple[str, ...], date_from: str, date_to: str, *, article: str | None = None) -> list[dict]:
+def get_daily_advertising(
+    store_slugs: tuple[str, ...], date_from: str, date_to: str, *, article: str | None = None
+) -> list[dict]:
     if not store_slugs:
         return []
     placeholders = ", ".join("?" for _ in store_slugs)

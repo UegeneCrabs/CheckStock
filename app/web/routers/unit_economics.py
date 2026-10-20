@@ -974,8 +974,11 @@ async def sales_unit_economics_1c(request: Request):
             article=_nm_id(detail_article) if detail_article else None,
         )
         chart_metrics = (
-            unit_economics_1c.load_product_metrics(store_slugs, period_days=21, article=_nm_id(detail_article))
-            if include_history else {}
+            unit_economics_1c.load_product_metrics(
+                store_slugs, period_days=21, article=_nm_id(detail_article)
+            )
+            if include_history
+            else {}
         )
         chart_prices = (
             {
@@ -1149,17 +1152,21 @@ async def sales_unit_economics_1c(request: Request):
                     cabinet.default_buyout_percent,
                 )
                 product_margin_snapshots = margin_snapshots_by_product.get((store_slug, article)) or {}
-                live_snapshot = unit_economics_1c_history.calculate_snapshot_row(
-                    snapshot_day=today,
-                    store_slug=store_slug,
-                    article=article,
-                    price_snapshot=prices.get((store_slug, article)) or {},
-                    product_metrics=current_product_metrics,
-                    product_settings=effective_product_settings,
-                    product_reference=reference,
-                    cabinet=cabinet,
-                    captured_at=datetime.now(UTC).isoformat(),
-                ) if today.isoformat() not in product_margin_snapshots else None
+                live_snapshot = (
+                    unit_economics_1c_history.calculate_snapshot_row(
+                        snapshot_day=today,
+                        store_slug=store_slug,
+                        article=article,
+                        price_snapshot=prices.get((store_slug, article)) or {},
+                        product_metrics=current_product_metrics,
+                        product_settings=effective_product_settings,
+                        product_reference=reference,
+                        cabinet=cabinet,
+                        captured_at=datetime.now(UTC).isoformat(),
+                    )
+                    if today.isoformat() not in product_margin_snapshots
+                    else None
+                )
                 first_sale_day = _optional_day(sales_starts.get((store_slug, nm_id)))
                 turnover_coverage_from = closed_period_from
                 if first_sale_day is not None and first_sale_day > turnover_coverage_from:
