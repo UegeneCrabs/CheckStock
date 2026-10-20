@@ -56,6 +56,8 @@
 
 - [Финансовый отчёт Яндекс Маркета: работа, проверки и эксплуатация](yandex-finance.md)
 - [Техническое задание на финансовый отчёт Яндекс Маркета](yandex-finance-spec.md)
+- [Полнота расчёта экономики WB и Яндекс Маркета](f05-economics-completeness.md)
+- [Отчёт WB «Рейтинг товаров»: план и контракт](wb-product-rating-report-plan.md)
 - [Производительность чтения юнит-экономики и отчётов](economics-performance.md)
 - [Полнота расчёта экономики WB, Ozon и Яндекс Маркета](f05-economics-completeness.md)
 - [Нулевые и неизвестные остатки Ozon в экономике](f05-economics-completeness.md#ozon)
