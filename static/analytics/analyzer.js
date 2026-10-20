@@ -20,6 +20,7 @@
     const monday = day => addDays(day, -((new Date(day + 'T12:00:00Z').getUTCDay() + 6) % 7));
     let payload = null, rows = [], columns = [], loadedWeek = null, requestedWeek = monday(config.today);
     let pending = null, loading = false, selected = null, editingNoteId = null, noteSaving = false, toastTimer;
+    let coefficientRetryAfter = 0;
     const noteDrafts = new Map();
     const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: M.fields.find(column => column.key === 'fact').index, direction: -1, page: 1, pageSize: 20};
     const visibleGroups = new Set(Object.keys(M.groups));
@@ -59,7 +60,7 @@
         if (column.key === 'roi') return 'ROI по дневным расчётам юнит-экономики за выбранную неделю. Неполные данные отмечены в карточке.';
         if (['drr', 'yesterdayDrr'].includes(column.key)) return 'Расход рекламы / ожидаемый выкупленный оборот × 100%, как в юнит-экономике WB. Только дни с известными исходными значениями.';
         if (column.key === 'previousPrice') return 'Сумма заказов / количество заказов за ' + shortDate(payload.previous_from) + '–' + shortDate(payload.previous_to) + '.';
-        if (column.key === 'coeff') return 'Коэффициент D временно равен 1 для всех товаров.';
+        if (column.key === 'coeff') return 'Коэффициент D для текущего часа по Москве из параметров кабинета WB. С 00:00 до 07:59 используется D = 1.';
         if (column.key === 'fact') return 'Сумма заказов за сегодня (' + shortDate(payload.turnover_day) + ') из последней сохранённой воронки WB. Включает все размеры артикула WB; в итогах учитывается один раз.';
         if (column.key === 'forecast') return 'Коэффициент D × ТО факт на данный момент за сегодня. Оборот всех размеров артикула WB учитывается в итогах один раз.';
         if (column.key === 'difference') return 'ТО цель на день − прогнозируемый ТО на день.';
@@ -166,7 +167,7 @@
         filter: filters => { state.filters = filters || {}; state.page = 1; renderPage(); },
         sort: (idx, direction) => { state.sort = Number(idx); state.direction = direction === 'desc' ? -1 : 1; state.page = 1; renderPage(); },
     };
-    async function loadWeek(week) {
+    async function loadWeek(week, refresh = false) {
         pending?.abort();
         const controller = new AbortController();
         pending = controller;
@@ -176,22 +177,28 @@
         $('load-status').hidden = false;
         $('load-status').textContent = 'Загрузка данных за ' + shortDate(week) + '–' + shortDate(addDays(week, 6)) + '…';
         $('export').disabled = true;
-        closeDrawer();
+        if (!refresh) closeDrawer();
         try {
             const response = await fetch('/api/analytics/analyzer?week=' + encodeURIComponent(week), {signal: controller.signal, headers: {'Accept': 'application/json'}});
             const body = await response.json();
             if (!response.ok || !body.ok) throw new Error(body.detail || body.error || 'Не удалось загрузить данные');
             if (controller !== pending) return;
+            const selectedId = refresh && selected ? selected.id : null;
+            if (selectedId) rememberDraft();
             payload = body;
+            config.today = body.today;
             rows = body.rows;
             loadedWeek = body.week[0];
-            state.page = 1;
-            state.filters = {};
+            if (!refresh) {
+                state.page = 1;
+                state.filters = {};
+            }
             $('week-label').textContent = shortDate(body.week[0]) + '–' + shortDate(body.week[6]) + ' ' + body.week[6].slice(0, 4);
             $('week-caption').textContent = loadedWeek === monday(body.today) ? 'Текущая неделя' : 'Выбранная неделя';
             $('load-status').hidden = true;
             loading = false;
             buildColumns();
+            if (selectedId) openDrawer(selectedId);
         } catch (error) {
             if (error.name === 'AbortError') return;
             $('load-status').textContent = `${error.message}. ${payload ? 'На экране осталась ранее загруженная неделя. ' : ''}`;
@@ -232,7 +239,7 @@
             <h3>Комментарии · ${shortDate(payload.week[0])}–${shortDate(payload.today)}</h3>
             <div id="note-history" class="note-history"></div>
             ${config.canEdit ? `<div class="note-editor-heading"><label for="note-input" id="note-editor-label">Комментарий на сегодня · ${shortDate(payload.today)}</label><button type="button" class="note-edit" id="new-note">Новая запись</button></div><textarea id="note-input" maxlength="4000" placeholder="Что сделали, что проверить, план действий"></textarea>` : '<p>Доступ только для просмотра записей.</p>'}
-            <details class="source-details"><summary>Сохранённые данные</summary>${Object.entries({stock: 'Каталог', prices: 'Цена', reference: 'Цели и справочник', orders: 'Заказы', advertising: 'Реклама'}).map(([key, name]) => `<p>${name}: ${dateTime(row.updated[key])}</p>`).join('')}<p>ТО факт за ${shortDate(payload.turnover_day)}: ${money(row.fact)}. Коэф D = 1.</p></details>`;
+            <details class="source-details"><summary>Сохранённые данные</summary>${Object.entries({stock: 'Каталог', prices: 'Цена', reference: 'Цели и справочник', orders: 'Заказы', advertising: 'Реклама'}).map(([key, name]) => `<p>${name}: ${dateTime(row.updated[key])}</p>`).join('')}<p>ТО факт за ${shortDate(payload.turnover_day)}: ${money(row.fact)}. Коэф D = ${num(row.coeff, 2)} на ${num(payload.coefficient_hour)}:00 МСК.</p></details>`;
         $('save-note').hidden = !config.canEdit;
         $('save-note').disabled = noteSaving;
         $('drawer').hidden = false;
@@ -380,5 +387,13 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         toast('Экспортированы все отфильтрованные товары');
     };
+    function refreshHourlyCoefficient() {
+        if (document.hidden || loading || noteSaving || !payload?.coefficient_valid_until) return;
+        if (Date.now() < coefficientRetryAfter || Date.now() < Date.parse(payload.coefficient_valid_until)) return;
+        coefficientRetryAfter = Date.now() + 60000;
+        loadWeek(requestedWeek, true);
+    }
+    setInterval(refreshHourlyCoefficient, 1000);
+    document.addEventListener('visibilitychange', refreshHourlyCoefficient);
     loadWeek(requestedWeek);
 })();

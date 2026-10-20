@@ -633,6 +633,9 @@ def get_cabinet_settings(store_slug: str) -> UnitEconomics1CCabinetSettings:
         return UnitEconomics1CCabinetSettings(store_slug=store_slug)
     payload = dict(row)
     payload["target_roi_by_code"] = json.loads(payload.get("target_roi_by_code") or "{}")
+    hourly_d = payload.pop("hourly_d_coefficients", None)
+    if hourly_d is not None:
+        payload["hourly_d_coefficients"] = json.loads(hourly_d)
     return UnitEconomics1CCabinetSettings.model_validate(payload)
 
 
@@ -649,11 +652,19 @@ def save_cabinet_settings(
     updated_by_name: str,
 ) -> UnitEconomics1CCabinetSettings:
     payload = values.model_dump(mode="python")
-    for field in ("default_buyout_percent", "target_drr_percent", "target_roi_percent", "target_roi_by_code"):
+    for field in (
+        "default_buyout_percent",
+        "target_drr_percent",
+        "target_roi_percent",
+        "target_roi_by_code",
+        "hourly_d_coefficients",
+    ):
         if field not in values.model_fields_set:
             payload.pop(field, None)
     if "target_roi_by_code" in payload:
         payload["target_roi_by_code"] = json.dumps(payload["target_roi_by_code"], allow_nan=False)
+    if "hourly_d_coefficients" in payload:
+        payload["hourly_d_coefficients"] = json.dumps(payload["hourly_d_coefficients"], allow_nan=False)
     columns = tuple(payload)
     with WRITE_LOCK:
         conn = get_connection()

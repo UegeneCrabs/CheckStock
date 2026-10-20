@@ -101,9 +101,17 @@ def turnover_sort_key(row, value):
 
 
 def load(
-    stores: tuple[str, ...], week: date, user, *, today: date | None = None, include_notes=True, sources=None
+    stores: tuple[str, ...],
+    week: date,
+    user,
+    *,
+    today: date | None = None,
+    include_notes=True,
+    sources=None,
+    now: datetime | None = None,
 ) -> dict:
-    today = today or datetime.now(MOSCOW_TIMEZONE).date()
+    now = (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE)
+    today = today or now.date()
     week = week - timedelta(days=week.weekday())
     days = [(week + timedelta(days=i)).isoformat() for i in range(7)]
     anchor = min(today, week + timedelta(days=6))
@@ -126,6 +134,7 @@ def load(
 
     rows = []
     for store in stores:
+        coefficient = cabinets[store].coefficient_at_hour(now.hour)
         for product in sources.products[store]:
             article = str(product["article"])
             key = (store, article)
@@ -261,7 +270,7 @@ def load(
                 if day_goal is not None and previous_price is not None
                 else None
             )
-            forecast = fact  # D is fixed to 1 until its calculation is specified.
+            forecast = round(fact * coefficient, 2) if fact is not None else None
             difference = round(plan - forecast, 2) if plan is not None and forecast is not None else None
             row = {
                 "id": f"{store}:{article}",
@@ -304,7 +313,7 @@ def load(
                 "spp": ratio(retail - customer, retail) if retail and customer is not None else None,
                 "wallet": price.get("customer_price_with_wallet"),
                 "price": retail,
-                "coeff": 1,
+                "coeff": coefficient,
                 "fact": fact,
                 "forecast": forecast,
                 "difference": difference,
@@ -360,5 +369,9 @@ def load(
         "stockPreviousFrom": stock_days[0],
         "stockPreviousTo": stock_days[-1],
         "turnover_day": today.isoformat(),
+        "coefficient_hour": now.hour,
+        "coefficient_valid_until": (
+            now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        ).isoformat(),
         "loaded_at": datetime.now(UTC).isoformat(),
     }

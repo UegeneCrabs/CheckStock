@@ -31,3 +31,11 @@
 <!-- template: card-html -->
 <article class="ue1cs-card" data-store="{{store_slug}}" style="--store-color:{{store_color}};--store-text:{{store_text}}"><div class="ue1cs-card-head"><span class="ue1cs-avatar">{{store_initials}}</span><div><h3>{{store_name}}</h3></div><span class="ue1cs-state" data-state>{{item}}</span></div><div class="ue1cs-card-body">{{{content}}}</div><div class="ue1cs-card-foot"><button type="button" data-save{{{content_2}}}>Сохранить</button></div></article>
 <!-- endtemplate -->
+
+<!-- template: hourly-d-table -->
+<section class="ue1cs-field-group ue1cs-hourly-d"><div class="ue1cs-field-group-head"><strong>Коэф D по часам</strong><span>Для анализатора WB: ТО прогноз = ТО факт × D. Коэффициент действует с указанного часа до следующего по московскому времени. С 00:00 до 07:59 используется D = 1.</span></div><table><thead><tr><th scope="col">Время (МСК)</th><th scope="col">Коэф D</th></tr></thead><tbody>{{{rows}}}</tbody></table></section>
+<!-- endtemplate -->
+
+<!-- template: hourly-d-row -->
+<tr><th scope="row">{{hour}}:00</th><td>{{{control}}}</td></tr>
+<!-- endtemplate -->

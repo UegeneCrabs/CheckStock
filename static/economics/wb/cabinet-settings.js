@@ -14,6 +14,17 @@
     var cabinetCount = document.getElementById('ue1cs-cabinet-count');
     var toastTimer = 0;
     var roiDefaults = { A: 20, B: 30, C: 50, D: 0, F: 50, NEW: 50, U: 20 };
+    var hourlyDFields = (items.length ? items[0].hourly_d_coefficients : []).map(function (entry) {
+        return {
+            key: 'hourly_d_' + entry.hour,
+            hour: entry.hour,
+            label: 'Коэф D на ' + entry.hour + ':00',
+            step: '0.01',
+            min: '0',
+            max: '1000000',
+            warning: 'Введите коэффициент от 0 до 1 000 000.',
+        };
+    });
     var fields = [
         {
             key: 'buyout_period_days',
@@ -118,7 +129,7 @@
                 warning: 'Введите цель по ROI от 0 до 1 000 000%.',
             };
         }),
-    );
+    ).concat(hourlyDFields);
     var fieldGroups = [
         { key: 'buyout', title: 'Процент выкупа', hint: 'Период без сегодняшнего дня · обновление каждые 4 часа' },
         { key: 'logistics', title: 'Логистика', hint: 'Приёмка и дополнительные тарифы WB' },
@@ -142,6 +153,9 @@
         return 'Сохранено ' + date + (item.updated_by_name ? ' · ' + item.updated_by_name : '');
     }
     function fieldValue(field, item) {
+        if (field.hour !== undefined) {
+            return item.hourly_d_coefficients.find(function (entry) { return entry.hour === field.hour; }).value;
+        }
         if (!field.roiCode) return item[field.key];
         var goals = item.target_roi_by_code || {};
         return goals[field.roiCode] === undefined ? roiDefaults[field.roiCode] : goals[field.roiCode];
@@ -232,12 +246,19 @@
                 .map(function (group) {
                     return fieldGroupHtml(group, item);
                 })
-                .join(''),
+                .join('') + window.CheckStockUI.render('economics/wb/cabinet-settings/hourly-d-table', {
+                    rows: hourlyDFields.map(function (field) {
+                        return window.CheckStockUI.render('economics/wb/cabinet-settings/hourly-d-row', {
+                            hour: field.hour,
+                            control: fieldHtml(field, item),
+                        });
+                    }).join(''),
+                }),
             content_2: canEdit ? '' : ' disabled',
         });
     }
     function payloadFromCard(card) {
-        var payload = { target_roi_by_code: {} };
+        var payload = { target_roi_by_code: {}, hourly_d_coefficients: [] };
         fields
             .filter(function (field) {
                 return !field.readOnly;
@@ -245,6 +266,10 @@
             .forEach(function (field) {
                 var input = card.querySelector('[data-setting="' + field.key + '"]');
                 if (!input) return;
+                if (field.hour !== undefined) {
+                    payload.hourly_d_coefficients.push({ hour: field.hour, value: Number(input.value) });
+                    return;
+                }
                 if (field.roiCode) {
                     payload.target_roi_by_code[field.roiCode] = Number(input.value);
                     return;
@@ -312,7 +337,9 @@
             var input = card.querySelector('[data-setting="' + field.key + '"]');
             if (
                 input &&
-                (field.roiCode
+                (field.hour !== undefined
+                    ? settings.hourly_d_coefficients !== undefined
+                    : field.roiCode
                     ? settings.target_roi_by_code !== undefined
                     : settings[field.key] !== undefined)
             ) {
