@@ -7,7 +7,9 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app import db
+from app.application.wb_product_rating import WbProductRatingService
 from app.core.stores import STORES
+from app.dto.wb_product_rating import WbRatingObservation
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
@@ -857,6 +859,7 @@ def _sync_store(
     load_retail_prices: bool = True,
     wallet_discount_report: dict | None = None,
     record_state: bool = True,
+    rating_service: WbProductRatingService,
 ) -> dict:
     snapshot_day = snapshot_day or _today()
     attempted_at = _now()
@@ -905,10 +908,17 @@ def _sync_store(
     reputation_rows = [
         row for row in _storefront_reputation_rows(storefront_products) if row["nm_id"] in catalog_nm_ids
     ]
-    reputation_rows_saved = db.upsert_unit_economics_1c_product_reputation(
-        store_slug,
-        reputation_rows,
-        attempted_at,
+    # Both rating tables are updated together; invalid ratings only affect the latest-value cache.
+    observed_at = datetime.fromisoformat(attempted_at)
+    reputation_rows_saved = rating_service.record(
+        WbRatingObservation(
+            store_slug=store_slug,
+            nm_id=str(row["nm_id"]),
+            rating=row["rating"],
+            reviews_count=row["reviews_count"],
+            observed_at=observed_at,
+        )
+        for row in reputation_rows
     )
     returned_products = {
         str(product.get("id") or product.get("nmID") or product.get("nmId") or ""): product
@@ -1138,7 +1148,12 @@ def sync_store(
     load_retail_prices: bool = True,
     storefront_batch_size: int | None = None,
     record_state: bool = True,
+    rating_service: WbProductRatingService | None = None,
 ) -> dict:
+    if rating_service is None:
+        from app.container import wb_product_rating_service
+
+        rating_service = wb_product_rating_service()
     snapshot_day = snapshot_day or _today()
     nm_ids = _catalog_nm_ids((store_slug,))
     wallet_discount_report = _wallet_discount_report()
@@ -1152,6 +1167,7 @@ def sync_store(
         load_retail_prices=load_retail_prices,
         wallet_discount_report=wallet_discount_report,
         record_state=record_state,
+        rating_service=rating_service,
     )
 
 
@@ -1162,7 +1178,12 @@ def sync_stores(
     load_retail_prices: bool = True,
     storefront_batch_size: int | None = None,
     record_state: bool = True,
+    rating_service: WbProductRatingService | None = None,
 ) -> dict[str, dict]:
+    if rating_service is None:
+        from app.container import wb_product_rating_service
+
+        rating_service = wb_product_rating_service()
     snapshot_day = snapshot_day or _today()
     report: dict[str, dict] = {}
     nm_ids = _catalog_nm_ids(store_slugs)
@@ -1201,6 +1222,7 @@ def sync_stores(
                 load_retail_prices=load_retail_prices,
                 wallet_discount_report=wallet_discount_report,
                 record_state=record_state,
+                rating_service=rating_service,
             )
         except Exception as error:
             attempted_at = _now()

@@ -27,6 +27,7 @@
 - [Финансовый отчёт Яндекс Маркета: работа, проверки и эксплуатация](yandex-finance.md)
 - [Техническое задание на финансовый отчёт Яндекс Маркета](yandex-finance-spec.md)
 - [Полнота расчёта экономики WB и Яндекс Маркета](f05-economics-completeness.md)
+- [Отчёт WB «Рейтинг товаров»: план и контракт](wb-product-rating-report-plan.md)
 - [Дневной календарь параметров](daily-economics-calendar.md)
 - [Юнит-экономика Яндекс Маркета](unit-economics-yandex.md)
 - [Настройки калькулятора Яндекс Маркета](yandex-calculator-settings.md)
