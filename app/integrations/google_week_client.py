@@ -1,3 +1,4 @@
+import json
 import time
 from collections.abc import Callable
 from typing import cast
@@ -16,6 +17,29 @@ from app.infrastructure.async_http import AsyncHttp
 class TokenResponse(BaseModel):
     access_token: str
     expires_in: int = GOOGLE_WEEK.token_seconds
+
+
+def value_batches(title: str, writes: list[CellWrite]) -> list[list[CellWrite]]:
+    quoted = "'" + title.replace("'", "''") + "'"
+    overhead = len(json.dumps({"valueInputOption": "RAW", "data": []}).encode())
+    batches: list[list[CellWrite]] = []
+    batch: list[CellWrite] = []
+    size = overhead
+    for entry in writes:
+        entry_size = len(json.dumps({"range": f"{quoted}!{entry.cell}", "values": [[entry.value]]}).encode())
+        if overhead + entry_size > GOOGLE_WEEK.max_payload_bytes:
+            raise WeekError(WeekIssue.TOO_LARGE, cell=entry.cell)
+        separator_size = len(", ") if batch else 0
+        if size + separator_size + entry_size > GOOGLE_WEEK.max_payload_bytes:
+            batches.append(batch)
+            batch = []
+            size = overhead
+            separator_size = 0
+        batch.append(entry)
+        size += separator_size + entry_size
+    if batch:
+        batches.append(batch)
+    return batches
 
 
 class GoogleWeekClient:
@@ -94,11 +118,12 @@ class GoogleWeekClient:
 
     async def write(self, doc_id: str, title: str, writes: list[CellWrite]) -> None:
         quoted = "'" + title.replace("'", "''") + "'"
-        body = {
-            "valueInputOption": "RAW",
-            "data": [{"range": f"{quoted}!{entry.cell}", "values": [[entry.value]]} for entry in writes],
-        }
-        await self.request("POST", f"{quote(doc_id, safe='')}/values:batchUpdate", body=body)
+        for batch in value_batches(title, writes):
+            body = {
+                "valueInputOption": "RAW",
+                "data": [{"range": f"{quoted}!{entry.cell}", "values": [[entry.value]]} for entry in batch],
+            }
+            await self.request("POST", f"{quote(doc_id, safe='')}/values:batchUpdate", body=body)
 
     async def freeze(self, doc_id: str, ranges: list[GridRange]) -> None:
         requests = []
