@@ -1,0 +1,206 @@
+[
+  {
+    "name": "absent",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      }
+    },
+    "advertising": 0,
+    "current_margin": 345,
+    "current_roi": 86.25,
+    "standard_margin": 270,
+    "standard_roi": 67.5
+  },
+  {
+    "name": "missing_field",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      },
+      "advertising": {}
+    },
+    "advertising": 0,
+    "current_margin": 345,
+    "current_roi": 86.25,
+    "standard_margin": 270,
+    "standard_roi": 67.5
+  },
+  {
+    "name": "null",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      },
+      "advertising": {
+        "spend_per_order": null
+      }
+    },
+    "advertising": 0,
+    "current_margin": 345,
+    "current_roi": 86.25,
+    "standard_margin": 270,
+    "standard_roi": 67.5
+  },
+  {
+    "name": "zero",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      },
+      "advertising": {
+        "spend_per_order": 0
+      }
+    },
+    "advertising": 0,
+    "current_margin": 345,
+    "current_roi": 86.25,
+    "standard_margin": 270,
+    "standard_roi": 67.5
+  },
+  {
+    "name": "positive",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      },
+      "advertising": {
+        "spend_per_order": 30
+      }
+    },
+    "advertising": 30,
+    "current_margin": 315,
+    "current_roi": 78.75,
+    "standard_margin": 240,
+    "standard_roi": 60.0
+  },
+  {
+    "name": "partial_missing",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      },
+      "advertising": {
+        "spend_per_order": null,
+        "coverage": {
+          "complete": false
+        }
+      }
+    },
+    "advertising": 0,
+    "current_margin": 345,
+    "current_roi": 86.25,
+    "standard_margin": 270,
+    "standard_roi": 67.5
+  },
+  {
+    "name": "partial_positive",
+    "product": {
+      "price": {
+        "current": 1000,
+        "with_spp": 900
+      },
+      "details": {
+        "purchase_cost": 400,
+        "buyout_percent": 100,
+        "fulfillment_cost": 20,
+        "acquiring": 1,
+        "team_commission_percent": 5,
+        "vat_value": 40,
+        "usn_value": 10,
+        "commission_value": 100,
+        "delivery_with_returns": 20,
+        "storage_sum": 5
+      },
+      "advertising": {
+        "spend_per_order": 30,
+        "coverage": {
+          "complete": false
+        }
+      }
+    },
+    "advertising": 30,
+    "current_margin": 315,
+    "current_roi": 78.75,
+    "standard_margin": 240,
+    "standard_roi": 60.0
+  }
+]
