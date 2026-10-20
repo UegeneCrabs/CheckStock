@@ -20,6 +20,7 @@ REPORT_SECTIONS = (
     S.REPORT_UNIT_PROFIT,
     S.REPORT_SPP,
     S.REPORT_TARGET_PRICE,
+    S.REPORT_WB_CONDITIONS,
     S.REPORT_UNIT_PROFIT_YANDEX,
     S.REPORT_TARGET_PRICE_YANDEX,
 )
@@ -34,6 +35,7 @@ SECTION_GROUPS = (
     ("Администрирование", (S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
 )
 SECTION_LABELS = {
+    S.REPORT_WB_CONDITIONS: "Расходы без ИУ · WB",
     S.EPHEMERIDES: "Аналитика · Эфемериды WB",
     S.FINANCE_YANDEX: "Финансовые отчёты · Яндекс Маркет",
     S.ANALYTICS_SALES_API: "Аналитика · Продажи по API WB",
@@ -62,6 +64,7 @@ SECTION_LABELS = {
     S.ADMIN_INTEGRATIONS: "API-ключи и фоновые выгрузки",
 }
 SECTION_PATHS = {
+    S.REPORT_WB_CONDITIONS: "/sales/unit-economics-1c/reports/standard-costs",
     S.EPHEMERIDES: "/analytics/ephemerides",
     S.FINANCE_YANDEX: "/finance-reports/yandex",
     S.ANALYTICS_SALES_API: "/analytics/sales-api",
@@ -90,6 +93,7 @@ SECTION_PATHS = {
     S.ADMIN_INTEGRATIONS: "/admin/integrations",
 }
 SECTION_DESCRIPTIONS = {
+    S.REPORT_WB_CONDITIONS: "Сравнение калькулятора с тарифами WB по складским остаткам.",
     S.EPHEMERIDES: "Сравнение недель WB, оборот и комментарии с историей изменений.",
     S.FINANCE_YANDEX: "Финансовый итог целого магазина: реализация, расходы, закупка и выплаты.",
     S.ANALYTICS_SALES_API: "Заказы и отмены из воронки WB: период, дни, фильтры и экспорт.",
@@ -130,12 +134,14 @@ SECTION_PARENTS = {
             S.REPORT_UNIT_PROFIT,
             S.REPORT_SPP,
             S.REPORT_TARGET_PRICE,
+            S.REPORT_WB_CONDITIONS,
             S.REPORT_UNIT_PROFIT_YANDEX,
             S.REPORT_TARGET_PRICE_YANDEX,
         )
     },
 }
 SECTION_MARKETPLACES = {
+    S.REPORT_WB_CONDITIONS: "WB",
     S.EPHEMERIDES: "WB",
     S.FINANCE_YANDEX: "YANDEX MARKET",
     S.ANALYTICS_SALES_API: "WB",
@@ -159,6 +165,8 @@ def _under(path: str, prefix: str) -> bool:
 def section_for_path(path: str) -> SectionName | None:
     path = path.rstrip("/") or "/"
     for prefix, section in (
+        ("/sales/unit-economics-1c/reports/standard-costs", S.REPORT_WB_CONDITIONS),
+        ("/api/unit-economics-1c/reports/standard-costs", S.REPORT_WB_CONDITIONS),
         ("/finance-reports/yandex", S.FINANCE_YANDEX),
         ("/api/finance-reports/yandex", S.FINANCE_YANDEX),
         ("/analytics/sales-api", S.ANALYTICS_SALES_API),
@@ -235,6 +243,7 @@ def active_section(active: str) -> SectionName | None:
         "unit_1c_reports": S.REPORT_UNIT_PROFIT,
         "unit_1c_spp_report": S.REPORT_SPP,
         "unit_1c_target_price": S.REPORT_TARGET_PRICE,
+        "wb_standard_costs": S.REPORT_WB_CONDITIONS,
         "stock": S.STOCK_BALANCES,
         "stock_total": S.STOCK_TOTAL,
         "stock_supplies": S.STOCK_SUPPLIES,

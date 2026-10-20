@@ -35,6 +35,7 @@ class SectionName(StrEnum):
     REPORT_UNIT_PROFIT = "report_unit_profit"
     REPORT_SPP = "report_spp"
     REPORT_TARGET_PRICE = "report_target_price"
+    REPORT_WB_CONDITIONS = "report_wb_conditions"
     REPORT_UNIT_PROFIT_YANDEX = "report_unit_profit_yandex"
     REPORT_TARGET_PRICE_YANDEX = "report_target_price_yandex"
     AI_AGENTS = "ai_agents"

@@ -210,6 +210,7 @@ def render_page(
         "unit_1c_yandex",
     }
     reports_open = active in {
+        "wb_standard_costs",
         "unit_1c_reports",
         "unit_1c_spp_report",
         "unit_1c_target_price",
@@ -223,6 +224,7 @@ def render_page(
         return "" if allowed else " hidden"
 
     marketplace = {
+        "wb_standard_costs": ("wb", "WB", "Wildberries"),
         "analytics_sales_api": ("wb", "WB", "Wildberries"),
         "analyzer": ("wb", "WB", "Wildberries"),
         "ephemerides": ("wb", "WB", "Wildberries"),
@@ -277,6 +279,8 @@ def render_page(
         unit_1c_wb_active="active" if active == "unit_1c_wb" else "",
         unit_1c_ozon_active="active" if active == "unit_1c_ozon" else "",
         unit_1c_yandex_active="active" if active == "unit_1c_yandex" else "",
+        wb_conditions_active="active" if active == "wb_standard_costs" else "",
+        wb_conditions_hidden=hidden(visible[SectionName.REPORT_WB_CONDITIONS]),
         reports_open="",
         reports_expanded="false",
         reports_group_hidden=hidden(any(visible[item] for item in REPORT_SECTIONS)),
