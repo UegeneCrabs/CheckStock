@@ -141,8 +141,7 @@
       var panel=renderBreakdown(body,key,payload.values[key],state,payload);
       toggle.onclick=function(){panel.hidden=!panel.hidden;toggle.textContent=panel.hidden?'▸':'▾';toggle.setAttribute('aria-expanded',String(!panel.hidden));};
     });
-    document.querySelector('#period').textContent=dateText(from.value)+' — '+dateText(to.value);
-    document.querySelector('#range').textContent=dateText(from.value)+' — '+dateText(to.value);
+    document.querySelector('#period').textContent=dateText(payload.date_from)+' — '+dateText(payload.date_to);
     document.querySelector('#last-loaded').textContent=payload.last_loaded_at?'Загружено: '+new Date(payload.last_loaded_at).toLocaleString('ru-RU'):'Данные ещё не загружены';
     var selected=campaign.value; campaign.replaceChildren(new Option('Все модели и склады',''));
     (payload.campaigns||[]).forEach(function(c) { campaign.append(new Option(c.store_slug.toUpperCase()+' · '+(c.model==='FBY'?'FBO':c.model)+' · '+c.name,String(c.id))); });
@@ -153,12 +152,33 @@
   }
   async function load() {
     error.textContent=''; if(preview) { render(preview); return; }
+    var requestedFrom=from.value, requestedTo=to.value;
     var version=++loadVersion;
-    var params=new URLSearchParams({date_from:from.value,date_to:to.value});
+    var params=new URLSearchParams({date_from:requestedFrom,date_to:requestedTo});
     if(store.value) params.set('store_slug',store.value);
     if(campaign.value) params.set('campaign_id',campaign.value);
-    try { var payload=await json('/api/rbe2/report?'+params); if(version===loadVersion)render(payload); }
-    catch(e) { if(version===loadVersion)error.textContent=e.message; }
+    sessionStorage.setItem('rbe2-period',requestedFrom+'|'+requestedTo);
+    var body=document.querySelector('#metrics'), row=document.createElement('tr'), message=document.createElement('td');
+    message.colSpan=3; message.textContent='Загружаем данные за '+dateText(requestedFrom)+' — '+dateText(requestedTo)+'…';
+    row.append(message); body.replaceChildren(row);
+    document.querySelector('#period').textContent=dateText(requestedFrom)+' — '+dateText(requestedTo);
+    document.querySelector('#last-loaded').textContent='Загрузка данных…';
+    document.querySelector('#apply').disabled=true;
+    try {
+      var payload=await json('/api/rbe2/report?'+params);
+      if(version===loadVersion) {
+        if(payload.date_from!==requestedFrom || payload.date_to!==requestedTo) throw Error('Сервер вернул данные за другой период');
+        render(payload);
+      }
+    }
+    catch(e) {
+      if(version===loadVersion) {
+        error.textContent=e.message;
+        message.textContent='Не удалось загрузить данные за выбранный период';
+        document.querySelector('#last-loaded').textContent='Данные не загружены';
+      }
+    }
+    finally { if(version===loadVersion) document.querySelector('#apply').disabled=false; }
     try {
       var queue=await json('/api/rbe2/sync-status'), label=document.querySelector('#auto-status');
       if(version===loadVersion) label.textContent=queue.automatic?'Автозагрузка включена · в очереди '+queue.pending_jobs+' заданий':'Автозагрузка выключена';
@@ -184,7 +204,9 @@
   document.querySelector('#apply').onclick=load;
   store.onchange=function() { campaign.value=''; load(); }; campaign.onchange=load;
   var end=new Date(); end.setDate(end.getDate()-1); var start=new Date(end); start.setDate(end.getDate()-6);
-  from.value=preview?preview.date_from:dateKey(start); to.value=preview?preview.date_to:dateKey(end);
+  var saved=sessionStorage.getItem('rbe2-period')||'', savedDates=/^(\d{4}-\d\d-\d\d)\|(\d{4}-\d\d-\d\d)$/.exec(saved);
+  from.value=preview?preview.date_from:(savedDates&&savedDates[1]<=savedDates[2]?savedDates[1]:dateKey(start));
+  to.value=preview?preview.date_to:(savedDates&&savedDates[1]<=savedDates[2]?savedDates[2]:dateKey(end));
   if(preview) {
     store.append(new Option('TRIS','tris')); store.value='tris'; store.disabled=true; campaign.disabled=true;
     document.querySelector('#range').disabled=true; document.querySelector('#apply').disabled=true; render(preview);
