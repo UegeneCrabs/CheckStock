@@ -400,11 +400,14 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     return (
         BackgroundJob(
             standard_sync.JOB,
-            standard_sync.sync_all,
-            _fixed_delay(standard_sync.INTERVAL_SECONDS),
-            startup_delay_seconds=60,
+            standard_sync.sync_job_payload,
+            _fixed_delay(settings.wb_standard_costs.interval_seconds),
+            startup_delay_seconds=settings.wb_standard_costs.startup_delay_seconds,
             is_enabled=lambda: _job_enabled(standard_sync.JOB),
-            retry_delays=(300, 900),
+            retry_delays=(
+                settings.wb_standard_costs.retry_first_seconds,
+                settings.wb_standard_costs.retry_second_seconds,
+            ),
         ),
         BackgroundJob(
             wb_transit.JOB,

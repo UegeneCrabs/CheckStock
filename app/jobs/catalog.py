@@ -39,15 +39,6 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
     funnel = base or settings.funnel_orders_sync_enabled
     prices = settings.unit_economics_1c_price_sync_enabled
     return (
-        SyncJobDefinition(
-            "wb_standard_costs_sync",
-            "WB: сравнение ИУ и без ИУ",
-            "Загружает реализацию, хранение, тарифы, комиссии и карточки за последние 7 завершённых дней. При ошибке сохраняет предыдущий отчёт.",
-            "Первый запуск через минуту, затем каждые 4 часа",
-            base,
-            "store_marketplaces",
-            ("WB",),
-        ),
         *(
             SyncJobDefinition(
                 name=metadata.name,
@@ -371,5 +362,15 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             _interval(settings.token_check_interval_seconds),
             base,
             "stores",
+        ),
+        SyncJobDefinition(
+            "wb_standard_costs_sync",
+            "WB: сравнение ИУ и без ИУ",
+            "Загружает реализацию, хранение, тарифы, комиссии и карточки за последние 7 завершённых дней. При ошибке сохраняет предыдущий отчёт.",
+            f"Первый запуск через {settings.wb_standard_costs.startup_delay_seconds} сек., "
+            f"затем каждые {settings.wb_standard_costs.interval_seconds / 3600:g} ч.",
+            base,
+            "store_marketplaces",
+            ("WB",),
         ),
     )
