@@ -827,6 +827,7 @@ class UnitEconomics1CCabinetSettingRecord(OrmBase):
     target_drr_percent: Mapped[float] = mapped_column(Float, nullable=False, default=8, server_default="8")
     target_roi_percent: Mapped[float] = mapped_column(Float, nullable=False, default=50, server_default="50")
     target_roi_by_code: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default="{}")
+    hourly_d_coefficients: Mapped[str | None] = mapped_column(Text, nullable=True)
     buyout_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14, server_default="14")
     acceptance_coefficient: Mapped[float] = mapped_column(
         Float, nullable=False, default=0, server_default="0"
