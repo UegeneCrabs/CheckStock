@@ -64,7 +64,9 @@ async def target_price_data(request: Request):
         start, end = pricing.closed_week()
         cabinets = {item.store_slug: item for item in db.list_unit_economics_1c_cabinet_settings(stores)}
         period_metrics = economics.load_product_metrics(
-            stores, period_days=7, today=end,
+            stores,
+            period_days=7,
+            today=end,
             article=selected_article.partition(" / ")[0].strip() if selected_article else None,
         )
         catalogs = {}
@@ -110,9 +112,9 @@ async def target_price_data(request: Request):
             stores,
             start.isoformat(),
             end.isoformat(),
-            articles=tuple(sorted({
-                str(product["article"]) for products in catalogs.values() for product in products
-            })),
+            articles=tuple(
+                sorted({str(product["article"]) for products in catalogs.values() for product in products})
+            ),
             inputs_only=True,
         ):
             margin_snapshots.setdefault(
