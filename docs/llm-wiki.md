@@ -42,7 +42,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Где живёт состояние
 
-- Локально по умолчанию используется SQLite `data/checkstock.db`; при `CHECKSTOCK_DATABASE_URL` — PostgreSQL. В `docker-compose.yml` PostgreSQL хранится в томе `postgres-data`.
+- Локально по умолчанию используется SQLite `data/checkstock.db`; при `CHECKSTOCK_DATABASE_URL` — PostgreSQL. В `deploy/docker-compose.yml` PostgreSQL хранится в томе `postgres-data`.
 - Настройки окружения и значения по умолчанию определены в `app/config.py`; образец — `.env.example`. Настройки отдельных фоновых задач дополнительно хранятся в БД через `app/jobs/settings.py`.
 - Сроки и попытки автоматических загрузок хранятся в `sync_job_schedules`; история и отображаемые статусы — в `sync_job_runs` и `sync_job_states`. Они переживают перезапуск планировщика.
 - Секреты берутся из `secrets/` или путей, заданных переменными окружения. Образцы файлов — в `secrets/example/`; реальные секреты и локальные данные не коммитятся.
@@ -50,7 +50,10 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Запуск и проверка
 
-Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
+Выпуск из `master` через `dev-release`, тег, обязательный дамп PostgreSQL и
+обновление сервера описаны в [инструкции по релизам](releases.md).
+
+Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose --env-file .env -f deploy/docker-compose.yml up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
 
 Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 

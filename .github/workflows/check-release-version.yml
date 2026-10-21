@@ -1,0 +1,45 @@
+name: Check release version
+
+on:
+  push:
+    branches: [dev-release]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a higher release version
+        shell: bash
+        env:
+          PREVIOUS_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          current="$(tr -d '\r' < deploy/VERSION)"
+          [[ "$current" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "deploy/VERSION must contain MAJOR.MINOR.PATCH" >&2; exit 1;
+          }
+          if [[ "$PREVIOUS_SHA" == 0000000000000000000000000000000000000000 ]]; then
+            echo "First dev-release version: $current"
+            exit 0
+          fi
+          git cat-file -e "$PREVIOUS_SHA^{commit}" || {
+            echo "Cannot inspect previous dev-release commit" >&2; exit 1;
+          }
+          if ! git cat-file -e "$PREVIOUS_SHA:deploy/VERSION" 2>/dev/null; then
+            echo "Previous dev-release commit has no deploy/VERSION; initial version accepted"
+            exit 0
+          fi
+          previous="$(git show "$PREVIOUS_SHA:deploy/VERSION" | tr -d '\r')"
+          [[ "$previous" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "Previous VERSION is invalid" >&2; exit 1;
+          }
+          if [[ "$(printf '%s\n%s\n' "$previous" "$current" | sort -V | head -n 1)" != "$previous" || "$current" == "$previous" ]]; then
+            echo "VERSION $current must exceed previous dev-release version $previous" >&2
+            exit 1
+          fi

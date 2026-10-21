@@ -51,8 +51,8 @@ python -m app.jobs.worker
 и необходимые тома. Обычный запуск:
 
 ```shell
-docker compose up --build -d
-docker compose logs --follow app scheduler
+docker compose --env-file .env -f deploy/docker-compose.yml up --build -d
+docker compose --env-file .env -f deploy/docker-compose.yml logs --follow app scheduler
 ```
 
 При первом переходе на отдельный планировщик остановите старый `app` со

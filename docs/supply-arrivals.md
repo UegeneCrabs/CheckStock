@@ -31,7 +31,7 @@
 В работающем Docker Compose:
 
 ```sh
-docker compose exec app python scripts/sync/sync_supply_arrivals.py
+docker compose --env-file .env -f deploy/docker-compose.yml exec app python scripts/sync/sync_supply_arrivals.py
 ```
 
 Новая таблица `supply_arrivals_snapshots` создаётся штатно при старте приложения.
