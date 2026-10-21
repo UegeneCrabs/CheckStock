@@ -1,3 +1,5 @@
+name: checkstock
+
 services:
   db:
     image: postgres:17-alpine
@@ -18,7 +20,8 @@ services:
   app:
     image: paketa-app
     build:
-      context: .
+      context: ..
+      dockerfile: deploy/Dockerfile
     init: true
     restart: unless-stopped
     shm_size: 1gb
@@ -107,7 +110,7 @@ services:
       CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS: ${CHECKSTOCK_RNP_REPORT_POLL_ATTEMPTS:-18}
       CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS: ${CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS:-1}
     volumes: &app-volumes
-      - ./secrets:/app/secrets:ro
+      - ../secrets:/app/secrets:ro
       - yandex-finance-credentials:/app/finance-credentials
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
