@@ -63,6 +63,8 @@ class WarehouseTariff:
     fbw_extra: float | None = None
     fbs_base: float | None = None
     fbs_extra: float | None = None
+    fbw_coefficient: float | None = None
+    fbs_coefficient: float | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,8 @@ def normalize_sources(raw: SourceBundle) -> NormalizedSources:
                 number(t.get("boxDeliveryLiter")),
                 number(t.get("boxDeliveryMarketplaceBase")),
                 number(t.get("boxDeliveryMarketplaceLiter")),
+                number(t.get("boxDeliveryCoefExpr")),
+                number(t.get("boxDeliveryMarketplaceCoefExpr")),
             )
             for t in data["warehouseList"]
         )

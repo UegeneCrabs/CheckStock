@@ -81,7 +81,8 @@ class CostsTests(unittest.TestCase):
                 result = logistics_with_returns(
                     row, CalculatorProduct.model_validate({"details": {"buyout_percent": 80}})
                 )
-                self.assertAlmostEqual(result["reverse"], 46 + 14 * max(volume - 1, 0))
+                self.assertEqual(result["volume_source"], "stock")
+                self.assertAlmostEqual(result["reverse"], 60)
                 self.assertIsNotNone(result["total"])
 
     def test_costs_per_unit_and_storage_per_unit_day(self):

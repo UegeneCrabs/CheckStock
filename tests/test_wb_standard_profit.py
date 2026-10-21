@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.dto.wb_standard_costs import ReportRow, Snapshot
+from app.dto.wb_standard_costs import Coverage, ProductEconomics, ReportRow, Snapshot
 from app.economics.wb.standard_profit import compare, enrich
 from app.economics.wb.standard_sources import calculator_product
 
@@ -86,10 +86,12 @@ class ProfitTest(unittest.TestCase):
         self.assertEqual(standard["storage_total"], 0)
 
     def test_no_sales_uses_ninety_days(self):
+        self.product["advertising"]["net_orders_count"] = 0
         standard, _, _ = self.compare({**self.row, "scheme": "FBW", "sales": 0}, self.product)
         self.assertEqual(standard["storage_total"], 90)
 
     def test_no_sales_without_daily_rate_remains_unknown(self):
+        self.product["advertising"]["net_orders_count"] = 0
         standard, _, _ = self.compare(
             {**self.row, "scheme": "FBW", "sales": 0, "storage_unit_day": None}, self.product
         )
@@ -98,7 +100,8 @@ class ProfitTest(unittest.TestCase):
     def setUp(self):
         self.product = dict(
             price=dict(current=1000, with_spp=900),
-            advertising=dict(spend_per_order=30, coverage=dict(complete=True)),
+            advertising=dict(spend_per_order=30, net_orders_count=10, coverage=dict(complete=True)),
+            economics_7d=dict(turnover_coverage=dict(complete=True)),
             details=dict(
                 purchase_cost=400,
                 buyout_percent=100,
@@ -143,7 +146,16 @@ class ProfitTest(unittest.TestCase):
         cases = json.loads((Path(__file__).parent / "fixtures/wb_advertising_parity.json").read_text())
         for case in cases:
             with self.subTest(case=case["name"]):
-                standard, current, delta = self.compare(self.row, case["product"])
+                product = calculator_product(case["product"])
+                product = product.model_copy(
+                    update={
+                        "economics_7d": ProductEconomics(
+                            net_orders_count=10, turnover_coverage=Coverage(complete=True)
+                        )
+                    }
+                )
+                result = compare(ReportRow.model_validate(self.row), product)
+                standard, current, delta = result.standard, result.current, result.delta
                 for scenario, prefix in ((standard, "standard"), (current, "current")):
                     self.assertEqual(scenario.advertising, case["advertising"])
                     self.assertEqual(scenario.margin, case[prefix + "_margin"])
@@ -200,4 +212,18 @@ class ProfitTest(unittest.TestCase):
         self.row["volume"] = 2.5
         self.assertEqual(self.compare(self.row, self.product)[0]["logistics"], 147)
         self.row["volume"] = 0.5
-        self.assertEqual(self.compare(self.row, self.product)[0]["logistics"], 126)
+        self.assertEqual(self.compare(self.row, self.product)[0]["logistics"], 109)
+
+    def test_storage_uses_funnel_net_orders_not_financial_sales(self):
+        self.product["advertising"]["net_orders_count"] = 25
+        standard, _, _ = self.compare({**self.row, "scheme": "FBW", "sales": 1}, self.product)
+        self.assertEqual(standard.storage_total, 4)
+
+    def test_missing_or_partial_funnel_is_not_zero(self):
+        for orders, complete in ((None, True), (0, False), (25, False), (-1, True)):
+            with self.subTest(orders=orders, complete=complete):
+                self.product["advertising"]["net_orders_count"] = orders
+                self.product["economics_7d"]["turnover_coverage"]["complete"] = complete
+                standard, _, _ = self.compare({**self.row, "scheme": "FBW"}, self.product)
+                self.assertIsNone(standard.storage_total)
+                self.assertIsNone(standard.margin)

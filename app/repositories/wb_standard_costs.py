@@ -28,8 +28,8 @@ def load(store: str) -> Snapshot | None:
             "SELECT payload FROM wb_standard_costs_snapshots WHERE store_slug=?", (store,)
         ).fetchone()
     snapshot = json.loads(row["payload"]) if row else None
-    if snapshot and snapshot.get("version", 0) < 5:
-        # Recover precision from saved API responses, without network calls or writes.
+    if snapshot and snapshot.get("version", 0) < 6:
+        # Recalculate volume tariffs from saved API responses, without network calls or writes.
         from app.economics.wb.standard_costs import build
 
         with get_connection() as conn:

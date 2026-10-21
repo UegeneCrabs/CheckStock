@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 from app.dto.wb_standard_costs import (
     CalculationInputs,
+    CalculatorEvidence,
     CalculatorProduct,
     CalculatorValues,
     Comparison,
@@ -147,7 +148,7 @@ def compare(row: ReportRow, product: CalculatorProduct | None) -> Comparison:
     current = calculate_scenario(
         costs, retail=retail, client=client, tax_system=tax_system, days=days, shared_missing=shared_missing
     )
-    storage_calculation, storage_missing = storage_per_unit(row)
+    storage_calculation, storage_missing = storage_per_unit(row, product.economics_7d)
     standard_costs = costs.model_copy(
         update={
             "commission": percent(retail, row.commission_rate),
@@ -231,9 +232,28 @@ def enrich(store: str, report: Snapshot) -> Snapshot:
             reason = ("Несколько размеров: требуется однозначное сопоставление",)
             standard = standard.model_copy(update={"missing": standard.missing + reason})
             current = current.model_copy(update={"missing": current.missing + reason})
+        evidence = CalculatorEvidence(
+            vat_value=details.vat_value if details else None,
+            tax_value=(details.osno_value if details.tax_system == "osno" else details.usn_value)
+            if details
+            else None,
+            commission_value=details.commission_value if details else None,
+            commission_percent=details.commission_percent if details else None,
+            delivery_with_returns=details.delivery_with_returns if details else None,
+            logistics=details.logistics if details else None,
+            storage_sum=details.storage_sum if details else None,
+            storage_daily=product.product_settings.storage_wb_rub if product else None,
+            storage_days=details.storage_days if details else None,
+            advertising_unit=product.advertising.spend_per_order if product else None,
+            advertising_spend=product.advertising.spend if product else None,
+            advertising_orders=product.advertising.orders if product else None,
+            advertising_buyout=product.advertising.buyout_percent if product else None,
+            advertising_coverage=product.advertising.coverage if product else None,
+        )
         enriched.append(
             row.model_copy(
                 update={
+                    "calculator_evidence": evidence,
                     "managers": tuple(managers),
                     "image_url": image_url,
                     "calculator_turnover": calculator_turnover,

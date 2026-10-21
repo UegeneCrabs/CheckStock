@@ -37,11 +37,15 @@ def calculator_product(source: dict) -> CalculatorProduct:
             snapshot_date=price.get("snapshot_date"),
         ),
         advertising=ProductAdvertising(
+            spend=number(ads.get("spend")),
+            orders=number(ads.get("orders")),
+            buyout_percent=number(ads.get("buyout_percent")),
             spend_per_order=number(ads.get("spend_per_order")),
             coverage=Coverage.model_validate(ads["coverage"]) if ads.get("coverage") else None,
         ),
         product_settings=ProductSettings(storage_wb_rub=number(settings.get("storage_wb_rub"))),
         economics_7d=ProductEconomics(
+            net_orders_count=number(ads.get("net_orders_count")),
             turnover=number(economics.get("turnover")),
             turnover_coverage=Coverage.model_validate(economics["turnover_coverage"])
             if economics.get("turnover_coverage")

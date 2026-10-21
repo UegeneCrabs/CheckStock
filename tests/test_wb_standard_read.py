@@ -29,13 +29,13 @@ class ReadTests(unittest.TestCase):
 
         conn = MagicMock()
         conn.execute.return_value.fetchone.side_effect = [
-            {"payload": json.dumps({"version": 3})},
+            {"payload": json.dumps({"version": 5})},
             {"payload": json.dumps(fixture())},
         ]
         with patch.object(repository, "get_connection") as connection:
             connection.return_value.__enter__.return_value = conn
             result = repository.load("tris")
-        self.assertEqual(result["version"], 5)
+        self.assertEqual(result["version"], 6)
         self.assertEqual(len(result["rows"]), 1)
         self.assertTrue(all(call.args[0].startswith("SELECT") for call in conn.execute.call_args_list))
         conn.commit.assert_not_called()

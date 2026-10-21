@@ -54,6 +54,12 @@ class Scenario(CostValues, MarginRoi):
     total_cost: float | None = None
 
 
+class ReturnVolumeTerm(ReportModel):
+    volume: float | None
+    quantity: float
+    rate: float | None
+
+
 class LogisticsReturns(ReportModel):
     forward: float | None
     reverse: float | None
@@ -65,12 +71,16 @@ class LogisticsReturns(ReportModel):
     return_base: float
     return_liter: float
     return_source: str
+    volume_source: Literal["stock", "card"] = "card"
+    volume_terms: tuple[ReturnVolumeTerm, ...] = Field(default_factory=tuple)
     extra_forward: float | None
     reverse_per_buyout: float | None
 
 
 class StorageCalculation(ReportModel):
-    basis: str = "weekly_sales"
+    basis: str = "funnel_net_orders"
+    net_orders_count: float | None = None
+    orders_complete: bool = False
     days: int | None = None
     daily_rate: float | None = None
     value: float | None = None
@@ -85,6 +95,8 @@ class DeliveryTerm(ReportModel):
     base: float | None
     extra: float | None
     rate: float | None
+    coefficient: float | None = None
+    volume_base: float | None = None
 
 
 class LogisticsCalculation(ReportModel):
@@ -118,7 +130,25 @@ class CalculationInputs(ReportModel):
     client_price: float | None = None
 
 
+class CalculatorEvidence(ReportModel):
+    vat_value: float | None = None
+    tax_value: float | None = None
+    commission_value: float | None = None
+    commission_percent: float | None = None
+    delivery_with_returns: float | None = None
+    logistics: float | None = None
+    storage_sum: float | None = None
+    storage_daily: float | None = None
+    storage_days: float | None = None
+    advertising_unit: float | None = None
+    advertising_spend: float | None = None
+    advertising_orders: float | None = None
+    advertising_buyout: float | None = None
+    advertising_coverage: Coverage | None = None
+
+
 class ReportRow(ReportModel):
+    calculator_evidence: CalculatorEvidence = Field(default_factory=CalculatorEvidence)
     article: str = ""
     scheme: str = ""
     name: str = ""
@@ -249,6 +279,9 @@ class ProductPrice(ReportModel):
 
 
 class ProductAdvertising(ReportModel):
+    spend: float | None = None
+    orders: float | None = None
+    buyout_percent: float | None = None
     spend_per_order: float | None = None
     coverage: Coverage | None = None
 
@@ -258,6 +291,7 @@ class ProductSettings(ReportModel):
 
 
 class ProductEconomics(ReportModel):
+    net_orders_count: float | None = None
     turnover: float | None = None
     turnover_coverage: Coverage | None = None
 

@@ -11,6 +11,7 @@ from app.dto.wb_standard_costs import (
     SourceBundle,
     StorageDetail,
 )
+from app.economics.wb.standard_delivery_tariffs import volume_tariff
 from app.economics.wb.standard_numbers import norm as norm
 from app.economics.wb.standard_numbers import number as number
 from app.economics.wb.standard_working import RowAccumulator, RowDraft
@@ -34,7 +35,12 @@ def cost(tariff: WarehouseTariff, scheme: str, volume: float | None) -> float | 
     if volume is None or volume <= 0 or base is None or base < 0:
         return None
     if volume <= 1:
-        return base
+        coefficient = tariff.fbs_coefficient if scheme == "FBS" else tariff.fbw_coefficient
+        return (
+            volume_tariff(volume) * coefficient / 100
+            if coefficient is not None and coefficient >= 0
+            else None
+        )
     return base + (volume - 1) * extra if extra is not None and extra >= 0 else None
 
 
@@ -149,6 +155,8 @@ def build(raw: SourceBundle) -> Snapshot:
                     base=tariff.fbs_base if scheme == "FBS" else tariff.fbw_base,
                     extra=tariff.fbs_extra if scheme == "FBS" else tariff.fbw_extra,
                     rate=delivery,
+                    coefficient=tariff.fbs_coefficient if scheme == "FBS" else tariff.fbw_coefficient,
+                    volume_base=volume_tariff(row.volume),
                 )
             )
             acc.sales_delivery_weight += quantity
@@ -202,6 +210,8 @@ def build(raw: SourceBundle) -> Snapshot:
                 base=tariff.fbw_base,
                 extra=tariff.fbw_extra,
                 rate=delivery,
+                coefficient=tariff.fbw_coefficient,
+                volume_base=volume_tariff(volume),
             )
         )
         row.stock_days += qty
@@ -234,7 +244,16 @@ def build(raw: SourceBundle) -> Snapshot:
         terms = acc.stock_terms if acc.delivery_weight else acc.sales_terms
         grouped = {}
         for term in terms:
-            key = (term.warehouse, term.tariff, term.volume, term.base, term.extra, term.rate)
+            key = (
+                term.warehouse,
+                term.tariff,
+                term.volume,
+                term.base,
+                term.extra,
+                term.rate,
+                term.coefficient,
+                term.volume_base,
+            )
             if key not in grouped:
                 grouped[key] = term.model_copy(update={"quantity": 0})
             grouped[key] = grouped[key].model_copy(update={"quantity": grouped[key].quantity + term.quantity})
@@ -290,7 +309,7 @@ def build(raw: SourceBundle) -> Snapshot:
         row.complete = not row.missing
         result.append(ReportRow.model_validate(row.model_dump(exclude_unset=True)))
     return Snapshot(
-        version=5,
+        version=6,
         date_from=raw.date_from,
         date_to=raw.date_to,
         updated_at=raw.updated_at,
