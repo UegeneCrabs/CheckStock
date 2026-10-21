@@ -44,6 +44,7 @@ from app.dto.stock import (
     StockQuantityQuery,
     TransitActionResult,
 )
+from app.dto.supply_arrivals import SupplyStockCommand, SupplyStockState
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
 from app.dto.wb_standard_costs import PublishSnapshot
 
@@ -71,6 +72,12 @@ class WbStandardCostsUnitOfWork(Protocol):
 
 class WbStandardCostsUnitOfWorkFactory(Protocol):
     def __call__(self) -> WbStandardCostsUnitOfWork: ...
+
+
+class SupplyStockUnitOfWork(Protocol):
+    async def states(self, source_key: str) -> tuple[SupplyStockState, ...]: ...
+
+    async def save(self, command: SupplyStockCommand) -> SupplyStockState: ...
 
 
 class HourlyPriceWriter(Protocol):

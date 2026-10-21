@@ -158,3 +158,39 @@ class InactiveCalculatorLoaderTests(unittest.TestCase):
         self.assertIsNotNone(row.current_profit.roi)
         self.assertIsNotNone(row.profit.margin)
         self.assertIsNotNone(row.profit.roi)
+
+    def test_detail_reads_are_scoped_to_selected_article(self):
+        with (
+            patch.object(web.unit_economics_1c, "load_product_metrics", return_value={}) as metrics,
+            patch.object(web.db, "get_unit_economics_1c_funnel_daily_order_rows", return_value=[]) as orders,
+            patch.object(web.db, "get_unit_economics_1c_daily_price_history", return_value=[]),
+            patch.object(web.db, "get_daily_stock_history", return_value=[]) as stocks,
+        ):
+            products, _ = web.load_wb_calculator_products(
+                ("tris",), self.today, 7, self.start, self.end,
+                include_history=True, detail_store="tris", detail_article=self.article,
+            )
+        self.assertEqual([p["article"] for p in products], [self.article])
+        self.assertEqual(len(metrics.call_args_list), 3)
+        for call in metrics.call_args_list:
+            self.assertEqual(call.kwargs["article"], self.article)
+        self.assertEqual(orders.call_args.kwargs["article"], self.article)
+        self.assertEqual(stocks.call_args.kwargs["article"], self.article)
+
+    def test_saved_today_snapshot_preserves_results_without_recalculation(self):
+        snapshots = []
+        calculate = web.unit_economics_1c_history.calculate_snapshot_row
+        def capture(**kwargs):
+            result = calculate(**kwargs)
+            snapshots.append(result)
+            return result
+        with patch.object(web.unit_economics_1c_history, "calculate_snapshot_row", side_effect=capture):
+            before = self.load(include_inactive=True)
+        self.assertEqual(len(snapshots), 1)
+        with (
+            patch.object(web.db, "get_unit_economics_1c_daily_margin_snapshots", return_value=snapshots),
+            patch.object(web.unit_economics_1c_history, "calculate_snapshot_row") as recalculate,
+        ):
+            after = self.load(include_inactive=True)
+        recalculate.assert_not_called()
+        self.assertEqual(before, after)

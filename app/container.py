@@ -1,11 +1,13 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.access.security import Pbkdf2PasswordService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.stock import StockMovementService
+from app.application.supply_arrival_stock import SupplyArrivalStockService
 from app.application.wb_standard_costs import WbStandardCostsService
 from app.config import settings
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
@@ -15,6 +17,7 @@ from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
+from app.infrastructure.supply_arrival_stock_repository import SupplyArrivalStockRepository
 from app.infrastructure.wb_hourly_price_repository import (
     SqlAlchemyDailyPriceCloser,
     SqlAlchemyHourlyPriceWriter,
@@ -23,6 +26,7 @@ from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_ca
 from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
+from app.stock.supply_arrivals import source_key as supply_arrivals_source_key
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 from app.wb.hourly_prices import (
@@ -30,6 +34,9 @@ from app.wb.hourly_prices import (
     seller_prices_from_payload,
     storefront_result_from_payload,
 )
+
+if TYPE_CHECKING:
+    from app.infrastructure.async_resources import AsyncResources
 
 
 def _wb_storefront_products(nm_ids: tuple[str, ...]) -> WbStorefrontResult:
@@ -88,3 +95,11 @@ class ApplicationContainer:
     def _wb_standard_costs_unit_of_work(self) -> SqlAlchemyWbStandardCostsUnitOfWork:
         database = database_for_path(self._database_path())
         return SqlAlchemyWbStandardCostsUnitOfWork(database.session_factory)
+
+
+def supply_arrival_stock_service(resources: "AsyncResources") -> SupplyArrivalStockService:
+    return SupplyArrivalStockService(
+        SupplyArrivalStockRepository(resources.database),
+        supply_arrivals_source_key(),
+        lambda: datetime.now(UTC),
+    )

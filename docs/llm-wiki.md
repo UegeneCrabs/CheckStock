@@ -14,14 +14,17 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | URL, права и обработка запроса | `app/web/routers/`, `app/web/middleware.py`, `app/web/dependencies.py` |
 | Пользователи, сессии и удаление прежней матрицы доступа | `app/access/authentication.py`, `app/access/resources.py`, `app/repositories/identity_migration.py`, [контракт и миграция](authentication.md) |
 | Прикладной сценарий складского изменения | `app/application/`, `app/infrastructure/stock_repository.py`, [контракт транзакций](f03-stock-transactions.md) |
+| Расписание поставок и отметка «Поставлена на сток» | `app/application/supply_arrival_stock.py`, `app/infrastructure/supply_arrival_stock_repository.py`, `static/stock/supply-arrivals.js`, [хранение, ID и API](supply-arrivals.md#отметка-поставлена-на-сток) |
 | SQL, снимки и старые read-модели | `app/repositories/`, `app/db.py` |
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
 | Автоматическое расписание, повторы и восстановление | `app/jobs/worker.py`, `app/jobs/scheduling.py`, `app/repositories/job_schedules.py`, [контракт планировщика](background-jobs.md) |
 | Локальный запуск сайта и загрузчика одной командой | `run.py`, `app/development.py`, `app/infrastructure/process_job.py`, [запуск и остановка](background-jobs.md#запуск) |
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
+| Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
 | Расходы без ИУ WB | `app/application/wb_standard_costs.py`, `app/infrastructure/wb_standard_costs_repository.py`, `app/economics/wb/catalogue.py`, `app/dto/wb_standard_costs.py`, `app/economics/wb/standard_sources.py`, `app/economics/wb/standard_costs.py`, `app/economics/wb/standard_sync.py`, `app/wb/standard_costs.py`, `app/wb/standard_costs_sources.py`, `app/economics/wb/standard_logistics.py`, `app/economics/wb/standard_storage.py`, `app/web/routers/wb_standard_costs.py`, [контракт](wb-standard-costs.md) |
+| Коэффициент D по часам для каждого кабинета WB | `app/analytics/analyzer.py`, `app/dto/unit_economics_1c.py`, `static/economics/wb/cabinet-settings.js`, [значения, время и сохранение](wb-cabinet-settings.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
 | Финансовый отчёт Яндекс Маркета | `app/application/finance.py`, `app/finance/`, `app/infrastructure/finance_*`, [финансовый учёт](yandex-finance.md), [ТЗ](yandex-finance-spec.md) |
 | Веб-интерфейс | `templates/`, `static/`, соответствующий файл в `app/web/routers/` |

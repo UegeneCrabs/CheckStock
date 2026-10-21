@@ -169,7 +169,7 @@ def _load(stores, user, *, article="", overrides=None, scenario=None, today=None
         stores, user, start, end, today=today, article=article, for_target_price=True,
         sources=sources, collected=collected,
     )
-    caches = {store: economics.context(store, sources=sources) for store in stores}
+    caches = {store: economics.context(store, sources=sources, include_day_inputs=False) for store in stores}
     histories = {store: weekly_history(store, today, sources=sources) for store in stores}
     rows = []
     for row in report_rows:

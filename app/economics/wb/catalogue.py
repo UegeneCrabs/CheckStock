@@ -869,14 +869,20 @@ def load_wb_calculator_products(
         store_slugs,
         period_days=period_days,
         today=closed_period_to,
+        article=_nm_id(detail_article) if detail_article else None,
     )
     current_metrics = unit_economics_1c.load_product_metrics(
         store_slugs,
         period_days=1,
         today=today,
+        article=_nm_id(detail_article) if detail_article else None,
     )
     chart_metrics = (
-        unit_economics_1c.load_product_metrics(store_slugs, period_days=21) if include_history else {}
+        unit_economics_1c.load_product_metrics(
+            store_slugs, period_days=21, article=_nm_id(detail_article) if detail_article else None
+        )
+        if include_history
+        else {}
     )
     chart_prices = (
         {
@@ -890,6 +896,7 @@ def load_wb_calculator_products(
         store_slugs,
         history_from.isoformat(),
         today.isoformat(),
+        article=_nm_id(detail_article) if detail_article else None,
     )
     source_coverage = wb_days(store_slugs, history_from.isoformat(), today.isoformat())
     advertising_days_by_store = {store: days["advertising"] for store, days in source_coverage.items()}
@@ -989,6 +996,7 @@ def load_wb_calculator_products(
             "WB",
             (history_to - timedelta(days=20)).isoformat(),
             history_to.isoformat(),
+            article=detail_article or None,
         )
         if include_history
         else []
@@ -1047,16 +1055,20 @@ def load_wb_calculator_products(
                 cabinet.default_buyout_percent,
             )
             product_margin_snapshots = margin_snapshots_by_product.get((store_slug, article)) or {}
-            live_snapshot = unit_economics_1c_history.calculate_snapshot_row(
-                snapshot_day=today,
-                store_slug=store_slug,
-                article=article,
-                price_snapshot=prices.get((store_slug, article)) or {},
-                product_metrics=current_product_metrics,
-                product_settings=effective_product_settings,
-                product_reference=reference,
-                cabinet=cabinet,
-                captured_at=datetime.now(UTC).isoformat(),
+            live_snapshot = (
+                unit_economics_1c_history.calculate_snapshot_row(
+                    snapshot_day=today,
+                    store_slug=store_slug,
+                    article=article,
+                    price_snapshot=prices.get((store_slug, article)) or {},
+                    product_metrics=current_product_metrics,
+                    product_settings=effective_product_settings,
+                    product_reference=reference,
+                    cabinet=cabinet,
+                    captured_at=datetime.now(UTC).isoformat(),
+                )
+                if today.isoformat() not in product_margin_snapshots
+                else None
             )
             first_sale_day = _optional_day(sales_starts.get((store_slug, nm_id)))
             turnover_coverage_from = closed_period_from

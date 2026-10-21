@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, FiniteFloat, field_validator
 
+from app.core.constants import WB_ANALYZER
 from app.dto.common import DtoModel
 
 TargetRoiCode = Literal["A", "B", "C", "D", "F", "NEW", "U"]
@@ -29,7 +30,35 @@ class UnitEconomics1CTargetRoiValues(DtoModel):
         return {**DEFAULT_TARGET_ROI_BY_CODE, **values}
 
 
-class UnitEconomics1CCabinetValues(UnitEconomics1CTargetRoiValues):
+class WbHourlyDCoefficient(DtoModel):
+    hour: int = Field(ge=WB_ANALYZER.first_hour, le=23, strict=True)
+    value: float = Field(ge=0, le=WB_ANALYZER.max_d, allow_inf_nan=False)
+
+
+class WbHourlyDValues(DtoModel):
+    hourly_d_coefficients: tuple[WbHourlyDCoefficient, ...] = Field(
+        default_factory=lambda: tuple(
+            WbHourlyDCoefficient(hour=hour, value=value)
+            for hour, value in enumerate(WB_ANALYZER.hourly_d, start=WB_ANALYZER.first_hour)
+        ),
+        min_length=len(WB_ANALYZER.hourly_d),
+        max_length=len(WB_ANALYZER.hourly_d),
+    )
+
+    @field_validator("hourly_d_coefficients")
+    @classmethod
+    def complete_hours(cls, values: tuple[WbHourlyDCoefficient, ...]) -> tuple[WbHourlyDCoefficient, ...]:
+        if len({item.hour for item in values}) != len(WB_ANALYZER.hourly_d):
+            raise ValueError("Each hour from 8 to 23 must occur exactly once")
+        return tuple(sorted(values, key=lambda item: item.hour))
+
+    def coefficient_at_hour(self, hour: int) -> float:
+        return next(
+            (item.value for item in self.hourly_d_coefficients if item.hour == hour), WB_ANALYZER.fallback_d
+        )
+
+
+class UnitEconomics1CCabinetValues(UnitEconomics1CTargetRoiValues, WbHourlyDValues):
     target_drr_percent: float = Field(default=8, ge=0, le=100)
     target_roi_percent: float = Field(default=50, ge=0, le=1_000_000)
     buyout_period_days: int = Field(default=14, ge=1, le=29)
@@ -48,7 +77,7 @@ class UnitEconomics1CCabinetSettingsRequest(UnitEconomics1CCabinetValues):
     pass
 
 
-class UnitEconomics1CCabinetSettingsWebRequest(UnitEconomics1CTargetRoiValues):
+class UnitEconomics1CCabinetSettingsWebRequest(UnitEconomics1CTargetRoiValues, WbHourlyDValues):
     target_drr_percent: float = Field(default=8, ge=0, le=100)
     target_roi_percent: float = Field(default=50, ge=0, le=1_000_000)
     buyout_period_days: int = Field(default=14, ge=1, le=29)

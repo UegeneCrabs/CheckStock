@@ -37,6 +37,39 @@ class WindowsProcessConfig:
 WINDOWS_PROCESS: Final = WindowsProcessConfig()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WbAnalyzerConstants:
+    first_hour: int = 8
+    hourly_d: tuple[float, ...] = (
+        0.18,
+        0.23,
+        0.30,
+        0.36,
+        0.42,
+        0.48,
+        0.54,
+        0.60,
+        0.66,
+        0.71,
+        0.76,
+        0.81,
+        0.87,
+        0.92,
+        0.96,
+        1.00,
+    )
+    fallback_d: float = 1.0
+    max_d: float = 1_000_000
+
+
+WB_ANALYZER: Final = WbAnalyzerConstants()
+
+
+class SupplyStockAction(StrEnum):
+    MARK = "supply_arrival_stock_mark"
+    UNMARK = "supply_arrival_stock_unmark"
+
+
 class Marketplace(StrEnum):
     WB = "WB"
     OZON = "OZON"

@@ -495,12 +495,15 @@ def get_funnel_daily_order_rows(
     store_slugs: tuple[str, ...],
     date_from: str,
     date_to: str,
+    *,
+    article: str | None = None,
 ) -> list[dict]:
     """Return raw WB funnel orderCount and orderSum values by product and day."""
 
     if not store_slugs:
         return []
     placeholders = ", ".join("?" for _ in store_slugs)
+    article_filter = " AND article=?" if article is not None else ""
     conn = get_connection()
     rows = conn.execute(
         f"""
@@ -514,20 +517,22 @@ def get_funnel_daily_order_rows(
          WHERE store_slug IN ({placeholders})
            AND day>=? AND day<=?
            AND source_version>=3
+           {article_filter}
          ORDER BY store_slug, article, day
         """,
-        (*store_slugs, date_from, date_to),
+        (*store_slugs, date_from, date_to, *((article,) if article is not None else ())),
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
 
-def get_funnel_product_metrics(store_slugs: tuple[str, ...]) -> list[dict]:
+def get_funnel_product_metrics(store_slugs: tuple[str, ...], *, article: str | None = None) -> list[dict]:
     """Return the latest persisted seven-day funnel metrics by product."""
 
     if not store_slugs:
         return []
     placeholders = ", ".join("?" for _ in store_slugs)
+    article_filter = " AND article=?" if article is not None else ""
     conn = get_connection()
     rows = conn.execute(
         f"""
@@ -539,9 +544,10 @@ def get_funnel_product_metrics(store_slugs: tuple[str, ...]) -> list[dict]:
           FROM wb_funnel_product_metrics
          WHERE store_slug IN ({placeholders})
            AND source_version>=2
+           {article_filter}
          ORDER BY store_slug, article
         """,
-        store_slugs,
+        (*store_slugs, *((article,) if article is not None else ())),
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -633,6 +639,9 @@ def get_cabinet_settings(store_slug: str) -> UnitEconomics1CCabinetSettings:
         return UnitEconomics1CCabinetSettings(store_slug=store_slug)
     payload = dict(row)
     payload["target_roi_by_code"] = json.loads(payload.get("target_roi_by_code") or "{}")
+    hourly_d = payload.pop("hourly_d_coefficients", None)
+    if hourly_d is not None:
+        payload["hourly_d_coefficients"] = json.loads(hourly_d)
     return UnitEconomics1CCabinetSettings.model_validate(payload)
 
 
@@ -649,11 +658,19 @@ def save_cabinet_settings(
     updated_by_name: str,
 ) -> UnitEconomics1CCabinetSettings:
     payload = values.model_dump(mode="python")
-    for field in ("default_buyout_percent", "target_drr_percent", "target_roi_percent", "target_roi_by_code"):
+    for field in (
+        "default_buyout_percent",
+        "target_drr_percent",
+        "target_roi_percent",
+        "target_roi_by_code",
+        "hourly_d_coefficients",
+    ):
         if field not in values.model_fields_set:
             payload.pop(field, None)
     if "target_roi_by_code" in payload:
         payload["target_roi_by_code"] = json.dumps(payload["target_roi_by_code"], allow_nan=False)
+    if "hourly_d_coefficients" in payload:
+        payload["hourly_d_coefficients"] = json.dumps(payload["hourly_d_coefficients"], allow_nan=False)
     columns = tuple(payload)
     with WRITE_LOCK:
         conn = get_connection()
@@ -1155,10 +1172,13 @@ def replace_daily_advertising(
     return len(rows)
 
 
-def get_daily_advertising(store_slugs: tuple[str, ...], date_from: str, date_to: str) -> list[dict]:
+def get_daily_advertising(
+    store_slugs: tuple[str, ...], date_from: str, date_to: str, *, article: str | None = None
+) -> list[dict]:
     if not store_slugs:
         return []
     placeholders = ", ".join("?" for _ in store_slugs)
+    article_filter = " AND nm_id=?" if article is not None else ""
     conn = get_connection()
     rows = conn.execute(
         f"""
@@ -1167,9 +1187,10 @@ def get_daily_advertising(store_slugs: tuple[str, ...], date_from: str, date_to:
          WHERE store_slug IN ({placeholders})
            AND marketplace='WB'
            AND day>=? AND day<=?
+           {article_filter}
          ORDER BY store_slug, nm_id, day
         """,
-        (*store_slugs, date_from, date_to),
+        (*store_slugs, date_from, date_to, *((article,) if article is not None else ())),
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]

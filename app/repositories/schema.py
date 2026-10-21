@@ -341,6 +341,9 @@ def _migrate_unit_economics_1c_cabinet_settings(database: Database) -> None:
                 f"ALTER TABLE {table_name} ADD COLUMN target_roi_by_code TEXT NOT NULL DEFAULT '{{}}'"
             )
             columns.add("target_roi_by_code")
+        if columns and "hourly_d_coefficients" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN hourly_d_coefficients TEXT")
+            columns.add("hourly_d_coefficients")
         if columns and "default_buyout_percent" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN default_buyout_percent FLOAT")
             columns.add("default_buyout_percent")

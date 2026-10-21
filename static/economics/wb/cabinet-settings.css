@@ -162,6 +162,20 @@
 .ue1cs-input-wrap select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
 .ue1cs-input-wrap input[aria-invalid='true'] { border-color: #c92a3a; }
 .ue1cs-field-warning { color: #c92a3a; font-size: 12px; line-height: 1.4; }
+.ue1cs-hourly-d { grid-column: 1 / -1; }
+.ue1cs-hourly-d table { width: 100%; max-width: 560px; border-collapse: collapse; }
+.ue1cs-hourly-d th, .ue1cs-hourly-d td { padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.ue1cs-hourly-d th { font-size: 13px; font-weight: 600; }
+.ue1cs-hourly-d td { width: 65%; }
+.ue1cs-hourly-d .ue1cs-input-wrap input { height: 34px; }
+.ue1cs-hourly-d .ue1cs-field > span:first-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
 .ue1cs-input-wrap b { position: absolute; right: 12px; color: var(--text-muted); font-size: 12px; pointer-events: none; }
 .ue1cs-card-foot {
     display: flex;
