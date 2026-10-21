@@ -178,6 +178,50 @@ def compare(row: ReportRow, product: CalculatorProduct | None) -> Comparison:
     return Comparison(standard, current, delta, logistics_returns, storage_calculation)
 
 
+def calculation_inputs(product: CalculatorProduct | None) -> CalculationInputs:
+    """Expose the same valid settings used by the scenario calculation."""
+    details = product.details if product else None
+    if product is None or "Не заполнены настройки кабинета WB" not in product.data_errors:
+        calculation_inputs = CalculationInputs(
+            acquiring=details.acquiring if details else None,
+            team_commission_percent=details.team_commission_percent if details else None,
+            vat_percent=details.vat_percent if details else None,
+            usn_percent=details.usn_percent if details else None,
+            osno_percent=details.osno_percent if details else None,
+            tax_system=details.tax_system if details and "tax_system" in details.model_fields_set else None,
+        )
+    else:
+        calculation_inputs = CalculationInputs()
+    calculation_inputs = calculation_inputs.model_copy(
+        update={"client_price": product.price.with_spp if product else None}
+    )
+    return calculation_inputs
+
+
+def calculator_evidence(product: CalculatorProduct | None) -> CalculatorEvidence:
+    """Preserve calculator source values for explanations without recalculating them."""
+    details = product.details if product else None
+    evidence = CalculatorEvidence(
+        vat_value=details.vat_value if details else None,
+        tax_value=(details.osno_value if details.tax_system == "osno" else details.usn_value)
+        if details
+        else None,
+        commission_value=details.commission_value if details else None,
+        commission_percent=details.commission_percent if details else None,
+        delivery_with_returns=details.delivery_with_returns if details else None,
+        logistics=details.logistics if details else None,
+        storage_sum=details.storage_sum if details else None,
+        storage_daily=product.product_settings.storage_wb_rub if product else None,
+        storage_days=details.storage_days if details else None,
+        advertising_unit=product.advertising.spend_per_order if product else None,
+        advertising_spend=product.advertising.spend if product else None,
+        advertising_orders=product.advertising.orders if product else None,
+        advertising_buyout=product.advertising.buyout_percent if product else None,
+        advertising_coverage=product.advertising.coverage if product else None,
+    )
+    return evidence
+
+
 def enrich(store: str, report: Snapshot) -> Snapshot:
     from app.core.domain import MOSCOW_TIMEZONE
     from app.economics.wb.catalogue import load_wb_calculator_products
@@ -211,49 +255,14 @@ def enrich(store: str, report: Snapshot) -> Snapshot:
         )
         comparison = compare(row, product)
         standard, current = comparison.standard, comparison.current
-        details = product.details if product else None
-        if product is None or "Не заполнены настройки кабинета WB" not in product.data_errors:
-            calculation_inputs = CalculationInputs(
-                acquiring=details.acquiring if details else None,
-                team_commission_percent=details.team_commission_percent if details else None,
-                vat_percent=details.vat_percent if details else None,
-                usn_percent=details.usn_percent if details else None,
-                osno_percent=details.osno_percent if details else None,
-                tax_system=details.tax_system
-                if details and "tax_system" in details.model_fields_set
-                else None,
-            )
-        else:
-            calculation_inputs = CalculationInputs()
-        calculation_inputs = calculation_inputs.model_copy(
-            update={"client_price": product.price.with_spp if product else None}
-        )
         if len(matches) > 1:
             reason = ("Несколько размеров: требуется однозначное сопоставление",)
             standard = standard.model_copy(update={"missing": standard.missing + reason})
             current = current.model_copy(update={"missing": current.missing + reason})
-        evidence = CalculatorEvidence(
-            vat_value=details.vat_value if details else None,
-            tax_value=(details.osno_value if details.tax_system == "osno" else details.usn_value)
-            if details
-            else None,
-            commission_value=details.commission_value if details else None,
-            commission_percent=details.commission_percent if details else None,
-            delivery_with_returns=details.delivery_with_returns if details else None,
-            logistics=details.logistics if details else None,
-            storage_sum=details.storage_sum if details else None,
-            storage_daily=product.product_settings.storage_wb_rub if product else None,
-            storage_days=details.storage_days if details else None,
-            advertising_unit=product.advertising.spend_per_order if product else None,
-            advertising_spend=product.advertising.spend if product else None,
-            advertising_orders=product.advertising.orders if product else None,
-            advertising_buyout=product.advertising.buyout_percent if product else None,
-            advertising_coverage=product.advertising.coverage if product else None,
-        )
         enriched.append(
             row.model_copy(
                 update={
-                    "calculator_evidence": evidence,
+                    "calculator_evidence": calculator_evidence(product),
                     "managers": tuple(managers),
                     "image_url": image_url,
                     "calculator_turnover": calculator_turnover,
@@ -262,7 +271,7 @@ def enrich(store: str, report: Snapshot) -> Snapshot:
                     "delta": comparison.delta,
                     "logistics_returns": comparison.logistics_returns,
                     "storage_calculation": comparison.storage_calculation,
-                    "calculation_inputs": calculation_inputs,
+                    "calculation_inputs": calculation_inputs(product),
                     "calculator_date": product.price.snapshot_date if product else None,
                 }
             )
