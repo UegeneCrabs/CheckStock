@@ -1,0 +1,73 @@
+name: Deploy CheckStock release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checkstock-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check tag, version and branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$(tr -d '\r' < deploy/VERSION)" == "${GITHUB_REF_NAME#v}" ]] || {
+            echo "Tag and deploy/VERSION differ" >&2; exit 1;
+          }
+          git fetch origin dev-release:refs/remotes/origin/dev-release
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/dev-release || {
+            echo "Tagged commit is not in dev-release" >&2; exit 1;
+          }
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check Python
+        run: python -m ruff check app scripts run.py
+      - name: Build image
+        run: docker compose --env-file .env.example -f deploy/docker-compose.yml build app
+        env:
+          POSTGRES_PASSWORD: build-only-placeholder
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            [[ -n "${!name}" ]] || { echo "Missing $name" >&2; exit 1; }
+          done
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || exit 1
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/checkstock_deploy"
+          chmod 600 "$HOME/.ssh/checkstock_deploy"
+          ssh-keygen -y -f "$HOME/.ssh/checkstock_deploy" >/dev/null
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy on server
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/checkstock_deploy" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            bash -s -- "$GITHUB_REF_NAME" "$GITHUB_SHA" < deploy/deploy-release.sh

@@ -1,5 +1,6 @@
 PYTHON ?= python
 UVICORN ?= uvicorn
+COMPOSE = docker compose --env-file .env -f deploy/docker-compose.yml
 
 .PHONY: install install-dev run scheduler format lint check docker-build docker-up docker-down docker-logs
 
@@ -26,13 +27,13 @@ lint:
 check: lint
 
 docker-build:
-	docker compose build
+	$(COMPOSE) build
 
 docker-up:
-	docker compose up --build -d
+	$(COMPOSE) up --build -d
 
 docker-down:
-	docker compose down
+	$(COMPOSE) down
 
 docker-logs:
-	docker compose logs --follow app scheduler
+	$(COMPOSE) logs --follow app scheduler
