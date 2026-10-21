@@ -8,41 +8,45 @@
   const fields = [['retail','Цена'],['purchase','Закупка'],['fulfillment','ФФ'],['advertising','Реклама'],['acquiring','Эквайринг'],['team','Комиссия компании'],['vat','НДС'],['tax','УСН / ОСНО'],['commission','Комиссия WB'],['logistics','Логистика'],['storage_total','Хранение'],['total_cost','Все расходы']];
   const precise = v => v == null ? '—' : Number(v).toLocaleString('ru-RU',{maximumFractionDigits:6});
   function valueHelp(r,key,group='profit') {
+    const fmt=precise;
     const p=r[group]||{}, value=p[key], period=`${r.period_from} — ${r.period_to}`;
     let formula='', calculation='', source='БД калькулятора; '+r.store_name+', артикул '+r.article+'.';
     if(key==='logistics' && group==='profit') {
       const c=r.logistics_calculation;
-      formula='Тариф склада = первый литр + max(объём − 1, 0) × доп. литр.\nИтог = (Σ(тариф склада × количество) ÷ Σ количества) × ИЛ.';
+      formula='До 1 л: ставка диапазона × коэффициент склада / 100. Свыше 1 л: первый литр + (объём − 1) × доп. литр.\nИтог = (Σ(тариф склада × количество) ÷ Σ количества) × ИЛ.';
       if(c) {
-        calculation=c.terms.map(t=>`${t.warehouse}${t.tariff && t.tariff!==t.warehouse?' → '+t.tariff:''}:\n${precise(t.base)} + max(${precise(t.volume)} − 1, 0) × ${precise(t.extra)} = ${precise(t.rate)} ₽; вес ${precise(t.quantity)}.`).join('\n\n');
+        calculation=c.terms.map(t=>`${t.warehouse}; объём ${precise(t.volume)} л${t.tariff && t.tariff!==t.warehouse?' → '+t.tariff:''}:\n${t.volume<=1?`${precise(t.volume_base)} × ${precise(t.coefficient)} / 100`:`${precise(t.base)} + (${precise(t.volume)} − 1) × ${precise(t.extra)}`} = ${precise(t.rate)} ₽; вес ${precise(t.quantity)}.`).join('\n\n');
         calculation+=`\n\nТуда: (${precise(c.weighted_sum)} ÷ ${precise(c.weight)}) × ${precise(c.localization_index)} = ${fmt(r.logistics)} ₽.`;
-        source=`WB /api/v1/tariffs/box, дата ${c.tariff_date}: boxDelivery${r.scheme==='FBS'?'Marketplace':''}Base/Liter.\n`+(c.basis==='stock'?`Веса: сумма barcodesCount за ${period}; объём: volume. Источник: /api/v1/paid_storage. Это сумма дневных остатков, а не число уникальных штук.`:`Веса: quantity продаж из /api/finance/v1/sales-reports/detailed за ${period}. Объём: length × width × height / 1000 из /content/v2/get/cards/list.`);
+        source=`WB /api/v1/tariffs/box, дата ${c.tariff_date}: boxDelivery${r.scheme==='FBS'?'Marketplace':''}Base/Liter/CoefExpr. Коэффициент уже учтён в Base/Liter; до 1 л используем отдельно ставку диапазона и CoefExpr.\n`+(c.basis==='stock'?`Веса: сумма barcodesCount за ${period}; объём: volume. Источник: /api/v1/paid_storage. Это сумма дневных остатков, а не число уникальных штук.`:`Веса: quantity продаж из /api/finance/v1/sales-reports/detailed за ${period}. Объём: length × width × height / 1000 из /content/v2/get/cards/list.`);
       } else calculation='Подробные исходные ставки отсутствуют в сохранённом снимке.';
       source+='\nИЛ = '+precise(c?.localization_index)+' — задан по умолчанию для отчёта, не получен из API WB.';
       const ret=r.logistics_returns||{};
-      formula+='\nОбратно = 46 + max(объём − 1, 0) × 14.\np = выкуп ÷ 100; повторные поездки = (1 − p) ÷ p.\nНа выкупленную штуку = туда + (туда + обратно) × (1 − p) ÷ p.';
-      calculation+=`\n\nОбратно: 46 + max(${precise(ret.volume)} − 1, 0) × 14 = ${fmt(ret.reverse)} ₽.\nВыкуп: ${fmt(ret.buyout_percent)}%. Повторные поездки: ${precise(ret.retries)}.\nПервая доставка: ${fmt(ret.forward)} ₽.\nПовторные отправки: ${fmt(ret.extra_forward)} ₽.\nВозвраты: ${fmt(ret.reverse_per_buyout)} ₽.\nИтого: ${fmt(value)} ₽/выкупленную шт.\n${(ret.missing||[]).join('; ')}`;
-      source+='\nОбратная доставка: тариф по умолчанию 46/14 ₽, без коэффициента склада и ИЛ, не из API. Объём — габариты карточки WB в БД. До 1 л применяется минимум 46 ₽.\nПроцент выкупа — details.buyout_percent из БД калькулятора. Расчётная оценка повторных поездок; без приёмки и дополнительных услуг.';
+      formula+='\nОбратно: до 1 л — ставка диапазона 23/26/29/30/32 ₽; свыше 1 л — 46 + (объём − 1) × 14.\np = выкуп ÷ 100; повторные поездки = (1 − p) ÷ p.\nНа выкупленную штуку = туда + (туда + обратно) × (1 − p) ÷ p.';
+      const returnTerms=ret.volume_terms||[];
+      calculation+=`\n\nОбъём для обоих направлений: ${ret.volume_source==='stock'?'отчёт хранения WB за период':'карточка товара WB'}.\n`;
+      calculation+=returnTerms.map(t=>`${precise(t.volume)} л → ${precise(t.rate)} ₽; вес ${precise(t.quantity)}.`).join('\n');
+      calculation+=`\nОбратно: Σ(ставка × вес) ÷ Σ веса = ${precise(ret.reverse)} ₽.\nВыкуп: ${fmt(ret.buyout_percent)}%. Повторные поездки: ${precise(ret.retries)}.\nПервая доставка: ${fmt(ret.forward)} ₽.\nПовторные отправки: ${fmt(ret.extra_forward)} ₽.\nВозвраты: ${fmt(ret.reverse_per_buyout)} ₽.\nИтого: ${fmt(value)} ₽/выкупленную шт.\n${(ret.missing||[]).join('; ')}`;
+      source+='\nОбратная доставка: опубликованные базовые тарифы WB, без коэффициента склада и ИЛ; таблица задана в коде, не из API. До 0,2/0,4/0,6/0,8/1 л включительно — 23/26/29/30/32 ₽ за товар. Объёмы и веса совпадают с прямой доставкой: хранение за период, при его отсутствии — карточка. Усредняются стоимости, не литры.\nПроцент выкупа — details.buyout_percent из БД калькулятора. Расчётная оценка повторных поездок; без приёмки и дополнительных услуг.';
     } else if(key==='commission' && group==='profit') {
       formula='Цена до СПП × ставка категории ÷ 100.';
       calculation=`${fmt(p.retail)} × ${precise(r.commission_rate)}% = ${fmt(value)} ₽/шт.`;
-      source=`Цена: БД калькулятора, ${r.calculator_date||'дата неизвестна'}.\nСтавка: WB /api/v1/tariffs/commission, ${r.commission_date}; поле ${r.scheme==='FBS'?'kgvpMarketplace':'paidStorageKgvp'}. Предмет: ${r.subject}; схема: ${r.scheme}. Ставка текущая на дату загрузки.`;
+      source=`Цена: БД калькулятора, ${r.calculator_date||'дата неизвестна'}.\nСтавка: WB /api/v1/tariffs/commission, ${r.commission_date||'дата неизвестна'}; поле ${r.scheme==='FBS'?'kgvpMarketplace':'paidStorageKgvp'}. Предмет: ${r.subject}; схема: ${r.scheme}. Ставка текущая на дату загрузки.`;
     } else if(key==='storage_total' && group==='profit') {
-      formula='Сумма хранения до скидок ИУ за неделю ÷ проданные штуки.';
-      calculation=`${precise(r.storage)} ÷ ${precise(r.sales)} = ${fmt(value)} ₽/шт.`;
-      if(value==null) calculation=(r.sales>0?'Нет подтверждённых базовых начислений хранения WB.':'Нет продаж за неделю — расходы нельзя разделить на проданные штуки.')+`\nХранение за неделю: ${fmt(r.storage)} ₽; средняя ставка: ${precise(r.storage_unit_day)} ₽/шт./день.`;
+      formula='Сумма хранения до скидок ИУ за неделю ÷ (заказы − отмены) за ту же неделю.';
+      calculation=`${precise(r.storage)} ÷ ${precise(r.storage_calculation?.net_orders_count)} = ${fmt(value)} ₽/шт.`;
+      if(value==null) calculation='Не хватает корректных начислений хранения или полных данных воронки «Заказы − отмены» за период.';
       if(r.storage_calculation?.basis==='estimate_90_days') {
-        formula='Оценка для товара без продаж: средняя стоимость хранения одной штуки за день × 90 дней.';
+        formula='Оценка при нулевом показателе «Заказы − отмены»: средняя стоимость хранения одной штуки за день × 90 дней.';
         calculation=`${precise(r.storage_unit_day)} × 90 = ${fmt(value)} ₽/шт.`;
       }
-      source=`WB /api/v1/paid_storage: сумма warehousePrice; строки скидок исключены.\nЗнаменатель: quantity операций «Продажа» из /api/finance/v1/sales-reports/detailed, ${period}, схема ${r.scheme}. Возвраты из знаменателя не вычитаются.`;
+      source=`WB /api/v1/paid_storage: сумма warehousePrice; строки скидок исключены.\nЗнаменатель: orders_count − cancel_count из воронки продаж WB в локальной БД, ${period}. Общий показатель артикула по магазину, без разделения на схемы.`;
       if(r.scheme==='FBS') {formula='Хранение на складе WB для FBS не начисляется в этой модели.';calculation='0 ₽/шт. — правило модели, не подтверждение отсутствия других складских расходов.';}
     } else if(key==='margin') {
       formula='Цена до СПП − сумма расходов на одну штуку.';
       calculation=`${fmt(p.retail)} − ${fmt(p.total_cost)} = ${fmt(value)} ₽/шт.`;
     } else if(key==='roi') {
       formula='Чистая прибыль ÷ закупка × 100%.';
-      calculation=`${fmt(p.margin)} ÷ ${fmt(p.purchase)} × 100% = ${fmt(value)}%.`;
+      calculation=`(${fmt(p.retail)} − ${fmt(p.total_cost)}) ÷ ${fmt(p.purchase)} × 100% = ${fmt(value)}%. Для ROI используется прибыль до округления.`;
     } else if(group==='calculator_turnover') {
       formula='Сумма заказов − сумма отмен за период.';
       calculation=`Оборот: ${fmt(value)} ₽. ${p.coverage&&!p.coverage.complete?'Период неполный.':''}`;
@@ -70,16 +74,52 @@
       formula=fieldHelp[key]||'Значение из калькулятора с ИУ.';
       calculation=`На одну штуку: ${fmt(value)} ₽. Дата цены: ${r.calculator_date||'нет данных'}.`;
     }
+    const evidence=r.calculator_evidence||{};
+    if(['retail','purchase','fulfillment'].includes(key)) {
+      const names={retail:'Цена продавца до СПП',purchase:'Закупочная стоимость одной штуки',fulfillment:'Стоимость фулфилмента одной штуки'};
+      formula='Готовое значение из калькулятора, без дополнительного пересчёта в отчёте.';
+      calculation=`${names[key]}: ${precise(value)} ₽.`;
+      source+=` Поле ${key==='retail'?'price.current':key==='purchase'?'details.purchase_cost':'details.fulfillment_cost'}. Дата цены: ${r.calculator_date||'неизвестна'}.`;
+    }
+    if(key==='advertising') {
+      formula='Расходы на рекламу ÷ заказы ÷ (выкуп / 100).';
+      const buyout=evidence.advertising_buyout>0?evidence.advertising_buyout:100;
+      calculation=evidence.advertising_unit==null?'0 ₽ — в калькуляторе нет суммы рекламы на штуку; применяется согласованное значение по умолчанию.':evidence.advertising_orders===0?'0 ₽ — в калькуляторе за период нет заказов.':`${precise(evidence.advertising_spend)} ÷ ${precise(evidence.advertising_orders)} ÷ (${precise(buyout)} / 100) = ${precise(value)} ₽.`;
+      source+=` Реклама и заказы за ${period}; advertising.spend_per_order. При отсутствии положительного выкупа калькулятор использует 100%.`;
+      if(evidence.advertising_coverage&&!evidence.advertising_coverage.complete)source+=' Данные рекламы за период неполные.';
+    }
+    if((key==='vat'&&evidence.vat_value!=null)||(key==='tax'&&evidence.tax_value!=null)) {
+      formula='Использована готовая сумма налога из калькулятора; в этом отчёте заново не вычисляется.';
+      calculation=`${precise(value)} ₽ на штуку.`;
+      source+=` Поле details.${key==='vat'?'vat_value':r.calculation_inputs?.tax_system==='osno'?'osno_value':'usn_value'}. Ставка: ${precise(key==='vat'?r.calculation_inputs?.vat_percent:r.calculation_inputs?.tax_system==='osno'?r.calculation_inputs?.osno_percent:r.calculation_inputs?.usn_percent)}%. Цена покупателя: ${precise(r.calculation_inputs?.client_price)} ₽.`;
+    }
+    if(group==='current_profit'&&['commission','logistics','storage_total'].includes(key)) {
+      const direct=key==='commission'?evidence.commission_value:key==='logistics'?(evidence.delivery_with_returns??evidence.logistics):evidence.storage_sum;
+      const field=key==='commission'?'details.commission_value':key==='logistics'?(evidence.delivery_with_returns!=null?'details.delivery_with_returns':'details.logistics'):'details.storage_sum';
+      if(direct!=null) {
+        formula='Готовая сумма из калькулятора с ИУ; отчёт использует её без пересчёта.';
+        calculation=`${precise(value)} ₽ на штуку.`;
+        source+=` Поле ${field}. Исходная детализация этой суммы в отчёт не передана.`;
+      } else if(key==='commission') {
+        formula='Цена продавца до СПП × ставка комиссии с ИУ ÷ 100.';
+        calculation=`${precise(p.retail)} × ${precise(evidence.commission_percent)} / 100 = ${precise(value)} ₽.`;
+        source+=' Поле details.commission_percent калькулятора.';
+      } else if(key==='storage_total') {
+        formula='Дневная ставка хранения × дни хранения из калькулятора.';
+        calculation=`${precise(evidence.storage_daily)} × ${precise(evidence.storage_days)} = ${precise(value)} ₽.`;
+        source+=' Поля product_settings.storage_wb_rub и details.storage_days.';
+      } else {formula='Готовая сумма логистики из калькулятора.';calculation='Сумма отсутствует; подстановка нуля не выполняется.';}
+    }
     if(group==='delta') {
       formula=key==='margin'?'Прибыль без ИУ − прибыль с ИУ.':'ROI без ИУ − ROI с ИУ.';
-      calculation=`${fmt(r.profit?.[key])} − ${fmt(r.current_profit?.[key])} = ${delta(value)} ${key==='margin'?'₽/шт.':'п.п.'}`;
+      calculation=`${fmt(r.profit?.[key])} − ${fmt(r.current_profit?.[key])} = ${fmt(value)} ${key==='margin'?'₽/шт.':'п.п.'}`;
       source='Оба сценария расчёта этой строки.';
     }
     if(r.storage_calculation?.warning && ['profit','delta'].includes(group)) {
       source+='\n\n'+r.storage_calculation.warning;
       if(key==='storage_total' && group==='profit'){formula='При отсутствии начислений API принимаем хранение за 0 ₽.';calculation='0 ₽ — условное значение, а не подтверждённое бесплатное хранение.';}
     }
-    return `Формула\n${formula}\n\nРасчёт\n${calculation}\n\nИсточник данных\n${source}`+(value==null?'\n\nНе рассчитано: '+(p.missing?.join('; ')||r.missing?.join('; ')||'не хватает исходных данных'):'')+'\n\nПромежуточные значения показаны до 6 знаков; результат — до целого числа.';
+    return `Формула\n${formula}\n\nРасчёт\n${calculation}\n\nИсточник данных\n${source}`+(value==null?'\n\nНе рассчитано: '+(p.missing?.join('; ')||r.missing?.join('; ')||'не хватает исходных данных'):'')+'\n\nВ пояснении показано до 6 знаков. В основной таблице — целые числа; вычисления используют исходную точность.';
   }
   function numericCell(r,key,group='profit',cls='') {
     const value=r[group]?.[key];
@@ -97,8 +137,8 @@
     vat:'Цена с СПП × ставка НДС ÷ (100 + ставка НДС). Настройки калькулятора.',
     tax:'УСН: (цена с СПП − НДС) × ставка. ОСНО: цена с СПП × ставка.',
     commission:'Цена × стандартная ставка WB для категории и схемы продажи.',
-    logistics:'Доставка туда, возвраты и повторные отправки на одну выкупленную штуку. Обратно — тариф по умолчанию 46/14 ₽.',
-    storage_total:'Хранение недели ÷ продажи; без продаж — дневная ставка × 90 дней (оценка).',
+    logistics:'Доставка туда, возвраты и повторные отправки на одну выкупленную штуку. Обратно — базовый тариф WB по объёму без коэффициентов.',
+    storage_total:'Хранение недели ÷ (заказы − отмены) из воронки. При нуле — дневная ставка × 90 дней.',
     total_cost:'Сумма всех расходов на одну штуку.'
   };
   const tooltip=document.createElement('div');
@@ -224,8 +264,13 @@
     finally {exporting=false;button.disabled=rows.length===0;button.textContent='Скачать Excel';}
   };
   function detail(r) {
-    const p=r.profit||{}, c=r.current_profit||{};
-    el('detail-body').innerHTML=`<h2>${esc(r.name)}</h2>${r.storage_calculation?.warning?`<p class="sc-assumption">† ${esc(r.storage_calculation.warning)}</p>`:''}<p>${esc(r.store_name)} · ${esc(r.article)} · ${esc(r.scheme)}</p><p>Источник: БД калькулятора. Дата цены: ${esc(r.calculator_date||'нет данных')}.</p><p>${esc([...new Set([...(p.missing||[]),...(c.missing||[])])].join('; '))}</p><table><thead><tr><th>На 1 шт.</th><th>Без ИУ, ₽</th><th>С ИУ, ₽</th></tr></thead><tbody>${[...fields,['margin','Чистая прибыль'],['roi','ROI, %']].map(([key,name])=>`<tr><td>${name}</td><td>${fmt(p[key])}</td><td>${fmt(c[key])}</td></tr>`).join('')}</tbody></table><p>Хранение без ИУ: ${r.storage_calculation?.basis==='missing_api_zero'?'условно 0 ₽ — нет начислений API':r.storage_calculation?.basis==='estimate_90_days'?`оценка на 90 дней: ${precise(r.storage_unit_day)} ₽/шт./день × 90`:`${fmt(r.storage)} ₽ / ${fmt(r.sales)} проданных шт.`} = ${fmt(p.storage_total)} ₽/шт.</p><p>Логистика на выкупленную штуку: ${fmt(p.logistics)} ₽. Туда: ${fmt(r.logistics_returns?.forward)} ₽; обратно за поездку: ${fmt(r.logistics_returns?.reverse)} ₽; выкуп: ${fmt(r.logistics_returns?.buyout_percent)}%. Формула: туда + (туда + обратно) × (1 − p) / p. Обратный тариф по умолчанию: 46/14 ₽.</p><p>Комиссия без ИУ: ${fmt(p.retail)} ₽ × ${fmt(r.commission_rate)}% = ${fmt(p.commission)} ₽.</p>`;
+    const rows=[...fields,['margin','Чистая прибыль'],['roi','ROI, %']];
+    const explanation=(key,group)=>valueHelp(r,key,group).split('\n\n').filter(part=>!part.startsWith('В пояснении показано')).map(part=>{
+      const lines=part.split('\n'), label=lines.shift();
+      return `<div class="sc-detail-block"><strong>${esc(label)}</strong>${lines.length?`<div>${esc(lines.join('\n'))}</div>`:''}</div>`;
+    }).join('');
+    const cell=(key,group)=>`<td class="${group==='profit'?'sc-detail-without':'sc-detail-current'}"><details class="sc-detail-disclosure"><summary aria-label="Расчёт: ${esc(rows.find(([k])=>k===key)[1])}, ${group==='profit'?'без ИУ':'с ИУ'}"><span class="sc-detail-arrow" aria-hidden="true">›</span><span class="sc-detail-number ${['margin','roi'].includes(key)&&r[group]?.margin<0?'sc-delta-negative':''}">${fmt(r[group]?.[key])} <small>${key==='roi'?'%':'₽'}</small></span><span class="sc-detail-hint">Расчёт</span></summary><div class="sc-detail-explanation">${explanation(key,group)}</div></details></td>`;
+    el('detail-body').innerHTML=`<h2>${esc(r.name)}</h2><p>${esc(r.store_name)} · ${esc(r.article)} · ${esc(r.scheme)} · ${esc(r.period_from)} — ${esc(r.period_to)}</p><p class="sc-detail-intro">Суммы на одну штуку. Нажмите стрелку рядом с числом, чтобы увидеть формулу, исходные данные и источник.</p><div class="sc-detail-scroll"><table class="sc-detail-table"><thead><tr><th scope="col">Показатель</th><th scope="col" class="sc-detail-without">Без ИУ<span>Стандартные условия WB</span></th><th scope="col" class="sc-detail-current">С ИУ<span>Данные калькулятора</span></th></tr></thead><tbody>${rows.map(([key,name])=>`<tr><th scope="row">${esc(name)}</th>${cell(key,'profit')}${cell(key,'current_profit')}</tr>`).join('')}</tbody></table></div>`;
     el('detail').showModal();
   }
   for(const id of ['store','search','scheme','activity','subject','manager']) el(id).addEventListener('input',()=>{page=1;render();});

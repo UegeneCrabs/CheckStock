@@ -105,3 +105,30 @@
 @media(prefers-reduced-motion:reduce){.sc-loading-spinner{animation:none;border-right-color:var(--accent)}}
 @media(max-width:700px){#standard-costs .sc-table-wrap{max-height:calc(100vh - 250px)}}
 @media(max-width:650px){.sc-heading{align-items:flex-start}#standard-costs .sc-heading h1{font-size:17px}#sc-method-dialog{max-height:94vh}.sc-method-heading,.sc-method-content{padding:16px}}
+
+/* Each scenario keeps its value visible and expands its own calculation. */
+#sc-detail{max-width:1200px;width:94vw;padding:20px}
+#sc-detail .sc-detail-scroll{overflow-x:auto}
+#sc-detail .sc-detail-table{table-layout:fixed;min-width:580px}
+#sc-detail .sc-detail-table th,#sc-detail .sc-detail-table td{white-space:normal;vertical-align:top;text-align:left;padding:10px 14px}
+#sc-detail .sc-detail-table th:first-child{width:22%}
+#sc-detail .sc-detail-table thead th{font-size:16px;padding-top:14px;padding-bottom:14px}
+#sc-detail .sc-detail-table thead span{display:block;font-size:11px;font-weight:normal;margin-top:4px;color:var(--muted)}
+#sc-detail .sc-detail-table .sc-detail-without{background:var(--sc-without-bg)}
+#sc-detail .sc-detail-table .sc-detail-current{background:var(--sc-current-bg);border-left:4px solid var(--paper)}
+#sc-detail .sc-detail-table thead .sc-detail-without{border-top:3px solid #48846a}
+#sc-detail .sc-detail-table thead .sc-detail-current{border-top:3px solid #597daa}
+#sc-detail .sc-detail-disclosure summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;border-radius:4px;min-height:24px}
+#sc-detail .sc-detail-disclosure summary::-webkit-details-marker{display:none}
+#sc-detail .sc-detail-disclosure summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+#sc-detail .sc-detail-arrow{font-size:23px;line-height:1;transition:transform .15s}
+#sc-detail .sc-detail-disclosure[open] .sc-detail-arrow{transform:rotate(90deg)}
+#sc-detail .sc-detail-number{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+#sc-detail .sc-detail-number small{font-size:11px;font-weight:normal}
+#sc-detail .sc-detail-hint{margin-left:auto;font-size:11px;color:var(--muted)}
+#sc-detail .sc-detail-explanation{font-size:12px;line-height:1.5;overflow-wrap:anywhere;margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+#sc-detail .sc-detail-block{margin-bottom:10px;white-space:pre-line}
+#sc-detail .sc-detail-block strong{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+#sc-detail .sc-detail-intro{font-size:12px;color:var(--muted)}
+#sc-detail .sc-delta-negative{color:var(--sc-negative)}
+@media(prefers-reduced-motion:reduce){#sc-detail .sc-detail-arrow{transition:none}}
