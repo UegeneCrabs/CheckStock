@@ -23,6 +23,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
+| Расходы без ИУ WB | `app/application/wb_standard_costs.py`, `app/infrastructure/wb_standard_costs_repository.py`, `app/economics/wb/catalogue.py`, `app/dto/wb_standard_costs.py`, `app/economics/wb/standard_sources.py`, `app/economics/wb/standard_costs.py`, `app/economics/wb/standard_sync.py`, `app/wb/standard_costs.py`, `app/wb/standard_costs_sources.py`, `app/economics/wb/standard_logistics.py`, `app/economics/wb/standard_storage.py`, `app/web/routers/wb_standard_costs.py`, [контракт](wb-standard-costs.md) |
 | Коэффициент D по часам для каждого кабинета WB | `app/analytics/analyzer.py`, `app/dto/unit_economics_1c.py`, `static/economics/wb/cabinet-settings.js`, [значения, время и сохранение](wb-cabinet-settings.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
 | Финансовый отчёт Яндекс Маркета | `app/application/finance.py`, `app/finance/`, `app/infrastructure/finance_*`, [финансовый учёт](yandex-finance.md), [ТЗ](yandex-finance-spec.md) |
@@ -51,7 +52,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
 
-Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Автотесты удалены из рабочего дерева. Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
+Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 
 ## Как обновлять wiki
 

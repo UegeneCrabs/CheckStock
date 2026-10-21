@@ -2,6 +2,7 @@
 
 from decimal import Decimal, InvalidOperation
 
+from app.dto.wb_standard_costs import CalculatorValues, MarginRoi
 from app.economics.wb.calculations import money
 
 
@@ -16,17 +17,17 @@ def _number(value: object) -> Decimal | None:
 
 
 def calculate(
-    values: dict[str, float | None],
+    values: CalculatorValues,
     *,
     tax_system: str,
     turnover_days: float | None,
     acquiring_percent: float | None,
     purchase_cost: float | None,
-) -> dict[str, float | None]:
+) -> MarginRoi:
     """Use unrounded costs; round only the displayed margin and ROI."""
 
     def value(key: str, fallback: Decimal | None = None) -> Decimal | None:
-        candidate = _number(values.get(key))
+        candidate = _number(getattr(values, key))
         return candidate if candidate is not None else fallback
 
     def percent_cost(base: Decimal | None, percent: Decimal | None) -> Decimal | None:
@@ -48,7 +49,9 @@ def calculate(
     )
     vat = value("vatRub", calculated_vat)
     secondary_rate = value("osno" if tax_system == "osno" else "usn")
-    secondary_base = client if tax_system == "osno" else client - vat if client is not None and vat is not None else None
+    secondary_base = (
+        client if tax_system == "osno" else client - vat if client is not None and vat is not None else None
+    )
     secondary = value("secondaryTaxRub", percent_cost(secondary_base, secondary_rate))
     purchase = value("purchase", _number(purchase_cost))
     storage_rate = value("storage")
@@ -70,9 +73,9 @@ def calculate(
         secondary,
     ]
     if retail is None or any(expense is None for expense in expenses):
-        return {"margin": None, "roi": None}
+        return MarginRoi(margin=None, roi=None)
     margin = retail - sum(expenses)
-    return {
-        "margin": money(margin),
-        "roi": money(margin / purchase * 100) if purchase and purchase > 0 else None,
-    }
+    return MarginRoi(
+        margin=money(margin),
+        roi=money(margin / purchase * 100) if purchase and purchase > 0 else None,
+    )

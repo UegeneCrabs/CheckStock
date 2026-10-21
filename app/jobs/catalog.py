@@ -363,4 +363,14 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             base,
             "stores",
         ),
+        SyncJobDefinition(
+            "wb_standard_costs_sync",
+            "WB: сравнение ИУ и без ИУ",
+            "Загружает реализацию, хранение, тарифы, комиссии и карточки за последние 7 завершённых дней. При ошибке сохраняет предыдущий отчёт.",
+            f"Первый запуск через {settings.wb_standard_costs.startup_delay_seconds} сек., "
+            f"затем каждые {settings.wb_standard_costs.interval_seconds / 3600:g} ч.",
+            base,
+            "store_marketplaces",
+            ("WB",),
+        ),
     )

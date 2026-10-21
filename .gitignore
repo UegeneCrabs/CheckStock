@@ -16,6 +16,10 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+data/*.sqlite-journal
 data/*.tmp
 data/*.dump
 data/exports/

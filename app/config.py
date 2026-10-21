@@ -64,8 +64,53 @@ def _env_choice(
     return normalized
 
 
+class WbStandardCostsSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, validate_default=True)
+
+    interval_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_INTERVAL_SECONDS", 14400, minimum=1), ge=1
+    )
+    startup_delay_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_STARTUP_DELAY_SECONDS", 60, minimum=0), ge=0
+    )
+    retry_first_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_RETRY_FIRST_SECONDS", 300, minimum=1), ge=1
+    )
+    retry_second_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_RETRY_SECOND_SECONDS", 900, minimum=1), ge=1
+    )
+    finance_page_size: int = Field(
+        default_factory=lambda: _env_int(
+            "CHECKSTOCK_WB_STANDARD_FINANCE_PAGE_SIZE", 100000, minimum=1, maximum=100000
+        ),
+        ge=1,
+        le=100000,
+    )
+    finance_max_pages: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_FINANCE_MAX_PAGES", 1000, minimum=1), ge=1
+    )
+    card_page_size: int = Field(
+        default_factory=lambda: _env_int(
+            "CHECKSTOCK_WB_STANDARD_CARD_PAGE_SIZE", 100, minimum=1, maximum=100
+        ),
+        ge=1,
+        le=100,
+    )
+    card_max_pages: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_CARD_MAX_PAGES", 10000, minimum=1), ge=1
+    )
+    storage_poll_attempts: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_STORAGE_POLL_ATTEMPTS", 30, minimum=1), ge=1
+    )
+    storage_poll_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_WB_STANDARD_STORAGE_POLL_SECONDS", 5, minimum=0), ge=0
+    )
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
+
+    wb_standard_costs: WbStandardCostsSettings = Field(default_factory=WbStandardCostsSettings)
 
     base_dir: Path
     database_path: Path

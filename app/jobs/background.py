@@ -22,6 +22,7 @@ from app.economics.wb import advertising as advertising_sync
 from app.economics.wb import calculations as unit_economics_1c
 from app.economics.wb import history as unit_margin_history
 from app.economics.wb import reference_data as unit_reference_sync
+from app.economics.wb import standard_sync
 from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
@@ -397,6 +398,17 @@ def _yandex_unit_economics_jobs() -> tuple[BackgroundJob, ...]:
 
 def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     return (
+        BackgroundJob(
+            standard_sync.JOB,
+            standard_sync.sync_job_payload,
+            _fixed_delay(settings.wb_standard_costs.interval_seconds),
+            startup_delay_seconds=settings.wb_standard_costs.startup_delay_seconds,
+            is_enabled=lambda: _job_enabled(standard_sync.JOB),
+            retry_delays=(
+                settings.wb_standard_costs.retry_first_seconds,
+                settings.wb_standard_costs.retry_second_seconds,
+            ),
+        ),
         BackgroundJob(
             wb_transit.JOB,
             wb_transit.sync_all,
