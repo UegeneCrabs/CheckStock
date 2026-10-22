@@ -1,11 +1,14 @@
 import json
 import logging
+import math
 import random
 import socket
 import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 from app.config import settings
 
@@ -144,9 +147,16 @@ def _retry_after(headers) -> float | None:
     if not raw:
         return None
     try:
-        return max(0.0, float(str(raw).strip()))
+        seconds = float(str(raw).strip())
     except ValueError:
-        return None
+        try:
+            moment = parsedate_to_datetime(str(raw))
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            seconds = (moment - datetime.now(UTC)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0.0, seconds) if math.isfinite(seconds) else None
 
 
 def _backoff_pause(attempt: int) -> float:
