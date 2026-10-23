@@ -196,7 +196,7 @@
                     });
             })
             .then(function (data) {
-                renderRows(data.rows || []);
+                renderRows(data.rows.map(function (row) { return Object.assign({}, row, row.quantities); }) || []);
                 loaded = true;
                 setStatus('Показан общий остаток WB + OZON + Яндекс Маркета', false);
             })

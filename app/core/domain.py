@@ -1,5 +1,8 @@
-from datetime import timedelta, timezone
+from app.core.constants import (
+    TIME,
+)
+
+MOSCOW_TIMEZONE = TIME.moscow_timezone
 
 MARKETPLACES = ("WB", "OZON", "YANDEX MARKET")
 DEFAULT_MARKETPLACE = "WB"
-MOSCOW_TIMEZONE = timezone(timedelta(hours=3), name="MSK")

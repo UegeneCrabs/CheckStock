@@ -110,3 +110,9 @@ class InboundSnapshot(DtoModel):
 class InboundSyncRequest(DtoModel):
     store: str = ""
     marketplace: str = ""
+
+
+class InboundReport(DtoModel):
+    ok: bool = True
+    targets: tuple[InboundSnapshot, ...]
+    stale_before: str
