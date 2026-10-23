@@ -21,6 +21,11 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
 | Цены Ozon, комиссия за продажу FBO и дневная история | `app/economics/ozon_prices.py`, `app/ozon/async_prices.py`, `app/infrastructure/async_prices_repository.py`, `app/infrastructure/async_commissions_repository.py`, [контракт](ozon-prices.md) |
 | Связанные цены калькулятора Ozon, СПП, кошелёк и комиссия | `app/economics/ozon_price_calculator.py`, `app/dto/ozon_price_calculator.py`, `static/economics/ozon/prices.js`, [формулы и источники себестоимости](ozon-prices.md#связь-цен-калькулятора) |
+| Связанные артикулы Ozon (варианты одной модели) | `app/application/ozon_related.py`, `app/ozon/async_related.py`, `static/economics/ozon/related.js`, [контракт и кэш](ozon-calculator.md#контракт-и-модули) |
+| График Ozon за 14 дней и сравнение с прошлой неделей | `app/application/ozon_history.py`, `app/infrastructure/ozon_history_repository.py`, `static/economics/ozon/history.js`, [источники и пропуски](ozon-history.md) |
+| Редактирование расходов, выкупа, рекламы и налогов Ozon | `app/economics/ozon_calculator.py`, `app/dto/ozon_calculator.py`, `static/economics/ozon/calculator.js`, [локальные сценарии](ozon-calculator.md) |
+| Маржа Ozon за сегодня и диапазон | `app/economics/ozon_margin.py`, `app/ozon/margin_normalizer.py`, `app/infrastructure/ozon_margin_repository.py`, `app/jobs/ozon_margin.py`, [формула и история](ozon-margin.md) |
+| Выбор категории Ozon и тариф FBO по цене | `app/application/ozon_tariffs.py`, `app/ozon/async_categories.py`, `static/economics/ozon/categories.js`, общий с ЯМ выбор `static/economics/shared/categories.{js,css}`, [источник и обновление справочника](ozon-tariffs.md) |
 | Каталог задач, названия и подписи расписаний | `app/core/constants.py`, `app/jobs/catalog.py`, [метаданные](background-jobs.md#метаданные-каталога-задач) |
 | Автоматическое расписание, повторы и восстановление | `app/jobs/worker.py`, `app/jobs/scheduling.py`, `app/repositories/job_schedules.py`, [контракт планировщика](background-jobs.md) |
 | Локальный запуск сайта и загрузчика одной командой | `run.py`, `app/development.py`, `app/infrastructure/process_job.py`, [запуск и остановка](background-jobs.md#запуск) |
@@ -34,10 +39,17 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Типы и проверка заказов Ozon, восстановление артикула по SKU | `app/dto/orders.py`, `app/dto/ozon_orders.py`, `app/infrastructure/async_catalog_repository.py`, `app/orders/normalizers/ozon_legacy.py`, [DTO и совместимость](background-jobs.md#контракты-данных-заказов-ozon) |
 | Параметры асинхронного PostgreSQL | `app/dto/database.py`, `app/infrastructure/async_database.py`, [подключение и SSL](postgresql-migration.md#async-order-connections) |
 | Частичные ТО и реклама Ozon | `app/infrastructure/async_turnover_repository.py`, `app/ozon/turnover_normalizer.py`, [полнота](f05-economics-completeness.md#то-и-рекламные-расходы-ozon) |
+| Скорость таблиц, графиков и отчётов юнит-экономики | `app/ozon/advertising_read_index.py`, `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций и проверки](economics-performance.md) |
 | Выкуп и ДРР Ozon, сегодняшние CPC/CPO | `app/ozon/drr.py`, `app/dto/ozon_economics.py`, `app/infrastructure/ozon_economics_repository.py`, [формулы и даты](ozon-buyout.md) |
 | Почасовая реклама Ozon, пропуски, кэш отчётов и лимиты | `app/economics/ozon_advertising_breakdown.py`, `app/ozon/async_performance.py`, `app/infrastructure/async_advertising_repository.py`, [контракт и ограничения](ozon-performance-api.md) |
+| Настройки кабинетов Ozon, цели, выкуп каждые 4 часа, налоги | `app/application/ozon_cabinet.py`, `app/dto/ozon_buyout.py`, `app/ozon/cabinet_normalizer.py`, `app/infrastructure/ozon_cabinet_repository.py`, `static/economics/ozon/settings.js`, [контракт и категории](ozon-cabinet-settings.md) |
+| Логистика Ozon FBO, дневные снимки за 30 дней | `app/application/ozon_logistics.py`, `app/ozon/{async_logistics,logistics_normalizer}.py`, `app/infrastructure/async_logistics_repository.py`, `static/economics/ozon/logistics.js`, [формулы и сохранение](ozon-logistics.md) |
+| Сценарий объёма Ozon в литрах и тариф маршрута FBO | `app/economics/ozon_logistics_volume.py`, `app/dto/ozon_logistics_volume.py`, `app/infrastructure/ozon_logistics_tariffs.py`, [источник тарифов, границы и ограничения](ozon-logistics.md#сценарий-объёма-в-подробном-калькуляторе) |
+| Хранение Ozon FBO, дневные снимки за 30 дней | `app/application/ozon_storage.py`, `app/ozon/{async_storage,storage_normalizer}.py`, `app/infrastructure/async_storage_repository.py`, [источники и формула](ozon-storage.md) |
+| Почасовая реклама Ozon, пропуски, кэш отчётов, привязка SKU и лимиты | `app/economics/ozon_advertising_breakdown.py`, `app/economics/ozon_advertising_articles.py`, `app/ozon/async_performance.py`, `app/infrastructure/async_advertising_repository.py`, [контракт и ограничения](ozon-performance-api.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
 | Финансовый отчёт Яндекс Маркета | `app/application/finance.py`, `app/finance/`, `app/infrastructure/finance_*`, [финансовый учёт](yandex-finance.md), [ТЗ](yandex-finance-spec.md) |
+| Новинки Ozon, порог 21 день | `app/ozon/newness.py`, `app/infrastructure/ozon_newness_repository.py`, [источники и контракт](ozon-newness.md) |
 | Веб-интерфейс | `templates/`, `static/`, соответствующий файл в `app/web/routers/` |
 | Интерфейс Ozon и общие страницы без Python-разметки | `app/web/client_page.py`, `app/dto/{integrations,ui,stock_pages,ozon_economics,google_export}.py`, `app/infrastructure/async_read_models.py`, `static/common/client-page.js`, [контракты и границы переноса](ozon-web-contracts.md) |
 | Выгрузки и Google-интеграция | `app/exports/`, `app/integrations/`, [формат выгрузки](project-sheet-export.md) |
@@ -66,7 +78,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 
-После объединения локальной ветки и stash 19 октября 2026 года модули Ozon подключены через `app/jobs/ozon.py`, `app/web/ozon_jobs.py` и `app/web/routers/ozon_economics.py`. Страница использует асинхронный JSON API; четыре задачи обслуживают заказы, цены с комиссией, закрытие дней и рекламу. Общие складские страницы сохраняют прежние обработчики; [фактические подключения и совместимость](architecture.md#состояние-объединения-19-октября-2026).
+После объединения локальной ветки и stash 19 октября 2026 года модули Ozon подключены через `app/jobs/ozon.py`, `app/web/ozon_jobs.py` и `app/web/routers/ozon_economics.py`. Страница использует асинхронный JSON API; пять задач обслуживают заказы, цены с комиссией, закрытие дней, рекламу и дневную логистику. Общие складские страницы сохраняют прежние обработчики; [фактические подключения и совместимость](architecture.md#состояние-объединения-19-октября-2026).
 
 `python -m mypy` проверяет типизированный контур асинхронных заказов Ozon;
 список файлов и строгие настройки заданы в `pyproject.toml`. Проверка входит
