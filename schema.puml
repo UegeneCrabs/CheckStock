@@ -1,0 +1,1424 @@
+@startuml
+hide circle
+skinparam linetype ortho
+skinparam packageStyle rectangle
+
+package "Данные запросов маркетплейсов" #F4F9FF {
+  package "Кэш запросов WB" #E7F1FF {
+    entity "unit_economics_1c_product_reputation\nРепутация товаров WB" as unit_economics_1c_product_reputation {
+      store_slug : character
+      nm_id : character
+      rating : double
+      reviews_count : integer
+      synced_at : character
+    }
+
+    entity "unit_economics_1c_wb_advertising_sync_state\nСостояние загрузки рекламы WB" as unit_economics_1c_wb_advertising_sync_state {
+      store_slug : character
+      marketplace : character
+      status : character
+      period_from : character
+      period_to : character
+      last_attempt_at : character
+      last_success_at : character
+      rows_saved : integer
+      campaigns_count : integer
+      error : text
+    }
+
+    entity "unit_economics_1c_wb_commissions\nТарифы комиссий WB" as unit_economics_1c_wb_commissions {
+      category_key : character
+      category : character
+      commission_percent : double
+      synced_at : character
+    }
+
+    entity "unit_economics_1c_wb_daily_advertising\nДневные показатели рекламы WB" as unit_economics_1c_wb_daily_advertising {
+      store_slug : character
+      nm_id : character
+      day : character
+      marketplace : character
+      spend : double
+      impressions : integer
+      clicks : integer
+      synced_at : character
+    }
+
+    entity "unit_economics_1c_wb_daily_prices\nДневные цены товаров WB" as unit_economics_1c_wb_daily_prices {
+      store_slug : character
+      article : character
+      day : character
+      marketplace : character
+      nm_id : character
+      size_id : bigint
+      tech_size_name : character
+      vendor_code : character
+      currency : character
+      seller_base_price : double
+      retail_price : double
+      club_discounted_price : double
+      customer_price_with_spp : double
+      customer_price_with_wallet : double
+      customer_price_window_days : integer
+      customer_price_orders_count : integer
+      last_order_at : character
+      orders_synced_at : character
+      retail_synced_at : character
+      updated_at : character
+    }
+
+    entity "unit_economics_1c_wb_price_sync_state\nСостояние загрузки цен WB" as unit_economics_1c_wb_price_sync_state {
+      store_slug : character
+      marketplace : character
+      status : character
+      orders_ok : integer
+      retail_ok : integer
+      last_attempt_at : character
+      last_success_at : character
+      rows_saved : integer
+      error : text
+    }
+
+    entity "wb_advertising_campaign_snapshot\nСнимок рекламных кампаний WB" as wb_advertising_campaign_snapshot {
+      store_slug : character
+      status : character
+      attempted_at : character
+      payload_json : text
+    }
+
+    entity "wb_customer_transit\nПоказатели движения заказов покупателей WB" as wb_customer_transit {
+      store_slug : character
+      nm_id : character
+      from_customer : integer
+      to_customer : integer
+      updated_at : character
+    }
+
+    entity "wb_daily_prices\nДневные наблюдения цен WB" as wb_daily_prices {
+      store_slug : character
+      article : character
+      observed_day : character
+      observed_at : character
+      nm_id : character
+      size_id : bigint
+      tech_size_name : character
+      customer_price_with_spp : double
+      spp_percent : double
+      orders_turnover_updated_at : character
+      customer_price_with_wallet : double
+      wallet_discount_percent : double
+      product_kopecks : bigint
+      logistics_kopecks : bigint
+      price_fields_json : text
+      sale_conditions : bigint
+    }
+
+    entity "wb_decision_metrics\nПоказатели товаров для решений WB" as wb_decision_metrics {
+      store_slug : character
+      nm_id : integer
+      product_name : character
+      views : integer
+      carts : integer
+      orders : integer
+      buyouts : integer
+      cancels : integer
+      order_sum : double
+      rating : double
+      delivery_days : double
+      order_growth : double
+      avg_position : double
+      visibility : double
+      search_views : integer
+      search_carts : integer
+      search_orders : integer
+      search_growth : double
+      estimated_reach : integer
+      ad_impressions : integer
+      ad_clicks : integer
+      ad_spend : double
+      ad_orders : integer
+      ad_position : double
+      funnel_synced_at : character
+      search_synced_at : character
+      advertising_synced_at : character
+    }
+
+    entity "wb_decision_sync_state\nСостояние загрузки показателей WB" as wb_decision_sync_state {
+      store_slug : character
+      source : character
+      status : character
+      last_attempt_at : character
+      last_success_at : character
+      records : integer
+      error : text
+      duration_ms : integer
+    }
+
+    entity "wb_funnel_daily_orders\nДневные показатели воронки WB" as wb_funnel_daily_orders {
+      store_slug : character
+      day : character
+      article : character
+      vendor_code : character
+      product_name : character
+      orders_count : integer
+      orders_amount : double
+      updated_at : character
+      source_version : integer
+      cancel_count : integer
+      cancel_amount : double
+      buyout_count : integer
+      buyout_amount : double
+      buyout_percent : double
+      cart_count : integer
+    }
+
+    entity "wb_funnel_orders_sync_state\nСостояние загрузки заказов воронки WB" as wb_funnel_orders_sync_state {
+      store_slug : character
+      status : character
+      last_attempt_at : character
+      last_success_at : character
+      records : integer
+      error : text
+    }
+
+    entity "wb_funnel_product_metrics\nПоказатели воронки по товарам WB" as wb_funnel_product_metrics {
+      store_slug : character
+      article : character
+      period_from : character
+      period_to : character
+      orders_count : integer
+      orders_amount : double
+      cancel_count : integer
+      cancel_amount : double
+      buyout_percent : double
+      source_version : integer
+      updated_at : character
+    }
+
+    entity "wb_hourly_prices\nПочасовые наблюдения цен WB" as wb_hourly_prices {
+      store_slug : character
+      article : character
+      observed_hour : character
+      observed_at : character
+      nm_id : character
+      size_id : bigint
+      tech_size_name : character
+      customer_price_with_spp : double
+      spp_percent : double
+      orders_turnover_rub : double
+      orders_turnover_updated_at : character
+      customer_price_with_wallet : double
+      wallet_discount_percent : double
+      product_kopecks : bigint
+      logistics_kopecks : bigint
+      price_fields_json : text
+      sale_conditions : bigint
+    }
+
+    entity "wb_standard_costs_snapshots\nСнимки расходов WB без юнит-экономики" as wb_standard_costs_snapshots {
+      store_slug : character
+      payload : text
+      updated_at : character
+    }
+
+    entity "wb_standard_costs_sources\nИсходные данные расходов WB без юнит-экономики" as wb_standard_costs_sources {
+      store_slug : character
+      payload : text
+      updated_at : character
+    }
+
+  }
+
+  package "Кэш запросов Яндекс Маркета" #EAF7EB {
+    entity "finance_yandex_operations\nОперации из отчётов Яндекс Маркета" as finance_yandex_operations {
+      snapshot_id : integer <<FK>>
+      key : character
+      day : date
+      payload : json
+    }
+
+    entity "finance_yandex_report_tickets\nИдентификаторы запрошенных отчётов" as finance_yandex_report_tickets {
+      key : character
+      report_id : character
+      updated_at : character
+    }
+
+    entity "finance_yandex_snapshots\nСнимки финансовых отчётов Яндекса" as finance_yandex_snapshots {
+      id : integer
+      connection_id : character <<FK>>
+      source : character
+      start : date
+      end : date
+      raw : json
+      report_ids : json
+      issues : json
+      income_issues : json
+      captured_at : character
+      formula_version : character
+      fingerprint : character
+      actor : character
+    }
+
+    entity "finance_yandex_unallocated\nОперации без распределения по товарам" as finance_yandex_unallocated {
+      business_id : integer
+      source : character
+      month : date
+      key : character
+      payload : json
+      captured_at : character
+    }
+
+    entity "unit_economics_yandex_daily_metrics\nДневные показатели Яндекс Маркета" as unit_economics_yandex_daily_metrics {
+      store_slug : character
+      source : character
+      day : character
+      article : character
+      data_json : text
+      updated_at : character
+    }
+
+    entity "unit_economics_yandex_loaded_days\nДни с загруженными данными Яндекса" as unit_economics_yandex_loaded_days {
+      store_slug : character
+      source : character
+      day : character
+      updated_at : character
+    }
+
+    entity "unit_economics_yandex_snapshots\nСнимки источников Яндекс Маркета" as unit_economics_yandex_snapshots {
+      store_slug : character
+      source : character
+      period_from : character
+      period_to : character
+      data_json : text
+      last_success_at : character
+      last_attempt_at : character
+      error : text
+    }
+
+    entity "yandex_economics_sources\nСохранённые источники экономики Яндекса" as yandex_economics_sources {
+      store_slug : character
+      article : character
+      source : character
+      payload_json : text
+      updated_at : character
+    }
+
+    entity "yandex_storefront_prices\nНаблюдения цен витрины Яндекса" as yandex_storefront_prices {
+      store_slug : character
+      article : character
+      target_json : text
+      seller_price : double
+      seller_checked_at : character
+      buyer_price : double
+      price_checked_at : character
+      currency : character
+      status : character
+      checked_at : character
+      message : text
+      buyer_seller_price : double
+      pay_price : double
+      pay_checked_at : character
+      pay_seller_price : double
+      pay_buyer_price : double
+      spp_percent : double
+      spp_checked_at : character
+      pay_discount_percent : double
+      pay_discount_checked_at : character
+    }
+
+    entity "unit_economics_yandex_product_statuses\nСтатусы товаров Яндекс Маркета" as unit_economics_yandex_product_statuses {
+      store_slug : character
+      article : character
+      status : character
+      checked_on : character
+      period_from : character
+      period_to : character
+      order_date : character
+      updated_at : character
+    }
+
+  }
+
+  package "Кэш запросов Ozon" #FFF0E4 {
+    entity "ozon_advertising_snapshots\nСнимки рекламы Ozon" as ozon_advertising_snapshots {
+      store_slug : character
+      period_from : character
+      period_to : character
+      payload_json : text
+      synced_at : character
+    }
+
+    entity "ozon_order_days\nДни с загруженными заказами Ozon" as ozon_order_days {
+      store_slug : character
+      scheme : character
+      day : character
+      payload : text
+    }
+
+    entity "ozon_product_reputation\nПоказатели репутации товаров Ozon" as ozon_product_reputation {
+      store_slug : character
+      sku : character
+      rating : double
+      reviews_count : integer
+      synced_at : character
+    }
+
+  }
+
+}
+
+package "Внутренние таблицы" #FAF8FF {
+  package "Учётные записи и аудит" #F5F0FF {
+    entity "activity_log\nЖурнал действий пользователей" as activity_log {
+      id : integer
+      user_id : integer
+      user_name : character
+      action : character
+      details : text
+      created_at : character
+      operation_id : integer
+    }
+
+    entity "sessions\nСессии пользователей" as sessions {
+      token : character
+      user_id : integer <<FK>>
+      created_at : character
+      expires_at : character
+    }
+
+    entity "users\nУчётные записи пользователей" as users {
+      id : integer
+      full_name : character
+      google_email : character
+      login : character
+      password_hash : character
+      is_active : integer
+      created_at : character
+    }
+
+  }
+
+  package "Каталог" #F5F0FF {
+    entity "catalog_article_aliases\nСоответствия артикулов каталога" as catalog_article_aliases {
+      store_slug : character
+      marketplace : character
+      article : character
+      target_article : character
+      identity : character
+      updated_at : character
+    }
+
+    entity "catalog_barcodes\nШтрихкоды товаров" as catalog_barcodes {
+      stock_item_id : integer <<FK>>
+      barcode : character
+    }
+
+    entity "fulfillments\nСправочник фулфилментов" as fulfillments {
+      id : integer
+      name : character
+    }
+
+    entity "stock_items\nТовары внутреннего каталога" as stock_items {
+      id : integer
+      store_slug : character
+      marketplace : character
+      article : character
+      barcode : character
+      name : character
+      mp_sku : character
+      mp_product_id : character
+      image_url : character
+      is_service : integer
+      updated_at : character
+      mp_updated_at : character
+    }
+
+  }
+
+  package "Остатки и складские операции" #F5F0FF {
+    entity "ff_import_snapshots\nСнимки импортированных остатков фулфилмента" as ff_import_snapshots {
+      id : integer
+      store_slug : character
+      fulfillment : character
+      marketplace : character
+      source_type : character
+      source_key : character
+      article : character
+      quantity : integer
+      updated_at : character
+    }
+
+    entity "ff_stock\nОстатки на складах фулфилмента" as ff_stock {
+      id : integer
+      store_slug : character
+      article : character
+      fulfillment : character
+      marketplace : character
+      quantity : integer
+      updated_at : character
+    }
+
+    entity "ff_stock_deliveries\nЗагрузки остатков фулфилмента" as ff_stock_deliveries {
+      id : integer
+      store_slug : character
+      fulfillment : character
+      source_type : character
+      sheet_url : character
+      table_title : character
+      total_rows : integer
+      matched : integer
+      unmatched : integer
+      created_at : character
+      marketplace : character
+    }
+
+    entity "ff_warehouse_map\nСоответствие складов фулфилмента и WB" as ff_warehouse_map {
+      id : integer
+      store_slug : character
+      fulfillment : character
+      wb_warehouse_id : integer
+      wb_warehouse_name : character
+      updated_at : character
+    }
+
+    entity "fulfillment_stock_daily_history\nДневная история остатков фулфилмента" as fulfillment_stock_daily_history {
+      store_slug : character
+      marketplace : character
+      article : character
+      fulfillment : character
+      day : character
+      quantity : integer
+      captured_at : character
+    }
+
+    entity "marketplace_stock_daily_history\nДневная история остатков маркетплейсов" as marketplace_stock_daily_history {
+      store_slug : character
+      marketplace : character
+      article : character
+      scheme : character
+      day : character
+      quantity : integer
+      captured_at : character
+    }
+
+    entity "mp_stock\nАгрегированные остатки маркетплейсов" as mp_stock {
+      id : integer
+      store_slug : character
+      article : character
+      marketplace : character
+      scheme : character
+      quantity : integer
+      updated_at : character
+    }
+
+    entity "mp_warehouse_cluster\nСоответствие складов и кластеров" as mp_warehouse_cluster {
+      id : integer
+      marketplace : character
+      warehouse : character
+      cluster : character
+      updated_at : character
+    }
+
+    entity "mp_warehouse_stock\nОстатки по складам маркетплейсов" as mp_warehouse_stock {
+      id : integer
+      store_slug : character
+      article : character
+      marketplace : character
+      scheme : character
+      warehouse : character
+      cluster : character
+      quantity : integer
+      updated_at : character
+    }
+
+    entity "stock_audit_randomizations\nВыборки для проверки остатков" as stock_audit_randomizations {
+      id : integer
+      batch_key : character
+      month_key : character
+      fulfillment : character
+      store_slug : character
+      article : character
+      ff_quantity : integer
+      fbs_quantity : integer
+      user_id : integer
+      user_name : character
+      generated_at : character
+    }
+
+    entity "stock_mutation_requests\nКлючи повторов складских операций" as stock_mutation_requests {
+      store_slug : character
+      user_id : integer
+      request_key : character
+      payload_hash : character
+      response_json : text
+      status_code : integer
+      created_at : character
+    }
+
+    entity "stock_operation_items\nПозиции складских операций" as stock_operation_items {
+      id : integer
+      operation_id : integer <<FK>>
+      article : character
+      barcode : character
+      name : character
+      quantity : integer
+      purchase_price : double
+      purchase_price_recorded : integer
+    }
+
+    entity "stock_operation_report_flags\nОтметки отчётности складских операций" as stock_operation_report_flags {
+      operation_id : integer <<FK>>
+      is_fbs_transfer : integer
+      updated_by : integer
+      updated_at : character
+    }
+
+    entity "stock_operations\nЖурнал складских операций" as stock_operations {
+      id : integer
+      store_slug : character
+      kind : character
+      source_type : character
+      source_name : character
+      sheet_url : character
+      from_fulfillment : character
+      from_marketplace : character
+      to_fulfillment : character
+      to_marketplace : character
+      note : text
+      user_id : integer
+      user_name : character
+      created_at : character
+      transit_batch_id : integer
+    }
+
+    entity "trash_stock\nОстатки списанных товаров" as trash_stock {
+      id : integer
+      store_slug : character
+      article : character
+      marketplace : character
+      fulfillment : character
+      quantity : integer
+      checked : integer
+      updated_at : character
+    }
+
+    entity "used_sources\nУчёт использованных источников остатков" as used_sources {
+      id : integer
+      store_slug : character
+      kind : character
+      fingerprint : character
+      label : character
+      source_type : character
+      operation_id : integer
+      user_name : character
+      created_at : character
+    }
+
+  }
+
+  package "Поставки и транзит" #F5F0FF {
+    entity "ff_transfers\nПеремещения между складами" as ff_transfers {
+      id : integer
+      store_slug : character
+      article : character
+      quantity : integer
+      from_fulfillment : character
+      from_marketplace : character
+      to_fulfillment : character
+      to_marketplace : character
+      user_id : integer
+      user_name : character
+      created_at : character
+    }
+
+    entity "ff_transit_batches\nПартии товаров в пути" as ff_transit_batches {
+      id : integer
+      store_slug : character
+      from_fulfillment : character
+      from_marketplace : character
+      to_fulfillment : character
+      to_marketplace : character
+      status : character
+      note : text
+      sent_by_user_id : integer
+      sent_by_name : character
+      sent_at : character
+      last_received_by_user_id : integer
+      last_received_by_name : character
+      last_received_at : character
+      cancelled_by_user_id : integer
+      cancelled_by_name : character
+      cancelled_at : character
+      cancellation_reason : text
+      kind : character
+    }
+
+    entity "ff_transit_items\nТовары в партиях транзита" as ff_transit_items {
+      id : integer
+      batch_id : integer <<FK>>
+      from_article : character
+      to_article : character
+      barcode : character
+      name : character
+      sent_quantity : integer
+      received_quantity : integer
+      cancelled_quantity : integer
+      purchase_price : double
+    }
+
+    entity "ff_transit_receipt_items\nПозиции приёмок транзита" as ff_transit_receipt_items {
+      id : integer
+      receipt_id : integer <<FK>>
+      transit_item_id : integer <<FK>>
+      quantity : integer
+    }
+
+    entity "ff_transit_receipts\nПриёмки партий транзита" as ff_transit_receipts {
+      id : integer
+      batch_id : integer <<FK>>
+      user_id : integer
+      user_name : character
+      note : text
+      received_at : character
+    }
+
+    entity "inbound_supply_snapshots\nСнимки входящих поставок маркетплейсов" as inbound_supply_snapshots {
+      store_slug : character
+      marketplace : character
+      payload_json : text
+      status : character
+      last_attempt : character
+      last_success : character
+      last_finished : character
+      error : text
+      run_token : character
+      lease_until : character
+    }
+
+    entity "manual_supplies\nПоставки, заведённые вручную" as manual_supplies {
+      id : integer
+      store_slug : character
+      delivery_at : character
+      origin : character
+      destination : character
+      supply_type : character
+      ready : integer
+      created_by_user_id : integer
+      created_by_name : character
+      created_at : character
+      updated_at : character
+      note : text
+    }
+
+    entity "supply_arrival_stock\nСвязь поставок с зачислением на остатки" as supply_arrival_stock {
+      source_key : character
+      supply_id : character
+      checked : integer
+      version : integer
+      marked_at : character
+      marked_by : character
+      marked_by_id : integer
+    }
+
+    entity "supply_arrivals_snapshots\nСнимки статусов прибытия поставок" as supply_arrivals_snapshots {
+      source_key : character
+      sheet_title : character
+      payload_json : text
+      last_attempt : character
+      last_success : character
+      error : text
+    }
+
+  }
+
+  package "Продажи" #F5F0FF {
+    entity "sales_order_lines\nНормализованные строки заказов" as sales_order_lines {
+      store_slug : character
+      marketplace : character
+      order_key : character
+      line_key : character
+      external_order_id : character
+      scheme : character
+      status : character
+      substatus : character
+      article : character
+      barcode : character
+      name : character
+      ordered_at : character
+      source_updated_at : character
+      cancelled_at : character
+      sold_at : character
+      returned_at : character
+      quantity : integer
+      cancelled_quantity : integer
+      sold_quantity : integer
+      return_quantity : integer
+      order_amount : double
+      cancelled_amount : double
+      sale_amount : double
+      return_amount : double
+      currency : character
+      raw_json : text
+      synced_at : character
+    }
+
+    entity "sales_sync_state\nСостояние синхронизации продаж" as sales_sync_state {
+      store_slug : character
+      marketplace : character
+      last_attempt_at : character
+      last_success_at : character
+      ok : integer
+      error : text
+      rows_received : integer
+      lookback_days : integer
+    }
+
+  }
+
+  package "Юнит-экономика и решения" #F5F0FF {
+    entity "economics_daily\nТекущие дневные расчёты экономики" as economics_daily {
+      marketplace : character
+      store_slug : character
+      article : character
+      day : character
+      revision : integer
+      payload_json : text
+      updated_at : character
+    }
+
+    entity "economics_daily_events\nИстория изменений дневной экономики" as economics_daily_events {
+      id : character
+      marketplace : character
+      store_slug : character
+      article : character
+      day : character
+      revision : integer
+      payload_json : text
+      created_at : character
+      actor : character
+    }
+
+    entity "economics_source_days\nДни с загруженными источниками экономики" as economics_source_days {
+      marketplace : character
+      store_slug : character
+      source : character
+      day : character
+      updated_at : character
+    }
+
+    entity "rnp_action_log\nДействия по рекомендациям RNP" as rnp_action_log {
+      id : integer
+      store_slug : character
+      marketplace : character
+      article : character
+      action_date : character
+      note : text
+      user_id : integer
+      user_name : character
+      created_at : character
+    }
+
+    entity "rnp_action_revisions\nИстория изменений действий RNP" as rnp_action_revisions {
+      id : character
+      action_id : integer <<FK>>
+      previous_note : text
+      note : text
+      user_id : integer
+      user_name : character
+      edited_at : character
+    }
+
+    entity "rnp_daily_metrics\nДневные показатели для анализатора RNP" as rnp_daily_metrics {
+      store_slug : character
+      marketplace : character
+      article : character
+      day : character
+      traffic_clicks : integer
+      traffic_carts : integer
+      traffic_orders : integer
+      buyout_count : integer
+      buyout_amount : double
+      buyout_percent : double
+      return_count : integer
+      return_amount : double
+      ad_spend : double
+      ad_media : double
+      ad_internal : double
+      ad_external : double
+      ad_impressions : integer
+      ad_clicks : integer
+      ad_carts : integer
+      ad_orders : integer
+      ad_sales_amount : double
+      unified_impressions : integer
+      unified_clicks : integer
+      unified_spend : double
+      unified_orders : integer
+      unified_carts : integer
+      manual_search_impressions : integer
+      manual_search_clicks : integer
+      manual_search_spend : double
+      manual_search_orders : integer
+      manual_search_carts : integer
+      manual_recommendations_impressions : integer
+      manual_recommendations_clicks : integer
+      manual_recommendations_spend : double
+      manual_recommendations_orders : integer
+      manual_recommendations_carts : integer
+      cpc_search_impressions : integer
+      cpc_search_clicks : integer
+      cpc_search_spend : double
+      cpc_search_orders : integer
+      cpc_search_carts : integer
+      self_purchase_count : integer
+      self_purchase_amount : double
+      price_before_spp : double
+      price_after_spp : double
+      spp_percent : double
+      stock_units : integer
+      stock_value : double
+      stock_total : integer
+      stock_velocity_7d : double
+      stock_turnover_days : double
+      stock_depletion_date : character
+      stock_to_client : integer
+      stock_from_client : integer
+      stock_regions : text
+      rating : double
+      reviews_count : integer
+      reviews_delta : integer
+      reviews_1 : integer
+      reviews_2 : integer
+      plan_orders_amount : double
+      plan_orders_count : integer
+      plan_buyouts_amount : double
+      plan_buyouts_count : integer
+      plan_ad_budget : double
+      plan_drr : double
+      plan_margin : double
+      plan_roi : double
+      plan_profit : double
+      funnel_synced_at : character
+      advertising_synced_at : character
+      snapshot_synced_at : character
+    }
+
+    entity "rnp_metric_sync_state\nСостояние загрузки показателей RNP" as rnp_metric_sync_state {
+      store_slug : character
+      marketplace : character
+      source : character
+      period_from : character
+      period_to : character
+      status : character
+      last_attempt_at : character
+      last_success_at : character
+      rows_received : integer
+      error : text
+    }
+
+    entity "rnp_strategies\nСтратегии анализатора RNP" as rnp_strategies {
+      store_slug : character
+      marketplace : character
+      article : character
+      strategy : text
+      date_from : character
+      date_to : character
+      updated_by : character
+      updated_at : character
+    }
+
+    entity "unit_economics_1c_cabinet_settings\nНастройки кабинетов для экономики WB" as unit_economics_1c_cabinet_settings {
+      store_slug : character
+      marketplace : character
+      acceptance_coefficient : double
+      wb_extra_tariff_percent : double
+      acquiring_percent : double
+      team_commission_percent : double
+      vat_percent : double
+      usn_percent : double
+      osno_percent : double
+      tax_system : character
+      updated_at : character
+      updated_by_user_id : integer
+      updated_by_name : character
+      buyout_period_days : integer
+      default_buyout_percent : double
+      target_drr_percent : double
+      target_roi_percent : double
+      target_roi_by_code : text
+      hourly_d_coefficients : text
+    }
+
+    entity "unit_economics_1c_daily_margin_snapshots\nДневные снимки маржинальности WB" as unit_economics_1c_daily_margin_snapshots {
+      store_slug : character
+      article : character
+      day : character
+      marketplace : character
+      unit_margin : double
+      purchase_price : double
+      price_day : character
+      calculation_version : integer
+      inputs_json : text
+      result_json : text
+      captured_at : character
+    }
+
+    entity "unit_economics_1c_product_categories\nКатегории товаров для экономики WB" as unit_economics_1c_product_categories {
+      stock_item_id : integer <<FK>>
+      wb_subject_id : integer
+      imt_id : bigint
+      category : character
+      category_key : character
+      created_at : character
+      synced_at : character
+      brand : character
+    }
+
+    entity "unit_economics_1c_product_classifications\nКлассификация товаров для экономики WB" as unit_economics_1c_product_classifications {
+      stock_item_id : integer <<FK>>
+      abc_code : character
+      turnover_days : integer
+      source_article : character
+      source_barcode : character
+      source_row : integer
+      synced_at : character
+    }
+
+    entity "unit_economics_1c_product_settings\nНастройки товаров для экономики WB" as unit_economics_1c_product_settings {
+      store_slug : character
+      marketplace : character
+      article : character
+      delivery_wb_rub : double
+      return_cost_rub : double
+      volume_l : double
+      storage_wb_rub : double
+      updated_at : character
+      updated_by_user_id : integer
+      updated_by_name : character
+      target_drr_percent : double
+      target_roi_percent : double
+    }
+
+    entity "unit_economics_1c_source_values\nВнутренние исходные значения экономики WB" as unit_economics_1c_source_values {
+      stock_item_id : integer <<FK>>
+      purchase_price : double
+      fulfillment_cost : double
+      team_commission_percent : double
+      manager : character
+      tag_raw : text
+      goal_week : double
+      goal_day : double
+      stock_status : character
+      stock_end_week : character
+      supplier_external_raw : text
+      abc_code : character
+      fact_sales : double
+      plan_sales : double
+      source_sheet_id : integer
+      source_sheet_title : character
+      source_row : integer
+      synced_at : character
+    }
+
+    entity "unit_economics_yandex_assortment\nСостав ассортимента для экономики Яндекса" as unit_economics_yandex_assortment {
+      store_slug : character
+      article : character
+      is_legacy : integer
+      updated_at : character
+    }
+
+    entity "unit_economics_yandex_source_values\nВнутренние исходные значения экономики Яндекса" as unit_economics_yandex_source_values {
+      store_slug : character
+      article : character
+      purchase_price : double
+      fulfillment_cost : double
+      team_commission_percent : double
+      manager : character
+      tag_raw : text
+      goal_week : double
+      goal_day : double
+      stock_status : character
+      stock_end_week : character
+      supplier_external_raw : text
+      abc_code : character
+      fact_sales : double
+      plan_sales : double
+      source_sheet_id : integer
+      source_sheet_title : character
+      source_row : integer
+      synced_at : character
+    }
+
+    entity "wb_decision_actions\nДействия по решениям для товаров WB" as wb_decision_actions {
+      fingerprint : character
+      status : character
+      user_id : integer
+      user_name : character
+      updated_at : character
+    }
+
+    entity "yandex_economics_audit\nИстория изменений экономики Яндекса" as yandex_economics_audit {
+      id : character
+      store_slug : character
+      article : character
+      scheme : character
+      payload_json : text
+      created_at : character
+      actor : character
+    }
+
+    entity "yandex_economics_daily\nДневные расчёты экономики Яндекса" as yandex_economics_daily {
+      store_slug : character
+      article : character
+      scheme : character
+      day : character
+      payload_json : text
+      captured_at : character
+    }
+
+    entity "yandex_economics_settings\nНастройки экономики Яндекса" as yandex_economics_settings {
+      store_slug : character
+      article : character
+      scheme : character
+      revision : integer
+      payload_json : text
+      updated_at : character
+      updated_by : character
+    }
+
+  }
+
+  package "Финансы Яндекс Маркета" #F5F0FF {
+    entity "finance_yandex_attempts\nПопытки загрузки финансовых данных" as finance_yandex_attempts {
+      connection_id : character <<FK>>
+      month : date
+      source : character
+      attempted_at : character
+      error : text
+      state : character
+    }
+
+    entity "finance_yandex_connections\nПодключения финансовых данных Яндекса" as finance_yandex_connections {
+      id : character
+      store_slug : character
+      business_id : integer
+      campaign_ids : json
+      effective_from : date
+      effective_to : date
+      active : boolean
+      created_at : character
+      actor : character
+    }
+
+    entity "finance_yandex_costs\nСебестоимость товаров для финансового отчёта" as finance_yandex_costs {
+      id : integer
+      store_slug : character
+      article : character
+      effective_from : date
+      effective_to : date
+      price : character
+      origin : character
+      actor : character
+      reason : text
+      created_at : character
+    }
+
+    entity "finance_yandex_heads\nАктуальные версии финансовых снимков" as finance_yandex_heads {
+      connection_id : character <<FK>>
+      source : character
+      month : date
+      snapshot_id : integer <<FK>>
+    }
+
+  }
+
+  package "Эфемериды" #F5F0FF {
+    entity "ephemerides_comment_revisions\nИстория правок недельных комментариев" as ephemerides_comment_revisions {
+      store_slug : character
+      article : character
+      week : character
+      kind : character
+      version : integer
+      text : text
+      author_id : integer
+      author : character
+      updated_at : character
+    }
+
+    entity "ephemerides_comments\nНедельные комментарии к товарам" as ephemerides_comments {
+      store_slug : character
+      article : character
+      week : character
+      kind : character
+      version : integer
+      text : text
+      author_id : integer
+      author : character
+      updated_at : character
+    }
+
+  }
+
+  package "Google Таблицы и выгрузки" #F5F0FF {
+    entity "google_sheet_catalog\nКаталог листов Google Таблиц" as google_sheet_catalog {
+      spreadsheet_id : character
+      sheets_json : text
+      updated_at : character
+      last_attempt_at : character
+      last_error : text
+    }
+
+    entity "google_week_freeze_state\nСостояние фиксации недельных данных" as google_week_freeze_state {
+      id : integer
+      enabled : integer
+      spreadsheet_id : character
+      sheet_ids : text
+      selection_initialized : integer
+      last_attempt_at : character
+      last_success_at : character
+      last_success_slot : character
+      last_error : text
+      result_json : text
+    }
+
+    entity "google_week_marketplaces\nДанные недельных блоков маркетплейсов" as google_week_marketplaces {
+      marketplace : character
+      payload : text
+    }
+
+    entity "google_week_sales_state\nСостояние обновления недельных продаж" as google_week_sales_state {
+      id : integer
+      enabled : integer
+      last_attempt_at : character
+      last_success_at : character
+      last_success_slot : character
+      last_error : text
+      result_json : text
+    }
+
+    entity "google_week_search_state\nСостояние обновления недельного поиска" as google_week_search_state {
+      id : integer
+      enabled : integer
+      last_attempt_at : character
+      last_success_at : character
+      last_success_slot : character
+      last_error : text
+      result_json : text
+    }
+
+    entity "google_week_stock_state\nСостояние обновления недельных остатков" as google_week_stock_state {
+      id : integer
+      enabled : integer
+      sheet_name : character
+      last_attempt_at : character
+      last_success_at : character
+      last_success_slot : character
+      last_error : text
+      result_json : text
+    }
+
+    entity "google_week_update_settings\nНастройки недельного обновления таблиц" as google_week_update_settings {
+      id : integer
+      enabled : integer
+      spreadsheet_url : text
+      sheet_name : character
+      cells : text
+      weekday : integer
+      run_time : character
+      updated_at : character
+      last_attempt_at : character
+      last_success_at : character
+      last_success_slot : character
+      last_value : character
+      last_error : text
+    }
+
+    entity "project_sheet_export_settings\nНастройки проектной выгрузки" as project_sheet_export_settings {
+      id : integer
+      enabled : integer
+      schedule_kind : character
+      weekday : integer
+      run_time : character
+      spreadsheet_url : text
+      updated_at : character
+      last_attempt_at : character
+      last_success_at : character
+      last_error : text
+    }
+
+    entity "project_sheet_export_targets\nЦелевые листы проектной выгрузки" as project_sheet_export_targets {
+      marketplace : character
+      spreadsheet_url : text
+      stock_sheet_name : text
+      orders_sheet_name : text
+      orders_quantity_column : character
+      fbo_sheet_name : text
+      fbo_to_customer_column : character
+      fbo_from_customer_column : character
+    }
+
+    entity "stock_sheet_export_marketplaces\nМаркетплейсы выгрузки остатков" as stock_sheet_export_marketplaces {
+      store_slug : character
+      marketplace : character
+      spreadsheet_url : text
+    }
+
+    entity "stock_sheet_export_settings\nНастройки выгрузки остатков" as stock_sheet_export_settings {
+      store_slug : character
+      enabled : integer
+      schedule_kind : character
+      weekday : integer
+      run_time : character
+      spreadsheet_url : text
+      updated_at : character
+      last_attempt_at : character
+      last_success_at : character
+      last_error : text
+    }
+
+    entity "stock_sheet_export_targets\nЦелевые листы выгрузки остатков" as stock_sheet_export_targets {
+      id : integer
+      store_slug : character
+      marketplace : character
+      metric : character
+      sheet_name : character
+      key_column_name : character
+      value_column_name : character
+    }
+
+  }
+
+  package "Фоновые задания" #F5F0FF {
+    entity "sync_health\nСостояние синхронизаций" as sync_health {
+      id : integer
+      store_slug : character
+      marketplace : character
+      scope : character
+      ok : integer
+      error : text
+      checked_at : character
+    }
+
+    entity "sync_job_runs\nИстория запусков фоновых задач" as sync_job_runs {
+      id : character
+      name : character
+      trigger : character
+      status : character
+      started_at : character
+      finished_at : character
+      duration_ms : integer
+      error : text
+    }
+
+    entity "sync_job_schedules\nРасписание фоновых задач" as sync_job_schedules {
+      name : character
+      next_run_at : character
+      attempt_number : integer
+      active_run_id : character
+      updated_at : character
+    }
+
+    entity "sync_job_settings\nНастройки фоновых задач" as sync_job_settings {
+      name : character
+      store_slug : character
+      marketplace : character
+      enabled : integer
+      updated_at : character
+    }
+
+    entity "sync_job_states\nТекущее состояние фоновых задач" as sync_job_states {
+      name : character
+      last_trigger : character
+      status : character
+      last_started_at : character
+      last_finished_at : character
+      last_success_at : character
+      duration_ms : integer
+      error : text
+      next_run_at : character
+      updated_at : character
+    }
+
+    entity "wb_token_info\nСведения о сроках действия токенов WB" as wb_token_info {
+      store_slug : character
+      expires_at : character
+      checked_at : character
+    }
+
+    entity "yandex_report_limits\nОграничения запросов отчётов Яндекса" as yandex_report_limits {
+      business_id : character
+      report : character
+      next_request_at : character
+    }
+
+    entity "yandex_storefront_lease\nАренда запуска сбора цен витрины" as yandex_storefront_lease {
+      name : character
+      owner : character
+      expires_at : character
+    }
+
+    entity "yandex_storefront_runs\nИстория запусков сбора цен витрины" as yandex_storefront_runs {
+      run_id : character
+      started_at : character
+      finished_at : character
+      report_json : text
+    }
+
+  }
+
+  package "Архивные таблицы" #F5F0FF {
+    entity "stock_sheet_export_targets_backup_manual_20260817\nРезервная копия целей выгрузки остатков" as stock_sheet_export_targets_backup_manual_20260817 {
+      id : integer
+      store_slug : character
+      marketplace : character
+      metric : character
+      sheet_name : character
+      key_column_name : character
+      value_column_name : character
+    }
+
+    entity "stock_sheet_export_targets_backup_v1\nРанняя копия целей выгрузки остатков" as stock_sheet_export_targets_backup_v1 {
+      store_slug : character
+      marketplace : character
+      metric : character
+      sheet_name : character
+      key_column_name : character
+      value_column_name : character
+    }
+
+    entity "wb_buyout90_backup_20260903\nРезервная копия расчёта выкупа WB" as wb_buyout90_backup_20260903 {
+      store_slug : character
+      article : character
+      day : character
+      marketplace : character
+      unit_margin : double
+      purchase_price : double
+      price_day : character
+      calculation_version : integer
+      inputs_json : text
+      result_json : text
+      captured_at : character
+    }
+
+  }
+
+}
+
+stock_items ||--o{ catalog_barcodes
+ff_transit_batches ||--o{ ff_transit_items
+ff_transit_receipts ||--o{ ff_transit_receipt_items
+ff_transit_items ||--o{ ff_transit_receipt_items
+ff_transit_batches ||--o{ ff_transit_receipts
+finance_yandex_connections ||--o{ finance_yandex_attempts
+finance_yandex_connections ||--o{ finance_yandex_heads
+finance_yandex_snapshots ||--o{ finance_yandex_heads
+finance_yandex_snapshots ||--o{ finance_yandex_operations
+finance_yandex_connections ||--o{ finance_yandex_snapshots
+rnp_action_log ||--o{ rnp_action_revisions
+users ||--o{ sessions
+stock_operations ||--o{ stock_operation_items
+stock_operations ||--o{ stock_operation_report_flags
+stock_items ||--o{ unit_economics_1c_product_categories
+stock_items ||--o{ unit_economics_1c_product_classifications
+stock_items ||--o{ unit_economics_1c_source_values
+@enduml
