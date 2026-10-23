@@ -60,7 +60,7 @@ class AsyncTurnoverRepository:
                     )
                 ).mappings()
             )
-            stale = frozenset(
+            stale: frozenset[str] = frozenset(
                 (
                     await connection.execute(
                         select(states.c.store_slug).where(

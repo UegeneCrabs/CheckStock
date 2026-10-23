@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import ScalarResult
 
 from app.core.constants import Marketplace
 from app.dto.ozon_storage import StorageReportTicket, StorageSnapshot, StorageStoreData, StorageStoreSnapshot
@@ -65,7 +66,7 @@ class AsyncStorageRepository:
     async def articles(self, store: str) -> tuple[str, ...]:
         table = table_for(StockItemRecord)
         async with self.database.transaction() as connection:
-            values = await connection.scalars(
+            values: ScalarResult[str] = await connection.scalars(
                 select(table.c.article)
                 .distinct()
                 .where(table.c.store_slug == store, table.c.marketplace == Marketplace.OZON)
@@ -151,7 +152,9 @@ class AsyncStorageRepository:
         if article:
             query = query.where(table.c.article == article)
         async with self.database.transaction() as connection:
-            rows = await connection.scalars(query.order_by(table.c.day, table.c.store_slug, table.c.article))
+            rows: ScalarResult[str] = await connection.scalars(
+                query.order_by(table.c.day, table.c.store_slug, table.c.article)
+            )
             return tuple(StorageSnapshot.model_validate_json(row) for row in rows)
 
     async def latest(self, stores: tuple[str, ...], day: date) -> tuple[StorageStoreData, ...]:

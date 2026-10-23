@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import select
+from sqlalchemy.engine import ScalarResult
 
 from app.core.constants import OZON_MARGIN, TIME, Marketplace
 from app.dto.ozon_cabinet import OzonProductGoals
@@ -100,7 +101,7 @@ class OzonMarginRepository:
     ) -> tuple[OzonMarginSnapshot, ...]:
         table = table_for(OzonMarginDailyRecord)
         async with self.database.transaction() as connection:
-            payloads = (
+            payloads: ScalarResult[str] = (
                 await connection.execute(
                     select(table.c.payload).where(
                         table.c.store_slug.in_(stores),

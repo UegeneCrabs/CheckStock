@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import ScalarResult
 
 from app.core.constants import Marketplace
 from app.core.stores import STORES
@@ -246,7 +247,7 @@ class OzonCabinetRepository:
             .subquery()
         )
         async with self.database.transaction() as connection:
-            rows = await connection.scalars(
+            rows: ScalarResult[str] = await connection.scalars(
                 select(table.c.payload).join(
                     latest,
                     (table.c.store_slug == latest.c.store_slug) & (table.c.day == latest.c.day),
