@@ -24,6 +24,9 @@
     const noteDrafts = new Map();
     const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: M.fields.find(column => column.key === 'fact').index, direction: -1, page: 1, pageSize: 20};
     const visibleGroups = new Set(Object.keys(M.groups));
+    const hiddenColumns = new Set();
+    state.color = 'all';
+    state.colorColumn = M.fields.find(column => column.key === 'difference').index;
     let summaryCollapsed = false;
     const preferenceKey = 'checkstock.analyzer.columns.v1';
     try {
@@ -36,10 +39,13 @@
                 visibleGroups.clear();
                 saved.groups.forEach(group => { if (M.groups[group]) visibleGroups.add(group); });
             }
+            (saved.hiddenColumns || []).forEach(id => hiddenColumns.add(id));
+            if (!saved.hiddenColumns) visibleGroups.add('team');
         }
     } catch { /* Preferences are optional. */ }
+    visibleGroups.add('product');
     function savePreferences() {
-        try { localStorage.setItem(preferenceKey, JSON.stringify({dense: $('dense').checked, exact: $('sheet-order').checked, summaryCollapsed, groups: [...visibleGroups]})); } catch { /* Storage may be disabled. */ }
+        try { localStorage.setItem(preferenceKey, JSON.stringify({dense: $('dense').checked, exact: $('sheet-order').checked, summaryCollapsed, groups: [...visibleGroups], hiddenColumns: [...hiddenColumns]})); } catch { /* Storage may be disabled. */ }
     }
     function toast(text) {
         $('toast').textContent = text;
@@ -56,21 +62,23 @@
     function title(column) {
         if (column.metric === 'impressions' || column.metric === 'ctr' || column.key === 'totalCtr') return 'Показы и CTR рекламных кампаний WB. CTR = клики / показы × 100%.';
         if (column.metric === 'carts') return 'Все добавления товара в корзину за день, включая органические. Показатель карточки WB общий для её размеров; в итогах учитывается один раз.';
-        if (column.key === 'stock') return 'Последний сохранённый остаток: FBO + FBS + ФФ. Если часть источников отсутствует, показана известная часть.';
+        if (column.key === 'stock') return 'Последний сохранённый остаток: FBO + FBS. Если часть источников отсутствует, показана известная часть.';
+        if (column.key === 'currentRoi') return 'Текущий ROI из юнит-экономики WB: тот же расчёт за сегодня, с актуальными сохранёнными ценами, расходами и настройками.';
         if (column.key === 'roi') return 'ROI по дневным расчётам юнит-экономики за выбранную неделю. Неполные данные отмечены в карточке.';
         if (['drr', 'yesterdayDrr'].includes(column.key)) return 'Расход рекламы / ожидаемый выкупленный оборот × 100%, как в юнит-экономике WB. Только дни с известными исходными значениями.';
         if (column.key === 'previousPrice') return 'Сумма заказов / количество заказов за ' + shortDate(payload.previous_from) + '–' + shortDate(payload.previous_to) + '.';
         if (column.key === 'coeff') return 'Коэффициент D для текущего часа по Москве из параметров кабинета WB. С 00:00 до 07:59 используется D = 1.';
         if (column.key === 'fact') return 'Сумма заказов за сегодня (' + shortDate(payload.turnover_day) + ') из последней сохранённой воронки WB. Включает все размеры артикула WB; в итогах учитывается один раз.';
         if (column.key === 'forecast') return 'Коэффициент D × ТО факт на данный момент за сегодня. Оборот всех размеров артикула WB учитывается в итогах один раз.';
-        if (column.key === 'difference') return 'ТО цель на день − прогнозируемый ТО на день.';
-        if (column.key === 'deviation') return '(ТО цель на день − прогнозируемый ТО на день) / ТО цель на день × 100%.';
+        if (column.key === 'difference') return 'Прогнозируемый ТО на день − ТО цель на день. Минус — ниже цели, плюс — выше цели.';
+        if (column.key === 'deviation') return '(Прогнозируемый ТО на день − ТО цель на день) / ТО цель на день × 100%.';
         if (column.key === 'plan') return 'Средняя цена заказов предыдущей выбранной недели × цель по заказам на день.';
         if (column.type === 'goal' || ['goal', 'dayGoal'].includes(column.key)) return 'Последняя сохранённая цель из справочника юнит-экономики. Если дневная цель отсутствует, используется недельная / 7.';
         return column.label.replace(/<br>/g, ' ');
     }
     function format(value, column) {
         if (value == null) return '—';
+        if (column.type === 'difference' || column.type === 'deviation') return (value > 0 ? '+' : '') + (column.type === 'deviation' ? pct(value) : money(value));
         if (['roi', 'drr', 'percent', 'deviation'].includes(column.type)) return pct(value);
         if (['money', 'difference'].includes(column.type)) return money(value);
         return num(value, ['decimal', 'rating'].includes(column.type) ? 2 : 0);
@@ -103,11 +111,20 @@
         if (column.type === 'stock') return `<strong>${num(value)}</strong><span class="cell-sub" title="Сток / среднесуточные заказы за ${shortDate(payload.stockPreviousFrom)}–${shortDate(payload.stockPreviousTo)}">${row.stockDays != null ? '≈ ' + num(row.stockDays, 1) + ' дней запаса' : row.stockOrdersComplete && row.stockDailyOrders === 0 ? 'Нет заказов за прошлую неделю' : 'Запас дней: нет данных'}</span>`;
         if (column.type === 'rating') return `<span class="rating">★</span> <strong>${num(value, 1)}</strong>`;
         if (column.type === 'day') return orderBadge(value, row.dayGoal);
-        const partial = column.key === 'roi' && !row.coverage.roiComplete || column.key === 'drr' && row.coverage.drr < row.coverage.expected;
-        return `<span class="cell-main ${column.type === 'roi' ? value < 0 ? 'negative' : 'positive' : ''}">${format(value, column)}</span>${partial ? '<span class="cell-sub">неполные данные</span>' : ''}`;
+        if (['difference', 'deviation'].includes(column.type)) return `<span class="turnover-change ${value < 0 ? 'below' : value > 0 ? 'above' : ''}">${format(value, column)}</span>`;
+        const partial = column.key === 'currentRoi' && !row.coverage.currentRoiComplete || column.key === 'roi' && !row.coverage.roiComplete || column.key === 'drr' && row.coverage.drr < row.coverage.expected;
+        return `<span class="cell-main ${column.type === 'roi' ? value < 0 ? 'negative' : value > 0 ? 'positive' : '' : ''}">${format(value, column)}</span>${partial ? '<span class="cell-sub">неполные данные</span>' : ''}`;
     }
     function buildColumns() {
-        columns = M.displayColumns(visibleGroups, $('sheet-order').checked);
+        columns = M.displayColumns(visibleGroups, $('sheet-order').checked, 160, hiddenColumns);
+        const active = new Set(columns.map(column => column.index));
+        Object.keys(state.filters).forEach(index => { if (!active.has(Number(index))) delete state.filters[index]; });
+        if (!active.has(state.colorColumn)) state.color = $('color-filter').value = 'all';
+        $('color-column').innerHTML = columns.filter(column => ['roi', 'difference', 'deviation', 'day'].includes(column.type)).map(column => `<option value="${column.index}">${esc(label(column).replace(/<br>/g, ' '))}</option>`).join('');
+        $('color-column').disabled = $('color-filter').disabled = !$('color-column').options.length;
+        if (!active.has(state.colorColumn)) state.colorColumn = Number($('color-column').value);
+        $('color-column').value = state.colorColumn;
+        renderColumnSettings();
         root.classList.toggle('compact', $('dense').checked);
         $('table').style.width = columns.reduce((sum, column) => sum + column.width, 0) + 'px';
         $('cols').innerHTML = columns.map(column => `<col style="width:${column.width}px">`).join('');
@@ -118,7 +135,7 @@
         });
         const groupHeaders = groups.map(group => {
             const pinned = group.frozenLeft != null;
-            return `<th colspan="${group.columns.length}" data-section="${group.key}" class="tone-${group.key} ${pinned ? 'frozen' : ''}" ${pinned ? `style="left:${group.frozenLeft}px"` : ''}>${pinned ? group.columns[0].key === 'code' ? 'Код' : 'Товар' : group.key === 'product' ? 'Команда и проект' : M.groups[group.key]}</th>`;
+            return `<th colspan="${group.columns.length}" data-section="${group.key}" class="tone-${group.key} ${pinned ? 'frozen' : ''}" ${pinned ? `style="left:${group.frozenLeft}px"` : ''}>${pinned ? group.columns[0].key === 'code' ? 'Код' : 'Товар' : M.groups[group.key]}</th>`;
         }).join('');
         $('thead').innerHTML = `<tr class="group">${groupHeaders}</tr><tr class="heads">${columns.map(column => `<th ${columnAttributes(column)} ${column.type === 'spacer' ? '' : `data-filter-column="${column.index}" ${M.numeric(column) ? 'data-filter-type="number"' : ''}`} title="${esc(title(column))}">${label(column)}</th>`).join('')}</tr><tr class="totals"></tr>`;
         root.querySelectorAll('[data-jump]').forEach(button => { button.hidden = jumpColumnIndex(button) < 0; });
@@ -140,7 +157,7 @@
         $('summary-arrow').textContent = summaryCollapsed ? '▾' : '▴';
         if (!payload) return;
         const stores = summaryCollapsed && filtered.length ? [{project: 'Все магазины', ...M.turnoverTotals(filtered)}] : M.storeTurnover(filtered);
-        $('store-summary').innerHTML = stores.map(store => `<tr class="${summaryCollapsed ? 'summary-total' : ''}"><th scope="row">${esc(store.project)}</th>${['plan', 'fact', 'forecast', 'difference', 'deviation'].map(key => `<td title="${store.partial[key] ? 'Неполные данные: учтены только известные значения' : ''}">${key === 'deviation' ? pct(store[key]) : num(store[key], 2)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">Нет товаров по выбранным фильтрам</td></tr>';
+        $('store-summary').innerHTML = stores.map(store => `<tr class="${summaryCollapsed ? 'summary-total' : ''}"><th scope="row">${esc(store.project)}</th>${['plan', 'fact', 'forecast', 'deviation', 'difference'].map(key => `<td class="${['difference', 'deviation'].includes(key) ? store[key] < 0 ? 'turnover-change below' : store[key] > 0 ? 'turnover-change above' : '' : ''}" title="${store.partial[key] ? 'Неполные данные: учтены только известные значения' : ''}">${['difference', 'deviation'].includes(key) && store[key] > 0 ? '+' : ''}${key === 'deviation' ? pct(store[key]) : num(store[key], 2)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">Нет товаров по выбранным фильтрам</td></tr>';
     }
     function renderPage() {
         if (!payload) return;
@@ -150,7 +167,7 @@
         const start = (state.page - 1) * state.pageSize;
         $('thead').querySelector('.totals').innerHTML = columns.map((column, i) => {
             const value = M.summary(filtered, column);
-            return `<th ${columnAttributes(column)} title="Итоги по всем отфильтрованным товарам; неизвестные значения не включены">${i === 0 ? 'Итого · ' + filtered.length : value == null ? '' : format(value, column)}</th>`;
+            return `<th ${columnAttributes(column)} title="Итоги по всем отфильтрованным товарам; неизвестные значения не включены">${i === 0 ? 'Итого · ' + filtered.length : value == null ? '' : `<span class="${['difference', 'deviation'].includes(column.type) ? 'turnover-change ' + (value < 0 ? 'below' : value > 0 ? 'above' : '') : ''}">${format(value, column)}</span>`}</th>`;
         }).join('');
         $('tbody').innerHTML = filtered.slice(start, start + state.pageSize).map(row => `<tr data-row="${esc(row.id)}" class="${selected?.id === row.id ? 'selected' : ''}">${columns.map(column => `<td ${columnAttributes(column, ['product', 'person', 'name', 'text', 'note', 'goal'].includes(column.type) ? 'text' : ['project', 'code', 'photo', 'day'].includes(column.type) ? 'center' : '')}>${cell(row, column)}</td>`).join('')}</tr>`).join('');
         renderStoreSummary(filtered);
@@ -303,17 +320,20 @@
             if ($('new-note')) $('new-note').disabled = false;
         }
     });
-    $('groups-list').innerHTML = Object.entries(M.groups).map(([key, name]) => `<label><input type="checkbox" data-group="${key}" ${visibleGroups.has(key) ? 'checked' : ''}>${name}</label>`).join('');
-    root.querySelectorAll('[data-group]').forEach(input => input.addEventListener('change', () => {
-        if (!input.checked && visibleGroups.size === 1) { input.checked = true; return; }
-        if (input.checked) visibleGroups.add(input.dataset.group); else visibleGroups.delete(input.dataset.group);
-        // Hidden filters must not silently exclude products.
-        M.fields.filter(column => !visibleGroups.has(column.group)).forEach(column => { delete state.filters[column.index]; });
-        if (!visibleGroups.has('product')) delete state.filters[M.combined.index];
-        if (payload) buildColumns();
-    }));
-    $('show-all').onclick = () => { Object.keys(M.groups).forEach(key => visibleGroups.add(key)); root.querySelectorAll('[data-group]').forEach(input => { input.checked = true; }); if (payload) buildColumns(); };
-    $('sheet-order').onchange = () => { state.filters = {}; if (payload) buildColumns(); };
+    function renderColumnSettings() {
+        const expanded = new Set([...$('groups-list').querySelectorAll('details[open]')].map(item => item.dataset.section));
+        $('groups-list').innerHTML = Object.entries(M.groups).map(([key, name]) => `<details data-section="${key}" ${expanded.has(key) ? 'open' : ''}><summary>${esc(name)}</summary><label><input type="checkbox" data-group="${key}" ${visibleGroups.has(key) ? 'checked' : ''} ${key === 'product' ? 'disabled' : ''}>Показать блок</label><div class="column-choices">${M.fields.filter(column => column.group === key && column.type !== 'spacer' && ($('sheet-order').checked || !['barcode', 'article', 'image'].includes(column.key))).map(column => `<label><input type="checkbox" data-column="${M.columnId(column)}" ${!hiddenColumns.has(M.columnId(column)) || column.key === 'name' ? 'checked' : ''} ${column.key === 'name' || !visibleGroups.has(key) ? 'disabled' : ''}>${esc(column.key === 'name' && !$('sheet-order').checked ? 'Карточка товара' : payload ? label(column).replace(/<br>/g, ' ') : column.label.replace(/<br>/g, ' ') || column.key)}</label>`).join('')}</div></details>`).join('');
+    }
+    renderColumnSettings();
+    $('groups-list').onchange = event => {
+        const input = event.target;
+        if (input.dataset.group && input.dataset.group !== 'product') input.checked ? visibleGroups.add(input.dataset.group) : visibleGroups.delete(input.dataset.group);
+        if (input.dataset.column) input.checked ? hiddenColumns.delete(input.dataset.column) : hiddenColumns.add(input.dataset.column);
+        state.page = 1;
+        if (payload) { buildColumns(); renderPage(); } else { renderColumnSettings(); savePreferences(); }
+    };
+    $('show-all').onclick = () => { Object.keys(M.groups).forEach(key => visibleGroups.add(key)); hiddenColumns.clear(); if (payload) { buildColumns(); renderPage(); } else { renderColumnSettings(); savePreferences(); } };
+    $('sheet-order').onchange = () => { state.filters = {}; if (payload) { buildColumns(); renderPage(); } else renderColumnSettings(); };
     $('dense').onchange = () => { root.classList.toggle('compact', $('dense').checked); savePreferences(); };
     function toggleColumns(open) {
         $('column-panel').hidden = !open;
@@ -341,11 +361,14 @@
         state.query = state.project = state.manager = '';
         $('search').value = '';
         state.filters = {};
+        state.color = $('color-filter').value = 'all';
         $('table')._tfFilters = {};
         root.querySelector('[data-state="all"]').click();
         buildColumns();
     };
     $('page-size').onchange = event => { state.pageSize = Number(event.target.value); state.page = 1; renderPage(); };
+    $('color-filter').onchange = () => { state.color = $('color-filter').value; state.page = 1; renderPage(); };
+    $('color-column').onchange = () => { state.colorColumn = Number($('color-column').value); state.page = 1; renderPage(); };
     $('page-prev').onclick = () => { state.page--; renderPage(); };
     $('page-next').onclick = () => { state.page++; renderPage(); };
     $('prev-week').onclick = () => loadWeek(addDays(requestedWeek, -7));

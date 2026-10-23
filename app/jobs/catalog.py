@@ -50,7 +50,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
                 marketplaces=metadata.marketplaces,
                 manual_run=metadata.manual_run,
             )
-            for metadata in JOBS.google_weeks
+            for metadata in (*JOBS.google_weeks, JOBS.wb_ephemerides_stock, JOBS.inbound_supplies)
         ),
         SyncJobDefinition(
             "wb_customer_transit_sync",
@@ -84,15 +84,6 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "Остатки маркетплейсов",
             "Загружает актуальные остатки по всем магазинам и маркетплейсам.",
             _interval(settings.auto_sync_interval_seconds),
-            base,
-            "store_marketplaces",
-            ("WB", "OZON", "YANDEX MARKET"),
-        ),
-        SyncJobDefinition(
-            "inbound_supplies_sync",
-            "Поставки на склады маркетплейсов",
-            "Загружает поставки FBW, FBO и FBY, их товары, статусы и результаты приёмки по каждому магазину.",
-            _interval(settings.inbound_sync_interval_seconds),
             base,
             "store_marketplaces",
             ("WB", "OZON", "YANDEX MARKET"),

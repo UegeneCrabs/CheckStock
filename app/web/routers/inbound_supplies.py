@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.access.authentication import is_active_user
 from app.access.resources import store_marketplace_pairs
-from app.config import settings
+from app.core.constants import INBOUND_SCHEDULE
 from app.core.stores import STORES
 from app.dto.inbound_supplies import STAGE_LABELS, InboundSyncRequest
 from app.jobs.locks import SyncJobBusyError
@@ -60,7 +60,6 @@ async def inbound_page(request: Request, store: str = "", mp: str = ""):
         ),
         scopes=html.escape(json.dumps(pairs), quote=True),
         refresh_hidden="" if is_active_user(request.state.user) else " hidden",
-        interval_minutes=str(settings.inbound_sync_interval_seconds // 60),
     )
     return render_page("РАКЕТА — Поставки FBO", "stock_inbound", content, request.state.user)
 
@@ -69,7 +68,7 @@ async def inbound_page(request: Request, store: str = "", mp: str = ""):
 async def inbound_data(request: Request, container: ContainerDependency, store: str = "", mp: str = ""):
     targets = allowed_targets(request, store, mp)
     snapshots = await run_in_threadpool(container.inbound_supplies.report, targets)
-    cutoff = datetime.now(UTC) - timedelta(seconds=max(settings.inbound_sync_interval_seconds * 2, 3600))
+    cutoff = datetime.now(UTC) - timedelta(seconds=INBOUND_SCHEDULE.stale_after_seconds)
     result = []
     for snapshot in snapshots:
         stale = not snapshot.last_success or datetime.fromisoformat(snapshot.last_success) < cutoff

@@ -729,9 +729,7 @@ def _combined_stock_snapshot(
             (*repository.STOCK_METRICS, "ff_transit"),
             now=now,
         )
-        inbound = stock_sheet_inbound.load(
-            store_slug, marketplace, catalog, now=now, allow_saved_snapshot=allow_saved_snapshot
-        )
+        inbound = stock_sheet_inbound.load_accounted(store_slug, marketplace, catalog)
         catalog = inbound.catalog
         store_values["mp_inbound"] = inbound.quantities
         inbound_available = inbound_available and inbound.available

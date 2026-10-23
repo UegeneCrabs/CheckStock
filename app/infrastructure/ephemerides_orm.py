@@ -25,3 +25,12 @@ Table(
     Column("to_customer", Integer, nullable=False),
     Column("updated_at", String, nullable=False),
 )
+
+Table(
+    "ephemerides_stock_snapshots",
+    OrmBase.metadata,
+    Column("store_slug", String, primary_key=True),
+    Column("week", String, primary_key=True),
+    Column("products_json", Text, nullable=False),
+    Column("captured_at", String, nullable=False),
+)

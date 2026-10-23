@@ -2,9 +2,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from app.config import settings
+from app.core.constants import INBOUND_SCHEDULE
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSnapshot, InboundSupply
+from app.repositories.stock_transit import get_ff_transit_totals
 from app.stock import inbound_supplies
 
 
@@ -15,6 +16,19 @@ class InboundExport:
     available: bool
     warnings: tuple[str, ...] = ()
     confirmed_quantities: dict[str, int] = field(default_factory=dict)
+
+
+def load_accounted(store_slug: str, marketplace: str, catalog: list[dict]) -> InboundExport:
+    products = {str(row["article"]): dict(row) for row in catalog if row.get("article")}
+    all_transit = get_ff_transit_totals(store_slug, marketplace)
+    between_ff = get_ff_transit_totals(store_slug, marketplace, include_fbo=False)
+    quantities = dict.fromkeys(products, 0)
+    for article, total in all_transit.items():
+        quantity = total - between_ff.get(article, 0)
+        if quantity:
+            products.setdefault(article, {"article": article, "name": article, "barcode": ""})
+            quantities[article] = quantity
+    return InboundExport(list(products.values()), quantities, True, confirmed_quantities=dict(quantities))
 
 
 def _key(value: object) -> str:
@@ -83,7 +97,7 @@ def summarize(
     current = now or datetime.now(UTC)
     if current.tzinfo is None:
         current = current.replace(tzinfo=UTC)
-    cutoff = current - timedelta(seconds=max(settings.inbound_sync_interval_seconds * 2, 3600))
+    cutoff = current - timedelta(seconds=INBOUND_SCHEDULE.stale_after_seconds)
     fresh = bool(
         updated
         and updated >= cutoff

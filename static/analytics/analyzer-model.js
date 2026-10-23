@@ -4,8 +4,8 @@
     function col(letter, label, key, group, width = 108, type = 'number', extra = {}) {
         fields.push({letter, label, key, group, width, type, index: fields.length, ...extra});
     }
-    col('A', 'Ответственный', 'manager', 'product', 100, 'person');
-    col('B', 'Проект', 'project', 'product', 75, 'project');
+    col('A', 'Ответственный', 'manager', 'team', 100, 'person');
+    col('B', 'Проект', 'project', 'team', 75, 'project');
     col('C', 'BARCODE', 'barcode', 'product', 120, 'text');
     col('D', 'ARTICLE', 'article', 'product', 105, 'text');
     col('E', 'Название', 'name', 'product', 160, 'name');
@@ -13,7 +13,7 @@
     col('G', 'Код', 'code', 'product', 65, 'code');
     col('H', 'Сток, шт', 'stock', 'base', 75, 'stock');
     col('I', 'ДРР', 'drr', 'base', 55, 'drr');
-    col('J', 'ROI', 'roi', 'base', 65, 'roi');
+    col('J', 'ROI сейчас', 'currentRoi', 'base', 65, 'roi');
     col('K', 'Средняя цена<br>пред. периода', 'previousPrice', 'base', 90, 'money');
     ['L', 'M', 'N', 'O'].forEach((letter, idx) => col(letter, 'Показы', 'impressions' + idx, 'traffic', 70, 'number', {idx, metric: 'impressions'}));
     ['P', 'Q', 'R', 'S'].forEach((letter, idx) => col(letter, 'CTR', 'ctr' + idx, 'traffic', 55, 'percent', {idx, metric: 'ctr'}));
@@ -30,7 +30,7 @@
     col('AM', 'Цена WB<br>с кошельком', 'wallet', 'plan', 80, 'money');
     col('AN', 'Цена<br>поставщика', 'price', 'plan', 80, 'money');
     col('AO', 'Цель W,<br>шт', 'goal', 'plan', 65);
-    col('AP', 'Коэф D', 'coeff', 'plan', 55, 'decimal');
+    col('AP', 'Коэф D', 'coeff', 'turnover', 55, 'decimal');
     col('AQ', 'Цель день,<br>шт', 'dayGoal', 'plan', 65, 'decimal');
     col('AR', '', 'spacer', 'turnover', 8, 'spacer');
     col('AT', 'ТО цель на день,<br>₽', 'plan', 'turnover', 110, 'money');
@@ -40,7 +40,17 @@
     col('AV', 'Отклонение,<br>%', 'deviation', 'turnover', 70, 'deviation');
     ['AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC'].forEach((letter, idx) => col(letter, '', 'note' + idx, 'notes', 165, 'note', {idx}));
     const combined = {index: fields.length, label: 'Товар', key: 'product', group: 'product', width: 160, type: 'product'};
-    const groups = {product: 'Товар', base: 'Текущие показатели', traffic: 'Рекламная воронка · 4 дня', performance: 'Эффективность', goals: 'Цели на неделю', week: 'Заказы · выбранная неделя', plan: 'Цены и план', turnover: 'Товарооборот', notes: 'Работа по неделе'};
+    const groups = {product: 'Товар', team: 'Команда и проект', base: 'Текущие показатели', traffic: 'Рекламная воронка · 4 дня', performance: 'Эффективность', goals: 'Цели на неделю', week: 'Заказы · выбранная неделя', plan: 'Цены и план', turnover: 'Товарооборот', notes: 'Работа по неделе'};
+    const columnId = column => column.group + ':' + column.key;
+    function color(row, column) {
+        let amount = value(row, column);
+        if (amount == null) return 'empty';
+        if (column.type === 'day') {
+            if (!(row.dayGoal > 0)) return 'neutral';
+            amount -= row.dayGoal;
+        }
+        return amount < 0 ? 'red' : amount > 0 ? 'green' : 'neutral';
+    }
     const numeric = c => !['product', 'text', 'person', 'project', 'name', 'photo', 'code', 'goal', 'spacer', 'note'].includes(c.type);
     function value(row, column) {
         if (column.metric) return row[column.metric]?.[column.idx] ?? null;
@@ -57,7 +67,8 @@
         return rows.filter(row => (!query || [row.name, row.article, row.barcode, ...(row.barcodes || []), row.project, row.manager].join(' ').toLocaleLowerCase('ru').includes(query))
             && (!state.project || row.project === state.project)
             && (!state.manager || row.manager === state.manager)
-            && (state.segment === 'all' || state.segment === 'negative' && row.roi != null && row.roi < 0 || state.segment === 'new' && row.code.toUpperCase() === 'NEW'));
+            && (state.segment === 'all' || state.segment === 'negative' && row.currentRoi != null && row.currentRoi < 0 || state.segment === 'new' && row.code.toUpperCase() === 'NEW')
+            && (!state.color || state.color === 'all' || color(row, fields[state.colorColumn]) === state.color));
     }
     function tableRows(rows, state) {
         const columns = [...fields, combined];
@@ -78,12 +89,15 @@
         return known.length ? known.reduce((a, b) => a + b, 0) : null;
     }
     function ratio(a, b) { return a != null && b > 0 ? a / b * 100 : null; }
-    function displayColumns(visibleGroups, separate = false, productWidth = 160) {
-        const enabled = fields.filter(column => visibleGroups.has(column.group));
-        if (!visibleGroups.has('product')) return enabled;
+    function displayColumns(visibleGroups, separate = false, productWidth = 160, hiddenColumns = new Set()) {
+        const order = Object.keys(groups);
+        const enabled = fields.filter(column => (column.group === 'product' || visibleGroups.has(column.group))
+            && (column.key === 'name' || !hiddenColumns.has(columnId(column))));
+        enabled.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group)
+            || (a.key === 'difference' && b.key === 'deviation' ? 1 : a.key === 'deviation' && b.key === 'difference' ? -1 : a.index - b.index));
         const primary = separate ? enabled.find(column => column.key === 'name') : {...combined, width: productWidth};
         const code = enabled.find(column => column.key === 'code');
-        return [{...primary, frozenLeft: 0}, {...code, frozenLeft: primary.width},
+        return [{...primary, frozenLeft: 0}, ...(code ? [{...code, frozenLeft: primary.width}] : []),
             ...enabled.filter(column => !['name', 'code'].includes(column.key)
                 && (separate || !['barcode', 'article', 'image'].includes(column.key)))];
     }
@@ -106,7 +120,7 @@
             const completePlan = products.every(row => known(row.plan));
             const fact = sharedValue(products, 'fact'), forecast = sharedValue(products, 'forecast');
             return {plan, completePlan, fact, forecast,
-                difference: completePlan && forecast != null ? plan - forecast : null};
+                difference: completePlan && forecast != null ? forecast - plan : null};
         });
         const result = {partial: {}};
         ['plan', 'fact', 'forecast', 'difference'].forEach(key => {
@@ -134,6 +148,7 @@
             const pairs = rows.filter(row => row.weights[numerator] != null && row.weights[denominator] != null);
             return ratio(sum(pairs.map(row => row.weights[numerator])), sum(pairs.map(row => row.weights[denominator])));
         };
+        if (column.key === 'currentRoi') return weighted('currentProfit', 'currentPurchase');
         if (column.metric === 'carts') {
             const articles = new Map();
             rows.forEach(row => {
@@ -173,7 +188,7 @@
         if (/^[\s]*[=+@\-]/.test(text) && typeof value !== 'number') text = "'" + text;
         return '"' + text.replace(/"/g, '""') + '"';
     }
-    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress};
+    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress, columnId, color};
     scope.CheckStockAnalyzer = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof window === 'undefined' ? globalThis : window);
