@@ -7,12 +7,15 @@ from app.core.constants import (
     HTTPMethod,
     OrderScheme,
 )
-from app.dto.orders import OzonCredentials
+from app.dto.common import DtoModel
+from app.dto.orders import OzonArticleIndex, OzonCatalogArticle, OzonCredentials
 from app.dto.ozon_orders import (
     FboPostingsRequest,
     FbsPostingsRequest,
     OzonPosting,
     OzonPostingsPage,
+    OzonProductInfoPage,
+    OzonProductInfoRequest,
     PostingFilter,
     PostingOptions,
 )
@@ -29,7 +32,7 @@ class AsyncSellerApi:
             "Accept": "application/json",
         }
 
-    async def request(self, path: str, payload: FboPostingsRequest | FbsPostingsRequest) -> OzonPostingsPage:
+    async def _response(self, path: str, payload: DtoModel) -> httpx.Response:
         try:
             response = await self.http.request(
                 HTTPMethod.POST,
@@ -45,6 +48,10 @@ class AsyncSellerApi:
             raise OzonApiError(None, f"Сетевая ошибка Ozon: {type(error).__name__}") from error
         if response.is_error:
             raise OzonApiError(response.status_code, _parse_error_body(response.text))
+        return response
+
+    async def request(self, path: str, payload: FboPostingsRequest | FbsPostingsRequest) -> OzonPostingsPage:
+        response = await self._response(path, payload)
         try:
             data: object = response.json()
         except ValueError as error:
@@ -69,6 +76,30 @@ class AsyncSellerApi:
                 ]
             )
             raise OzonApiError(None, f"Некорректный ответ Ozon: {details}") from None
+
+    async def product_articles(self, skus: tuple[str, ...]) -> OzonArticleIndex:
+        unique = tuple(dict.fromkeys(sku for sku in skus if sku.strip()))
+        items: list[OzonCatalogArticle] = []
+        for offset in range(0, len(unique), OZON_API.product_info_batch_size):
+            batch = unique[offset : offset + OZON_API.product_info_batch_size]
+            response = await self._response(OZON_API.product_info_path, OzonProductInfoRequest(sku=batch))
+            try:
+                data: object = response.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Expected product information object")
+                page = OzonProductInfoPage.model_validate(data.get("result", data))
+            except (ValidationError, ValueError):
+                raise OzonApiError(None, "Invalid Ozon product information response") from None
+            requested = frozenset(batch)
+            for product in page.items:
+                if not product.offer_id.strip():
+                    continue
+                identities = {product.sku, *(source.sku for source in product.sources)}
+                items.extend(
+                    OzonCatalogArticle(sku=sku, article=product.offer_id.strip())
+                    for sku in sorted(identities & requested)
+                )
+        return OzonArticleIndex(items=tuple(items))
 
     async def postings(
         self,

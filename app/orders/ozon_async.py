@@ -69,7 +69,7 @@ async def record_failure(batch: OrderSaveBatch, resources: AsyncResources) -> St
 
 
 async def sync_configured_store(
-    store: str, period: OrderPeriod, resources: AsyncResources
+    store: str, period: OrderPeriod, resources: AsyncResources, *, wait_for_lock: bool = False
 ) -> StoreOrderSyncResult | None:
     attempted_at = datetime.now(TIME.moscow_timezone).replace(microsecond=0)
     try:
@@ -89,7 +89,7 @@ async def sync_configured_store(
             resources,
         )
     try:
-        async with async_locks.hold(OZON_ORDERS.lock_prefix + store, resources.database):
+        async with async_locks.hold(OZON_ORDERS.lock_prefix + store, resources.database, wait=wait_for_lock):
             return await sync_store(store, credentials, period, resources)
     except SyncJobBusyError:
         return None

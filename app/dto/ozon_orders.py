@@ -261,6 +261,26 @@ class OzonPostingsPage(OzonPayload):
     cursor: str | None = None
 
 
+class OzonProductSource(OzonPayload):
+    sku: Identifier = ""
+
+
+class OzonProductInfo(OzonPayload):
+    offer_id: Identifier = Field(min_length=1)
+    sku: Identifier = ""
+    sources: tuple[OzonProductSource, ...] = ()
+
+
+class OzonProductInfoPage(OzonPayload):
+    items: tuple[OzonProductInfo, ...]
+
+
+class OzonProductInfoRequest(DtoModel):
+    sku: tuple[str, ...]
+    offer_id: tuple[str, ...] = ()
+    product_id: tuple[int, ...] = ()
+
+
 class PostingFilter(DtoModel):
     since: str
     to: str

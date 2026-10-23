@@ -1,9 +1,9 @@
 from collections import defaultdict
 from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
-from app.core.constants import OZON_ORDERS, TIME, Marketplace
+from app.core.constants import OZON_ORDERS, TIME, Marketplace, OrderScheme
 from app.dto.ozon_economics import OzonConfirmedDay, OzonOrderDay, OzonProductsQuery, OzonTurnoverData
 from app.infrastructure.async_database import AsyncDatabase, table_for
 from app.infrastructure.async_orders_repository import AsyncOrdersRepository
@@ -28,6 +28,9 @@ class AsyncTurnoverRepository:
                 func.sum(orders.c.quantity - orders.c.cancelled_quantity).label("ordered"),
                 func.sum(orders.c.sold_quantity).label("received"),
                 func.sum(orders.c.cancelled_quantity).label("cancelled"),
+                func.sum(case((orders.c.scheme == OrderScheme.FBS, orders.c.quantity), else_=0)).label(
+                    "fbs_ordered"
+                ),
             )
             .where(
                 orders.c.marketplace == Marketplace.OZON,
