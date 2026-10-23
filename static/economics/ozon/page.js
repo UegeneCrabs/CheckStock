@@ -26,7 +26,7 @@ window.OzonEconomicsUI = (() => {
     function product(value) {
         const current = value.current_economics || {};
         const period = value.economics_7d || {};
-        const messages = calculationMessages(current.calculation);
+        const currentMessages = calculationMessages(current.calculation);
         const periodMessages = [...new Set((period.daily || []).flatMap(calculationMessages))];
         const coverage = (value, label) => value ? { ...value, messages: [
             label, 'Учтено ' + value.days + ' из ' + value.expected_days + ' дней.',
@@ -37,9 +37,9 @@ window.OzonEconomicsUI = (() => {
         const inputs = current.calculation?.inputs || {};
         const formula = Object.entries(inputs).map(([key, amount]) =>
             (marginLabels[key] || key) + ': ' + (amount == null ? '—' : numbers.format(Number(amount)) + ' ₽')).join('\n');
-        if (current.expected_buyouts != null && Number(current.expected_buyouts) === 0) messages.push('Нет ожидаемых выкупов: маржа на штуку не определена. Расходы на рекламу учтены в прибыли дня.');
+        if (current.expected_buyouts != null && Number(current.expected_buyouts) === 0) currentMessages.push('Нет ожидаемых выкупов: маржа на штуку не определена. Расходы на рекламу учтены в прибыли дня.');
         return { ...value,
-            current_economics: { ...current, formula, issues: { margin: messages, roi: messages }, messages, daily_messages: messages },
+            current_economics: { ...current, formula, issues: { margin: currentMessages, roi: currentMessages }, messages: currentMessages, daily_messages: currentMessages },
             economics_7d: { ...period, messages: periodMessages,
                 margin_coverage: coverage(period.margin_coverage, 'Сумма прибыли по отдельным дням.'),
                 roi_coverage: coverage(period.roi_coverage, 'Сумма прибыли / закупочная стоимость ожидаемых выкупов за те же дни × 100%.'),
