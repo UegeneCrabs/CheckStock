@@ -174,6 +174,15 @@ OZON_ORDERS: Final = OzonOrdersConfig()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class OzonNewnessConfig:
+    max_days: int = 21
+    stock_schemes: tuple[str, ...] = ("fbo", "fbs")
+
+
+OZON_NEWNESS: Final = OzonNewnessConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class OzonApiConfig:
     base_url: str = "https://api-seller.ozon.ru"
     fbo_postings_path: str = "/v2/posting/fbo/list"
@@ -181,6 +190,8 @@ class OzonApiConfig:
     fbo_postings_v3_page_size: int = 100
     fbs_postings_v3_path: str = "/v3/posting/fbs/list"
     fbs_postings_v4_path: str = "/v4/posting/fbs/list"
+    product_info_path: str = "/v3/product/info/list"
+    product_info_batch_size: int = 1000
     page_size: int = 1000
     fbs_postings_v4_page_size: int = 50
     max_postings: int = 500_000
@@ -193,6 +204,266 @@ class OzonApiConfig:
 
 
 OZON_API: Final = OzonApiConfig()
+
+
+class OzonLogisticsState(StrEnum):
+    AVAILABLE = "available"
+    MISSING = "missing"
+    INSUFFICIENT = "insufficient"
+    PARTIAL = "partial"
+
+
+class OzonLogisticsPart(StrEnum):
+    FORWARD = "forward"
+    REVERSE = "reverse"
+    HANDLING = "handling"
+    LAST_MILE = "last_mile"
+    EXTRA = "extra"
+
+
+class OzonVolumeState(StrEnum):
+    AVAILABLE = "available"
+    VOLUME_MISSING = "volume_missing"
+    PRICE_MISSING = "price_missing"
+    ROUTE_MISSING = "route_missing"
+    ROUTE_UNAVAILABLE = "route_unavailable"
+    TARIFF_UNAVAILABLE = "tariff_unavailable"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonLogisticsConfig:
+    window_days: int = 30
+    formula_version: int = 1
+    run_hour_msk: int = 5
+    accrual_path: str = "/v1/finance/accrual/postings"
+    types_path: str = "/v1/finance/accrual/types"
+    returns_path: str = "/v1/returns/list"
+    attributes_path: str = "/v4/product/info/attributes"
+    accrual_batch_size: int = 50
+    returns_page_size: int = 500
+    attributes_batch_size: int = 100
+    max_returns: int = 500_000
+    rate_limit_delays_seconds: tuple[int, ...] = (15, 30, 60)
+    lock_prefix: str = "ozon-logistics:"
+    delivered_status: str = "delivered"
+    cancelled_status: str = "cancelled"
+    client_return_type: str = "ClientReturn"
+    currency: str = "RUB"
+    tariff_price_limit: int = 300
+    tariffs_relative_path: str = "ozon/data/logistics-tariffs.json"
+    volume_max_digits: int = 20
+    volume_decimal_places: int = 9
+    max_volume_l: int = 1_000_000_000
+    cluster_max_length: int = 100
+    accrual_parts: tuple[tuple[str, OzonLogisticsPart], ...] = (
+        ("Logistic", OzonLogisticsPart.FORWARD),
+        ("ReturnFlowLogistic", OzonLogisticsPart.REVERSE),
+        ("PickUpPointReturnAcceptance", OzonLogisticsPart.HANDLING),
+        ("LastMileCourier", OzonLogisticsPart.LAST_MILE),
+        ("DeliveryToHandoverPlaceByOzon", OzonLogisticsPart.LAST_MILE),
+        ("PackageCost", OzonLogisticsPart.EXTRA),
+        ("PackingFee", OzonLogisticsPart.EXTRA),
+        ("ItemPacking", OzonLogisticsPart.EXTRA),
+        ("ItemSealing", OzonLogisticsPart.EXTRA),
+        ("CourierPickUpByOzon", OzonLogisticsPart.EXTRA),
+        ("CourierPickUpReinvoice", OzonLogisticsPart.EXTRA),
+        ("Cancellation", OzonLogisticsPart.EXTRA),
+        ("ClientReturn", OzonLogisticsPart.EXTRA),
+        ("PartialReturn", OzonLogisticsPart.EXTRA),
+    )
+
+
+OZON_LOGISTICS: Final = OzonLogisticsConfig()
+
+
+class OzonStorageState(StrEnum):
+    AVAILABLE = "available"
+    INSUFFICIENT = "insufficient"
+    PARTIAL = "partial"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonStorageConfig:
+    window_days: int = 30
+    formula_version: int = 1
+    run_hour_msk: int = 6
+    create_path: str = "/v1/report/placement/by-products/create"
+    info_path: str = "/v1/report/info"
+    accrual_path: str = "/v1/finance/accrual/by-day"
+    posting_path: str = "/v2/posting/fbo/get"
+    report_type: str = "seller_placement_by_products"
+    pending_statuses: tuple[str, ...] = ("waiting", "processing")
+    success_status: str = "success"
+    failed_status: str = "failed"
+    poll_attempts: int = 12
+    poll_seconds: int = 10
+    max_report_attempts: int = 3
+    max_accrual_pages: int = 1_000
+    max_download_bytes: int = 50_000_000
+    max_unpacked_bytes: int = 300_000_000
+    max_rows: int = 1_000_000
+    download_domains: tuple[str, ...] = ("ozone.ru", "ozon.ru")
+    lock_prefix: str = "ozon-storage:"
+    currency: str = "RUB"
+    fbo_schema: str = "fbo"
+    rounding: str = "0.01"
+    excel_epoch: str = "1899-12-30"
+    xml_namespace: str = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    date_header: str = "Дата"
+    sku_header: str = "SKU"
+    article_header: str = "Артикул"
+    cost_header: str = "Начисленная стоимость размещения"
+
+
+OZON_STORAGE: Final = OzonStorageConfig()
+
+
+class OzonRoiCode(StrEnum):
+    A = "A"
+    B = "B"
+    C = "C"
+    D = "D"
+    F = "F"
+    NEW = "NEW"
+    U = "U"
+
+
+class OzonBuyoutState(StrEnum):
+    AVAILABLE = "available"
+    MISSING = "missing"
+    PARTIAL = "partial"
+
+
+class OzonBuyoutError(StrEnum):
+    INCOMPLETE_COVERAGE = "incomplete_order_coverage"
+
+
+class OzonReturnSchema(StrEnum):
+    FBO = "FBO"
+    FBS = "FBS"
+
+
+class OzonScenarioBasis(StrEnum):
+    PERCENT = "percent"
+    AMOUNT = "amount"
+
+
+class OzonScenarioField(StrEnum):
+    OTHER_SPEND = "other_spend"
+    ORDERS_COUNT = "orders_count"
+    COMMISSION_AMOUNT = "commission_amount"
+    LOGISTICS_AMOUNT = "logistics_amount"
+    ADVERTISING_AMOUNT = "advertising_amount"
+    SELLER_PRICE = "seller_price"
+    BUYER_PRICE = "buyer_price"
+    TURNOVER = "turnover"
+    BUYOUT = "buyout_percent"
+    CLICK_SPEND = "click_spend"
+    CLICK_DRR = "click_drr"
+    ORDER_SPEND = "order_spend"
+    ORDER_DRR = "order_drr"
+    PURCHASE = "purchase"
+    FULFILLMENT = "fulfillment"
+    STORAGE = "storage_amount"
+    ACQUIRING_PERCENT = "acquiring_percent"
+    ACQUIRING_AMOUNT = "acquiring_amount"
+    TEAM_PERCENT = "team_percent"
+    TEAM_AMOUNT = "team_amount"
+    VAT_PERCENT = "vat_percent"
+    VAT_AMOUNT = "vat_amount"
+    USN_PERCENT = "usn_percent"
+    USN_AMOUNT = "usn_amount"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonScenarioConfig:
+    max_money: int = 1_000_000_000_000
+    number_max_digits: int = 40
+    number_decimal_places: int = 24
+    percent_factor: int = 100
+    money_quantum: str = "0.01"
+    percent_quantum: str = "0.00000001"
+    max_edits: int = 100
+    signed_fields: tuple[OzonScenarioField, ...] = (
+        OzonScenarioField.OTHER_SPEND,
+        OzonScenarioField.LOGISTICS_AMOUNT,
+        OzonScenarioField.ADVERTISING_AMOUNT,
+        OzonScenarioField.STORAGE,
+        OzonScenarioField.CLICK_SPEND,
+        OzonScenarioField.CLICK_DRR,
+        OzonScenarioField.ORDER_SPEND,
+        OzonScenarioField.ORDER_DRR,
+    )
+    bounded_percent_fields: tuple[OzonScenarioField, ...] = (
+        OzonScenarioField.BUYOUT,
+        OzonScenarioField.ACQUIRING_PERCENT,
+        OzonScenarioField.TEAM_PERCENT,
+        OzonScenarioField.VAT_PERCENT,
+        OzonScenarioField.USN_PERCENT,
+    )
+
+
+OZON_SCENARIO: Final = OzonScenarioConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonMarginConfig:
+    version: int = 1
+    interval_seconds: int = 3600
+    lock_prefix: str = "ozon_margin:"
+    expense_fields: tuple[str, ...] = (
+        "purchase",
+        "fulfillment",
+        "commission_amount",
+        "logistics_amount",
+        "storage_amount",
+        "advertising_amount",
+        "acquiring_amount",
+        "team_amount",
+        "vat_amount",
+        "usn_amount",
+    )
+    snapshot_missing: str = "snapshot"
+    orders_missing: str = "orders_count"
+    buyout_missing: str = "buyout_percent"
+    advertising_missing: str = "advertising_spend"
+    no_buyouts: str = "no_expected_buyouts"
+    unsupported_scheme: str = "fbs_orders"
+    orders_partial: str = "orders_partial"
+    advertising_partial: str = "advertising_partial"
+    sources_stale: str = "sources_stale"
+    logistics_partial: str = "logistics_partial"
+    storage_partial: str = "storage_partial"
+    buyout_default: str = "buyout_default"
+
+
+OZON_MARGIN: Final = OzonMarginConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonCabinetConfig:
+    legacy_buyout_formula_version: int = 1
+    buyout_formula_version: int = 2
+    percent_factor: int = 100
+    percent_precision: int = 2
+    default_period_days: int = 14
+    max_period_days: int = 90
+    interval_seconds: int = 14_400
+    lock_prefix: str = "ozon_buyout:"
+    max_roi_percent: int = 1_000_000
+    default_roi_percent: float = 50
+    roi_by_code: tuple[tuple[OzonRoiCode, float], ...] = (
+        (OzonRoiCode.A, 20),
+        (OzonRoiCode.B, 30),
+        (OzonRoiCode.C, 50),
+        (OzonRoiCode.D, 0),
+        (OzonRoiCode.F, 50),
+        (OzonRoiCode.NEW, 50),
+        (OzonRoiCode.U, 20),
+    )
+
+
+OZON_CABINET: Final = OzonCabinetConfig()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -262,6 +533,11 @@ class OzonCommissionInput(StrEnum):
     AMOUNT = "amount"
 
 
+class OzonCalculatorCommissionMode(StrEnum):
+    AUTOMATIC = "automatic"
+    MANUAL = "manual"
+
+
 class OzonPriceCalculatorField(StrEnum):
     BASE = "base_price"
     SELLER = "seller_price"
@@ -325,6 +601,25 @@ class HttpConfig:
 
 
 HTTP: Final = HttpConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonTariffsConfig:
+    category_tree_path: str = "/v1/description-category/tree"
+    language: str = "RU"
+    first_price_limit: int = 100
+    second_price_limit: int = 300
+    first_price_percent: int = 17
+    second_price_percent: int = 23
+    source_host: str = "cdn.ozone.ru"
+    source_page: str = (
+        "https://seller-edu.ozon.ru/libra/commissions-tariffs/commissions-tariffs-ozon/komissii-tovary-uslugi"
+    )
+    workbook_header_rows: int = 2
+    rate_quantum: str = "0.00000001"
+
+
+OZON_TARIFFS: Final = OzonTariffsConfig()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -475,6 +770,7 @@ class LockConfig:
     postgres_byte_order: Literal["little", "big"] = "big"
     file_length_bytes: int = 1
     initialization_name: str = "application_initialization"
+    retry_seconds: float = 1.0
 
 
 LOCKS: Final = LockConfig()
@@ -492,6 +788,7 @@ class SchedulerConfig:
     job_run_retention_days: int = 30
     initialization_retry_seconds: int = 1
     max_error_length: int = 12_000
+    legacy_store_error_boundary: str = r"(?:^|; )([\w-]+): "
     wb_funnel_weekly_metrics_interval_seconds: int = 4 * TIME.seconds_per_hour
 
 
@@ -695,6 +992,38 @@ class JobCatalog:
         title="Цены Ozon",
         description="Каждый час загружает четыре цены Ozon; комиссию за продажу FBO сохраняет один раз за день по каждому товару.",
         schedule="Цены — каждый час; комиссия FBO — раз в день",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.OZON,),
+    )
+    ozon_logistics: SyncJobMetadata = SyncJobMetadata(
+        name="ozon_logistics_daily_sync",
+        title="Логистика Ozon FBO за 30 дней",
+        description="Сохраняет дневной расчёт по оплаченным перевозкам, начислениям и возвратам за 30 полных дней до вчера включительно.",
+        schedule="Ежедневно в 05:00 МСК; пропущенный запуск — после старта",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.OZON,),
+    )
+    ozon_storage: SyncJobMetadata = SyncJobMetadata(
+        name="ozon_storage_daily_sync",
+        title="Хранение Ozon FBO за 30 дней",
+        description="Сохраняет дневной снимок расходов на размещение и реализации FBO за 30 полных дней до вчера включительно.",
+        schedule="Ежедневно в 06:00 МСК; пропущенный запуск — после старта",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.OZON,),
+    )
+    ozon_buyout: SyncJobMetadata = SyncJobMetadata(
+        name="ozon_buyout_sync",
+        title="Процент выкупа Ozon",
+        description="Обновляет заказы FBO/FBS и выкуп по количествам за завершённые дни из настроек кабинета.",
+        schedule="Каждые 4 часа",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.OZON,),
+    )
+    ozon_margin: SyncJobMetadata = SyncJobMetadata(
+        name="ozon_margin_daily_sync",
+        title="Дневные параметры маржи Ozon",
+        description="Сохраняет цены, расходы и процент выкупа текущего дня для расчёта прибыли за период.",
+        schedule="Каждый час",
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
     )
@@ -1012,6 +1341,7 @@ class CredentialMarketplace(StrEnum):
 
 
 class WebErrorCode(StrEnum):
+    SETTINGS_CONFLICT = "settings_conflict"
     FORBIDDEN = "forbidden"
     NOT_FOUND = "not_found"
     INVALID_CREDENTIAL = "invalid_credential"
@@ -1027,6 +1357,10 @@ class WebErrorCode(StrEnum):
     INVALID_EXPORT_SETTINGS = "invalid_export_settings"
     INVALID_ARTICLE = "invalid_article"
     INVALID_PRICE_CALCULATION = "invalid_price_calculation"
+    INVALID_CALCULATOR_SCENARIO = "invalid_calculator_scenario"
+    OZON_CATEGORY_UNAVAILABLE = "ozon_category_unavailable"
+    OZON_RELATED_UNAVAILABLE = "ozon_related_unavailable"
+    OZON_REVIEW_SUBSCRIPTION_REQUIRED = "ozon_review_subscription_required"
 
 
 class UiAlertCode(StrEnum):
@@ -1131,6 +1465,23 @@ class WebConstants:
 WEB: Final = WebConstants()
 
 
+class OzonHistoryField(StrEnum):
+    ORDERS = "orders"
+    STOCK = "stock"
+    ADS = "ads"
+    DRR = "drr"
+    PRICE = "price"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonHistoryConstants:
+    visible_days: int = 14
+    comparison_days: int = 7
+
+
+OZON_HISTORY: Final = OzonHistoryConstants()
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class JobScheduleRule:
     name: str
@@ -1166,6 +1517,12 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.ozon_reputation.name, seconds=86_400),
     JobScheduleRule(name=JOBS.ozon_orders.name, seconds=OZON_ORDERS.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_prices.name, seconds=OZON_PRICES.interval_seconds),
+    JobScheduleRule(name=JOBS.ozon_buyout.name, seconds=OZON_CABINET.interval_seconds),
+    JobScheduleRule(name=JOBS.ozon_margin.name, seconds=OZON_MARGIN.interval_seconds),
+    JobScheduleRule(
+        name=JOBS.ozon_logistics.name, kind=ScheduleKind.DAILY, hours=(OZON_LOGISTICS.run_hour_msk,)
+    ),
+    JobScheduleRule(name=JOBS.ozon_storage.name, kind=ScheduleKind.DAILY, hours=(OZON_STORAGE.run_hour_msk,)),
     JobScheduleRule(
         name=JOBS.ozon_prices_close.name, kind=ScheduleKind.DAILY, hours=(OZON_PRICES.close_hour_msk,)
     ),

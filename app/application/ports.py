@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
 
@@ -31,6 +31,11 @@ from app.dto.identity import (
     WbTokenInfoCollection,
     WbTokenInfoCommand,
 )
+from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonCabinetRecord, OzonCabinetSave
+from app.dto.ozon_history import OzonHistoryEvidence, OzonHistoryQuery
+from app.dto.ozon_logistics import LogisticsStoreSnapshot
+from app.dto.ozon_margin import OzonMarginSnapshot
+from app.dto.ozon_storage import StorageEvidence, StoragePeriod, StorageReportTicket, StorageStoreSnapshot
 from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
@@ -78,6 +83,56 @@ class SupplyStockUnitOfWork(Protocol):
     async def states(self, source_key: str) -> tuple[SupplyStockState, ...]: ...
 
     async def save(self, command: SupplyStockCommand) -> SupplyStockState: ...
+
+
+class OzonHistoryReader(Protocol):
+    async def load(self, query: OzonHistoryQuery, start: date, end: date) -> OzonHistoryEvidence: ...
+
+
+class OzonMarginStore(Protocol):
+    async def current(self, stores: tuple[str, ...], now: datetime) -> tuple[OzonMarginSnapshot, ...]: ...
+
+    async def save(self, snapshots: tuple[OzonMarginSnapshot, ...], now: datetime) -> None: ...
+
+
+class OzonCabinetUnitOfWork(Protocol):
+    async def settings(self, stores: tuple[str, ...]) -> tuple[OzonCabinetRecord, ...]: ...
+
+    async def save(self, command: OzonCabinetSave) -> OzonCabinetRecord: ...
+
+    async def save_buyout(self, snapshot: OzonBuyoutSnapshot) -> None: ...
+
+    async def fail_buyout(self, store: str, error: str) -> None: ...
+
+
+class StorageSource(Protocol):
+    async def create(self, period: StoragePeriod) -> str: ...
+
+    async def evidence(self, period: StoragePeriod, code: str) -> StorageEvidence: ...
+
+
+class StorageUnitOfWork(Protocol):
+    async def completed(self, store: str, day: date) -> bool: ...
+
+    async def articles(self, store: str) -> tuple[str, ...]: ...
+
+    async def ticket(self, store: str, day: date) -> StorageReportTicket: ...
+
+    async def save_ticket(self, store: str, day: date, ticket: StorageReportTicket) -> None: ...
+
+    async def commit(self, snapshot: StorageStoreSnapshot) -> None: ...
+
+    async def fail(self, store: str, day: date, error: str) -> None: ...
+
+
+class LogisticsUnitOfWork(Protocol):
+    async def completed(self, store: str, day: date) -> bool: ...
+
+    async def articles(self, store: str) -> tuple[str, ...]: ...
+
+    async def commit(self, snapshot: LogisticsStoreSnapshot) -> None: ...
+
+    async def fail(self, store: str, day: date, error: str) -> None: ...
 
 
 class HourlyPriceWriter(Protocol):
