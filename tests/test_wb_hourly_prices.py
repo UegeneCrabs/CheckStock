@@ -285,6 +285,24 @@ class HourlyPriceTests(unittest.TestCase):
         service.collect.assert_called_once_with(("rimili",))
         self.assertEqual(result["rimili"]["error"], "catalog unavailable")
 
+    def test_hourly_job_can_be_started_manually(self):
+        from app.jobs import manual
+
+        service = Mock()
+        service.collect.return_value = WbHourlyCollection(
+            (WbHourlyStoreReport(store_slug="rimili", ok=True, rows=2),)
+        )
+        with (
+            patch("app.jobs.manual.background._jobs", return_value=()),
+            patch("app.jobs.manual.background._unit_economics_1c_price_jobs", return_value=()),
+            patch("app.jobs.manual.background.ApplicationContainer") as container,
+            patch.object(background.sync_settings, "enabled_stores", return_value=("rimili",)),
+        ):
+            container.return_value.wb_hourly_prices = service
+            result = manual.callback_for("wb_hourly_prices_sync")()
+        service.collect.assert_called_once_with(("rimili",))
+        self.assertEqual(result["rimili"]["rows"], 2)
+
     def test_container_wires_collection_to_wb_and_database(self):
         from app.container import ApplicationContainer
 

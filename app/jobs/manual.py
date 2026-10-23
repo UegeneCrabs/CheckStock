@@ -102,6 +102,9 @@ def callback_for(name: str) -> Callable[[], object]:
         "wb_token_check": lambda: background.token_watch.refresh_token_info(
             sync_settings.enabled_stores("wb_token_check")
         ),
+        "wb_hourly_prices_sync": lambda: background._wb_hourly_price_job(
+            background.ApplicationContainer().wb_hourly_prices
+        ).callback(),
         "yandex_storefront_prices_sync": _storefront_now,
         "wb_advertising_sync": lambda: background.advertising_sync.sync_stores(
             sync_settings.enabled_stores("wb_advertising_sync")
