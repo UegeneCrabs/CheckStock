@@ -1,0 +1,4 @@
+.is-ozon-preview .ue1c-calculator-inputs .ue1c-calculator-row[hidden] { display: none; }
+.ozon-price-row.has-source-issue > span:first-child { color: var(--ue-muted); }
+.ozon-calculator-status { order: 0; grid-column: 1 / -1; color: var(--ue-negative, #b42318); font-size: 12px; }
+.ozon-calculator-status[hidden] { display: none; }

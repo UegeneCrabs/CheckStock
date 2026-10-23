@@ -133,7 +133,7 @@
         return fetch(url, options).then(function (response) {
             return response.json().then(function (data) {
                 if (!response.ok || !data.ok) {
-                    var error = new Error(data.error || data.detail || 'Не удалось выполнить действие');
+                    var error = new Error(window.CheckStockUI.errorText(data));
                     error.cooldown = data.status === 'cooldown';
                     throw error;
                 }
@@ -245,7 +245,9 @@
                 var globalLabel = input
                     .closest('.integration-sync-toggle')
                     .querySelector('.integration-sync-toggle-label');
-                globalLabel.textContent = config.summary;
+                globalLabel.textContent = config.summary || (config.targets.length
+                    ? 'Включено ' + config.enabled_target_count + ' из ' + config.target_count
+                    : config.effective_enabled ? 'Включено' : 'Выключено');
             } else if (!store) {
                 var marketplaceSetting = (config.marketplace_settings || []).find(function (item) {
                     return item.marketplace === marketplace;

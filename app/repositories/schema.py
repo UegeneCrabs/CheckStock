@@ -8,6 +8,9 @@ from app.infrastructure import economics_coverage_orm as economics_coverage_orm
 from app.infrastructure import ephemerides_orm as ephemerides_orm
 from app.infrastructure import finance_orm as finance_orm
 from app.infrastructure import google_week_orm as google_week_orm
+from app.infrastructure import ozon_advertising_orm as ozon_advertising_orm
+from app.infrastructure import ozon_commissions_orm as ozon_commissions_orm
+from app.infrastructure import ozon_prices_orm as ozon_prices_orm
 from app.infrastructure import wb_standard_costs_orm as wb_standard_costs_orm
 from app.infrastructure import yandex_economics_orm as yandex_economics_orm
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path

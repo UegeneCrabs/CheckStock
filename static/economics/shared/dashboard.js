@@ -579,6 +579,7 @@
         var row = id('ue1c-totals');
         if (!row || !window.CheckStockYandexTotals) return;
         var totals = window.CheckStockYandexTotals(items, config.ozonPreview === true);
+        if (config.ozonPreview && window.OzonAdvertisingUI) totals[8] = window.OzonAdvertisingUI.spendTotal(items);
         row.innerHTML = visibleColumnGroups().map(function (group) {
             return group.columns.map(function (column) {
                 var total = totals[column.index] || {};
@@ -887,15 +888,15 @@
             drrCoverage: coverageCellClass(product.advertising.drr_coverage),
             adCoverage: coverageCellClass(product.advertising.coverage),
             drrClass: drrClass,
-            advertisingTitle: advertisingTitle + '\n' + coverageTitle('ДРР: совпадающие дни заказов и рекламы', product.advertising.drr_coverage),
-            content: drr === null ? '—' : coverageValue('ДРР', drr, decimal,
+            advertisingTitle: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.drrTooltip(product) : advertisingTitle + '\n' + coverageTitle('ДРР: совпадающие дни заказов и рекламы', product.advertising.drr_coverage),
+            content: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.drrContent(product) : drr === null ? '—' : coverageValue('ДРР', drr, decimal,
                 product.advertising.drr_coverage, '%'),
-            advertisingTitle_2: advertisingTitle,
-            content_2: coverageValue('Расходы на рекламу', product.advertising.spend, money,
+            advertisingTitle_2: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.spendTooltip(product) : advertisingTitle,
+            content_2: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.spendContent(product) : coverageValue('Расходы на рекламу', product.advertising.spend, money,
                 product.advertising.coverage),
-            content_3: coverageValue('CTR', product.advertising.ctr, decimal,
+            content_3: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.trafficContent(product, 'ctr') : coverageValue('CTR', product.advertising.ctr, decimal,
                 product.advertising.coverage, '%'),
-            content_4: coverageValue('CPC', product.advertising.cpc, preciseMoney,
+            content_4: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.trafficContent(product, 'cpc') : coverageValue('CPC', product.advertising.cpc, preciseMoney,
                 product.advertising.coverage),
         });
         cells.tag = window.CheckStockUI.render('economics/shared/dashboard/render-product-9', {
@@ -1071,6 +1072,7 @@
     function replaceProducts(items, preserveDetails) {
         var previousProducts = productsById;
         products = (Array.isArray(items) ? items : []).map(function (product) {
+            if (config.ozonPreview && window.OzonEconomicsUI) product = window.OzonEconomicsUI.product(product);
             var previous = preserveDetails ? previousProducts[product.id] : null;
             if (!previous || !previous._detailLoaded) return product;
             var mergedPrice = Object.assign({}, previous.price || {}, product.price || {});
@@ -1104,6 +1106,7 @@
         });
     }
     function productsRequestUrl(parameters) {
+        if (!lastProductsLoadedAt && !parameters && config.initialProductsUrl) return config.initialProductsUrl;
         var separator = productsEndpoint.indexOf('?') === -1 ? '?' : '&';
         var query = new URLSearchParams(parameters || {});
         if (state.periodMode === 'custom') {
@@ -1156,6 +1159,7 @@
                 state.tableFilters = {};
             }
             lastProductsLoadedAt = Date.now();
+            config.initialProductsUrl = null;
             nodes.productsError.hidden = true;
             renderPage();
             if (silent) {
@@ -2641,7 +2645,8 @@
             });
             nodes.subjectSelect.value = '';
             nodes.subjectSelect.disabled = true;
-            nodes.calculatorReset.disabled = true;
+            nodes.calculatorMode.disabled = false;
+            nodes.calculatorReset.disabled = false;
             nodes.breakEven.disabled = true;
             nodes.savePrice.disabled = true;
             var formula = root.querySelector('.ue1c-formula-popover > div');
@@ -2675,6 +2680,8 @@
                 nodes.chart.before(emptyChart);
             }
             emptyChart.textContent = 'История заказов и расчётов Ozon пока не подключена.';
+            if (window.OzonPricesUI) window.OzonPricesUI.render(root, product);
+            if (window.OzonAdvertisingUI) window.OzonAdvertisingUI.renderCalculator(root, product);
             return;
         }
         if (config.yandexEconomics && window.YandexEconomics) {
@@ -2961,6 +2968,7 @@
         }, 5000);
     }
     function closeDetail() {
+        if (config.ozonPreview && window.OzonPricesUI) window.OzonPricesUI.clear(root);
         detailRequestId += 1;
         window.clearTimeout(calculatorVerifyTimer);
         calculatorVerifySequence += 1;
@@ -3594,6 +3602,7 @@
     });
     Array.prototype.forEach.call(nodes.calculatorInputs, function (input) {
         input.addEventListener('input', function () {
+            if (config.ozonPreview) return;
             var product = productsById[state.selected];
             if (!product) return;
             var source = input.dataset.calculatorInput;
@@ -3689,6 +3698,10 @@
     nodes.calculatorReset.addEventListener('click', function () {
         var product = productsById[state.selected];
         if (!product) return;
+        if (config.ozonPreview && window.OzonPricesUI) {
+            window.OzonPricesUI.reset(root, product);
+            return;
+        }
         clearTargetCalculator();
         editedPriceKind = 'retail';
         fillCalculator(product);
@@ -3754,9 +3767,9 @@
         );
         root.querySelector('[data-detail-tab="params"]').textContent = 'Параметры';
         id('ue1c-panel-params').querySelector('.ue1c-section-head span').textContent =
-            'данные пока не подключены';
+            config.ozonPreview ? 'данные из базы' : 'данные пока не подключены';
         [nodes.periodDays, nodes.periodFrom, nodes.periodTo, nodes.periodApply].forEach(function (control) {
-            control.title = 'Выбор периода будет доступен после подключения расчётов';
+            if (!config.periodSelection) control.title = 'Выбор периода будет доступен после подключения расчётов';
         });
         Array.prototype.forEach.call(
             root.querySelectorAll('[data-state-filter]:not([data-state-filter="all"])'),

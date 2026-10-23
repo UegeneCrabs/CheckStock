@@ -35,3 +35,21 @@ docker compose up -d app
 
 Do not delete the source SQLite database or the old server until the new application passes its
 readiness and functional checks.
+
+## Async order connections
+
+Ozon orders use the same `CHECKSTOCK_DATABASE_URL` as the synchronous application.
+Both `postgresql://` and `postgresql+psycopg://` URLs are accepted. The async connection
+builder normalizes the driver prefix and passes the DSN to `asyncpg` for both the
+regular engine and the separate job-lock engine.
+
+`connect_timeout` is parsed as a single integer and passed as the async connection
+timeout in seconds. Zero and negative values disable the timeout; an absent value
+keeps the driver default. Empty, non-integer and repeated values are configuration
+errors. `application_name` is passed through `server_settings` and must occur at most
+once. Error messages and the connection-options representation do not include the DSN.
+
+SSL options, including `sslmode`, `sslrootcert`, `sslcert` and `sslkey`, remain in the
+DSN and are interpreted by `asyncpg`. The application does not downgrade the requested
+SSL mode or replace certificate settings. URL-encode parameter values and credentials
+as usual. SQLite configuration and the synchronous PostgreSQL connection are unchanged.

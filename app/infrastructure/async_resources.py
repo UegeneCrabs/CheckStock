@@ -10,9 +10,14 @@ from app.config import settings
 from app.core.constants import (
     HTTP,
 )
+from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepository
+from app.infrastructure.async_catalog_repository import AsyncCatalogRepository
+from app.infrastructure.async_commissions_repository import AsyncCommissionsRepository
 from app.infrastructure.async_database import AsyncDatabase
 from app.infrastructure.async_http import AsyncHttp
 from app.infrastructure.async_job_repository import AsyncJobRepository
+from app.infrastructure.async_orders_repository import AsyncOrdersRepository
+from app.infrastructure.async_prices_repository import AsyncPricesRepository
 
 logger = logging.getLogger(__name__)
 Finalizer = Callable[[asyncio.Task[None]], Coroutine[object, object, None]]
@@ -32,6 +37,11 @@ class AsyncResources:
         )
         self.http = AsyncHttp(self.client)
         self.jobs = AsyncJobRepository(self.database)
+        self.catalog = AsyncCatalogRepository(self.database)
+        self.advertising = AsyncAdvertisingRepository(self.database)
+        self.orders = AsyncOrdersRepository(self.database)
+        self.prices = AsyncPricesRepository(self.database)
+        self.commissions = AsyncCommissionsRepository(self.database)
         self.tasks: set[asyncio.Task[None]] = set()
         self._finalizers: set[asyncio.Task[None]] = set()
         self.closing = False
