@@ -1,4 +1,17 @@
 .is-ozon-preview .ue1c-calculator-inputs .ue1c-calculator-row[hidden] { display: none; }
+.is-ozon-preview .ue1c-placeholder-chart[hidden] { display: none; }
 .ozon-price-row.has-source-issue > span:first-child { color: var(--ue-muted); }
 .ozon-calculator-status { order: 0; grid-column: 1 / -1; color: var(--ue-negative, #b42318); font-size: 12px; }
 .ozon-calculator-status[hidden] { display: none; }
+.ozon-scenario-note { order: 30; grid-column: 1 / -1; color: var(--ue-muted); font-size: 12px; line-height: 1.4; }
+.ozon-scenario-note.is-error { color: var(--ue-negative, #b42318); }
+.is-ozon-preview .ue1c-calculator-results { justify-content: flex-start; }
+.is-ozon-preview .ue1c-calculator-results .ozon-scenario-note { margin: 0; font-size: 10px; }
+.is-ozon-preview .ozon-category-row { --expanded-order: 8; }
+.is-ozon-preview .ozon-category-note { order: 8; display: none; gap: 4px; padding: 6px 12px 10px; font-size: 10px; color: var(--ue-muted); line-height: 1.4; }
+.is-ozon-preview .ue1c-calculator-inputs.is-expanded .ozon-category-note:not([hidden]) { display: grid; }
+.is-ozon-preview .ozon-advertising-breakdown { grid-template-columns: minmax(0, 1fr); }
+.ozon-advertising-breakdown > summary,
+.ozon-advertising-breakdown > ul { grid-column: 1 / -1; font-size: 10px; line-height: 1.5; }
+.ozon-advertising-breakdown > summary { cursor: pointer; font-weight: 690; }
+.ozon-advertising-breakdown > ul { margin: 0; padding-left: 16px; }

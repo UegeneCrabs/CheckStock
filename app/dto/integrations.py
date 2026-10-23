@@ -115,6 +115,12 @@ class JobStates(DtoModel):
     states: tuple[JobState, ...]
 
 
+class JobRunError(DtoModel):
+    target: str = ""
+    code: WebErrorCode | None = None
+    message: str
+
+
 class JobRun(DtoModel):
     id: str
     name: str
@@ -125,6 +131,7 @@ class JobRun(DtoModel):
     duration_ms: int | None = None
     error: str | None = None
     error_code: WebErrorCode | None = None
+    error_details: tuple[JobRunError, ...] = ()
 
 
 class JobIdentity(DtoModel):

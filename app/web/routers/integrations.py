@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, SecretStr
 from app import db
 from app.access.authentication import is_active_user
 from app.access.economics_preview import PRIVATE_JOB_NAMES, can_preview, require_preview
+from app.core.constants import JOBS
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
@@ -26,7 +27,7 @@ from app.web import ozon_jobs
 from app.web.cabinet_settings import render_cabinet_settings
 from app.web.dependencies import get_async_resources
 from app.web.routers.google_export import render_google_export
-from app.web.templating import fill_template, render_page
+from app.web.templating import fill_template, read_template, render_page
 
 router = APIRouter()
 
@@ -355,6 +356,9 @@ async def integrations_page(request: Request):
         job_count=str(len(definitions)),
         store_tabs=store_tabs,
         cabinet_settings=await run_in_threadpool(render_cabinet_settings, request.state.user),
+        ozon_cabinet_settings=read_template("economics/ozon/settings.html")
+        if can_preview(request.state.user)
+        else "",
         store_panels="".join(_store_panel(slug, active=index == 0) for index, slug in enumerate(STORES)),
         sync_groups=_sync_groups(definitions, states, configurations),
     )
@@ -431,7 +435,7 @@ async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     definition = definitions.get(job_name)
     if definition is None:
         return JSONResponse({"ok": False, "error": "Выгрузка не найдена"}, status_code=404)
-    if ozon_jobs.owns(job_name):
+    if ozon_jobs.owns(job_name) or job_name == JOBS.ozon_reputation.name:
         return await ozon_jobs.history(job_name, limit, get_async_resources(request))
     runs = await run_in_threadpool(_sync_history, job_name, min(max(limit, 1), 200))
     return {

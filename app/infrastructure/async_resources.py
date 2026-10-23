@@ -18,6 +18,8 @@ from app.infrastructure.async_http import AsyncHttp
 from app.infrastructure.async_job_repository import AsyncJobRepository
 from app.infrastructure.async_orders_repository import AsyncOrdersRepository
 from app.infrastructure.async_prices_repository import AsyncPricesRepository
+from app.ozon.async_categories import AsyncCategoryReader
+from app.ozon.async_related import AsyncRelatedReader
 
 logger = logging.getLogger(__name__)
 Finalizer = Callable[[asyncio.Task[None]], Coroutine[object, object, None]]
@@ -36,6 +38,8 @@ class AsyncResources:
             transport=transport,
         )
         self.http = AsyncHttp(self.client)
+        self.ozon_categories = AsyncCategoryReader(self.http)
+        self.ozon_related = AsyncRelatedReader(self.http)
         self.jobs = AsyncJobRepository(self.database)
         self.catalog = AsyncCatalogRepository(self.database)
         self.advertising = AsyncAdvertisingRepository(self.database)

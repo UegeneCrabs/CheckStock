@@ -1,0 +1,37 @@
+<link rel="stylesheet" href="/static/economics/ozon/settings.css?v=20261019" />
+<section class="ue1cs-page ozon-cabinet-panel" id="ozon-cabinet-panel" data-cabinet-panel="ozon" aria-label="Параметры кабинетов Ozon" hidden>
+    <div class="cabinet-picker">
+        <div class="cabinet-picker-label">Кабинет <span data-ozon-cabinet-count>—</span></div>
+        <div class="cabinet-store-nav" data-ozon-cabinet-nav role="group" aria-label="Кабинеты Ozon"></div>
+        <p data-ozon-cabinet-status role="status" aria-live="polite">Загружаем настройки Ozon…</p>
+    </div>
+    <article class="ue1cs-card" data-ozon-cabinet-card hidden>
+        <div class="ue1cs-card-head"><span class="ue1cs-avatar" data-ozon-avatar></span><div><h3 data-ozon-name></h3><small>Параметры расчёта Ozon</small></div></div>
+        <div class="ue1cs-card-body">
+            <form class="ue1cs-field-group" data-ozon-section="goals">
+                <div class="ue1cs-field-group-head"><strong>Целевая цена</strong><span>Цель по ДРР с учётом выкупа и целевой ROI для выбранного кабинета. Настройки сохраняются для Ozon; расчёт отчёта «Целевая цена» Ozon пока не подключён.</span></div>
+                <div class="ue1cs-fields" data-ozon-fields></div>
+                <fieldset class="ue1cs-roi-group"><legend>Целевой ROI по коду товара</legend><div class="ue1cs-roi-fields" data-ozon-roi></div></fieldset>
+                <p class="ozon-settings-help">ROI по коду имеет приоритет над общим ROI. Пустой ROI по коду использует общий. Индивидуальные цели товара имеют приоритет над настройками кабинета.</p>
+                <p data-ozon-status role="status" aria-live="polite"></p>
+                <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить цели</button><button type="button" data-ozon-reset>Отменить изменения</button></div>
+            </form>
+            <form class="ue1cs-field-group" data-ozon-section="buyout">
+                <div class="ue1cs-field-group-head"><strong>Процент выкупа</strong><span>Период без сегодняшнего дня · обновление каждые 4 часа</span></div>
+                <div class="ue1cs-fields" data-ozon-fields></div>
+                <p class="ozon-settings-help">Получено / (получено + отменено) × 100 по заказам FBO и FBS. Товары в пути и последующие возвраты в этот процент не входят. Новый период применяется при следующей выгрузке. При отсутствии статистики или выкупе 0% используется выкуп по умолчанию, если он задан. Выкуп для логистики считается отдельно по оплаченным доставкам за 30 дней.</p>
+                <p data-ozon-status role="status" aria-live="polite"></p>
+                <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить выкуп</button><button type="button" data-ozon-reset>Отменить изменения</button></div>
+            </form>
+            <form class="ue1cs-field-group" data-ozon-section="expenses">
+                <div class="ue1cs-field-group-head"><strong>Расходы и налоги</strong><span>Ставки для расчёта юнит-экономики</span></div>
+                <div class="ue1cs-fields" data-ozon-fields></div>
+                <p class="ozon-settings-help" data-ozon-team-note></p>
+                <p class="ozon-settings-help">Пустое поле — ставка не задана. Ноль — явное отсутствие расхода. Значения доступны в параметрах товара; расчёт маржи Ozon пока не подключён.</p>
+                <p data-ozon-status role="status" aria-live="polite"></p>
+                <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить</button><button type="button" data-ozon-reset>Отменить изменения</button></div>
+            </form>
+        </div>
+    </article>
+</section>
+<script src="/static/economics/ozon/settings.js?v=20261020-taxes-v1"></script>

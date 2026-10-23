@@ -171,6 +171,10 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         ),
         from_metadata(JOBS.ozon_orders, base),
         from_metadata(JOBS.ozon_prices, base),
+        from_metadata(JOBS.ozon_logistics, base),
+        from_metadata(JOBS.ozon_storage, base),
+        from_metadata(JOBS.ozon_buyout, base),
+        from_metadata(JOBS.ozon_margin, base),
         from_metadata(JOBS.ozon_prices_close, base),
         from_metadata(JOBS.ozon_advertising_breakdown, base),
         SyncJobDefinition(

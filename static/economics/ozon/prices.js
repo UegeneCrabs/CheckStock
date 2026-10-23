@@ -11,6 +11,7 @@ window.OzonPricesUI = (() => {
         ['wallet_percent', 'Скидка с Ozon Кошельком, %', 'Скидка от цены с СПП.'],
     ];
     const sessions = new WeakMap();
+    const inputFormat = new Intl.NumberFormat('en-US', { useGrouping: false, maximumFractionDigits: 2 });
     const dates = new Intl.DateTimeFormat('ru-RU', {
         timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
@@ -27,12 +28,13 @@ window.OzonPricesUI = (() => {
     }
 
     function displayed(value) {
-        return value == null ? '' : String(Number(value));
+        return value == null ? '' : inputFormat.format(Number(value));
     }
 
     function clear(root) {
         const session = sessions.get(root);
         if (session) {
+            if (window.OzonCategoriesUI) window.OzonCategoriesUI.clear(session);
             window.clearTimeout(session.timer);
             if (session.controller) session.controller.abort();
         }
@@ -48,6 +50,8 @@ window.OzonPricesUI = (() => {
         input.dataset.ozonCalculatorInput = key;
         input.value = Object.hasOwn(session.draft, key) ? session.draft[key] : displayed(session.values[key]);
         input.oninput = () => {
+            session.modified = true;
+            if (key.startsWith('commission_') && window.OzonCategoriesUI) window.OzonCategoriesUI.manual(root, session);
             session.draft[key] = input.value;
             if (!input.checkValidity()) {
                 session.invalid.add(key);
@@ -92,7 +96,7 @@ window.OzonPricesUI = (() => {
             input.dataset.ozonPriceInput = key;
             const status = states[price.state] || (price.stale ? 'Данные устарели' : '');
             const notes = [label];
-            if (key === 'seller_price') notes.push('Без дополнительной скидки Ozon.');
+            if (key === 'seller_price') notes.push('Без дополнительной скидки Ozon. Эта цена определяет диапазон комиссии: до 100 ₽ — 17%, свыше 100 до 300 ₽ — 23%, кроме тарифов отдельных категорий.');
             if (status) notes.push(status);
             if (price.received_at) notes.push('Получено из API: ' + dates.format(new Date(price.received_at)) + ' МСК.');
             notes.push('Цены связаны через текущие скидки. Обновление из API каждый час. Правки действуют только в открытой карточке.');
@@ -105,6 +109,7 @@ window.OzonPricesUI = (() => {
         });
         discounts.forEach(([key, label, note], index) => {
             const { row, input } = numericRow(label, key, index - discounts.length);
+            row.classList.add('ue1c-calculator-row--expanded');
             input.removeAttribute('min');
             input.max = '100';
             input.step = '0.00000001';
@@ -119,6 +124,7 @@ window.OzonPricesUI = (() => {
         status.hidden = true;
         inputs.append(status);
         renderCommission(root, product, session);
+        if (window.OzonCategoriesUI) window.OzonCategoriesUI.render(root, product, session, () => queue(root, session));
         if (!session.initialized || session.edits.length) queue(root, session);
     }
 
@@ -146,8 +152,9 @@ window.OzonPricesUI = (() => {
             const input = root.querySelector('[data-calculator-input="' + key + '"]');
             const row = input.closest('.ue1c-calculator-row');
             row.classList.add('ue1c-calculator-row--expanded');
+            row.style.setProperty('--expanded-order', '8');
             row.firstElementChild.textContent = label;
-            const notes = [key === 'commission' ? 'Комиссия за продажу FBO. Ставка сохраняется раз в день.'
+            const notes = [key === 'commission' ? 'Комиссия за продажу FBO. Исходная ставка загружается раз в день. При изменении цены диапазон определяется ценой с учётом акции: до 100 ₽ — 17%, свыше 100 до 300 ₽ — 23%, с учётом исключений выбранной категории. Выше 300 ₽ возвращается обычная ставка.'
                 : 'Цена с учётом акции × комиссия Ozon FBO / 100.'];
             if (source.received_at) notes.push('Получено из API: ' + dates.format(new Date(source.received_at)) + ' МСК.');
             if (source.state === 'missing') notes.push('Комиссия из API ещё не загружена.');
@@ -156,6 +163,7 @@ window.OzonPricesUI = (() => {
             notes.push('Правки действуют только в открытой карточке.');
             row.title = notes.join('\n');
             input.disabled = false;
+            row.dataset.ozonCommissionApiTitle = row.title;
             input.readOnly = false;
             input.placeholder = '—';
             input.step = key === 'commission' ? '0.00000001' : '0.01';
@@ -165,6 +173,7 @@ window.OzonPricesUI = (() => {
     }
 
     function queue(root, session) {
+        root.dispatchEvent(new CustomEvent('ozon-prices-pending', { detail: { productId: session.productId } }));
         window.clearTimeout(session.timer);
         if (session.controller) session.controller.abort();
         const sequence = ++session.sequence;
@@ -180,7 +189,8 @@ window.OzonPricesUI = (() => {
                 const response = await window.fetch('/api/unit-economics-1c/ozon/prices/calculate', {
                     method: 'POST', signal: controller.signal,
                     headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'fetch' },
-                    body: JSON.stringify({ values: session.values, initialize: !session.initialized, edits: session.edits }),
+                    body: JSON.stringify({ values: session.values, initialize: !session.initialized, edits: session.edits,
+                        tariff_id: session.tariffId || null, product_tariff_id: session.productTariffId || null }),
                 });
                 if (!response.ok) throw new Error('Не удалось пересчитать цены. Проверьте значения: скидка до 100%, комиссия в рублях не больше цены с акциями.');
                 const result = await response.json();
@@ -189,6 +199,8 @@ window.OzonPricesUI = (() => {
                 session.edits = [];
                 session.draft = {};
                 session.initialized = true;
+                if (window.OzonCategoriesUI) window.OzonCategoriesUI.refresh(root, session);
+                root.dispatchEvent(new CustomEvent('ozon-prices-changed', { detail: { productId: session.productId, values: result, modified: Boolean(session.modified || session.tariffId) } }));
                 root.querySelectorAll('[data-ozon-calculator-input]').forEach(input => {
                     input.value = displayed(result[input.dataset.ozonCalculatorInput]);
                 });

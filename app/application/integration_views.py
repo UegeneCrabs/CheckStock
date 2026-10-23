@@ -1,14 +1,26 @@
+import re
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 from app.config import settings
-from app.core.constants import JOB_SCHEDULE_RULES, JOBS, WEB, JobScope, JobStatus, ScheduleKind, WebErrorCode
+from app.core.constants import (
+    JOB_SCHEDULE_RULES,
+    JOBS,
+    OZON_API,
+    SCHEDULER,
+    WEB,
+    JobScope,
+    JobStatus,
+    ScheduleKind,
+    WebErrorCode,
+)
 from app.dto.integrations import (
     JobCatalog,
     JobConfiguration,
     JobHistory,
     JobIdentity,
     JobRun,
+    JobRunError,
     JobScheduleView,
     JobState,
     JobStates,
@@ -58,6 +70,24 @@ def schedule_for(name: str) -> JobScheduleView:
         hours=hours,
         minute=rule.minute,
         weekdays=rule.weekdays,
+    )
+
+
+def history_errors(run: JobRun) -> tuple[JobRunError, ...]:
+    if run.name != JOBS.ozon_reputation.name or run.status != JobStatus.ERROR or not run.error:
+        return run.error_details
+    if OZON_API.subscription_error_marker not in run.error.casefold():
+        return run.error_details
+    parts = re.split(SCHEDULER.legacy_store_error_boundary, run.error)
+    details = [JobRunError(message=parts[0])] if parts[0] else []
+    details.extend(
+        JobRunError(target=parts[index], message=parts[index + 1]) for index in range(1, len(parts), 2)
+    )
+    return tuple(
+        detail.model_copy(update={"code": WebErrorCode.OZON_REVIEW_SUBSCRIPTION_REQUIRED})
+        if OZON_API.subscription_error_marker in detail.message.casefold()
+        else detail
+        for detail in details
     )
 
 
@@ -149,7 +179,7 @@ class IntegrationViews:
                     run = run.model_copy(
                         update={"status": WEB.interrupted_status, "error_code": WebErrorCode.INTERRUPTED}
                     )
-            result.append(run)
+            result.append(run.model_copy(update={"error_details": history_errors(run)}))
         return JobHistory(job=JobIdentity(name=definition.name, title=definition.title), runs=tuple(result))
 
     async def save_setting(self, definition: SyncJobDefinition, value: SyncSettingUpdate) -> JobConfiguration:

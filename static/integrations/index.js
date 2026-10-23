@@ -490,6 +490,21 @@
         return node;
     }
 
+    function runError(run) {
+        if (run.error_details && run.error_details.length) {
+            return run.error_details.map(function (detail) {
+                var message = detail.code === 'ozon_review_subscription_required'
+                    ? 'Отзывы недоступны на текущей подписке Ozon (403). Проверьте подписку с доступом к API отзывов в кабинете Ozon.'
+                    : detail.message;
+                return (detail.target ? detail.target + ': ' : '') + message;
+            }).join('\n');
+        }
+        if (run.error) return run.error;
+        if (run.error_code === 'interrupted')
+            return 'Запуск больше не выполняется, но результат не был сохранён. Возможно, приложение перезапустили или процесс остановился. Точное время завершения неизвестно.';
+        return 'Текст ошибки для этого запуска не сохранился.';
+    }
+
     function renderHistory(runs) {
         historyRows.replaceChildren();
         historySummary.hidden = !runs.length;
@@ -555,7 +570,7 @@
                 detailCell.colSpan = 4;
                 var detail = document.createElement('pre');
                 detail.className = 'integration-history-error-detail';
-                detail.textContent = run.error || 'Текст ошибки для этого запуска не сохранился.';
+                detail.textContent = runError(run);
                 detailCell.appendChild(detail);
                 detailRow.appendChild(detailCell);
                 var toggle = document.createElement('button');

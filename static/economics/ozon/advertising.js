@@ -137,34 +137,59 @@ window.OzonAdvertisingUI = (() => {
             escape(percent(basis.drr)) + (partial ? window.CheckStockUI.render('economics/shared/dashboard/coverage-value') : '') + '</span>';
     }
 
+    function otherBreakdownLines(breakdown) {
+        if (breakdown == null) return ['Сумма прочей рекламы используется целиком. Распределение по категориям не задано; после ручной правки «Сбросить» возвращает исходный состав.'];
+        const lines = breakdown.map(item => {
+            const label = definitions.find(definition => definition.kind === item.kind)?.label || item.kind;
+            let text = label + ': ' + amount(item.amount) + '; ДРР ' + percent(item.drr) + '.';
+            if (item.amount == null) text += ' Расходы неизвестны, в сумму не включены.';
+            else if (item.state !== 'ready') text += ' Включена только известная часть расходов.';
+            if (item.state === 'unsupported') text += ' Источник не предоставляет полный расчёт.';
+            if (item.stale) text += ' Предыдущая выгрузка; данные устарели.';
+            if (item.kind === 'other' && item.raw_types?.length) text += ' Типы: ' + item.raw_types.join(', ') + '.';
+            return text;
+        });
+        lines.push('Итог включает только известные расходы на этот товар. Неизвестные категории не подтверждают ноль и не блокируют общий ДРР. Клики и заказы учтены отдельно.');
+        return lines;
+    }
+
     function renderCalculator(root, product) {
         const calculator = root.querySelector('#ue1c-panel-economics > .ue1c-calculator:not(.ue1c-placeholder-calculator)');
         if (!calculator) return;
         const inputs = calculator.querySelector('.ue1c-calculator-inputs');
-        const anchor = calculator.querySelector('[data-calculator-input="drr"]').closest('.ue1c-calculator-row');
+        const anchor = calculator.querySelector('#ue1c-subject-select').closest('.ue1c-calculator-row');
         ['drr', 'advertisingRub'].forEach(key => {
             const input = calculator.querySelector('[data-calculator-input="' + key + '"]');
             if (input) input.closest('.ue1c-calculator-row').hidden = true;
         });
         const data = product.calculator || {};
+        const buyout = data.buyout || {};
         const stamp = value => value ? 'Обновлено ' + timestamps.format(new Date(value)) + ' МСК' : 'Данные ещё не загружены';
-        const period = data.day ? 'Реклама и выкуп за ' + dayLabel(data.day) + ' · МСК.' : 'Сегодняшние данные рекламы и выкупа ещё не загружены.';
+        const period = data.day ? 'Реклама за ' + dayLabel(data.day) + ' · МСК.' : 'Сегодняшние данные рекламы ещё не загружены.';
+        const buyoutPeriod = buyout.period_from && buyout.period_to ?
+            'Выкуп за ' + dayLabel(buyout.period_from) + ' — ' + dayLabel(buyout.period_to) + ' · без сегодняшнего дня.' :
+            'Период выкупа ещё не загружен.';
+        const buyoutDetails = [buyoutPeriod, 'Период и значение по умолчанию — в параметрах кабинета Ozon. Обновление каждые 4 часа.',
+            'Выкупленные без возвратов / (выкупленные без возвратов + отмены + возвраты) × 100%.',
+            buyout.retained == null ? '' : 'Выкуплено без возвратов: ' + buyout.retained + '; отменено: ' + buyout.cancelled + '; возвращено: ' + buyout.returned + '.',
+            buyout.default_applied ? 'Применён выкуп по умолчанию: ' + percent(buyout.percent) + '. Фактический: ' + percent(buyout.actual_percent) + '.' : '',
+            buyout.stale ? 'Сохранённые данные устарели. Ожидается обновление.' : '',
+            buyout.error ? 'Последнее обновление не удалось.' : '',
+            stamp(buyout.observed_at)].filter(Boolean).join('\n');
         const fields = [
-            { key: 'turnover', label: 'ТО после отмен', unit: '₽', value: data.turnover, updatedAt: data.updated_at,
-                missing: 'Данные заказов за сегодня ещё не загружены.' },
-            { key: 'buyoutPercent', label: 'Процент выкупа', unit: '%', value: data.buyout_percent, updatedAt: data.updated_at,
-                missing: data.turnover == null ? 'Данные заказов за сегодня ещё не загружены.' : 'Пока нет полученных или отменённых товаров.' },
+            { key: 'buyoutPercent', label: 'Процент выкупа', unit: '%', value: data.buyout_percent, details: buyoutDetails,
+                missing: 'Нет полного расчёта выкупа за выбранный период и значения по умолчанию.' },
         ];
         [['clicks', 'клики', 'click'], ['orders', 'заказы', 'order']].forEach(([key, label, prefix]) => {
             const value = data[key] || {};
             const missing = !value.coverage || !value.coverage.days ? 'Нет совместной выгрузки заказов и рекламы.' :
-                value.buyout_percent == null ? 'Пока нет полученных или отменённых товаров.' :
+                value.buyout_percent == null ? 'Нет процента выкупа за период кабинета или значения по умолчанию.' :
                 Number(value.turnover) <= 0 ? 'Нет положительного ТО для расчёта ДРР.' : '';
             fields.push(
                 { key: key + 'Spend', label: 'Расходы за ' + label, unit: '₽', value: data[prefix + '_spend'],
                     updatedAt: data[prefix + '_updated_at'], missing: 'Данные рекламных расходов за сегодня ещё не загружены.' },
                 { key: key + 'Drr', label: 'ДРР за ' + label, unit: '%', value: value.drr,
-                    updatedAt: value.updated_at, missing },
+                    updatedAt: value.updated_at, details: period + '\n' + stamp(value.updated_at) + '\n' + buyoutDetails, missing },
             );
         });
         fields.forEach(spec => {
@@ -186,6 +211,7 @@ window.OzonAdvertisingUI = (() => {
             }
             row.dataset.ozonMetricRow = spec.key;
             row.hidden = false;
+            row.classList.toggle('ue1c-calculator-row--expanded', spec.key !== 'buyoutPercent');
             row.style.setProperty('--compact-order', '3');
             row.style.setProperty('--expanded-order', '8');
             const input = row.querySelector('input');
@@ -199,19 +225,10 @@ window.OzonAdvertisingUI = (() => {
             const value = spec.value == null ? null : Number(spec.value);
             const known = value !== null && Number.isFinite(value);
             input.value = known ? String(Math.round(value * 100) / 100) : '';
-            row.title = [spec.label, period, stamp(spec.updatedAt), known ? '' : spec.missing].filter(Boolean).join('\n');
+            row.title = [spec.label, spec.details || period + '\n' + stamp(spec.updatedAt), known ? '' : spec.missing].filter(Boolean).join('\n');
             inputs.insertBefore(row, anchor);
         });
-        const note = calculator.querySelector('#ue1c-calculator-source');
-        let periodNote = note.querySelector('[data-ozon-calculator-period]');
-        if (!periodNote) {
-            periodNote = document.createElement('span');
-            periodNote.dataset.ozonCalculatorPeriod = '';
-            note.append(periodNote);
-        }
-        periodNote.textContent = ' ' + period;
-        note.hidden = false;
     }
 
-    return { spendColumnIndex, spendValue, spendPartial, spendContent, spendTooltip, spendTotal, cellValue, trafficContent, trafficTooltip, drrTooltip, drrContent, renderCalculator };
+    return { spendColumnIndex, spendValue, spendPartial, spendContent, spendTooltip, spendTotal, cellValue, trafficContent, trafficTooltip, drrTooltip, drrContent, otherBreakdownLines, renderCalculator };
 })();

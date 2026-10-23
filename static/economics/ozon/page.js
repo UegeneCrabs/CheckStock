@@ -8,9 +8,42 @@ window.OzonEconomicsUI = (() => {
     };
     const fields = { purchase_price: 'себестоимость', fulfillment_cost: 'затраты на ФФ', team_commission_percent: 'комиссия компании', tag_raw: 'тег' };
     const sources = { reputation: 'Отзывы Ozon', source: 'Данные 1С Ozon', advertising: 'Реклама Ozon' };
+    const marginLabels = {
+        seller_price: 'Цена с учётом акции', purchase: 'Закупка', fulfillment: 'ФФ', commission_amount: 'Комиссия Ozon',
+        logistics_amount: 'Логистика на штуку', storage_amount: 'Хранение на штуку', advertising_amount: 'Реклама на штуку',
+        acquiring_amount: 'Эквайринг', team_amount: 'Комиссия компании', vat_amount: 'НДС', usn_amount: 'УСН',
+        snapshot: 'Нет дневного снимка параметров', orders_count: 'Количество заказов', buyout_percent: 'Процент выкупа',
+        advertising_spend: 'Расходы на рекламу', fbs_orders: 'Есть заказы FBS: расходы FBO к ним неприменимы',
+        orders_partial: 'Выгрузка заказов устарела', advertising_partial: 'Реклама загружена не полностью или устарела',
+        sources_stale: 'Часть параметров из предыдущей выгрузки', logistics_partial: 'Начисления логистики неполные',
+        storage_partial: 'Данные хранения неполные', buyout_default: 'Применён выкуп по умолчанию',
+    };
+    const calculationMessages = day => [
+        ...(day?.missing?.includes('snapshot') ? ['snapshot'] : day?.missing || []).map(key => 'Нет данных: ' + (marginLabels[key] || key)),
+        ...(day?.issues || []).map(key => marginLabels[key] || key),
+    ];
 
     function product(value) {
+        const current = value.current_economics || {};
+        const period = value.economics_7d || {};
+        const messages = calculationMessages(current.calculation);
+        const periodMessages = [...new Set((period.daily || []).flatMap(calculationMessages))];
+        const coverage = (value, label) => value ? { ...value, messages: [
+            label, 'Учтено ' + value.days + ' из ' + value.expected_days + ' дней.',
+            ...(value.missing_dates.length ? ['Нет расчёта за: ' + value.missing_dates.map(day => day.split('-').reverse().join('.')).join(', ')] : []),
+            ...periodMessages,
+        ] } : null;
+        const numbers = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+        const inputs = current.calculation?.inputs || {};
+        const formula = Object.entries(inputs).map(([key, amount]) =>
+            (marginLabels[key] || key) + ': ' + (amount == null ? '—' : numbers.format(Number(amount)) + ' ₽')).join('\n');
+        if (current.expected_buyouts != null && Number(current.expected_buyouts) === 0) messages.push('Нет ожидаемых выкупов: маржа на штуку не определена. Расходы на рекламу учтены в прибыли дня.');
         return { ...value,
+            current_economics: { ...current, formula, issues: { margin: messages, roi: messages }, messages, daily_messages: messages },
+            economics_7d: { ...period, messages: periodMessages,
+                margin_coverage: coverage(period.margin_coverage, 'Сумма прибыли по отдельным дням.'),
+                roi_coverage: coverage(period.roi_coverage, 'Сумма прибыли / закупочная стоимость ожидаемых выкупов за те же дни × 100%.'),
+                missing_parameters: Object.fromEntries((period.daily || []).map(day => [day.day, day.missing.map(key => key === 'purchase' ? 'purchase_price' : key)])) },
             data_errors: (value.data_issues || []).map(issue => {
                 if (issue.code === 'source_field_missing') return 'В данных 1С Ozon не заполнены: ' + (fields[issue.field] || issue.field);
                 if (issue.code === 'source_error') return (issue.source ? (sources[issue.source] || issue.source) + ': ' : '') + (issue.detail || 'Ошибка источника');
@@ -47,5 +80,5 @@ window.OzonEconomicsUI = (() => {
             marketplace_label: 'Ozon', calendar_link: '', loading_description: 'Загружаем товары, отзывы и остатки из базы данных.', unit_1c_notice: '',
         } };
     });
-    return { product };
+    return { product, marginLabels };
 })();
