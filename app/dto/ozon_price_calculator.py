@@ -3,9 +3,15 @@ from typing import Annotated, Self
 
 from pydantic import Field, model_validator
 
-from app.core.constants import OZON_COMMISSIONS, OZON_PRICE_CALCULATOR, OzonPriceCalculatorField
+from app.core.constants import (
+    OZON_COMMISSIONS,
+    OZON_PRICE_CALCULATOR,
+    OzonCalculatorCommissionMode,
+    OzonPriceCalculatorField,
+)
 from app.dto.common import DtoModel
 from app.dto.ozon_commissions import CommissionAmount, CommissionPercent
+from app.dto.ozon_tariffs import TariffId
 
 CalculatorNumber = Annotated[
     Decimal,
@@ -28,6 +34,8 @@ class OzonPriceCalculation(DtoModel):
     wallet_percent: DiscountPercent | None = None
     commission_percent: CommissionPercent | None = None
     commission_amount: CommissionAmount | None = None
+    regular_commission_percent: CommissionPercent | None = None
+    commission_mode: OzonCalculatorCommissionMode = OzonCalculatorCommissionMode.AUTOMATIC
 
 
 class OzonPriceEdit(DtoModel):
@@ -63,4 +71,6 @@ class OzonPriceEdit(DtoModel):
 class OzonPriceCalculationRequest(DtoModel):
     values: OzonPriceCalculation
     initialize: bool = False
+    tariff_id: TariffId | None = None
+    product_tariff_id: TariffId | None = None
     edits: tuple[OzonPriceEdit, ...] = Field(default=(), max_length=OZON_PRICE_CALCULATOR.max_edits)

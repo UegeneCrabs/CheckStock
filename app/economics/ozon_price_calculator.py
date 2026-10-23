@@ -92,6 +92,8 @@ def _edit(values: OzonPriceCalculation, edit: OzonPriceEdit) -> OzonPriceCalcula
         spp_percent=discounts[1],
         wallet_percent=discounts[2],
         commission_percent=values.commission_percent,
+        regular_commission_percent=values.regular_commission_percent,
+        commission_mode=values.commission_mode,
     )
     return _commission(updated, OzonCommissionInput.PERCENT)
 
