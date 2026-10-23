@@ -12,6 +12,7 @@ from app.core.constants import (
 )
 from app.dto.inbound_supplies import InboundSnapshot
 from app.dto.ozon_advertising import AdvertisingPeriod, StoreAdvertisingBreakdown
+from app.dto.ozon_cabinet import OzonProductGoals
 from app.dto.ozon_economics import (
     OzonCoverage,
     OzonDataIssue,
@@ -20,17 +21,26 @@ from app.dto.ozon_economics import (
     OzonProductsQuery,
     OzonTurnoverData,
 )
+from app.dto.ozon_logistics import LogisticsData
+from app.dto.ozon_margin import OzonMarginSource
+from app.dto.ozon_newness import OzonNewness
 from app.dto.ozon_prices import PriceValue
+from app.dto.ozon_storage import StorageData
 from app.dto.stock_pages import StockTarget
-from app.economics import ozon, ozon_commissions
+from app.economics import ozon, ozon_commissions, ozon_margin
 from app.economics.wb.calculations import calculate_stock_coverage_days
 from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepository
 from app.infrastructure.async_commissions_repository import AsyncCommissionsRepository
 from app.infrastructure.async_database import AsyncDatabase
+from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
 from app.infrastructure.async_prices_repository import AsyncPricesRepository
 from app.infrastructure.async_read_models import AsyncReadModels
+from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.inbound_read_repository import InboundReadRepository
+from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
+from app.infrastructure.ozon_margin_repository import OzonMarginRepository
+from app.infrastructure.ozon_newness_repository import OzonNewnessRepository
 from app.ozon import drr, tokens
 from app.ozon.advertising_normalizer import (
     breakdown,
@@ -39,6 +49,8 @@ from app.ozon.advertising_normalizer import (
     traffic_metrics,
     window_adjustments,
 )
+from app.ozon.advertising_read_index import AdvertisingReadIndex
+from app.ozon.cabinet_normalizer import effective_parameters
 from app.ozon.price_normalizer import price_freshness
 from app.ozon.turnover_normalizer import period_turnover
 
@@ -150,6 +162,8 @@ class OzonEconomicsRepository:
             for store in query.stores
         }
         configured = {store: tokens.has_performance_credentials(store) for store in query.stores}
+        advertising_indexes = {store: AdvertisingReadIndex(sources) for store, sources in by_store.items()}
+        today_indexes = {store: AdvertisingReadIndex(sources) for store, sources in today_sources.items()}
         prices = {
             (item.store_slug, str(item.product_id)): price_freshness(item.prices, datetime.now(UTC))
             for item in await AsyncPricesRepository(self.database).load(query.stores)
@@ -158,9 +172,65 @@ class OzonEconomicsRepository:
             (item.store_slug, str(item.product_id)): item.value
             for item in await AsyncCommissionsRepository(self.database).load(query.stores)
         }
+        logistics_stores = await AsyncLogisticsRepository(self.database).latest(query.stores, today)
+        logistics = {
+            (store.store_slug, snapshot.article): LogisticsData(
+                snapshot=snapshot,
+                stale=snapshot.period.day != today or store.error is not None,
+                error=store.error,
+                attempted_at=store.attempted_at,
+            )
+            for store in logistics_stores
+            for snapshot in store.products
+        }
+        logistics_missing = {
+            store.store_slug: LogisticsData(error=store.error, attempted_at=store.attempted_at)
+            for store in logistics_stores
+        }
+        storage_stores = await AsyncStorageRepository(self.database).latest(query.stores, today)
+        storage = {
+            (store.store_slug, snapshot.article): StorageData(
+                snapshot=snapshot,
+                stale=snapshot.period.day != today or store.error is not None,
+                error=store.error,
+                attempted_at=store.attempted_at,
+            )
+            for store in storage_stores
+            for snapshot in store.products
+        }
+        storage_missing = {
+            store.store_slug: StorageData(error=store.error, attempted_at=store.attempted_at)
+            for store in storage_stores
+        }
+        cabinet_repository = OzonCabinetRepository(self.database)
+        cabinets = {item.store_slug: item.values for item in await cabinet_repository.settings(query.stores)}
+        buyouts = {item.store_slug: item for item in await cabinet_repository.buyouts(query.stores, today)}
+        product_goals = await cabinet_repository.product_goals(query.stores)
+        newness = await OzonNewnessRepository(self.database).load(query.stores, today)
         products = tuple(
             product.model_copy(
                 update={
+                    "newness": (age := newness.get((product.store_slug, product.article), OzonNewness())),
+                    "is_new": age.is_new,
+                    "sales_days": age.observed_days,
+                    "cabinet": (
+                        cabinet := effective_parameters(
+                            cabinets[product.store_slug],
+                            product.article,
+                            product.tag_data.code,
+                            product_goals.get((product.store_slug, product.article), OzonProductGoals()),
+                            buyouts.get(product.store_slug),
+                            datetime.now(UTC),
+                        )
+                    ),
+                    "logistics": logistics.get(
+                        (product.store_slug, product.article),
+                        logistics_missing.get(product.store_slug, LogisticsData()),
+                    ),
+                    "storage": storage.get(
+                        (product.store_slug, product.article),
+                        storage_missing.get(product.store_slug, StorageData()),
+                    ),
                     "commission": ozon_commissions.snapshot(
                         commissions.get((product.store_slug, product.mp_product_id or "")),
                         prices[(product.store_slug, product.mp_product_id or "")].seller_price
@@ -176,16 +246,15 @@ class OzonEconomicsRepository:
                     "calculator": drr.calculator(
                         today,
                         turnover_data,
-                        today_sources[product.store_slug],
+                        current_sources,
                         store=product.store_slug,
                         article=product.article,
+                        buyout=cabinet.buyout,
                     ),
                     "advertising": product.advertising.model_copy(
                         update={
                             "traffic_coverage": (
-                                traffic := traffic_metrics(
-                                    period, by_store[product.store_slug], article=product.article
-                                )
+                                traffic := traffic_metrics(period, product_sources, article=product.article)
                             ).coverage,
                             "click_spend": traffic.click_spend,
                             "impressions": traffic.impressions,
@@ -195,7 +264,7 @@ class OzonEconomicsRepository:
                             "spend_summary": (
                                 summary := spend_summary(
                                     period,
-                                    by_store[product.store_slug],
+                                    product_sources,
                                     article=product.article,
                                     credentials_present=configured[product.store_slug],
                                 )
@@ -216,7 +285,7 @@ class OzonEconomicsRepository:
                                 breakdown(
                                     kind,
                                     period,
-                                    by_store[product.store_slug],
+                                    product_sources,
                                     article=product.article,
                                     credentials_present=configured[product.store_slug],
                                 )
@@ -226,7 +295,7 @@ class OzonEconomicsRepository:
                                 basis := drr.metrics(
                                     period,
                                     turnover_data,
-                                    by_store[product.store_slug],
+                                    product_sources,
                                     store=product.store_slug,
                                     article=product.article,
                                     spending=summary,
@@ -252,6 +321,8 @@ class OzonEconomicsRepository:
                 }
             )
             for product in result.products
+            for product_sources in (advertising_indexes[product.store_slug].article(product.article),)
+            for current_sources in (today_indexes[product.store_slug].article(product.article),)
         )
         unallocated = tuple(
             StoreAdvertisingBreakdown(
@@ -282,4 +353,75 @@ class OzonEconomicsRepository:
             for store in query.stores
             for adjustments in (window_adjustments(by_store[store]),)
         )
-        return result.model_copy(update={"products": products, "advertising_unallocated": unallocated})
+        history = {
+            (value.store_slug, value.article, value.day): value
+            for value in await OzonMarginRepository(self.database).history(
+                query.stores, query.period_from, query.period_to
+            )
+        }
+        enriched = []
+        for product in products:
+            assert product.cabinet is not None
+            saved = ozon_margin.snapshot(
+                OzonMarginSource(
+                    store_slug=product.store_slug,
+                    article=product.article,
+                    mp_product_id=product.mp_product_id,
+                    purchase_price=Decimal(str(product.details.purchase_cost))
+                    if product.details.purchase_cost is not None
+                    else None,
+                    fulfillment_cost=Decimal(str(product.details.fulfillment_cost))
+                    if product.details.fulfillment_cost is not None
+                    else None,
+                    team_commission_percent=Decimal(str(product.details.team_commission_percent))
+                    if product.details.team_commission_percent is not None
+                    else None,
+                ),
+                product.price,
+                product.commission,
+                product.logistics,
+                product.storage,
+                product.cabinet,
+                datetime.now(UTC),
+            )
+            current_ads = spend_summary(
+                AdvertisingPeriod(start=today, end=today),
+                today_indexes[product.store_slug].article(product.article),
+                article=product.article,
+                credentials_present=configured[product.store_slug],
+            )
+            daily = (
+                tuple(
+                    ozon_margin.calculate_day(
+                        product.store_slug,
+                        product.article,
+                        value.day,
+                        history.get((product.store_slug, product.article, value.day)),
+                        turnover_data,
+                        value,
+                    )
+                    for value in product.advertising.spend_summary.days
+                )
+                if product.advertising.spend_summary
+                else ()
+            )
+            enriched.append(
+                product.model_copy(
+                    update={
+                        "current_economics": ozon_margin.current(
+                            ozon_margin.calculate_day(
+                                product.store_slug,
+                                product.article,
+                                today,
+                                saved,
+                                turnover_data,
+                                current_ads.days[0],
+                            )
+                        ),
+                        "economics_7d": ozon_margin.period(
+                            product.economics_7d, daily, query.period_from, query.period_to
+                        ),
+                    }
+                )
+            )
+        return result.model_copy(update={"products": tuple(enriched), "advertising_unallocated": unallocated})

@@ -13,6 +13,7 @@ from app.core.constants import (
     AdvertisingSource,
     AdvertisingState,
     HTTPMethod,
+    HTTPStatus,
 )
 from app.core.stores import STORES
 from app.dto.ozon_advertising import (
@@ -26,17 +27,18 @@ from app.dto.ozon_advertising import (
     PerformanceCredentials,
     PerformanceReportRequest,
 )
+from app.economics.ozon_advertising_articles import AdvertisingArticleResolver
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import async_locks
 from app.ozon import tokens
 from app.ozon.advertising_normalizer import (
     all_product_facts,
-    attach_articles,
     campaign_kind,
     completed_period,
     import_plan,
     selected_facts,
 )
+from app.ozon.async_api import AsyncSellerApi
 from app.ozon.async_performance import AsyncPerformanceClient, PerformanceApiFailure
 
 logger = logging.getLogger(__name__)
@@ -286,15 +288,13 @@ async def sync_store(
             store,
             PerformanceCredentials(client_id=client_id, client_secret=secret),
         )
-        index = await resources.catalog.get_ozon_articles(store)
-        articles: dict[str, str] = {}
-        ambiguous: set[str] = set()
-        for product in index.items:
-            if product.sku in articles and articles[product.sku] != product.article:
-                ambiguous.add(product.sku)
-            articles[product.sku] = product.article
-        for sku in ambiguous:
-            articles.pop(sku, None)
+        resolver = AdvertisingArticleResolver(
+            store,
+            await resources.catalog.get_ozon_articles(store),
+            AsyncSellerApi(resources.http, tokens.get_order_credentials(store))
+            if tokens.has_credentials(store)
+            else None,
+        )
         success = True
         for item in imports:
             client.refresh_slot = slot if item.period == today else None
@@ -340,7 +340,7 @@ async def sync_store(
                 snapshot = snapshot.model_copy(
                     update={"finalized": item.period.end < today.start, "refresh_slot": client.refresh_slot}
                 )
-                await resources.advertising.save(attach_articles(snapshot, articles))
+                await resources.advertising.save(await resolver.attach(snapshot))
                 logger.info(
                     "ozon_advertising_source_loaded store=%s source=%s rows=%s",
                     store,
@@ -367,6 +367,11 @@ async def sync_store(
                     item.source.value,
                     code,
                 )
+                if isinstance(error, PerformanceApiFailure) and error.status_code in (
+                    HTTPStatus.UNAUTHORIZED,
+                    HTTPStatus.FORBIDDEN,
+                ):
+                    break
         return success
 
 

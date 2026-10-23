@@ -236,6 +236,13 @@ def import_plan(
         or item.stale
         or not item.snapshot.finalized
         or (item.source == AdvertisingSource.CPC and not item.snapshot.traffic_collected)
+        or any(
+            fact.kind in OZON_ADVERTISING.required_spend_kinds
+            and fact.article is None
+            and fact.advertised_sku
+            and (fact.amount or fact.impressions or fact.clicks)
+            for fact in item.snapshot.facts
+        )
     }
     result: list[AdvertisingImport] = []
     for source in AdvertisingSource:
@@ -246,7 +253,11 @@ def import_plan(
             missing.remove((source, yesterday))
     for source in AdvertisingSource:
         for status in sorted(statuses, key=lambda item: item.attempted_at):
-            if status.source != source or status.period.end >= yesterday:
+            if (
+                status.source != source
+                or status.period.end >= yesterday
+                or status.state == AdvertisingState.NO_CREDENTIALS
+            ):
                 continue
             pending_dates = set(period_days(status.period))
             if pending_dates and all((source, day) in missing for day in pending_dates):

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from app.core.constants import OZON_ADVERTISING, AdvertisingKind, AdvertisingState
 from app.dto.ozon_advertising import AdvertisingPeriod, AdvertisingSourceDay, AdvertisingSpendSummary
+from app.dto.ozon_cabinet import OzonEffectiveBuyout
 from app.dto.ozon_economics import OzonCalculatorMetrics, OzonCoverage, OzonDrrMetrics, OzonTurnoverData
 from app.ozon.advertising_normalizer import daily_expense, kind_source, period_days
 
@@ -98,6 +99,7 @@ def calculator(
     *,
     store: str,
     article: str,
+    buyout: OzonEffectiveBuyout,
 ) -> OzonCalculatorMetrics:
     period = AdvertisingPeriod(start=today, end=today)
     base = metrics(period, turnover, sources, store=store, article=article, kinds=())
@@ -122,29 +124,44 @@ def calculator(
         )
         return min(stamps) if stamps else None
 
+    def with_buyout(kinds: tuple[AdvertisingKind, ...]) -> OzonDrrMetrics:
+        value = metrics(
+            period, turnover, sources, store=store, article=article, kinds=kinds, allow_partial=False
+        )
+        percentage = Decimal(str(buyout.percent)) if buyout.percent is not None else None
+        calculated = (
+            float(value.spend / value.turnover * percentage)
+            if value.spend is not None
+            and value.turnover is not None
+            and value.turnover > 0
+            and percentage is not None
+            else None
+        )
+        return value.model_copy(update={"buyout_percent": buyout.percent, "drr": calculated})
+
+    other_breakdown = tuple(
+        daily_expense(kind, by_source.get(kind_source(kind)), article=article, credentials_present=True)
+        for kind in AdvertisingKind
+        if kind not in OZON_ADVERTISING.required_spend_kinds
+    )
     return OzonCalculatorMetrics(
         day=today,
+        orders_count=sum(
+            row.ordered + row.cancelled
+            for row in turnover.products.get((store, article), ())
+            if row.day == today
+        )
+        if today
+        in (turnover.eligible_days.get(store, frozenset()) | turnover.confirmed_days.get(store, frozenset()))
+        else None,
+        other_spend=sum((value.amount for value in other_breakdown if value.amount is not None), Decimal(0)),
+        other_breakdown=other_breakdown,
         turnover=base.turnover,
-        buyout_percent=base.buyout_percent,
+        buyout_percent=buyout.percent,
+        buyout=buyout,
         updated_at=base.updated_at,
-        clicks=metrics(
-            period,
-            turnover,
-            sources,
-            store=store,
-            article=article,
-            kinds=OZON_ADVERTISING.click_kinds,
-            allow_partial=False,
-        ),
-        orders=metrics(
-            period,
-            turnover,
-            sources,
-            store=store,
-            article=article,
-            kinds=OZON_ADVERTISING.order_kinds,
-            allow_partial=False,
-        ),
+        clicks=with_buyout(OZON_ADVERTISING.click_kinds),
+        orders=with_buyout(OZON_ADVERTISING.order_kinds),
         click_spend=expense(OZON_ADVERTISING.click_kinds),
         order_spend=expense(OZON_ADVERTISING.order_kinds),
         click_updated_at=updated_at(OZON_ADVERTISING.click_kinds),

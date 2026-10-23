@@ -7,9 +7,19 @@ from pydantic import Field, model_validator
 
 from app.core.constants import TIME, WEB, InboundAvailability, OzonDataIssueCode
 from app.dto.common import DtoModel
-from app.dto.ozon_advertising import AdvertisingBreakdown, AdvertisingSpendSummary, StoreAdvertisingBreakdown
+from app.dto.ozon_advertising import (
+    AdvertisingBreakdown,
+    AdvertisingDailyExpense,
+    AdvertisingSpendSummary,
+    StoreAdvertisingBreakdown,
+)
+from app.dto.ozon_cabinet import OzonEffectiveBuyout, OzonEffectiveParameters
 from app.dto.ozon_commissions import OzonCommissionData
+from app.dto.ozon_logistics import LogisticsData
+from app.dto.ozon_margin import OzonMarginDay
+from app.dto.ozon_newness import OzonNewness
 from app.dto.ozon_prices import PriceValues
+from app.dto.ozon_storage import StorageData
 
 
 class OzonDataIssue(DtoModel):
@@ -42,6 +52,13 @@ class OzonCurrentEconomics(DtoModel):
     buyout_percent: float | None = None
     advertising_spend: float | None = None
     period_to: str | None = None
+    day_profit: Decimal | None = None
+    expected_buyouts: Decimal | None = None
+    day_purchase_value: Decimal | None = None
+    purchase_value: Decimal | None = None
+    complete: bool = False
+    daily_complete: bool = False
+    calculation: OzonMarginDay | None = None
 
 
 class OzonCoverage(DtoModel):
@@ -62,6 +79,7 @@ class OzonOrderDay(DtoModel):
     ordered: int = 0
     received: int = 0
     cancelled: int = 0
+    fbs_ordered: int = 0
 
 
 class OzonConfirmedDay(DtoModel):
@@ -90,6 +108,12 @@ class OzonPeriodEconomics(DtoModel):
     roi: float | None
     period_from: str
     period_to: str
+    margin_coverage: OzonCoverage | None = None
+    roi_coverage: OzonCoverage | None = None
+    complete: bool = False
+    purchase_value: Decimal | None = None
+    roi_purchase_value: Decimal | None = None
+    daily: tuple[OzonMarginDay, ...] = ()
 
 
 class OzonTrafficMetrics(DtoModel):
@@ -113,9 +137,13 @@ class OzonDrrMetrics(DtoModel):
 
 
 class OzonCalculatorMetrics(DtoModel):
+    orders_count: int | None = None
+    other_spend: Decimal | None = None
+    other_breakdown: tuple[AdvertisingDailyExpense, ...] = ()
     day: date
     turnover: Decimal | None
     buyout_percent: float | None
+    buyout: OzonEffectiveBuyout
     updated_at: datetime | None
     clicks: OzonDrrMetrics
     orders: OzonDrrMetrics
@@ -187,8 +215,12 @@ class OzonProduct(DtoModel):
     tag_data: OzonTag
     is_new: bool | None
     sales_days: int | None
+    newness: OzonNewness = OzonNewness()
     price: OzonPrices
     commission: OzonCommissionData = OzonCommissionData()
+    logistics: LogisticsData = LogisticsData()
+    storage: StorageData = StorageData()
+    cabinet: OzonEffectiveParameters | None = None
     current_economics: OzonCurrentEconomics
     economics_7d: OzonPeriodEconomics
     advertising: OzonAdvertisingMetrics
