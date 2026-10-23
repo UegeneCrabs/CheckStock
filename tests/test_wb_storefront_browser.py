@@ -3,10 +3,18 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from app.config import Settings
-from app.wb.storefront_browser import _browser_command, _wait_for_browser_start, browser_path
+from app.wb.storefront_browser import (
+    _browser_command,
+    _browser_startupinfo,
+    _card_page,
+    _verified_browser_session,
+    _wait_for_browser_start,
+    browser_path,
+)
 
 
 class BrowserPathTests(unittest.TestCase):
@@ -59,6 +67,16 @@ class BrowserCommandTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CHECKSTOCK_WB_BROWSER_HEADLESS": "0"}):
             self.assertFalse(Settings.from_env().wb_storefront_browser_headless)
 
+    def test_visible_mode_does_not_hide_browser_window(self) -> None:
+        self.assertIsNone(_browser_startupinfo(headless=False))
+
+    @unittest.skipUnless(os.name == "nt", "Windows startup info")
+    def test_headless_mode_hides_browser_window(self) -> None:
+        startupinfo = _browser_startupinfo(headless=True)
+        self.assertIsNotNone(startupinfo)
+        self.assertTrue(startupinfo.dwFlags & subprocess.STARTF_USESHOWWINDOW)
+        self.assertEqual(startupinfo.wShowWindow, subprocess.SW_HIDE)
+
     def test_headless_mode_can_be_switched(self) -> None:
         executable = Path("chrome.exe")
         profile = Path("profile")
@@ -92,3 +110,17 @@ class BrowserCommandTests(unittest.TestCase):
         process = mock.Mock()
         process.wait.side_effect = subprocess.TimeoutExpired("chrome.exe", 25)
         _wait_for_browser_start(process)
+
+    def test_redirected_card_page_is_used_for_wb_check(self) -> None:
+        card = SimpleNamespace(url="https://www.wildberries.ru/catalog/153985484/detail.aspx")
+        check = SimpleNamespace(url="https://www.wildberries.ru/security/check")
+        self.assertIs(_card_page(SimpleNamespace(pages=[card, check]), "153985484"), card)
+        self.assertIs(_card_page(SimpleNamespace(pages=[check]), "153985484"), check)
+
+    def test_browser_network_error_stops_session_wait(self) -> None:
+        page = mock.Mock(url="chrome-error://chromewebdata/")
+        page.locator.return_value.inner_text.return_value = "This site can't be reached ERR_CONNECTION_RESET"
+        page.evaluate.return_value = []
+        with self.assertRaisesRegex(RuntimeError, "ERR_CONNECTION_RESET"):
+            _verified_browser_session(mock.Mock(), page, "153985484", 180)
+        page.wait_for_timeout.assert_not_called()

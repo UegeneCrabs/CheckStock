@@ -33,3 +33,5 @@ data/backups/
 identifier.sqlite
 
 legacy/
+
+*.patch
