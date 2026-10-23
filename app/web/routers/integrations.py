@@ -1,22 +1,31 @@
 from __future__ import annotations
 
-import html
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field, SecretStr
 
 from app import db
 from app.access.authentication import is_active_user
 from app.access.economics_preview import PRIVATE_JOB_NAMES, can_preview, require_preview
-from app.core.constants import JOBS
+from app.application.integration_views import IntegrationViews
+from app.core.constants import JOBS, CredentialMarketplace, WebErrorCode
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
+from app.dto.integrations import (
+    CredentialList,
+    CredentialResult,
+    CredentialUpdate,
+    SyncSettingUpdate,
+    WebFailure,
+)
 from app.dto.integrations import SyncSettingUpdate as TypedSyncSettingUpdate
+from app.infrastructure.integration_repository import IntegrationRepository
 from app.integrations import credentials as marketplace_credentials
+from app.jobs import async_locks
 from app.jobs import manual as manual_sync
 from app.jobs import settings as sync_settings
 from app.jobs.catalog import job_definitions
@@ -25,33 +34,17 @@ from app.jobs.tracking import queue_tracked
 from app.wb import token_watch
 from app.web import ozon_jobs
 from app.web.cabinet_settings import render_cabinet_settings
+from app.web.client_page import client_page
 from app.web.dependencies import get_async_resources
-from app.web.routers.google_export import render_google_export
-from app.web.templating import fill_template, read_template, render_page
+from app.web.integration_route import IntegrationRoute
+from app.web.templating import read_template
 
-router = APIRouter()
-
-MARKETPLACE_LABELS = {
-    "wb": "Wildberries",
-    "ozon": "Ozon",
-    "yandex": "Яндекс Маркет",
-}
-
-
-class CredentialUpdate(BaseModel):
-    api_key: SecretStr = Field(min_length=1, max_length=16_384)
-    client_id: str = Field(default="", max_length=1_024)
-
-
-class SyncSettingUpdate(BaseModel):
-    enabled: bool
-    store_slug: str = Field(default="", max_length=100)
-    marketplace: str = Field(default="", max_length=100)
+router = APIRouter(route_class=IntegrationRoute)
 
 
 def _require_active_account(request: Request) -> None:
     if not is_active_user(request.state.user):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+        raise HTTPException(status_code=403, detail=WebErrorCode.FORBIDDEN)
 
 
 def _visible_jobs(user):
@@ -65,366 +58,47 @@ def _require_job_access(request: Request, job_name: str) -> None:
 
 def _validate_target(store_slug: str, marketplace: str) -> None:
     if store_slug not in STORES:
-        raise HTTPException(status_code=404, detail="Магазин не найден")
-    if marketplace not in MARKETPLACE_LABELS:
-        raise HTTPException(status_code=404, detail="Маркетплейс не найден")
+        raise HTTPException(status_code=404, detail=WebErrorCode.NOT_FOUND)
+    if marketplace not in CredentialMarketplace:
+        raise HTTPException(status_code=404, detail=WebErrorCode.NOT_FOUND)
 
 
-def _credential_card(store_slug: str, marketplace: str) -> str:
-    label = MARKETPLACE_LABELS[marketplace]
-    try:
-        status = marketplace_credentials.credential_status(store_slug, marketplace)
-        configured = bool(status.get("configured"))
-        storage_error = ""
-    except marketplace_credentials.CredentialStorageError as error:
-        configured = False
-        status = {}
-        storage_error = str(error)
-    badge_class = "is-connected" if configured else "is-empty"
-    badge_text = "Подключён" if configured else "Ключ не задан"
-    detail = ""
-    if marketplace == "wb" and status.get("expires_at"):
-        detail = f"Действует до {format_dt(str(status['expires_at']))}"
-    elif marketplace == "ozon" and status.get("client_id_hint"):
-        detail = f"Client ID: {status['client_id_hint']}"
-    if storage_error:
-        detail = storage_error
-
-    client_field = ""
-    if marketplace == "ozon":
-        client_field = (
-            '<label class="integration-field"><span>Client ID</span>'
-            '<input type="text" name="client_id" maxlength="1024" autocomplete="off" '
-            'placeholder="Оставьте пустым, чтобы сохранить текущий"></label>'
-        )
-    return (
-        '<form class="integration-key-card" data-credential-form '
-        f'data-store="{html.escape(store_slug)}" data-marketplace="{marketplace}">'
-        '<div class="integration-key-head"><div>'
-        f'<span class="integration-marketplace-code">{html.escape(label)}</span>'
-        f"<strong>{html.escape(STORES[store_slug].name)}</strong></div>"
-        f'<span class="integration-key-status {badge_class}" data-key-status>{badge_text}</span></div>'
-        f'<p class="integration-key-detail">{html.escape(detail) if detail else "API-ключ не показывается после сохранения"}</p>'
-        f"{client_field}"
-        '<label class="integration-field"><span>Новый API-ключ</span><div class="integration-secret-wrap">'
-        '<input type="password" name="api_key" maxlength="16384" autocomplete="new-password" '
-        'placeholder="Вставьте ключ для добавления или замены" required>'
-        '<button type="button" class="integration-reveal" data-reveal-key aria-label="Показать ключ">Показать</button>'
-        "</div></label>"
-        '<p class="integration-form-message" data-form-message aria-live="polite"></p>'
-        '<div class="integration-key-actions">'
-        '<button class="btn-primary" type="submit">Сохранить ключ</button>'
-        '<button class="btn-secondary integration-delete" type="button" data-delete-key'
-        f"{'' if configured else ' disabled'}>Удалить ключ</button></div>"
-        "</form>"
+def _views(request: Request) -> IntegrationViews:
+    resources = request.app.state.async_resources
+    return IntegrationViews(
+        IntegrationRepository(resources.database),
+        resources.jobs,
+        partial(async_locks.is_running, database=resources.database),
     )
 
 
-def _store_panel(store_slug: str, *, active: bool) -> str:
-    store = STORES[store_slug]
-    cards = "".join(_credential_card(store_slug, marketplace) for marketplace in MARKETPLACE_LABELS)
-    return (
-        f'<section class="integration-store-panel" data-integration-store="{store_slug}"'
-        f"{'' if active else ' hidden'}>"
-        '<div class="integration-store-heading">'
-        f'<span class="store-dot" style="--store-color:{html.escape(store.color)}"></span>'
-        f"<div><small>МАГАЗИН</small><h2>{html.escape(store.name)}</h2></div></div>"
-        f'<div class="integration-key-grid">{cards}</div></section>'
+def _failure(code: WebErrorCode, status: int) -> JSONResponse:
+    return JSONResponse(WebFailure(code=code).model_dump(mode="json"), status_code=status)
+
+
+@router.get("/api/admin/integrations/credentials", response_model=CredentialList)
+async def credential_list(request: Request) -> CredentialList:
+    _require_active_account(request)
+    credentials = await run_in_threadpool(
+        lambda: tuple(
+            marketplace_credentials.credential_snapshot(slug, code)
+            for slug in STORES
+            for code in CredentialMarketplace
+        )
     )
+    return CredentialList(credentials=credentials)
 
 
-def _switch(
-    definition,
-    *,
-    checked: bool,
-    label: str,
-    store_slug: str = "",
-    marketplace: str = "",
-) -> str:
-    disabled = not definition.enabled and not (store_slug or marketplace)
-    attributes = (
-        f'data-job="{html.escape(definition.name)}" '
-        f'data-store="{html.escape(store_slug)}" '
-        f'data-marketplace="{html.escape(marketplace)}"'
-    )
-    return (
-        '<label class="integration-sync-toggle">'
-        '<input type="checkbox" role="switch" data-sync-setting-toggle '
-        f"{attributes}{' checked' if checked else ''}{' disabled' if disabled else ''}>"
-        '<span class="integration-sync-toggle-track" aria-hidden="true"></span>'
-        f'<span class="integration-sync-toggle-label">{html.escape(label)}</span>'
-        "</label>"
-    )
-
-
-def _target_settings(definition, config: dict) -> str:
-    if not config["targets"]:
-        return ""
-    if definition.scope == "stores":
-        controls = "".join(
-            '<div class="integration-sync-target">'
-            + _switch(
-                definition,
-                checked=bool(target["configured_enabled"]),
-                label=str(target["store_name"]),
-                store_slug=str(target["store_slug"]),
-            )
-            + "</div>"
-            for target in config["targets"]
-        )
-    else:
-        by_store: dict[str, list[dict]] = {}
-        for target in config["targets"]:
-            by_store.setdefault(str(target["store_slug"]), []).append(target)
-        marketplace_controls = "".join(
-            _switch(
-                definition,
-                checked=bool(item["enabled"]),
-                label=f"Все {item['marketplace_name']}",
-                marketplace=str(item["marketplace"]),
-            )
-            for item in config["marketplace_settings"]
-        )
-        controls = (
-            '<section class="integration-sync-marketplace-masters">'
-            "<strong>Маркетплейсы целиком</strong>"
-            f"<div>{marketplace_controls}</div></section>"
-            + "".join(
-                '<section class="integration-sync-store-targets">'
-                f"<strong>{html.escape(STORES[store_slug].name)}</strong>"
-                '<div class="integration-sync-marketplaces">'
-                + "".join(
-                    _switch(
-                        definition,
-                        checked=bool(target["configured_enabled"]),
-                        label=str(target["marketplace_name"]),
-                        store_slug=store_slug,
-                        marketplace=str(target["marketplace"]),
-                    )
-                    for target in targets
-                )
-                + "</div></section>"
-                for store_slug, targets in by_store.items()
-            )
-        )
-    return (
-        f'<tr class="integration-sync-target-row" data-sync-targets-row="{html.escape(definition.name)}" hidden>'
-        '<td colspan="4"><div class="integration-sync-target-shell">'
-        "<div><strong>Магазины для выгрузки</strong>"
-        "<small>Выбор применяется к ручным и автоматическим запускам.</small></div>"
-        f'<div class="integration-sync-target-grid">{controls}</div>'
-        '<p class="integration-sync-setting-message" data-sync-setting-message aria-live="polite"></p>'
-        "</div></td></tr>"
-    )
-
-
-def _sync_row(definition, state: dict | None, config: dict) -> str:
-    state = state or {}
-    status = str(state.get("status") or "")
-    status_labels = {
-        "running": ("Выполняется", "is-running"),
-        "success": ("Успешно", "is-success"),
-        "error": ("Ошибка", "is-error"),
-    }
-    status_text, status_class = status_labels.get(status, ("Ещё не запускалась", "is-empty"))
-    trigger = str(state.get("last_trigger") or "")
-    trigger_text = {"manual": "Вручную", "scheduled": "По расписанию"}.get(trigger, "—")
-    last_run = state.get("last_finished_at") or state.get("last_started_at")
-    next_run = state.get("next_run_message") or (
-        format_dt(state.get("next_run_at")) if state.get("next_run_at") else "Рассчитывается"
-    )
-    target_button = ""
-    if config["targets"]:
-        target_button = (
-            '<button class="btn-secondary integration-targets-button" type="button" '
-            f'data-sync-targets-toggle="{html.escape(definition.name)}" aria-expanded="false">'
-            f"Магазины · {config['enabled_target_count']}/{config['target_count']}</button>"
-        )
-    manual_button = ""
-    if definition.manual_run:
-        manual_button = (
-            '<button class="btn-primary integration-run-button" type="button" '
-            f'data-sync-run="{html.escape(definition.name)}" '
-            f'data-sync-title="{html.escape(definition.title)}"'
-            f"{' disabled' if state.get('running') or state.get('cooldown_until') else ''}>"
-            f"{'Пауза' if state.get('cooldown_until') else 'Выгрузить вручную'}</button>"
-        )
-    row = (
-        f'<tr data-sync-job="{html.escape(definition.name)}">'
-        f'<td data-label="Выгрузка"><strong>{html.escape(definition.title)}</strong><small>{html.escape(definition.description)}</small></td>'
-        '<td data-label="Последняя выгрузка"><div class="integration-last-run">'
-        f'<span class="sync-status {status_class}">{status_text}</span>'
-        f"<small data-sync-last-run>{html.escape(format_dt(last_run))}</small>"
-        f"<small data-sync-trigger>{html.escape(trigger_text)}</small></div></td>"
-        '<td data-label="Автовыгрузка"><div class="integration-auto-setting">'
-        + _switch(
-            definition,
-            checked=bool(config["configured_enabled"]),
-            label=str(config["summary"]),
-        )
-        + f"<small>{html.escape(definition.schedule)}</small>"
-        + f"<small data-sync-next-run>Следующая: {html.escape(next_run)}</small>"
-        + '<small class="integration-sync-inline-message" data-sync-setting-inline-message></small>'
-        + "</div></td>"
-        '<td><div class="integration-sync-actions">'
-        + target_button
-        + manual_button
-        + '<button class="btn-secondary integration-history-button" type="button" '
-        f'data-sync-history="{html.escape(definition.name)}" '
-        f'data-sync-title="{html.escape(definition.title)}">История</button></div>'
-        '<p class="integration-sync-setting-message" data-sync-run-message aria-live="polite">'
-        f"{html.escape(state.get('cooldown_message') or '')}</p></td>"
-        "</tr>"
-    )
-    return row + _target_settings(definition, config)
-
-
-def _sync_group(definition) -> str:
-    if definition.name.startswith("yandex_"):
-        return "ym"
-    if definition.name.startswith("ozon_") or definition.name == "ftp_ozon_export":
-        return "ozon"
-    if (
-        definition.name.startswith("wb_")
-        or definition.name == "ftp_wb_export"
-        or definition.name.startswith("unit_economics_1c_")
-        and definition.name != "unit_economics_1c_source_sync"
-    ):
-        return "wb"
-    return "general"
-
-
-def _sync_groups(definitions, states: dict, configurations: dict) -> str:
-    groups = (
-        ("general", "Общее", "Все площадки, 1С и Google Таблицы", "ВСЕ"),
-        ("wb", "WB", "Wildberries", "WB"),
-        ("ym", "YM", "Яндекс Маркет", "YM"),
-        ("ozon", "Ozon", "Ozon", "OZ"),
-    )
-    navigation = [
-        '<nav class="integration-group-filters" aria-label="Площадки выгрузок">'
-        '<button type="button" data-sync-group-filter="all" aria-pressed="true">'
-        f"Все <span>{len(definitions)}</span></button>"
-    ]
-    blocks = []
-    for key, title, description, mark in groups:
-        jobs = [definition for definition in definitions if _sync_group(definition) == key]
-        if not jobs:
-            continue
-        navigation.append(
-            f'<button type="button" data-sync-group-filter="{key}" aria-pressed="false">'
-            f"{title} <span>{len(jobs)}</span></button>"
-        )
-        rows = "".join(
-            _sync_row(definition, states.get(definition.name), configurations[definition.name])
-            for definition in jobs
-        )
-        blocks.append(
-            f'<section class="integration-job-group" data-sync-group="{key}" '
-            f'aria-labelledby="sync-group-{key}">'
-            '<div class="integration-job-group-head">'
-            f'<span class="integration-group-mark is-{key}" aria-hidden="true">{mark}</span>'
-            f'<div><h3 id="sync-group-{key}">{title}</h3><p>{description}</p></div>'
-            f'<span class="integration-group-count" data-sync-group-count>Выгрузок: {len(jobs)}</span></div>'
-            '<div class="integration-sync-table-wrap"><table class="integration-sync-table">'
-            f'<caption class="visually-hidden">Выгрузки · {title}</caption>'
-            '<thead><tr><th scope="col">Что обновляет</th><th scope="col">Последняя выгрузка</th>'
-            '<th scope="col">Автовыгрузка</th><th scope="col">Действия</th></tr></thead>'
-            f"<tbody>{rows}</tbody></table></div></section>"
-        )
-    return "".join(navigation) + '</nav><div class="integration-job-groups">' + "".join(blocks) + "</div>"
+@router.get("/api/admin/integrations/sync-jobs/catalog")
+async def sync_job_catalog(request: Request):
+    _require_active_account(request)
+    return await ozon_jobs.views(get_async_resources(request)).catalog(_visible_jobs(request.state.user))
 
 
 @router.get("/admin/integrations", response_class=HTMLResponse)
 async def integrations_page(request: Request):
     _require_active_account(request)
-    states = {state["name"]: state for state in await run_in_threadpool(_sync_states, request.state.user)}
-    definitions = _visible_jobs(request.state.user)
-    configurations = {
-        definition.name: await run_in_threadpool(sync_settings.configuration, definition.name)
-        for definition in definitions
-    }
-    store_tabs = "".join(
-        '<button type="button" class="integration-store-tab'
-        f'{" is-active" if index == 0 else ""}" data-integration-store-tab="{slug}" aria-pressed="{str(index == 0).lower()}">'
-        f"{html.escape(store.name)}</button>"
-        for index, (slug, store) in enumerate(STORES.items())
-    )
-    content = fill_template(
-        "integrations/index.html",
-        google_export=await render_google_export(),
-        job_count=str(len(definitions)),
-        store_tabs=store_tabs,
-        cabinet_settings=await run_in_threadpool(render_cabinet_settings, request.state.user),
-        ozon_cabinet_settings=read_template("economics/ozon/settings.html")
-        if can_preview(request.state.user)
-        else "",
-        store_panels="".join(_store_panel(slug, active=index == 0) for index, slug in enumerate(STORES)),
-        sync_groups=_sync_groups(definitions, states, configurations),
-    )
-    return render_page(
-        "CheckStock — Интеграции и выгрузки",
-        "admin_integrations",
-        content,
-        request.state.user,
-        "content--integrations",
-    )
-
-
-def _sync_history(job_name: str, limit: int) -> list[dict]:
-    """Reconcile retained runs with the latest result and the actual worker lock."""
-    runs = [dict(run) for run in db.list_sync_job_runs(job_name, limit)]
-    states = db.list_sync_job_states()
-    state = next((item for item in states if item["name"] == job_name), None)
-    active = manual_sync.is_running(job_name)
-    if not active:
-        # A worker records its result before releasing the lock. Re-read after
-        # the probe so a just-finished run is not mistaken for an interruption.
-        states = db.list_sync_job_states()
-        state = next((item for item in states if item["name"] == job_name), None)
-    if (
-        state
-        and state.get("last_started_at")
-        and not any(item.get("started_at") == state["last_started_at"] for item in runs)
-    ):
-        runs.insert(
-            0,
-            {
-                "id": f"state:{job_name}",
-                "name": job_name,
-                "trigger": state.get("last_trigger"),
-                "status": state.get("status"),
-                "started_at": state.get("last_started_at"),
-                "finished_at": state.get("last_finished_at"),
-                "duration_ms": state.get("duration_ms"),
-                "error": state.get("error"),
-            },
-        )
-        runs = runs[:limit]
-    for run in runs:
-        if run.get("status") != "running":
-            continue
-        latest = state and run.get("started_at") == state.get("last_started_at")
-        if latest and state.get("status") in {"success", "error"}:
-            run.update(
-                status=state["status"],
-                finished_at=state.get("last_finished_at"),
-                duration_ms=state.get("duration_ms"),
-                error=state.get("error"),
-            )
-        elif latest and active:
-            continue
-        else:
-            run.update(
-                status="interrupted",
-                error=run.get("error")
-                or (
-                    "Запуск больше не выполняется, но результат не был сохранён. "
-                    "Возможно, приложение перезапустили или процесс остановился. "
-                    "Точное время завершения неизвестно."
-                ),
-            )
-    return runs
+    return client_page("integrations/index.html")
 
 
 @router.get("/api/admin/integrations/sync-jobs/{job_name}/history")
@@ -446,54 +120,6 @@ async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     }
 
 
-def _storefront_state(state: dict) -> None:
-    from app.repositories import yandex_storefront
-    from app.yandex.storefront_schedule import next_run_at
-
-    current = datetime.now(UTC)
-    pause = yandex_storefront.cooldown(current)
-    if pause:
-        state["cooldown_until"] = pause["retry_after"]
-        state["cooldown_message"] = (
-            f"Пауза после ограничения Яндекса до {format_dt(pause['retry_after'])}. "
-            "Новые запросы не отправляются. Снятие ограничения пока не подтверждено."
-        )
-    config = sync_settings.configuration(state["name"])
-    if not config["effective_enabled"] or not config["enabled_target_count"]:
-        state.update(next_run_at=None, next_run_message="Автовыгрузка выключена")
-        return
-    try:
-        planned = datetime.fromisoformat(state.get("next_run_at") or "")
-        if planned.tzinfo is None or planned <= current:
-            planned = None
-    except ValueError:
-        planned = None
-    if planned is None:
-        state.update(next_run_at=None, next_run_message="Сборщик не подтвердил следующий запуск")
-    elif pause and planned < datetime.fromisoformat(pause["retry_after"]):
-        state["next_run_at"] = next_run_at(
-            datetime.fromisoformat(pause["retry_after"]) - timedelta(microseconds=1)
-        ).isoformat()
-
-
-def _sync_states(user=None) -> list[dict]:
-    stored = {state["name"]: state for state in db.list_sync_job_states()}
-    states = []
-    for definition in _visible_jobs(user):
-        if ozon_jobs.owns(definition.name):
-            continue
-        state = {"name": definition.name, **stored.get(definition.name, {})}
-        state["running"] = manual_sync.is_running(definition.name)
-        if state["running"]:
-            state["status"] = "running"
-        elif state.get("status") == "running":
-            state.update(status="error", error="Выполнение прервано. Можно запустить выгрузку повторно.")
-        if definition.name == "yandex_storefront_prices_sync":
-            _storefront_state(state)
-        states.append(state)
-    return states
-
-
 @router.get("/api/admin/integrations/sync-jobs")
 async def sync_job_states(request: Request):
     _require_active_account(request)
@@ -503,12 +129,6 @@ async def sync_job_states(request: Request):
         if ozon_jobs.owns(definition.name):
             states.append((await service.state(definition.name)).model_dump(mode="json"))
     return {"ok": True, "states": states}
-
-
-@router.get("/api/admin/integrations/sync-jobs/catalog")
-async def sync_job_catalog(request: Request):
-    _require_active_account(request)
-    return await ozon_jobs.views(get_async_resources(request)).catalog(_visible_jobs(request.state.user))
 
 
 @router.post("/api/admin/integrations/sync-jobs/{job_name}/run")
@@ -600,7 +220,7 @@ async def update_sync_job_setting(
     return {"ok": True, "configuration": config}
 
 
-@router.put("/api/admin/integrations/{store_slug}/{marketplace}")
+@router.put("/api/admin/integrations/{store_slug}/{marketplace}", response_model=CredentialResult)
 async def update_credential(
     request: Request,
     store_slug: str,
@@ -620,21 +240,30 @@ async def update_credential(
         if marketplace == "wb":
             await run_in_threadpool(token_watch.refresh_token_info)
     except (ValueError, marketplace_credentials.CredentialStorageError) as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+        return _failure(
+            WebErrorCode.CREDENTIAL_STORAGE
+            if isinstance(error, marketplace_credentials.CredentialStorageError)
+            else WebErrorCode.CLIENT_ID_REQUIRED
+            if str(error) == WebErrorCode.CLIENT_ID_REQUIRED
+            else WebErrorCode.INVALID_CREDENTIAL,
+            400,
+        )
 
     actor = request.state.user
-    await run_in_threadpool(
-        db.log_action,
+    await IntegrationRepository(request.app.state.async_resources.database).audit(
         actor.id,
         actor.full_name,
         "Изменён API-ключ",
-        f"{STORES[store_slug].name}: {MARKETPLACE_LABELS[marketplace]}",
-        datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
+        f"{store_slug}:{marketplace}",
     )
-    return {"ok": True, "status": marketplace_credentials.credential_status(store_slug, marketplace)}
+    return CredentialResult(
+        status=await run_in_threadpool(
+            marketplace_credentials.credential_snapshot, store_slug, CredentialMarketplace(marketplace)
+        )
+    )
 
 
-@router.delete("/api/admin/integrations/{store_slug}/{marketplace}")
+@router.delete("/api/admin/integrations/{store_slug}/{marketplace}", response_model=CredentialResult)
 async def remove_credential(request: Request, store_slug: str, marketplace: str):
     _require_active_account(request)
     _validate_target(store_slug, marketplace)
@@ -642,16 +271,140 @@ async def remove_credential(request: Request, store_slug: str, marketplace: str)
         await run_in_threadpool(marketplace_credentials.delete_credential, store_slug, marketplace)
         if marketplace == "wb":
             await run_in_threadpool(db.delete_wb_token_info, store_slug)
-    except marketplace_credentials.CredentialStorageError as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    except marketplace_credentials.CredentialStorageError:
+        return _failure(WebErrorCode.CREDENTIAL_STORAGE, 400)
 
     actor = request.state.user
-    await run_in_threadpool(
-        db.log_action,
+    await IntegrationRepository(request.app.state.async_resources.database).audit(
         actor.id,
         actor.full_name,
         "Удалён API-ключ",
-        f"{STORES[store_slug].name}: {MARKETPLACE_LABELS[marketplace]}",
-        datetime.now(MOSCOW_TIMEZONE).isoformat(timespec="seconds"),
+        f"{store_slug}:{marketplace}",
     )
-    return {"ok": True, "status": marketplace_credentials.credential_status(store_slug, marketplace)}
+    return CredentialResult(
+        status=await run_in_threadpool(
+            marketplace_credentials.credential_snapshot, store_slug, CredentialMarketplace(marketplace)
+        )
+    )
+
+
+@router.get("/admin/integrations/wb-yandex/cabinets", response_class=HTMLResponse)
+async def wb_yandex_cabinets(request: Request):
+    _require_active_account(request)
+    return await run_in_threadpool(render_cabinet_settings, request.state.user)
+
+
+@router.get("/admin/integrations/wb-yandex/week", response_class=HTMLResponse)
+async def wb_yandex_week(request: Request):
+    _require_active_account(request)
+    return HTMLResponse(read_template("integrations/google-week-update.html"))
+
+
+def _sync_history(job_name: str, limit: int) -> list[dict]:
+    """Reconcile retained runs with the latest result and the actual worker lock."""
+    runs = [dict(run) for run in db.list_sync_job_runs(job_name, limit)]
+    states = db.list_sync_job_states()
+    state = next((item for item in states if item["name"] == job_name), None)
+    active = manual_sync.is_running(job_name)
+    if not active:
+        # A worker records its result before releasing the lock. Re-read after
+        # the probe so a just-finished run is not mistaken for an interruption.
+        states = db.list_sync_job_states()
+        state = next((item for item in states if item["name"] == job_name), None)
+    if (
+        state
+        and state.get("last_started_at")
+        and not any(item.get("started_at") == state["last_started_at"] for item in runs)
+    ):
+        runs.insert(
+            0,
+            {
+                "id": f"state:{job_name}",
+                "name": job_name,
+                "trigger": state.get("last_trigger"),
+                "status": state.get("status"),
+                "started_at": state.get("last_started_at"),
+                "finished_at": state.get("last_finished_at"),
+                "duration_ms": state.get("duration_ms"),
+                "error": state.get("error"),
+            },
+        )
+        runs = runs[:limit]
+    for run in runs:
+        if run.get("status") != "running":
+            continue
+        latest = state and run.get("started_at") == state.get("last_started_at")
+        if latest and state.get("status") in {"success", "error"}:
+            run.update(
+                status=state["status"],
+                finished_at=state.get("last_finished_at"),
+                duration_ms=state.get("duration_ms"),
+                error=state.get("error"),
+            )
+        elif latest and active:
+            continue
+        else:
+            run.update(
+                status="interrupted",
+                error=run.get("error")
+                or (
+                    "Запуск больше не выполняется, но результат не был сохранён. "
+                    "Возможно, приложение перезапустили или процесс остановился. "
+                    "Точное время завершения неизвестно."
+                ),
+            )
+    return runs
+
+
+def _storefront_state(state: dict) -> None:
+    from app.repositories import yandex_storefront
+    from app.yandex.storefront_schedule import next_run_at
+
+    current = datetime.now(UTC)
+    pause = yandex_storefront.cooldown(current)
+    if pause:
+        state["cooldown_until"] = pause["retry_after"]
+        state["cooldown_message"] = (
+            f"Пауза после ограничения Яндекса до {format_dt(pause['retry_after'])}. "
+            "Новые запросы не отправляются. Снятие ограничения пока не подтверждено."
+        )
+    config = sync_settings.configuration(state["name"])
+    if not config["effective_enabled"] or not config["enabled_target_count"]:
+        state.update(next_run_at=None, next_run_message="Автовыгрузка выключена")
+        return
+    try:
+        planned = datetime.fromisoformat(state.get("next_run_at") or "")
+        if planned.tzinfo is None or planned <= current:
+            planned = None
+    except ValueError:
+        planned = None
+    if planned is None:
+        state.update(next_run_at=None, next_run_message="Сборщик не подтвердил следующий запуск")
+    elif pause and planned < datetime.fromisoformat(pause["retry_after"]):
+        state["next_run_at"] = next_run_at(
+            datetime.fromisoformat(pause["retry_after"]) - timedelta(microseconds=1)
+        ).isoformat()
+
+
+def _sync_states(user=None) -> list[dict]:
+    stored = {state["name"]: state for state in db.list_sync_job_states()}
+    states = []
+    for definition in _visible_jobs(user):
+        if ozon_jobs.owns(definition.name):
+            continue
+        state = {"name": definition.name, **stored.get(definition.name, {})}
+        state["running"] = manual_sync.is_running(definition.name)
+        if state["running"]:
+            state["status"] = "running"
+        elif state.get("status") == "running":
+            state.update(status="error", error="Выполнение прервано. Можно запустить выгрузку повторно.")
+        if definition.name == "yandex_storefront_prices_sync":
+            _storefront_state(state)
+        states.append(state)
+    return states
+
+
+@router.get("/admin/integrations/ozon/cabinets", response_class=HTMLResponse)
+async def ozon_cabinets(request: Request):
+    require_preview(request.state.user)
+    return HTMLResponse(read_template("economics/ozon/settings.html"))

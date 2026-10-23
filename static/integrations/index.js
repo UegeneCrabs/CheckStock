@@ -1,5 +1,15 @@
-(function () {
+(async function () {
     'use strict';
+
+    var catalog;
+    try {
+        catalog = await window.IntegrationPage.load();
+    } catch (error) {
+        var loading = document.querySelector('[data-integration-loading]');
+        loading.textContent = error.message + '. Обновите страницу для повторной загрузки.';
+        loading.setAttribute('role', 'alert');
+        return;
+    }
 
     var viewLinks = Array.from(document.querySelectorAll('[data-integration-view]'));
     var viewPanels = Array.from(document.querySelectorAll('[data-integration-view-panel]'));
@@ -10,7 +20,6 @@
         try {
             anchor = document.getElementById(decodeURIComponent(url.hash.slice(1)));
         } catch (_) {
-            /* Ignore malformed fragments. */
         }
         var anchorPanel = anchor && anchor.closest('[data-integration-view-panel]');
         if (anchorPanel) selected = anchorPanel.dataset.integrationViewPanel;
@@ -173,12 +182,10 @@
                 headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
                 body: JSON.stringify({ api_key: keyInput.value, client_id: client ? client.value : '' }),
             })
-                .then(function () {
+                .then(function (data) {
                     keyInput.value = '';
                     if (client) client.value = '';
-                    status.textContent = 'Подключён';
-                    status.className = 'integration-key-status is-connected';
-                    remove.disabled = false;
+                    window.IntegrationPage.applyCredential(form, data.status);
                     show('Ключ сохранён', false);
                 })
                 .catch(function (error) {
@@ -207,9 +214,8 @@
                     method: 'DELETE',
                     headers: { 'X-Requested-With': 'fetch' },
                 })
-                    .then(function () {
-                        status.textContent = 'Ключ не задан';
-                        status.className = 'integration-key-status is-empty';
+                    .then(function (data) {
+                        window.IntegrationPage.applyCredential(form, data.status);
                         show('Ключ удалён', false);
                     })
                     .catch(function (error) {
@@ -245,9 +251,7 @@
                 var globalLabel = input
                     .closest('.integration-sync-toggle')
                     .querySelector('.integration-sync-toggle-label');
-                globalLabel.textContent = config.summary || (config.targets.length
-                    ? 'Включено ' + config.enabled_target_count + ' из ' + config.target_count
-                    : config.effective_enabled ? 'Включено' : 'Выключено');
+                globalLabel.textContent = window.IntegrationPage.summary(config);
             } else if (!store) {
                 var marketplaceSetting = (config.marketplace_settings || []).find(function (item) {
                     return item.marketplace === marketplace;
@@ -267,6 +271,8 @@
                 'Магазины · ' + config.enabled_target_count + '/' + config.target_count;
         }
     }
+
+    catalog.jobs.forEach(function (job) { applySyncConfiguration(job.configuration); });
 
     document.querySelectorAll('[data-sync-targets-toggle]').forEach(function (button) {
         button.addEventListener('click', function () {
@@ -330,6 +336,7 @@
             running: ['Выполняется', 'is-running'],
             success: ['Успешно', 'is-success'],
             error: ['Ошибка', 'is-error'],
+            interrupted: ['Прервано', 'is-error'],
         };
         var label = labels[state.status] || ['Ещё не запускалась', 'is-empty'];
         var badge = row.querySelector('.sync-status');
@@ -347,7 +354,7 @@
         var next = row.querySelector('[data-sync-next-run]');
         next.textContent =
             'Следующая: ' +
-            (state.next_run_message ||
+            (!state.effective_enabled ? 'Автовыгрузка выключена' :
                 (state.next_run_at ? runDate(state.next_run_at) : 'Рассчитывается'));
         var button = row.querySelector('[data-sync-run]');
         if (button) {
@@ -360,7 +367,7 @@
         }
         if (state.cooldown_until) {
             delete launchErrors[state.name];
-            runMessage(state.name, state.cooldown_message, false);
+            runMessage(state.name, 'Пауза до ' + runDate(state.cooldown_until), false);
             return;
         }
         if (state.running) delete launchErrors[state.name];

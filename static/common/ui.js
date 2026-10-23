@@ -41,7 +41,7 @@ window.CheckStockUI = (() => {
     }
 
     async function request(url, options = {}) {
-        const response = await fetch(url, { ...options, headers: { Accept: 'application/json', ...options.headers } });
+        const response = await fetch(url, { ...options, headers: { Accept: 'application/json', 'X-Requested-With': 'fetch', ...options.headers } });
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(errorText(data));
         return data;
