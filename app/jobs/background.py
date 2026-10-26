@@ -12,6 +12,7 @@ from app import db
 from app.access import auth
 from app.config import settings
 from app.container import ApplicationContainer
+from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.dto.wb_hourly_prices import WbHourlyCollection
@@ -28,7 +29,7 @@ from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import finance as finance_sync
-from app.jobs import google_weeks, wb_transit
+from app.jobs import google_weeks, inbound_schedule, wb_ephemerides, wb_transit
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, ScheduledJob
@@ -424,6 +425,15 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
             startup_delay_seconds=_seconds_until_next_moscow_run(5),
             is_enabled=lambda: settings.background_sync_enabled and _job_enabled(finance_sync.JOB),
         ),
+        BackgroundJob(
+            wb_ephemerides.JOB,
+            wb_ephemerides.snapshot,
+            wb_ephemerides.delay,
+            startup_delay_seconds=wb_ephemerides.delay(startup=True),
+            ready_event=catalog_ready,
+            retry_delays=EPHEMERIDES_STOCK_SCHEDULE.retry_delays,
+            is_enabled=lambda: settings.background_sync_enabled and _job_enabled(wb_ephemerides.JOB),
+        ),
         *google_weeks.jobs(),
         BackgroundJob(
             "catalog_sync",
@@ -452,8 +462,9 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
         BackgroundJob(
             inbound_supplies.JOB_NAME,
             inbound_supplies.sync_all,
-            _fixed_delay(settings.inbound_sync_interval_seconds),
-            startup_delay_seconds=90,
+            inbound_schedule.delay,
+            startup_delay_seconds=inbound_schedule.delay(),
+            align_scheduled_run=inbound_schedule.align,
             is_enabled=lambda: _job_enabled(inbound_supplies.JOB_NAME),
         ),
         BackgroundJob(

@@ -32,6 +32,7 @@ class JobTiming:
     interval_from_start: bool = False
     retry_delays: tuple[float, ...] = ()
     next_delay_after_success: Callable[[], float] | None = None
+    align_scheduled_run: Callable[[datetime, datetime], datetime] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,11 @@ def run_scheduled_step(job: BackgroundJob) -> datetime:
         schedule = job_schedules.ensure(job.name, now + timedelta(seconds=job.startup_delay_seconds), now)
         planned = datetime.fromisoformat(schedule["next_run_at"])
         attempt = int(schedule["attempt_number"])
+        if job.align_scheduled_run and not schedule["active_run_id"] and not attempt:
+            aligned = job.align_scheduled_run(planned, now)
+            if aligned != planned:
+                job_schedules.defer(job.name, aligned, now)
+                return aligned
         if not schedule["active_run_id"] and not attempt and planned > now:
             return planned
 

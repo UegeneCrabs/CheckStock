@@ -81,7 +81,9 @@ def load(stores, week, user, *, today=None):
     # Reuse the analyzer's established ROI/DRR/coverage rules, without its daily notes.
     sources = analyzer.Sources(stores, previous, today, last_week=week, include_reference=True)
     comparisons = [
-        analyzer.load(stores, start, user, today=today, include_notes=False, sources=sources)
+        analyzer.load(
+            stores, start, user, today=today, include_notes=False, sources=sources, include_current_roi=False
+        )
         for start in (previous, week)
     ]
     source_rows = [{row["id"]: row for row in item["rows"]} for item in comparisons]
@@ -94,16 +96,27 @@ def load(stores, week, user, *, today=None):
     )
     prices = analyzer.daily_index(prices)
     references = analyzer.daily_index(references)
-    orders, coverage = sources.orders, sources.coverage
-    transit = repository.transit(stores)
+    coverage = sources.coverage
+    stock_snapshot = repository.weekly_stock(stores, week.isoformat())
+    weekly_metrics = [
+        analyzer.calculations.load_product_metrics(
+            stores,
+            period_days=(min(today, start + timedelta(days=6)) - start).days + 1,
+            today=min(today, start + timedelta(days=6)),
+        )
+        for start in (previous, week)
+    ]
     for row in rows:
         key = (row["store_slug"], row["article"])
         nm_key = (key[0], key[1].partition(" / ")[0].strip())
         row["nm_id"] = nm_key[1]
-        returned = transit.get(nm_key, {})
-        row["fromCustomer"] = returned.get("from_customer")
-        row["transitUpdated"] = returned.get("updated_at")
-        stock = [row["fbs"], row["fbo"], row["fromCustomer"]]
+        frozen = stock_snapshot.get(key, {})
+        for field in ("fbs", "fbo", "ff", "fromCustomer"):
+            row[field] = frozen.get(field)
+        row["stockUpdated"] = frozen.get("captured_at")
+        row["transitUpdated"] = frozen.get("captured_at")
+        row["stockWeek"] = week.isoformat()
+        stock = [row["fbs"], row["fbo"], row["ff"], row["fromCustomer"]]
         row["stock"] = analyzer.total(stock)
         row["stockPartial"] = any(value is None for value in stock)
         for idx, name in enumerate(("previous", "current")):
@@ -126,29 +139,46 @@ def load(stores, week, user, *, today=None):
                 if goals
                 else None
             )
-            amounts = [
-                orders[nm_key][day].get("orders_amount")
-                if day in orders[nm_key]
-                else 0
-                if day in coverage[key[0]]["orders"]
-                else None
-                for day in days
-            ]
             retail, customer = price.get("retail_price"), price.get("customer_price_with_spp")
+            metrics = weekly_metrics[idx].get(nm_key)
+            completed = start + timedelta(days=6) < today
+            known_days = set(days) & coverage[key[0]]["orders"]
+            fact = (
+                metrics["net_orders_count" if completed else "orders_count"]
+                if metrics
+                else 0
+                if known_days
+                else None
+            )
+            if len(known_days) < len(days):
+                fact = (
+                    sum(
+                        int(item.get("orders_count") or 0)
+                        - (int(item.get("cancel_count") or 0) if completed else 0)
+                        for item in (metrics or {}).get("daily", [])
+                        if item.get("date") in known_days
+                    )
+                    if known_days
+                    else None
+                )
             row[name] = {
                 "spp": analyzer.ratio(retail - customer, retail) if retail and customer is not None else None,
                 "wallet": price.get("customer_price_with_wallet"),
                 "price": retail,
                 "priceDay": price.get("day"),
                 "goal": goal,
-                "fact": analyzer.total(source.get("week", [])),
-                "turnover": analyzer.total(amounts),
+                "fact": fact,
+                "factNet": completed,
+                "turnover": goal * retail if goal is not None and retail is not None else None,
                 "impressions": source.get("weights", {}).get("impressions"),
                 "ctr": source.get("totalCtr"),
                 "roi": source.get("roi"),
                 "drr": source.get("drr"),
                 "weights": source.get("weights", {}),
-                "coverage": {**source.get("coverage", {}), "turnover": sum(v is not None for v in amounts)},
+                "coverage": {
+                    **source.get("coverage", {}),
+                    "orders": len(known_days),
+                },
             }
         current = source_rows[1].get(row["id"], {})
         row["rating"] = current.get("rating")

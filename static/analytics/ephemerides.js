@@ -15,7 +15,8 @@
     if(week>config.today || week<'2000-01-03') week=M.monday(config.today);
     let data=null, columns=[], columnMap=new Map(), filtered=[], page=1, pageSize=20, query='',segment='all', sort=config.history?null:'today-turnover', direction=-1, revisionsItem=null, latestRevision=null, busy=false;
     let separate=false, dense=false, summaryCollapsed=false, visible=new Set(Object.keys(groups));
-    try { const prefs=JSON.parse(localStorage.getItem('ephemerides-view')||'null'); if(prefs) {separate=!!prefs.separate;dense=!!prefs.dense;summaryCollapsed=!!prefs.summaryCollapsed;visible=new Set((prefs.visible||Object.keys(groups)).filter(g=>g in groups));visible.add('product');} } catch {}
+    const hiddenColumns=new Set();
+    try { const prefs=JSON.parse(localStorage.getItem('ephemerides-view')||'null'); if(prefs) {separate=!!prefs.separate;dense=!!prefs.dense;summaryCollapsed=!!prefs.summaryCollapsed;visible=new Set((prefs.visible||Object.keys(groups)).filter(g=>g in groups));visible.add('product');(prefs.hiddenColumns||[]).forEach(id=>hiddenColumns.add(id));} } catch {}
     const filters=new Map();
     async function jsonFetch(url, options={}) {
         const response=await fetch(url,{credentials:'same-origin',...options});
@@ -90,11 +91,11 @@
             if(separate) {add('barcode','Баркод','product',120,'text');add('article','Артикул WB','product',105,'text');add('image','Фото','product',55,'photo');}
             add('code','Код ABC-D','product',65,'text');
             add('today-turnover','ТО сегодня, ₽','product',110,'number',{key:'fact',period:'dayTurnover'});
-            add('fbs','Сток FBS','stock',65);add('fbo','Сток FBO','stock',65);add('fromCustomer','В пути от клиента','stock',75);add('stock','Общий сток','stock',75);
+            add('fbs','Сток FBS','stock',65);add('fbo','Сток FBO','stock',65);add('fromCustomer','В пути от клиента','stock',75);add('ff','На ФФ','stock',65);add('stock','Общий сток','stock',75);
             add('rating','Рейтинг','control',65);add('competitor','Конкуренты','control',180,'comment',{week:data.current.start,kind:'competitor'});
             for(const period of ['previous','current']) {
                 [['spp','СПП','percent',55],['impressions','Показы','number',70],['ctr','CTR','percent',55],['roi','ROI','percent',65],['drr','ДРР','percent',55],['wallet','Цена WB с кошельком, ₽','number',80],['price','Цена поставщика, ₽','number',80],['goal','Цель недели, шт','number',65],['fact','Факт недели, шт','number',65]].forEach(([key,label,type,width=115])=>add(period+'-'+key,label,period,width,type,{key,period}));
-                if(period==='current') add('current-turnover','ТО эфемериды, ₽',period,110,'number',{key:'turnover',period});
+                if(period==='current') add('current-turnover','ТО эфемериды по цели, ₽',period,110,'number',{key:'turnover',period});
                 add(period+'-decision','Решения',period,155,'comment',{week:data[period].start,kind:'decision'});
             }
             list.push(...M.weeklyCommentColumns(data.weeks));
@@ -102,7 +103,7 @@
             list.push(...M.weeklyCommentColumns(data.weeks,$('kind').value,250));
         }
         columnMap=new Map(list.map(c=>[c.id,c]));
-        columns=list.filter(c=>config.history||visible.has(c.group));
+        columns=list.filter(c=>config.history||c.id==='product'||visible.has(c.group)&&!hiddenColumns.has(c.id));
     }
     function value(row,c) {
         if(c.type==='comment') return commentItem(row,c).text;
@@ -115,26 +116,28 @@
         if(c.key==='stock') return row.stockPartial;
         if(!c.period) return false;
         const coverage=row[c.period]?.coverage||{};
-        const key={turnover:'turnover',fact:'orders',impressions:'advertising',ctr:'advertising',drr:'drr'}[c.key];
+        const key={fact:'orders',impressions:'advertising',ctr:'advertising',drr:'drr'}[c.key];
         return c.key==='roi'?!coverage.roiComplete:key?coverage[key]<coverage.expected:false;
     }
     function productHtml(row,index) {
         const image=/^https?:\/\//i.test(row.image||'')?`<img src="${escape(row.image)}" alt="" loading="lazy">`:'<span class="e-photo e-muted">WB</span>';
-        return `<button class="e-product" data-product="${index}">${separate&&!config.history?'':image}<span><strong>${escape(row.name)}</strong><small>WB ${escape(row.article)}</small><small>${escape(row.barcode)}${config.history?' · '+escape(row.project):''}</small></span></button>`;
+        return `<button class="e-product" data-product="${index}">${separate&&!config.history?'':image}<span><strong>${escape(row.name)}</strong><small data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул">WB ${escape(row.article)} ⧉</small><small>${escape(row.barcode)}${config.history?' · '+escape(row.project):''}</small></span></button>`;
     }
     function cell(row,c) {
         const val=value(row,c);
         if(c.type==='product') return productHtml(row,data.rows.indexOf(row));
         if(c.type==='comment') return commentHtml(row,c);
         if(c.type==='photo') return /^https?:\/\//i.test(row.image||'')?`<img class="e-photo" src="${escape(row.image)}" alt="" loading="lazy">`:'—';
-        if(c.type==='text') return `<span class="e-text">${escape(val||'—')}</span>`;
-        const partial=incomplete(row,c), coverage=row[c.period]?.coverage;
+        if(c.type==='text') return `<span class="e-text" ${c.key==='article'?`data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул"`:''}>${escape(val||'—')}</span>`;
+        const partial=incomplete(row,c);
         let title=partial?'Неполные данные':'';
         if(c.period==='dayTurnover') title=`Сумма заказов за сегодня (${data.today}, Москва), без вычета отмен. По умолчанию товары ранжируются по этому показателю.`;
-        if(c.period&&c.key==='turnover') title=`Сумма заказов за ${data[c.period].start} — ${data[c.period].end}. Загружено дней: ${coverage.turnover} из ${coverage.expected}.`;
+        if(c.period&&c.key==='turnover') title='Цель недели, шт × Цена поставщика, ₽. Если цель или цена неизвестны, ТО не рассчитан.';
         if(c.period&&['price','wallet','spp'].includes(c.key)) title=`Последняя сохранённая цена внутри недели: ${row[c.period].priceDay||'нет данных'}`;
-        if(c.key==='fromCustomer') title=`Снимок возвратов: ${row.transitUpdated||'ещё не загружен'}. Показатель всего артикула WB.`;
-        if(c.key==='fbs'||c.key==='fbo') title=`Текущие остатки: ${row.stockUpdated||'нет даты'}`;
+        if(c.key==='fromCustomer') title=`Снимок понедельника ${row.stockWeek}: ${row.transitUpdated||'ещё не сохранён'}. Показатель всего артикула WB.`;
+        if(['fbs','fbo','ff','stock'].includes(c.key)) title=`Сток зафиксирован на неделю с ${row.stockWeek}: ${row.stockUpdated||'снимок понедельника ещё не сохранён'}`;
+        if(c.key==='ff') title+=`. Сумма остатков по всем фулфилментам WB этого товара в магазине.${val==null?' В снимке нет данных ФФ.':''}`;
+        if(c.period&&c.key==='fact') title=row[c.period].factNet?'Завершённая неделя: заказы − отмены. Источник — воронка юнит-экономики WB.':'Заказы текущей недели из воронки юнит-экономики WB, с понедельника по сегодня.';
         return `<span title="${escape(title)}" class="${val==null?'e-muted':c.key==='roi'?val<0?'e-negative':'e-positive':''}">${number(val,c.type==='percent')}</span>`;
     }
     function externalRows() {
@@ -164,7 +167,7 @@
     }
     function render() {
         if(!data) return;
-        makeColumns();applyFilters();renderSummary();
+        makeColumns();renderColumnSettings();applyFilters();renderSummary();
         const pages=Math.max(1,Math.ceil(filtered.length/pageSize));page=Math.min(page,pages);
         $('cols').innerHTML=columns.map(c=>`<col style="width:${c.width}px">`).join('');$('table').style.width=columns.reduce((n,c)=>n+c.width,0)+'px';
         const sections=[];columns.forEach(c=>{const key=c.id==='product'?'frozen':c.group;const last=sections.at(-1);if(last?.key===key)last.count++;else sections.push({key,count:1,group:c.group});});
@@ -180,7 +183,7 @@
         $('jumps').innerHTML=(config.history?[]:['product','stock','control','previous','current','history']).filter(g=>visible.has(g)).map(g=>`<button data-jump="${g}">${escape(g==='product'?'Все поля':label(g))}</button>`).join('');
         bindComments($('body'));updateSaveState();
     }
-    function prefs() { try {localStorage.setItem('ephemerides-view',JSON.stringify({separate,dense,summaryCollapsed,visible:[...visible]}));} catch {} }
+    function prefs() { try {localStorage.setItem('ephemerides-view',JSON.stringify({separate,dense,summaryCollapsed,visible:[...visible],hiddenColumns:[...hiddenColumns]}));} catch {} }
     $('table')._tfAdapter={
         values: key=>columnMap.has(key)?externalRows().map(row=>String(value(row,columnMap.get(key))??'')):[],
         filter: selected=>{filters.clear();Object.entries(selected||{}).forEach(([key,values])=>filters.set(key,values));page=1;render();},
@@ -204,13 +207,20 @@
         $('drawer-title').textContent=row.name;
         let html=`<p>${escape(row.project)} · WB ${escape(row.article)}</p><p class="e-muted">${escape(row.manager)} · ${escape(row.category)}</p>`;
         if(!config.history) {
-            html+=`<table><thead><tr><th>Показатель</th><th>${escape(weekLabel(data.previous))}</th><th>${escape(weekLabel(data.current))}</th></tr></thead><tbody>${[['fact','Заказы, шт'],['turnover','ТО, ₽'],['roi','ROI, %'],['drr','ДРР, %'],['goal','Цель, шт'],['price','Цена, ₽']].map(([key,label])=>`<tr><td>${label}</td><td>${number(row.previous[key])}</td><td>${number(row.current[key])}</td></tr>`).join('')}</tbody></table><p>FBS ${number(row.fbs)} · FBO ${number(row.fbo)} · От клиента ${number(row.fromCustomer)}</p>`;
+            html+=`<table><thead><tr><th>Показатель</th><th>${escape(weekLabel(data.previous))}</th><th>${escape(weekLabel(data.current))}</th></tr></thead><tbody>${[['fact','Заказы, шт'],['turnover','ТО по цели, ₽'],['roi','ROI, %'],['drr','ДРР, %'],['goal','Цель, шт'],['price','Цена, ₽']].map(([key,label])=>`<tr><td>${label}</td><td>${number(row.previous[key])}</td><td>${number(row.current[key])}</td></tr>`).join('')}</tbody></table><p>FBS ${number(row.fbs)} · FBO ${number(row.fbo)} · От клиента ${number(row.fromCustomer)} · На ФФ ${number(row.ff)} · Общий сток ${number(row.stock)}</p>`;
         }
         const start=config.history?data.weeks[0].start:data.current.start;
         Object.entries(kinds).forEach(([kind,label])=>{html+=`<h3>${escape(label)} · ${escape(start)}</h3>${commentHtml(row,{week:start,kind,readOnly:config.history&&kind==='decision'})}`;});
         $('drawer-body').innerHTML=html;bindComments($('drawer-body'));
     }
-    $('body').onclick=e=>{const button=e.target.closest('[data-product]');if(button)openDrawer(Number(button.dataset.product));};
+    async function copyArticle(element) {
+        if(!element)return;
+        try {await window.CheckStockUI.copyText(element.dataset.copyArticle);element.title='Артикул скопирован';}
+        catch {element.title='Нажмите, чтобы скопировать артикул';}
+    }
+    $('body').addEventListener('mouseover',e=>{const item=e.target.closest('[data-copy-article]');if(item&&!item.contains(e.relatedTarget))copyArticle(item);});
+    $('body').addEventListener('focusin',e=>copyArticle(e.target.closest('[data-copy-article]')));
+    $('body').onclick=e=>{const article=e.target.closest('[data-copy-article]');if(article){copyArticle(article);return;}const button=e.target.closest('[data-product]');if(button)openDrawer(Number(button.dataset.product));};
     $('close-drawer').onclick=()=>{$('drawer').hidden=true;};
     $('retry').onclick=()=>drafts.flush();
     $('search').oninput=()=>{query=$('search').value;page=1;render();};
@@ -222,8 +232,19 @@
     $('summary-toggle').onclick=()=>{summaryCollapsed=!summaryCollapsed;prefs();renderSummary();};
     renderSummary();
     $('separate').checked=separate;$('dense').checked=dense;root.classList.toggle('e-dense',dense);
-    $('groups').innerHTML=Object.entries(groups).map(([id,label])=>`<label><input type="checkbox" data-visible="${id}" ${visible.has(id)?'checked':''} ${id==='product'?'disabled':''}>${escape(label)}</label>`).join('');
-    $('groups').onchange=e=>{const id=e.target.dataset.visible;if(id){e.target.checked?visible.add(id):visible.delete(id);prefs();render();}};
+    function renderColumnSettings() {
+        if(config.history)return;
+        const expanded=new Set([...$('groups').querySelectorAll('details[open]')].map(item=>item.dataset.section));
+        $('groups').innerHTML=Object.entries(groups).map(([id,label])=>`<details data-section="${id}" ${expanded.has(id)?'open':''}><summary>${escape(label)}</summary><label><input type="checkbox" data-visible="${id}" ${visible.has(id)?'checked':''} ${id==='product'?'disabled':''}>Показать блок</label><div class="e-column-choices">${[...columnMap.values()].filter(c=>c.group===id).map(c=>`<label><input type="checkbox" data-column="${escape(c.id)}" ${!hiddenColumns.has(c.id)||c.id==='product'?'checked':''} ${c.id==='product'||!visible.has(id)?'disabled':''}>${escape(c.label)}</label>`).join('')}</div></details>`).join('');
+    }
+    renderColumnSettings();
+    $('groups').onchange=e=>{
+        const id=e.target.dataset.visible, column=e.target.dataset.column;
+        if(id&&id!=='product')e.target.checked?visible.add(id):visible.delete(id);
+        if(column&&column!=='product')e.target.checked?hiddenColumns.delete(column):hiddenColumns.add(column);
+        columnMap.forEach(c=>{if(!visible.has(c.group)||hiddenColumns.has(c.id))filters.delete(c.id);});
+        prefs();render();
+    };
     $('separate').onchange=()=>{separate=$('separate').checked;prefs();render();};$('dense').onchange=()=>{dense=$('dense').checked;root.classList.toggle('e-dense',dense);prefs();};
     $('columns').onclick=()=>{$('column-panel').hidden=!$('column-panel').hidden;$('columns').setAttribute('aria-expanded',String(!$('column-panel').hidden));};
     $('columns-done').onclick=()=>{$('column-panel').hidden=true;$('columns').setAttribute('aria-expanded','false');};
