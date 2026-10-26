@@ -36,6 +36,10 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Поток запроса и данных
 
+История СПП WB для ИИ-агентов: `app/application/spp_history.py`, модели `app/dto/spp_history.py`,
+репозиторий `app/infrastructure/spp_history_repository.py`, регистрация в
+`app/agents/extended_reports.py`; [поля и ограничения](agent-spp-history.md).
+
 `app.main:create_app` создаёт приложение и `ApplicationContainer`, подключает middleware и роутеры. Для части новых сценариев маршрут вызывает сервис из `app/application`, а тот работает через порт и SQLAlchemy Unit of Work в `app/infrastructure`. Часть аналитических чтений и загрузчиков по-прежнему использует `app/repositories` и фасад `app/db.py`; поэтому не следует предполагать, что весь код проходит через один слой. `app/jobs/background.py` содержит общую инициализацию и описания задач. Автоматические задачи запускает отдельный `app/jobs/worker.py`; вебовый `lifespan` их не запускает.
 
 Складские HTTP-изменения требуют `Idempotency-Key`; повтор с тем же ключом не должен повторять начисление. Подробности и границы транзакции — в [F03](f03-stock-transactions.md). Для экономических отчётов различайте отсутствие данных и подтверждённый ноль; источники и полнота описаны в [F05](f05-economics-completeness.md).

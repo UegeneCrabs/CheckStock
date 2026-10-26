@@ -217,6 +217,7 @@ SPECS = {
 PERIOD_REPORTS = {"advertising-campaigns", "advertising", "stock-operations", "supplies", "profit"}
 SPECS.update(EXTRA_SPECS)
 PERIOD_REPORTS.update({"stock-history", "orders", "stock-cost-report"})
+PERIOD_REPORTS.update({"spp-hourly", "spp-daily"})
 ECONOMIC = {
     name
     for name, spec in SPECS.items()

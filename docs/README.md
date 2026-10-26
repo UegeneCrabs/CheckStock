@@ -42,8 +42,12 @@
 
 ## API для ИИ-агентов
 
+- [Расходы WB без ИУ — сравнение прибыли и ROI](wb-standard-costs.md#api-для-ии-агентов)
+
+- [Почасовая и дневная история СПП WB](agent-spp-history.md)
+
 - [API аналитики CheckStock](chatgpt-analytics.md)
-- [Подключение Claude через MCP](claude-mcp.md)
+- [Подключение Claude и ChatGPT через MCP](claude-mcp.md)
 - [Развёртывание API агентов](agent-api-deployment.md)
 - [Сводка прибыли](agent-profit-summary.md)
 - [Серверный анализ товаров](agent-server-analysis.md)

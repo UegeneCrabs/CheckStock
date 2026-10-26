@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from app.access.security import Pbkdf2PasswordService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
+from app.application.spp_history import SppHistoryService
 from app.application.stock import StockMovementService
 from app.application.supply_arrival_stock import SupplyArrivalStockService
 from app.application.wb_standard_costs import WbStandardCostsService
@@ -16,6 +17,7 @@ from app.infrastructure.database import database_for_path
 from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
+from app.infrastructure.spp_history_repository import SqlAlchemySppHistoryRepository
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.infrastructure.supply_arrival_stock_repository import SupplyArrivalStockRepository
 from app.infrastructure.wb_hourly_price_repository import (
@@ -55,6 +57,12 @@ def _wb_seller_prices(store_slug: str, nm_ids: tuple[str, ...]) -> tuple[WbSelle
 
 
 class ApplicationContainer:
+    @property
+    def spp_history(self) -> SppHistoryService:
+        return SppHistoryService(
+            SqlAlchemySppHistoryRepository(database_for_path(self._database_path()).session_factory)
+        )
+
     @property
     def finance(self) -> FinanceService:
         return FinanceService(FinanceRepository(database_for_path(self._database_path()).session_factory))

@@ -3,9 +3,11 @@
     if (!status) return;
     const list = document.getElementById('mcp-connections');
     const copy = document.getElementById('mcp-copy');
+    const provider = document.querySelector('[data-mcp-provider]')?.dataset.mcpProvider;
     let url = null;
     async function api(suffix = '', method = 'GET') {
-        const response = await fetch('/api/ai-agents/mcp/connections' + suffix, {
+        const query = method === 'GET' && provider ? '?provider=' + encodeURIComponent(provider) : '';
+        const response = await fetch('/api/ai-agents/mcp/connections' + suffix + query, {
             method, credentials: 'same-origin', cache: 'no-store',
             headers: { Accept: 'application/json', 'X-Agent-Management': '1' },
         });
@@ -42,7 +44,8 @@
         } catch (error) { status.textContent = error.message; }
     }
     copy.onclick = async () => {
-        try { await navigator.clipboard.writeText(url); status.textContent = 'Адрес скопирован.'; }
+        if (!url) return;
+        try { await window.CheckStockAgentClipboard(url, status); }
         catch { status.textContent = 'Выделите и скопируйте адрес вручную.'; }
     };
     document.getElementById('mcp-refresh').onclick = load;

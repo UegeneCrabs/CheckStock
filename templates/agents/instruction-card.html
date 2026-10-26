@@ -1,0 +1,8 @@
+<section class="agent-card" aria-labelledby="agent-instruction-heading">
+  <h2 id="agent-instruction-heading">Инструкция ИИ-агентов</h2>
+  <p>Единые правила анализа данных для ChatGPT и Claude / MCP. Для GPT скопируйте текст в поле «Инструкции». Claude получает эти правила через MCP.</p>
+  <button type="button" id="agent-copy-visible-instructions" disabled>Скопировать инструкцию</button>
+  <p id="agent-instruction-status" role="status" aria-live="polite">Загрузка инструкции…</p>
+  <pre id="agent-instruction-text" class="agent-instruction-text" tabindex="0" aria-label="Текст инструкции"></pre>
+</section>
+<script src="/static/agents/instructions.js?v=20261023" defer></script>

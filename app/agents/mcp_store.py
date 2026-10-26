@@ -12,6 +12,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.dto.mcp_connection import McpConnection, provider_for_redirects
+
 ACCESS_TTL = 3600
 GRANT_TTL = 30 * 86400
 
@@ -200,15 +202,26 @@ class OAuthStore:
             ).fetchone()
             return dict(row) if row else None
 
-    def connections(self, user_id):
+    def connections(self, user_id) -> list[McpConnection]:
         with self.transaction() as db:
-            return [
-                dict(row)
-                for row in db.execute(
-                    "SELECT id, name, created, expires FROM grants WHERE user_id = ? AND revoked = 0",
-                    (user_id,),
+            result = []
+            for row in db.execute(
+                """SELECT g.id, g.name, g.created, g.expires, c.payload
+                   FROM grants g LEFT JOIN clients c ON c.id = g.client_id
+                   WHERE g.user_id = ? AND g.revoked = 0""",
+                (user_id,),
+            ):
+                metadata = json.loads(row["payload"]) if row["payload"] else {}
+                result.append(
+                    McpConnection(
+                        id=row["id"],
+                        name=row["name"],
+                        created=row["created"],
+                        expires=row["expires"],
+                        provider=provider_for_redirects(metadata.get("redirect_uris", [])),
+                    )
                 )
-            ]
+            return result
 
     def revoke(self, grant_id, user_id):
         with self.transaction() as db:

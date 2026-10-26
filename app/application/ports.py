@@ -4,6 +4,8 @@ from datetime import date
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
 
+from app.dto.spp_history import DailySppRow, HourlySppRow, SppHistoryQuery
+
 if TYPE_CHECKING:
     from app.infrastructure.database import DatabaseConnection
 
@@ -191,3 +193,7 @@ class StockUnitOfWork(Protocol):
 
 class StockUnitOfWorkFactory(Protocol):
     def __call__(self) -> StockUnitOfWork: ...
+
+
+class SppHistoryRepository(Protocol):
+    def read(self, query: SppHistoryQuery) -> list[HourlySppRow] | list[DailySppRow]: ...

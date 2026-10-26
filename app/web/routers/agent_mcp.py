@@ -1,4 +1,4 @@
-"""Read-only MCP Streamable HTTP and per-user OAuth for personal Claude accounts."""
+"""Read-only MCP Streamable HTTP and per-user OAuth for Claude and ChatGPT accounts."""
 
 import asyncio
 import base64
@@ -23,8 +23,9 @@ from pydantic import ValidationError
 from app.access import auth
 from app.access.authentication import is_active_user
 from app.agents.mcp_store import OAuthError, OAuthStore, digest
-from app.config import settings
+from app.config import MCP_DEFAULT_REDIRECT_URIS, settings
 from app.dto.identity import SessionToken, UserId
+from app.dto.mcp_connection import McpProvider
 from app.web.routers.agent_management import Owner
 
 router = APIRouter()
@@ -50,7 +51,7 @@ HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 def analyst_instructions():
     """Share the GPT rulebook; adapt authentication wording for MCP only."""
     rules = (settings.static_dir / "agents" / "agent-instructions.txt").read_text(encoding="utf-8").strip()
-    rules = rules.replace("401 — проверить ключ Action", "401 — переподключить коннектор Claude через OAuth")
+    rules = rules.replace("401 — проверить ключ Action", "401 — переподключить MCP-подключение через OAuth")
     rules = rules.replace("Нет Action — нужна схема.", "Нет инструмента — обновить инструменты коннектора.")
     return (
         rules
@@ -107,7 +108,7 @@ async def store_call(method, *args):
 
 
 def allowed_redirects():
-    values = set(os.getenv("CHECKSTOCK_MCP_REDIRECT_URIS", "https://claude.ai/api/mcp/auth_callback").split())
+    values = set(os.getenv("CHECKSTOCK_MCP_REDIRECT_URIS", MCP_DEFAULT_REDIRECT_URIS).split())
     for value in values:
         parsed = urlsplit(value)
         if (
@@ -122,7 +123,7 @@ def allowed_redirects():
 
 
 def check_origin(request, *, consent=False):
-    allowed = {origin()} if consent else {origin(), "https://claude.ai"}
+    allowed = {origin()} if consent else {origin(), "https://claude.ai", "https://chatgpt.com"}
     incoming = request.headers.get("origin")
     if incoming is not None and incoming not in allowed:
         raise HTTPException(403, "Origin not allowed")
@@ -209,6 +210,7 @@ async def oauth_metadata():
     return JSONResponse(
         {
             "issuer": base,
+            "authorization_response_iss_parameter_supported": True,
             "authorization_endpoint": base + "/oauth/mcp/authorize",
             "token_endpoint": base + "/oauth/mcp/token",
             "registration_endpoint": base + "/oauth/mcp/register",
@@ -234,7 +236,7 @@ async def register(request: Request):
     if not isinstance(data, dict):
         raise HTTPException(400, "Invalid client metadata")
     redirects = data.get("redirect_uris")
-    name = data.get("client_name", "Claude")
+    name = data.get("client_name", "MCP")
     if (
         not isinstance(redirects, list)
         or not 1 <= len(redirects) <= 5
@@ -283,7 +285,7 @@ async def authorize(request: Request):
     user = await browser_user(request)
     if user is None:
         return page(
-            "<h1>Войдите в CheckStock</h1><p>Для подключения Claude войдите в свой аккаунт "
+            "<h1>Войдите в CheckStock</h1><p>Для подключения приложения войдите в свой аккаунт "
             "в новой вкладке. Затем вернитесь сюда и продолжите подключение.</p>"
             '<p><a href="/login" target="_blank" rel="noopener">Войти в CheckStock</a></p>'
             '<p><a href="'
@@ -308,13 +310,13 @@ async def authorize(request: Request):
         },
     )
     response = page(
-        "<h1>Подключить Claude к CheckStock</h1><p>Приложение: <strong>"
+        "<h1>Подключить приложение к CheckStock</h1><p>Приложение: <strong>"
         + html.escape(client["client_name"])
         + "</strong></p><p>Аккаунт: "
         + html.escape(str(user.full_name))
         + "</p><p>Разрешить чтение аналитики и остатков "
         "только тех магазинов, которые доступны вам на сайте. Полученные данные будут "
-        "передаваться в Claude для ответа на ваши вопросы.</p><p>Подключение действует "
+        "передаваться в указанное приложение для ответа на ваши вопросы.</p><p>Подключение действует "
         "30 дней. Его можно отозвать в разделе «ИИ-агенты».</p>"
         '<form method="post" action="/oauth/mcp/authorize"><input type="hidden" name="pending" value="'
         + pending
@@ -344,6 +346,7 @@ async def consent(request: Request):
         data["decision"] == "approve",
     )
     query = {"code": code} if code else {"error": "access_denied"}
+    query["iss"] = origin()
     if pending["state"]:
         query["state"] = pending["state"]
     redirect = pending["redirect_uri"]
@@ -408,14 +411,23 @@ async def revoke_token(request: Request):
 
 
 @router.get("/api/ai-agents/mcp/connections")
-async def connections(user: Owner):
+async def connections(user: Owner, provider: McpProvider | None = None):
     # Keep the existing agents page usable before the operator enables MCP.
     try:
         url = origin() + "/mcp"
     except HTTPException:
         return JSONResponse({"url": None, "connections": []}, headers=HEADERS)
+    records = await store_call("connections", user.id)
     return JSONResponse(
-        {"url": url, "connections": await store_call("connections", user.id)}, headers=HEADERS
+        {
+            "url": url,
+            "connections": [
+                record.model_dump(mode="json")
+                for record in records
+                if provider is None or record.provider == provider
+            ],
+        },
+        headers=HEADERS,
     )
 
 
