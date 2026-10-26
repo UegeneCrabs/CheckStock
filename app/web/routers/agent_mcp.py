@@ -50,7 +50,9 @@ HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 def analyst_instructions():
     """Load the full analyst rulebook for MCP clients."""
-    rules = (settings.static_dir / "agents" / "agent-instructions-full.txt").read_text(encoding="utf-8").strip()
+    rules = (
+        (settings.static_dir / "agents" / "agent-instructions-full.txt").read_text(encoding="utf-8").strip()
+    )
     return (
         rules
         + "\n\nПРИМЕНЕНИЕ В MCP\n"
@@ -414,7 +416,7 @@ async def connections(user: Owner, provider: McpProvider | None = None):
     try:
         url = origin() + "/mcp"
     except HTTPException:
-        return JSONResponse({"url": None, "connections": []}, headers=HEADERS)
+        url = None
     records = await store_call("connections", user.id)
     return JSONResponse(
         {
@@ -423,6 +425,12 @@ async def connections(user: Owner, provider: McpProvider | None = None):
                 record.model_dump(mode="json")
                 for record in records
                 if provider is None or record.provider == provider
+            ],
+            "other_connections": [
+                record.model_dump(mode="json")
+                for record in records
+                if provider in {McpProvider.CLAUDE, McpProvider.CHATGPT}
+                and record.provider == McpProvider.UNKNOWN
             ],
         },
         headers=HEADERS,

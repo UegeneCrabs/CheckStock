@@ -20,28 +20,35 @@
             url = data.url;
             document.getElementById('mcp-url').textContent = url || 'Подключение ещё не настроено администратором';
             copy.disabled = !url;
-            list.replaceChildren();
-            status.textContent = data.connections.length ? '' : 'Активных подключений пока нет.';
-            for (const connection of data.connections) {
-                const item = document.createElement('li');
-                item.append(document.createTextNode(connection.name + ' — до ' + new Date(connection.expires * 1000).toLocaleString('ru-RU') + ' '));
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.textContent = 'Отозвать';
-                button.onclick = async () => {
-                    button.disabled = true;
-                    try {
-                        await api('/' + encodeURIComponent(connection.id), 'DELETE');
-                        await load();
-                    } catch (error) {
-                        status.textContent = error.message;
-                        button.disabled = false;
-                    }
-                };
-                item.append(button);
-                list.append(item);
-            }
+            status.textContent = data.connections.length ? '' : 'Подключений этого сервиса пока нет.';
+            renderConnections(list, data.connections);
+            const others = data.other_connections || [];
+            const otherSection = document.getElementById('mcp-other-section');
+            otherSection.hidden = !others.length;
+            renderConnections(document.getElementById('mcp-other-connections'), others);
         } catch (error) { status.textContent = error.message; }
+    }
+    function renderConnections(target, connections) {
+        target.replaceChildren();
+        for (const connection of connections) {
+            const item = document.createElement('li');
+            item.append(document.createTextNode(connection.name + ' — до ' + new Date(connection.expires * 1000).toLocaleString('ru-RU') + ' '));
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = 'Отозвать';
+            button.onclick = async () => {
+                button.disabled = true;
+                try {
+                    await api('/' + encodeURIComponent(connection.id), 'DELETE');
+                    await load();
+                } catch (error) {
+                    status.textContent = error.message;
+                    button.disabled = false;
+                }
+            };
+            item.append(button);
+            target.append(item);
+        }
     }
     copy.onclick = async () => {
         if (!url) return;
