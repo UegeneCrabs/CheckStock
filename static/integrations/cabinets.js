@@ -4,13 +4,16 @@
     if (!root) return;
     var buttons = Array.from(root.querySelectorAll('[data-cabinet-market]'));
     var panels = Array.from(root.querySelectorAll('[data-cabinet-panel]'));
+    buttons.forEach(function (button) {
+        button.hidden = !panels.some(function (panel) { return panel.dataset.cabinetPanel === button.dataset.cabinetMarket; });
+    });
 
     function showFromUrl() {
         var url = new URL(window.location.href);
         var selected = url.searchParams.get('cabinet_market');
         if (url.hash.indexOf('#yandex-') === 0 || (!selected && (url.searchParams.has('ym_store') || url.searchParams.has('ym_article'))))
             selected = 'ym';
-        if (selected !== 'ym') selected = 'wb';
+        if (!panels.some(function (panel) { return panel.dataset.cabinetPanel === selected; })) selected = 'wb';
         panels.forEach(function (panel) {
             panel.hidden = panel.dataset.cabinetPanel !== selected;
         });

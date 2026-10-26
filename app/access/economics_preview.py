@@ -3,12 +3,20 @@
 from fastapi import HTTPException
 
 from app.config import settings
+from app.core.constants import JOBS
 from app.dto.identity import User, coerce_user
 
 PRIVATE_JOB_NAMES = frozenset(
     {
         "ozon_reputation_sync",
-        "ozon_unit_economics_turnover_sync",
+        JOBS.ozon_orders.name,
+        JOBS.ozon_prices.name,
+        JOBS.ozon_prices_close.name,
+        JOBS.ozon_logistics.name,
+        JOBS.ozon_storage.name,
+        JOBS.ozon_buyout.name,
+        JOBS.ozon_margin.name,
+        JOBS.ozon_advertising_breakdown.name,
         "ozon_unit_economics_advertising_sync",
         "ozon_unit_economics_1c_source_sync",
     }

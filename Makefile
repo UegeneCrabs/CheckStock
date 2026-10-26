@@ -1,7 +1,7 @@
 PYTHON ?= python
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev run scheduler format lint check docker-build docker-up docker-down docker-logs
+.PHONY: install install-dev run scheduler format lint typecheck check docker-build docker-up docker-down docker-logs
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -23,7 +23,10 @@ lint:
 	$(PYTHON) -m ruff format --check app scripts run.py
 	$(PYTHON) -m ruff check app scripts run.py
 
-check: lint
+typecheck:
+	$(PYTHON) -m mypy
+
+check: lint typecheck
 
 docker-build:
 	docker compose build

@@ -1,35 +1,26 @@
-import html
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from app import db
 from app.access.authentication import is_active_user
-from app.access.resources import has_store_marketplace, store_marketplace_pairs
+from app.access.resources import store_marketplace_pairs
+from app.core.constants import WEB, WebErrorCode
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
-from app.core.stores import STORES
+from app.dto.integrations import WebFailure
+from app.dto.stock_pages import StockClassificationCommand
+from app.infrastructure.stock_classification_repository import StockClassificationRepository
 from app.stock import cost_report as stock_cost_report
 from app.stock import cost_report_export as stock_cost_report_export
-from app.stock.catalog_identity import display_barcode
 from app.web.access import accessible_store_slugs
-from app.web.common import _fmt_num, _now_iso
+from app.web.client_page import client_page
+from app.web.common import _now_iso
 from app.web.downloads import _download_headers
-from app.web.identifiers import copy_identifier
-from app.web.templating import fill_template, render_page
+from app.web.stock_scope import stock_scope
 
 router = APIRouter()
-
-VIEW_LABELS = (
-    ("summary", "Сводная"),
-    ("deliveries", "Поставки"),
-    ("transfers", "Перемещения"),
-    ("shipments", "Отгрузки"),
-    ("fbs_transfers", "На FBS"),
-    ("fbs_sales", "Продажи FBS"),
-)
 
 
 def _default_period(today: date | None = None) -> tuple[date, date]:
@@ -43,206 +34,12 @@ def _period(date_from: str, date_to: str) -> tuple[date, date]:
         start = date.fromisoformat(date_from) if date_from else default_from
         end = date.fromisoformat(date_to) if date_to else default_to
     except ValueError as error:
-        raise HTTPException(status_code=400, detail="Некорректный период отчёта") from error
+        raise HTTPException(status_code=400, detail=WebErrorCode.INVALID_PERIOD) from error
     if end < start:
-        raise HTTPException(status_code=400, detail="Конец периода не может быть раньше начала")
-    if (end - start).days > 366:
-        raise HTTPException(status_code=400, detail="Период отчёта не может быть больше 366 дней")
+        raise HTTPException(status_code=400, detail=WebErrorCode.INVALID_PERIOD)
+    if (end - start).days > WEB.report_max_days:
+        raise HTTPException(status_code=400, detail=WebErrorCode.INVALID_PERIOD)
     return start, end
-
-
-def _money(value: float) -> str:
-    formatted = f"{float(value):,.2f}".replace(",", " ").replace(".00", "")
-    return f"{formatted} ₽"
-
-
-def _metric_cell(metric: dict) -> str:
-    return (
-        '<span class="cost-metric">'
-        f"<strong>{html.escape(_money(float(metric.get('cost') or 0)))}</strong>"
-        f"<small>{_fmt_num(int(metric.get('units') or 0))} ед.</small></span>"
-    )
-
-
-def _fbs_units_cell(metric: dict, formula_note: str) -> str:
-    units = _fmt_num(int(metric.get("units") or 0))
-    return f'<span class="cost-metric"><strong>{units} ед.</strong>{formula_note}</span>'
-
-
-def _fbs_cost_cell(metric: dict) -> str:
-    return (
-        '<span class="cost-metric">'
-        f"<strong>{html.escape(_money(float(metric.get('cost') or 0)))}</strong></span>"
-    )
-
-
-def _summary_table(rows: list[dict]) -> str:
-    body = []
-    for row in rows:
-        formula = row.get("fbs_formula") or {}
-        if formula.get("available"):
-            formula_note = (
-                '<span class="formula-note">'
-                f"{_fmt_num(formula['start_units'])} + {_fmt_num(formula['moved_units'])} − "
-                f"{_fmt_num(formula['end_units'])}</span>"
-            )
-            fbs_units = _fbs_units_cell(row["fbs_sales"], formula_note)
-            fbs_cost = _fbs_cost_cell(row["fbs_sales"])
-        else:
-            fbs_units = '<span class="snapshot-wait">Снимки границ ещё не накоплены</span>'
-            fbs_cost = '<span class="snapshot-wait">—</span>'
-        body.append(
-            "<tr>"
-            f"<th>{html.escape(row['store_name'])}</th>"
-            f"<td>{html.escape(row['marketplace'])}</td>"
-            f"<td>{_metric_cell(row['deliveries'])}</td>"
-            f"<td>{_metric_cell(row['moved_out'])}</td>"
-            f"<td>{_metric_cell(row['moved_in'])}</td>"
-            f"<td>{_metric_cell(row['shipped'])}</td>"
-            f"<td>{fbs_units}</td>"
-            f"<td>{fbs_cost}</td>"
-            f"<td>{_fbs_units_cell(row['fbs_actual_sales'], '')}</td>"
-            "</tr>"
-        )
-    return (
-        '<div class="cost-table-wrap table-wrap"><table class="cost-summary-table data-table"><thead><tr>'
-        "<th>Магазин</th><th>Маркетплейс</th><th>Поставки</th><th>Со стока</th><th>На сток</th>"
-        "<th>Отгружено наружу</th><th>Продано FBS по формуле</th><th>ЗЦ продаж FBS</th>"
-        "<th>По данным маркетплейса</th>"
-        "</tr></thead><tbody>" + "".join(body) + "</tbody></table></div>"
-    )
-
-
-def _operation_cost(operation: dict) -> str:
-    return f'<span class="operation-cost"><strong>{_money(operation["purchase_cost"])}</strong></span>'
-
-
-def _classification_form(operation: dict, query: dict[str, str], can_edit: bool) -> str:
-    if operation.get("kind") != "shipment":
-        return "—"
-    active = bool(operation.get("is_fbs_transfer"))
-    if not can_edit:
-        return "На FBS" if active else "Наружу"
-    hidden = "".join(
-        f'<input type="hidden" name="{html.escape(key)}" value="{html.escape(value, quote=True)}">'
-        for key, value in query.items()
-    )
-    return (
-        f'<form class="fbs-classifier" method="post" '
-        f'action="/stock/cost-report/operations/{int(operation["id"])}/fbs-transfer">'
-        f"{hidden}"
-        f'<input type="hidden" name="is_fbs_transfer" value="{0 if active else 1}">'
-        f'<button class="{"is-active" if active else ""}" type="submit">'
-        f"{'На FBS' if active else 'Отгрузка наружу'}</button></form>"
-    )
-
-
-def _operation_marketplace(operation: dict) -> str:
-    source = str(operation.get("from_marketplace") or "")
-    target = str(operation.get("to_marketplace") or "")
-    if source and target and source != target:
-        return f"{source} → {target}"
-    return target or source or "—"
-
-
-def _operation_table(
-    operations: list[dict],
-    query: dict[str, str],
-    can_edit: bool,
-) -> str:
-    if not operations:
-        return '<div class="cost-empty">За выбранный период таких операций нет.</div>'
-    rows = []
-    for operation in operations:
-        created = str(operation.get("created_at") or "").replace("T", " ")[:16]
-        rows.append(
-            "<tr>"
-            f"<td>{html.escape(created)}</td>"
-            f"<td>{html.escape(STORES[operation['store_slug']]['name'])}</td>"
-            f"<td>{html.escape(_operation_marketplace(operation))}</td>"
-            f"<td>{html.escape(operation['label'])}</td>"
-            f"<td><span>{html.escape(operation['from_label'])}</span><b>→</b>"
-            f"<span>{html.escape(operation['to_label'])}</span></td>"
-            f'<td data-filter-value="{int(operation["units"])}"><strong>{_fmt_num(operation["units"])} ед.</strong>'
-            f"<small>{_fmt_num(operation['positions'])} поз.</small></td>"
-            f"<td>{_operation_cost(operation)}</td>"
-            f"<td>{html.escape(str(operation.get('note') or '—'))}</td>"
-            f"<td>{_classification_form(operation, query, can_edit)}</td>"
-            "</tr>"
-        )
-    return (
-        '<div class="cost-table-wrap table-wrap"><table class="cost-operation-table data-table"><thead><tr>'
-        "<th>Когда</th><th>Магазин</th><th>Маркетплейс</th><th>Операция</th><th>Маршрут</th>"
-        '<th data-filter-type="number">Количество</th><th>ЗЦ</th><th>Примечание</th>'
-        "<th>Учёт отгрузки</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
-    )
-
-
-def _fbs_sales_table(report: dict) -> str:
-    if not report["fbs_sales"]:
-        return (
-            '<div class="cost-empty">Для расчёта продаж FBS нужны снимки остатков '
-            "на обеих границах периода.</div>"
-        )
-    actual = {
-        (item["store_slug"], item["marketplace"], item["article"]): item
-        for item in report["fbs_actual_sales"]
-    }
-    rows = []
-    for item in report["fbs_sales"]:
-        check = actual.get((item["store_slug"], item["marketplace"], item["article"]))
-        check_html = f"{_fmt_num(check['quantity'])} ед." if check else "—"
-        cost = _money(item["purchase_cost"]) if item["purchase_cost"] is not None else "нет ЗЦ"
-        article_copy = copy_identifier(
-            item["article"],
-            "Артикул",
-            f"Арт. {item['article']}",
-        )
-        barcode_copy = copy_identifier(display_barcode(item, item["marketplace"]), "Баркод")
-        rows.append(
-            "<tr>"
-            f"<td>{html.escape(STORES[item['store_slug']]['name'])}</td>"
-            f"<td>{html.escape(item['marketplace'])}</td>"
-            f"<td><strong>{html.escape(str(item.get('name') or item['article']))}</strong>"
-            f"<small>{article_copy} · {barcode_copy}</small></td>"
-            f"<td>{_fmt_num(item['quantity'])} ед.</td>"
-            f"<td>{html.escape(_money(item['purchase_price'])) if item['purchase_price'] is not None else '—'}</td>"
-            f"<td><strong>{html.escape(cost)}</strong></td>"
-            f"<td>{_fmt_num(item['start_quantity'])} + {_fmt_num(item['moved_quantity'])} − "
-            f"{_fmt_num(item['end_quantity'])}</td>"
-            f"<td>{check_html}</td>"
-            "</tr>"
-        )
-    return (
-        '<div class="cost-table-wrap table-wrap"><table class="cost-sales-table data-table"><thead><tr>'
-        "<th>Магазин</th><th>Маркетплейс</th><th>Товар</th><th>Продано FBS</th><th>ЗЦ/ед.</th>"
-        "<th>ЗЦ продаж</th><th>Начало + на FBS − конец</th><th>По данным маркетплейса</th>"
-        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
-    )
-
-
-def _query(
-    date_from: date,
-    date_to: date,
-    store: str,
-    marketplace: str,
-    view: str,
-) -> dict[str, str]:
-    return {
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "store": store,
-        "marketplace": marketplace,
-        "view": view,
-    }
-
-
-def _tabs(query: dict[str, str], active: str) -> str:
-    return "".join(
-        f'<a class="{"is-active" if view == active else ""}" '
-        f'href="/stock/cost-report?{urlencode(query | {"view": view})}">{label}</a>'
-        for view, label in VIEW_LABELS
-    )
 
 
 @router.get("/stock/cost-report", response_class=HTMLResponse)
@@ -254,76 +51,8 @@ async def stock_cost_report_page(
     marketplace: str = "",
     view: str = "summary",
 ):
-    if not is_active_user(request.state.user):
-        raise HTTPException(status_code=403, detail="Нет доступа к отчёту движения стока")
-    start, end = _period(date_from, date_to)
-    allowed_stores = accessible_store_slugs(request.state.user)
-    store = store if store in allowed_stores else ""
-    store_slugs = (store,) if store else allowed_stores
-    allowed_pairs = store_marketplace_pairs(request.state.user)
-    allowed_marketplaces = tuple(
-        item for item in MARKETPLACES if any(pair[1] == item for pair in allowed_pairs)
-    )
-    marketplace = marketplace if marketplace in allowed_marketplaces else ""
-    marketplaces = (marketplace,) if marketplace else allowed_marketplaces
-    view = view if view in stock_cost_report.VIEW_KINDS else "summary"
-    report = await run_in_threadpool(
-        stock_cost_report.build_report,
-        store_slugs,
-        start,
-        end,
-        marketplaces,
-        allowed_pairs,
-    )
-    query = _query(start, end, store, marketplace, view)
-    current_monday, current_end = _default_period()
-    previous_end = current_monday - timedelta(days=1)
-    previous_start = previous_end - timedelta(days=6)
-    current_week_url = "/stock/cost-report?" + urlencode(
-        _query(current_monday, current_end, store, marketplace, view)
-    )
-    previous_week_url = "/stock/cost-report?" + urlencode(
-        _query(previous_start, previous_end, store, marketplace, view)
-    )
-    store_options = '<option value="">Все магазины</option>' + "".join(
-        f'<option value="{slug}"{" selected" if slug == store else ""}>'
-        f"{html.escape(STORES[slug]['name'])}</option>"
-        for slug in allowed_stores
-    )
-    marketplace_options = '<option value="">Все маркетплейсы</option>' + "".join(
-        f'<option value="{html.escape(item, quote=True)}"'
-        f"{' selected' if item == marketplace else ''}>{html.escape(item)}</option>"
-        for item in allowed_marketplaces
-    )
-    if view == "summary":
-        detail = _summary_table(report["summary"])
-    elif view == "fbs_sales":
-        detail = _fbs_sales_table(report)
-    else:
-        detail = _operation_table(
-            stock_cost_report.operations_for_view(report, view), query, is_active_user(request.state.user)
-        )
-    export_url = "/stock/cost-report.xlsx?" + urlencode(query)
-    content = fill_template(
-        "stock/cost-report.html",
-        date_from=start.isoformat(),
-        date_to=end.isoformat(),
-        store_options=store_options,
-        marketplace_options=marketplace_options,
-        current_week_url=html.escape(current_week_url, quote=True),
-        previous_week_url=html.escape(previous_week_url, quote=True),
-        export_url=html.escape(export_url, quote=True),
-        export_hidden="" if is_active_user(request.state.user) else " hidden",
-        tabs=_tabs(query, view),
-        detail=detail,
-    )
-    return render_page(
-        "РАКЕТА — Движение и ЗЦ",
-        "stock_cost_report",
-        content,
-        request.state.user,
-        content_class="content--stock-cost-report",
-    )
+    stock_scope(request, store, marketplace)
+    return client_page("stock/cost-report.html")
 
 
 @router.get("/stock/cost-report.xlsx")
@@ -378,34 +107,39 @@ async def classify_shipment_as_fbs_transfer(
     marketplace: str = Form(""),
     view: str = Form("shipments"),
 ):
-    if not is_active_user(request.state.user):
-        raise HTTPException(status_code=403, detail="Нет права изменять движение и ЗЦ")
-    operation = await run_in_threadpool(db.get_operation, operation_id)
-    allowed_stores = accessible_store_slugs(request.state.user)
-    if operation is None or operation.get("store_slug") not in allowed_stores:
-        raise HTTPException(status_code=404, detail="Операция не найдена")
-    operation_marketplace = str(operation.get("from_marketplace") or operation.get("to_marketplace") or "")
-    if not operation_marketplace or not has_store_marketplace(
-        request.state.user, store_slug=str(operation["store_slug"]), marketplace=operation_marketplace
-    ):
-        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
-    changed = await run_in_threadpool(
-        db.set_operation_fbs_transfer,
-        operation_id,
-        bool(is_fbs_transfer),
-        request.state.user.get("id"),
-        _now_iso(),
+    scope = stock_scope(request)
+    if is_fbs_transfer not in (0, 1):
+        return JSONResponse(
+            WebFailure(code=WebErrorCode.INVALID_TARGET).model_dump(mode="json"), status_code=400
+        )
+    command = StockClassificationCommand(
+        operation_id=operation_id,
+        is_fbs_transfer=bool(is_fbs_transfer),
+        user_id=request.state.user.id,
+        updated_at=_now_iso(),
     )
-    if not changed:
-        raise HTTPException(status_code=400, detail="Пометить можно только отгрузку")
-    redirect_query = {
-        "date_from": date_from,
-        "date_to": date_to,
-        "store": store,
-        "marketplace": marketplace,
-        "view": view,
-    }
+    try:
+        result = await StockClassificationRepository(request.app.state.async_resources.database).classify(
+            scope, command
+        )
+    except ValueError as error:
+        code = WebErrorCode(str(error))
+        return JSONResponse(
+            WebFailure(code=code).model_dump(mode="json"),
+            status_code=404 if code == WebErrorCode.NOT_FOUND else 400,
+        )
+    if request.headers.get("X-Requested-With") == "fetch":
+        return result
     return RedirectResponse(
-        "/stock/cost-report?" + urlencode(redirect_query),
+        "/stock/cost-report?"
+        + urlencode(
+            {
+                "date_from": date_from,
+                "date_to": date_to,
+                "store": store,
+                "marketplace": marketplace,
+                "view": view,
+            }
+        ),
         status_code=303,
     )

@@ -3,6 +3,7 @@ import logging
 from functools import lru_cache
 
 from app.config import settings
+from app.dto.orders import OzonCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,11 @@ def get_credentials(store_slug: str) -> tuple[str, str]:
 def has_credentials(store_slug: str) -> bool:
     entry = _load_tokens().get(store_slug) or {}
     return bool(entry.get("client_id") and entry.get("api_key"))
+
+
+def get_order_credentials(store_slug: str) -> OzonCredentials:
+    client_id, api_key = get_credentials(store_slug)
+    return OzonCredentials(client_id=client_id, api_key=api_key)
 
 
 def get_performance_credentials(store_slug: str) -> tuple[str, str]:

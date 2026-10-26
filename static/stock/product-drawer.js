@@ -336,5 +336,5 @@
         updateCount();
     }
 
-    document.addEventListener('DOMContentLoaded', enhanceTableToolbar);
+    (document.readyState === 'loading' ? callback => document.addEventListener('DOMContentLoaded', callback) : callback => callback())( enhanceTableToolbar);
 })();

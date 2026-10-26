@@ -123,6 +123,11 @@ class Settings(BaseModel):
     agent_tokens_path: Path = BASE_DIR / "secrets" / "chatgpt_tokens.json"
     wb_tokens_path: Path
     ozon_tokens_path: Path
+    ozon_tariffs_path: Path = BASE_DIR / "app" / "ozon" / "data" / "commission-tariffs.json"
+    ozon_category_cache_seconds: int = Field(default=3600, ge=0)
+    ozon_related_cache_seconds: int = Field(default=3600, ge=0)
+    ozon_promotions_cache_seconds: int = Field(default=300, ge=0)
+    ozon_promotions_timeout_seconds: int = Field(default=60, ge=1)
     yandex_tokens_path: Path
     google_service_account_path: Path
     log_level: str
@@ -181,6 +186,8 @@ class Settings(BaseModel):
     ff_import_timeout_seconds: int = Field(ge=1)
     wb_request_timeout_seconds: int = Field(ge=1)
     ozon_request_timeout_seconds: int = Field(ge=1)
+    ozon_logistics_request_interval_seconds: float = Field(default=2, ge=0, allow_inf_nan=False)
+    ozon_storage_request_interval_seconds: float = Field(default=1, ge=0, allow_inf_nan=False)
     yandex_request_timeout_seconds: int = Field(ge=1)
     wb_request_attempts: int = Field(ge=1, le=20)
     ozon_request_attempts: int = Field(ge=1, le=20)
@@ -358,6 +365,12 @@ class Settings(BaseModel):
             ff_import_timeout_seconds=_env_int("CHECKSTOCK_FF_IMPORT_TIMEOUT_SECONDS", 30, minimum=1),
             wb_request_timeout_seconds=_env_int("CHECKSTOCK_WB_REQUEST_TIMEOUT_SECONDS", 30, minimum=1),
             ozon_request_timeout_seconds=_env_int("CHECKSTOCK_OZON_REQUEST_TIMEOUT_SECONDS", 60, minimum=1),
+            ozon_logistics_request_interval_seconds=float(
+                os.getenv("CHECKSTOCK_OZON_LOGISTICS_REQUEST_INTERVAL_SECONDS", "2")
+            ),
+            ozon_storage_request_interval_seconds=float(
+                os.getenv("CHECKSTOCK_OZON_STORAGE_REQUEST_INTERVAL_SECONDS", "1")
+            ),
             yandex_request_timeout_seconds=_env_int(
                 "CHECKSTOCK_YANDEX_REQUEST_TIMEOUT_SECONDS", 60, minimum=1
             ),

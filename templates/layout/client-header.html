@@ -1,0 +1,231 @@
+<header class="sidebar app-header" id="app-header">
+    <div class="sidebar-brand-row">
+        <a class="brand" href="/" aria-label="РАКЕТА — на главную">
+            <span class="brand-mark">Р</span>
+            <span class="brand-label">РАКЕТА</span>
+        </a>
+        <span data-ui-marketplace></span>
+    </div>
+
+    <nav class="side-nav" aria-label="Основная навигация">
+        <div class="nav-group " data-nav-group>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger "
+                    type="button"
+                    title="Сток"
+                    aria-expanded="false"
+                    aria-controls="nav-stock-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                            d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+                        ></path>
+                        <path d="m3.3 7 8.7 5 8.7-5"></path>
+                        <path d="M12 22V12"></path>
+                    </svg>
+                    <span>Сток</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-stock-submenu" data-nav-submenu>
+                <a class="nav-subitem " href="/stock" >Остатки</a>
+                <a class="nav-subitem " href="/stock/total"
+                    >Остатки Тотал</a
+                >
+                <a class="nav-subitem " href="/stock/supplies"
+                    >Поставки</a
+                >
+                <a class="nav-subitem " href="/stock/inbound"
+                    >Поставки FBO</a
+                >
+                <a
+                    class="nav-subitem "
+                    href="/stock/cost-report"
+
+                    >Движение и ЗЦ</a
+                >
+                <a
+                    class="nav-subitem "
+                    href="/stock"
+
+                    >История операций</a
+                >
+            </div>
+        </div>
+
+        <a class="nav-item " href="/supply-schedule"
+            title="Расписание поставок" aria-label="Расписание поставок">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M16 3v4M8 3v4M3 11h18M8 15h3M8 18h6"></path>
+            </svg>
+            <span>Расписание поставок</span>
+        </a>
+
+        <div class="nav-group" data-nav-group>
+            <div class="nav-group-head">
+                <button class="nav-item nav-group-trigger " type="button"
+                    title="Аналитика" aria-expanded="false" aria-controls="nav-analytics-submenu" data-nav-toggle>
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16m-13-4 4-5 4 2 5-7"></path></svg>
+                    <span>Аналитика</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-analytics-submenu" data-nav-submenu>
+                <a class="nav-subitem " href="/analytics/analyzer">Анализатор</a>
+                <a class="nav-subitem " href="/analytics/ephemerides">Эфемериды</a>
+                <a class="nav-subitem " href="/analytics/sales-api">Продажи по API</a>
+            </div>
+        </div>
+
+        <div class="nav-group " data-nav-group>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger "
+                    type="button"
+                    title="Юнит-экономика 1С"
+                    aria-expanded="false"
+                    aria-controls="nav-unit-1c-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 5h16v14H4Z"></path>
+                        <path d="M8 9h8"></path>
+                        <path d="M8 13h3"></path>
+                        <path d="M14 13h2"></path>
+                        <path d="M8 17h3"></path>
+                        <path d="M14 17h2"></path>
+                    </svg>
+                    <span>Юнит-экономика 1С</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-unit-1c-submenu" data-nav-submenu>
+                <a class="nav-subitem " href="/sales/unit-economics-1c"
+                    >Wildberries</a
+                >
+                <a
+                    class="nav-subitem "
+                    href="/sales/unit-economics-1c/ozon"
+
+                    >Ozon</a
+                >
+                <a
+                    class="nav-subitem "
+                    href="/sales/unit-economics-1c/yandex-market"
+
+                    >Яндекс Маркет</a
+                >
+            </div>
+        </div>
+
+        <div class="nav-group " data-nav-group>
+            <div class="nav-group-head">
+                <button
+                    class="nav-item nav-group-trigger "
+                    type="button"
+                    title="Отчёты"
+                    aria-expanded="false"
+                    aria-controls="nav-reports-submenu"
+                    data-nav-toggle
+                >
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 19V5"></path>
+                        <path d="M4 19h16"></path>
+                        <path d="m7 15 4-4 3 2 5-6"></path>
+                    </svg>
+                    <span>Отчёты</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-reports-submenu" data-nav-submenu>
+                <a
+                    class="nav-subitem marketplace-report-wb "
+                    href="/sales/unit-economics-1c/reports/unit-profit"
+
+                    >WB · Юниточная прибыль</a
+                >
+                <a
+                    class="nav-subitem marketplace-report-wb "
+                    href="/sales/unit-economics-1c/reports/target-price"
+
+                    >WB · Целевая цена</a
+                >
+                <a class="nav-subitem marketplace-report-ym " href="/sales/unit-economics-1c/yandex-market/reports/unit-profit" >ЯМ · Юниточная прибыль</a>
+                <a class="nav-subitem marketplace-report-ym " href="/sales/unit-economics-1c/yandex-market/reports/target-price" >ЯМ · Целевая цена</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+            <div class="nav-group-head">
+                <button class="nav-item nav-group-trigger " type="button"
+                    title="Финансовые отчёты" aria-expanded="false"
+                    aria-controls="nav-finance-reports-submenu" data-nav-toggle>
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 15v-3M12 15V8M17 15v-5"></path></svg>
+                    <span>Финансовые отчёты</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-finance-reports-submenu" data-nav-submenu>
+                <a class="nav-subitem " href="https://153.76.164.196" target="_blank" rel="noopener noreferrer" title="Открыть финансовые отчёты Яндекса в новой вкладке">Яндекс</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-nav-group >
+            <div class="nav-group-head">
+                <button class="nav-item agent-nav nav-group-trigger "
+                    type="button" title="API и интеграции" aria-expanded="false"
+                    aria-controls="nav-agents-submenu" data-nav-toggle>
+                    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="4" y="7" width="16" height="13" rx="3"></rect>
+                        <path d="M12 3v4M8 12h1m6 0h1m-8 4h8"></path>
+                    </svg>
+                    <span>API и интеграции</span>
+                    <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                </button>
+            </div>
+            <div class="nav-submenu" id="nav-agents-submenu" data-nav-submenu>
+                <a class="nav-subitem" href="/ai-agents/keys">API-ключи</a>
+                <a class="nav-subitem" href="/ai-agents/catalog">Каталог API</a>
+                <a class="nav-subitem" href="/ai-agents/gpt">ChatGPT</a>
+                <a class="nav-subitem" href="/ai-agents/claude">Claude / MCP</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <div class="nav-utility"><a class="nav-item" href="/admin" data-ui-admin title="Админ-панель"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg><span>Админ</span></a><a class="nav-item" href="/admin/integrations" data-ui-integrations title="Интеграции и выгрузки"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14a5 5 0 1 1 3.9 1.9L8 19H5v-3l2-2Z"></path></svg><span>Интеграции</span></a></div>
+        <div class="profile ">
+            <a
+                class="profile-main"
+                href="/profile"
+                title="Открыть профиль пользователя"
+                aria-label="Открыть профиль пользователя"
+            >
+                <span class="avatar"><span data-ui-initials></span></span>
+                <span class="profile-copy">
+                    <strong><span data-ui-user></span></strong>
+                    <small></small>
+                    <span class="profile-connection"
+                        ><span class="live-dot" aria-hidden="true"></span><span>Подключено</span></span
+                    >
+                </span>
+            </a>
+            <a class="profile-logout" href="/logout" title="Выйти" aria-label="Выйти">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M10 17l5-5-5-5"></path>
+                    <path d="M15 12H3"></path>
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>

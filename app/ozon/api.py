@@ -1,13 +1,32 @@
 import json
 import logging
+import math
 import random
 import socket
 import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 from app.config import settings
+from app.core.constants import (
+    HTTP,
+    OZON_API,
+    OZON_STOCK_ANALYTICS,
+    HTTPStatus,
+    OrderScheme,
+    OzonErrorCode,
+    SortDirection,
+)
+
+PAGE_SIZE = OZON_API.page_size
+FBS_POSTINGS_V4_PAGE_SIZE = OZON_API.fbs_postings_v4_page_size
+BASE_URL = OZON_API.base_url
+
+SCHEME_FBO = OrderScheme.FBO.value
+SCHEME_FBS = OrderScheme.FBS.value
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +48,6 @@ def _store_label() -> str:
     return f"[{label}] " if label else ""
 
 
-BASE_URL = "https://api-seller.ozon.ru"
 REQUEST_TIMEOUT = settings.ozon_request_timeout_seconds
 
 
@@ -38,16 +56,15 @@ RETRY_BACKOFF_SECONDS = settings.ozon_retry_backoff_seconds
 
 
 PATH_MAX_ATTEMPTS = {
-    "/v1/analytics/stocks": 2,
+    OZON_STOCK_ANALYTICS.path: OZON_STOCK_ANALYTICS.request_attempts,
     "/v1/supply-order/act/product/get": 2,
 }
 
 
 THROTTLED_PATHS = {
-    "/v1/analytics/stocks": 1.5,
+    OZON_STOCK_ANALYTICS.path: OZON_STOCK_ANALYTICS.minimum_interval_seconds,
     "/v2/review/list": 1.0,
     "supply-orders": 0.55,
-    # Successful list/bundle requests must not relax backoff learned from act failures.
     "/v1/supply-order/act/product/get": 0.55,
 }
 
@@ -62,6 +79,7 @@ _throttle_lock = threading.Lock()
 _last_call_at: dict[tuple[str, str], float] = {}
 _interval: dict[tuple[str, str], float] = {}
 _calm_streak: dict[tuple[str, str], int] = {}
+_cooldown_until: dict[tuple[str, str], float] = {}
 
 
 def _throttle_key(path: str) -> str:
@@ -78,19 +96,32 @@ def _throttle(path: str, client_id: str = "") -> None:
     if "/supply-order/" in path and key != "supply-orders":
         paths.append("supply-orders")
 
-    with _throttle_lock:
-        now = time.monotonic()
-        wait = max(
-            _interval.setdefault((client_id, name), THROTTLED_PATHS[name])
-            - (now - _last_call_at.get((client_id, name), 0.0))
-            for name in paths
-        )
-        # Reserve this account's next slot under the lock, then wait outside it.
-        # A slow/backed-off account must not serialize the other six accounts.
-        for name in paths:
-            _last_call_at[(client_id, name)] = now + max(wait, 0)
-    if wait > 0:
+    while True:
+        with _throttle_lock:
+            now = time.monotonic()
+            wait = max(
+                max(
+                    _last_call_at.get((client_id, name), float("-inf"))
+                    + _interval.setdefault((client_id, name), THROTTLED_PATHS[name]),
+                    _cooldown_until.get((client_id, name), 0.0),
+                )
+                - now
+                for name in paths
+            )
+            if wait <= 0:
+                for name in paths:
+                    _last_call_at[(client_id, name)] = now
+                return
         time.sleep(wait)
+
+
+def _defer_requests(path: str, client_id: str, pause: float) -> None:
+    name = _throttle_key(path)
+    if name not in THROTTLED_PATHS:
+        return
+    with _throttle_lock:
+        key = (client_id, name)
+        _cooldown_until[key] = max(_cooldown_until.get(key, 0.0), time.monotonic() + pause)
 
 
 def _note_rate_limit(path: str, client_id: str = "") -> float:
@@ -144,40 +175,54 @@ def _retry_after(headers) -> float | None:
     if not raw:
         return None
     try:
-        return max(0.0, float(str(raw).strip()))
+        seconds = float(str(raw).strip())
     except ValueError:
-        return None
+        try:
+            moment = parsedate_to_datetime(str(raw))
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            seconds = (moment - datetime.now(UTC)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0.0, seconds) if math.isfinite(seconds) else None
 
 
 def _backoff_pause(attempt: int) -> float:
 
-    return RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)) + random.uniform(0, 1.5)
+    return RETRY_BACKOFF_SECONDS * (HTTP.retry_backoff_multiplier ** (attempt - 1)) + random.uniform(
+        0, HTTP.retry_jitter_max_seconds
+    )
 
 
-PAGE_SIZE = 1000
-FBS_POSTINGS_V4_PAGE_SIZE = 50
+def _retry_pause(path: str, attempt: int, retry_after: float | None, interval: float = 0.0) -> float:
+    backoff = _backoff_pause(attempt)
+    if path != OZON_STOCK_ANALYTICS.path:
+        return retry_after if retry_after is not None else backoff
+    return max(
+        min(max(backoff, OZON_STOCK_ANALYTICS.retry_base_seconds), OZON_STOCK_ANALYTICS.retry_max_seconds),
+        retry_after or 0.0,
+        interval,
+    )
 
 
-SCHEME_FBO = "fbo"
-SCHEME_FBS = "fbs"
 SCHEME_RFBS = "rfbs"
 
 _FRIENDLY_BY_STATUS = {
-    400: "неверный запрос к Ozon (400)",
-    401: "Ozon не принял ключ (401) — проверьте Client-Id и Api-Key",
-    403: "нет доступа (403) — у ключа не хватает прав или он отозван",
-    404: "метод Ozon не найден (404) — возможно, изменилась версия API",
-    409: "конфликт запроса (409)",
-    429: "слишком часто обращаемся к Ozon (429) — сработал лимит запросов",
-    500: "внутренняя ошибка на стороне Ozon (500)",
-    502: "Ozon недоступен (502)",
-    503: "Ozon недоступен (503)",
-    504: "Ozon не ответил вовремя (504)",
+    HTTPStatus.BAD_REQUEST: "неверный запрос к Ozon (400)",
+    HTTPStatus.UNAUTHORIZED: "Ozon не принял ключ (401) — проверьте Client-Id и Api-Key",
+    HTTPStatus.FORBIDDEN: "нет доступа (403) — у ключа не хватает прав или он отозван",
+    HTTPStatus.NOT_FOUND: "метод Ozon не найден (404) — возможно, изменилась версия API",
+    HTTPStatus.CONFLICT: "конфликт запроса (409)",
+    HTTPStatus.TOO_MANY_REQUESTS: "слишком часто обращаемся к Ozon (429) — сработал лимит запросов",
+    HTTPStatus.INTERNAL_SERVER_ERROR: "внутренняя ошибка на стороне Ozon (500)",
+    HTTPStatus.BAD_GATEWAY: "Ozon недоступен (502)",
+    HTTPStatus.SERVICE_UNAVAILABLE: "Ozon недоступен (503)",
+    HTTPStatus.GATEWAY_TIMEOUT: "Ozon не ответил вовремя (504)",
 }
 
 
 class OzonApiError(Exception):
-    def __init__(self, status: int | None, detail: str = ""):
+    def __init__(self, status: int | None, detail: str = "") -> None:
         self.status = status
         self.detail = detail
         super().__init__(self.friendly)
@@ -185,6 +230,11 @@ class OzonApiError(Exception):
     @property
     def friendly(self) -> str:
         base = _FRIENDLY_BY_STATUS.get(self.status)
+        if (
+            self.status == HTTPStatus.FORBIDDEN
+            and OZON_API.subscription_error_marker in self.detail.casefold()
+        ):
+            base = OZON_API.subscription_error_message
         if base:
             return f"{base} ({self.detail})" if self.detail else base
         if self.status:
@@ -193,11 +243,11 @@ class OzonApiError(Exception):
 
 
 _GRPC_CODES = {
-    2: "внутренний сбой на стороне Ozon",
-    4: "Ozon не уложился в свой таймаут",
-    8: "исчерпан лимит запросов",
-    13: "внутренняя ошибка Ozon",
-    14: "сервис Ozon временно недоступен",
+    OzonErrorCode.UNKNOWN: "внутренний сбой на стороне Ozon",
+    OzonErrorCode.DEADLINE_EXCEEDED: "Ozon не уложился в свой таймаут",
+    OzonErrorCode.RESOURCE_EXHAUSTED: "исчерпан лимит запросов",
+    OzonErrorCode.INTERNAL: "внутренняя ошибка Ozon",
+    OzonErrorCode.UNAVAILABLE: "сервис Ozon временно недоступен",
 }
 
 
@@ -206,10 +256,10 @@ def _parse_error_body(raw: str) -> str:
     try:
         data = json.loads(raw)
     except ValueError:
-        return raw[:200]
+        return raw[: OZON_API.error_body_length]
 
     if not isinstance(data, dict):
-        return raw[:200]
+        return raw[: OZON_API.error_body_length]
 
     message = str(data.get("message") or data.get("error") or "").strip()
     code = data.get("code")
@@ -219,7 +269,7 @@ def _parse_error_body(raw: str) -> str:
         return f"{message}; код {code}: {hint}"
     if hint:
         return f"код {code}: {hint}"
-    return message or raw[:200]
+    return message or raw[: OZON_API.error_body_length]
 
 
 def _request(path: str, client_id: str, api_key: str, payload: dict) -> dict:
@@ -257,11 +307,15 @@ def _request(path: str, client_id: str, api_key: str, payload: dict) -> dict:
             last_error = OzonApiError(e.code, detail)
 
             if e.code == 429 or 500 <= e.code < 600:
+                interval = 0.0
                 if e.code == 429:
-                    _note_rate_limit(path, client_id)
+                    interval = _note_rate_limit(path, client_id)
+
+                pause = _retry_pause(path, attempt, _retry_after(e.headers), interval)
+                if e.code == 429:
+                    _defer_requests(path, client_id, pause)
 
                 if attempt < max_attempts:
-                    pause = _retry_after(getattr(e, "headers", None)) or _backoff_pause(attempt)
                     logger.warning(
                         "%sOzon %s: %s, повтор через %.1f с",
                         _store_label(),
@@ -276,7 +330,7 @@ def _request(path: str, client_id: str, api_key: str, payload: dict) -> dict:
         except TimeoutError as e:
             last_error = OzonApiError(None, "Ozon не ответил за отведённое время")
             if attempt < max_attempts:
-                time.sleep(_backoff_pause(attempt))
+                time.sleep(_retry_pause(path, attempt, None))
                 continue
             raise last_error from e
 
@@ -384,11 +438,11 @@ def get_stock_analytics(client_id: str, api_key: str, skus: list[int]) -> list[d
         return []
 
     rows: list[dict] = []
-    CHUNK = 100
+    chunk_size = OZON_STOCK_ANALYTICS.sku_batch_size
 
-    for start_idx in range(0, len(skus), CHUNK):
-        chunk = [str(s) for s in skus[start_idx : start_idx + CHUNK]]
-        data = _request("/v1/analytics/stocks", client_id, api_key, {"skus": chunk})
+    for start_idx in range(0, len(skus), chunk_size):
+        chunk = [str(s) for s in skus[start_idx : start_idx + chunk_size]]
+        data = _request(OZON_STOCK_ANALYTICS.path, client_id, api_key, {"skus": chunk})
 
         page = data.get("items")
         if page is None:
@@ -515,7 +569,6 @@ def get_product_info(client_id: str, api_key: str, product_ids: list[int]) -> li
 
 
 def get_reviews(client_id: str, api_key: str) -> list[dict]:
-    """Load all buyer reviews using the current cursor-based Seller API."""
     rows: list[dict] = []
     cursor = ""
     seen: set[str] = set()
@@ -550,7 +603,7 @@ def _get_postings(path: str, client_id: str, api_key: str, since: str, to: str) 
             client_id,
             api_key,
             {
-                "dir": "ASC",
+                "dir": SortDirection.ASC.value,
                 "filter": {"since": since, "to": to},
                 "limit": PAGE_SIZE,
                 "offset": offset,
@@ -568,7 +621,10 @@ def _get_postings(path: str, client_id: str, api_key: str, since: str, to: str) 
         if page is None and isinstance(result, dict):
             page = result.get("items")
         if not isinstance(page, list):
-            raise OzonApiError(None, f"неожиданный формат отправлений Ozon: {result!r}"[:300])
+            raise OzonApiError(
+                None,
+                f"неожиданный формат отправлений Ozon: {result!r}"[: OZON_API.legacy_response_error_length],
+            )
 
         rows.extend(page)
         has_next = result.get("has_next") if isinstance(result, dict) else None
@@ -576,21 +632,20 @@ def _get_postings(path: str, client_id: str, api_key: str, since: str, to: str) 
             return rows
 
         offset += len(page)
-        if offset > 500_000:
+        if offset > OZON_API.max_postings:
             logger.warning("%sOzon: прервали обход отправлений %s на offset=%s", _store_label(), path, offset)
             return rows
 
 
 def get_fbo_postings(client_id: str, api_key: str, since: str, to: str) -> list[dict]:
-    return _get_postings("/v2/posting/fbo/list", client_id, api_key, since, to)
+    return _get_postings(OZON_API.fbo_postings_path, client_id, api_key, since, to)
 
 
 def get_fbs_postings(client_id: str, api_key: str, since: str, to: str) -> list[dict]:
-    return _get_postings("/v3/posting/fbs/list", client_id, api_key, since, to)
+    return _get_postings(OZON_API.fbs_postings_v3_path, client_id, api_key, since, to)
 
 
 def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> list[dict]:
-    """Return FBS postings using Ozon's cursor-based v4 endpoint."""
     rows: list[dict] = []
     cursor = ""
     seen_cursors: set[str] = set()
@@ -598,7 +653,7 @@ def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> li
 
     while True:
         payload = {
-            "dir": "ASC",
+            "dir": SortDirection.ASC.value,
             "filter": {"since": since, "to": to},
             "limit": FBS_POSTINGS_V4_PAGE_SIZE,
             "with": {
@@ -611,7 +666,7 @@ def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> li
         if cursor:
             payload["cursor"] = cursor
 
-        data = _request("/v4/posting/fbs/list", client_id, api_key, payload)
+        data = _request(OZON_API.fbs_postings_v4_path, client_id, api_key, payload)
         result = data.get("result") if isinstance(data.get("result"), dict) else data
         page = result.get("postings") if isinstance(result, dict) else None
         if page is None and isinstance(result, dict):
@@ -632,7 +687,7 @@ def get_fbs_postings_v4(client_id: str, api_key: str, since: str, to: str) -> li
             return rows
         if not page:
             raise OzonApiError(None, "Ozon v4 вернул пустую промежуточную страницу отправлений")
-        if len(rows) > 500_000:
+        if len(rows) > OZON_API.max_postings:
             raise OzonApiError(None, "Превышен предел обхода отправлений Ozon v4; выгрузка неполна")
 
         next_cursor = str(result.get("cursor") or "").strip()

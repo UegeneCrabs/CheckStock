@@ -44,10 +44,12 @@ class InboundSupplyService:
         repository: InboundRepository,
         loader: Callable[[Target, tuple[InboundSupply, ...]], tuple[InboundSupply, ...]],
         clock: Callable[[], datetime] | None = None,
+        after_sync: Callable[[Target], None] | None = None,
     ) -> None:
         self.repository = repository
         self.loader = loader
         self.clock = clock or (lambda: datetime.now(UTC))
+        self.after_sync = after_sync
 
     def report(self, targets: Sequence[Target]) -> list[InboundSnapshot]:
         return self.repository.read(targets)
@@ -116,6 +118,8 @@ class InboundSupplyService:
                 supplies=supplies,
                 status="partial" if partial else "ok",
             )
+            if saved and self.after_sync is not None:
+                self.after_sync(target)
             return {"ok": saved, "count": len(loaded), "status": "partial" if partial else "ok"}
         except InboundNotConfiguredError as error:
             self.repository.finish(target, token, self.clock(), status="not_configured", error=str(error))

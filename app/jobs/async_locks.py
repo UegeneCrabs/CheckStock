@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import BinaryIO
@@ -54,8 +55,15 @@ async def acquire(name: str, database: AsyncDatabase) -> AsyncJobLock:
 
 
 @asynccontextmanager
-async def hold(name: str, database: AsyncDatabase) -> AsyncIterator[None]:
-    handle = await acquire(name, database)
+async def hold(name: str, database: AsyncDatabase, *, wait: bool = False) -> AsyncIterator[None]:
+    while True:
+        try:
+            handle = await acquire(name, database)
+            break
+        except SyncJobBusyError:
+            if not wait:
+                raise
+            await asyncio.sleep(LOCKS.retry_seconds)
     try:
         yield
     finally:

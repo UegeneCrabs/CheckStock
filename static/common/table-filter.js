@@ -270,8 +270,6 @@
 
             updateButtonState(table, colIndex, current.button);
             closePopover();
-            // An adapter may rebuild the header while applying the selection.
-            // Close first, before its refresh discards the current button.
             applyAllFilters(table);
         });
     }
@@ -416,7 +414,7 @@
         applyAllFilters(table);
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
+    (document.readyState === 'loading' ? callback => document.addEventListener('DOMContentLoaded', callback) : callback => callback())( function () {
         document.querySelectorAll('table.data-table').forEach(initTable);
     });
 
@@ -447,7 +445,6 @@
                 buildHeaderButton(th, table, headerColumn(th));
             });
             buildToolbar(table);
-            // Data-driven tables can render their filtered rows themselves.
             if (!options || options.applyFilters !== false) applyAllFilters(table);
         },
     };

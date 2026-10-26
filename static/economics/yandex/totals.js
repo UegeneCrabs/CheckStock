@@ -25,7 +25,7 @@
         }
         function ratio(index, rows, top, bottom, factor, unit, title, partial) {
             var numerator = 0, denominator = 0;
-            rows.forEach(function (p) { numerator += top(p); denominator += bottom(p); });
+            rows.forEach(function (p) { numerator += Number(top(p)); denominator += Number(bottom(p)); });
             metric(index, rows, denominator > 0 ? numerator / denominator * factor : null, unit, title, partial);
         }
         var current = products.filter(function (p) {
@@ -105,10 +105,10 @@
             'percent', 'ДРР: расходы на рекламу / Σ(сумма заказов после отмен × процент выкупа / 100) × 100%. Учитываются только дни, за которые есть и заказы, и реклама.',
             function (p) { return !p.advertising.drr_coverage || !p.advertising.drr_coverage.complete; });
         sum(8, function (p) { return p.advertising.spend; }, 'money', 'Общие расходы на рекламу.', function (p) { return p.advertising.coverage; });
-        var clicks = products.filter(function (p) { return known(p.advertising.clicks) && known(p.advertising.impressions) && known(p.advertising.spend); });
-        var adsPartial = function (p) { return !p.advertising.coverage || !p.advertising.coverage.complete; };
+        var clicks = products.filter(function (p) { return known(p.advertising.clicks) && known(p.advertising.impressions) && known(legacy ? p.advertising.click_spend : p.advertising.spend); });
+        var adsPartial = function (p) { var coverage = legacy ? p.advertising.traffic_coverage : p.advertising.coverage; return !coverage || !coverage.complete; };
         ratio(9, clicks, function (p) { return p.advertising.clicks; }, function (p) { return p.advertising.impressions; }, 100, 'percent', 'CTR: всего кликов / всего показов.', adsPartial);
-        ratio(10, clicks, function (p) { return p.advertising.spend; }, function (p) { return p.advertising.clicks; }, 1, 'money', 'CPC: расходы / клики.', adsPartial);
+        ratio(10, clicks, function (p) { return Number(legacy ? p.advertising.click_spend : p.advertising.spend); }, function (p) { return p.advertising.clicks; }, 1, 'money', legacy ? 'CPC: расходы на оплату кликов / клики.' : 'CPC: расходы / клики.', adsPartial);
         [[11, 'goal_week'], [12, 'goal_day'], [16, 'fact'], [17, 'plan']].forEach(function (pair) {
             sum(pair[0], function (p) { return (p.tag_data || {})[pair[1]]; }, '', 'Сумма значений.');
         });

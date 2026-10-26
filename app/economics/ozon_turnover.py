@@ -12,7 +12,7 @@ JOB_NAME = "ozon_unit_economics_turnover_sync"
 LOOKBACK_DAYS = 21
 
 
-def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict[str, dict]:
+def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict[str, dict[str, object]]:
     stores = tuple(STORES) if store_slugs is None else store_slugs
     return {
         slug: orders_sync.sync_store(slug, "OZON", lookback_days=LOOKBACK_DAYS)

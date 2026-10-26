@@ -103,7 +103,6 @@ from app.repositories.stock_history import (
     replace_fulfillment_stock_daily_history,
     replace_marketplace_stock_daily_history,
 )
-from app.repositories.stock_randomizer import generate_stock_audit_sample, get_stock_audit_state
 from app.repositories.stock_transit import get_ff_transit_batch, get_ff_transit_batches, get_ff_transit_totals
 from app.repositories.supply_planning import (
     create_manual_supply,
@@ -252,7 +251,6 @@ __all__ = (
     "delete_wb_token_info",
     "find_existing_delivery",
     "find_used_source",
-    "generate_stock_audit_sample",
     "get_activity_log",
     "get_catalog_items",
     "get_daily_stock_history",
@@ -291,7 +289,6 @@ __all__ = (
     "get_session",
     "get_stock_items",
     "get_stock_overview",
-    "get_stock_audit_state",
     "get_store_operation_stats",
     "get_store_operations",
     "get_sync_health",

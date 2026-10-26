@@ -9,7 +9,7 @@ def source_states(
     placeholders = ", ".join("?" for _ in store_slugs)
     with get_connection() as connection:
         rows = connection.execute(
-            f"SELECT store_slug, scope, ok, error FROM sync_health "
+            f"SELECT store_slug, scope, ok, error, checked_at FROM sync_health "
             f"WHERE marketplace=? AND store_slug IN ({placeholders})",
             (marketplace, *store_slugs),
         ).fetchall()

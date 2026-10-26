@@ -330,7 +330,15 @@
             if (sequence !== requestSequence) return;
             if (!response.ok || !data.ok)
                 throw new Error(data.detail || data.error || 'Не удалось загрузить поставки');
-            targets = data.targets;
+            const context = await window.CheckStockUI.context();
+            targets = data.targets.map(target => ({ ...target,
+                supplies: target.supplies.map(supply => ({ ...supply, items: supply.items.map(item => ({ ...item,
+                    barcode: target.marketplace === 'YANDEX MARKET' && String(item.barcode || '').startsWith('0') ? '' : item.barcode,
+                })) })),
+                store_name: context.stores.find(store => store.slug === target.store_slug)?.name || target.store_slug,
+                marketplace_name: { WB: 'Wildberries', OZON: 'Ozon', 'YANDEX MARKET': 'Яндекс Маркет' }[target.marketplace] || target.marketplace,
+                stale: !target.last_success || new Date(target.last_success) < new Date(data.stale_before),
+            }));
             connectionCards();
             render();
             const running = targets.filter((target) => target.status === 'running').length;

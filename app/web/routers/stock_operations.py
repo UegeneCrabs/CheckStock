@@ -1,7 +1,5 @@
-import html
 import logging
 from typing import Annotated
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -9,192 +7,26 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app import db
 from app.access.resources import has_store_marketplace, store_marketplace_pairs
-from app.config import settings
-from app.core.formatting import format_dt
+from app.core.constants import STOCK_READ, StockOperationFilter
 from app.core.stores import STORES
 from app.ff_import import export as ff_export
-from app.web.common import _fmt_num
+from app.stock.export_schemes import schemes_for
+from app.web.client_page import client_page
 from app.web.downloads import _download_headers
-from app.web.stock_rendering import render_trash_table, render_warehouse_table, schemes_for
-from app.web.templating import fill_template, render_page
+from app.web.stock_scope import stock_scope
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-OPERATION_FILTERS = [
-    ("", "Все"),
-    ("delivery", "Поставки"),
-    ("transfer", "Перемещения"),
-    ("fbs_transfer", "На FBS"),
-    ("shipment", "Отгрузки"),
-    ("manual_add", "Ручные докладки"),
-]
-
-TRANSFER_KINDS = (
-    "transfer",
-    "transfer_dispatch",
-    "transfer_receive",
-    "transfer_receive_revert",
-    "transfer_cancel",
-)
-SHIPMENT_KINDS = ("shipment", "fbo_dispatch", "fbo_receive", "fbo_receive_revert", "fbo_cancel")
-
-
-def render_kind_tabs(slug: str, active: str, counts: dict[str, int]) -> str:
-    parts = []
-    for kind, label in OPERATION_FILTERS:
-        cls = "ops-filter active" if kind == active else "ops-filter"
-        href = f"/stock/{slug}/operations" + (f"?kind={kind}" if kind else "")
-        count = counts.get("", 0) if not kind else counts.get(kind, 0)
-        parts.append(
-            f'<a class="{cls}" href="{href}">{html.escape(label)}'
-            f'<span class="ops-filter-count">{_fmt_num(count)}</span></a>'
-        )
-    return "\n".join(parts)
-
-
-def _plural_positions(value: int) -> str:
-    value = abs(value)
-    if value % 10 == 1 and value % 100 != 11:
-        return "позиция"
-    if value % 10 in (2, 3, 4) and value % 100 not in (12, 13, 14):
-        return "позиции"
-    return "позиций"
-
-
-def render_operation_summary(summary: dict) -> str:
-    return (
-        '<div class="ops-summary" role="list">'
-        f'<div role="listitem"><span>Операций</span><strong>{_fmt_num(summary["total"])}</strong></div>'
-        f'<div role="listitem"><span>Товарных позиций</span><strong>{_fmt_num(summary["positions"])}</strong></div>'
-        f'<div role="listitem"><span>Движение, ед.</span><strong>{_fmt_num(summary["units"])}</strong></div>'
-        f'<div role="listitem"><span>Сотрудников</span><strong>{_fmt_num(summary["employees"])}</strong></div>'
-        "</div>"
-    )
-
-
-def render_operation_pagination(slug: str, kind: str, page: int, page_size: int, total: int) -> str:
-    pages = max(1, (total + page_size - 1) // page_size)
-    first = (page - 1) * page_size + 1 if total else 0
-    last = min(page * page_size, total)
-
-    def link(target: int, label: str, title: str) -> str:
-        query = urlencode({"kind": kind, "page": target})
-        href = html.escape(f"/stock/{slug}/operations?{query}", quote=True)
-        return f'<a class="ops-page-link" href="{href}" aria-label="{title}" title="{title}">{label}</a>'
-
-    def arrow(target: int, title: str, direction: str, disabled: bool) -> str:
-        path = "m14 6-6 6 6 6" if direction == "previous" else "m10 6 6 6-6 6"
-        icon = f'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="{path}"/></svg>'
-        if disabled:
-            return (
-                f'<button class="ops-page-link" type="button" disabled aria-label="{title}">{icon}</button>'
-            )
-        return link(target, icon, title)
-
-    controls = []
-    if pages > 1:
-        controls.append(arrow(page - 1, "Предыдущая страница", "previous", page == 1))
-        visible_pages = set(range(1, pages + 1)) if pages <= 7 else {1, pages, page - 1, page, page + 1}
-        if pages > 7 and page <= 3:
-            visible_pages.update(range(1, 6))
-        if pages > 7 and page >= pages - 2:
-            visible_pages.update(range(pages - 4, pages + 1))
-        previous = 0
-        for number in sorted(number for number in visible_pages if 1 <= number <= pages):
-            if previous and number > previous + 1:
-                controls.append('<span class="ops-page-gap" aria-hidden="true">…</span>')
-            if number == page:
-                controls.append(
-                    f'<span class="ops-page-link" aria-current="page" aria-label="Страница {number}">{number}</span>'
-                )
-            else:
-                controls.append(link(number, str(number), f"Страница {number}"))
-            previous = number
-        controls.append(arrow(page + 1, "Следующая страница", "next", page == pages))
-    range_label = (
-        f"Записи <strong>{_fmt_num(first)}–{_fmt_num(last)}</strong> из <strong>{_fmt_num(total)}</strong>"
-        if total
-        else "Пока нет операций"
-    )
-    return (
-        '<nav class="ops-pagination" aria-label="Страницы истории операций">'
-        f'<span class="ops-pagination-range">{range_label}</span>'
-        '<div class="ops-pagination-navigation">'
-        f'<span class="ops-pagination-position">Страница {page} из {pages}</span>'
-        f'<div class="ops-pagination-controls">{"".join(controls)}</div></div></nav>'
-    )
-
-
-def render_operation_rows(operations: list[dict]) -> str:
-    if not operations:
-        return '<tr class="empty-row"><td colspan="6">Движений пока не было</td></tr>'
-
-    def endpoint(fulfillment, marketplace, fallback: str) -> str:
-        title = fulfillment or fallback
-        marketplace_html = f"<small>{html.escape(marketplace)}</small>" if marketplace else ""
-        return f'<span class="ops-endpoint"><strong>{html.escape(title)}</strong>{marketplace_html}</span>'
-
-    rows = []
-    for op in operations:
-        note = op.get("note") or ""
-        source = op.get("source_name") or db.SOURCE_LABELS.get(op.get("source_type"), "")
-        detail = " · ".join(part for part in (note, source) if part) or "Без примечания"
-        kind = op["kind"] if op["kind"] in db.OPERATION_LABELS else "other"
-        created = format_dt(op["created_at"])
-        created_parts = created.split(" ", 1)
-        date = created_parts[0]
-        time = created_parts[1] if len(created_parts) > 1 else ""
-        from_fallback = (
-            "Поставка" if kind == "delivery" else ("Ручной ввод" if kind == "manual_add" else "Не указано")
-        )
-        to_fallback = (
-            "Отгрузка"
-            if kind == "shipment"
-            else ("FBS" if kind == "fbs_transfer" else ("Мусорка" if kind == "trash" else "Не указано"))
-        )
-        units = int(op.get("units") or 0)
-        unit_class = " ops-volume-value--negative" if units < 0 else ""
-        rows.append(
-            f'<tr class="ops-row ops-row--{kind}">'
-            '<td data-label="Когда"><time class="ops-time">'
-            f"<strong>{html.escape(date)}</strong><small>{html.escape(time)}</small></time></td>"
-            '<td data-label="Операция">'
-            f'<span class="ops-kind ops-kind--{kind}">'
-            f'<i aria-hidden="true"></i>{html.escape(db.OPERATION_LABELS.get(op["kind"], op["kind"]))}'
-            "</span></td>"
-            '<td data-label="Маршрут"><span class="ops-route">'
-            f"{endpoint(op['from_fulfillment'], op['from_marketplace'], from_fallback)}"
-            '<span class="ops-route-arrow" aria-hidden="true">→</span>'
-            f"{endpoint(op['to_fulfillment'], op['to_marketplace'], to_fallback)}"
-            "</span></td>"
-            '<td data-label="Объём"><span class="ops-volume">'
-            f'<strong class="ops-volume-value{unit_class}">{_fmt_num(units)} ед.</strong>'
-            f"<small>{op['positions']} {_plural_positions(int(op['positions']))}</small>"
-            "</span></td>"
-            '<td data-label="Сотрудник"><span class="ops-person">'
-            f"<strong>{html.escape(op['user_name'])}</strong>"
-            f'<small title="{html.escape(detail, quote=True)}">{html.escape(detail)}</small>'
-            "</span></td>"
-            f'<td data-label="Выгрузка"><a class="ops-download" '
-            f'href="/admin/operations/{op["id"]}/xlsx" title="Скачать Excel операции">'
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path>'
-            '<path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>'
-            "<span>Excel</span></a></td>"
-            "</tr>"
-        )
-    return "".join(rows)
-
-
 def _history_kinds(kind: str) -> tuple[str, ...] | None:
 
     kind = (kind or "").strip()
-    known = {k for k, _ in OPERATION_FILTERS if k}
+    known = set(StockOperationFilter)
     if kind == "transfer":
-        return TRANSFER_KINDS
+        return STOCK_READ.transfer_kinds
     if kind == "shipment":
-        return SHIPMENT_KINDS
+        return STOCK_READ.shipment_kinds
     return (kind,) if kind in known else None
 
 
@@ -203,55 +35,8 @@ async def stock_store_operations(
     request: Request, slug: str, kind: str = "", page: Annotated[int, Query(ge=1)] = 1
 ):
 
-    store = STORES.get(slug.lower())
-    if store is None:
-        raise HTTPException(status_code=404, detail="Магазин не найден")
-
-    kinds = _history_kinds(kind)
-    active = kind if kinds else ""
-    marketplaces = tuple(
-        (
-            marketplace
-            for store_slug, marketplace in store_marketplace_pairs(request.state.user)
-            if store_slug == slug.lower()
-        )
-    )
-    stats = await run_in_threadpool(
-        db.get_store_operation_stats, slug.lower(), kinds, marketplaces=marketplaces
-    )
-    page_size = settings.operation_history_limit
-    total = stats["summary"]["total"]
-    page = min(page, max(1, (total + page_size - 1) // page_size))
-    operations = await run_in_threadpool(
-        db.get_store_operations,
-        slug.lower(),
-        kinds,
-        page_size,
-        offset=(page - 1) * page_size,
-        marketplaces=marketplaces,
-    )
-    counts = stats["counts"]
-    counts[""] = sum(counts.values())
-    counts["transfer"] = sum(counts.get(item, 0) for item in TRANSFER_KINDS)
-    counts["shipment"] = sum(counts.get(item, 0) for item in SHIPMENT_KINDS)
-
-    content = fill_template(
-        "stock/operations.html",
-        slug=slug.lower(),
-        store_name=store["name"],
-        kind=active,
-        kind_tabs=render_kind_tabs(slug.lower(), active, counts),
-        summary=render_operation_summary(stats["summary"]),
-        rows=render_operation_rows(operations),
-        pagination=render_operation_pagination(slug.lower(), active, page, page_size, total),
-    )
-    return render_page(
-        f"CheckStock — Перемещение стока — {store['name']}",
-        "stock_operations",
-        content,
-        request.state.user,
-        content_class="content--operations",
-    )
+    stock_scope(request, slug)
+    return client_page("stock/operations.html")
 
 
 @router.get("/stock/{slug}/operations/xlsx")
@@ -463,44 +248,5 @@ async def toggle_trash_checked(
 
 @router.get("/stock/{slug}/warehouses", response_class=HTMLResponse)
 async def stock_store_warehouses(request: Request, slug: str, mp: str = ""):
-    store = STORES.get(slug.lower())
-    if store is None:
-        raise HTTPException(status_code=404, detail="Магазин не найден")
-    marketplace = mp or db.DEFAULT_MARKETPLACE
-    if not has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace):
-        raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
-
-    def build_content() -> str:
-        return fill_template(
-            "stock/warehouses.html",
-            store_name=store["name"],
-            slug=slug.lower(),
-            marketplace=html.escape(marketplace),
-            fbo_table=render_warehouse_table(
-                db.get_mp_warehouse_details(slug.lower(), marketplace, "fbo"),
-                f"Пока нет данных по складам {marketplace} — запустите синхронизацию на странице «Остатки»",
-                top_n=settings.warehouse_display_limit,
-            ),
-            fbs_table=render_warehouse_table(
-                _fbs_warehouse_rows(slug.lower(), marketplace),
-                "Пока нет данных по складам продавца — запустите синхронизацию на странице «Остатки»",
-            ),
-            ff_table=render_warehouse_table(
-                db.get_ff_warehouse_details_by_mp(slug.lower(), marketplace),
-                "Пока нет остатков на фулфилментах — загрузите поставку на странице магазина",
-            ),
-            trash_table=render_trash_table(
-                slug.lower(),
-                marketplace,
-                has_store_marketplace(request.state.user, store_slug=slug.lower(), marketplace=marketplace),
-            ),
-        )
-
-    content = await run_in_threadpool(build_content)
-    return render_page(
-        f"CheckStock — Склады — {store['name']}",
-        "stock",
-        content,
-        request.state.user,
-        content_class="content--warehouses",
-    )
+    stock_scope(request, slug, mp, select_marketplace=True)
+    return client_page("stock/warehouses.html")

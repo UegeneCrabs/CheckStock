@@ -44,9 +44,10 @@ python -m app.jobs.worker
 ```powershell
 python -m ruff format --check app scripts run.py
 python -m ruff check app scripts run.py
+python -m mypy
 ```
 
-При наличии `make` доступны цели `run` (только сайт), `scheduler`, `lint` и `check` (`check` равен `lint`), а `make format` изменяет файлы.
+При наличии `make` доступны цели `run` (только сайт), `scheduler`, `lint` и `check` (Ruff и mypy), а `make format` изменяет файлы.
 Автотесты удалены из рабочего дерева; команды выше выполняют статические проверки кода.
 
 ## Поставки на ФФ

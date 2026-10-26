@@ -1,0 +1,349 @@
+.stock-transit-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    align-items: end;
+    gap: 12px;
+    margin: 16px 0 8px;
+}
+
+.stock-transit-filters label {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    font-size: 12px;
+    color: #52627b;
+}
+
+.stock-transit-panel .stock-transit-filters input:not([type='checkbox']),
+.stock-transit-panel .stock-transit-filters select {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+    margin: 0;
+    padding: 7px 10px;
+    border: 1px solid #d7dfeb;
+    border-radius: 8px;
+    background: #fff;
+    color: #253348;
+    font: inherit;
+}
+
+.stock-transit-filters button {
+    min-height: 40px;
+    margin: 0;
+}
+
+.stock-transit-filters .stock-transit-shortage-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    cursor: pointer;
+}
+
+.stock-transit-shortage-filter input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    flex: none;
+    accent-color: #3155c8;
+}
+
+.stock-transit-filter-hint {
+    margin: 0 0 12px;
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.stock-transit-count {
+    margin: 0;
+    font-size: 12px;
+    color: #52627b;
+}
+
+.stock-transit-list-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.stock-transit-expansion {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.stock-transit-expansion button {
+    width: auto;
+    margin: 0;
+}
+
+.stock-fbo-card {
+    container: fbo-card / inline-size;
+    min-width: 0;
+    margin: 0;
+    color: #253348;
+}
+
+.stock-fbo-card .stock-fbo-details {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+.stock-fbo-details > summary {
+    grid-template-columns: minmax(160px, 1.1fr) minmax(150px, 1fr) minmax(130px, 0.9fr) minmax(150px, 0.9fr) 125px;
+    transition: background 0.15s;
+}
+
+.stock-fbo-details > summary:hover {
+    background: #f8faff;
+}
+
+.stock-fbo-details > summary:focus-visible {
+    outline: 2px solid #477bd2;
+    outline-offset: -3px;
+}
+
+.stock-fbo-details > summary > div {
+    min-width: 0;
+}
+
+.stock-fbo-details .inbound-badge {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.stock-fbo-card small.stock-fbo-needs-action {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.stock-fbo-processing {
+    font-weight: 650;
+}
+
+.stock-fbo-fulfillment {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+    margin: 0 0 16px;
+}
+
+.stock-fbo-fulfillment label {
+    display: grid;
+    gap: 6px;
+    min-width: 220px;
+    max-width: 100%;
+    font-size: 12px;
+}
+
+.stock-fbo-fulfillment select {
+    width: 100%;
+    height: 40px;
+    margin: 0;
+    border: 1px solid #d7dfeb;
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: #fff;
+    color: #253348;
+}
+
+.stock-fbo-fulfillment button {
+    width: auto;
+    margin: 0;
+}
+
+.stock-fbo-shortage-errors {
+    flex-basis: 100%;
+    max-height: 180px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 12px;
+}
+
+.stock-fbo-shortage-errors p {
+    margin: 6px 0;
+}
+
+.stock-fbo-in-transit {
+    color: #3155c8;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.inbound-card-numbers > .stock-fbo-in-transit {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+}
+
+.stock-fbo-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+    color: #3155c8;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.stock-fbo-toggle .inbound-chevron {
+    display: inline-block;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.stock-fbo-hide,
+.stock-fbo-details[open] .stock-fbo-show {
+    display: none;
+}
+
+.stock-fbo-details[open] .stock-fbo-hide {
+    display: inline;
+}
+
+.stock-fbo-details[open] .inbound-chevron {
+    transform: rotate(90deg);
+}
+
+.stock-fbo-table-scroll {
+    max-height: 420px;
+    overflow: auto;
+    scrollbar-gutter: stable;
+}
+
+.stock-fbo-table-scroll:focus-visible {
+    outline: 2px solid #477bd2;
+    outline-offset: -2px;
+}
+
+.stock-fbo-table {
+    min-width: 850px;
+}
+
+.stock-fbo-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.stock-fbo-table tbody tr:hover {
+    background: #fafcff;
+}
+
+.stock-fbo-table .stock-fbo-row--shortage > td {
+    background: #fee2e2;
+    color: #991b1b;
+    border-bottom-color: #fecaca;
+}
+
+.stock-fbo-table .stock-fbo-row--shortage:hover > td {
+    background: #fecaca;
+}
+
+.stock-fbo-row--shortage .stock-fbo-source {
+    background: #fff1f2;
+    color: #991b1b;
+}
+
+.stock-fbo-shortage {
+    font-weight: 650;
+    min-width: 100px;
+}
+
+.stock-fbo-table .stock-fbo-code {
+    min-width: 100px;
+    font-variant-numeric: tabular-nums;
+}
+
+.stock-fbo-name {
+    width: 40%;
+    min-width: 220px;
+    line-height: 1.6;
+}
+
+.stock-fbo-sources {
+    min-width: 150px;
+}
+
+.stock-fbo-source {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 3px 7px;
+    margin-bottom: 4px;
+    border-radius: 5px;
+    background: #f2f5fa;
+    color: #52627b;
+    font-size: 11px;
+}
+
+.stock-fbo-source b {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.stock-fbo-table-hint {
+    margin: 12px 0 0;
+    font-size: 11px;
+}
+
+.stock-fbo-alert {
+    margin: 14px 0 0;
+    padding: 14px;
+    border: 2px solid #dc2626;
+    border-radius: 10px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.stock-fbo-alert p { margin: 8px 0; }
+.stock-fbo-alert button { margin-top: 10px; width: auto; min-width: 120px; }
+.stock-fbo-link { display: flex; gap: 8px; align-items: baseline; margin-top: 8px; }
+
+.stock-fbo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: #52627b;
+}
+
+.stock-fbo-actions button {
+    width: auto;
+    min-width: 120px;
+    margin: 0;
+}
+
+#sh-fbo-option[hidden] { display: none !important; }
+
+@container fbo-card (max-width: 900px) {
+    .stock-fbo-details > summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stock-fbo-toggle {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 640px) {
+    .stock-fbo-details .inbound-card-body {
+        padding: 12px 14px 14px;
+    }
+}

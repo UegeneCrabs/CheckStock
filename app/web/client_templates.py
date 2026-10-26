@@ -21,9 +21,11 @@ def _read_fragments(path: Path, modified_ns: int, size: int) -> dict[str, str]:
     return fragments
 
 
-def render_client_templates(markup: str) -> str:
+def load_client_templates(modules: tuple[str, ...]) -> dict[str, str]:
     templates: dict[str, str] = {}
-    for module in dict.fromkeys(SCRIPT_PATH.findall(markup)):
+    for module in dict.fromkeys(modules):
+        if not re.fullmatch(r"[\w-]+(?:/[\w-]+)*", module):
+            raise ValueError("Invalid module path")
         relative = Path(module)
         path = settings.templates_dir / relative.parent / "client" / f"{relative.name}.html"
         if not path.is_file():
@@ -31,6 +33,11 @@ def render_client_templates(markup: str) -> str:
         stat = path.stat()
         for name, fragment in _read_fragments(path, stat.st_mtime_ns, stat.st_size).items():
             templates[f"{module}/{name}"] = fragment
+    return templates
+
+
+def render_client_templates(markup: str) -> str:
+    templates = load_client_templates(tuple(SCRIPT_PATH.findall(markup)))
     payload = (
         json.dumps(templates, ensure_ascii=False)
         .replace("<", "\\u003c")

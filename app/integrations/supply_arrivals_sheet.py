@@ -23,11 +23,11 @@ TEXT_COLUMNS = {
     "order": "Номер заказа",
     "group": "Группа",
     "file": "Ссылка на файл заказа",
-    "category": "Категория",
     "warehouse": "Склад ФФ",
     "status": "Статус поставки",
     "shipping": "Способ",
 }
+OPTIONAL_TEXT_COLUMNS = {"category": "Категория"}
 NUMBER_COLUMNS = {"volume": "Обьем", "weight": "Вес", "boxes": "Коробки"}
 # The source renamed the actual arrival date from Moscow to the fulfillment
 # warehouse. Keep both headings compatible, without falling back to the plan.
@@ -120,8 +120,9 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
         if len(required_keys & set(keys)) > len(required_keys & best_keys):
             best_keys = set(keys)
         if all(header_key(label) in keys for label in required):
-            if any(keys.count(header_key(label)) != 1 for label in required):
-                raise SupplySheetError("В реестре повторяются обязательные заголовки колонок")
+            recognized = required | set(OPTIONAL_TEXT_COLUMNS.values())
+            if any(keys.count(header_key(label)) > 1 for label in recognized):
+                raise SupplySheetError("В реестре повторяются заголовки используемых колонок")
             columns = {key: index for index, key in enumerate(keys)}
             first_data_row = header_index + 1
             break
@@ -138,8 +139,8 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
         cells = row.get("values", [])
 
         def cell(label, cells=cells):
-            position = columns[header_key(label)]
-            return cells[position] if position < len(cells) else {}
+            position = columns.get(header_key(label))
+            return cells[position] if position is not None and position < len(cells) else {}
 
         try:
             order = cell_text(cell(TEXT_COLUMNS["order"]))
@@ -149,7 +150,7 @@ def parse_sheet(sheet: dict) -> list[SupplyArrival]:
             continue
         warnings = []
         fields = {"row": index, "order": order}
-        for field, label in TEXT_COLUMNS.items():
+        for field, label in (TEXT_COLUMNS | OPTIONAL_TEXT_COLUMNS).items():
             try:
                 fields[field] = cell_text(cell(label))
             except ValueError:

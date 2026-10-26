@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from time import monotonic
 
 from app.core.constants import (
+    JOBS,
     SCHEDULER,
     TIME,
 )
@@ -21,6 +22,15 @@ async def run_scheduled_step(job: AsyncBackgroundJob, resources: AsyncResources)
         schedule = await repository.ensure(job.name, now + timedelta(seconds=job.startup_delay_seconds), now)
         planned = datetime.fromisoformat(schedule.next_run_at)
         attempt = schedule.attempt_number
+        if (
+            job.name in (JOBS.ozon_orders.name, JOBS.ozon_advertising_breakdown.name)
+            and not schedule.active_run_id
+            and not attempt
+            and planned > now + timedelta(seconds=job.next_delay())
+        ):
+            await repository.defer(job.name, now, now)
+            schedule = await repository.ensure(job.name, now, now)
+            planned = now
         if not schedule.active_run_id and not attempt and planned > now:
             return planned
         enabled = job.is_enabled is None or await job.is_enabled(resources)

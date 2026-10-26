@@ -63,6 +63,8 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
 
     function refreshLegacyRetry() {
         var pending = window.CheckStockMutation.hasPending(shipmentUrl);
+        fboInput.closest('label').hidden = !pending;
+        if (!pending) fboInput.checked = false;
         legacyFbsOption.hidden = !pending;
         if (!pending) legacyFbsInput.checked = false;
         updateMode();
@@ -132,7 +134,7 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
         window.CheckStockMutation.fetch(shipmentUrl, {
             method: 'POST',
             body: fd,
-            pendingOnly: legacyFbsInput.checked,
+            pendingOnly: legacyFbsInput.checked || fboInput.checked,
             headers: { 'X-Requested-With': 'fetch' },
         })
             .then(function (r) {
@@ -142,7 +144,9 @@ window.CheckStockOperations.initBlock('отгрузка', 'sh-status', function 
             })
             .then(function (res) {
                 if (!res.ok || !res.data.ok) {
-                    rows.showServerMessage('Ошибка: ' + (res.data.error || 'не удалось отгрузить'), true);
+                    rows.showServerMessage('Ошибка: ' + (res.data.error === 'fbo_manual_disabled'
+                        ? 'Для поставки FBO выберите ФФ и нажмите «Провести» в «Движении товаров».'
+                        : res.data.error || 'не удалось отгрузить'), true);
                     return;
                 }
                 var list = res.data.results || [];
