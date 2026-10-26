@@ -26,6 +26,7 @@ class StandardCostsTests(unittest.TestCase):
     def get(self, **params):
         return self.client.get("/api/agent/v1/standard-costs", params={"store": "rimili", **params})
 
+    # API возвращает компактные сценарии прибыли, исходный период и все страницы без потери null.
     def test_scenarios_details_pagination_and_source_period(self):
         snapshot = Snapshot(
             version=6,
@@ -54,6 +55,9 @@ class StandardCostsTests(unittest.TestCase):
             patch("app.economics.wb.standard_profit.enrich", side_effect=lambda store, value: value),
         ):
             result = self.get(limit=1).json()
+            second = self.get(limit=1, offset=1).json()
+            absent = self.get(article="not-found").json()
+
             self.assertEqual(result["total_rows"], 2)
             self.assertEqual(result["next_offset"], 1)
             self.assertEqual(result["totals"], {})
@@ -78,12 +82,12 @@ class StandardCostsTests(unittest.TestCase):
             self.assertEqual(set(result["rows"][0]["profit"]), {"margin", "roi", "complete", "missing"})
             self.assertNotIn("retail", result["rows"][0]["profit"])
             self.assertEqual(result["rows"][0]["profit"]["missing"], ["commission"])
-            second = self.get(limit=1, offset=1).json()
             self.assertEqual(second["rows"][0]["delta"]["roi"], 10)
             self.assertIsNone(second["next_offset"])
-            self.assertEqual(self.get(article="not-found").json()["total_rows"], 0)
+            self.assertEqual(absent["total_rows"], 0)
             load.assert_called_with("rimili")
 
+    # Отсутствующий отчёт даёт пустой ответ, а сбой источника возвращает 503.
     def test_missing_and_failed_source(self):
         with patch("app.repositories.wb_standard_costs.load", return_value=None):
             r = self.get()
@@ -91,15 +95,20 @@ class StandardCostsTests(unittest.TestCase):
             self.assertFalse(r.json()["context"]["available"])
             self.assertEqual(r.json()["rows"], [])
         with patch("app.repositories.wb_standard_costs.load", side_effect=RuntimeError("unavailable")):
-            self.assertEqual(self.get().status_code, 503)
+            response = self.get()
 
+            self.assertEqual(response.status_code, 503)
+
+    # API отклоняет неподдерживаемые параметры и запрос без авторизации; каталог соответствует схеме.
     def test_validation_schema_and_catalog(self):
         for params in (
             {"marketplace": "YANDEX MARKET"},
             {"date_from": "2026-10-12", "date_to": "2026-10-18"},
             {"scheme": "fbs"},
         ):
-            self.assertEqual(self.get(**params).status_code, 422)
+            response = self.get(**params)
+
+            self.assertEqual(response.status_code, 422)
         schema = build_action_schema(self.app.routes)
         operation = schema["paths"]["/api/agent/v1/standard-costs"]["get"]
         self.assertEqual(operation["operationId"], "getAnalyticsStandardCosts")
@@ -117,4 +126,6 @@ class StandardCostsTests(unittest.TestCase):
             )
         )
         self.app.dependency_overrides.clear()
-        self.assertEqual(self.get().status_code, 401)
+        response = self.get()
+
+        self.assertEqual(response.status_code, 401)

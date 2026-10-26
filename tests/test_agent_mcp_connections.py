@@ -15,6 +15,7 @@ from app.web.routers import agent_management, agent_mcp
 
 
 class ConnectionTests(unittest.TestCase):
+    # Подключения разделяются по провайдеру; отозвать можно только собственное подключение.
     def test_filter_existing_grants_and_revoke_ownership(self):
         app = FastAPI()
         app.include_router(agent_mcp.router)
@@ -48,19 +49,26 @@ class ConnectionTests(unittest.TestCase):
                 patch.object(agent_mcp, "storage", return_value=store),
                 TestClient(app) as client,
             ):
+                filtered = {
+                    provider: client.get("/api/ai-agents/mcp/connections", params={"provider": provider})
+                    for provider in ("claude", "chatgpt", "unknown")
+                }
+                all_connections = client.get("/api/ai-agents/mcp/connections")
+                foreign_revoke = client.delete("/api/ai-agents/mcp/connections/other")
+                own_revoke = client.delete("/api/ai-agents/mcp/connections/g")
+                remaining_chatgpt = client.get("/api/ai-agents/mcp/connections?provider=chatgpt")
+                remaining_claude = client.get("/api/ai-agents/mcp/connections?provider=claude")
+                invalid = client.get("/api/ai-agents/mcp/connections?provider=invalid")
+
                 for provider, expected in [("claude", ["c"]), ("chatgpt", ["g"]), ("unknown", ["unknown"])]:
-                    r = client.get("/api/ai-agents/mcp/connections", params={"provider": provider})
-                    self.assertEqual(r.status_code, 200)
-                    self.assertEqual([x["id"] for x in r.json()["connections"]], expected)
-                self.assertEqual(len(client.get("/api/ai-agents/mcp/connections").json()["connections"]), 3)
-                self.assertEqual(client.delete("/api/ai-agents/mcp/connections/other").status_code, 404)
-                self.assertEqual(client.delete("/api/ai-agents/mcp/connections/g").status_code, 204)
-                self.assertEqual(
-                    client.get("/api/ai-agents/mcp/connections?provider=chatgpt").json()["connections"], []
-                )
-                self.assertEqual(
-                    len(client.get("/api/ai-agents/mcp/connections?provider=claude").json()["connections"]), 1
-                )
-                self.assertEqual(
-                    client.get("/api/ai-agents/mcp/connections?provider=invalid").status_code, 422
-                )
+                    with self.subTest(provider=provider):
+                        self.assertEqual(filtered[provider].status_code, 200)
+                        self.assertEqual(
+                            [x["id"] for x in filtered[provider].json()["connections"]], expected
+                        )
+                self.assertEqual(len(all_connections.json()["connections"]), 3)
+                self.assertEqual(foreign_revoke.status_code, 404)
+                self.assertEqual(own_revoke.status_code, 204)
+                self.assertEqual(remaining_chatgpt.json()["connections"], [])
+                self.assertEqual(len(remaining_claude.json()["connections"]), 1)
+                self.assertEqual(invalid.status_code, 422)

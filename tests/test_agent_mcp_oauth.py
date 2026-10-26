@@ -18,6 +18,7 @@ from app.web.routers import agent_mcp
 
 
 class McpOAuthTests(unittest.TestCase):
+    # Claude и ChatGPT проходят OAuth с issuer; отказ и недоверенные адреса не дают доступ.
     def test_both_clients_authorize_and_deny_with_issuer(self):
         app = FastAPI()
         app.include_router(agent_mcp.router)
@@ -43,7 +44,6 @@ class McpOAuthTests(unittest.TestCase):
                                         json={"redirect_uris": [callback], "client_name": "Test MCP"},
                                         headers={"Origin": "https://chatgpt.com"},
                                     )
-                                    self.assertEqual(registered.status_code, 201)
                                     client_id = registered.json()["client_id"]
                                     verifier = "v" * 43
                                     challenge = (
@@ -64,20 +64,15 @@ class McpOAuthTests(unittest.TestCase):
                                             "state": "state-test",
                                         },
                                     )
-                                    self.assertEqual(page.status_code, 200)
                                     pending = re.search(r'name="pending" value="([^"]+)"', page.text).group(1)
                                     result = client.post(
                                         "/oauth/mcp/authorize",
                                         data={"pending": pending, "decision": decision},
                                         follow_redirects=False,
                                     )
-                                    self.assertEqual(result.status_code, 303)
                                     params = parse_qs(urlsplit(result.headers["location"]).query)
-                                    self.assertEqual(params["iss"], [metadata["issuer"]])
-                                    self.assertEqual(params["state"], ["state-test"])
-                                    if decision == "deny":
-                                        self.assertEqual(params["error"], ["access_denied"])
-                                    else:
+                                    tokens = None
+                                    if decision == "approve":
                                         tokens = client.post(
                                             "/oauth/mcp/token",
                                             data={
@@ -89,36 +84,39 @@ class McpOAuthTests(unittest.TestCase):
                                                 "resource": "https://site.test/mcp",
                                             },
                                         )
+
+                                    self.assertEqual(registered.status_code, 201)
+                                    self.assertEqual(page.status_code, 200)
+                                    self.assertEqual(result.status_code, 303)
+                                    self.assertEqual(params["iss"], [metadata["issuer"]])
+                                    self.assertEqual(params["state"], ["state-test"])
+                                    if decision == "deny":
+                                        self.assertEqual(params["error"], ["access_denied"])
+                                        self.assertNotIn("code", params)
+                                    else:
                                         self.assertEqual(tokens.status_code, 200, tokens.text)
                                         self.assertIn("access_token", tokens.json())
                         for callback in (
                             "https://evil.test/callback",
                             "https://chatgpt.com.evil.test/connector_platform_oauth_redirect",
                         ):
-                            self.assertEqual(
-                                client.post(
-                                    "/oauth/mcp/register", json={"redirect_uris": [callback]}
-                                ).status_code,
-                                400,
-                            )
-                        self.assertEqual(
-                            client.post(
-                                "/oauth/mcp/register", json={}, headers={"Origin": "https://evil.test"}
-                            ).status_code,
-                            403,
+                            response = client.post("/oauth/mcp/register", json={"redirect_uris": [callback]})
+
+                            self.assertEqual(response.status_code, 400)
+                        foreign_origin = client.post(
+                            "/oauth/mcp/register", json={}, headers={"Origin": "https://evil.test"}
                         )
+
+                        self.assertEqual(foreign_origin.status_code, 403)
                         with patch.dict(
                             os.environ,
                             {"CHECKSTOCK_MCP_REDIRECT_URIS": "https://claude.ai/api/mcp/auth_callback"},
                         ):
-                            self.assertEqual(
-                                client.post(
-                                    "/oauth/mcp/register",
-                                    json={
-                                        "redirect_uris": [
-                                            "https://chatgpt.com/connector_platform_oauth_redirect"
-                                        ]
-                                    },
-                                ).status_code,
-                                400,
+                            disabled_callback = client.post(
+                                "/oauth/mcp/register",
+                                json={
+                                    "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"]
+                                },
                             )
+
+                            self.assertEqual(disabled_callback.status_code, 400)

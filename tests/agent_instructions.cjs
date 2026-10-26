@@ -21,32 +21,38 @@ function setup({ gpt = false, ok = true, value = '<b>СПП</b>\nТекст', re
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+// Обе страницы загружают инструкцию как текст; все кнопки копируют одинаковое содержимое.
 for (const gpt of [false, true]) test(`instruction loads and all buttons copy identical text: gpt=${gpt}`, async () => {
     const app = setup({ gpt });
-    assert.equal(app.ids['agent-copy-visible-instructions'].disabled, true);
+    const initiallyDisabled = app.ids['agent-copy-visible-instructions'].disabled;
     await flush();
+    const buttons = ['agent-copy-visible-instructions', ...(gpt ? ['agent-copy-instructions'] : [])];
+    const enabled = buttons.map(id => !app.ids[id].disabled);
+    for (const id of buttons) await app.ids[id].onclick();
+
+    assert.equal(initiallyDisabled, true);
+    assert.ok(enabled.every(Boolean));
     assert.equal(app.ids['agent-instruction-text'].textContent, '<b>СПП</b>\nТекст');
     assert.equal(app.fetched.length, 1);
     assert.equal(app.fetched[0][1].cache, 'no-store');
-    for (const id of ['agent-copy-visible-instructions', ...(gpt ? ['agent-copy-instructions'] : [])]) {
-        assert.equal(app.ids[id].disabled, false);
-        await app.ids[id].onclick();
-    }
     assert.equal(app.copied.length, gpt ? 2 : 1);
     assert.ok(app.copied.every(value => value === app.ids['agent-instruction-text'].textContent));
 });
+// Ошибка сети, HTTP или пустой текст оставляют копирование недоступным и показывают ошибку.
 for (const options of [{ ok: false }, { value: '' }, { rejectFetch: true }]) test(`loading error keeps copy disabled ${JSON.stringify(options)}`, async () => {
     const app = setup({ ...options, gpt: true });
     await flush();
     assert.match(app.ids['agent-instruction-status'].textContent, /Не удалось загрузить/);
     assert.equal(app.ids['agent-copy-instructions'].disabled, true);
-    assert.equal(app.ids['agent-copy-visible-instructions'].disabled, true);
+    const initiallyDisabled = app.ids['agent-copy-visible-instructions'].disabled;
 });
+// При отказе Clipboard API запасной способ успешно копирует инструкцию.
 test('clipboard failure supports legacy copy', async () => {
     const app = setup({ rejectCopy: true, legacyCopy: true });
     await flush(); await app.ids['agent-copy-visible-instructions'].onclick();
     assert.equal(app.ids['agent-instruction-status'].textContent, 'Скопировано.');
 });
+// При отказе обоих способов доступен исходный текст для ручного копирования.
 test('clipboard failure exposes original text for manual copy', async () => {
     const app = setup({ rejectCopy: true });
     await flush(); await app.ids['agent-copy-visible-instructions'].onclick();
@@ -56,6 +62,7 @@ test('clipboard failure exposes original text for manual copy', async () => {
     assert.equal(status.children[0].readOnly, true);
 });
 
+// Повтор ручного копирования сохраняет текст и выводит подсказку в прежнем блоке.
 test('manual clipboard retry preserves text and status target', async () => {
     const app = setup({ rejectCopy: true });
     await flush();

@@ -60,8 +60,12 @@ class SppHistoryApiTests(unittest.TestCase):
             params={"store": "rimili", "date_from": "2026-10-20", "date_to": "2026-10-20", **params},
         )
 
+    # Почасовые данные ограничены московским днём и магазином; пагинация и null сохраняются.
     def test_moscow_boundaries_store_isolation_pagination_and_nulls(self):
         response = self.get(limit=1, order="asc")
+        second = self.get(limit=1, offset=1, order="asc").json()
+        filtered = self.get(article="A").json()
+
         self.assertEqual(response.status_code, 200, response.text)
         page = response.json()
         self.assertEqual(page["total_rows"], 2)
@@ -70,13 +74,15 @@ class SppHistoryApiTests(unittest.TestCase):
         self.assertIsNone(page["rows"][0]["spp_percent"])
         self.assertIsNone(page["rows"][0]["customer_price_with_wallet"])
         self.assertEqual(page["totals"], {})
-        second = self.get(limit=1, offset=1, order="asc").json()
         self.assertEqual(second["rows"][0]["article"], "B")
         self.assertIsNone(second["next_offset"])
-        self.assertEqual(self.get(article="A").json()["total_rows"], 1)
+        self.assertEqual(filtered["total_rows"], 1)
 
+    # Дневной API возвращает сохранённые средние и последнее наблюдение; пустой день не считается полным.
     def test_daily_returns_saved_averages_and_last_observation(self):
         response = self.get("spp-daily")
+        missing = self.get("spp-daily", date_from="2026-10-18", date_to="2026-10-18").json()
+
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(
             response.json()["rows"],
@@ -91,10 +97,10 @@ class SppHistoryApiTests(unittest.TestCase):
                 }
             ],
         )
-        missing = self.get("spp-daily", date_from="2026-10-18", date_to="2026-10-18").json()
         self.assertEqual(missing["rows"], [])
         self.assertEqual(missing["context"]["coverage"], "unknown")
 
+    # Некорректные параметры, неизвестный магазин и запрос без авторизации отклоняются.
     def test_validation_auth_and_store_guard(self):
         for params in (
             {"marketplace": "YANDEX MARKET"},
@@ -105,26 +111,33 @@ class SppHistoryApiTests(unittest.TestCase):
             {"scheme": "fbo"},
         ):
             with self.subTest(params=params):
-                self.assertEqual(self.get(**params).status_code, 422)
-        self.assertEqual(self.get(store="not-a-store").status_code, 403)
-        self.assertEqual(
-            self.client.get("/api/agent/v1/spp-hourly", params={"store": "rimili"}).status_code, 422
-        )
-        self.app.dependency_overrides.clear()
-        self.assertEqual(self.get().status_code, 401)
+                response = self.get(**params)
 
+                self.assertEqual(response.status_code, 422)
+        unknown_store = self.get(store="not-a-store")
+        missing_period = self.client.get("/api/agent/v1/spp-hourly", params={"store": "rimili"})
+        self.app.dependency_overrides.clear()
+        unauthenticated = self.get()
+
+        self.assertEqual(unknown_store.status_code, 403)
+        self.assertEqual(missing_period.status_code, 422)
+        self.assertEqual(unauthenticated.status_code, 401)
+
+    # Схема требует период, а поля каталога совпадают с ответами обоих методов СПП.
     def test_schema_and_catalog_match_the_new_fields(self):
         schema = build_action_schema(agent_full.router.routes)
         for method in ("spp-hourly", "spp-daily"):
+            doc = documentation(method)
+            response = self.get(method)
+
             operation = schema["paths"]["/" + method]["get"]
             self.assertLessEqual(len(operation["description"]), 300)
             parameters = {p["name"]: p for p in operation["parameters"]}
             self.assertTrue(parameters["date_from"]["required"])
             self.assertTrue(parameters["date_to"]["required"])
-            doc = documentation(method)
             self.assertNotIn("marketplace_guides", doc)
             keys = {f["name"] for f in doc["fields"]}
-            self.assertEqual(keys, set(self.get(method).json()["rows"][0]))
+            self.assertEqual(keys, set(response.json()["rows"][0]))
 
 
 if __name__ == "__main__":

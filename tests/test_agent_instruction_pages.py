@@ -22,6 +22,7 @@ class Elements(HTMLParser):
 
 
 class InstructionPagesTests(unittest.TestCase):
+    # Все страницы интеграций показывают общую навигацию и нужный компонент инструкции.
     def test_pages_share_navigation_and_instruction_component(self):
         app = FastAPI()
         app.include_router(agent_management.router)
@@ -46,17 +47,23 @@ class InstructionPagesTests(unittest.TestCase):
                         self.assertIn("/ai-agents/gpt-mcp", links)
                         if active in {"gpt", "instructions"}:
                             ids = [attrs.get("id") for tag, attrs in elements]
-                            self.assertEqual(ids.count("agent-instruction-text"), 1 if active == "instructions" else 0)
+                            self.assertEqual(
+                                ids.count("agent-instruction-text"), 1 if active == "instructions" else 0
+                            )
                             scripts = [attrs.get("src") for tag, attrs in elements if tag == "script"]
                             self.assertLess(
                                 next(i for i, s in enumerate(scripts) if "clipboard.js" in s),
                                 next(i for i, s in enumerate(scripts) if "instructions.js" in s),
                             )
 
+    # Инструкция укладывается в лимит GPT, а MCP получает те же правила СПП.
     def test_gpt_length_and_shared_mcp_rules(self):
         text = Path("static/agents/agent-instructions.txt").read_text(encoding="utf-8")
-        self.assertLessEqual(len(text.replace("\n", "\r\n").encode("utf-16-le")) // 2, 8000)
         mcp = agent_mcp.analyst_instructions()
+
+        self.assertLessEqual(len(text.replace("\n", "\r\n").encode("utf-16-le")) // 2, 8000)
+        spp_rules = [line for line in text.splitlines() if line.startswith("СПП WB:")]
+        self.assertTrue(spp_rules)
         for line in text.splitlines():
             if line.startswith("СПП WB:"):
                 self.assertIn(line, mcp)
