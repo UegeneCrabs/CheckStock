@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.application.inbound_supplies import InboundNotConfiguredError, InboundSupplyService, Target
 from app.core.stores import STORES
+from app.dto.fbo_stock import FboTarget
 from app.dto.inbound_supplies import InboundSupply
 from app.infrastructure.database import database_for_path
 from app.infrastructure.inbound_repository import SqlAlchemyInboundRepository
@@ -10,6 +11,7 @@ from app.ozon import api as ozon_api
 from app.ozon import inbound as ozon_inbound
 from app.ozon import tokens as ozon_tokens
 from app.repositories import core
+from app.stock.fbo_sync import reconcile_target
 from app.stock.inbound_common import api_error
 from app.wb import api as wb_api
 from app.wb import inbound as wb_inbound
@@ -51,7 +53,14 @@ def load_target(target: Target, previous: tuple[InboundSupply, ...]) -> tuple[In
 def build_service(database_path: Callable[[], Path] | None = None) -> InboundSupplyService:
     path = database_path or (lambda: core.DB_PATH)
     repository = SqlAlchemyInboundRepository(lambda: database_for_path(path()).session_factory())
-    return InboundSupplyService(repository, load_target)
+    return InboundSupplyService(
+        repository,
+        load_target,
+        after_sync=lambda target: reconcile_target(
+            FboTarget(store_slug=target[0], marketplace=target[1]),
+            path(),
+        ),
+    )
 
 
 def sync_all() -> dict:

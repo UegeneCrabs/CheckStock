@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.constants import (
+    JOBS,
     SCHEDULER,
     JobStatus,
     JobTrigger,
@@ -31,13 +32,16 @@ class AsyncJobRepository:
         self.database = database
 
     async def settings(self, name: str) -> tuple[SyncJobSetting, ...]:
+        names = (
+            (JOBS.ozon_advertising.name, name) if name == JOBS.ozon_advertising_breakdown.name else (name,)
+        )
         async with self.database.transaction() as connection:
-            rows = await connection.execute(select(SETTINGS).where(SETTINGS.c.name == name))
+            rows = await connection.execute(select(SETTINGS).where(SETTINGS.c.name.in_(names)))
             return tuple(
                 SyncJobSetting(
                     store_slug=row["store_slug"], marketplace=row["marketplace"], enabled=bool(row["enabled"])
                 )
-                for row in rows.mappings()
+                for row in sorted(rows.mappings(), key=lambda row: row["name"] == name)
             )
 
     async def log_action(self, user_id: int, user_name: str, title: str, now: datetime) -> None:

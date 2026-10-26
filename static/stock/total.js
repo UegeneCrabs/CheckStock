@@ -76,7 +76,7 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
+    (document.readyState === 'loading' ? callback => document.addEventListener('DOMContentLoaded', callback) : callback => callback())( function () {
         var table = document.getElementById('stock-total-table');
         var select = document.getElementById('stock-total-store');
         if (!table || !select) return;
@@ -86,7 +86,6 @@
         });
         select.addEventListener('change', function () {
             var query = select.value ? '?store=' + encodeURIComponent(select.value) : '';
-            // Rebuild merged quantities for the selected store, including the export.
             window.location.assign('/stock/total' + query);
         });
         sortByGrandTotal(table);

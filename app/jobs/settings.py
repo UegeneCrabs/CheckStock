@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from app import db
+from app.core.constants import JOBS, JobScope
 from app.core.stores import STORES
+from app.dto.integrations import JobConfiguration, JobTarget, MarketplaceSetting
+from app.dto.jobs import SyncJobSetting
 from app.jobs.catalog import SyncJobDefinition, job_definitions
 
 MARKETPLACE_LABELS = {
@@ -18,7 +22,7 @@ _MANUAL_JOB: ContextVar[str | None] = ContextVar("manual_sync_job", default=None
 
 
 @contextmanager
-def manual_run(name: str):
+def manual_run(name: str) -> Iterator[None]:
     """A button ignores the automatic switch, but keeps store/marketplace selection."""
     token = _MANUAL_JOB.set(name)
     try:
@@ -37,6 +41,8 @@ def definition_for(name: str) -> SyncJobDefinition | None:
 
 def _setting_map(name: str) -> dict[tuple[str, str], bool]:
     rows = db.list_sync_job_settings(name)
+    if name == JOBS.ozon_advertising_breakdown.name:
+        rows = [*db.list_sync_job_settings(JOBS.ozon_advertising.name), *rows]
     return {
         (str(row.get("store_slug") or ""), str(row.get("marketplace") or "")): bool(row.get("enabled"))
         for row in rows
@@ -53,7 +59,7 @@ def _targets(definition: SyncJobDefinition) -> tuple[tuple[str, str], ...]:
     return ()
 
 
-def configuration(name: str) -> dict:
+def configuration(name: str) -> dict[str, object]:
     definition = definition_for(name)
     if definition is None:
         raise ValueError("Выгрузка не найдена")
@@ -104,24 +110,63 @@ def configuration(name: str) -> dict:
     }
 
 
+def configuration_from_rows(name: str, rows: tuple[SyncJobSetting, ...]) -> JobConfiguration:
+    definition = definition_for(name)
+    if definition is None:
+        raise ValueError(name)
+    values = {(row["store_slug"], row["marketplace"]): row["enabled"] for row in rows}
+    marketplaces = tuple(
+        MarketplaceSetting(marketplace=marketplace, enabled=values.get(("", marketplace), True))
+        for marketplace in definition.marketplaces
+    )
+    enabled = {item.marketplace: item.enabled for item in marketplaces}
+    targets = tuple(
+        JobTarget(
+            store_slug=store,
+            marketplace=marketplace,
+            configured_enabled=values.get((store, marketplace), True),
+            enabled=values.get((store, marketplace), True) and enabled.get(marketplace, True),
+        )
+        for store, marketplace in _targets(definition)
+    )
+    configured = values.get(("", ""), True)
+    return JobConfiguration(
+        name=name,
+        scope=JobScope(definition.scope),
+        environment_enabled=bool(definition.enabled),
+        configured_enabled=configured,
+        effective_enabled=bool(definition.enabled and configured),
+        target_count=len(targets),
+        enabled_target_count=sum(item.enabled for item in targets),
+        marketplace_settings=marketplaces,
+        targets=targets,
+    )
+
+
+def _configuration_model(name: str) -> JobConfiguration:
+    return configuration_from_rows(
+        name,
+        tuple(
+            SyncJobSetting(store_slug=store, marketplace=marketplace, enabled=enabled)
+            for (store, marketplace), enabled in _setting_map(name).items()
+        ),
+    )
+
+
 def enabled_stores(name: str, marketplace: str = "") -> tuple[str, ...]:
-    config = configuration(name)
-    if not config["effective_enabled"] and _MANUAL_JOB.get() != name:
+    config = _configuration_model(name)
+    if not config.effective_enabled and _MANUAL_JOB.get() != name:
         return ()
-    if config["scope"] == "global":
+    if config.scope == JobScope.GLOBAL:
         return tuple(STORES)
     return tuple(
-        target["store_slug"]
-        for target in config["targets"]
-        if target["enabled"] and target["marketplace"] == marketplace
+        target.store_slug for target in config.targets if target.enabled and target.marketplace == marketplace
     )
 
 
 def has_enabled_targets(name: str) -> bool:
-    config = configuration(name)
-    if not config["effective_enabled"]:
-        return False
-    return not config["targets"] or bool(config["enabled_target_count"])
+    config = _configuration_model(name)
+    return config.effective_enabled and (not config.targets or bool(config.enabled_target_count))
 
 
 def save_setting(
@@ -130,7 +175,7 @@ def save_setting(
     enabled: bool,
     store_slug: str = "",
     marketplace: str = "",
-) -> dict:
+) -> dict[str, object]:
     definition = definition_for(name)
     if definition is None:
         raise ValueError("Выгрузка не найдена")

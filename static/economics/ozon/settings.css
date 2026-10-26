@@ -1,0 +1,8 @@
+.ozon-cabinet-panel { --ue1cs-accent: #005bff; --ue1cs-accent-strong: #0046c5; }
+.cabinet-market-mark.is-ozon { color: #005bff; background: #eaf1ff; }
+.ozon-cabinet-panel .ue1cs-card-body { display: grid; gap: 24px; }
+.ozon-cabinet-panel .ue1cs-card-foot { padding: 12px 0 0; border: 0; }
+.ozon-cabinet-panel .ozon-settings-help { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.ozon-cabinet-panel [role='status'] { margin: 0; font-size: 13px; line-height: 1.6; }
+.ozon-cabinet-panel .is-error { color: var(--red, #b42318); }
+.ozon-cabinet-panel input[readonly] { color: var(--text-muted); background: var(--bg); }

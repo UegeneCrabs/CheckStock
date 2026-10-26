@@ -23,7 +23,7 @@
             return response.json().then(
                 function (data) {
                     if (!response.ok || !data || !data.ok) {
-                        throw new Error((data && (data.error || data.detail)) || 'Ошибка сервера (HTTP ' + response.status + ').');
+                        throw new Error(data ? window.CheckStockUI.errorText(data) : 'Ошибка сервера (HTTP ' + response.status + ').');
                     }
                     return data;
                 },
@@ -108,8 +108,8 @@
                 show('Нет настроенных листов для выбранной выгрузки. Укажите ссылку на файл площадки, названия листов и сохраните настройки.', true);
                 return;
             }
-            if (data.last_success_text) {
-                message += '. ' + data.last_success_text;
+            if (report.last_success_at) {
+                message += '. Последняя успешная выгрузка: ' + window.CheckStockUI.date(report.last_success_at);
             }
             var warnings = marketplaces.reduce(function (all, item) {
                 return all.concat(item.warnings || []);
@@ -130,7 +130,17 @@
             var submittedSnapshot = snapshot();
             setBusy(true);
             show('Сохраняю общие настройки…', false);
-            request('/admin/google-export/settings', body)
+            window.CheckStockUI.request('/api/admin/google-export', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: body.get('enabled') === '1', schedule_kind: body.get('schedule_kind'),
+                    weekday: Number(body.get('weekday')), run_time: body.get('run_time'),
+                    targets: [['WB', 'wb'], ['OZON', 'ozon'], ['YANDEX MARKET', 'yandex']].map(([marketplace, prefix]) => ({
+                        marketplace, spreadsheet_url: body.get(prefix + '_spreadsheet_url'), stock_sheet_name: body.get(prefix + '_sheet_name'),
+                        orders_sheet_name: body.get(prefix + '_fbs_orders_sheet_name'), orders_quantity_column: body.get(prefix + '_fbs_orders_quantity_column'),
+                        fbo_sheet_name: body.get(prefix + '_fbo_sheet_name'), fbo_to_customer_column: body.get(prefix + '_fbo_to_customer_column'),
+                        fbo_from_customer_column: body.get(prefix + '_fbo_from_customer_column'),
+                    })) }),
+            })
                 .then(function () {
                     saved = true;
                     savedSnapshot = submittedSnapshot;

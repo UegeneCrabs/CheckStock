@@ -3,6 +3,7 @@ import json
 from datetime import date, datetime
 
 from sqlalchemy import JSON, cast, func, select, text, type_coerce
+from sqlalchemy.engine import ScalarResult
 
 from app.core.constants import (
     GOOGLE_WEEK,
@@ -247,17 +248,15 @@ class GoogleWeekRepository:
         source_days: dict[date, set[date]] = {}
         params = {"marketplace": Marketplace.OZON.value, "store": store}
         async with self.database.transaction() as connection:
-            confirmed = {
-                date.fromisoformat(day)
-                for day in (
-                    await connection.execute(
-                        text("""SELECT day FROM economics_source_days
-                            WHERE marketplace=:marketplace AND store_slug=:store AND source='orders'"""),
-                        params,
-                    )
-                ).scalars()
-            }
-            day_payloads = (
+            confirmed_rows: ScalarResult[str] = (
+                await connection.execute(
+                    text("""SELECT day FROM economics_source_days
+                        WHERE marketplace=:marketplace AND store_slug=:store AND source='orders'"""),
+                    params,
+                )
+            ).scalars()
+            confirmed = {date.fromisoformat(value) for value in confirmed_rows}
+            day_payloads: ScalarResult[str] = (
                 await connection.execute(
                     text("SELECT payload FROM ozon_order_days WHERE store_slug=:store"), params
                 )

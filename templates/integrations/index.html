@@ -11,7 +11,7 @@
 
 <nav class="integration-view-tabs" aria-label="Разделы интеграций">
     <a href="?tab=sync" data-integration-view="sync" aria-current="page"
-        >Фоновые выгрузки <span class="integration-tab-count">$job_count</span></a
+        >Фоновые выгрузки <span class="integration-tab-count" data-job-count></span></a
     >
     <a href="?tab=keys" data-integration-view="keys">API-ключи</a>
     <a href="?tab=google" data-integration-view="google">Google Таблицы</a>
@@ -50,7 +50,8 @@
     <p class="integration-hint"
         >Ручной запуск использует выбранные магазины и доступен даже при выключенной автовыгрузке.</p
     >
-    $sync_groups
+    <p data-integration-loading role="status">Загружаем подключения и задачи…</p>
+    <div data-sync-groups></div>
     <div class="integration-empty" data-sync-empty hidden
         ><strong>Выгрузки не найдены</strong><p>Измените запрос или выберите другой статус.</p
         ><button type="button" class="btn-secondary" data-sync-reset>Сбросить фильтры</button></div
@@ -67,8 +68,8 @@
             >
         </div></div
     >
-    <div class="integration-store-tabs" aria-label="Магазины">$store_tabs</div>
-    $store_panels
+    <div class="integration-store-tabs" aria-label="Магазины" data-store-tabs></div>
+    <div data-store-panels></div>
 </section>
 
 <section class="integration-google" id="integration-google" data-integration-view-panel="google" hidden>
@@ -103,10 +104,15 @@
                 <span class="cabinet-market-mark is-ym" aria-hidden="true">YM</span>
                 <span>Яндекс Маркет</span>
             </button>
+            <button type="button" data-cabinet-market="ozon" aria-pressed="false" aria-controls="ozon-cabinet-panel" hidden>
+                <span class="cabinet-market-mark is-ozon" aria-hidden="true">OZ</span>
+                <span>Ozon</span>
+            </button>
         </div>
         $cabinet_settings
+        $ozon_cabinet_settings
     </div>
-    <script src="/static/integrations/cabinets.js?v=20260914"></script>
+    <script src="/static/integrations/cabinets.js?v=20261019-ozon"></script>
 </section>
 
 <dialog
@@ -154,4 +160,11 @@
     </div>
 </dialog>
 
-<script src="/static/integrations/index.js?v=20260915-2"></script>
+
+
+
+
+
+
+<script src="/static/integrations/render.js?v=20261023"></script>
+<script src="/static/integrations/index.js?v=20261023-migration"></script>

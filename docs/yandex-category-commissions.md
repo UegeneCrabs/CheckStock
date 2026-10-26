@@ -36,7 +36,7 @@
 
 Полная ветка категории и даты проверок видны в параметрах товара калькулятора YM.
 
-Поиск и переходы по дереву в калькуляторе используют переиспользуемый компонент
+Поиск и переходы по дереву в калькуляторе используют общий с Ozon компонент
 `static/economics/shared/categories.js` и `categories.css` с шаблонами в
 `templates/economics/shared/client/categories.html`. Адаптер ЯМ
 `static/economics/yandex/categories.js` сохраняет загрузку дерева по кабинету,

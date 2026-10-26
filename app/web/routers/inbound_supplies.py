@@ -1,5 +1,3 @@
-import html
-import json
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
@@ -8,23 +6,22 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.access.authentication import is_active_user
 from app.access.resources import store_marketplace_pairs
-from app.core.constants import INBOUND_SCHEDULE
-from app.core.stores import STORES
-from app.dto.inbound_supplies import STAGE_LABELS, InboundSyncRequest
+from app.core.constants import INBOUND_SCHEDULE, WebErrorCode
+from app.dto.inbound_supplies import InboundReport, InboundSyncRequest
+from app.dto.stock_pages import StockTarget
+from app.infrastructure.inbound_read_repository import InboundReadRepository
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import queue_tracked
-from app.stock.catalog_identity import display_barcode
 from app.stock.inbound_supplies import JOB_NAME
+from app.web.client_page import client_page
 from app.web.dependencies import ContainerDependency
-from app.web.templating import fill_template, render_page
 
 router = APIRouter()
-MARKETPLACE_LABELS = {"WB": "Wildberries", "OZON": "Ozon", "YANDEX MARKET": "Яндекс Маркет"}
 
 
 def allowed_targets(request: Request, store: str = "", marketplace: str = "") -> tuple[tuple[str, str], ...]:
     if not is_active_user(request.state.user):
-        raise HTTPException(status_code=403, detail="Нет доступа к остаткам")
+        raise HTTPException(status_code=403, detail=WebErrorCode.FORBIDDEN)
     store = store.strip().lower()
     marketplace = marketplace.strip().upper()
     pairs = store_marketplace_pairs(request.state.user)
@@ -34,60 +31,25 @@ def allowed_targets(request: Request, store: str = "", marketplace: str = "") ->
         if (not store or slug == store) and (not marketplace or mp == marketplace)
     )
     if not filtered:
-        raise HTTPException(status_code=403, detail="Нет доступа к выбранному магазину или площадке")
+        raise HTTPException(status_code=403, detail=WebErrorCode.FORBIDDEN)
     return filtered
 
 
 @router.get("/stock/inbound", response_class=HTMLResponse)
 async def inbound_page(request: Request, store: str = "", mp: str = ""):
-    pairs = allowed_targets(request)
     allowed_targets(request, store, mp)
-    stores = tuple(dict.fromkeys(slug for slug, _ in pairs))
-    marketplaces = tuple(dict.fromkeys(marketplace for _, marketplace in pairs))
-
-    def options(values, selected):
-        return "".join(
-            f'<option value="{html.escape(value, quote=True)}"{" selected" if value == selected else ""}>'
-            f"{html.escape(label)}</option>"
-            for value, label in values
-        )
-
-    content = fill_template(
-        "stock/inbound-supplies.html",
-        store_options=options(((slug, STORES[slug].name) for slug in stores), store.strip().lower()),
-        marketplace_options=options(
-            ((value, MARKETPLACE_LABELS[value]) for value in marketplaces), mp.strip().upper()
-        ),
-        scopes=html.escape(json.dumps(pairs), quote=True),
-        refresh_hidden="" if is_active_user(request.state.user) else " hidden",
-    )
-    return render_page("РАКЕТА — Поставки FBO", "stock_inbound", content, request.state.user)
+    return client_page("stock/inbound-supplies.html")
 
 
-@router.get("/stock/inbound/data")
+@router.get("/stock/inbound/data", response_model=InboundReport)
 async def inbound_data(request: Request, container: ContainerDependency, store: str = "", mp: str = ""):
-    targets = allowed_targets(request, store, mp)
-    snapshots = await run_in_threadpool(container.inbound_supplies.report, targets)
-    cutoff = datetime.now(UTC) - timedelta(seconds=INBOUND_SCHEDULE.stale_after_seconds)
-    result = []
-    for snapshot in snapshots:
-        stale = not snapshot.last_success or datetime.fromisoformat(snapshot.last_success) < cutoff
-        data = snapshot.model_dump(mode="json")
-        if snapshot.marketplace == "YANDEX MARKET":
-            for supply in data["supplies"]:
-                for item in supply["items"]:
-                    item["barcode"] = display_barcode(item, snapshot.marketplace)
-        result.append(
-            {
-                **data,
-                "store_name": STORES[snapshot.store_slug].name,
-                "marketplace_name": MARKETPLACE_LABELS[snapshot.marketplace],
-                "stale": stale,
-            }
-        )
-    return JSONResponse(
-        {"ok": True, "targets": result, "stages": STAGE_LABELS}, headers={"Cache-Control": "no-store"}
+    targets = tuple(
+        StockTarget(store_slug=slug, marketplace=marketplace)
+        for slug, marketplace in allowed_targets(request, store, mp)
     )
+    snapshots = await InboundReadRepository(request.app.state.async_resources.database).snapshots(targets)
+    cutoff = datetime.now(UTC) - timedelta(seconds=INBOUND_SCHEDULE.stale_after_seconds)
+    return InboundReport(targets=snapshots, stale_before=cutoff.isoformat())
 
 
 @router.post("/stock/inbound/sync")

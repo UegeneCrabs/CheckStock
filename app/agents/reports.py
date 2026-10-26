@@ -178,7 +178,7 @@ def stocks(query):
 
 
 def stock_summary(query):
-    from app.web.stock_rendering import schemes_for
+    from app.stock.export_schemes import schemes_for
 
     schemes = schemes_for(query.marketplace, query.store)
     labels = {

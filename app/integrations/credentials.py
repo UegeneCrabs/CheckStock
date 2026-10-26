@@ -6,6 +6,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from app.core.constants import WEB, CredentialMarketplace, WebErrorCode
+from app.dto.integrations import CredentialStatus
 from app.ozon import tokens as ozon_tokens
 from app.wb import tokens as wb_tokens
 from app.yandex import tokens as yandex_tokens
@@ -64,29 +66,40 @@ def _write(path: Path, data: dict) -> None:
                 pass
 
 
-def credential_status(store_slug: str, code: str) -> dict[str, object]:
-    if code == "wb":
-        data = _read(wb_tokens.TOKENS_PATH)
-        token = str(data.get(store_slug) or "").strip()
-        configured = bool(token)
-        expiry = None
-        if configured:
-            parsed = wb_tokens.get_token_expiry(token)
-            expiry = parsed.isoformat() if parsed else None
-        return {"configured": configured, "expires_at": expiry}
-    if code == "ozon":
-        data = _read(ozon_tokens.TOKENS_PATH)
-        entry = data.get(store_slug) if isinstance(data.get(store_slug), dict) else {}
-        client_id = str(entry.get("client_id") or "").strip()
-        return {
-            "configured": bool(client_id and str(entry.get("api_key") or "").strip()),
-            "client_id_hint": f"••••{client_id[-4:]}" if client_id else "",
-        }
-    if code == "yandex":
+def credential_snapshot(store_slug: str, code: CredentialMarketplace) -> CredentialStatus:
+    try:
+        if code == CredentialMarketplace.WB:
+            data = _read(wb_tokens.TOKENS_PATH)
+            token = str(data.get(store_slug) or "").strip()
+            expiry = wb_tokens.get_token_expiry(token) if token else None
+            return CredentialStatus(
+                store_slug=store_slug,
+                marketplace=code,
+                configured=bool(token),
+                expires_at=expiry.isoformat() if expiry else None,
+            )
+        if code == CredentialMarketplace.OZON:
+            data = _read(ozon_tokens.TOKENS_PATH)
+            entry = data.get(store_slug) if isinstance(data.get(store_slug), dict) else {}
+            client_id = str(entry.get("client_id") or "").strip()
+            return CredentialStatus(
+                store_slug=store_slug,
+                marketplace=code,
+                configured=bool(client_id and str(entry.get("api_key") or "").strip()),
+                client_id_suffix=client_id[-WEB.client_id_suffix_length :] if client_id else None,
+            )
         data = _read(yandex_tokens.SECRETS_PATH)
         entry = data.get(store_slug) if isinstance(data.get(store_slug), dict) else {}
-        return {"configured": bool(str(entry.get("api_key") or "").strip())}
-    raise ValueError("Неизвестный маркетплейс")
+        return CredentialStatus(
+            store_slug=store_slug, marketplace=code, configured=bool(str(entry.get("api_key") or "").strip())
+        )
+    except CredentialStorageError:
+        return CredentialStatus(
+            store_slug=store_slug,
+            marketplace=code,
+            configured=False,
+            error_code=WebErrorCode.CREDENTIAL_STORAGE,
+        )
 
 
 def save_credential(
@@ -100,7 +113,7 @@ def save_credential(
     client_id = client_id.strip()
     if not api_key:
         raise ValueError("Введите новый API-ключ")
-    if len(api_key) > 16_384 or len(client_id) > 1_024:
+    if len(api_key) > WEB.api_key_max_length or len(client_id) > WEB.client_id_max_length:
         raise ValueError("Значение ключа слишком длинное")
 
     with _LOCK:
@@ -115,7 +128,7 @@ def save_credential(
             current = data.get(store_slug) if isinstance(data.get(store_slug), dict) else {}
             effective_client_id = client_id or str(current.get("client_id") or "").strip()
             if not effective_client_id:
-                raise ValueError("Для нового подключения Ozon укажите Client ID")
+                raise ValueError(WebErrorCode.CLIENT_ID_REQUIRED)
             data[store_slug] = {**current, "client_id": effective_client_id, "api_key": api_key}
             _write(ozon_tokens.TOKENS_PATH, data)
             ozon_tokens.reload_tokens()

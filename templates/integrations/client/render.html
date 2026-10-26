@@ -1,0 +1,31 @@
+<!-- template: credential -->
+<form class="integration-key-card" data-credential-form data-store="{{store}}" data-marketplace="{{marketplace}}">
+        <div class="integration-key-head"><div><span class="integration-marketplace-code">{{label}}</span><strong>{{name}}</strong></div><span class="integration-key-status" data-key-status></span></div>
+        <p class="integration-key-detail"></p>
+        <label class="integration-field" data-client-id-field><span>Client ID</span><input type="text" name="client_id" maxlength="1024" autocomplete="off" placeholder="Оставьте пустым, чтобы сохранить текущий"></label>
+        <label class="integration-field"><span>Новый API-ключ</span><div class="integration-secret-wrap"><input type="password" name="api_key" maxlength="16384" autocomplete="new-password" placeholder="Вставьте ключ для добавления или замены" required><button type="button" class="integration-reveal" data-reveal-key aria-label="Показать ключ">Показать</button></div></label>
+        <p class="integration-form-message" data-form-message aria-live="polite"></p>
+        <div class="integration-key-actions"><button class="btn-primary" type="submit">Сохранить ключ</button><button class="btn-secondary integration-delete" type="button" data-delete-key>Удалить ключ</button></div>
+    </form>
+<!-- endtemplate -->
+
+<!-- template: store -->
+<section class="integration-store-panel" data-integration-store="{{slug}}"><div class="integration-store-heading"><span class="store-dot" data-store-color="{{slug}}"></span><div><small>МАГАЗИН</small><h2>{{name}}</h2></div></div><div class="integration-key-grid">{{{cards}}}</div></section>
+<!-- endtemplate -->
+
+<!-- template: group -->
+<section class="integration-job-group" data-sync-group="{{key}}" aria-labelledby="sync-group-{{key}}"><div class="integration-job-group-head"><span class="integration-group-mark is-{{key}}" aria-hidden="true">{{mark}}</span><div><h3 id="sync-group-{{key}}">{{title}}</h3><p>{{description}}</p></div><span class="integration-group-count" data-sync-group-count></span></div><div class="integration-sync-table-wrap"><table class="integration-sync-table"><caption class="visually-hidden">Выгрузки · {{title}}</caption><thead><tr><th scope="col">Что обновляет</th><th scope="col">Последняя выгрузка</th><th scope="col">Автовыгрузка</th><th scope="col">Действия</th></tr></thead><tbody>{{{rows}}}</tbody></table></div></section>
+<!-- endtemplate -->
+
+<!-- template: switch -->
+<label class="integration-sync-toggle"><input type="checkbox" role="switch" data-sync-setting-toggle data-job="{{job}}" data-store="{{store}}" data-marketplace="{{marketplace}}"><span class="integration-sync-toggle-track" aria-hidden="true"></span><span class="integration-sync-toggle-label">{{label}}</span></label>
+<!-- endtemplate -->
+
+<!-- template: job -->
+<tr data-sync-job="{{name}}"><td data-label="Выгрузка"><strong>{{title}}</strong><small>{{description}}</small></td><td data-label="Последняя выгрузка"><div class="integration-last-run"><span class="sync-status is-empty">Ещё не запускалась</span><small data-sync-last-run>—</small><small data-sync-trigger>—</small></div></td><td data-label="Автовыгрузка"><div class="integration-auto-setting">{{{toggle}}}<small>{{schedule}}</small><small data-sync-next-run>Следующая: рассчитывается</small><small class="integration-sync-inline-message" data-sync-setting-inline-message></small></div></td><td data-label="Действия"><div class="integration-sync-actions"><button class="btn-secondary integration-targets-button" type="button" data-sync-targets-toggle="{{name}}" aria-expanded="false">Магазины</button><button class="btn-primary integration-run-button" type="button" data-sync-run="{{name}}" data-sync-title="{{title}}" disabled>Выгрузить вручную</button><button class="btn-secondary" type="button" data-sync-history="{{name}}" data-sync-title="{{title}}">История</button></div><p class="integration-sync-setting-message" data-sync-run-message aria-live="polite"></p></td></tr>
+    <tr class="integration-sync-target-row" data-sync-targets-row="{{name}}" hidden><td colspan="4"><div class="integration-sync-target-shell"><div><strong>Магазины для выгрузки</strong><small>Выбор применяется к ручным и автоматическим запускам.</small></div><div class="integration-sync-target-grid">{{{targets}}}</div><p class="integration-sync-setting-message" data-sync-setting-message aria-live="polite"></p></div></td></tr>
+<!-- endtemplate -->
+
+<!-- template: targets -->
+<section class="integration-sync-store-targets"><strong>{{name}}</strong><div class="integration-sync-marketplaces">{{{controls}}}</div></section>
+<!-- endtemplate -->

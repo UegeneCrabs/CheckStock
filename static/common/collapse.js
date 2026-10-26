@@ -51,7 +51,7 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
+    (document.readyState === 'loading' ? callback => document.addEventListener('DOMContentLoaded', callback) : callback => callback())( function () {
         document.querySelectorAll('.panel--collapsible').forEach(initPanel);
     });
 })();

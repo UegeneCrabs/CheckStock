@@ -410,7 +410,8 @@ body[data-section='unit_economics_1c'] .content--unit-1c {
     height: calc(100vh - var(--app-header-height));
 }
 
-body[data-section='unit_economics_1c'] .ue1c-drawer {
+body[data-section='unit_economics_1c'] .ue1c-drawer,
+body[data-section='unit_1c_ozon'] .ue1c-drawer {
     top: var(--app-header-height);
     z-index: 190;
     height: calc(100vh - var(--app-header-height));

@@ -4,7 +4,6 @@ from string import Template
 
 from app import db
 from app.access.authentication import is_active_user
-from app.access.resources import accessible_marketplaces
 from app.access.sections import (
     ANALYTICS_SECTIONS,
     REPORT_SECTIONS,
@@ -200,7 +199,6 @@ def render_page(
         "stock_total",
         "stock_supplies",
         "stock_inbound",
-        "stock_randomizer",
         "stock_cost_report",
     }
     unit_1c_open = active in {
@@ -300,10 +298,6 @@ def render_page(
         stock_inbound_hidden=hidden(visible[SectionName.STOCK_INBOUND]),
         stock_arrivals_active="active" if active == "stock_arrivals" else "",
         stock_arrivals_hidden=hidden(visible[SectionName.STOCK_ARRIVALS]),
-        stock_randomizer_active="active" if active == "stock_randomizer" else "",
-        stock_randomizer_hidden=hidden(
-            visible[SectionName.STOCK_RANDOMIZER] and "WB" in accessible_marketplaces(user)
-        ),
         stock_cost_report_active="active" if active == "stock_cost_report" else "",
         stock_cost_report_hidden=hidden(visible[SectionName.STOCK_COST_REPORT]),
         stock_operations_active="active" if active == "stock_operations" else "",

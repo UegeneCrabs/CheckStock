@@ -154,6 +154,9 @@ def build_rows(
         priced = [item for item in matches if item.get("purchase_price") is not None]
         if priced:
             row["purchase_price"] = max(float(item["purchase_price"]) for item in priced)
+        row["locations"] = [
+            {"store_slug": slug, "marketplace": marketplace} for slug, marketplace in active_pairs
+        ]
         row["store_slugs"] = active_stores
         row["store_name"] = ", ".join(
             STORES.get(slug, {}).get("name", slug.upper()) for slug in active_stores

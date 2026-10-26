@@ -16,7 +16,6 @@ from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.dto.wb_hourly_prices import WbHourlyCollection
-from app.economics import ozon_advertising, ozon_turnover
 from app.economics.sources import ozon as ozon_source_sync
 from app.economics.sources import purchase_prices as unit_source_sync
 from app.economics.wb import advertising as advertising_sync
@@ -29,7 +28,7 @@ from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import finance as finance_sync
-from app.jobs import google_weeks, inbound_schedule, wb_ephemerides, wb_transit
+from app.jobs import google_weeks, inbound_schedule, ozon, wb_ephemerides, wb_transit
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, ScheduledJob
@@ -494,27 +493,7 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
                 sync_settings.enabled_stores("ozon_reputation_sync", "OZON")
             ),
         ),
-        BackgroundJob(
-            ozon_turnover.JOB_NAME,
-            ozon_turnover.sync_all,
-            _moscow_daily_delay(3),
-            ready_event=catalog_ready,
-            is_enabled=lambda: _job_enabled(ozon_turnover.JOB_NAME),
-            run_callback=lambda: ozon_turnover.sync_all(
-                sync_settings.enabled_stores(ozon_turnover.JOB_NAME, "OZON")
-            ),
-            retry_delays=(60, 300, 900),
-        ),
-        BackgroundJob(
-            ozon_advertising.JOB_NAME,
-            ozon_advertising.sync_all,
-            _moscow_daily_delay(4),
-            ready_event=catalog_ready,
-            is_enabled=lambda: _job_enabled(ozon_advertising.JOB_NAME),
-            run_callback=lambda: ozon_advertising.sync_all(
-                sync_settings.enabled_stores(ozon_advertising.JOB_NAME, "OZON")
-            ),
-        ),
+        *ozon.jobs(catalog_ready),
         BackgroundJob(
             ya_category_commissions.JOB,
             ya_category_commissions.sync_all,
@@ -639,6 +618,9 @@ async def lifespan(application: FastAPI):
     try:
         async with AsyncResources() as resources:
             application.state.async_resources = resources
+            from app.stock.fbo_sync import reconcile_saved
+
+            await reconcile_saved(resources.database)
             yield
     finally:
         logger.info("application_stopped")
