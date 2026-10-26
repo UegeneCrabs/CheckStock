@@ -929,6 +929,33 @@ SCHEDULE_TEXTS: Final = ScheduleTexts()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class InboundScheduleConstants:
+    daily_hour: int = 10
+    extra_weekday: int = 0
+    extra_hour: int = 5
+    days_per_week: int = 7
+    interval_seconds: int = 86_400
+    stale_after_seconds: int = 93_600
+    alignment_tolerance_seconds: int = 1
+    description: str = "Ежедневно в 10:00 МСК; дополнительно в понедельник в 05:00 МСК"
+
+
+INBOUND_SCHEDULE: Final = InboundScheduleConstants()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EphemeridesStockSchedule:
+    weekday: int = 0
+    hour: int = 0
+    minute: int = 5
+    days: int = 7
+    retry_delays: tuple[int, ...] = (300, 1_800, 3_600)
+
+
+EPHEMERIDES_STOCK_SCHEDULE: Final = EphemeridesStockSchedule()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class JobCatalog:
     wb_standard_costs: SyncJobMetadata = SyncJobMetadata(
         name="wb_standard_costs_sync",
@@ -1027,14 +1054,9 @@ class JobCatalog:
         name="inbound_supplies_sync",
         title="Поставки на склады маркетплейсов",
         description="Загружает поставки FBW, FBO и FBY, их товары, статусы и результаты приёмки по каждому магазину.",
-        schedule=None,
+        schedule=INBOUND_SCHEDULE.description,
         scope=JobScope.STORE_MARKETPLACES,
-        marketplaces=(
-            Marketplace.WB,
-            Marketplace.OZON,
-            Marketplace.YANDEX_MARKET,
-        ),
-        manual_run=True,
+        marketplaces=(Marketplace.WB, Marketplace.OZON, Marketplace.YANDEX_MARKET),
     )
     supply_arrivals: SyncJobMetadata = SyncJobMetadata(
         name="supply_arrivals_sync",
@@ -1604,33 +1626,6 @@ class OzonHistoryConstants:
 
 
 OZON_HISTORY: Final = OzonHistoryConstants()
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class InboundScheduleConstants:
-    daily_hour: int = 10
-    extra_weekday: int = 0
-    extra_hour: int = 5
-    days_per_week: int = 7
-    interval_seconds: int = 86_400
-    stale_after_seconds: int = 93_600
-    alignment_tolerance_seconds: int = 1
-    description: str = "Ежедневно в 10:00 МСК; дополнительно в понедельник в 05:00 МСК"
-
-
-INBOUND_SCHEDULE: Final = InboundScheduleConstants()
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class EphemeridesStockSchedule:
-    weekday: int = 0
-    hour: int = 0
-    minute: int = 5
-    days: int = 7
-    retry_delays: tuple[int, ...] = (300, 1_800, 3_600)
-
-
-EPHEMERIDES_STOCK_SCHEDULE: Final = EphemeridesStockSchedule()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

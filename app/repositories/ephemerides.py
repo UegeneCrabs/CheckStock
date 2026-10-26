@@ -6,18 +6,6 @@ from datetime import UTC, datetime
 from app.repositories.core import WRITE_LOCK, get_connection
 
 
-def freeze_stock(store: str, week: str, products: list[dict], captured_at: str) -> None:
-    with WRITE_LOCK, get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO ephemerides_stock_snapshots (store_slug, week, products_json, captured_at)
-            VALUES (?, ?, ?, ?) ON CONFLICT(store_slug, week) DO NOTHING
-            """,
-            (store, week, json.dumps(products, ensure_ascii=False), captured_at),
-        )
-        conn.commit()
-
-
 def weekly_stock(stores: tuple[str, ...], week: str) -> dict[tuple[str, str], dict]:
     if not stores:
         return {}

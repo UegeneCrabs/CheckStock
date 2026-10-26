@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import settings
-from app.core.constants import INBOUND_SCHEDULE, JOBS, SyncJobMetadata
+from app.core.constants import JOBS, SyncJobMetadata
 from app.yandex.category_commissions import JOB as YANDEX_CATEGORY_COMMISSIONS_JOB
 from app.yandex.product_novelty import SYNC_INTERVAL_SECONDS as YANDEX_NOVELTY_INTERVAL_SECONDS
 from app.yandex.unit_economics_sync import SYNC_INTERVAL_SECONDS as YANDEX_SYNC_INTERVAL_SECONDS
@@ -102,15 +102,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "store_marketplaces",
             ("WB", "OZON", "YANDEX MARKET"),
         ),
-        SyncJobDefinition(
-            "inbound_supplies_sync",
-            "Поставки на склады маркетплейсов",
-            "Загружает поставки FBW, FBO и FBY, их товары, статусы и результаты приёмки по каждому магазину.",
-            INBOUND_SCHEDULE.description,
-            base,
-            "store_marketplaces",
-            ("WB", "OZON", "YANDEX MARKET"),
-        ),
+        from_metadata(JOBS.inbound_supplies, base),
         SyncJobDefinition(
             "supply_arrivals_sync",
             "Табло поставок из Google Таблицы",
