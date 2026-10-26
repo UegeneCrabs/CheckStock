@@ -12,7 +12,7 @@
             ['target_roi_percent', 'Целевой ROI для остальных кодов', 0, 1000000, true],
         ],
         buyout: [
-            ['period_days', 'Период расчёта', 1, 90, true, 'дн.'],
+            ['period_days', 'Период расчёта', 30, 30, true, 'дн.'],
             ['default_percent', 'Выкуп по умолчанию', 0.01, 100, false],
         ],
         expenses: [
@@ -45,7 +45,7 @@
         input.type = 'number'; input.name = name; input.min = min; input.max = max;
         input.step = name === 'period_days' ? '1' : 'any'; input.required = required;
         input.value = value == null ? '' : value; input.placeholder = 'Не задан';
-        input.readOnly = name === 'team_commission_percent';
+        input.readOnly = ['team_commission_percent', 'period_days'].includes(name);
         const unit = document.createElement('b'); unit.textContent = suffix;
         wrap.append(input, unit); label.append(text, wrap);
         return label;
@@ -128,7 +128,7 @@
                         store: selected.store_slug, revision: result.revision, updated_at: result.updated_at,
                     }));
                 } catch {}
-                message(status, key === 'buyout' ? 'Сохранено. Период применится при следующей выгрузке выкупа.' : 'Сохранено.');
+                message(status, 'Сохранено.');
             } catch (error) { message(status, error.message, true); }
             finally { busy = false; controls(); }
         });

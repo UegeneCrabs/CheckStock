@@ -2,7 +2,6 @@ window.OzonCalculatorUI = (() => {
     'use strict';
     const sessions = new WeakMap();
     const fields = [
-        { key: 'orders_count', label: 'Заказано за сегодня, шт.', order: 1, unit: 'шт.' },
         { key: 'other_spend', label: 'Прочая реклама за сегодня, руб', order: 7, unit: '₽', signed: true },
         { key: 'other_drr', label: 'ДРР прочей рекламы', order: 7, signed: true, readOnly: true },
         { key: 'advertising_amount', legacy: 'advertisingRub', label: 'Реклама на штуку, руб', signed: true },
@@ -57,6 +56,7 @@ window.OzonCalculatorUI = (() => {
                 }
             });
             session.expenses = expenses;
+            session.expensesUpdatedAt = record.updated_at;
             session.product.cabinet = { ...session.product.cabinet, expenses };
             session.settingsError = '';
             if (changed) queue(root, session);
@@ -69,67 +69,6 @@ window.OzonCalculatorUI = (() => {
         }
     }
 
-    function hint(session, key) {
-        const v = session.values;
-        const prefix = key.split('_')[0];
-        const modified = pairModified(session, prefix) || session.modified.has(key);
-        let origin = modified ? 'Сценарий: введено вручную.' : session.titles[key];
-        if (!modified && expensePairs.includes(prefix)) origin = 'Ставка из параметров кабинета ' + session.product.store_name + '.';
-        if (!modified && ['purchase', 'fulfillment', 'team'].includes(prefix)) origin = 'Источник: Google Sheets, строка товара.';
-        if (session.error || session.pending) return [origin, session.error || 'Пересчитываем…'].join('\n');
-        let formula = '';
-        if (['acquiring', 'team'].includes(prefix)) {
-            formula = v[prefix + '_basis'] === 'amount'
-                ? 'Сумма задана вручную. Ставка = ' + rub(v[prefix + '_amount']) + ' / ' + rub(v.seller_price) + ' × 100 = ' + percent(v[prefix + '_percent']) + '%.'
-                : 'Цена с учётом акции × ставка = ' + rub(v.seller_price) + ' × ' + percent(v[prefix + '_percent']) + '% = ' + rub(v[prefix + '_amount']) + '.';
-        } else if (prefix === 'vat') {
-            formula = v.vat_basis === 'amount'
-                ? 'НДС задан вручную. Ставка = ' + rub(v.vat_amount) + ' / (' + rub(v.buyer_price) + ' − ' + rub(v.vat_amount) + ') × 100 = ' + percent(v.vat_percent) + '%.'
-                : 'НДС = цена с СПП × ставка / (100 + ставка).\n' + rub(v.buyer_price) + ' × ' + percent(v.vat_percent) + ' / (100 + ' + percent(v.vat_percent) + ') = ' + rub(v.vat_amount) + '.';
-            if (v.vat_basis === 'percent' && Number(v.vat_percent) === 0 && v.vat_percent != null) formula += '\nПри ставке 0% НДС равен 0 ₽, даже если цена неизвестна.';
-        } else if (prefix === 'usn') {
-            formula = v.usn_basis === 'amount'
-                ? 'УСН задан вручную. Ставка = ' + rub(v.usn_amount) + ' / (' + rub(v.buyer_price) + ' − ' + rub(v.vat_amount) + ') × 100 = ' + percent(v.usn_percent) + '%.'
-                : 'УСН = (цена с СПП − НДС) × ставка.\n(' + rub(v.buyer_price) + ' − ' + rub(v.vat_amount) + ') × ' + percent(v.usn_percent) + '% = ' + rub(v.usn_amount) + '.';
-            if (v.vat_basis === 'percent') formula += '\nНДС в базе УСН учитывается без промежуточного округления, как в Яндексе.';
-            if (v.usn_basis === 'percent' && Number(v.usn_percent) === 0 && v.usn_percent != null) formula += '\nПри ставке 0% УСН равен 0 ₽, даже если база неизвестна.';
-        } else if (['click', 'order'].includes(prefix)) {
-            formula = v[prefix + '_basis'] === 'percent'
-                ? 'Расходы = ДРР × ТО / выкуп = ' + percent(v[prefix + '_drr']) + '% × ' + rub(v.turnover) + ' / ' + percent(v.buyout_percent) + '% = ' + rub(v[prefix + '_spend']) + '.'
-                : 'ДРР = расходы / ТО × выкуп = ' + rub(v[prefix + '_spend']) + ' / ' + rub(v.turnover) + ' × ' + percent(v.buyout_percent) + '% = ' + percent(v[prefix + '_drr']) + '%.';
-        } else if (key === 'storage_amount') {
-            const data = session.product.storage || {};
-            const snapshot = data.snapshot;
-            if (!modified) origin = snapshot ? 'Источник: дневной снимок хранения Ozon FBO.' : 'Дневной снимок хранения ещё не загружен.';
-            if (snapshot) {
-                const date = value => new Date(value + 'T00:00:00+03:00').toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
-                formula = 'Период: ' + date(snapshot.period.start) + '–' + date(snapshot.period.end) + ', без сегодняшнего дня.\n' +
-                    'Хранение на штуку = расходы / (продажи − возвраты).\n' + rub(snapshot.expenses) + ' / (' + snapshot.sold_units + ' − ' + snapshot.returned_units + ') = ' + rub(snapshot.per_unit) + '.\n' +
-                    'Снимок от ' + date(snapshot.period.day) + '. Даты продаж и возвратов — по финансовым начислениям FBO.';
-                if (snapshot.state === 'insufficient') formula += '\nНет положительного количества выкупленных штук для распределения расходов.';
-                if (snapshot.state === 'partial') formula += '\nВ отчёте хранения отсутствуют дни периода. Итог на штуку не подставляется.';
-                if (data.stale) formula += '\nПоказан предыдущий дневной снимок.';
-            }
-            if (data.error) formula += '\nПоследнее обновление не удалось.';
-            if (modified) formula += '\nВ сценарии используется введённая сумма: ' + rub(v[key]) + '.';
-        } else if (['purchase', 'fulfillment'].includes(key)) {
-            formula = 'Расход на одну штуку: ' + rub(v[key]) + '.';
-        } else if (key === 'advertising_amount') {
-            formula = v.advertising_manual ? 'Сумма на одну штуку задана вручную: ' + rub(v.advertising_amount) + '.'
-                : 'Реклама на штуку = (расходы за клики + за заказы + прочая реклама) / (заказано × выкуп / 100).\n' +
-                    '(' + rub(v.click_spend) + ' + ' + rub(v.order_spend) + ' + ' + rub(v.other_spend) + ') / (' +
-                    percent(v.orders_count) + ' × ' + percent(v.buyout_percent) + '%) = ' + rub(v.advertising_amount) + '.';
-        } else if (key === 'orders_count') {
-            formula = 'Количество заказанных единиц за сегодня до отмен. Отмены и возвраты учтены в проценте выкупа.';
-        } else if (['other_spend', 'other_drr'].includes(key)) {
-            formula = 'Известные расходы остальных видов рекламы, распределённые Ozon на этот товар за сегодня. Неизвестные категории не считаются подтверждёнными нулями; они не блокируют ДРР по действующему правилу учёта рекламы.\n' +
-                'ДРР прочей рекламы = ' + rub(v.other_spend) + ' / ' + rub(v.turnover) + ' × ' + percent(v.buyout_percent) + '% = ' + percent(v.other_drr) + '%.';
-        }
-        if (v[key] == null) formula += '\nЗначение не рассчитано: не хватает исходных данных или база не позволяет выполнить расчёт.';
-        return [origin, formula, key === 'other_drr' ? 'Пересчитывается по сумме прочей рекламы, ТО и выкупу.' :
-            'Можно изменить вручную. «Сбросить» возвращает исходные значения.'].filter(Boolean).join('\n');
-    }
-
     function source(product) {
         const data = product.calculator || {};
         const details = product.details || {};
@@ -139,7 +78,9 @@ window.OzonCalculatorUI = (() => {
             return value.state === 'conflict' ? null : value.amount ?? null;
         };
         return {
+            advertising_week: data.advertising_week ?? null,
             seller_price: price('seller_price'), buyer_price: price('black_price'),
+            wallet_price: price('green_price'),
             commission_amount: (product.commission || {}).amount ?? null,
             logistics_amount: display(((product.logistics || {}).snapshot || {}).actual_per_unit) || null,
             orders_count: data.orders_count ?? null, other_spend: data.other_spend ?? null,
@@ -156,6 +97,7 @@ window.OzonCalculatorUI = (() => {
     }
 
     function clear(root) {
+        window.OzonCalculatorHelp.clear(root);
         const session = sessions.get(root);
         if (session) {
             window.clearTimeout(session.timer);
@@ -192,7 +134,7 @@ window.OzonCalculatorUI = (() => {
         if (!session || session.productId !== product.id) {
             clear(root);
             session = { productId: product.id, product, values: source(product), expenses: { ...(product.cabinet || {}).expenses },
-                edits: [], draft: {}, invalid: new Set(), modified: new Set(), titles: {}, sequence: 0, initialized: false, changed: false };
+                edits: [], draft: {}, invalid: new Set(), modified: new Set(), sequence: 0, initialized: false, changed: false };
             session.pricesChanged = event => {
                 if (event.detail.productId !== session.productId) return;
                 const prices = event.detail.values;
@@ -200,6 +142,7 @@ window.OzonCalculatorUI = (() => {
                 if (event.detail.modified) session.changed = true;
                 edit(session, 'seller_price', prices.seller_price);
                 edit(session, 'buyer_price', prices.black_price);
+                edit(session, 'wallet_price', prices.green_price);
                 edit(session, 'commission_amount', prices.commission_amount);
                 queue(root, session);
             };
@@ -278,7 +221,6 @@ window.OzonCalculatorUI = (() => {
             }
             if (spec.key === 'vat_amount') row.style.setProperty('--expanded-order', '19');
             if (spec.key === 'usn_amount') row.style.setProperty('--expanded-order', '21');
-            if (!session.titles[spec.key]) session.titles[spec.key] = spec.metric ? row.title : spec.label;
             input.dataset.ozonScenarioInput = spec.key;
             input.type = 'number';
             input.min = spec.signed ? '-1000000000000' : '0';
@@ -333,8 +275,8 @@ window.OzonCalculatorUI = (() => {
             const key = input.dataset.ozonScenarioInput;
             const unavailable = input.readOnly && (session.pending || session.pricePending || !session.initialized || session.error || session.invalid.size);
             input.value = unavailable ? '' : Object.hasOwn(session.draft, key) ? session.draft[key] : display(session.values[key]);
-            input.title = hint(session, key);
-            input.closest('.ue1c-calculator-row').title = input.title;
+            window.OzonCalculatorHelp.bind(input.closest('.ue1c-calculator-row'), () =>
+                window.OzonCalculatorHelpContent.calculator(session, key, input.getAttribute('aria-label')));
         });
         const breakdown = root.querySelector('[data-ozon-other-breakdown] ul');
         const waiting = session.pending || session.pricePending || !session.initialized;
@@ -350,6 +292,7 @@ window.OzonCalculatorUI = (() => {
         note.hidden = !note.textContent;
         note.classList.toggle('is-error', Boolean(session.error || session.settingsError));
         paintResult(root, session);
+        window.OzonCalculatorHelp.refresh();
     }
 
     function paintTotalDrr(root, session) {
@@ -359,13 +302,8 @@ window.OzonCalculatorUI = (() => {
         const waiting = session.pending || session.pricePending || !session.initialized;
         const unavailable = waiting || session.error || session.invalid.size;
         input.value = unavailable ? '' : display(values.total_drr);
-        const detail = session.error || (waiting ? 'Пересчитываем…' : session.invalid.size ? 'Проверьте введённые значения.'
-            : 'Общий ДРР = (расходы за клики + за заказы + прочая реклама) / ТО после отмен × процент выкупа.\n' +
-                '(' + rub(values.click_spend) + ' + ' + rub(values.order_spend) + ' + ' + rub(values.other_spend) + ') / ' +
-                rub(values.turnover) + ' × ' + percent(values.buyout_percent) + '% = ' + percent(values.total_drr) +
-                (values.total_drr == null ? '. Не хватает расходов, выкупа или положительного ТО.' : '%.'));
-        input.title = detail + '\nПрочая реклама включает только известные расходы; состояния категорий показаны в подробном расчёте. Округление отдельных ДРР может отличаться от округления общей суммы.\nРасходы за сегодня. Их можно изменить в подробном расчёте. Ручная реклама на штуку меняет прибыль, но не расходы за день и общий ДРР.';
-        input.closest('.ue1c-calculator-row').title = input.title;
+        window.OzonCalculatorHelp.bind(input.closest('.ue1c-calculator-row'), () =>
+            window.OzonCalculatorHelpContent.calculator(session, 'total_drr', 'Общий ДРР с выкупом'));
     }
 
     function paintResult(root, session) {
@@ -376,31 +314,30 @@ window.OzonCalculatorUI = (() => {
         const unavailable = waiting || session.error || session.invalid.size;
         const margin = unavailable ? null : result.margin;
         const roi = unavailable ? null : result.roi;
-        node.replaceChildren();
-        [['Чистая прибыль на штуку', margin, rub], ['ROI', roi, value => value == null ? '—' : percent(value) + '%']].forEach(([label, value, format]) => {
-            const row = document.createElement('div');
+        Array.from(node.childNodes).forEach(item => {
+            if (item.nodeType !== 1 || !item.hasAttribute('data-ozon-result')) item.remove();
+        });
+        [['Чистая прибыль на штуку', margin, rub, 'margin'], ['ROI', roi, value => value == null ? '—' : percent(value) + '%', 'roi']].forEach(([label, value, format, key]) => {
+            const row = node.querySelector('[data-ozon-result="' + key + '"]') || document.createElement('div');
+            row.dataset.ozonResult = key;
             const title = document.createElement('span');
             title.textContent = label;
             const amount = document.createElement('strong');
             amount.textContent = format(value);
             amount.className = value == null ? '' : Number(value) < 0 ? 'is-negative' : 'is-positive';
-            row.append(title, amount);
-            node.append(row);
+            row.replaceChildren(title, amount);
+            row.tabIndex = 0;
+            if (!row.parentNode) node.append(row);
+            window.OzonCalculatorHelp.bind(row, () => window.OzonCalculatorHelpContent.calculator(session, key, label));
         });
         const labels = window.OzonEconomicsUI.marginLabels;
-        const keys = ['seller_price', 'purchase', 'fulfillment', 'commission_amount', 'logistics_amount', 'storage_amount',
-            'advertising_amount', 'acquiring_amount', 'team_amount', 'vat_amount', 'usn_amount'];
-        const text = keys.map(key => labels[key] + ': ' + rub(session.values[key])).join('\n');
         const missing = (result.missing || []).map(key => labels[key] || key);
         const status = document.createElement('p');
         status.className = 'ozon-scenario-note';
         status.textContent = session.error || (waiting ? 'Пересчитываем…' : missing.length ? 'Не хватает: ' + missing.join(', ') + '.'
             : '');
         if (status.textContent) node.append(status);
-        node.title = unavailable ? status.textContent : text + '\nЧистая прибыль на штуку: ' + rub(margin);
-        if (!session.changed && session.product.current_economics?.calculation?.issues?.length) {
-            node.title += '\n' + session.product.current_economics.calculation.issues.map(key => labels[key] || key).join('. ') + '.';
-        }
+        node.removeAttribute('title');
     }
 
     function queue(root, session) {

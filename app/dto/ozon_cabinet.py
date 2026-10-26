@@ -76,6 +76,8 @@ class OzonCabinetUpdate(DtoModel):
     def one_section(self) -> Self:
         if sum(value is not None for value in (self.goals, self.buyout, self.expenses)) != 1:
             raise ValueError("Exactly one settings section is required")
+        if self.buyout is not None and self.buyout.period_days != OZON_CABINET.default_period_days:
+            raise ValueError("Ozon buyout period must be 30 completed days")
         return self
 
 

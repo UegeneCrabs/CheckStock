@@ -5,8 +5,12 @@ window.OzonHistoryUI = (() => {
     const dateLabel = value => dates.format(new Date(value + 'T12:00:00Z'));
 
     function note(row, field) {
+        const buyout = row.buyout || {};
+        const period = field === 'drr' ? ' · выкуп за 30 дней: ' +
+            (buyout.percent == null ? 'нет снимка с рассчитанным выкупом' : buyout.percent + '%') +
+            (buyout.period_from && buyout.period_to ? ' (' + dateLabel(buyout.period_from) + '–' + dateLabel(buyout.period_to) + ')' : '') : '';
         return ((row.partial_fields || []).includes(field) ? ' · неполные данные' : '') +
-            ((row.stale_fields || []).includes(field) ? ' · обновление не подтверждено' : '');
+            ((row.stale_fields || []).includes(field) ? ' · обновление не подтверждено' : '') + period;
     }
 
     function clear(root) {

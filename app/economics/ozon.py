@@ -8,10 +8,12 @@ from app.core.constants import InboundAvailability
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.inbound_supplies import InboundSnapshot
+from app.dto.ozon_stock import OzonStockEvidence
 from app.economics import ozon_advertising, ozon_turnover
 from app.economics.wb import calculations as wb_calculations
 from app.exports import stock_sheet_inbound
 from app.ozon import reputation as ozon_reputation
+from app.ozon.stock_normalizer import quantities as stock_quantities
 from app.repositories import unit_economics_1c as unit_economics_repository
 from app.repositories import unit_economics_data_errors
 
@@ -73,6 +75,7 @@ def load_products(
             else stock_sheet_inbound.load(slug, MARKETPLACE, catalog)
         )
         reputation_error = (health.get(slug, {}).get("reputation") or {}).get("error")
+        stock_source = health.get(slug, {}).get("stocks") or {}
         source_error = (health.get(slug, {}).get("unit_economics_1c_source") or {}).get("error")
         ad_source_error = (
             (health.get(slug, {}).get(ozon_advertising.SCOPE) or {}).get("error")
@@ -84,12 +87,20 @@ def load_products(
             if article and sku != article:
                 continue
             stock = stocks.get(sku)
-            fbs = (
-                sum(max(int(stock.get(key) or 0), 0) for key in ("fbs_stock", "rfbs_stock"))
-                if stock and any(stock.get(key) is not None for key in ("fbs_stock", "rfbs_stock"))
-                else None
+            quantities = stock_quantities(
+                OzonStockEvidence.model_validate(
+                    {
+                        "fbs": stock.get("fbs_stock") if stock else None,
+                        "rfbs": stock.get("rfbs_stock") if stock else None,
+                        "fbo": stock.get("fbo_stock") if stock else None,
+                        "catalog_observed_at": item.get("mp_updated_at"),
+                        "source_checked_at": stock_source.get("checked_at"),
+                        "source_ok": bool(stock_source.get("ok")),
+                    }
+                )
             )
-            fbo = max(int(stock["fbo_stock"]), 0) if stock and stock.get("fbo_stock") is not None else None
+            fbs = quantities.fbs
+            fbo = quantities.fbo
             ff = (
                 max(int(stock["ff_available"]), 0)
                 if stock and stock.get("ff_available") is not None

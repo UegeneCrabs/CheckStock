@@ -59,9 +59,11 @@ def parse_source_values(sheets: list[dict], catalog: list[dict]) -> dict:
 
     for sheet in sheets:
         title = source._text(sheet.get("title"))
+        sheet_stores = source._sheet_store_slugs(title)
         rows = list(sheet.get("rows") or [])
         header_index, columns = _find_header(rows)
         for source_row, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
+
             def cell(
                 name: str,
                 current_row: list[object] = row,
@@ -77,7 +79,9 @@ def parse_source_values(sheets: list[dict], catalog: list[dict]) -> dict:
                 skipped_not_ozon += 1
                 continue
             source_rows += 1
-            candidates = by_product_id.get(product_id, [])
+            candidates = [
+                item for item in by_product_id.get(product_id, []) if item["store_slug"] in sheet_stores
+            ]
             if not candidates:
                 unmatched += 1
                 if len(unmatched_examples) < 10:
@@ -104,8 +108,11 @@ def parse_source_values(sheets: list[dict], catalog: list[dict]) -> dict:
             previous = parsed_by_item.get(item_id)
             if previous is not None:
                 comparable = (
-                    "purchase_price", "fulfillment_cost", "team_commission_percent",
-                    "tag_raw", "manager",
+                    "purchase_price",
+                    "fulfillment_cost",
+                    "team_commission_percent",
+                    "tag_raw",
+                    "manager",
                 )
                 if any(previous[key] != parsed[key] for key in comparable):
                     raise source.SourceDataError(
@@ -160,6 +167,9 @@ def sync_all(sheets: list[dict] | None = None) -> dict:
         db.record_sync_health(slug, MARKETPLACE, "unit_economics_1c_source", True, None, now)
     logger.info(
         "ozon_source_sync sheets=%s saved=%s skipped_not_ozon=%s unmatched=%s",
-        report["sheet_count"], saved, report["skipped_not_ozon"], report["unmatched"],
+        report["sheet_count"],
+        saved,
+        report["skipped_not_ozon"],
+        report["unmatched"],
     )
     return {"ok": True, "saved": saved, "synced_at": now, **report}

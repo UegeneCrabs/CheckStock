@@ -4,7 +4,7 @@ from typing import Annotated
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from app.core.constants import OzonPriceField, OzonPriceSource, OzonPriceState
+from app.core.constants import OrderScheme, OzonPriceField, OzonPriceSource, OzonPriceState
 from app.dto.common import DtoModel
 from app.dto.ozon_commissions import CommissionPercent
 
@@ -17,6 +17,7 @@ class PriceValue(DtoModel):
     received_at: AwareDatetime | None = None
     attempted_at: AwareDatetime | None = None
     source: OzonPriceSource | None = None
+    scheme: OrderScheme | None = None
     action_ids: tuple[int, ...] = ()
     state: OzonPriceState = OzonPriceState.MISSING
     stale: bool = False
@@ -148,3 +149,4 @@ class WebsiteEvidence(DtoModel):
     source: OzonPriceSource
     received_at: AwareDatetime
     prices: WebsiteSchemePrices
+    scheme: OrderScheme = OrderScheme.FBO

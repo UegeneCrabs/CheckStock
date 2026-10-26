@@ -25,7 +25,7 @@
         }
         function ratio(index, rows, top, bottom, factor, unit, title, partial) {
             var numerator = 0, denominator = 0;
-            rows.forEach(function (p) { numerator += top(p); denominator += bottom(p); });
+            rows.forEach(function (p) { numerator += Number(top(p)); denominator += Number(bottom(p)); });
             metric(index, rows, denominator > 0 ? numerator / denominator * factor : null, unit, title, partial);
         }
         var current = products.filter(function (p) {

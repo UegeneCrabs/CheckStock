@@ -87,7 +87,7 @@ def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
         values.turnover, values.buyout_percent, None, other_spend, OzonScenarioBasis.AMOUNT
     ).percent
     acquiring = pair(
-        values.seller_price, values.acquiring_percent, values.acquiring_amount, values.acquiring_basis
+        values.wallet_price, values.acquiring_percent, values.acquiring_amount, values.acquiring_basis
     )
     team = pair(values.seller_price, values.team_percent, values.team_amount, values.team_basis)
     clicks = advertising(
@@ -159,7 +159,15 @@ def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
     advertising_amount = (
         values.advertising_amount
         if values.advertising_manual
-        else advertising_per_unit(spend, values.orders_count, values.buyout_percent)
+        else advertising_per_unit(
+            values.advertising_week.spend,
+            Decimal(values.advertising_week.orders_count)
+            if values.advertising_week.orders_count is not None
+            else None,
+            values.buyout_percent,
+        )
+        if values.advertising_week is not None and values.advertising_week.complete
+        else None
     )
     inputs = OzonMarginInputs.model_validate(
         {
@@ -184,15 +192,7 @@ def calculate(request: OzonCalculatorRequest) -> OzonCalculatorValues:
             changes["other_breakdown"] = None
         if edit.field == OzonScenarioField.ADVERTISING_AMOUNT:
             changes["advertising_manual"] = True
-        elif edit.field in (
-            OzonScenarioField.ORDERS_COUNT,
-            OzonScenarioField.BUYOUT,
-            OzonScenarioField.CLICK_SPEND,
-            OzonScenarioField.CLICK_DRR,
-            OzonScenarioField.ORDER_SPEND,
-            OzonScenarioField.ORDER_DRR,
-            OzonScenarioField.OTHER_SPEND,
-        ):
+        elif edit.field == OzonScenarioField.BUYOUT:
             changes["advertising_manual"] = False
         match edit.field:
             case OzonScenarioField.CLICK_DRR | OzonScenarioField.CLICK_SPEND:

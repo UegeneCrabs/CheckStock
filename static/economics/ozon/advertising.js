@@ -126,8 +126,12 @@ window.OzonAdvertisingUI = (() => {
 
     function drrTooltip(product) {
         const basis = (product.advertising || {}).drr_basis || {};
+        const buyout = basis.buyout || {};
         return ['ТО после отмен: ' + amount(basis.turnover), 'Расходы на рекламу: ' + amount(basis.spend),
-            'Процент выкупа: ' + percent(basis.buyout_percent)].join('\n');
+            'Процент выкупа за 30 дней: ' + percent(basis.buyout_percent),
+            'Период выкупа: ' + (buyout.period_from || '—') + ' — ' + (buyout.period_to || '—'),
+            buyout.default_applied ? 'Применён выкуп по умолчанию из настроек кабинета.' : '',
+            buyout.stale ? 'Данные выкупа устарели.' : ''].filter(Boolean).join('\n');
     }
 
     function drrContent(product) {

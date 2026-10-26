@@ -73,6 +73,7 @@ class JobScheduleView(DtoModel):
     hours: tuple[int, ...] = ()
     minute: int = 0
     weekdays: tuple[int, ...] = ()
+    weekly_hours: tuple[tuple[int, int], ...] = ()
     deadline_hour: int | None = None
     retry_seconds: int | None = None
 

@@ -267,6 +267,7 @@ class AdvertisingSourceDay(DtoModel):
     state: AdvertisingState
     snapshot: AdvertisingSnapshot | None = None
     stale: bool = False
+    error: str | None = None
 
 
 class AdvertisingDay(DtoModel):

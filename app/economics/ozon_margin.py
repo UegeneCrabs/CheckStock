@@ -32,6 +32,9 @@ def snapshot(
             buyer_price=prices.black_price.amount
             if prices.black_price.state != OzonPriceState.CONFLICT
             else None,
+            wallet_price=prices.green_price.amount
+            if prices.green_price.state != OzonPriceState.CONFLICT
+            else None,
             purchase=source.purchase_price,
             fulfillment=source.fulfillment_cost,
             commission_amount=commission.amount,
@@ -54,6 +57,7 @@ def snapshot(
         (
             prices.seller_price.stale,
             prices.black_price.stale,
+            prices.green_price.stale,
             commission.stale,
             logistics.stale,
             storage.stale,
@@ -104,7 +108,6 @@ def calculate_day(
         count,
         advertising.amount if advertising and advertising.complete else None,
         issues=tuple(issues),
-        unsupported=any(row.fbs_ordered for row in rows),
     )
 
 

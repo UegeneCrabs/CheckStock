@@ -40,24 +40,31 @@ async def website_observations(
                 for product in page.products:
                     if product.id not in candidates or product.website_prices is None:
                         continue
-                    prices = product.website_prices.prices_by_schema.get(OZON_PRICES.scheme)
-                    if prices is not None:
-                        evidence[product.id].append(
-                            WebsiteEvidence(
-                                product_id=product.id,
-                                action_id=action_id,
-                                source=source,
-                                received_at=page.received_at,
-                                prices=prices,
+                    for scheme in OZON_PRICES.website_schemes:
+                        prices = product.website_prices.prices_by_schema.get(scheme.value.upper())
+                        if prices is not None:
+                            evidence[product.id].append(
+                                WebsiteEvidence(
+                                    product_id=product.id,
+                                    action_id=action_id,
+                                    source=source,
+                                    received_at=page.received_at,
+                                    prices=prices,
+                                    scheme=scheme,
+                                )
                             )
-                        )
         if source == OzonPriceSource.PRODUCTS:
             checked = datetime.now(UTC)
             candidates = {
                 product_id
                 for product_id, items in evidence.items()
                 if any(
-                    website_value(tuple(items), field, checked).state == OzonPriceState.MISSING
+                    website_value(
+                        tuple(item for item in items if item.scheme == OZON_PRICES.website_schemes[0]),
+                        field,
+                        checked,
+                    ).state
+                    == OzonPriceState.MISSING
                     for field in OZON_PRICES.website_fields
                 )
             }

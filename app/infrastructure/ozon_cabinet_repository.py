@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.engine import ScalarResult
 
-from app.core.constants import Marketplace
+from app.core.constants import OZON_CABINET, Marketplace
 from app.core.stores import STORES
 from app.dto.ozon_buyout import OzonBuyoutLine
 from app.dto.ozon_cabinet import (
@@ -30,6 +30,13 @@ from app.infrastructure.ozon_cabinet_orm import OzonCabinetRecord as CabinetTabl
 
 class OzonCabinetConflict(Exception):
     pass
+
+
+def stored_cabinet_values(payload: str) -> OzonCabinetValues:
+    values = OzonCabinetValues.model_validate_json(payload)
+    return values.model_copy(
+        update={"buyout": values.buyout.model_copy(update={"period_days": OZON_CABINET.default_period_days})}
+    )
 
 
 class OzonCabinetRepository:
@@ -65,7 +72,7 @@ class OzonCabinetRepository:
                 row.store_slug: OzonCabinetRecord(
                     store_slug=row.store_slug,
                     revision=row.revision,
-                    values=OzonCabinetValues.model_validate_json(row.payload),
+                    values=stored_cabinet_values(row.payload),
                     updated_at=row.updated_at,
                     updated_by=row.updated_by,
                 )
@@ -97,7 +104,7 @@ class OzonCabinetRepository:
             ).first()
             if row is None or row.revision != command.change.revision:
                 raise OzonCabinetConflict()
-            values = OzonCabinetValues.model_validate_json(row.payload).model_copy(
+            values = stored_cabinet_values(row.payload).model_copy(
                 update={
                     key: value
                     for key in ("goals", "buyout", "expenses")

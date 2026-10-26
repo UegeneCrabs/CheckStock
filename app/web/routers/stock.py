@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.web.routers import (
+    fbo_stock,
     inbound_supplies,
     stock_cost_report,
     stock_mutations,
@@ -15,6 +16,7 @@ from app.web.routers import (
 router = APIRouter()
 router.include_router(supply_arrivals.router)
 router.include_router(inbound_supplies.router)
+router.include_router(fbo_stock.router)
 router.include_router(stock_read.router)
 router.include_router(stock_cost_report.router)
 router.include_router(stock_total.router)

@@ -32,6 +32,7 @@ window.OzonPricesUI = (() => {
     }
 
     function clear(root) {
+        window.OzonCalculatorHelp.clear(root);
         const session = sessions.get(root);
         if (session) {
             if (window.OzonCategoriesUI) window.OzonCategoriesUI.clear(session);
@@ -51,6 +52,14 @@ window.OzonPricesUI = (() => {
         input.value = Object.hasOwn(session.draft, key) ? session.draft[key] : displayed(session.values[key]);
         input.oninput = () => {
             session.modified = true;
+            if (fields.some(([field]) => field === key)) {
+                session.helpPriceAnchor = key;
+                session.helpPriceManual = key;
+            } else if (key === 'spp_percent' || key === 'wallet_percent') {
+                session.helpPriceAnchor = key === 'spp_percent' ? 'seller_price' : 'black_price';
+                session.helpPriceManual = null;
+                session.helpDiscounts.add(key);
+            } else session.helpCommissionBasis = key;
             if (key.startsWith('commission_') && window.OzonCategoriesUI) window.OzonCategoriesUI.manual(root, session);
             session.draft[key] = input.value;
             if (!input.checkValidity()) {
@@ -86,9 +95,10 @@ window.OzonPricesUI = (() => {
                 const price = (product.price || {})[key] || {};
                 values[key] = price.state === 'conflict' ? null : price.amount ?? null;
             });
-            session = { productId: product.id, values, draft: {}, edits: [], invalid: new Set(), initialized: false, sequence: 0 };
+            session = { productId: product.id, values, draft: {}, edits: [], invalid: new Set(), initialized: false, sequence: 0, helpDiscounts: new Set() };
             sessions.set(root, session);
         }
+        session.helpProduct = product;
         calculator.querySelectorAll('[data-ozon-price-row], [data-ozon-calculator-status], .ozon-prices').forEach(row => row.remove());
         fields.forEach(([key, label], index) => {
             const price = (product.price || {})[key] || {};
@@ -125,7 +135,16 @@ window.OzonPricesUI = (() => {
         inputs.append(status);
         renderCommission(root, product, session);
         if (window.OzonCategoriesUI) window.OzonCategoriesUI.render(root, product, session, () => queue(root, session));
+        bindHelp(root, session);
         if (!session.initialized || session.edits.length) queue(root, session);
+    }
+
+    function bindHelp(root, session) {
+        root.querySelectorAll('[data-ozon-calculator-input]').forEach(input => {
+            window.OzonCalculatorHelp.bind(input.closest('.ue1c-calculator-row'), () =>
+                window.OzonCalculatorHelpContent.prices(session.helpProduct, session, input.dataset.ozonCalculatorInput, input.getAttribute('aria-label')));
+        });
+        window.OzonCalculatorHelp.refresh();
     }
 
     function numericRow(label, key, order) {
@@ -173,6 +192,9 @@ window.OzonPricesUI = (() => {
     }
 
     function queue(root, session) {
+        session.helpPending = true;
+        session.helpError = '';
+        bindHelp(root, session);
         root.dispatchEvent(new CustomEvent('ozon-prices-pending', { detail: { productId: session.productId } }));
         window.clearTimeout(session.timer);
         if (session.controller) session.controller.abort();
@@ -199,13 +221,18 @@ window.OzonPricesUI = (() => {
                 session.edits = [];
                 session.draft = {};
                 session.initialized = true;
+                session.helpPending = false;
                 if (window.OzonCategoriesUI) window.OzonCategoriesUI.refresh(root, session);
                 root.dispatchEvent(new CustomEvent('ozon-prices-changed', { detail: { productId: session.productId, values: result, modified: Boolean(session.modified || session.tariffId) } }));
                 root.querySelectorAll('[data-ozon-calculator-input]').forEach(input => {
                     input.value = displayed(result[input.dataset.ozonCalculatorInput]);
                 });
+                bindHelp(root, session);
             } catch (error) {
                 if (error.name !== 'AbortError' && sessions.get(root) === session && sequence === session.sequence) {
+                    session.helpError = error.message;
+                    session.helpPending = false;
+                    bindHelp(root, session);
                     const currentStatus = root.querySelector('[data-ozon-calculator-status]');
                     if (currentStatus) {
                         currentStatus.textContent = error.message;

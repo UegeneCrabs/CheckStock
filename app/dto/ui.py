@@ -31,6 +31,7 @@ class UiContext(DtoModel):
     stores: tuple[UiStore, ...]
     sections: tuple[str, ...]
     inbound_interval_seconds: int
+    inbound_schedule: str
     warehouse_display_limit: int
     economics_preview: bool
     alerts: tuple[UiAlert, ...] = ()

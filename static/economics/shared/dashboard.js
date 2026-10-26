@@ -6,6 +6,7 @@
     if (!root || !configNode) return;
 
     var config = JSON.parse(configNode.textContent || '{}');
+    if (config.ozonPreview && window.OzonPromotionsUI) window.OzonPromotionsUI.init(root);
     var placeholderMode = config.placeholderMode === true;
     var marketplaceLabel = String(config.marketplaceLabel || 'WB');
     root.classList.toggle('is-placeholder', placeholderMode);
@@ -2546,6 +2547,7 @@
         });
         id('ue1c-panel-economics').hidden = tabName !== 'economics';
         id('ue1c-panel-params').hidden = tabName !== 'params';
+        if (config.ozonPreview && window.OzonPromotionsUI) window.OzonPromotionsUI.select(root, tabName);
     }
     function updateSaveState() {
         nodes.savePrice.setAttribute('aria-busy', sendingPrice ? 'true' : 'false');
@@ -2704,6 +2706,7 @@
                 renderMarketplaceHistory(product, rows, message);
             });
             if (window.OzonPricesUI) window.OzonPricesUI.render(root, product);
+            if (window.OzonPromotionsUI) window.OzonPromotionsUI.render(root, product);
             if (window.OzonAdvertisingUI) window.OzonAdvertisingUI.renderCalculator(root, product);
             if (window.OzonLogisticsUI) window.OzonLogisticsUI.render(root, product);
             if (window.OzonCalculatorUI) window.OzonCalculatorUI.render(root, product);
@@ -2996,6 +2999,7 @@
         }, 5000);
     }
     function closeDetail() {
+        if (config.ozonPreview && window.OzonPromotionsUI) window.OzonPromotionsUI.clear(root);
         if (config.ozonPreview && window.OzonPricesUI) window.OzonPricesUI.clear(root);
         if (config.ozonPreview && window.OzonLogisticsUI) window.OzonLogisticsUI.clear(root);
         if (config.ozonPreview && window.OzonCalculatorUI) window.OzonCalculatorUI.clear(root);

@@ -12,7 +12,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.unit_economics_1c import UnitEconomics1CProductSettings
 from app.economics.completeness import aggregate_days
-from app.economics.wb import calculations, history
+from app.economics.wb import calculations, catalogue, history
 from app.repositories import analyzer as repository
 from app.repositories.economics_coverage import wb_days
 
@@ -107,6 +107,7 @@ def load(
     *,
     today: date | None = None,
     include_notes=True,
+    include_current_roi=True,
     sources=None,
     now: datetime | None = None,
 ) -> dict:
@@ -126,6 +127,15 @@ def load(
     orders, advertising, rnp = sources.orders, sources.advertising, sources.rnp
     snapshots, coverage = sources.snapshots, sources.coverage
     cabinets, settings, current_metrics = sources.cabinets, sources.settings, sources.current_metrics
+    current_economics = {}
+    if include_current_roi:
+        yesterday = today - timedelta(days=1)
+        current_products, _ = catalogue.load_wb_calculator_products(
+            stores, today, 7, yesterday - timedelta(days=6), yesterday, include_inactive=True
+        )
+        current_economics = {
+            (item["store_slug"], item["article"]): item["current_economics"] for item in current_products
+        }
     work = defaultdict(lambda: defaultdict(list))
     can_edit = is_active_user(user)
     for row in repository.notes(stores, days[0], today.isoformat()) if include_notes else ():
@@ -246,7 +256,7 @@ def load(
             goal, day_goal = reference.get("goal_week"), reference.get("goal_day")
             if day_goal is None and goal is not None:
                 day_goal = goal / 7
-            stock_values = [product.get(field) for field in ("fbo_stock", "fbs_stock", "ff_available")]
+            stock_values = [product.get(field) for field in ("fbo_stock", "fbs_stock")]
             stock = total(stock_values)
             stock_orders = [
                 product_orders[day].get("orders_count")
@@ -271,7 +281,8 @@ def load(
                 else None
             )
             forecast = round(fact * coefficient, 2) if fact is not None else None
-            difference = round(plan - forecast, 2) if plan is not None and forecast is not None else None
+            difference = round(forecast - plan, 2) if plan is not None and forecast is not None else None
+            current = current_economics.get(key, {})
             row = {
                 "id": f"{store}:{article}",
                 "store_slug": store,
@@ -293,6 +304,7 @@ def load(
                 "stockStatus": reference.get("stock_status"),
                 "stockEnds": reference.get("stock_end_week"),
                 "roi": economics.get("roi"),
+                "currentRoi": current.get("roi"),
                 "drr": ratio(spend, bought_amount) if bought_amount else 0.0 if spend == 0 else None,
                 "previousPrice": previous_price,
                 "impressions": [ad_value(day, "impressions") for day in traffic_days],
@@ -338,9 +350,12 @@ def load(
                     "expected": len(period),
                     "drr": drr_days,
                     "roiComplete": economics.get("complete", False),
+                    "currentRoiComplete": current.get("complete", False),
                     "roiMessages": economics.get("messages", []),
                 },
                 "weights": {
+                    "currentProfit": current.get("margin"),
+                    "currentPurchase": current.get("purchase_value"),
                     "spend": spend,
                     "boughtAmount": bought_amount,
                     "yesterdaySpend": yesterday_spend,

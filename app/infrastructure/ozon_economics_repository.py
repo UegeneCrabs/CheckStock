@@ -123,6 +123,7 @@ class OzonEconomicsRepository:
 
     async def products(self, query: OzonProductsQuery, last_complete_day: date, custom: bool) -> OzonProducts:
         today = datetime.now(TIME.moscow_timezone).date()
+        advertising_week = drr.calculator_advertising_period(today)
         expanded = query.model_copy(
             update={
                 "period_to": max(today, query.period_to),
@@ -148,7 +149,8 @@ class OzonEconomicsRepository:
         )
         period = AdvertisingPeriod(start=query.period_from, end=query.period_to)
         statuses = await AsyncAdvertisingRepository(self.database).overlapping(
-            query.stores, AdvertisingPeriod(start=query.period_from, end=expanded.period_to)
+            query.stores,
+            AdvertisingPeriod(start=min(query.period_from, advertising_week.start), end=expanded.period_to),
         )
         by_store = {
             store: source_days(period, tuple(status for status in statuses if status.store_slug == store))
@@ -164,6 +166,14 @@ class OzonEconomicsRepository:
         configured = {store: tokens.has_performance_credentials(store) for store in query.stores}
         advertising_indexes = {store: AdvertisingReadIndex(sources) for store, sources in by_store.items()}
         today_indexes = {store: AdvertisingReadIndex(sources) for store, sources in today_sources.items()}
+        week_indexes = {
+            store: AdvertisingReadIndex(
+                source_days(
+                    advertising_week, tuple(status for status in statuses if status.store_slug == store)
+                )
+            )
+            for store in query.stores
+        }
         prices = {
             (item.store_slug, str(item.product_id)): price_freshness(item.prices, datetime.now(UTC))
             for item in await AsyncPricesRepository(self.database).load(query.stores)
@@ -250,6 +260,14 @@ class OzonEconomicsRepository:
                         store=product.store_slug,
                         article=product.article,
                         buyout=cabinet.buyout,
+                        advertising_week=drr.calculator_advertising_week(
+                            today,
+                            turnover_data,
+                            week_sources,
+                            store=product.store_slug,
+                            article=product.article,
+                            credentials_present=configured[product.store_slug],
+                        ),
                     ),
                     "advertising": product.advertising.model_copy(
                         update={
@@ -299,6 +317,7 @@ class OzonEconomicsRepository:
                                     store=product.store_slug,
                                     article=product.article,
                                     spending=summary,
+                                    buyout=cabinet.buyout,
                                 )
                             ),
                             "drr": basis.drr,
@@ -317,12 +336,19 @@ class OzonEconomicsRepository:
                         (OzonDataIssue(code=OzonDataIssueCode.ADVERTISING_UNAVAILABLE),)
                         if summary.amount is None
                         else ()
+                    )
+                    + tuple(
+                        OzonDataIssue(code=OzonDataIssueCode.SOURCE_ERROR, source="advertising", detail=error)
+                        for error in sorted(
+                            {status.error for status in (*product_sources, *current_sources) if status.error}
+                        )
                     ),
                 }
             )
             for product in result.products
             for product_sources in (advertising_indexes[product.store_slug].article(product.article),)
             for current_sources in (today_indexes[product.store_slug].article(product.article),)
+            for week_sources in (week_indexes[product.store_slug].article(product.article),)
         )
         unallocated = tuple(
             StoreAdvertisingBreakdown(

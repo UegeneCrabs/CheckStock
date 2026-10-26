@@ -37,7 +37,9 @@ window.IntegrationPage = (() => {
         if (value.kind === 'external') return 'Проверка каждую минуту; общее расписание на вкладке Google';
         if (value.kind === 'window') return 'Ежедневно с ' + time + ' до ' + String(value.deadline_hour).padStart(2, '0') + ':00 МСК; повтор каждые ' + value.retry_seconds / 60 + ' мин. при ошибке';
         if (value.kind === 'weekly') return 'По понедельникам в ' + time + ' МСК; пропущенная проверка — после запуска';
-        return 'Ежедневно в ' + time + ' МСК';
+        const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        const extra = (value.weekly_hours || []).map(([day, hour]) => days[day] + ' ' + String(hour).padStart(2, '0') + ':00').join(', ');
+        return 'Ежедневно в ' + time + ' МСК' + (extra ? '; дополнительно ' + extra + ' МСК' : '');
     }
 
     function toggle(job, label, store = '', marketplace = '') {

@@ -1,8 +1,36 @@
 """Bulk reads and optimistic, transactional weekly comment saves."""
 
+import json
 from datetime import UTC, datetime
 
 from app.repositories.core import WRITE_LOCK, get_connection
+
+
+def freeze_stock(store: str, week: str, products: list[dict], captured_at: str) -> None:
+    with WRITE_LOCK, get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO ephemerides_stock_snapshots (store_slug, week, products_json, captured_at)
+            VALUES (?, ?, ?, ?) ON CONFLICT(store_slug, week) DO NOTHING
+            """,
+            (store, week, json.dumps(products, ensure_ascii=False), captured_at),
+        )
+        conn.commit()
+
+
+def weekly_stock(stores: tuple[str, ...], week: str) -> dict[tuple[str, str], dict]:
+    if not stores:
+        return {}
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM ephemerides_stock_snapshots WHERE store_slug IN ({','.join('?' for _ in stores)}) AND week=?",
+            (*stores, week),
+        ).fetchall()
+    return {
+        (row["store_slug"], item["article"]): {**item, "captured_at": row["captured_at"]}
+        for row in rows
+        for item in json.loads(row["products_json"])
+    }
 
 
 class Conflict(ValueError):

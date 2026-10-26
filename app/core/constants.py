@@ -6,6 +6,88 @@ from http import HTTPStatus as HTTPStatus
 from typing import Final, Literal
 
 
+class FboStockState(StrEnum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    ACCEPTED = "accepted"
+    HISTORICAL = "historical"
+    CANCELLED = "cancelled"
+
+
+class FboStockIssue(StrEnum):
+    NONE = ""
+    SHORTAGE = "shortage"
+    LEGACY = "legacy_review"
+    UNCONFIRMED = "unconfirmed"
+    CANCELLED = "cancelled_review"
+
+
+class FboStockAction(StrEnum):
+    SELECT_FULFILLMENT = "select_fulfillment"
+    POST = "post"
+    LINK = "link"
+    RETURN = "return"
+
+
+class FboStockErrorCode(StrEnum):
+    INVALID_FULFILLMENT = "fbo_invalid_fulfillment"
+    FULFILLMENT_REQUIRED = "fbo_fulfillment_required"
+    FULFILLMENT_LOCKED = "fbo_fulfillment_locked"
+    INVALID_REQUEST = "fbo_invalid_request"
+    CONFLICT = "fbo_request_conflict"
+    MISSING = "fbo_supply_missing"
+    UNCONFIRMED = "fbo_supply_unconfirmed"
+    INVALID_LINK = "fbo_invalid_link"
+    INVALID_RETURN = "fbo_invalid_return"
+    MANUAL_DISABLED = "fbo_manual_disabled"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FboStockConfig:
+    wb_active: frozenset[str] = frozenset({"2", "3", "4", "6"})
+    ozon_active: frozenset[str] = frozenset(
+        {
+            "READY_TO_SUPPLY",
+            "ACCEPTED_AT_SUPPLY_WAREHOUSE",
+            "IN_TRANSIT",
+            "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
+            "REPORTS_CONFIRMATION_AWAITING",
+            "REPORT_REJECTED",
+        }
+    )
+    yandex_active: frozenset[str] = frozenset(
+        {
+            "ACCEPTED_BY_WAREHOUSE_SYSTEM",
+            "REGISTERED_IN_ELECTRONIC_QUEUE",
+            "ARRIVED_TO_SERVICE",
+            "ARRIVED_TO_XDOC_SERVICE",
+            "SHIPPED_TO_SERVICE",
+            "WAREHOUSE_HANDLING",
+            "WAREHOUSE_SIGNED_ACT",
+        }
+    )
+    wb_accepted: str = "5"
+    ozon_accepted: str = "COMPLETED"
+    yandex_accepted: str = "FINISHED"
+    batch_kind: str = "fbo_shipment"
+    batch_active: str = "in_transit"
+    batch_partial: str = "partial"
+    batch_accepted: str = "received"
+    batch_cancelled: str = "cancelled"
+    dispatch_operation: str = "fbo_dispatch"
+    receive_operation: str = "fbo_receive"
+    reopen_operation: str = "fbo_receive_revert"
+    return_operation: str = "fbo_cancel"
+    source: str = "marketplace_api"
+    stage_unknown: str = "unknown"
+    stage_cancelled: str = "cancelled"
+    snapshot_confirmed: frozenset[str] = frozenset({"ok", "partial"})
+    request_pattern: str = r"[A-Za-z0-9_-]{16,128}"
+
+
+FBO_STOCK: Final = FboStockConfig()
+
+
 class LocalService(StrEnum):
     WEB = "web"
     SCHEDULER = "scheduler"
@@ -206,6 +288,32 @@ class OzonApiConfig:
 OZON_API: Final = OzonApiConfig()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonPromotionsConfig:
+    actions_path: str = "/v1/actions"
+    candidates_path: str = "/v2/actions/candidates"
+    products_path: str = "/v2/actions/products"
+    page_size: int = 100
+    max_pages: int = 500
+    cache_size: int = 128
+
+
+OZON_PROMOTIONS: Final = OzonPromotionsConfig()
+
+
+class OzonPromotionStatus(StrEnum):
+    PARTICIPATING = "participating"
+    CANDIDATE = "candidate"
+    UNKNOWN = "unknown"
+
+
+class OzonPromotionIssue(StrEnum):
+    ACCESS_DENIED = "access_denied"
+    UNAVAILABLE = "unavailable"
+    INCOMPLETE = "incomplete"
+    TIMEOUT = "timeout"
+
+
 class OzonLogisticsState(StrEnum):
     AVAILABLE = "available"
     MISSING = "missing"
@@ -356,6 +464,7 @@ class OzonScenarioField(StrEnum):
     ADVERTISING_AMOUNT = "advertising_amount"
     SELLER_PRICE = "seller_price"
     BUYER_PRICE = "buyer_price"
+    WALLET_PRICE = "wallet_price"
     TURNOVER = "turnover"
     BUYOUT = "buyout_percent"
     CLICK_SPEND = "click_spend"
@@ -377,6 +486,7 @@ class OzonScenarioField(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonScenarioConfig:
+    advertising_days: int = 7
     max_money: int = 1_000_000_000_000
     number_max_digits: int = 40
     number_decimal_places: int = 24
@@ -428,7 +538,6 @@ class OzonMarginConfig:
     buyout_missing: str = "buyout_percent"
     advertising_missing: str = "advertising_spend"
     no_buyouts: str = "no_expected_buyouts"
-    unsupported_scheme: str = "fbs_orders"
     orders_partial: str = "orders_partial"
     advertising_partial: str = "advertising_partial"
     sources_stale: str = "sources_stale"
@@ -446,7 +555,7 @@ class OzonCabinetConfig:
     buyout_formula_version: int = 2
     percent_factor: int = 100
     percent_precision: int = 2
-    default_period_days: int = 14
+    default_period_days: int = 30
     max_period_days: int = 90
     interval_seconds: int = 14_400
     lock_prefix: str = "ozon_buyout:"
@@ -516,6 +625,7 @@ class OzonPricesConfig:
     )
     website_fields: tuple[OzonPriceField, ...] = (OzonPriceField.BLACK, OzonPriceField.GREEN)
     scheme: str = "FBO"
+    website_schemes: tuple[OrderScheme, ...] = (OrderScheme.FBO, OrderScheme.FBS)
     visibility: str = "ALL"
 
 
@@ -674,6 +784,8 @@ class AdvertisingError(StrEnum):
     INVALID_PERIOD = "invalid_advertising_period"
     NETWORK = "performance_network_error"
     HTTP = "performance_http_error"
+    AUTHENTICATION = "performance_authentication_failed"
+    PERMISSION = "performance_permission_denied"
     DAILY_LIMIT = "performance_daily_limit"
     ACTIVE_LIMIT = "performance_active_limit"
     RATE_LIMIT = "performance_rate_limit"
@@ -866,6 +978,15 @@ class JobCatalog:
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.WB,),
         manual_run=True,
+    )
+    wb_ephemerides_stock: SyncJobMetadata = SyncJobMetadata(
+        name="wb_ephemerides_stock_snapshot",
+        title="Недельный сток эфемерид WB",
+        description="Фиксирует сохранённые FBS, FBO и возвраты на неделю только для эфемерид. Снимок не перезаписывается.",
+        schedule="По понедельникам в 00:05 МСК",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.WB,),
+        manual_run=False,
     )
     yandex_finance: SyncJobMetadata = SyncJobMetadata(
         name="yandex_finance_sync",
@@ -1360,6 +1481,9 @@ class WebErrorCode(StrEnum):
     INVALID_CALCULATOR_SCENARIO = "invalid_calculator_scenario"
     OZON_CATEGORY_UNAVAILABLE = "ozon_category_unavailable"
     OZON_RELATED_UNAVAILABLE = "ozon_related_unavailable"
+    OZON_PROMOTIONS_UNAVAILABLE = "ozon_promotions_unavailable"
+    OZON_PROMOTIONS_ACCESS_DENIED = "ozon_promotions_access_denied"
+    OZON_PROMOTIONS_CREDENTIALS_MISSING = "ozon_promotions_credentials_missing"
     OZON_REVIEW_SUBSCRIPTION_REQUIRED = "ozon_review_subscription_required"
 
 
@@ -1483,6 +1607,33 @@ OZON_HISTORY: Final = OzonHistoryConstants()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class InboundScheduleConstants:
+    daily_hour: int = 10
+    extra_weekday: int = 0
+    extra_hour: int = 5
+    days_per_week: int = 7
+    interval_seconds: int = 86_400
+    stale_after_seconds: int = 93_600
+    alignment_tolerance_seconds: int = 1
+    description: str = "Ежедневно в 10:00 МСК; дополнительно в понедельник в 05:00 МСК"
+
+
+INBOUND_SCHEDULE: Final = InboundScheduleConstants()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EphemeridesStockSchedule:
+    weekday: int = 0
+    hour: int = 0
+    minute: int = 5
+    days: int = 7
+    retry_delays: tuple[int, ...] = (300, 1_800, 3_600)
+
+
+EPHEMERIDES_STOCK_SCHEDULE: Final = EphemeridesStockSchedule()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class JobScheduleRule:
     name: str
     kind: ScheduleKind = ScheduleKind.INTERVAL
@@ -1492,6 +1643,7 @@ class JobScheduleRule:
     hour_setting: str | None = None
     minute: int = 0
     weekdays: tuple[int, ...] = ()
+    weekly_hours: tuple[tuple[int, int], ...] = ()
     yandex_source: YandexSyncSource | None = None
 
 
@@ -1502,10 +1654,22 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.wb_hourly_prices.name, interval_setting="wb_hourly_prices_interval_seconds"),
     JobScheduleRule(name=JOBS.wb_daily_prices.name, kind=ScheduleKind.DAILY, hours=(0,), minute=5),
     JobScheduleRule(name=JOBS.wb_customer_transit.name, seconds=14_400),
+    JobScheduleRule(
+        name=JOBS.wb_ephemerides_stock.name,
+        kind=ScheduleKind.WEEKLY,
+        hours=(EPHEMERIDES_STOCK_SCHEDULE.hour,),
+        minute=EPHEMERIDES_STOCK_SCHEDULE.minute,
+        weekdays=(EPHEMERIDES_STOCK_SCHEDULE.weekday,),
+    ),
     JobScheduleRule(name=JOBS.yandex_finance.name, kind=ScheduleKind.DAILY, hours=(5,)),
     JobScheduleRule(name=JOBS.catalog.name, kind=ScheduleKind.DAILY, hour_setting="catalog_sync_hour"),
     JobScheduleRule(name=JOBS.stock.name, interval_setting="auto_sync_interval_seconds"),
-    JobScheduleRule(name=JOBS.inbound_supplies.name, interval_setting="inbound_sync_interval_seconds"),
+    JobScheduleRule(
+        name=JOBS.inbound_supplies.name,
+        kind=ScheduleKind.DAILY,
+        hours=(INBOUND_SCHEDULE.daily_hour,),
+        weekly_hours=((INBOUND_SCHEDULE.extra_weekday, INBOUND_SCHEDULE.extra_hour),),
+    ),
     JobScheduleRule(name=JOBS.supply_arrivals.name, interval_setting="supply_arrivals_sync_interval_seconds"),
     JobScheduleRule(name=JOBS.wb_advertising.name, interval_setting="wb_advertising_sync_interval_seconds"),
     JobScheduleRule(

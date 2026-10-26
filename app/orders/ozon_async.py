@@ -69,7 +69,12 @@ async def record_failure(batch: OrderSaveBatch, resources: AsyncResources) -> St
 
 
 async def sync_configured_store(
-    store: str, period: OrderPeriod, resources: AsyncResources, *, wait_for_lock: bool = False
+    store: str,
+    period: OrderPeriod,
+    resources: AsyncResources,
+    *,
+    wait_for_lock: bool = False,
+    retry_incomplete_days: bool = False,
 ) -> StoreOrderSyncResult | None:
     attempted_at = datetime.now(TIME.moscow_timezone).replace(microsecond=0)
     try:
@@ -90,7 +95,9 @@ async def sync_configured_store(
         )
     try:
         async with async_locks.hold(OZON_ORDERS.lock_prefix + store, resources.database, wait=wait_for_lock):
-            return await sync_store(store, credentials, period, resources)
+            return await sync_store(
+                store, credentials, period, resources, retry_incomplete_days=retry_incomplete_days
+            )
     except SyncJobBusyError:
         return None
 
@@ -100,6 +107,8 @@ async def sync_store(
     credentials: OzonCredentials,
     period: OrderPeriod,
     resources: AsyncResources,
+    *,
+    retry_incomplete_days: bool = False,
 ) -> StoreOrderSyncResult:
     context = store_context.set(store)
     attempted_at = datetime.now(TIME.moscow_timezone).replace(microsecond=0)
@@ -238,7 +247,7 @@ async def sync_store(
                 retryable = cursor >= today - timedelta(days=OZON_ORDERS.retry_days)
                 if state and state.finalized and state.ok:
                     continue
-                if state and not retryable:
+                if state and not retryable and not retry_incomplete_days:
                     continue
                 if (
                     state

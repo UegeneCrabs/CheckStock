@@ -16,6 +16,7 @@ from app.application.stock_requests import (
     StockRequestResult,
     execute_stock_request,
 )
+from app.core.constants import FboStockErrorCode
 from app.core.errors import StockValidationError
 from app.core.formatting import format_dt
 from app.core.stores import STORES
@@ -34,9 +35,11 @@ from app.dto.stock import (
     SignedStockEntries,
     TransferStockCommand,
 )
+from app.dto.stock_pages import StockPageQuery, StockTarget, TransitReportData
 from app.ff_import import importer as ff_stock_import
 from app.ff_import import shipment as ff_shipment
 from app.ff_import import transfer as ff_transfer
+from app.infrastructure.stock_page_repository import StockPageRepository
 from app.web.access import accessible_marketplaces
 from app.web.common import _now_iso
 from app.web.dependencies import StockMovementServiceDependency
@@ -593,7 +596,7 @@ async def transfer_ff_stock(
     )
 
 
-@router.get("/stock/{slug}/transfers/in-transit")
+@router.get("/stock/{slug}/transfers/in-transit", response_model=TransitReportData)
 async def list_in_transit_transfers(
     request: Request,
     slug: str,
@@ -611,29 +614,16 @@ async def list_in_transit_transfers(
     if not has_store_marketplace(request.state.user, store_slug=store_slug, marketplace=marketplace):
         raise HTTPException(status_code=403, detail="Нет доступа к этой площадке")
 
-    batches = await run_in_threadpool(
-        db.get_ff_transit_batches,
-        store_slug,
-        marketplace,
-        active_only=view == "active",
-        closed_only=view == "history",
+    return await StockPageRepository(request.app.state.async_resources.database).movements(
+        StockPageQuery(
+            stores=(store_slug,),
+            targets=(StockTarget(store_slug=store_slug, marketplace=marketplace),),
+            store=store_slug,
+            marketplace=marketplace,
+            can_edit=is_active_user(request.state.user),
+        ),
+        "active" if view == "active" else "history",
     )
-    for batch in batches:
-        batch["can_receive"] = view == "active" and has_store_marketplace(
-            request.state.user, store_slug=store_slug, marketplace=batch["to_marketplace"]
-        )
-        batch["can_cancel"] = view == "active" and has_store_marketplace(
-            request.state.user, store_slug=store_slug, marketplace=batch["from_marketplace"]
-        )
-        batch["can_reopen"] = (
-            batch["status"] in {"received", "partial"}
-            and int(batch.get("received_units") or 0) > 0
-            and (int(batch.get("cancelled_units") or 0) == 0)
-            and has_store_marketplace(
-                request.state.user, store_slug=store_slug, marketplace=batch["to_marketplace"]
-            )
-        )
-    return JSONResponse({"ok": True, "view": view, "batches": batches})
 
 
 @router.post("/stock/{slug}/transfers/{transfer_id}/receive")
@@ -926,6 +916,8 @@ async def ship_ff_stock(
     label = source_name or sheet_url.strip() or "ручной ввод"
 
     def _mutate(uow):
+        if fbo_shipment:
+            return JSONResponse({"ok": False, "error": FboStockErrorCode.MANUAL_DISABLED}, status_code=400)
         fingerprint, used_error = _guard_used_source(
             slug.lower(),
             source_kind,

@@ -4,6 +4,7 @@ from sqlalchemy import case, func, select
 
 from app.core.constants import Marketplace, StockScheme
 from app.dto.ozon_advertising import AdvertisingPeriod
+from app.dto.ozon_cabinet import OzonBuyoutSnapshot
 from app.dto.ozon_economics import OzonProductsQuery
 from app.dto.ozon_history import OzonHistoryEvidence, OzonHistoryQuery, OzonPriceDay, OzonStockDay
 from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepository
@@ -15,6 +16,7 @@ from app.infrastructure.orm import (
     MarketplaceStockDailyHistoryRecord,
     StockItemRecord,
 )
+from app.infrastructure.ozon_cabinet_orm import OzonBuyoutDailyRecord
 from app.infrastructure.ozon_prices_orm import OzonPriceDailyRecord
 
 
@@ -27,6 +29,7 @@ class OzonHistoryRepository:
         stocks = table_for(MarketplaceStockDailyHistoryRecord)
         fulfillment = table_for(FulfillmentStockDailyHistoryRecord)
         prices = table_for(OzonPriceDailyRecord)
+        buyouts = table_for(OzonBuyoutDailyRecord)
         async with self.database.transaction() as connection:
             product = (
                 await connection.execute(
@@ -93,6 +96,15 @@ class OzonHistoryRepository:
                     )
                 )
             )
+            buyout_days = tuple(
+                OzonBuyoutSnapshot.model_validate_json(payload)
+                for payload in await connection.scalars(
+                    select(buyouts.c.payload).where(
+                        buyouts.c.store_slug == query.store,
+                        buyouts.c.day.between(start.isoformat(), end.isoformat()),
+                    )
+                )
+            )
         turnover = await AsyncTurnoverRepository(self.database).load(
             OzonProductsQuery(stores=(query.store,), article=query.article, period_from=start, period_to=end)
         )
@@ -104,4 +116,5 @@ class OzonHistoryRepository:
             advertising=advertising,
             stocks=tuple(stock_days.values()),
             prices=price_days,
+            buyouts=buyout_days,
         )

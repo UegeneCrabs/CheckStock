@@ -43,7 +43,6 @@ def day_margin(
     spend: Decimal | None,
     *,
     issues: tuple[str, ...] = (),
-    unsupported: bool = False,
 ) -> OzonMarginDay:
     inputs = OzonMarginInputs.model_validate(
         {
@@ -83,9 +82,6 @@ def day_margin(
         missing = [OZON_MARGIN.advertising_missing] if spend is None else []
     elif expected is not None and baseline.margin is not None and spend is not None:
         profit = money(baseline.margin * expected - spend)
-    if unsupported:
-        missing.append(OZON_MARGIN.unsupported_scheme)
-        profit = None
     return OzonMarginDay(
         day=day,
         inputs=inputs,
@@ -94,8 +90,8 @@ def day_margin(
         advertising_spend=spend,
         expected_buyouts=expected,
         profit=profit,
-        margin=result.margin if expected != 0 and not unsupported else None,
-        roi=result.roi if expected != 0 and not unsupported else None,
+        margin=result.margin if expected != 0 else None,
+        roi=result.roi if expected != 0 else None,
         purchase_value=money(inputs.purchase * expected)
         if inputs.purchase is not None and expected is not None
         else Decimal(0)

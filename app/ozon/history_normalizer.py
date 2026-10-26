@@ -1,3 +1,4 @@
+from datetime import datetime, time
 from decimal import Decimal
 
 from app.core.constants import TIME, OzonHistoryField, OzonPriceState
@@ -5,6 +6,7 @@ from app.dto.ozon_advertising import AdvertisingPeriod
 from app.dto.ozon_history import OzonHistoryDay, OzonHistoryEvidence, OzonHistoryQuery, OzonStockDay
 from app.ozon.advertising_normalizer import period_days, source_days, spend_summary
 from app.ozon.advertising_read_index import AdvertisingReadIndex
+from app.ozon.cabinet_normalizer import effective_buyout
 from app.ozon.drr import metrics
 
 
@@ -20,6 +22,7 @@ def history_days(
     ads = {row.day: row for row in spending.days}
     stocks = {row.day: row for row in evidence.stocks}
     prices = {row.day: row.value for row in evidence.prices}
+    buyouts = {row.day: row for row in evidence.buyouts if row.store_slug == query.store}
     result = []
     for day in period_days(period):
         partial = []
@@ -35,6 +38,14 @@ def history_days(
             partial.append(OzonHistoryField.ADS)
         if expense.amount is not None and expense.stale:
             stale.append(OzonHistoryField.ADS)
+        saved_buyout = buyouts.get(day)
+        buyout = effective_buyout(
+            query.article,
+            saved_buyout,
+            saved_buyout.observed_at
+            if saved_buyout
+            else datetime.combine(day, time.min, TIME.moscow_timezone),
+        )
         ratio = metrics(
             AdvertisingPeriod(start=day, end=day),
             turnover,
@@ -42,9 +53,12 @@ def history_days(
             store=query.store,
             article=query.article,
             spending=spending,
+            buyout=buyout,
         )
-        if ratio.drr is not None and (ratio.coverage.partial_dates or day not in confirmed):
+        if ratio.drr is not None and (not ratio.coverage.complete or day not in confirmed):
             partial.append(OzonHistoryField.DRR)
+        if buyout.stale:
+            stale.append(OzonHistoryField.DRR)
         stock = stocks.get(day, OzonStockDay(day=day))
         quantities = (stock.fbo, stock.fbs, stock.fulfillment)
         known_stock = tuple(value for value in quantities if value is not None)
@@ -67,6 +81,7 @@ def history_days(
             stale.append(OzonHistoryField.PRICE)
         result.append(
             OzonHistoryDay(
+                buyout=buyout,
                 date=day,
                 orders_count=order.ordered if order else 0 if known_orders else None,
                 turnover_rub=order.amount if order else Decimal(0) if known_orders else None,

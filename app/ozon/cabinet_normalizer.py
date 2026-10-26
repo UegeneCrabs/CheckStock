@@ -39,14 +39,14 @@ def returned_quantities(evidence: OzonBuyoutEvidence, now: datetime) -> dict[str
 
 
 def buyout_snapshot(
-    store: str, period_days: int, articles: tuple[str, ...], evidence: OzonBuyoutEvidence, now: datetime
+    store: str, articles: tuple[str, ...], evidence: OzonBuyoutEvidence, now: datetime
 ) -> OzonBuyoutSnapshot:
     data = evidence.turnover
     returns = returned_quantities(evidence, now)
     today = now.astimezone(TIME.moscow_timezone).date()
-    start = today - timedelta(days=period_days)
+    start = today - timedelta(days=OZON_CABINET.default_period_days)
     end = today - timedelta(days=1)
-    dates = frozenset(start + timedelta(days=offset) for offset in range(period_days))
+    dates = frozenset(start + timedelta(days=offset) for offset in range(OZON_CABINET.default_period_days))
     missing = dates - data.eligible_days.get(store, frozenset())
     products = []
     for article in sorted(set(articles) | {article for slug, article in data.products if slug == store}):
@@ -83,16 +83,14 @@ def buyout_snapshot(
     )
 
 
-def effective_parameters(
-    settings: OzonCabinetValues,
+def effective_buyout(
     article: str,
-    code: str | None,
-    product_goals: OzonProductGoals,
     snapshot: OzonBuyoutSnapshot | None,
     now: datetime,
-) -> OzonEffectiveParameters:
+    default_percent: float | None = None,
+) -> OzonEffectiveBuyout:
     today = now.astimezone(TIME.moscow_timezone).date()
-    start = today - timedelta(days=settings.buyout.period_days)
+    start = today - timedelta(days=OZON_CABINET.default_period_days)
     end = today - timedelta(days=1)
     item = next((item for item in snapshot.products if item.article == article), None) if snapshot else None
     matches = bool(
@@ -102,9 +100,9 @@ def effective_parameters(
         and snapshot.period_to == end
     )
     actual = item.percent if item and matches else None
-    use_default = (actual is None or actual == 0) and settings.buyout.default_percent is not None
-    buyout = OzonEffectiveBuyout(
-        percent=settings.buyout.default_percent if use_default else actual,
+    use_default = (actual is None or actual == 0) and default_percent is not None
+    return OzonEffectiveBuyout(
+        percent=default_percent if use_default else actual,
         actual_percent=actual,
         default_applied=use_default,
         state=snapshot.state if snapshot and matches else OzonBuyoutState.MISSING,
@@ -125,6 +123,16 @@ def effective_parameters(
         returned=item.returned if item and matches else None,
         retained=item.received - item.returned if item and matches else None,
     )
+
+
+def effective_parameters(
+    settings: OzonCabinetValues,
+    article: str,
+    code: str | None,
+    product_goals: OzonProductGoals,
+    snapshot: OzonBuyoutSnapshot | None,
+    now: datetime,
+) -> OzonEffectiveParameters:
     roi = next((value for key, value in settings.goals.target_roi_by_code.items() if key == code), None)
     return OzonEffectiveParameters(
         target_drr_percent=product_goals.target_drr_percent
@@ -136,5 +144,5 @@ def effective_parameters(
         if roi is not None
         else settings.goals.target_roi_percent,
         expenses=settings.expenses,
-        buyout=buyout,
+        buyout=effective_buyout(article, snapshot, now, settings.buyout.default_percent),
     )

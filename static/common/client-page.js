@@ -77,7 +77,7 @@ window.CheckStockPage = (() => {
             const alerts = page.alertMarketplace
                 ? context.alerts.filter(alert => alert.marketplace === page.alertMarketplace)
                 : context.alerts;
-            if (alerts.length) {
+            if (page.showAlerts !== false && alerts.length) {
                 const banner = document.createElement('section');
                 banner.className = 'token-banner system-alerts'; banner.dataset.systemAlerts = '';
                 banner.setAttribute('role', 'status'); banner.setAttribute('aria-live', 'polite');

@@ -126,6 +126,8 @@ class Settings(BaseModel):
     ozon_tariffs_path: Path = BASE_DIR / "app" / "ozon" / "data" / "commission-tariffs.json"
     ozon_category_cache_seconds: int = Field(default=3600, ge=0)
     ozon_related_cache_seconds: int = Field(default=3600, ge=0)
+    ozon_promotions_cache_seconds: int = Field(default=300, ge=0)
+    ozon_promotions_timeout_seconds: int = Field(default=60, ge=1)
     yandex_tokens_path: Path
     google_service_account_path: Path
     log_level: str

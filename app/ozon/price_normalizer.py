@@ -74,6 +74,15 @@ def website_value(
         for item in evidence
         if (amount := website_amount(item, field)) is not None and amount.amount is not None
     )
+    scheme = next(
+        (
+            scheme
+            for scheme in OZON_PRICES.website_schemes
+            if any(item.scheme == scheme for item in available)
+        ),
+        None,
+    )
+    available = tuple(item for item in available if item.scheme == scheme)
     participants = tuple(item for item in available if item.source == OzonPriceSource.PRODUCTS)
     selected = participants or available
     if not selected:
@@ -90,6 +99,7 @@ def website_value(
         received_at=newest.received_at,
         attempted_at=checked_at,
         source=newest.source,
+        scheme=newest.scheme,
         action_ids=tuple(sorted({item.action_id for item in selected})),
         state=OzonPriceState.CONFLICT if conflict else OzonPriceState.AVAILABLE,
     )

@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from app.application.ports import OzonCabinetUnitOfWork
-from app.core.constants import TIME, OzonBuyoutError, OzonBuyoutState
+from app.core.constants import OZON_CABINET, TIME, OzonBuyoutError, OzonBuyoutState
 from app.dto.ozon_buyout import OzonBuyoutEvidence
 from app.dto.ozon_cabinet import OzonBuyoutSyncResult, OzonCabinetRecord, OzonCabinetSave, OzonCabinetUpdate
 from app.dto.ozon_economics import OzonProductsQuery
@@ -40,19 +40,18 @@ class OzonCabinetService:
             raise
 
     async def _sync_buyout(self, store: str) -> OzonBuyoutSyncResult:
-        settings = (await self.repository.settings((store,)))[0].values.buyout
         today = self.clock().astimezone(TIME.moscow_timezone).date()
         data = await self.load_orders(
             OzonProductsQuery(
                 stores=(store,),
-                period_from=today - timedelta(days=settings.period_days),
+                period_from=today - timedelta(days=OZON_CABINET.default_period_days),
                 period_to=today - timedelta(days=1),
             )
         )
         now = self.clock()
         if now.astimezone(TIME.moscow_timezone).date() != today:
             raise ValueError("Buyout acquisition crossed Moscow midnight")
-        snapshot = buyout_snapshot(store, settings.period_days, await self.articles(store), data, now)
+        snapshot = buyout_snapshot(store, await self.articles(store), data, now)
         await self.repository.save_buyout(snapshot)
         return OzonBuyoutSyncResult(
             stores=1,

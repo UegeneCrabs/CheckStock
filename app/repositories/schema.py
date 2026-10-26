@@ -6,6 +6,7 @@ from sqlalchemy import inspect, select
 from app.infrastructure import daily_economics_orm as daily_economics_orm
 from app.infrastructure import economics_coverage_orm as economics_coverage_orm
 from app.infrastructure import ephemerides_orm as ephemerides_orm
+from app.infrastructure import fbo_stock_orm as fbo_stock_orm
 from app.infrastructure import finance_orm as finance_orm
 from app.infrastructure import google_week_orm as google_week_orm
 from app.infrastructure import ozon_advertising_orm as ozon_advertising_orm

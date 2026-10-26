@@ -17,6 +17,10 @@ python_version = "3.13"
 strict = true
 follow_imports = "silent"
 files = [
+    "app/application/fbo_stock.py", "app/dto/fbo_stock.py",
+    "app/infrastructure/fbo_stock_repository.py", "app/infrastructure/fbo_stock_orm.py",
+    "app/stock/fbo_sync.py", "app/web/routers/fbo_stock.py",
+    "app/dto/ozon_promotions.py", "app/application/ozon_promotions.py", "app/ozon/async_promotions.py",
     "app/dto/ozon_history.py", "app/application/ozon_history.py",
     "app/ozon/history_normalizer.py", "app/infrastructure/ozon_history_repository.py",
     "app/dto/ozon_related.py", "app/application/ozon_related.py", "app/ozon/async_related.py",

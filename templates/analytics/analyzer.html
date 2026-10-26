@@ -1,21 +1,22 @@
 <link rel="stylesheet" href="/static/common/table-filter.css?v=20260912">
-<link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261009-1">
+<link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261023-2">
 <section class="analyzer" id="analyzer"><div class="analyzer-main">
  <section class="toolbar" aria-label="Фильтры товаров">
   <div class="report-search"><div class="heading-left"><h1>Анализатор товаров</h1><span class="demo">WB</span></div>
   <div class="search-row">
    <label class="search"><svg class="ico"><use href="#i-search"/></svg><input type="search" id="search" placeholder="Название, артикул или баркод" aria-label="Поиск товаров"></label>
    <div class="segments" aria-label="Состояние товара"><button data-state="all" class="active" aria-pressed="true">Все товары</button><button data-state="negative" aria-pressed="false">В минус</button><button data-state="new" aria-pressed="false">Новинки</button></div>
+   <div class="color-filters"><label>Цвет в столбце <select id="color-column" aria-label="Столбец для фильтра по цвету"></select></label><select id="color-filter" aria-label="Фильтр по цвету"><option value="all">Все цвета</option><option value="red">Красный · ниже цели / в минус</option><option value="green">Зелёный · выше цели / в плюс</option><option value="neutral">Без отклонения</option><option value="empty">Нет данных</option></select></div>
   </div>
   </div>
-  <div class="store-summary-wrap"><table class="store-summary" aria-label="Товарооборот по магазинам"><thead><tr><th><button class="summary-toggle" id="summary-toggle" type="button" aria-expanded="true" aria-controls="store-summary" aria-label="Свернуть до общего итога" title="Свернуть до общего итога"><span>Магазин</span><span id="summary-arrow" aria-hidden="true">▴</span></button></th><th>ТО цель<br>на день, ₽</th><th>ТО факт<br>на данный момент, ₽</th><th>Прогнозируемый ТО<br>на день, ₽</th><th>Разница, ₽</th><th>Отклонение, %</th></tr></thead><tbody id="store-summary"><tr><td colspan="6">Загрузка…</td></tr></tbody></table></div>
+  <div class="store-summary-wrap"><table class="store-summary" aria-label="Товарооборот по магазинам"><thead><tr><th><button class="summary-toggle" id="summary-toggle" type="button" aria-expanded="true" aria-controls="store-summary" aria-label="Свернуть до общего итога" title="Свернуть до общего итога"><span>Магазин</span><span id="summary-arrow" aria-hidden="true">▴</span></button></th><th>ТО цель<br>на день, ₽</th><th>ТО факт<br>на данный момент, ₽</th><th>Прогнозируемый ТО<br>на день, ₽</th><th>Отклонение, %</th><th>Разница, ₽</th></tr></thead><tbody id="store-summary"><tr><td colspan="6">Загрузка…</td></tr></tbody></table></div>
  </section>
  <div id="load-status" class="load-status" role="status">Загрузка данных…</div>
  <div class="table-workspace" id="table-workspace">
   <section class="table-card" aria-label="Анализатор товаров WB">
   <div class="table-top"><div class="table-navigation"><div class="table-title">Товары <span id="count">0</span></div><div class="jumps" aria-label="Перейти к блоку"><button class="active" data-jump="product">Обзор</button><button data-jump="traffic">Рекламная воронка</button><button data-jump="performance">Эффективность</button><button data-jump="goals" data-jump-fallback="week">Заказы по дням</button><button data-jump="plan">Цены и план</button><button data-jump="turnover">Товарооборот</button><button data-jump="notes">Работа по неделе</button></div></div>
    <div class="table-actions"><div class="period"><button id="prev-week" aria-label="Предыдущая неделя">‹</button><div class="period-text"><small id="week-caption">Неделя</small><strong id="week-label">Загрузка…</strong></div><button id="next-week" aria-label="Следующая неделя">›</button></div><button class="button" id="export"><svg class="ico"><use href="#i-download"/></svg>Экспорт</button>
-   <div class="columns-wrap"><button class="button" id="columns-toggle" aria-expanded="false"><svg class="ico"><use href="#i-columns"/></svg>Колонки</button><div class="column-panel" id="column-panel" hidden><strong>Вид таблицы</strong><p>Настройте группы столбцов и плотность строк.</p><label><input id="sheet-order" type="checkbox">Отдельные столбцы товара</label><label><input id="dense" type="checkbox">Компактные строки</label><hr><div id="groups-list"></div><div class="panel-actions"><button class="button" id="show-all">Показать все</button><button class="button primary" id="columns-done">Готово</button></div></div></div></div>
+   <div class="columns-wrap"><button class="button" id="columns-toggle" aria-expanded="false"><svg class="ico"><use href="#i-columns"/></svg>Колонки</button><div class="column-panel" id="column-panel" hidden><strong>Вид таблицы</strong><p>Настройте блоки, отдельные столбцы и плотность строк.</p><label><input id="sheet-order" type="checkbox">Отдельные столбцы товара</label><label><input id="dense" type="checkbox">Компактные строки</label><hr><div id="groups-list"></div><div class="panel-actions"><button class="button" id="show-all">Показать все</button><button class="button primary" id="columns-done">Готово</button></div></div></div></div>
   </div>
   <div class="scroll" id="table-scroll" tabindex="0" aria-label="Таблица с горизонтальной прокруткой"><table id="table" aria-label="Анализатор товаров"><colgroup id="cols"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody></table><div class="empty" id="empty" hidden><strong>Товары не найдены</strong><span>Попробуйте другой запрос или сбросьте фильтры.</span><button class="button" id="reset">Сбросить фильтры</button></div></div>
   <footer class="table-footer"><span id="pagination">Загрузка…</span><div class="footer-right"><label for="page-size">На странице</label><select id="page-size" aria-label="Товаров на странице"><option>20</option><option>50</option><option>100</option></select><button class="icon-button" id="page-prev" disabled aria-label="Предыдущая страница">‹</button><span class="page-num" id="page-number">1</span><button class="icon-button" id="page-next" disabled aria-label="Следующая страница">›</button></div></footer>
@@ -36,5 +37,5 @@
 </defs></svg>
 </section>
 <script type="application/json" id="analyzer-config">$analyzer_config</script>
-<script src="/static/analytics/analyzer-model.js?v=20261009-2" defer></script>
-<script src="/static/analytics/analyzer.js?v=20261020" defer></script>
+<script src="/static/analytics/analyzer-model.js?v=20261023" defer></script>
+<script src="/static/analytics/analyzer.js?v=20261023" defer></script>

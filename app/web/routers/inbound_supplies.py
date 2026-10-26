@@ -6,8 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.access.authentication import is_active_user
 from app.access.resources import store_marketplace_pairs
-from app.config import settings
-from app.core.constants import WEB, WebErrorCode
+from app.core.constants import INBOUND_SCHEDULE, WebErrorCode
 from app.dto.inbound_supplies import InboundReport, InboundSyncRequest
 from app.dto.stock_pages import StockTarget
 from app.infrastructure.inbound_read_repository import InboundReadRepository
@@ -49,12 +48,7 @@ async def inbound_data(request: Request, container: ContainerDependency, store: 
         for slug, marketplace in allowed_targets(request, store, mp)
     )
     snapshots = await InboundReadRepository(request.app.state.async_resources.database).snapshots(targets)
-    cutoff = datetime.now(UTC) - timedelta(
-        seconds=max(
-            settings.inbound_sync_interval_seconds * WEB.inbound_stale_multiplier,
-            WEB.inbound_stale_min_seconds,
-        )
-    )
+    cutoff = datetime.now(UTC) - timedelta(seconds=INBOUND_SCHEDULE.stale_after_seconds)
     return InboundReport(targets=snapshots, stale_before=cutoff.isoformat())
 
 

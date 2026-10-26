@@ -1,15 +1,18 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.access.security import Pbkdf2PasswordService
+from app.application.fbo_stock import FboStockService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.ozon_cabinet import OzonCabinetService
 from app.application.ozon_history import OzonHistoryService
 from app.application.ozon_logistics import OzonLogisticsService
 from app.application.ozon_margin_service import OzonMarginService
+from app.application.ozon_promotions import OzonPromotionsService
 from app.application.ozon_related import OzonRelatedService
 from app.application.ozon_storage import OzonStorageService
 from app.application.ozon_tariffs import OzonTariffService
@@ -30,6 +33,7 @@ from app.infrastructure.async_logistics_repository import AsyncLogisticsReposito
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.database import database_for_path
+from app.infrastructure.fbo_stock_repository import FboStockRepository
 from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
@@ -47,6 +51,7 @@ from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_ca
 from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
 from app.orders.ozon_async import sync_configured_store
 from app.ozon.async_logistics import AsyncLogisticsClient
+from app.ozon.async_promotions import AsyncPromotionsClient
 from app.ozon.async_storage import AsyncStorageClient
 from app.ozon.tokens import get_order_credentials
 from app.repositories import core
@@ -66,6 +71,10 @@ if TYPE_CHECKING:
 
 def ozon_margin_service(resources: "AsyncResources") -> OzonMarginService:
     return OzonMarginService(OzonMarginRepository(resources.database))
+
+
+def fbo_stock_service(resources: "AsyncResources") -> FboStockService:
+    return FboStockService(FboStockRepository(resources.database))
 
 
 def _wb_storefront_products(nm_ids: tuple[str, ...]) -> WbStorefrontResult:
@@ -163,6 +172,18 @@ def ozon_related_service(resources: "AsyncResources", store: str) -> OzonRelated
     return OzonRelatedService(lambda: resources.catalog.ozon_products(store), models)
 
 
+def ozon_promotions_service(resources: "AsyncResources", store: str) -> OzonPromotionsService:
+    credentials = get_order_credentials(store)
+    scope = sha256(f"{store}:{credentials.client_id}:{credentials.api_key}".encode()).hexdigest()
+    return OzonPromotionsService(
+        AsyncPromotionsClient(resources.http, credentials),
+        lambda: resources.catalog.ozon_products(store),
+        resources.ozon_promotions_cache,
+        scope,
+        lambda: datetime.now(UTC),
+    )
+
+
 def ozon_tariff_service(resources: "AsyncResources", store: str = "") -> OzonTariffService:
     async def category(article: str) -> OzonCategorySelection:
         return await resources.ozon_categories.product(get_order_credentials(store), article)
@@ -180,6 +201,7 @@ def ozon_cabinet_service(resources: "AsyncResources") -> OzonCabinetService:
             ),
             resources,
             wait_for_lock=True,
+            retry_incomplete_days=True,
         )
         if result is None or result.errors:
             raise ValueError("Order refresh unavailable")

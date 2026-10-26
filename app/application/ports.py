@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from datetime import date, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
 
+from app.dto.fbo_stock import (
+    FboActor,
+    FboEvidence,
+    FboMovement,
+    FboStockCommand,
+    FboStockReport,
+    FboStockResult,
+    FboTarget,
+)
+
 if TYPE_CHECKING:
     from app.infrastructure.database import DatabaseConnection
+
 
 from app.dto.identity import (
     AccessDecision,
@@ -52,6 +64,29 @@ from app.dto.stock import (
 from app.dto.supply_arrivals import SupplyStockCommand, SupplyStockState
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
 from app.dto.wb_standard_costs import PublishSnapshot
+
+
+class FboStockUnitOfWork(Protocol):
+    async def evidence(self) -> FboEvidence: ...
+
+    async def claim(self, command: FboStockCommand) -> FboStockResult | None: ...
+
+    async def finish(self, command: FboStockCommand, result: FboStockResult) -> None: ...
+
+    async def save(
+        self,
+        previous: FboMovement | None,
+        movement: FboMovement,
+        actor: FboActor,
+        *,
+        adopt: tuple[int, ...] = (),
+    ) -> FboMovement: ...
+
+
+class FboStockRepository(Protocol):
+    def transaction(self, target: FboTarget) -> AbstractAsyncContextManager[FboStockUnitOfWork]: ...
+
+    async def report(self, target: FboTarget) -> FboStockReport: ...
 
 
 class WbStandardCostsRepository(Protocol):

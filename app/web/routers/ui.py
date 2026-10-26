@@ -6,7 +6,7 @@ from app.access.authentication import is_active_user
 from app.access.economics_preview import can_preview
 from app.access.resources import accessible_marketplaces, accessible_stores
 from app.config import settings
-from app.core.constants import WebErrorCode
+from app.core.constants import INBOUND_SCHEDULE, WebErrorCode
 from app.core.stores import STORES
 from app.dto.identity import SectionName
 from app.dto.ui import UiContext, UiStore, UiUser
@@ -29,8 +29,9 @@ async def context(request: Request, resources: AsyncResourcesDependency) -> UiCo
             UiStore(slug=slug, name=STORES[slug].name, marketplaces=accessible_marketplaces(user, slug))
             for slug in stores
         ),
-        sections=tuple(SectionName),
-        inbound_interval_seconds=settings.inbound_sync_interval_seconds,
+        sections=tuple(section for section in SectionName if section != SectionName.STOCK_RANDOMIZER),
+        inbound_interval_seconds=INBOUND_SCHEDULE.interval_seconds,
+        inbound_schedule=INBOUND_SCHEDULE.description,
         warehouse_display_limit=settings.warehouse_display_limit,
         economics_preview=can_preview(user),
         alerts=await IntegrationRepository(resources.database).alerts(stores),

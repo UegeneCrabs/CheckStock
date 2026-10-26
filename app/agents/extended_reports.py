@@ -9,7 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.access.resources import store_marketplace_pairs
 from app.agents import reports
-from app.config import settings
+from app.core.constants import INBOUND_SCHEDULE
 from app.dto.identity import SectionName as S
 
 EXTRA_SPECS = {
@@ -98,7 +98,7 @@ def orders(query, user):
 def inbound(request, query):
     snapshots = request.app.state.container.inbound_supplies.report(((query.store, query.marketplace),))
     rows, sources = [], []
-    cutoff = datetime.now(UTC) - timedelta(seconds=max(settings.inbound_sync_interval_seconds * 2, 3600))
+    cutoff = datetime.now(UTC) - timedelta(seconds=INBOUND_SCHEDULE.stale_after_seconds)
     for snapshot in snapshots:
         if (snapshot.store_slug, snapshot.marketplace) != (query.store, query.marketplace):
             continue

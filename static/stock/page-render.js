@@ -111,7 +111,7 @@
         const rows = data.operations.map(op => {
             const kind = Object.hasOwn(operations, op.kind) ? op.kind : 'other';
             const detail = [op.note, op.source_name || ({ file: 'файл', sheet: 'Google Таблица', manual: 'ручной ввод' }[op.source_type] || '')].filter(Boolean).join(' · ') || 'Без примечания';
-            return `<tr class="ops-row ops-row--${kind}"><td data-label="Когда"><time class="ops-time">${e(ui.date(op.created_at))}</time></td><td data-label="Операция"><span class="ops-kind ops-kind--${kind}"><i aria-hidden="true"></i>${e(operations[op.kind] || op.kind)}</span></td><td data-label="Маршрут"><span class="ops-route">${endpoint(op.from_fulfillment, op.from_marketplace, kind === 'delivery' ? 'Поставка' : kind === 'manual_add' ? 'Ручной ввод' : 'Не указано')}<span class="ops-route-arrow" aria-hidden="true">→</span>${endpoint(op.to_fulfillment, op.to_marketplace, kind === 'shipment' ? 'Отгрузка' : kind === 'fbs_transfer' ? 'FBS' : kind === 'trash' ? 'Мусорка' : 'Не указано')}</span></td><td data-label="Объём"><span class="ops-volume"><strong class="ops-volume-value${op.units < 0 ? ' ops-volume-value--negative' : ''}">${n(op.units)} ед.</strong><small>${n(op.positions)} поз.</small></span></td><td data-label="Сотрудник"><span class="ops-person"><strong>${e(op.user_name)}</strong><small title="${e(detail)}">${e(detail)}</small></span></td><td data-label="Выгрузка"><a class="ops-download" href="/admin/operations/${op.id}/xlsx">Excel</a></td></tr>`;
+            return `<tr class="ops-row ops-row--${kind}"><td data-label="Когда"><time class="ops-time">${e(ui.date(op.created_at))}</time></td><td data-label="Операция"><span class="ops-kind ops-kind--${kind}"><i aria-hidden="true"></i>${e(operations[op.kind] || op.kind)}</span></td><td data-label="Маршрут"><span class="ops-route">${endpoint(op.from_fulfillment, op.from_marketplace, kind === 'delivery' ? 'Поставка' : kind === 'manual_add' ? 'Ручной ввод' : 'Не указано')}<span class="ops-route-arrow" aria-hidden="true">→</span>${endpoint(op.to_fulfillment, op.to_marketplace, kind === 'shipment' ? 'Отгрузка' : kind === 'fbs_transfer' ? 'FBS' : kind === 'trash' ? 'Мусорка' : 'Не указано')}</span></td><td data-label="Объём"><span class="ops-volume"><strong class="ops-volume-value${op.units < 0 ? ' ops-volume-value--negative' : ''}">${n(op.units)} ед.</strong><small>${n(op.positions)} поз.</small></span></td><td data-label="Сотрудник"><span class="ops-person"><strong>${e(op.user_name === 'marketplace_api' ? 'Маркетплейс' : op.user_name)}</strong><small title="${e(detail)}">${e(detail)}</small></span></td><td data-label="Выгрузка"><a class="ops-download" href="/admin/operations/${op.id}/xlsx">Excel</a></td></tr>`;
         }).join('');
         const pages = Math.max(1, Math.ceil(data.summary.total / data.page_size));
         const pageLink = (number, label) => `<a class="ops-page-link" href="${link(url.pathname, { kind: data.kind, page: number })}">${label}</a>`;
@@ -157,12 +157,18 @@
     }
 
     async function inbound(context, url) {
-        return { title: 'CheckStock — Поставки FBO', section: 'stock_inbound', values: { store_options: storeOptions(context, url.searchParams.get('store'), false), marketplace_options: markets(context).map(mp => option(mp, marketNames[mp] || mp, url.searchParams.get('mp'))).join(''), scopes: e(JSON.stringify(context.stores.flatMap(store => store.marketplaces.map(mp => [store.slug, mp])))), refresh_hidden: '', interval_minutes: Math.round(context.inbound_interval_seconds / 60) } };
+        return { title: 'CheckStock — Поставки FBO', section: 'stock_inbound', values: { store_options: storeOptions(context, url.searchParams.get('store'), false), marketplace_options: markets(context).map(mp => option(mp, marketNames[mp] || mp, url.searchParams.get('mp'))).join(''), scopes: e(JSON.stringify(context.stores.flatMap(store => store.marketplaces.map(mp => [store.slug, mp])))), refresh_hidden: '', schedule_text: e(context.inbound_schedule) } };
+    }
+
+    function register(matches, prepare) {
+        window.CheckStockPage.register(matches, async (context, url) => ({
+            ...await prepare(context, url), showAlerts: false,
+        }));
     }
 
     const routes = [['/stock', overview], ['/stock/total', totals], ['/stock/cost-report', costs], ['/stock/supplies', supplies], ['/stock/inbound', inbound]];
-    routes.forEach(([path, prepare]) => window.CheckStockPage.register(url => url.pathname === path, prepare));
-    window.CheckStockPage.register(url => /^\/stock\/[^/]+\/warehouses$/.test(url.pathname), warehouses);
-    window.CheckStockPage.register(url => /^\/stock\/[^/]+\/operations$/.test(url.pathname), history);
-    window.CheckStockPage.register(url => /^\/stock\/[^/]+$/.test(url.pathname), stock);
+    routes.forEach(([path, prepare]) => register(url => url.pathname === path, prepare));
+    register(url => /^\/stock\/[^/]+\/warehouses$/.test(url.pathname), warehouses);
+    register(url => /^\/stock\/[^/]+\/operations$/.test(url.pathname), history);
+    register(url => /^\/stock\/[^/]+$/.test(url.pathname), stock);
 })();

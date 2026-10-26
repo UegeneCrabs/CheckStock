@@ -44,6 +44,10 @@ def request_key(request: PerformanceReportRequest) -> str:
 def response_error(response: httpx.Response) -> AdvertisingError | None:
     if response.status_code == HTTPStatus.OK:
         return None
+    if response.status_code == HTTPStatus.UNAUTHORIZED:
+        return AdvertisingError.AUTHENTICATION
+    if response.status_code == HTTPStatus.FORBIDDEN:
+        return AdvertisingError.PERMISSION
     if response.status_code != HTTPStatus.TOO_MANY_REQUESTS:
         return AdvertisingError.HTTP
     try:

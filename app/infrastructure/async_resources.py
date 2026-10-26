@@ -6,6 +6,7 @@ from typing import Self
 
 import httpx
 
+from app.application.ozon_promotions import OzonPromotionsCache
 from app.config import settings
 from app.core.constants import (
     HTTP,
@@ -40,6 +41,7 @@ class AsyncResources:
         self.http = AsyncHttp(self.client)
         self.ozon_categories = AsyncCategoryReader(self.http)
         self.ozon_related = AsyncRelatedReader(self.http)
+        self.ozon_promotions_cache = OzonPromotionsCache()
         self.jobs = AsyncJobRepository(self.database)
         self.catalog = AsyncCatalogRepository(self.database)
         self.advertising = AsyncAdvertisingRepository(self.database)

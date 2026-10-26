@@ -1,10 +1,11 @@
 from collections.abc import Mapping
 from datetime import date, timedelta
+from typing import Literal
 
 from app import db
 from app.config import settings
 from app.core import health
-from app.core.constants import WEB, Marketplace
+from app.core.constants import FBO_STOCK, WEB, Marketplace
 from app.dto.common import DtoModel
 from app.dto.stock_pages import (
     ArticleTransit,
@@ -28,7 +29,9 @@ from app.dto.stock_pages import (
     SupplyPageData,
     TotalStockData,
     TotalStockRow,
+    TransitBatchData,
     TransitQuantities,
+    TransitReportData,
     WarehouseData,
     WarehouseQuantity,
 )
@@ -43,6 +46,39 @@ def project[T: DtoModel](model: type[T], row: Mapping[str, object]) -> T:
 
 
 class StockPageRepository(AsyncReadModels):
+    async def movements(self, query: StockPageQuery, view: Literal["active", "history"]) -> TransitReportData:
+        def load() -> TransitReportData:
+            batches = tuple(
+                TransitBatchData.model_validate(row)
+                for row in db.get_ff_transit_batches(
+                    query.store,
+                    query.marketplace,
+                    active_only=view == "active",
+                    closed_only=view == "history",
+                )
+            )
+            return TransitReportData(
+                view=view,
+                batches=tuple(
+                    batch.model_copy(
+                        update={
+                            "can_receive": query.can_edit
+                            and batch.kind != FBO_STOCK.batch_kind
+                            and view == "active",
+                            "can_cancel": query.can_edit and not batch.managed_by_supply and view == "active",
+                            "can_reopen": query.can_edit
+                            and batch.kind != FBO_STOCK.batch_kind
+                            and batch.status in {FBO_STOCK.batch_accepted, FBO_STOCK.batch_partial}
+                            and batch.received_units > 0
+                            and batch.cancelled_units == 0,
+                        }
+                    )
+                    for batch in batches
+                ),
+            )
+
+        return await self.read(load)
+
     async def overview(self, query: StockPageQuery) -> StockOverview:
         def load() -> StockOverview:
             rows = db.get_stock_overview(

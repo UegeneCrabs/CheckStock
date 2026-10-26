@@ -11,10 +11,11 @@ from app.access.resources import accessible_stores
 from app.container import (
     ozon_cabinet_service,
     ozon_history_service,
+    ozon_promotions_service,
     ozon_related_service,
     ozon_tariff_service,
 )
-from app.core.constants import TIME, Marketplace, WebErrorCode
+from app.core.constants import TIME, HTTPStatus, Marketplace, WebErrorCode
 from app.dto.ozon_cabinet import OzonCabinetRecord, OzonCabinets, OzonCabinetUpdate
 from app.dto.ozon_calculator import OzonCalculatorRequest, OzonCalculatorValues
 from app.dto.ozon_commissions import OzonCommissionCalculation, OzonCommissionRequest
@@ -23,6 +24,7 @@ from app.dto.ozon_history import OzonHistory, OzonHistoryQuery
 from app.dto.ozon_logistics import LogisticsCalculation, LogisticsScenario
 from app.dto.ozon_logistics_volume import LogisticsTariffOptions
 from app.dto.ozon_price_calculator import OzonPriceCalculation, OzonPriceCalculationRequest
+from app.dto.ozon_promotions import OzonPromotions, OzonPromotionsQuery
 from app.dto.ozon_related import OzonRelatedProducts, OzonRelatedQuery
 from app.dto.ozon_tariffs import OzonCategorySelection, OzonTariffCatalog, OzonTariffQuery
 from app.economics import ozon_commissions
@@ -101,6 +103,32 @@ async def product_history(
         return await ozon_history_service(resources).history(query, datetime.now(TIME.moscow_timezone).date())
     except LookupError:
         raise HTTPException(404, WebErrorCode.NOT_FOUND) from None
+
+
+@router.get("/api/unit-economics-1c/ozon/promotions")
+async def product_promotions(
+    request: Request, query: Annotated[OzonPromotionsQuery, Query()], resources: AsyncResourcesDependency
+) -> OzonPromotions:
+    require_preview(request.state.user)
+    if query.store not in accessible_stores(request.state.user, Marketplace.OZON):
+        raise HTTPException(HTTPStatus.FORBIDDEN, WebErrorCode.FORBIDDEN)
+    try:
+        return await ozon_promotions_service(resources, query.store).promotions(query.article)
+    except LookupError:
+        raise HTTPException(HTTPStatus.NOT_FOUND, WebErrorCode.NOT_FOUND) from None
+    except OzonCredentialsNotFoundError:
+        raise HTTPException(
+            HTTPStatus.BAD_GATEWAY, WebErrorCode.OZON_PROMOTIONS_CREDENTIALS_MISSING
+        ) from None
+    except OzonApiError as error:
+        code = (
+            WebErrorCode.OZON_PROMOTIONS_ACCESS_DENIED
+            if error.status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN)
+            else WebErrorCode.OZON_PROMOTIONS_UNAVAILABLE
+        )
+        raise HTTPException(HTTPStatus.BAD_GATEWAY, code) from None
+    except (ValueError, TimeoutError):
+        raise HTTPException(HTTPStatus.BAD_GATEWAY, WebErrorCode.OZON_PROMOTIONS_UNAVAILABLE) from None
 
 
 @router.get("/api/unit-economics-1c/ozon/cabinets/{store}")

@@ -60,6 +60,10 @@ window.OzonCategoriesUI = (() => {
         }
         node.hidden = !node.childElementCount;
         root.querySelector('#ue1c-subject-select').title = state.text;
+        const picker = root.querySelector('[data-ozon-categories] [data-ym-category-toggle]');
+        if (picker) window.OzonCalculatorHelp.bind(picker, () => window.OzonCalculatorHelpContent.category(session));
+        root.querySelectorAll('[data-ozon-commission-api-title]').forEach(row => row.removeAttribute('title'));
+        window.OzonCalculatorHelp.refresh();
     }
 
     function apply(root, session, changed) {
@@ -138,6 +142,7 @@ window.OzonCategoriesUI = (() => {
                 apply(root, session, changed);
             },
         });
+        source(root, session);
         const query = new URLSearchParams({ store: product.store_slug, article: product.article });
         window.fetch('/api/unit-economics-1c/ozon/category?' + query, {
             signal: state.controller.signal, headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },

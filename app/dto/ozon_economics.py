@@ -14,6 +14,7 @@ from app.dto.ozon_advertising import (
     StoreAdvertisingBreakdown,
 )
 from app.dto.ozon_cabinet import OzonEffectiveBuyout, OzonEffectiveParameters
+from app.dto.ozon_calculator import OzonCalculatorAdvertisingWeek
 from app.dto.ozon_commissions import OzonCommissionData
 from app.dto.ozon_logistics import LogisticsData
 from app.dto.ozon_margin import OzonMarginDay
@@ -126,6 +127,7 @@ class OzonTrafficMetrics(DtoModel):
 
 
 class OzonDrrMetrics(DtoModel):
+    buyout: OzonEffectiveBuyout = OzonEffectiveBuyout()
     turnover: Decimal | None
     spend: Decimal | None
     received: int | None
@@ -137,6 +139,7 @@ class OzonDrrMetrics(DtoModel):
 
 
 class OzonCalculatorMetrics(DtoModel):
+    advertising_week: OzonCalculatorAdvertisingWeek | None = None
     orders_count: int | None = None
     other_spend: Decimal | None = None
     other_breakdown: tuple[AdvertisingDailyExpense, ...] = ()

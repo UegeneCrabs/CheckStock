@@ -8,12 +8,18 @@ window.OzonEconomicsUI = (() => {
     };
     const fields = { purchase_price: 'себестоимость', fulfillment_cost: 'затраты на ФФ', team_commission_percent: 'комиссия компании', tag_raw: 'тег' };
     const sources = { reputation: 'Отзывы Ozon', source: 'Данные 1С Ozon', advertising: 'Реклама Ozon' };
+    const sourceErrors = {
+        performance_authentication_failed: 'Ozon отклонил рекламные ключи. Проверьте доступы Performance API этого магазина.',
+        performance_permission_denied: 'У рекламного ключа нет доступа к запрошенным данным Ozon.',
+        performance_daily_limit: 'Достигнут суточный лимит рекламных отчётов Ozon.',
+        performance_rate_limit: 'Ozon временно ограничил частоту рекламных запросов.',
+    };
     const marginLabels = {
         seller_price: 'Цена с учётом акции', purchase: 'Закупка', fulfillment: 'ФФ', commission_amount: 'Комиссия Ozon',
         logistics_amount: 'Логистика на штуку', storage_amount: 'Хранение на штуку', advertising_amount: 'Реклама на штуку',
         acquiring_amount: 'Эквайринг', team_amount: 'Комиссия компании', vat_amount: 'НДС', usn_amount: 'УСН',
         snapshot: 'Нет дневного снимка параметров', orders_count: 'Количество заказов', buyout_percent: 'Процент выкупа',
-        advertising_spend: 'Расходы на рекламу', fbs_orders: 'Есть заказы FBS: расходы FBO к ним неприменимы',
+        advertising_spend: 'Расходы на рекламу',
         orders_partial: 'Выгрузка заказов устарела', advertising_partial: 'Реклама загружена не полностью или устарела',
         sources_stale: 'Часть параметров из предыдущей выгрузки', logistics_partial: 'Начисления логистики неполные',
         storage_partial: 'Данные хранения неполные', buyout_default: 'Применён выкуп по умолчанию',
@@ -46,7 +52,12 @@ window.OzonEconomicsUI = (() => {
                 missing_parameters: Object.fromEntries((period.daily || []).map(day => [day.day, day.missing.map(key => key === 'purchase' ? 'purchase_price' : key)])) },
             data_errors: (value.data_issues || []).map(issue => {
                 if (issue.code === 'source_field_missing') return 'В данных 1С Ozon не заполнены: ' + (fields[issue.field] || issue.field);
-                if (issue.code === 'source_error') return (issue.source ? (sources[issue.source] || issue.source) + ': ' : '') + (issue.detail || 'Ошибка источника');
+                if (issue.code === 'source_error') {
+                    const detail = issue.detail || '';
+                    const code = detail === 'performance_http_error:401' ? 'performance_authentication_failed'
+                        : detail === 'performance_http_error:403' ? 'performance_permission_denied' : detail.split(':')[0];
+                    return (issue.source ? (sources[issue.source] || issue.source) + ': ' : '') + (sourceErrors[code] || detail || 'Ошибка источника');
+                }
                 return messages[issue.code] || 'Данные недоступны';
             }),
             stock: { ...value.stock, inbound_message: value.stock.inbound_state === 'awaiting_acceptance'

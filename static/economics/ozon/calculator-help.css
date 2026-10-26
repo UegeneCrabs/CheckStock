@@ -1,0 +1,25 @@
+.ozon-calculator-help {
+    position: fixed;
+    z-index: 11000;
+    box-sizing: border-box;
+    width: 470px;
+    max-width: calc(100vw - 16px);
+    max-height: min(620px, calc(100vh - 16px));
+    overflow: auto;
+    padding: 16px 18px;
+    border: 1px solid #c8dfd6;
+    border-radius: 10px;
+    background: #eff8f3;
+    color: #1c2936;
+    box-shadow: 0 8px 30px #142c4230;
+    font-size: 13px;
+    line-height: 1.55;
+    text-align: left;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+.ozon-calculator-help[hidden] { display: none; }
+.ozon-calculator-help-title { display: block; padding-bottom: 10px; border-bottom: 1px solid #d7e8df; font-size: 14px; }
+.ozon-calculator-help section { margin-top: 12px; }
+.ozon-calculator-help p { margin: 3px 0 0; white-space: pre-line; }
+.ozon-calculator-help .ozon-calculator-help-note { margin-top: 12px; padding-top: 10px; border-top: 1px solid #d7e8df; color: #485a55; }

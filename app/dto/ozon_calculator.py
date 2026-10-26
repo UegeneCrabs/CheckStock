@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Self
 
@@ -5,7 +6,7 @@ from pydantic import Field, model_validator
 
 from app.core.constants import OZON_ADVERTISING, OZON_SCENARIO, OzonScenarioBasis, OzonScenarioField
 from app.dto.common import DtoModel
-from app.dto.ozon_advertising import AdvertisingDailyExpense
+from app.dto.ozon_advertising import AdvertisingDailyExpense, AdvertisingPeriod
 from app.dto.ozon_margin import OzonMarginResult
 
 ScenarioSignedNumber = Annotated[
@@ -26,7 +27,20 @@ class OzonCalculatorOtherExpense(AdvertisingDailyExpense):
     drr: ScenarioSignedNumber | None = None
 
 
+class OzonCalculatorAdvertisingWeek(DtoModel):
+    period: AdvertisingPeriod
+    spend: ScenarioSignedNumber | None = None
+    orders_count: int | None = Field(default=None, ge=0)
+    complete: bool = False
+    missing_dates: tuple[date, ...] = ()
+    partial_dates: tuple[date, ...] = ()
+    other_incomplete: bool = False
+    advertising_updated_at: datetime | None = None
+    orders_updated_at: datetime | None = None
+
+
 class OzonCalculatorValues(DtoModel):
+    advertising_week: OzonCalculatorAdvertisingWeek | None = None
     other_spend: ScenarioSignedNumber | None = None
     other_drr: ScenarioSignedNumber | None = None
     other_breakdown: tuple[OzonCalculatorOtherExpense, ...] | None = None
@@ -38,6 +52,7 @@ class OzonCalculatorValues(DtoModel):
     result: OzonMarginResult = OzonMarginResult()
     seller_price: ScenarioNumber | None = None
     buyer_price: ScenarioNumber | None = None
+    wallet_price: ScenarioNumber | None = None
     turnover: ScenarioNumber | None = None
     buyout_percent: ScenarioPercent | None = None
     click_spend: ScenarioSignedNumber | None = None

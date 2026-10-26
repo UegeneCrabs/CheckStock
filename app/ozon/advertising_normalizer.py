@@ -200,6 +200,11 @@ def source_days(
                 AdvertisingSourceDay(
                     day=day,
                     source=source,
+                    error=latest.error
+                    if latest is not None
+                    and latest.state == AdvertisingState.ERROR
+                    and (snapshot is None or latest.attempted_at >= snapshot.synced_at)
+                    else None,
                     state=AdvertisingState.READY
                     if snapshot is not None
                     else latest.state

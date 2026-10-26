@@ -4,6 +4,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.barcodes import ordered_barcodes
+from app.core.constants import FBO_STOCK, FboStockErrorCode
 from app.core.errors import StockValidationError
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
@@ -23,6 +24,7 @@ from app.dto.stock import (
     TransitActionResult,
 )
 from app.infrastructure.database import DatabaseConnection
+from app.infrastructure.fbo_stock_orm import FboSupplyBatchRecord
 from app.infrastructure.orm import (
     CatalogArticleAliasRecord,
     CatalogBarcodeRecord,
@@ -193,6 +195,8 @@ class SqlAlchemyStockRepository:
         )
         if batch is None:
             raise StockValidationError("Перемещение не найдено")
+        if batch.kind == FBO_STOCK.batch_kind:
+            raise StockValidationError(FboStockErrorCode.MANUAL_DISABLED)
         if batch.status not in {"in_transit", "partial"}:
             raise StockValidationError("Это перемещение уже закрыто")
 
@@ -287,6 +291,8 @@ class SqlAlchemyStockRepository:
         )
         if batch is None:
             raise StockValidationError("Перемещение не найдено")
+        if self._session.get(FboSupplyBatchRecord, batch.id) is not None:
+            raise StockValidationError(FboStockErrorCode.MANUAL_DISABLED)
         if batch.status not in {"in_transit", "partial"}:
             raise StockValidationError("Это перемещение уже закрыто")
 
@@ -349,6 +355,8 @@ class SqlAlchemyStockRepository:
         )
         if batch is None:
             raise StockValidationError("Перемещение не найдено")
+        if batch.kind == FBO_STOCK.batch_kind:
+            raise StockValidationError(FboStockErrorCode.MANUAL_DISABLED)
         if batch.status not in {"received", "partial"}:
             raise StockValidationError("В партии нет принятого товара для возврата в путь")
 

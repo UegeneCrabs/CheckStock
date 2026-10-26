@@ -7,6 +7,7 @@ from pydantic import Field
 from app.core.constants import OzonHistoryField
 from app.dto.common import DtoModel
 from app.dto.ozon_advertising import AdvertisingSourceStatus
+from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonEffectiveBuyout
 from app.dto.ozon_economics import OzonTurnoverData
 from app.dto.ozon_prices import PriceValue
 
@@ -34,9 +35,11 @@ class OzonHistoryEvidence:
     advertising: tuple[AdvertisingSourceStatus, ...]
     stocks: tuple[OzonStockDay, ...]
     prices: tuple[OzonPriceDay, ...]
+    buyouts: tuple[OzonBuyoutSnapshot, ...] = ()
 
 
 class OzonHistoryDay(DtoModel):
+    buyout: OzonEffectiveBuyout = OzonEffectiveBuyout()
     date: date
     orders_count: int | None
     turnover_rub: Decimal | None

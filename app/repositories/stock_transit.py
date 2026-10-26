@@ -10,6 +10,12 @@ def _attach_items(batches: list[dict], *, connection: DatabaseConnection | None 
     batch_ids = tuple(int(batch["id"]) for batch in batches)
     placeholders = ", ".join("?" for _ in batch_ids)
     with repository_connection(connection) as conn:
+        managed_ids = {
+            int(row["batch_id"])
+            for row in conn.execute(
+                f"SELECT batch_id FROM fbo_supply_batches WHERE batch_id IN ({placeholders})", batch_ids
+            ).fetchall()
+        }
         rows = conn.execute(
             f"""
             SELECT id, batch_id, from_article, to_article, barcode, name,
@@ -74,6 +80,7 @@ def _attach_items(batches: list[dict], *, connection: DatabaseConnection | None 
             receipts_by_batch.setdefault(int(receipt["batch_id"]), []).append(receipt)
 
         for batch in batches:
+            batch["managed_by_supply"] = int(batch["id"]) in managed_ids
             items = by_batch.get(int(batch["id"]), [])
             batch["items"] = items
             batch["sent_units"] = sum(int(item["sent_quantity"] or 0) for item in items)

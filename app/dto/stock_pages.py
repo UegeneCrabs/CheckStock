@@ -1,6 +1,80 @@
 from datetime import date
+from typing import Literal
 
 from app.dto.common import DtoModel
+
+
+class TransitItemData(DtoModel):
+    id: int
+    batch_id: int
+    from_article: str
+    to_article: str
+    barcode: str | None
+    name: str | None
+    sent_quantity: int
+    received_quantity: int
+    cancelled_quantity: int
+    remaining_quantity: int
+    purchase_price: float | None
+
+
+class TransitReceiptItemData(DtoModel):
+    receipt_id: int
+    transit_item_id: int
+    quantity: int
+    article: str
+    barcode: str | None
+    name: str | None
+
+
+class TransitReceiptData(DtoModel):
+    id: int
+    batch_id: int
+    user_id: int | None
+    user_name: str
+    note: str
+    received_at: str
+    received_units: int
+    items: tuple[TransitReceiptItemData, ...]
+
+
+class TransitBatchData(DtoModel):
+    id: int
+    store_slug: str
+    kind: str
+    from_fulfillment: str
+    from_marketplace: str
+    to_fulfillment: str
+    to_marketplace: str
+    status: str
+    note: str
+    sent_by_user_id: int | None
+    sent_by_name: str
+    sent_at: str
+    last_received_by_user_id: int | None
+    last_received_by_name: str | None
+    last_received_at: str | None
+    cancelled_by_user_id: int | None
+    cancelled_by_name: str | None
+    cancelled_at: str | None
+    cancellation_reason: str | None
+    managed_by_supply: bool
+    sent_units: int
+    received_units: int
+    cancelled_units: int
+    remaining_units: int
+    positions: int
+    items: tuple[TransitItemData, ...]
+    receipts: tuple[TransitReceiptData, ...]
+    can_receive: bool = False
+    can_cancel: bool = False
+    can_reopen: bool = False
+
+
+class TransitReportData(DtoModel):
+    ok: bool = True
+    view: Literal["active", "history"]
+    batches: tuple[TransitBatchData, ...]
 
 
 class StockTarget(DtoModel):

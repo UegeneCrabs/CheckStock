@@ -70,6 +70,7 @@ def schedule_for(name: str) -> JobScheduleView:
         hours=hours,
         minute=rule.minute,
         weekdays=rule.weekdays,
+        weekly_hours=rule.weekly_hours,
     )
 
 
