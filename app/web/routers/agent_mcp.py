@@ -49,10 +49,8 @@ HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 
 def analyst_instructions():
-    """Share the GPT rulebook; adapt authentication wording for MCP only."""
-    rules = (settings.static_dir / "agents" / "agent-instructions.txt").read_text(encoding="utf-8").strip()
-    rules = rules.replace("401 — проверить ключ Action", "401 — переподключить MCP-подключение через OAuth")
-    rules = rules.replace("Нет Action — нужна схема.", "Нет инструмента — обновить инструменты коннектора.")
+    """Load the full analyst rulebook for MCP clients."""
+    rules = (settings.static_dir / "agents" / "agent-instructions-full.txt").read_text(encoding="utf-8").strip()
     return (
         rules
         + "\n\nПРИМЕНЕНИЕ В MCP\n"

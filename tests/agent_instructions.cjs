@@ -5,10 +5,14 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 function setup({ gpt = false, ok = true, value = '<b>СПП</b>\nТекст', rejectFetch = false, rejectCopy = false, legacyCopy = false } = {}) {
-    const element = () => ({ textContent: '', disabled: false, children: [], style: {},
+    const element = () => ({ textContent: '', disabled: false, children: [], style: {}, dataset: {},
         append(...items) { this.children.push(...items); }, focus() {}, select() {}, remove() {}, setAttribute() {} });
     const ids = Object.fromEntries(['agent-instruction-text', 'agent-copy-visible-instructions', 'agent-instruction-status'].map(id => [id, element()]));
     if (gpt) ids['agent-copy-instructions'] = element();
+    const instructionUrl = gpt ? '/static/agents/agent-instructions.txt' : '/static/agents/agent-instructions-full.txt';
+    for (const id of ['agent-copy-visible-instructions', 'agent-copy-instructions']) {
+        if (ids[id]) ids[id].dataset.instructionUrl = instructionUrl;
+    }
     const copied = [], fetched = [];
     const context = { document: { getElementById: id => ids[id] || null, body: element(), activeElement: element(),
         createElement: element, execCommand: () => legacyCopy },
@@ -21,7 +25,7 @@ function setup({ gpt = false, ok = true, value = '<b>СПП</b>\nТекст', re
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-// Обе страницы загружают инструкцию как текст; все кнопки копируют одинаковое содержимое.
+// Страница получает нужную версию инструкции; кнопки копируют загруженный текст без преобразования.
 for (const gpt of [false, true]) test(`instruction loads and all buttons copy identical text: gpt=${gpt}`, async () => {
     const app = setup({ gpt });
     const initiallyDisabled = app.ids['agent-copy-visible-instructions'].disabled;
@@ -34,6 +38,7 @@ for (const gpt of [false, true]) test(`instruction loads and all buttons copy id
     assert.ok(enabled.every(Boolean));
     assert.equal(app.ids['agent-instruction-text'].textContent, '<b>СПП</b>\nТекст');
     assert.equal(app.fetched.length, 1);
+    assert.equal(app.fetched[0][0], gpt ? '/static/agents/agent-instructions.txt' : '/static/agents/agent-instructions-full.txt');
     assert.equal(app.fetched[0][1].cache, 'no-store');
     assert.equal(app.copied.length, gpt ? 2 : 1);
     assert.ok(app.copied.every(value => value === app.ids['agent-instruction-text'].textContent));
@@ -44,7 +49,7 @@ for (const options of [{ ok: false }, { value: '' }, { rejectFetch: true }]) tes
     await flush();
     assert.match(app.ids['agent-instruction-status'].textContent, /Не удалось загрузить/);
     assert.equal(app.ids['agent-copy-instructions'].disabled, true);
-    const initiallyDisabled = app.ids['agent-copy-visible-instructions'].disabled;
+    assert.equal(app.ids['agent-copy-visible-instructions'].disabled, true);
 });
 // При отказе Clipboard API запасной способ успешно копирует инструкцию.
 test('clipboard failure supports legacy copy', async () => {

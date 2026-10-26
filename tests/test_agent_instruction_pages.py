@@ -50,29 +50,33 @@ class InstructionPagesTests(unittest.TestCase):
                             self.assertEqual(
                                 ids.count("agent-instruction-text"), 1 if active == "instructions" else 0
                             )
+                            expected_url = (
+                                "/static/agents/agent-instructions-full.txt"
+                                if active == "instructions"
+                                else "/static/agents/agent-instructions.txt"
+                            )
+                            sources = [
+                                attrs["data-instruction-url"]
+                                for tag, attrs in elements
+                                if "data-instruction-url" in attrs
+                            ]
+                            self.assertEqual(sources, [expected_url])
+                            if active == "gpt":
+                                self.assertIn(expected_url, links)
                             scripts = [attrs.get("src") for tag, attrs in elements if tag == "script"]
                             self.assertLess(
                                 next(i for i, s in enumerate(scripts) if "clipboard.js" in s),
                                 next(i for i, s in enumerate(scripts) if "instructions.js" in s),
                             )
 
-    # Инструкция укладывается в лимит GPT; MCP сохраняет все правила с адаптацией авторизации.
+    # Компактная версия подходит GPT; MCP получает полную версию без ограничения редактора GPT.
     def test_gpt_length_and_shared_mcp_rules(self):
-        text = Path("static/agents/agent-instructions.txt").read_text(encoding="utf-8")
-        expected = (
-            text.strip()
-            .replace("401 — проверить ключ Action", "401 — переподключить MCP-подключение через OAuth")
-            .replace("Нет Action — нужна схема.", "Нет инструмента — обновить инструменты коннектора.")
-        )
+        compact = Path("static/agents/agent-instructions.txt").read_text(encoding="utf-8")
+        full = Path("static/agents/agent-instructions-full.txt").read_text(encoding="utf-8")
 
         mcp = agent_mcp.analyst_instructions()
 
-        self.assertLessEqual(len(text.replace("\n", "\r\n").encode("utf-16-le")) // 2, 8000)
-        self.assertEqual(mcp.split("\n\nПРИМЕНЕНИЕ В MCP\n", 1)[0], expected)
-        spp_rules = [line for line in text.splitlines() if line.startswith("СПП WB:")]
-        self.assertTrue(spp_rules)
-        for line in text.splitlines():
-            if line.startswith("СПП WB:"):
-                self.assertIn(line, mcp)
-                self.assertIn("SppHourly", line)
-                self.assertIn("SppDaily", line)
+        self.assertLessEqual(len(compact.replace("\n", "\r\n").encode("utf-16-le")) // 2, 8000)
+        self.assertGreater(len(full), len(compact))
+        self.assertEqual(mcp.split("\n\nПРИМЕНЕНИЕ В MCP\n", 1)[0], full.strip())
+        self.assertNotEqual(mcp.split("\n\nПРИМЕНЕНИЕ В MCP\n", 1)[0], compact.strip())

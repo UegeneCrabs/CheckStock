@@ -9,7 +9,7 @@
         control.disabled = true;
         control.onclick = () => window.CheckStockAgentClipboard(instruction, status);
     }
-    fetch('/static/agents/agent-instructions.txt', { cache: 'no-store' })
+    fetch(buttons[0].dataset.instructionUrl, { cache: 'no-store' })
         .then(response => {
             if (!response.ok) throw new Error('load');
             return response.text();

@@ -61,6 +61,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Интерфейс Ozon и общие страницы без Python-разметки | `app/web/client_page.py`, `app/dto/{integrations,ui,stock_pages,ozon_economics,google_export}.py`, `app/infrastructure/async_read_models.py`, `static/common/client-page.js`, [контракты и границы переноса](ozon-web-contracts.md) |
 | Выгрузки и Google-интеграция | `app/exports/`, `app/integrations/`, [формат выгрузки](project-sheet-export.md) |
 | Три независимых недельных блока WB/Ozon/ЯМ | `app/application/google_weeks.py`, `app/infrastructure/google_week_repository.py`, `app/integrations/google_week_{client,plans}.py`, `app/web/routers/google_weeks.py`, [контракт и перенос WB](google-week-update.md) |
+| Инструкции ИИ: полная MCP и компактная GPT | `static/agents/agent-instructions-full.txt`, `static/agents/agent-instructions.txt`, [правила обновления](chatgpt-analytics.md#общая-инструкция-ии-агентов) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |
 | Статические проверки | `pyproject.toml`, цели `lint` и `check` в `Makefile` |
