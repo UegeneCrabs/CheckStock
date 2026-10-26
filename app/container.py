@@ -18,8 +18,8 @@ from app.application.ozon_storage import OzonStorageService
 from app.application.ozon_tariffs import OzonTariffService
 from app.application.spp_history import SppHistoryService
 from app.application.stock import StockMovementService
-from app.application.wb_product_rating import WbProductRatingService
 from app.application.supply_arrival_stock import SupplyArrivalStockService
+from app.application.wb_product_rating import WbProductRatingService
 from app.application.wb_standard_costs import WbStandardCostsService
 from app.config import settings
 from app.core.constants import TIME
