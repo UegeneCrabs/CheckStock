@@ -63,6 +63,15 @@ from app.dto.stock import (
 )
 from app.dto.supply_arrivals import SupplyStockCommand, SupplyStockState
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
+from app.dto.wb_product_rating import WbRatingObservation
+
+
+class WbRatingWriter(Protocol):
+    def upsert(
+        self,
+        observations: tuple[WbRatingObservation, ...],
+        valid_ratings: tuple[WbRatingObservation, ...],
+    ) -> int: ...
 from app.dto.wb_standard_costs import PublishSnapshot
 
 
