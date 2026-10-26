@@ -29,6 +29,9 @@ data/yandex-storefront/
 data/wb-storefront/
 data/.sync-locks/
 data/backups/
+data/diagnostics/
+data/logs/
+data/*.log
 
 identifier.sqlite
 

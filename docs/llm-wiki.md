@@ -34,6 +34,8 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
+| Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
+| Отчёт WB «Рейтинг товаров» | `app/economics/wb/rating_report.py`, `app/web/routers/rating_report.py`, `app/application/wb_product_rating.py`, [полнота данных](f05-economics-completeness.md) |
 | Расходы без ИУ WB | `app/application/wb_standard_costs.py`, `app/infrastructure/wb_standard_costs_repository.py`, `app/economics/wb/catalogue.py`, `app/dto/wb_standard_costs.py`, `app/economics/wb/standard_sources.py`, `app/economics/wb/standard_costs.py`, `app/economics/wb/standard_sync.py`, `app/wb/standard_costs.py`, `app/wb/standard_costs_sources.py`, `app/economics/wb/standard_logistics.py`, `app/economics/wb/standard_storage.py`, `app/web/routers/wb_standard_costs.py`, [контракт](wb-standard-costs.md) |
 | Коэффициент D по часам для каждого кабинета WB | `app/analytics/analyzer.py`, `app/dto/unit_economics_1c.py`, `static/economics/wb/cabinet-settings.js`, [значения, время и сохранение](wb-cabinet-settings.md) |
 | Асинхронные заказы Ozon | `app/economics/ozon_turnover.py`, `app/orders/ozon_async.py`, `app/ozon/async_api.py`, `app/infrastructure/async_*`, `app/jobs/async_*`, [контракт](background-jobs.md#асинхронные-заказы-ozon) |
@@ -101,10 +103,3 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 4. Для HTTP API сверяйте описание с `/openapi.json` или специализированной схемой `/api/agent/v1/openapi.json` запущенного приложения.
 
 Не помещайте в wiki ключи, содержимое `.env`, реальные данные клиентов и временные результаты выгрузок.
-
-## Выпуск аналитики WB и расписания поставок от 23 октября 2026
-
-- [Анализатор ПРО WB](wb-analyzer.md): текущий ROI из общего калькулятора WB, сток FBS + FBO, фильтры цвета и видимость столбцов.
-- [Эфемериды](ephemerides.md): `app/jobs/wb_ephemerides.py`, неизменяемые недельные снимки FBS/FBO/ФФ/возвратов и уточнённые недельные показатели.
-- [Расписание поставок](inbound-supplies.md): `app/jobs/inbound_schedule.py`, ежедневный запуск в 10:00 и понедельник в 05:00 МСК.
-- [Экспорт стоков](project-sheet-export.md): FBO в пути из проведённых транзитных партий; автоматическое списание поставок в этот выпуск не входит.

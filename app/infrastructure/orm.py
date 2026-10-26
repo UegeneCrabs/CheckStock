@@ -947,6 +947,18 @@ class UnitEconomics1CProductReputationRecord(OrmBase):
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class WbProductRatingDailyRecord(OrmBase):
+    __tablename__ = "wb_product_rating_daily"
+    __table_args__ = (Index("ix_wb_product_rating_history", "store_slug", "nm_id", "day"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    nm_id: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    rating: Mapped[float] = mapped_column(Float, nullable=False)
+    reviews_count: Mapped[int | None] = mapped_column(Integer)
+    observed_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class OzonProductReputationRecord(OrmBase):
     __tablename__ = "ozon_product_reputation"
 
