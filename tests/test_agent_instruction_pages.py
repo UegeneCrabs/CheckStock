@@ -56,12 +56,19 @@ class InstructionPagesTests(unittest.TestCase):
                                 next(i for i, s in enumerate(scripts) if "instructions.js" in s),
                             )
 
-    # Инструкция укладывается в лимит GPT, а MCP получает те же правила СПП.
+    # Инструкция укладывается в лимит GPT; MCP сохраняет все правила с адаптацией авторизации.
     def test_gpt_length_and_shared_mcp_rules(self):
         text = Path("static/agents/agent-instructions.txt").read_text(encoding="utf-8")
+        expected = (
+            text.strip()
+            .replace("401 — проверить ключ Action", "401 — переподключить MCP-подключение через OAuth")
+            .replace("Нет Action — нужна схема.", "Нет инструмента — обновить инструменты коннектора.")
+        )
+
         mcp = agent_mcp.analyst_instructions()
 
         self.assertLessEqual(len(text.replace("\n", "\r\n").encode("utf-16-le")) // 2, 8000)
+        self.assertEqual(mcp.split("\n\nПРИМЕНЕНИЕ В MCP\n", 1)[0], expected)
         spp_rules = [line for line in text.splitlines() if line.startswith("СПП WB:")]
         self.assertTrue(spp_rules)
         for line in text.splitlines():
