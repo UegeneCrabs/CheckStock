@@ -129,3 +129,56 @@ class StandardCostsTests(unittest.TestCase):
         response = self.get()
 
         self.assertEqual(response.status_code, 401)
+
+    # Поздние причины неполноты меняют только пометку; числа сохраняются в расчёте сайта и API.
+    def test_late_missing_reasons_preserve_values_in_report_and_api(self):
+        from app.dto.wb_standard_costs import CalculatorProduct, StorageCalculation
+        from app.economics.wb import standard_profit
+
+        row = ReportRow(article="TEST-COMPLETE", scheme="FBW")
+        scenario = Scenario(margin=200, roi=40, complete=True)
+        for reasons in ([], ["Не хватает данных о хранении"]):
+            with (
+                self.subTest(reasons=reasons),
+                patch.object(standard_profit, "calculate_scenario", return_value=scenario),
+                patch.object(
+                    standard_profit, "storage_per_unit", return_value=(StorageCalculation(value=10), reasons)
+                ),
+                patch.object(standard_profit, "logistics_with_returns") as logistics,
+            ):
+                logistics.return_value.total = 20
+                logistics.return_value.missing = ()
+
+                comparison = standard_profit.compare(row, CalculatorProduct())
+                report_row = row.model_copy(
+                    update={
+                        "profit": comparison.standard,
+                        "current_profit": comparison.current,
+                        "delta": comparison.delta,
+                    }
+                )
+                snapshot = Snapshot(date_from="2026-10-12", date_to="2026-10-18", rows=(report_row,))
+                with (
+                    patch("app.repositories.wb_standard_costs.load", return_value=snapshot),
+                    patch.object(standard_profit, "enrich", side_effect=lambda store, value: value),
+                ):
+                    response = self.get()
+
+                self.assertEqual(comparison.standard.complete, not reasons)
+                self.assertEqual(comparison.standard.missing, tuple(reasons))
+                self.assertEqual(comparison.standard.margin, 200)
+                self.assertEqual(comparison.standard.roi, 40)
+                self.assertEqual(comparison.delta.margin, 0)
+                self.assertEqual(comparison.delta.roi, 0)
+                self.assertEqual(response.status_code, 200)
+                returned = response.json()["rows"][0]
+                self.assertEqual(
+                    returned["profit"],
+                    {
+                        "margin": 200,
+                        "roi": 40,
+                        "complete": not reasons,
+                        "missing": reasons,
+                    },
+                )
+                self.assertTrue(returned["current_profit"]["complete"])
