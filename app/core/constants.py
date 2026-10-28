@@ -578,6 +578,7 @@ OZON_CABINET: Final = OzonCabinetConfig()
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonStockAnalyticsConfig:
     path: str = "/v1/analytics/stocks"
+    fbs_return_tag: str = "FBS_RETURN"
     sku_batch_size: int = 100
     request_attempts: int = 8
     minimum_interval_seconds: float = 1.5
@@ -808,6 +809,7 @@ class AdvertisingError(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonAdvertisingConfig:
+    legacy_health_scope: str = "ozon_advertising"
     base_url: str = "https://api-performance.ozon.ru"
     token_path: str = "/api/client/token"
     campaigns_path: str = "/api/client/campaign"
@@ -1519,6 +1521,7 @@ class UiAlertCode(StrEnum):
 class UiAlertScope(StrEnum):
     CREDENTIALS = "credentials"
     ADVERTISING = "advertising"
+    REPUTATION = "reputation"
 
 
 class StockScheme(StrEnum):
