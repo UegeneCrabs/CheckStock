@@ -164,9 +164,8 @@ def compare(row: ReportRow, product: CalculatorProduct | None) -> Comparison:
         days=days,
         shared_missing=shared_missing,
     )
-    standard = standard.model_copy(
-        update={"missing": standard.missing + logistics_returns.missing + tuple(storage_missing)}
-    )
+    standard_missing = standard.missing + logistics_returns.missing + tuple(storage_missing)
+    standard = standard.model_copy(update={"missing": standard_missing, "complete": not standard_missing})
     delta = MarginRoi(
         margin=round(standard.margin - current.margin, 2)
         if standard.margin is not None and current.margin is not None
@@ -257,8 +256,8 @@ def enrich(store: str, report: Snapshot) -> Snapshot:
         standard, current = comparison.standard, comparison.current
         if len(matches) > 1:
             reason = ("Несколько размеров: требуется однозначное сопоставление",)
-            standard = standard.model_copy(update={"missing": standard.missing + reason})
-            current = current.model_copy(update={"missing": current.missing + reason})
+            standard = standard.model_copy(update={"missing": standard.missing + reason, "complete": False})
+            current = current.model_copy(update={"missing": current.missing + reason, "complete": False})
         enriched.append(
             row.model_copy(
                 update={
