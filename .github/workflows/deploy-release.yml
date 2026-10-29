@@ -66,11 +66,15 @@ jobs:
           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
             [[ -n "${!name}" ]] || { echo "Missing $name" >&2; exit 1; }
           done
-          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || {
+            echo 'DEPLOY_PORT must be a numeric SSH port' >&2; exit 1;
+          }
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/checkstock_deploy"
           chmod 600 "$HOME/.ssh/checkstock_deploy"
-          ssh-keygen -y -f "$HOME/.ssh/checkstock_deploy" >/dev/null
+          ssh-keygen -y -f "$HOME/.ssh/checkstock_deploy" >/dev/null || {
+            echo 'DEV_DEPLOY_SSH_KEY is not a valid SSH private key' >&2; exit 1;
+          }
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
       - name: Deploy on server
@@ -83,5 +87,6 @@ jobs:
           set -euo pipefail
           ssh -i "$HOME/.ssh/checkstock_deploy" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
             -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             bash -s -- "$GITHUB_REF_NAME" "$RELEASE_SHA" < deploy/deploy-release.sh

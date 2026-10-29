@@ -5,16 +5,20 @@ tag="${1:?Usage: deploy-release.sh TAG COMMIT_SHA}"
 expected_sha="${2:?Usage: deploy-release.sh TAG COMMIT_SHA}"
 root=/home/checkstock
 backup_dir=/home/bd_backup
-compose=(docker compose --env-file .env -f deploy/docker-compose.yml)
 
 [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid tag' >&2; exit 1; }
 [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid SHA' >&2; exit 1; }
-cd "$root"
+cd "$root" || { echo "Application checkout $root is unavailable" >&2; exit 1; }
 [[ -f .env ]] || { echo 'Missing .env' >&2; exit 1; }
 [[ -d secrets ]] || { echo 'Missing secrets directory' >&2; exit 1; }
 [[ -d "$backup_dir" && -w "$backup_dir" ]] || { echo 'Backup directory is unavailable' >&2; exit 1; }
-command -v docker >/dev/null
-docker compose version >/dev/null
+old_compose_file=deploy/docker-compose.yml
+[[ -f "$old_compose_file" ]] || old_compose_file=docker-compose.yml
+[[ -f "$old_compose_file" ]] || { echo 'Missing current Docker Compose file' >&2; exit 1; }
+old_compose=(docker compose --env-file .env -f "$old_compose_file")
+compose=("${old_compose[@]}")
+command -v docker >/dev/null || { echo 'Docker is not installed on the server' >&2; exit 1; }
+docker compose version >/dev/null || { echo 'Docker Compose is unavailable on the server' >&2; exit 1; }
 [[ -z "$(git status --porcelain --untracked-files=no)" ]] || {
   echo 'Tracked server files have local changes' >&2; exit 1;
 }
@@ -35,6 +39,7 @@ if ((${#deployed_tags[@]})); then
     echo "Release tag $tag must exceed deployed tag $deployed_tag" >&2; exit 1;
   }
 fi
+echo "Checking current Compose configuration: $old_compose_file"
 "${compose[@]}" config --quiet </dev/null
 db_id="$("${compose[@]}" ps -q db)"
 [[ -n "$db_id" && "$(docker inspect --format '{{.State.Health.Status}}' "$db_id")" == healthy ]] || {
@@ -46,38 +51,79 @@ backup="$backup_dir/checkstock-$stamp-$tag.dump"
 temporary="$(mktemp "$backup_dir/.checkstock-$stamp-$tag.XXXXXX.tmp")"
 trap 'rm -f -- "$temporary"' EXIT
 echo "Creating database backup $backup"
-"${compose[@]}" exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' </dev/null > "$temporary"
+"${compose[@]}" exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' </dev/null > "$temporary" || {
+  echo 'Database backup failed while running pg_dump; application code was not changed' >&2
+  exit 1
+}
 [[ -s "$temporary" ]] || { echo 'Database backup is empty' >&2; exit 1; }
-"${compose[@]}" exec -T db pg_restore -l < "$temporary" > /dev/null
+"${compose[@]}" exec -T db pg_restore -l < "$temporary" > /dev/null || {
+  echo 'Database backup verification failed; application code was not changed' >&2
+  exit 1
+}
 [[ ! -e "$backup" ]] || { echo 'Backup filename already exists' >&2; exit 1; }
 chmod 600 "$temporary"
 mv -- "$temporary" "$backup"
 echo "Verified database backup: $backup"
 
+show_service_failure() {
+  local service="$1" reason="$2" id
+  echo "Service $service failed deployment check: $reason" >&2
+  id="$("${compose[@]}" ps -a -q "$service")"
+  if [[ -z "$id" ]]; then
+    echo "No container found for $service" >&2
+    return
+  fi
+  docker inspect --format 'Container {{.Name}}: status={{.State.Status}} running={{.State.Running}} exit_code={{.State.ExitCode}}{{if .State.Health}} health={{.State.Health.Status}}{{end}}' "$id" >&2 || true
+  echo "Recent healthcheck results for $service:" >&2
+  docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}exit_code={{.ExitCode}} output={{.Output}}{{end}}{{else}}No healthcheck configured{{end}}' "$id" >&2 || true
+  echo "Recent container logs for $service:" >&2
+  docker logs --tail 40 "$id" >&2 || true
+}
+
 wait_healthy() {
-  local service="$1" attempts="$2" id state
-  id="$("${compose[@]}" ps -q "$service")"
-  [[ -n "$id" ]] || return 1
+  local service="$1" attempts="$2" id state i
+  echo "Waiting for $service to become healthy" >&2
+  id="$("${compose[@]}" ps -a -q "$service")"
+  if [[ -z "$id" ]]; then
+    show_service_failure "$service" 'container not found'
+    return 1
+  fi
   for ((i=0; i<attempts; i++)); do
-    state="$(docker inspect --format '{{.State.Health.Status}}' "$id")"
-    [[ "$state" == healthy ]] && return 0
-    [[ "$state" != unhealthy ]] || return 1
+    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id")"
+    if [[ "$state" == healthy ]]; then
+      echo "Service $service is healthy" >&2
+      return 0
+    fi
+    if [[ "$state" == unhealthy || "$state" == none ]]; then
+      show_service_failure "$service" "health status is $state"
+      return 1
+    fi
     sleep 5
   done
+  show_service_failure "$service" "healthcheck did not pass within $((attempts * 5)) seconds"
   return 1
 }
 
 watchdog_running() {
   local id
-  id="$("${compose[@]}" ps -q watchdog)"
-  [[ -n "$id" && "$(docker inspect --format '{{.State.Running}}' "$id")" == true ]]
+  id="$("${compose[@]}" ps -a -q watchdog)"
+  if [[ -n "$id" && "$(docker inspect --format '{{.State.Running}}' "$id")" == true ]]; then
+    echo 'Service watchdog is running' >&2
+    return 0
+  fi
+  show_service_failure watchdog 'container is not running'
+  return 1
 }
 
 rollback() {
   local status=$? rollback_failed=0
   trap - ERR
-  echo "Deployment failed; restoring application commit $old_sha" >&2
+  echo "Deployment failed during $deploy_stage (exit status $status); restoring application commit $old_sha" >&2
   git checkout --detach "$old_sha" || rollback_failed=1
+  if ((rollback_failed == 0)); then
+    compose=("${old_compose[@]}")
+    "${compose[@]}" config --quiet </dev/null || rollback_failed=1
+  fi
   if ((rollback_failed == 0)); then
     "${compose[@]}" build app </dev/null || rollback_failed=1
   fi
@@ -96,15 +142,27 @@ rollback() {
   fi
   exit "$status"
 }
+deploy_stage='checkout of release commit'
 trap rollback ERR
 
+echo "Switching checkout to release $tag ($actual_sha)"
 git checkout --detach "$actual_sha"
+compose=(docker compose --env-file .env -f deploy/docker-compose.yml)
+deploy_stage='validation of release Compose configuration'
+echo 'Checking release Compose configuration'
 "${compose[@]}" config --quiet </dev/null
+deploy_stage='release image build'
+echo 'Building release image on server'
 "${compose[@]}" build app </dev/null
+deploy_stage='container update'
+echo 'Updating app, scheduler and watchdog containers'
 "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null
 
+deploy_stage='app healthcheck'
 wait_healthy app 24
+deploy_stage='scheduler healthcheck'
 wait_healthy scheduler 30
+deploy_stage='watchdog running check'
 watchdog_running
 trap - ERR
 

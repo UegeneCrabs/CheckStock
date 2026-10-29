@@ -63,7 +63,6 @@ from app.dto.supply_arrivals import SupplyStockCommand, SupplyStockState
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
 from app.dto.wb_product_rating import WbRatingObservation
 from app.dto.wb_standard_costs import PublishSnapshot
-from app.dto.wb_standard_costs import PublishSnapshot
 
 if TYPE_CHECKING:
     from app.infrastructure.database import DatabaseConnection
