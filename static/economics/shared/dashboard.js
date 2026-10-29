@@ -2050,6 +2050,7 @@
                     product.store_slug + ':' + item.article;
                 return window.CheckStockUI.render('economics/shared/dashboard/render-glued-products', {
                     targetId: targetId,
+                    media: config.ozonPreview ? mediaHtml(item, 'ozon-related-thumb') : '',
                     name: item.name,
                     article: item.article,
                     article_2: item.article,
@@ -2057,6 +2058,11 @@
                 });
             })
             .join('');
+        if (config.ozonPreview) {
+            nodes.gluedProducts.querySelectorAll('img').forEach(function (image) {
+                image.addEventListener('error', function () { image.remove(); }, { once: true });
+            });
+        }
     }
     function chartPath(points) {
         return points
@@ -2125,9 +2131,10 @@
             }
             return;
         }
-        var history = allHistory.slice(-14);
+        var visibleDays = config.ozonPreview ? product.history_days || 14 : 14;
+        var history = allHistory.slice(-visibleDays);
         renderChartDailySales(history);
-        var previousHistory = allHistory.length >= 21 ? allHistory.slice(-21, -7) : [];
+        var previousHistory = allHistory.length >= visibleDays + 7 ? allHistory.slice(-visibleDays - 7, -7) : [];
         var canCompare =
             previousHistory.length === history.length &&
             (!(config.yandexEconomics || config.ozonPreview) ||
@@ -2266,6 +2273,7 @@
         var barWidth = compare
             ? Math.max(5, (chartSlotWidth - barGap * 2) / 2)
             : Math.max(7, Math.min(22, chartSlotWidth * 0.64));
+        if (config.ozonPreview) barWidth = Math.min(barWidth, compare ? (chartSlotWidth - barGap * 2) / 2 : chartSlotWidth * 0.64);
         function orderBars(items, previous) {
             if (!enabled('orders') || !items.length) return '';
             return items
@@ -2349,8 +2357,11 @@
                 ? line(history, 'price_with_spp_rub', moneyY, 'is-price', 'price')
                 : { visual: '', hit: '' },
         };
+        var labelStep = config.ozonPreview && history.length > 14 ? 3 : 1;
         var labels = history
             .map(function (item, index) {
+                if (labelStep > 1 && index !== history.length - 1 &&
+                    (index % labelStep !== 0 || history.length - 1 - index < labelStep)) return '';
                 return window.CheckStockUI.render('economics/shared/dashboard/labels', {
                     index: x(index),
                     label: item.label,
@@ -2590,9 +2601,10 @@
                 .join(''),
         });
     }
-    function renderMarketplaceHistory(product, rows, message) {
+    function renderMarketplaceHistory(product, rows, message, days) {
         product.history = rows;
-        var visible = product.history.slice(-14);
+        if (config.ozonPreview) product.history_days = days || product.history_days || 14;
+        var visible = product.history.slice(-(config.ozonPreview ? product.history_days : 14));
         var seriesKeys = {
             orders: 'orders_count',
             stock: 'stock_units',
@@ -2702,8 +2714,8 @@
                 parameter('Период выкупа кабинета', escapeHtml((ozonCabinet.buyout || {}).period_from || '—') + ' — ' + escapeHtml((ozonCabinet.buyout || {}).period_to || '—')) +
                 parameter('Тег', nullText(product.tag));
             id('ue1c-panel-params').querySelector('.ue1c-section-head span').textContent = 'Ozon';
-            if (window.OzonHistoryUI) window.OzonHistoryUI.render(root, product, function (rows, message) {
-                renderMarketplaceHistory(product, rows, message);
+            if (window.OzonHistoryUI) window.OzonHistoryUI.render(root, product, function (rows, message, days) {
+                renderMarketplaceHistory(product, rows, message, days);
             });
             if (window.OzonPricesUI) window.OzonPricesUI.render(root, product);
             if (window.OzonPromotionsUI) window.OzonPromotionsUI.render(root, product);

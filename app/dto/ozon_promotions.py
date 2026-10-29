@@ -10,6 +10,7 @@ from app.dto.ozon_calculator import OzonCalculatorValues, ScenarioNumber, Scenar
 from app.dto.ozon_margin import OzonMarginResult
 from app.dto.ozon_orders import OzonPayload, optional_date
 from app.dto.ozon_price_calculator import OzonPriceCalculationRequest
+from app.dto.ozon_prices import WebsitePrices
 
 PromotionDate = Annotated[datetime | None, BeforeValidator(optional_date)]
 
@@ -55,6 +56,7 @@ class OzonActionProduct(OzonPayload):
     min_stock: int | None = Field(default=None, ge=0)
     is_quarantined: StrictBool | None = None
     alert_max_action_price_failed: StrictBool | None = None
+    website_prices: WebsitePrices | None = None
 
 
 class OzonActionProductsRequest(DtoModel):

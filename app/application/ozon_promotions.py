@@ -56,14 +56,17 @@ class OzonPromotionsService:
         self.scope = scope
         self.clock = clock
 
-    async def promotions(self, article: str) -> OzonPromotions:
+    def invalidate(self, article: str) -> None:
+        self.cache.items.pop((self.scope, article), None)
+
+    async def promotions(self, article: str, *, fresh: bool = False) -> OzonPromotions:
         catalog = await self.catalog_reader()
         if article not in {item.article for item in catalog.items}:
             raise LookupError("Product not found")
         key = (self.scope, article)
         async with self.cache.locks.setdefault(self.scope, asyncio.Lock()):
             cached = self.cache.items.get(key)
-            if cached is not None and cached.expires > monotonic():
+            if not fresh and cached is not None and cached.expires > monotonic():
                 self.cache.items.move_to_end(key)
                 return cached.response
             deadline = asyncio.get_running_loop().time() + settings.ozon_promotions_timeout_seconds

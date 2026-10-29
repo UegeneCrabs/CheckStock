@@ -321,14 +321,15 @@ window.OzonCalculatorUI = (() => {
         [['Чистая прибыль на штуку', margin, rub, 'margin'], ['ROI', roi, value => value == null ? '—' : percent(value) + '%', 'roi']].forEach(([label, value, format, key]) => {
             const row = node.querySelector('[data-ozon-result="' + key + '"]') || document.createElement('div');
             row.dataset.ozonResult = key;
-            const title = document.createElement('span');
-            title.textContent = label;
-            const amount = document.createElement('strong');
+            if (!row.parentNode) {
+                const title = document.createElement('span');
+                title.textContent = label;
+                row.append(title, document.createElement('strong'));
+                node.append(row);
+            }
+            const amount = row.querySelector('strong');
             amount.textContent = format(value);
             amount.className = value == null ? '' : Number(value) < 0 ? 'is-negative' : 'is-positive';
-            row.replaceChildren(title, amount);
-            row.tabIndex = 0;
-            if (!row.parentNode) node.append(row);
             window.OzonCalculatorHelp.bind(row, () => window.OzonCalculatorHelpContent.calculator(session, key, label));
         });
         const labels = window.OzonEconomicsUI.marginLabels;

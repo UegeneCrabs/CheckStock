@@ -83,3 +83,28 @@
 .ozon-gantt-empty { position: absolute; top: 50%; transform: translateY(-50%); max-width: 100%; color: #64748b; font-size: 10px; }
 .ozon-gantt-today { position: absolute; z-index: 1; top: 0; bottom: 0; border-left: 1px dashed #c05a49; pointer-events: none; }
 .ozon-gantt-today-label { position: absolute; bottom: 6px; transform: translateX(-50%); padding: 1px 3px; color: #a43e2d; background: #fff4ee; border-radius: 3px; font-size: 10px; }
+.ozon-entry-dialog {
+    box-sizing: border-box;
+    width: min(720px, calc(100vw - 24px));
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    padding: 22px;
+    border: 1px solid #d8e1f2;
+    border-radius: 12px;
+    color: #162744;
+    background: #fff;
+    box-shadow: 0 16px 64px #10254a40;
+    font-size: 13px;
+}
+.ozon-entry-dialog::backdrop { background: #14244266; }
+.ozon-entry-dialog h3 { margin-top: 0; }
+.ozon-entry-dialog p { line-height: 1.5; overflow-wrap: anywhere; }
+.ozon-entry-new-price { font-size: 16px; font-weight: 700; }
+.ozon-entry-metrics, .ozon-entry-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+.ozon-entry-status { font-weight: 600; }
+.ozon-entry-dialog input { max-width: 140px; padding: 6px; margin: 6px; }
+.ozon-entry-dialog .is-positive { color: #18743b; }
+.ozon-entry-dialog .is-negative { color: #bd2828; }
+.ozon-entry-history { margin-top: 20px; }
+.ozon-entry-history-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid #e5eaf3; font-size: 12px; }
+.ozon-promotion-identity > button { margin-top: 6px; }

@@ -1,4 +1,5 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -12,23 +13,27 @@ from app.application.ozon_cabinet import OzonCabinetService
 from app.application.ozon_history import OzonHistoryService
 from app.application.ozon_logistics import OzonLogisticsService
 from app.application.ozon_margin_service import OzonMarginService
+from app.application.ozon_promotion_entry import OzonPromotionEntryService
 from app.application.ozon_promotions import OzonPromotionsService
 from app.application.ozon_related import OzonRelatedService
 from app.application.ozon_storage import OzonStorageService
 from app.application.ozon_tariffs import OzonTariffService
 from app.application.stock import StockMovementService
-from app.application.wb_product_rating import WbProductRatingService
 from app.application.supply_arrival_stock import SupplyArrivalStockService
+from app.application.wb_product_rating import WbProductRatingService
 from app.application.wb_standard_costs import WbStandardCostsService
 from app.config import settings
-from app.core.constants import TIME
+from app.core.constants import OZON_PRICES, OZON_PROMOTIONS, TIME, OzonPriceSource, OzonPromotionStatus
 from app.dto.orders import OrderPeriod
 from app.dto.ozon_buyout import OzonBuyoutEvidence
 from app.dto.ozon_economics import OzonProductsQuery
 from app.dto.ozon_logistics import ReturnsFilter
+from app.dto.ozon_prices import PriceIdentity, PriceValues, WebsiteEvidence
+from app.dto.ozon_promotion_entry import OzonEntryBusyError, OzonEntryEvidence, OzonEntryRefreshedPrices
 from app.dto.ozon_related import OzonModelProducts
 from app.dto.ozon_tariffs import OzonCategorySelection
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
+from app.economics.ozon_commissions import snapshot as commission_snapshot
 from app.economics.wb.prices import calculate_wallet_price
 from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
@@ -41,6 +46,7 @@ from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
 from app.infrastructure.ozon_history_repository import OzonHistoryRepository
 from app.infrastructure.ozon_margin_repository import OzonMarginRepository
+from app.infrastructure.ozon_promotion_entry_repository import OzonPromotionEntryRepository
 from app.infrastructure.ozon_tariff_catalog import CATALOG
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.infrastructure.supply_arrival_stock_repository import SupplyArrivalStockRepository
@@ -51,10 +57,13 @@ from app.infrastructure.wb_hourly_price_repository import (
 from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
 from app.infrastructure.wb_product_rating_repository import SqlAlchemyWbRatingWriter
 from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
+from app.jobs.async_locks import hold
+from app.jobs.locks import SyncJobBusyError
 from app.orders.ozon_async import sync_configured_store
 from app.ozon.async_logistics import AsyncLogisticsClient
 from app.ozon.async_promotions import AsyncPromotionsClient
 from app.ozon.async_storage import AsyncStorageClient
+from app.ozon.price_normalizer import fbo_commission_observation, seller_observation, website_observation
 from app.ozon.tokens import get_order_credentials
 from app.repositories import core
 from app.stock.inbound_supplies import build_service as build_inbound_service
@@ -187,6 +196,59 @@ def ozon_promotions_service(resources: "AsyncResources", store: str) -> OzonProm
         lambda: resources.catalog.ozon_products(store),
         resources.ozon_promotions_cache,
         scope,
+        lambda: datetime.now(UTC),
+    )
+
+
+def ozon_promotion_entry_service(resources: "AsyncResources", store: str) -> OzonPromotionEntryService:
+    @asynccontextmanager
+    async def lock(article: str) -> AsyncIterator[None]:
+        try:
+            async with hold(OZON_PROMOTIONS.entry_lock_prefix + store + ":" + article, resources.database):
+                yield
+        except SyncJobBusyError:
+            raise OzonEntryBusyError() from None
+
+    async def refresh(evidence: OzonEntryEvidence) -> OzonEntryRefreshedPrices:
+        now = datetime.now(UTC)
+        seller = seller_observation(evidence.prices, now)
+        websites = tuple(
+            WebsiteEvidence(
+                product_id=evidence.identity.id,
+                action_id=item.action.id,
+                source=OzonPriceSource.PRODUCTS
+                if item.status == OzonPromotionStatus.PARTICIPATING
+                else OzonPriceSource.CANDIDATES,
+                received_at=now,
+                prices=item.product.website_prices.prices_by_schema[scheme.value.upper()],
+                scheme=scheme,
+            )
+            for item in evidence.promotions.items
+            if item.product and item.product.website_prices
+            for scheme in OZON_PRICES.website_schemes
+            if scheme.value.upper() in item.product.website_prices.prices_by_schema
+        )
+        website = website_observation(
+            PriceIdentity(product_id=evidence.identity.id, offer_id=evidence.identity.offer_id), websites, now
+        )
+        commission = fbo_commission_observation(evidence.prices, now)
+        await resources.prices.save(store, (seller, website))
+        await resources.commissions.save(store, (commission,))
+        values = PriceValues.model_validate(
+            {change.field.value: change.value for change in (*seller.changes, *website.changes)}
+        )
+        return OzonEntryRefreshedPrices(
+            prices=values, commission=commission_snapshot(commission.value, values.seller_price, now)
+        )
+
+    return OzonPromotionEntryService(
+        OzonPromotionEntryRepository(resources.database),
+        AsyncPromotionsClient(resources.http, get_order_credentials(store)),
+        ozon_promotions_service(resources, store),
+        OzonCabinetRepository(resources.database).boost_settings,
+        ozon_tariff_service(resources, store).calculate,
+        lock,
+        refresh,
         lambda: datetime.now(UTC),
     )
 

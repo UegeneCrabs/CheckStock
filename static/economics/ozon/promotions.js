@@ -65,6 +65,7 @@ window.OzonPromotionsUI = (() => {
     }
 
     function clear(root) {
+        window.OzonPromotionEntryUI.clear(root);
         window.OzonPromotionsTimeline.clear(root);
         const session = sessions.get(root);
         if (session) {
@@ -86,6 +87,7 @@ window.OzonPromotionsUI = (() => {
         const key = product.store_slug + ':' + product.article;
         if (sessions.get(root)?.key === key) {
             sessions.get(root).product = product;
+            entry(root, sessions.get(root));
             return;
         }
         clear(root);
@@ -98,9 +100,22 @@ window.OzonPromotionsUI = (() => {
         };
         session.focus = () => refresh(root, session, true);
         sessions.set(root, session);
+        entry(root, session);
         root.addEventListener('ozon-calculator-changed', session.changed);
         window.addEventListener('storage', session.boostChanged);
         window.addEventListener('focus', session.focus);
+    }
+
+    function entry(root, session) {
+        window.OzonPromotionEntryUI.render(root, session.product, operation => {
+            if (sessions.get(root) !== session) return;
+            if (operation.refreshed) {
+                session.product.price = operation.refreshed.prices;
+                session.product.commission = operation.refreshed.commission;
+                window.OzonPricesUI.reset(root, session.product);
+            }
+            load(root, session);
+        });
     }
 
     function select(root, tabName) {
@@ -138,6 +153,8 @@ window.OzonPromotionsUI = (() => {
 
     async function load(root, session) {
         if (sessions.get(root) !== session) return;
+        const sequence = (session.loadSequence || 0) + 1;
+        session.loadSequence = sequence;
         session.started = true;
         const panel = root.querySelector('#ue1c-panel-promotions');
         panel.replaceChildren(element('p', 'Проверяем акции и участие товара в Ozon…', 'ozon-promotions-note'));
@@ -148,7 +165,7 @@ window.OzonPromotionsUI = (() => {
                 headers: { Accept: 'application/json' }, signal: session.controller.signal,
             });
             const result = await response.json();
-            if (sessions.get(root) !== session) return;
+            if (sessions.get(root) !== session || session.loadSequence !== sequence) return;
             if (!response.ok) throw new Error(errors[result.detail] || 'Не удалось загрузить акции Ozon.');
             if (!Array.isArray(result.items) || typeof result.complete !== 'boolean') throw new Error('Некорректный ответ об акциях Ozon.');
             panel.replaceChildren();
@@ -188,12 +205,14 @@ window.OzonPromotionsUI = (() => {
             const timeline = element('section', undefined, 'ozon-promotions-timeline');
             panel.append(timeline);
             window.OzonPromotionsTimeline.render(root, timeline, result.items);
+            window.OzonPromotionEntryUI.history(root, panel);
             refresh(root, session);
         } catch (error) {
-            if (sessions.get(root) !== session || error.name === 'AbortError') return;
+            if (sessions.get(root) !== session || session.loadSequence !== sequence || error.name === 'AbortError') return;
             panel.replaceChildren(element('p', error.message || 'Не удалось загрузить акции Ozon.', 'ozon-promotions-warning'), retry(root, session));
+            window.OzonPromotionEntryUI.history(root, panel);
         } finally {
-            if (sessions.get(root) === session) panel.removeAttribute('aria-busy');
+            if (sessions.get(root) === session && session.loadSequence === sequence) panel.removeAttribute('aria-busy');
         }
     }
 
@@ -261,6 +280,7 @@ window.OzonPromotionsUI = (() => {
         box.append(note);
         const row = { item, input, margin, roi, boost, note, currency, sequence: 0, draft: previous?.draft };
         session.rows.set(action.id, row);
+        window.OzonPromotionEntryUI.bind(root, identity, row, () => calculationContext(root, session));
         input.oninput = () => {
             row.draft = input.value;
             schedule(root, session, row);

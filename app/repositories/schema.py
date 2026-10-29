@@ -15,6 +15,7 @@ from app.infrastructure import ozon_commissions_orm as ozon_commissions_orm
 from app.infrastructure import ozon_logistics_orm as ozon_logistics_orm
 from app.infrastructure import ozon_margin_orm as ozon_margin_orm
 from app.infrastructure import ozon_prices_orm as ozon_prices_orm
+from app.infrastructure import ozon_promotion_entry_orm as ozon_promotion_entry_orm
 from app.infrastructure import ozon_storage_orm as ozon_storage_orm
 from app.infrastructure import wb_standard_costs_orm as wb_standard_costs_orm
 from app.infrastructure import yandex_economics_orm as yandex_economics_orm

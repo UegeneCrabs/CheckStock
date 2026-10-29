@@ -22,6 +22,8 @@ files = [
     "app/stock/fbo_sync.py", "app/web/routers/fbo_stock.py",
     "app/dto/ozon_promotions.py", "app/application/ozon_promotions.py", "app/ozon/async_promotions.py",
     "app/economics/ozon_promotion_calculator.py",
+    "app/dto/ozon_promotion_entry.py", "app/application/ozon_promotion_entry.py",
+    "app/infrastructure/ozon_promotion_entry_repository.py", "app/infrastructure/ozon_promotion_entry_orm.py",
     "app/dto/ozon_history.py", "app/application/ozon_history.py",
     "app/ozon/history_normalizer.py", "app/infrastructure/ozon_history_repository.py",
     "app/dto/ozon_related.py", "app/application/ozon_related.py", "app/ozon/async_related.py",

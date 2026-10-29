@@ -298,6 +298,11 @@ class OzonPromotionsConfig:
     cache_size: int = 128
     currency: str = "RUB"
     settings_scope: str = "__ozon_promotions__"
+    update_path: str = "/v1/actions/products/update"
+    entry_lock_prefix: str = "ozon-promotion-entry:"
+    entry_history_limit: int = 10
+    entry_reason_max_length: int = 1000
+    entry_write_attempts: int = 1
 
 
 OZON_PROMOTIONS: Final = OzonPromotionsConfig()
@@ -314,6 +319,55 @@ class OzonPromotionIssue(StrEnum):
     UNAVAILABLE = "unavailable"
     INCOMPLETE = "incomplete"
     TIMEOUT = "timeout"
+
+
+class OzonEntryState(StrEnum):
+    PREPARED = "prepared"
+    BLOCKED = "blocked"
+    CHECKING = "checking"
+    SENDING = "sending"
+    VERIFYING = "verifying"
+    UNCERTAIN = "uncertain"
+    SUCCEEDED = "succeeded"
+    REJECTED = "rejected"
+    CHANGED = "changed"
+    EXPIRED = "expired"
+    ALREADY = "already_participating"
+    FAILED = "failed"
+
+
+class OzonEntryIssue(StrEnum):
+    ACTION_UNAVAILABLE = "action_unavailable"
+    NOT_CANDIDATE = "not_candidate"
+    INCOMPLETE = "incomplete"
+    STOCK_UNKNOWN = "stock_unknown"
+    NO_STOCK = "no_stock"
+    QUARANTINED = "quarantined"
+    FROZEN = "frozen"
+    ENDED = "ended"
+    PRICE_UNAVAILABLE = "price_unavailable"
+    CURRENCY = "currency"
+    PRICE_LIMIT = "price_limit"
+    STOCK_REQUIRED = "stock_required"
+    STOCK_LIMIT = "stock_limit"
+    STOCK_UNSUPPORTED = "stock_unsupported"
+    ACCESS_DENIED = "access_denied"
+    UNAVAILABLE = "unavailable"
+    BUSY = "busy"
+    EXPIRED = "expired"
+    CHANGED = "changed"
+    REJECTED = "rejected"
+    WRITE_UNCERTAIN = "write_uncertain"
+    VERIFY_FAILED = "verify_failed"
+    INTERRUPTED = "interrupted"
+
+
+OZON_ENTRY_PENDING: Final = (
+    OzonEntryState.CHECKING,
+    OzonEntryState.SENDING,
+    OzonEntryState.VERIFYING,
+    OzonEntryState.UNCERTAIN,
+)
 
 
 class OzonLogisticsState(StrEnum):
@@ -1629,9 +1683,15 @@ class OzonHistoryField(StrEnum):
     PRICE = "price"
 
 
+class OzonHistoryPeriod(IntEnum):
+    WEEK = 7
+    FORTNIGHT = 14
+    MONTH = 30
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonHistoryConstants:
-    visible_days: int = 14
+    visible_days: OzonHistoryPeriod = OzonHistoryPeriod.FORTNIGHT
     comparison_days: int = 7
 
 

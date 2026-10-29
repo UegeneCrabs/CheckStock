@@ -128,6 +128,7 @@ class Settings(BaseModel):
     ozon_related_cache_seconds: int = Field(default=3600, ge=0)
     ozon_promotions_cache_seconds: int = Field(default=300, ge=0)
     ozon_promotions_timeout_seconds: int = Field(default=60, ge=1)
+    ozon_promotion_entry_preview_seconds: int = Field(default=180, ge=10)
     yandex_tokens_path: Path
     google_service_account_path: Path
     log_level: str

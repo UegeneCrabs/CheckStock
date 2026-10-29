@@ -1,9 +1,18 @@
 import httpx
 
 from app.config import settings
-from app.core.constants import OZON_API, OZON_PROMOTIONS, HTTPMethod
+from app.core.constants import OZON_API, OZON_PROMOTIONS, HTTPMethod, OzonPriceSource
 from app.dto.orders import OzonCredentials
 from app.dto.ozon_orders import OzonProductInfoRequest
+from app.dto.ozon_prices import SellerPriceItem, SellerPricePage
+from app.dto.ozon_promotion_entry import (
+    OzonEntryIdentities,
+    OzonEntryIdentity,
+    OzonEntryPriceFilter,
+    OzonEntryPriceRequest,
+    OzonEntryReceipt,
+    OzonEntryUpdate,
+)
 from app.dto.ozon_promotions import (
     OzonAction,
     OzonActionProduct,
@@ -22,6 +31,57 @@ class AsyncPromotionsClient:
     def __init__(self, http: AsyncHttp, credentials: OzonCredentials):
         self.http = http
         self.api = AsyncSellerApi(http, credentials)
+
+    async def identity(self, article: str) -> OzonEntryIdentity:
+        response = await self.api._response(
+            OZON_API.product_info_path, OzonProductInfoRequest(sku=(), offer_id=(article,))
+        )
+        items = OzonEntryIdentities.model_validate(response.json()).items
+        if len(items) != 1 or items[0].offer_id != article:
+            raise ValueError("Unexpected product identity")
+        return items[0]
+
+    async def price(self, article: str, product_id: int) -> SellerPriceItem:
+        response = await self.api._response(
+            OzonPriceSource.SELLER,
+            OzonEntryPriceRequest(filter=OzonEntryPriceFilter(offer_id=(article,))),
+        )
+        page = SellerPricePage.model_validate(response.json())
+        if (
+            len(page.items) != 1
+            or page.items[0].offer_id != article
+            or page.items[0].product_id != product_id
+        ):
+            raise ValueError("Unexpected price identity")
+        return page.items[0]
+
+    async def update(self, payload: OzonEntryUpdate) -> OzonEntryReceipt:
+        response = await self.http.request(
+            HTTPMethod.POST,
+            OZON_API.base_url + OZON_PROMOTIONS.update_path,
+            headers=self.api.headers,
+            json=payload.model_dump(mode="json", exclude_none=True),
+            attempts=OZON_PROMOTIONS.entry_write_attempts,
+            backoff=settings.ozon_retry_backoff_seconds,
+        )
+        if response.is_error:
+            raise OzonApiError(response.status_code, _parse_error_body(response.text))
+        receipt = OzonEntryReceipt.model_validate(response.json())
+        active, deactivated = set(receipt.active_product_ids), set(receipt.deactivated_product_ids)
+        rejected = {item.product_id for item in receipt.rejected}
+        expected = {item.product_id for item in payload.products}
+        if (
+            active & deactivated
+            or active & rejected
+            or deactivated & rejected
+            or len(active) != len(receipt.active_product_ids)
+            or len(deactivated) != len(receipt.deactivated_product_ids)
+            or len(rejected) != len(receipt.rejected)
+            or active | deactivated | rejected != expected
+            or any(item.product_id not in expected for item in receipt.warnings)
+        ):
+            raise ValueError("Inconsistent promotion receipt")
+        return receipt
 
     async def actions(self) -> tuple[OzonAction, ...]:
         try:

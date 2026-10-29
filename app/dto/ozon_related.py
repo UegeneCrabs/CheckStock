@@ -12,6 +12,7 @@ class OzonRelatedQuery(DtoModel):
 class OzonRelatedItem(DtoModel):
     article: str = Field(min_length=1)
     name: str
+    image_url: str | None = None
 
 
 class OzonRelatedProducts(DtoModel):

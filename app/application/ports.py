@@ -4,6 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import date, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
+from uuid import UUID
 
 from app.dto.fbo_stock import (
     FboActor,
@@ -47,6 +48,7 @@ from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonCabinetRecord, OzonCabi
 from app.dto.ozon_history import OzonHistoryEvidence, OzonHistoryQuery
 from app.dto.ozon_logistics import LogisticsStoreSnapshot
 from app.dto.ozon_margin import OzonMarginSnapshot
+from app.dto.ozon_promotion_entry import OzonEntryOperation
 from app.dto.ozon_promotions import OzonBoostRecord, OzonBoostSave
 from app.dto.ozon_storage import StorageEvidence, StoragePeriod, StorageReportTicket, StorageStoreSnapshot
 from app.dto.stock import (
@@ -152,6 +154,18 @@ class OzonCabinetUnitOfWork(Protocol):
     async def save_buyout(self, snapshot: OzonBuyoutSnapshot) -> None: ...
 
     async def fail_buyout(self, store: str, error: str) -> None: ...
+
+
+class OzonPromotionEntryStore(Protocol):
+    async def create(self, operation: OzonEntryOperation) -> None: ...
+
+    async def get(self, operation_id: UUID) -> OzonEntryOperation: ...
+
+    async def history(self, store: str, article: str, user_id: int) -> tuple[OzonEntryOperation, ...]: ...
+
+    async def save(self, operation: OzonEntryOperation, *, release: bool = False) -> None: ...
+
+    async def claim(self, operation: OzonEntryOperation) -> bool: ...
 
 
 class StorageSource(Protocol):
