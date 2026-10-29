@@ -18,6 +18,7 @@
 - [Группы констант: неизменяемые датаклассы и Enum](background-jobs.md#константы-и-перечисления-заказов-ozon)
 - [Миграция SQLite в PostgreSQL](postgresql-migration.md)
 - [Выпуск версии и развёртывание на сервере](releases.md)
+- [Скилл агента для выпуска и диагностики деплоя](../.agents/skills/checkstock-deploy/SKILL.md)
 - [Параметры асинхронного PostgreSQL и SSL](postgresql-migration.md#async-order-connections)
 
 ## Остатки, поставки и Google Таблицы
