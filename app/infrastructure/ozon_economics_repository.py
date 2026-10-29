@@ -442,7 +442,15 @@ class OzonEconomicsRepository:
                                 saved,
                                 turnover_data,
                                 current_ads.days[0],
-                            )
+                            ),
+                            period_turnover(
+                                turnover_data,
+                                product.store_slug,
+                                product.article,
+                                today,
+                                today,
+                                include_open_days=True,
+                            ),
                         ),
                         "economics_7d": ozon_margin.period(
                             product.economics_7d, daily, query.period_from, query.period_to

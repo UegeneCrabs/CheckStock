@@ -12,6 +12,7 @@ from app.dto.ozon_advertising import (
     PerformanceRequestEvent,
     SavedPerformanceReport,
 )
+from app.dto.ozon_limits import PendingPerformanceReport
 from app.infrastructure.async_database import AsyncDatabase, table_for, upsert
 from app.infrastructure.ozon_advertising_orm import (
     OzonAdvertisingCooldownRecord,
@@ -122,6 +123,18 @@ class AsyncAdvertisingRepository:
             ).one_or_none()
             return SavedPerformanceReport(uuid=row.uuid, pending=bool(row.pending)) if row else None
 
+    async def pending_reports(self, stores: tuple[str, ...]) -> tuple[PendingPerformanceReport, ...]:
+        table = table_for(OzonAdvertisingReportRecord)
+        async with self.database.transaction() as connection:
+            rows = (
+                await connection.execute(
+                    select(table.c.store_slug, table.c.request_key, table.c.uuid).where(
+                        table.c.store_slug.in_(stores), table.c.pending == 1
+                    )
+                )
+            ).mappings()
+            return tuple(PendingPerformanceReport.model_validate(row) for row in rows)
+
     async def forget_report(self, store: str, key: str) -> None:
         table = table_for(OzonAdvertisingReportRecord)
         async with self.database.transaction(write=True) as connection:
@@ -184,7 +197,7 @@ class AsyncAdvertisingRepository:
         async with self.database.transaction(write=True) as connection:
             await connection.execute(
                 insert(table).values(
-                    id=uuid4().hex,
+                    id=event.request_id or uuid4().hex,
                     store_slug=event.store_slug,
                     method=event.method.value,
                     path=event.path,

@@ -159,16 +159,16 @@ window.OzonCalculatorHelpContent = (() => {
         } else {
             const spend = '(' + rub(v.click_spend) + ' + ' + rub(v.order_spend) + ' + ' + rub(v.other_spend) + ')';
             if (key === 'total_drr') {
-                d.formula = '(Расходы за клики + за заказы + прочая реклама) / ТО после отмен × выкуп (%).';
-                d.calculation = spend + ' / ' + rub(v.turnover) + ' × ' + n(v.buyout_percent) + ' = ' + pct(value);
+                d.formula = '(Расходы за клики + за заказы + прочая реклама) / (ТО после отмен × выкуп (%) / 100) × 100%.';
+                d.calculation = spend + ' / (' + rub(v.turnover) + ' × ' + n(v.buyout_percent) + ' / 100) × 100 = ' + pct(value);
             } else if (key === 'other_spend') {
                 d.formula = 'Сумма известных расходов прочих видов рекламы, распределённых на товар.';
                 d.calculation = v.other_breakdown ? (v.other_breakdown.filter(item => item.amount != null).map(item => rub(item.amount)).join(' + ') || '0 ₽') + ' = ' + rub(value) : 'Общая сумма без разбивки: ' + rub(value);
             } else {
                 const rateBasis = v[prefix + '_basis'] === 'percent';
-                d.formula = rateBasis ? 'Расходы = ДРР (%) × ТО после отмен / выкуп (%).' : 'ДРР (%) = расходы / ТО после отмен × выкуп (%).';
-                d.calculation = rateBasis ? n(v[prefix + '_drr']) + ' × ' + rub(v.turnover) + ' / ' + n(v.buyout_percent) + ' = ' + rub(v[prefix + '_spend'])
-                    : rub(v[prefix + '_spend']) + ' / ' + rub(v.turnover) + ' × ' + n(v.buyout_percent) + ' = ' + pct(v[prefix + '_drr']);
+                d.formula = rateBasis ? 'Расходы = ДРР (%) / 100 × ТО после отмен × выкуп (%) / 100.' : 'ДРР (%) = расходы / (ТО после отмен × выкуп (%) / 100) × 100.';
+                d.calculation = rateBasis ? n(v[prefix + '_drr']) + ' / 100 × ' + rub(v.turnover) + ' × ' + n(v.buyout_percent) + ' / 100 = ' + rub(v[prefix + '_spend'])
+                    : rub(v[prefix + '_spend']) + ' / (' + rub(v.turnover) + ' × ' + n(v.buyout_percent) + ' / 100) × 100 = ' + pct(v[prefix + '_drr']);
             }
             d.source = lines('Ozon Performance API: клики (CPC), заказы (CPO выбранных товаров, всех товаров и Комбо), прочие виды рекламы. Только расходы, распределённые на этот товар.', buyoutSource(p));
             d.dates = advertisingDates(p, ['click', 'order'].includes(prefix) ? prefix : null);

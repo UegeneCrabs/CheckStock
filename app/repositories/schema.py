@@ -12,6 +12,7 @@ from app.infrastructure import google_week_orm as google_week_orm
 from app.infrastructure import ozon_advertising_orm as ozon_advertising_orm
 from app.infrastructure import ozon_cabinet_orm as ozon_cabinet_orm
 from app.infrastructure import ozon_commissions_orm as ozon_commissions_orm
+from app.infrastructure import ozon_limits_orm as ozon_limits_orm
 from app.infrastructure import ozon_logistics_orm as ozon_logistics_orm
 from app.infrastructure import ozon_margin_orm as ozon_margin_orm
 from app.infrastructure import ozon_prices_orm as ozon_prices_orm

@@ -1,13 +1,24 @@
 import asyncio
 import hashlib
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
 from time import monotonic
 
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
-from app.core.constants import HTTP, OZON_ADVERTISING, TIME, AdvertisingError, HTTPMethod, HTTPStatus
+from app.application.ozon_limits import OzonLimitsService, OzonQuotaExceeded
+from app.core.constants import (
+    HTTP,
+    OZON_ADVERTISING,
+    OZON_API_LIMITS,
+    TIME,
+    AdvertisingError,
+    HTTPMethod,
+    HTTPStatus,
+    OzonReservationState,
+)
 from app.dto.ozon_advertising import (
     AdvertisingPeriod,
     AllProductsOrdersReport,
@@ -26,8 +37,17 @@ from app.dto.ozon_advertising import (
     ReportTicket,
     SelectedOrdersReport,
 )
+from app.dto.ozon_limits import (
+    OzonRateFeedback,
+    PerformanceCompletion,
+    PerformanceIdentity,
+    PerformanceLease,
+    PerformanceQuotaRequest,
+)
 from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepository
 from app.infrastructure.async_http import AsyncHttp, retry_after
+from app.ozon.performance_limits import account_export_limit
+from app.ozon.performance_limits import export_units as estimate_export_units
 
 
 class PerformanceApiFailure(Exception):
@@ -75,6 +95,9 @@ class AsyncPerformanceClient:
         repository: AsyncAdvertisingRepository,
         store: str,
         credentials: PerformanceCredentials,
+        *,
+        limits: OzonLimitsService,
+        identity: PerformanceIdentity,
     ):
         self.http = http
         self.repository = repository
@@ -82,7 +105,10 @@ class AsyncPerformanceClient:
         self.credentials = credentials
         self._token = ""
         self._expires_at = 0.0
-        self._next_request = 0.0
+        self.limits = limits
+        self.identity = identity
+        self._quota_campaigns: tuple[PerformanceCampaign, ...] | None = None
+        self._lease: PerformanceLease | None = None
         self.refresh_slot: str | None = None
 
     async def _authorize(self) -> None:
@@ -111,16 +137,57 @@ class AsyncPerformanceClient:
         authenticated: bool = True,
         report: PerformanceReportRequest | None = None,
     ) -> bytes:
+        billable = generation or path == OZON_ADVERTISING.daily_path
+        if billable and (until := await self.repository.blocked_until(self.store)):
+            if until > datetime.now(UTC):
+                raise PerformanceApiFailure(AdvertisingError.DAILY_LIMIT)
+        if billable and self._lease is None:
+            async with self._report_slot(request_key(report) if report is not None else None):
+                return await self._request(
+                    method,
+                    path,
+                    params=params,
+                    body=body,
+                    generation=generation,
+                    authenticated=authenticated,
+                    report=report,
+                )
+        export_units = 0
+        account_limit = OZON_API_LIMITS.performance_exports_per_day
+        if billable:
+            if report is None:
+                raise ValueError("Performance report metadata is required")
+            if self._quota_campaigns is None:
+                self._quota_campaigns = await self.campaigns(report.period, fresh=True)
+                if any(item.state is None for item in self._quota_campaigns):
+                    raise PerformanceApiFailure(AdvertisingError.INVALID_RESPONSE)
+            account_limit = account_export_limit(self._quota_campaigns)
+            export_units = estimate_export_units(report, self._quota_campaigns)
         refreshed = False
         for attempt in range(OZON_ADVERTISING.attempts):
-            if generation and (until := await self.repository.blocked_until(self.store)):
+            if billable and (until := await self.repository.blocked_until(self.store)):
                 if until > datetime.now(UTC):
                     raise PerformanceApiFailure(AdvertisingError.DAILY_LIMIT)
             if authenticated and monotonic() >= self._expires_at:
                 await self._authorize()
-            await asyncio.sleep(max(0, self._next_request - monotonic()))
-            self._next_request = monotonic() + OZON_ADVERTISING.request_spacing_seconds
+            await self.limits.wait_performance(self.identity)
+            if self._lease is not None:
+                await self.limits.renew(self._lease)
+            try:
+                reservation = await self.limits.reserve_performance(
+                    PerformanceQuotaRequest(
+                        identity=self.identity,
+                        export_units=export_units,
+                        account_export_limit=account_limit,
+                        request_key=request_key(report) if report is not None and billable else None,
+                        generation=generation,
+                        http_units=int(path != OZON_ADVERTISING.products_path),
+                    )
+                )
+            except OzonQuotaExceeded as quota_error:
+                raise PerformanceApiFailure(quota_error.code) from None
             event = PerformanceRequestEvent(
+                request_id=reservation.id,
                 store_slug=self.store,
                 method=method,
                 path=path,
@@ -138,39 +205,83 @@ class AsyncPerformanceClient:
                     params=params,
                     json=body,
                 )
+            except asyncio.CancelledError:
+                await self.limits.finish_performance(
+                    PerformanceCompletion(reservation=reservation, state=OzonReservationState.UNCERTAIN)
+                )
+                raise
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError):
+                await self.limits.finish_performance(
+                    PerformanceCompletion(reservation=reservation, state=OzonReservationState.UNCERTAIN)
+                )
                 await self.repository.record_request(
                     event.model_copy(update={"error": AdvertisingError.NETWORK})
                 )
-                if generation or attempt == OZON_ADVERTISING.attempts - 1:
+                if billable or attempt == OZON_ADVERTISING.attempts - 1:
                     raise PerformanceApiFailure(AdvertisingError.NETWORK) from None
                 await asyncio.sleep(OZON_ADVERTISING.backoff_seconds * (attempt + 1))
                 continue
             error = response_error(response)
+            state = (
+                OzonReservationState.ACCEPTED
+                if error is None and generation
+                else OzonReservationState.RESOLVED
+                if error is None
+                else OzonReservationState.REJECTED
+                if response.status_code < HTTPStatus.INTERNAL_SERVER_ERROR
+                else OzonReservationState.UNCERTAIN
+            )
+            await self.limits.finish_performance(
+                PerformanceCompletion(reservation=reservation, status=response.status_code, state=state)
+            )
+            pause = retry_after(response.headers.get(OZON_API_LIMITS.retry_header))
+            try:
+                remaining = int(response.headers[OZON_API_LIMITS.remaining_header])
+            except (KeyError, ValueError):
+                remaining = None
+            await self.limits.observe_performance(
+                self.identity,
+                OzonRateFeedback(status=response.status_code, retry_seconds=pause, remaining=remaining),
+            )
             await self.repository.record_request(
                 event.model_copy(
                     update={
                         "status_code": response.status_code,
                         "error": error,
-                        "export_units": max(event.campaign_count, 1) if generation and error is None else 0,
+                        "export_units": reservation.export_units if error is None else 0,
                     }
                 )
             )
             if error is None:
+                if generation:
+                    try:
+                        ReportTicket.model_validate_json(response.content)
+                    except ValidationError:
+                        await self.limits.finish_performance(
+                            PerformanceCompletion(
+                                reservation=reservation, state=OzonReservationState.UNCERTAIN
+                            )
+                        )
+                        raise PerformanceApiFailure(AdvertisingError.INVALID_RESPONSE) from None
                 return response.content
-            pause = retry_after(response.headers.get("Retry-After"))
             if error == AdvertisingError.DAILY_LIMIT:
                 until = datetime.now(UTC) + timedelta(
                     seconds=pause if pause is not None and pause > 0 else OZON_ADVERTISING.quota_pause_seconds
                 )
-                await self.repository.block_exports(self.store, until)
+                affected = tuple(
+                    account.store_slug
+                    for account in self.identity.accounts
+                    if account.organization_scope == self.identity.organization_scope
+                ) or (self.store,)
+                for store in affected:
+                    await self.repository.block_exports(store, until)
                 raise PerformanceApiFailure(error, response.status_code)
             if authenticated and response.status_code == HTTPStatus.UNAUTHORIZED and not refreshed:
                 self._expires_at = 0
                 refreshed = True
                 continue
             retryable = response.status_code == HTTPStatus.TOO_MANY_REQUESTS or (
-                not generation and response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+                not billable and response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
             )
             if not retryable or attempt == OZON_ADVERTISING.attempts - 1:
                 raise PerformanceApiFailure(error, response.status_code)
@@ -179,7 +290,9 @@ class AsyncPerformanceClient:
             )
         raise PerformanceApiFailure(AdvertisingError.ATTEMPTS_EXHAUSTED)
 
-    async def campaigns(self, period: AdvertisingPeriod) -> tuple[PerformanceCampaign, ...]:
+    async def campaigns(
+        self, period: AdvertisingPeriod, *, fresh: bool = False
+    ) -> tuple[PerformanceCampaign, ...]:
         request = PerformanceReportRequest(
             refresh_slot=self.refresh_slot,
             method=HTTPMethod.GET,
@@ -187,7 +300,7 @@ class AsyncPerformanceClient:
             period=period,
         )
         key = request_key(request)
-        if (cached := await self.repository.response(self.store, key)) is not None:
+        if not fresh and (cached := await self.repository.response(self.store, key)) is not None:
             return CampaignInventory.model_validate_json(cached).campaigns
         result: dict[str, PerformanceCampaign] = {}
         for page in range(1, OZON_ADVERTISING.max_pages + 1):
@@ -217,17 +330,20 @@ class AsyncPerformanceClient:
             period=period,
         )
         key = request_key(request)
-        if (cached := await self.repository.response(self.store, key)) is not None:
+        if (cached := await self._saved_response(request, key)) is not None:
             return DailyCampaignReport.model_validate_json(cached)
-        raw = await self._request(
-            HTTPMethod.GET,
-            OZON_ADVERTISING.daily_path,
-            params={"dateFrom": period.start.isoformat(), "dateTo": period.end.isoformat()},
-            report=request,
-        )
-        result = DailyCampaignReport.model_validate_json(raw)
-        await self.repository.save_response(self.store, key, request, raw)
-        return result
+        async with self._report_slot(key):
+            if (cached := await self._saved_response(request, key)) is not None:
+                return DailyCampaignReport.model_validate_json(cached)
+            raw = await self._request(
+                HTTPMethod.GET,
+                OZON_ADVERTISING.daily_path,
+                params={"dateFrom": period.start.isoformat(), "dateTo": period.end.isoformat()},
+                report=request,
+            )
+            result = DailyCampaignReport.model_validate_json(raw)
+            await self.repository.save_response(self.store, key, request, raw)
+            return result
 
     async def saved_product_traffic(
         self, period: AdvertisingPeriod, campaigns: tuple[str, ...]
@@ -273,12 +389,100 @@ class AsyncPerformanceClient:
         await self.repository.save_response(self.store, key, request, raw)
         return result
 
+    @asynccontextmanager
+    async def _report_slot(self, current_key: str | None) -> AsyncIterator[None]:
+        async with self.limits.report(self.identity) as lease:
+            self._lease = lease
+            try:
+                await self._finish_pending(current_key)
+                yield
+            finally:
+                self._lease = None
+
+    async def _finish_pending(self, current_key: str | None) -> None:
+        stores = tuple(
+            account.store_slug
+            for account in self.identity.accounts
+            if account.account_scope == self.identity.account_scope
+        ) or (self.store,)
+        for pending in await self.repository.pending_reports(stores):
+            if pending.request_key == current_key and pending.store_slug == self.store:
+                continue
+            deadline = monotonic() + OZON_ADVERTISING.report_timeout_seconds
+            poll_delay = OZON_ADVERTISING.poll_seconds
+            while monotonic() < deadline:
+                try:
+                    raw = await self._request(
+                        HTTPMethod.GET, OZON_ADVERTISING.status_path.format(uuid=pending.uuid)
+                    )
+                except PerformanceApiFailure as error:
+                    if error.status_code == HTTPStatus.NOT_FOUND:
+                        await self.repository.forget_report(pending.store_slug, pending.request_key)
+                        await self.limits.resolve_report(self.identity, pending.request_key)
+                        break
+                    raise
+                state = ReportStatus.model_validate_json(raw).state
+                if state == OZON_ADVERTISING.ready_report:
+                    await self.repository.record_report(
+                        pending.store_slug, pending.request_key, pending.uuid, pending=False
+                    )
+                    await self.limits.resolve_report(self.identity, pending.request_key)
+                    break
+                if state not in OZON_ADVERTISING.pending_reports:
+                    await self.repository.forget_report(pending.store_slug, pending.request_key)
+                    await self.limits.resolve_report(self.identity, pending.request_key)
+                    break
+                await asyncio.sleep(poll_delay)
+                poll_delay = min(
+                    poll_delay * HTTP.retry_backoff_multiplier, OZON_ADVERTISING.max_poll_seconds
+                )
+            else:
+                raise PerformanceApiFailure(AdvertisingError.REPORT_TIMEOUT)
+
     async def _report(self, request: PerformanceReportRequest) -> bytes:
         key = request_key(request)
-        if (cached := await self.repository.response(self.store, key)) is not None:
+        if (cached := await self._saved_response(request, key)) is not None:
+            return cached
+        async with self._report_slot(key):
+            return await self._load_report(request)
+
+    def _account_stores(self) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                (self.store,)
+                + tuple(
+                    account.store_slug
+                    for account in self.identity.accounts
+                    if account.account_scope == self.identity.account_scope
+                )
+            )
+        )
+
+    async def _saved_response(self, request: PerformanceReportRequest, key: str) -> bytes | None:
+        for store in self._account_stores():
+            cached = await self.repository.response(store, key)
+            if cached is not None:
+                if store != self.store:
+                    await self.repository.save_response(self.store, key, request, cached)
+                return cached
+        return None
+
+    async def _load_report(self, request: PerformanceReportRequest) -> bytes:
+        key = request_key(request)
+        if (cached := await self._saved_response(request, key)) is not None:
             return cached
         saved = await self.repository.report(self.store, key)
+        if saved is None:
+            for store in self._account_stores():
+                if store == self.store:
+                    continue
+                saved = await self.repository.report(store, key)
+                if saved is not None:
+                    await self.repository.record_report(self.store, key, saved.uuid, pending=saved.pending)
+                    break
         uuid = saved.uuid if saved else None
+        if saved is not None:
+            await self.limits.resolve_report(self.identity, key)
         if uuid is None:
             first = datetime.combine(request.period.start, time.min, TIME.moscow_timezone).isoformat()
             last = datetime.combine(request.period.end, time.max, TIME.moscow_timezone).isoformat(
@@ -302,6 +506,7 @@ class AsyncPerformanceClient:
             )
             uuid = ReportTicket.model_validate_json(raw).uuid
             await self.repository.record_report(self.store, key, uuid, pending=True)
+            await self.limits.resolve_report(self.identity, key)
         deadline = monotonic() + OZON_ADVERTISING.report_timeout_seconds
         poll_delay = OZON_ADVERTISING.poll_seconds
         while monotonic() < deadline:
@@ -319,13 +524,20 @@ class AsyncPerformanceClient:
                     )
                     await self.repository.save_response(self.store, key, request, result)
                     await self.repository.record_report(self.store, key, uuid, pending=False)
+                    for store in self._account_stores():
+                        if store != self.store:
+                            alias = await self.repository.report(store, key)
+                            if alias is not None and alias.uuid == uuid:
+                                await self.repository.record_report(store, key, uuid, pending=False)
                     return result
             except PerformanceApiFailure as error:
                 if error.status_code == HTTPStatus.NOT_FOUND:
                     await self.repository.forget_report(self.store, key)
+                    await self.limits.resolve_report(self.identity, key)
                 raise
             if state not in OZON_ADVERTISING.pending_reports:
                 await self.repository.forget_report(self.store, key)
+                await self.limits.resolve_report(self.identity, key)
                 raise PerformanceApiFailure(AdvertisingError.REPORT_FAILED)
             await asyncio.sleep(poll_delay)
             poll_delay = min(poll_delay * HTTP.retry_backoff_multiplier, OZON_ADVERTISING.max_poll_seconds)

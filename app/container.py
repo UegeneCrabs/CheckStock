@@ -11,11 +11,13 @@ from app.application.finance import FinanceService
 from app.application.identity import IdentityService
 from app.application.ozon_cabinet import OzonCabinetService
 from app.application.ozon_history import OzonHistoryService
+from app.application.ozon_limits import OzonLimitsService
 from app.application.ozon_logistics import OzonLogisticsService
 from app.application.ozon_margin_service import OzonMarginService
 from app.application.ozon_promotion_entry import OzonPromotionEntryService
 from app.application.ozon_promotions import OzonPromotionsService
 from app.application.ozon_related import OzonRelatedService
+from app.application.ozon_reports import OzonReportsService
 from app.application.ozon_storage import OzonStorageService
 from app.application.ozon_tariffs import OzonTariffService
 from app.application.stock import StockMovementService
@@ -45,8 +47,10 @@ from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
 from app.infrastructure.ozon_history_repository import OzonHistoryRepository
+from app.infrastructure.ozon_limits_repository import OzonLimitsRepository
 from app.infrastructure.ozon_margin_repository import OzonMarginRepository
 from app.infrastructure.ozon_promotion_entry_repository import OzonPromotionEntryRepository
+from app.infrastructure.ozon_reports_repository import OzonReportsRepository
 from app.infrastructure.ozon_tariff_catalog import CATALOG
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.infrastructure.supply_arrival_stock_repository import SupplyArrivalStockRepository
@@ -77,7 +81,16 @@ from app.wb.hourly_prices import (
 )
 
 if TYPE_CHECKING:
+    from app.infrastructure.async_database import AsyncDatabase
     from app.infrastructure.async_resources import AsyncResources
+
+
+def ozon_limits_service(database: "AsyncDatabase") -> OzonLimitsService:
+    return OzonLimitsService(OzonLimitsRepository(database))
+
+
+def ozon_reports_service(database: "AsyncDatabase") -> OzonReportsService:
+    return OzonReportsService(OzonReportsRepository(database), lambda: datetime.now(UTC))
 
 
 def ozon_margin_service(resources: "AsyncResources") -> OzonMarginService:

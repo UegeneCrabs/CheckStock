@@ -15,6 +15,27 @@ from app.dto.fbo_stock import (
     FboStockResult,
     FboTarget,
 )
+from app.dto.ozon_limits import (
+    OzonRateFeedback,
+    OzonRateScope,
+    PerformanceAdmission,
+    PerformanceCompletion,
+    PerformanceIdentity,
+    PerformanceLease,
+    PerformanceQuotaRequest,
+)
+from app.dto.ozon_reports import (
+    OzonProfitQuery,
+    OzonReportCatalogItem,
+    OzonReportEvidence,
+    OzonTargetRecord,
+    OzonTargetSave,
+)
+
+if TYPE_CHECKING:
+    from app.infrastructure.database import DatabaseConnection
+
+
 from app.dto.identity import (
     AccessDecision,
     ActivityCommand,
@@ -307,3 +328,33 @@ class StockUnitOfWork(Protocol):
 
 class StockUnitOfWorkFactory(Protocol):
     def __call__(self) -> StockUnitOfWork: ...
+
+
+class OzonLimitStore(Protocol):
+    async def reserve_rate(self, scopes: tuple[OzonRateScope, ...], now: datetime) -> float: ...
+
+    async def observe_rate(self, scope: OzonRateScope, feedback: OzonRateFeedback, now: datetime) -> None: ...
+
+    async def reserve_performance(
+        self, request: PerformanceQuotaRequest, now: datetime
+    ) -> PerformanceAdmission: ...
+
+    async def finish_performance(self, completion: PerformanceCompletion) -> None: ...
+
+    async def acquire_report(
+        self, identity: PerformanceIdentity, now: datetime
+    ) -> PerformanceLease | None: ...
+
+    async def renew_report(self, lease: PerformanceLease, now: datetime) -> None: ...
+
+    async def release_report(self, lease: PerformanceLease) -> None: ...
+
+    async def resolve_report(self, identity: PerformanceIdentity, request_key: str) -> None: ...
+
+
+class OzonReportsStore(Protocol):
+    async def catalog(self, stores: tuple[str, ...]) -> tuple[OzonReportCatalogItem, ...]: ...
+    async def has_product(self, store: str, article: str) -> bool: ...
+    async def evidence(self, query: OzonProfitQuery, stores: tuple[str, ...]) -> OzonReportEvidence: ...
+    async def targets(self, stores: tuple[str, ...]) -> dict[tuple[str, str], OzonTargetRecord]: ...
+    async def save_target(self, command: OzonTargetSave) -> OzonTargetRecord: ...

@@ -27,12 +27,62 @@ window.OzonCalculatorUI = (() => {
     const display = value => value == null ? '' : inputFormat.format(Number(value));
     const moneyFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
     const percentFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+    const targetFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' });
     const rub = value => value == null ? '—' : moneyFormat.format(Number(value)) + ' ₽';
     const percent = value => value == null ? '—' : percentFormat.format(Number(value));
     const expensePairs = ['acquiring', 'vat', 'usn'];
 
     function pairModified(session, prefix) {
         return session.modified.has(prefix + '_percent') || session.modified.has(prefix + '_amount');
+    }
+
+    function paintTarget(root, session) {
+        const quote = session.target;
+        const row = root.querySelector('[data-ozon-result="target"]');
+        if (row) {
+            row.querySelector('strong').textContent = quote?.price == null ? '—' : targetFormat.format(quote.price);
+            row.title = quote?.message || 'Загружаем целевую цену…';
+            row.setAttribute('aria-busy', String(Boolean(session.targetPending)));
+        }
+        const input = root.querySelector('[data-ozon-price-input="green_price"]');
+        if (!input) return;
+        const available = quote?.price != null && !session.targetPending && !session.pricePending &&
+            input.value !== '' && input.checkValidity() && Number.isFinite(Number(input.value));
+        const current = available ? Math.round(Number(input.value) * 100) : null;
+        const target = available ? Math.round(quote.price * 100) : null;
+        input.classList.toggle('is-target-price-higher', available && current < target);
+        input.classList.toggle('is-target-price-lower', available && current >= target);
+    }
+
+    async function refreshTarget(root, session) {
+        if (session.targetController) session.targetController.abort();
+        const controller = new AbortController();
+        session.targetController = controller;
+        session.targetPending = true;
+        session.target = null;
+        paintTarget(root, session);
+        try {
+            const query = new URLSearchParams({ store: session.product.store_slug, article: session.product.article });
+            const response = await window.fetch('/api/unit-economics-1c/ozon/reports/target-price?' + query, {
+                signal: controller.signal, cache: 'no-store', headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
+            });
+            if (!response.ok || response.redirected) throw new Error('Не удалось загрузить целевую цену.');
+            const result = await response.json();
+            if (!result.ok || !Array.isArray(result.rows)) throw new Error('Не удалось загрузить целевую цену.');
+            const data = window.OzonReportsUI.targetPayload(result);
+            const row = data.rows.find(item => item.store_slug === session.product.store_slug && String(item.article) === String(session.product.article));
+            const value = row?.target_price;
+            const price = value == null || !Number.isFinite(Number(value)) || Number(value) < 0 ? null : Number(value);
+            if (sessions.get(root) !== session || session.targetController !== controller) return;
+            session.target = { price, message: price == null
+                ? (row?.target_warnings || []).join(' ') || 'Целевая цена пока не рассчитана.'
+                : 'Цена с Кошельком из отчёта «Целевая цена» Ozon. Используются цели ROI и ДРР товара или кабинета.' };
+        } catch (error) {
+            if (error.name === 'AbortError' || sessions.get(root) !== session || session.targetController !== controller) return;
+            session.target = { price: null, message: error.message };
+        }
+        session.targetPending = false;
+        paintTarget(root, session);
     }
 
     async function refreshExpenses(root, session) {
@@ -104,6 +154,7 @@ window.OzonCalculatorUI = (() => {
             window.clearTimeout(session.refreshTimer);
             if (session.controller) session.controller.abort();
             if (session.expensesController) session.expensesController.abort();
+            if (session.targetController) session.targetController.abort();
             root.removeEventListener('ozon-prices-changed', session.pricesChanged);
             root.removeEventListener('ozon-prices-pending', session.pricesPending);
             root.removeEventListener('ozon-logistics-changed', session.logisticsChanged);
@@ -111,6 +162,8 @@ window.OzonCalculatorUI = (() => {
             window.removeEventListener('storage', session.settingsChanged);
             document.removeEventListener('visibilitychange', session.refresh);
         }
+        root.querySelectorAll('[data-ozon-price-input="green_price"]').forEach(input =>
+            input.classList.remove('is-target-price-higher', 'is-target-price-lower'));
         sessions.delete(root);
     }
 
@@ -164,7 +217,10 @@ window.OzonCalculatorUI = (() => {
             session.refresh = () => {
                 if (document.visibilityState === 'hidden') return;
                 window.clearTimeout(session.refreshTimer);
-                session.refreshTimer = window.setTimeout(() => refreshExpenses(root, session), 100);
+                session.refreshTimer = window.setTimeout(() => {
+                    refreshExpenses(root, session);
+                    refreshTarget(root, session);
+                }, 100);
             };
             session.settingsChanged = event => {
                 if (event.key !== 'checkstock.ozon.cabinet-updated' || !event.newValue) return;
@@ -332,6 +388,15 @@ window.OzonCalculatorUI = (() => {
             amount.className = value == null ? '' : Number(value) < 0 ? 'is-negative' : 'is-positive';
             window.OzonCalculatorHelp.bind(row, () => window.OzonCalculatorHelpContent.calculator(session, key, label));
         });
+        if (!node.querySelector('[data-ozon-result="target"]')) {
+            const row = document.createElement('div');
+            row.dataset.ozonResult = 'target';
+            const title = document.createElement('span');
+            title.textContent = 'Целевая цена';
+            row.append(title, document.createElement('strong'));
+            node.append(row);
+        }
+        paintTarget(root, session);
         const labels = window.OzonEconomicsUI.marginLabels;
         const missing = (result.missing || []).map(key => labels[key] || key);
         const status = document.createElement('p');

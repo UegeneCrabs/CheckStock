@@ -236,7 +236,11 @@
         currentGroup.columns = currentGroup.columns.filter(function (column) { return column.index !== 24; });
     }
     if (config.ozonPreview === true) {
-        columnGroups.find(function (group) { return group.key === 'advertising'; }).columns[0].label = 'ДРР после отмен, %';
+        columnGroups.find(function (group) { return group.key === 'current'; }).columns.unshift({
+            index: 26, label: 'ТО, ₽', number: true, width: 105,
+            help: 'Оборот заказов FBO и FBS после отмен за сегодня по московскому времени на момент последней выгрузки.',
+        });
+        columnGroups.find(function (group) { return group.key === 'advertising'; }).columns[0].label = 'ДРР с выкупом, %';
     }
     columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
         index: 25, label: 'В пути на склады FBO', number: true, width: 125,
@@ -671,6 +675,7 @@
             product.advertising.cpc,
             product.current_economics && product.current_economics.margin,
             product.current_economics && product.current_economics.roi,
+            product.current_economics && product.current_economics.turnover,
             calculateSppPercent(product),
             product.economics_7d && product.economics_7d.turnover,
             product.economics_7d && product.economics_7d.margin,
@@ -719,6 +724,7 @@
                     : 'Нет',
             calculateSppPercent(product),
             product.stock.inbound,
+            product.current_economics && product.current_economics.turnover,
         ];
         var value = values[Number(columnIndex)];
         return String(value === null || value === undefined ? '—' : value);
@@ -880,6 +886,13 @@
         var marginIssues = currentIssues.margin || [];
         var roiIssues = currentIssues.roi || [];
         cells.current = window.CheckStockUI.render('economics/shared/dashboard/render-product-6', {
+            turnoverCell: config.ozonPreview === true ? window.CheckStockUI.render(
+                'economics/shared/dashboard/current-turnover-cell', {
+                    state: coverageCellClass(current.turnover_coverage),
+                    value: coverageValue('ТО за сегодня после отмен · ' + coverageDate(current.period_to) + ' · МСК',
+                        current.turnover, money, current.turnover_coverage),
+                }) : '',
+            currentStart: config.ozonPreview === true ? '' : ' ue1c-group-start',
             marginState: marginIssues.length ? ' ue1c-partial-cell' : '',
             currentTitle: currentTitle + (marginIssues.length
                 ? '\n' + (current.margin === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + marginIssues.join('\n• ')

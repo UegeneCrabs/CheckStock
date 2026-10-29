@@ -51,10 +51,12 @@ WB и Яндекс сохраняют существующие загрузчи�
 и фоновые задачи не изменяются.
 
 Меню «Отчёты» в клиентской шапке `templates/layout/client-header.html` и обычной
-шапке `templates/layout/header.html` содержит одинаковые шесть ссылок: четыре
-отчёта WB (юниточная прибыль, целевая цена, расходы без ИУ, СПП) и два отчёта ЯМ
-(юниточная прибыль и целевая цена). При добавлении отчёта обновляются оба шаблона,
+шапке `templates/layout/header.html` содержит одинаковые восемь ссылок: четыре
+отчёта WB (юниточная прибыль, целевая цена, расходы без ИУ, СПП), два отчёта ЯМ
+и два отчёта Ozon (юниточная прибыль и целевая цена). При добавлении отчёта обновляются оба шаблона,
 чтобы ссылки сохранялись на складе, в интеграциях и экономике Ozon.
+Пункты отчётов Ozon используют голубой фон и тёмный текст в обеих шапках;
+при наведении и для активного пункта фон становится светлее.
 
 ## Данные страниц
 
@@ -74,6 +76,7 @@ WB и Яндекс сохраняют существующие загрузчи�
 | `PUT /api/admin/integrations/sync-jobs/{name}/settings` | `SyncSettingUpdate` → `JobConfigurationResult` |
 | `POST /api/admin/integrations/sync-jobs/{name}/run` | `202`, `JobLaunch`; повторный запуск занятой задачи — `409` |
 | `GET /api/unit-economics-1c/ozon` | `OzonProducts`; при `article` и `store` — `OzonProductDetail` |
+| `/api/unit-economics-1c/ozon/reports/*` | Типизированные отчёты прибыли и целевой цены, предпросмотр, цели товара и кабинета, XLSX; [методы и ограничения](ozon-reports.md#контракты-и-модули) |
 | `GET /api/unit-economics-1c/ozon/tariffs` | `OzonTariffCatalog`: официальный справочник FBO с датой действия, источником и диапазонами цен |
 | `GET /api/unit-economics-1c/ozon/category` | `store`, `article` → `OzonCategorySelection`; чтение категории карточки, без изменения Ozon |
 | `GET /api/unit-economics-1c/ozon/related` | `store`, `article` → `OzonRelatedProducts`; варианты с общей моделью в каталоге кабинета, признаки полноты и кэш описаны в [калькуляторе](ozon-calculator.md) |

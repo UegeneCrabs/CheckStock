@@ -25,6 +25,8 @@ class AsyncTurnoverRepository:
                 orders.c.article,
                 day.label("day"),
                 func.sum(orders.c.order_amount - orders.c.cancelled_amount).label("amount"),
+                func.sum(orders.c.order_amount).label("gross_amount"),
+                func.sum(orders.c.cancelled_amount).label("cancelled_amount"),
                 func.sum(orders.c.quantity - orders.c.cancelled_quantity).label("ordered"),
                 func.sum(orders.c.sold_quantity).label("received"),
                 func.sum(orders.c.cancelled_quantity).label("cancelled"),

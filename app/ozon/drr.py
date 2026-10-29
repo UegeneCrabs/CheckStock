@@ -9,6 +9,19 @@ from app.dto.ozon_economics import OzonCalculatorMetrics, OzonCoverage, OzonDrrM
 from app.ozon.advertising_normalizer import daily_expense, kind_source, period_days, spend_summary
 
 
+def expected_turnover(turnover: Decimal | None, buyout: Decimal | None) -> Decimal | None:
+    if turnover is None or turnover <= 0 or buyout is None or buyout <= 0:
+        return None
+    return turnover * buyout / OZON_SCENARIO.percent_factor
+
+
+def advertising_drr(
+    spend: Decimal | None, turnover: Decimal | None, buyout: Decimal | None
+) -> Decimal | None:
+    expected = expected_turnover(turnover, buyout)
+    return spend / expected * OZON_SCENARIO.percent_factor if spend is not None and expected else None
+
+
 def calculator_advertising_period(today: date) -> AdvertisingPeriod:
     return AdvertisingPeriod(
         start=today - timedelta(days=OZON_SCENARIO.advertising_days), end=today - timedelta(days=1)
@@ -125,6 +138,7 @@ def metrics(
     percentage = Decimal(str(buyout.percent)) if buyout.percent is not None else None
     if buyout.observed_at is not None:
         updated.append(buyout.observed_at)
+    ratio = advertising_drr(spend if dates else None, amount if dates else None, percentage)
     return OzonDrrMetrics(
         buyout=buyout,
         turnover=amount if dates else None,
@@ -132,7 +146,7 @@ def metrics(
         received=buyout.received,
         cancelled=buyout.cancelled,
         buyout_percent=buyout.percent,
-        drr=float(spend / amount * percentage) if amount > 0 and percentage is not None else None,
+        drr=float(ratio) if ratio is not None else None,
         coverage=OzonCoverage(
             dates=tuple(dates),
             days=len(dates),

@@ -56,7 +56,9 @@ class AccrualsPage(OzonPayload):
 
 
 class AccrualsRequest(DtoModel):
-    posting_numbers: tuple[str, ...]
+    posting_numbers: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
+        min_length=1, max_length=OZON_LOGISTICS.accrual_batch_size
+    )
 
 
 class AccrualType(OzonPayload):

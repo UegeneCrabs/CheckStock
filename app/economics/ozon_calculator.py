@@ -4,6 +4,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from app.core.constants import OZON_SCENARIO, OzonScenarioBasis, OzonScenarioField
 from app.dto.ozon_calculator import OzonCalculatorRequest, OzonCalculatorValues
 from app.dto.ozon_margin import OzonMarginInputs
+from app.ozon.drr import advertising_drr, expected_turnover
 from app.ozon.margin_normalizer import advertising_per_unit, unit_margin
 
 
@@ -49,16 +50,15 @@ def advertising(
     if basis == OzonScenarioBasis.AMOUNT:
         return CalculationPair(
             amount=spend,
-            percent=rounded(spend / turnover * buyout, percent=True)
-            if spend is not None and turnover is not None and turnover > 0 and buyout is not None
-            else None,
+            percent=rounded(advertising_drr(spend, turnover, buyout), percent=True),
         )
     if buyout == 0 and drr is not None and drr != 0:
         raise ValueError("Nonzero DRR is incompatible with zero buyout")
+    expected = expected_turnover(turnover, buyout)
     return CalculationPair(
         percent=drr,
-        amount=rounded(drr * turnover / buyout)
-        if drr is not None and turnover is not None and turnover > 0 and buyout is not None and buyout > 0
+        amount=rounded(drr * expected / OZON_SCENARIO.percent_factor)
+        if drr is not None and expected is not None
         else None,
     )
 

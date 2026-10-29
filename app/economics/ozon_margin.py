@@ -6,7 +6,13 @@ from app.dto.ozon_advertising import AdvertisingSpendDay
 from app.dto.ozon_cabinet import OzonEffectiveParameters
 from app.dto.ozon_calculator import OzonCalculatorValues
 from app.dto.ozon_commissions import OzonCommissionData
-from app.dto.ozon_economics import OzonCoverage, OzonCurrentEconomics, OzonPeriodEconomics, OzonTurnoverData
+from app.dto.ozon_economics import (
+    OzonCoverage,
+    OzonCurrentEconomics,
+    OzonPeriodEconomics,
+    OzonTurnoverData,
+    OzonTurnoverValue,
+)
 from app.dto.ozon_logistics import LogisticsData
 from app.dto.ozon_margin import OzonMarginDay, OzonMarginInputs, OzonMarginSnapshot, OzonMarginSource
 from app.dto.ozon_prices import PriceValues
@@ -111,9 +117,11 @@ def calculate_day(
     )
 
 
-def current(value: OzonMarginDay) -> OzonCurrentEconomics:
+def current(value: OzonMarginDay, turnover: OzonTurnoverValue) -> OzonCurrentEconomics:
     complete = value.profit is not None and not value.missing and not value.issues
     return OzonCurrentEconomics(
+        turnover=float(turnover.amount) if turnover.amount is not None else None,
+        turnover_coverage=turnover.coverage,
         margin=float(value.margin) if value.margin is not None else None,
         roi=float(value.roi) if value.roi is not None else None,
         orders=value.orders,

@@ -20,7 +20,7 @@
         <div class="ue1cs-card-head"><span class="ue1cs-avatar" data-ozon-avatar></span><div><h3 data-ozon-name></h3><small>Параметры расчёта Ozon</small></div></div>
         <div class="ue1cs-card-body">
             <form class="ue1cs-field-group" data-ozon-section="goals">
-                <div class="ue1cs-field-group-head"><strong>Целевая цена</strong><span>Цель по ДРР с учётом выкупа и целевой ROI для выбранного кабинета. Настройки сохраняются для Ozon; расчёт отчёта «Целевая цена» Ozon пока не подключён.</span></div>
+                <div class="ue1cs-field-group-head"><strong>Целевая цена</strong><span>Цель по ДРР с учётом выкупа и целевой ROI для выбранного кабинета. Используются в <a href="/sales/unit-economics-1c/ozon/reports/target-price">отчёте «Целевая цена» Ozon</a>.</span></div>
                 <div class="ue1cs-fields" data-ozon-fields></div>
                 <fieldset class="ue1cs-roi-group"><legend>Целевой ROI по коду товара</legend><div class="ue1cs-roi-fields" data-ozon-roi></div></fieldset>
                 <p class="ozon-settings-help">ROI по коду имеет приоритет над общим ROI. Пустой ROI по коду использует общий. Индивидуальные цели товара имеют приоритет над настройками кабинета.</p>
@@ -38,7 +38,7 @@
                 <div class="ue1cs-field-group-head"><strong>Расходы и налоги</strong><span>Ставки для расчёта юнит-экономики</span></div>
                 <div class="ue1cs-fields" data-ozon-fields></div>
                 <p class="ozon-settings-help" data-ozon-team-note></p>
-                <p class="ozon-settings-help">Пустое поле — ставка не задана. Ноль — явное отсутствие расхода. Значения доступны в параметрах товара; расчёт маржи Ozon пока не подключён.</p>
+                <p class="ozon-settings-help">Пустое поле — ставка не задана. Ноль — явное отсутствие расхода. Значения используются в калькуляторе, марже и целевой цене Ozon.</p>
                 <p data-ozon-status role="status" aria-live="polite"></p>
                 <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить</button><button type="button" data-ozon-reset>Отменить изменения</button></div>
             </form>

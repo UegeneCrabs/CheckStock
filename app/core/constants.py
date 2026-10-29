@@ -403,7 +403,7 @@ class OzonLogisticsConfig:
     types_path: str = "/v1/finance/accrual/types"
     returns_path: str = "/v1/returns/list"
     attributes_path: str = "/v4/product/info/attributes"
-    accrual_batch_size: int = 50
+    accrual_batch_size: int = 200
     returns_page_size: int = 500
     attributes_batch_size: int = 100
     max_returns: int = 500_000
@@ -768,6 +768,77 @@ class HttpConfig:
 
 
 HTTP: Final = HttpConfig()
+
+
+class OzonReservationState(StrEnum):
+    RESERVED = "reserved"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    UNCERTAIN = "uncertain"
+    RESOLVED = "resolved"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonApiLimitsConfig:
+    coordination_scope: str = "coordination"
+    legacy_scope_prefix: str = "legacy:"
+    budget_cleanup_scope: str = "budget-cleanup"
+    budget_retention_days: int = 30
+    legacy_batch_size: int = 400
+    seller_scope_prefix: str = "seller:"
+    method_scope_prefix: str = "seller-method:"
+    performance_scope_prefix: str = "performance:"
+    remaining_header: str = "Ratelimit-Remaining"
+    retry_header: str = "Retry-After"
+    window_seconds: int = 86_400
+    seller_requests_per_second: int = 50
+    performance_requests_per_day: int = 100_000
+    performance_exports_per_day: int = 2_000
+    exports_per_active_campaign: int = 240
+    organization_active_reports: int = 5
+    report_max_days: int = 62
+    running_campaign_state: str = "CAMPAIGN_STATE_RUNNING"
+    lease_seconds: int = 1_020
+    queue_poll_seconds: float = 0.25
+    minimum_retry_seconds: float = 2
+    maximum_spacing_seconds: float = 120
+    successes_before_decrease: int = 10
+    spacing_decrease_factor: float = 0.9
+
+
+OZON_API_LIMITS: Final = OzonApiLimitsConfig()
+
+
+class OzonReportGroup(StrEnum):
+    PRODUCT = "product"
+    SUBJECT = "subject"
+
+
+class OzonReportRowKind(StrEnum):
+    PRODUCT = "product"
+    CATEGORY = "category"
+
+
+class OzonTargetIssue(StrEnum):
+    PURCHASE = "purchase_required"
+    PRICES = "prices_required"
+    PARAMETERS = "parameters_required"
+    UNREACHABLE = "target_unreachable"
+    PARTIAL = "partial_sources"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonReportsConfig:
+    api: str = "/api/unit-economics-1c/ozon/reports"
+    pages: str = "/sales/unit-economics-1c/ozon/reports"
+    default_page_size: int = 50
+    max_page_size: int = 100
+    price_scale: int = 100
+    max_price: int = 1_000_000_000
+    columns_path: str = "static/economics/ozon/report-columns.json"
+
+
+OZON_REPORTS: Final = OzonReportsConfig()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

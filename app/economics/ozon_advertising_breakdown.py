@@ -40,6 +40,7 @@ from app.ozon.advertising_normalizer import (
 )
 from app.ozon.async_api import AsyncSellerApi
 from app.ozon.async_performance import AsyncPerformanceClient, PerformanceApiFailure
+from app.ozon.limit_identity import performance_identity
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,8 @@ async def sync_store(
             resources.advertising,
             store,
             PerformanceCredentials(client_id=client_id, client_secret=secret),
+            limits=resources.ozon_limits,
+            identity=performance_identity(store, client_id),
         )
         resolver = AdvertisingArticleResolver(
             store,

@@ -3,6 +3,7 @@
     var root = document.getElementById('uetp');
     if (!root) return;
     var config = JSON.parse(document.getElementById('uetp-config').textContent);
+    if (config.marketplace === 'OZON') window.OzonReportsUI.prepareTarget(root);
     function node(id) {
         return document.getElementById('uetp-' + id);
     }
@@ -302,6 +303,7 @@
                 },
             );
             var data = await response.json();
+            if (config.marketplace === 'OZON' && data.ok) data = window.OzonReportsUI.targetPayload(data);
             if (id !== requestId) return;
             if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось загрузить отчёт');
             rows = data.rows;
@@ -353,7 +355,7 @@
         if (button)
             applySort(button.dataset.sort, sort === button.dataset.sort && descending ? 'asc' : 'desc');
     });
-    var calculator = config.marketplace === 'YM'
+    var calculator = config.marketplace === 'YM' || config.marketplace === 'OZON'
         ? window.YandexTargetReport.init({ root: root, node: node, config: config, load: load,
             rows: function () { return rows; }, format: format })
         : initializeWbCalculator();
@@ -879,7 +881,7 @@
                 url = URL.createObjectURL(blob),
                 link = document.createElement('a');
             link.href = url;
-            link.download = (config.marketplace === 'YM' ? 'ym_target_price_' : 'target_price_') + periodFrom + '_' + periodTo + '.xlsx';
+            link.download = (config.marketplace === 'YM' ? 'ym_target_price_' : config.marketplace === 'OZON' ? 'ozon_target_price_' : 'target_price_') + periodFrom + '_' + periodTo + '.xlsx';
             link.click();
             setTimeout(function () {
                 URL.revokeObjectURL(url);
