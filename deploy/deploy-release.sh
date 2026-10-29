@@ -8,7 +8,7 @@ backup_dir=/home/bd_backup
 
 [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid tag' >&2; exit 1; }
 [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid SHA' >&2; exit 1; }
-cd "$root"
+cd "$root" || { echo "Application checkout $root is unavailable" >&2; exit 1; }
 [[ -f .env ]] || { echo 'Missing .env' >&2; exit 1; }
 [[ -d secrets ]] || { echo 'Missing secrets directory' >&2; exit 1; }
 [[ -d "$backup_dir" && -w "$backup_dir" ]] || { echo 'Backup directory is unavailable' >&2; exit 1; }
@@ -17,8 +17,8 @@ old_compose_file=deploy/docker-compose.yml
 [[ -f "$old_compose_file" ]] || { echo 'Missing current Docker Compose file' >&2; exit 1; }
 old_compose=(docker compose --env-file .env -f "$old_compose_file")
 compose=("${old_compose[@]}")
-command -v docker >/dev/null
-docker compose version >/dev/null
+command -v docker >/dev/null || { echo 'Docker is not installed on the server' >&2; exit 1; }
+docker compose version >/dev/null || { echo 'Docker Compose is unavailable on the server' >&2; exit 1; }
 [[ -z "$(git status --porcelain --untracked-files=no)" ]] || {
   echo 'Tracked server files have local changes' >&2; exit 1;
 }
@@ -39,6 +39,7 @@ if ((${#deployed_tags[@]})); then
     echo "Release tag $tag must exceed deployed tag $deployed_tag" >&2; exit 1;
   }
 fi
+echo "Checking current Compose configuration: $old_compose_file"
 "${compose[@]}" config --quiet </dev/null
 db_id="$("${compose[@]}" ps -q db)"
 [[ -n "$db_id" && "$(docker inspect --format '{{.State.Health.Status}}' "$db_id")" == healthy ]] || {
@@ -50,9 +51,15 @@ backup="$backup_dir/checkstock-$stamp-$tag.dump"
 temporary="$(mktemp "$backup_dir/.checkstock-$stamp-$tag.XXXXXX.tmp")"
 trap 'rm -f -- "$temporary"' EXIT
 echo "Creating database backup $backup"
-"${compose[@]}" exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' </dev/null > "$temporary"
+"${compose[@]}" exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' </dev/null > "$temporary" || {
+  echo 'Database backup failed while running pg_dump; application code was not changed' >&2
+  exit 1
+}
 [[ -s "$temporary" ]] || { echo 'Database backup is empty' >&2; exit 1; }
-"${compose[@]}" exec -T db pg_restore -l < "$temporary" > /dev/null
+"${compose[@]}" exec -T db pg_restore -l < "$temporary" > /dev/null || {
+  echo 'Database backup verification failed; application code was not changed' >&2
+  exit 1
+}
 [[ ! -e "$backup" ]] || { echo 'Backup filename already exists' >&2; exit 1; }
 chmod 600 "$temporary"
 mv -- "$temporary" "$backup"
@@ -111,7 +118,7 @@ watchdog_running() {
 rollback() {
   local status=$? rollback_failed=0
   trap - ERR
-  echo "Deployment failed; restoring application commit $old_sha" >&2
+  echo "Deployment failed during $deploy_stage (exit status $status); restoring application commit $old_sha" >&2
   git checkout --detach "$old_sha" || rollback_failed=1
   if ((rollback_failed == 0)); then
     compose=("${old_compose[@]}")
@@ -135,16 +142,27 @@ rollback() {
   fi
   exit "$status"
 }
+deploy_stage='checkout of release commit'
 trap rollback ERR
 
+echo "Switching checkout to release $tag ($actual_sha)"
 git checkout --detach "$actual_sha"
 compose=(docker compose --env-file .env -f deploy/docker-compose.yml)
+deploy_stage='validation of release Compose configuration'
+echo 'Checking release Compose configuration'
 "${compose[@]}" config --quiet </dev/null
+deploy_stage='release image build'
+echo 'Building release image on server'
 "${compose[@]}" build app </dev/null
+deploy_stage='container update'
+echo 'Updating app, scheduler and watchdog containers'
 "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null
 
+deploy_stage='app healthcheck'
 wait_healthy app 24
+deploy_stage='scheduler healthcheck'
 wait_healthy scheduler 30
+deploy_stage='watchdog running check'
 watchdog_running
 trap - ERR
 
