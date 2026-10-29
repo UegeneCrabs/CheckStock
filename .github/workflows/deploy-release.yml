@@ -83,5 +83,6 @@ jobs:
           set -euo pipefail
           ssh -i "$HOME/.ssh/checkstock_deploy" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
             -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             bash -s -- "$GITHUB_REF_NAME" "$RELEASE_SHA" < deploy/deploy-release.sh
