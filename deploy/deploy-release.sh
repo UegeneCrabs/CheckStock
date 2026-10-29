@@ -58,23 +58,54 @@ chmod 600 "$temporary"
 mv -- "$temporary" "$backup"
 echo "Verified database backup: $backup"
 
+show_service_failure() {
+  local service="$1" reason="$2" id
+  echo "Service $service failed deployment check: $reason" >&2
+  id="$("${compose[@]}" ps -a -q "$service")"
+  if [[ -z "$id" ]]; then
+    echo "No container found for $service" >&2
+    return
+  fi
+  docker inspect --format 'Container {{.Name}}: status={{.State.Status}} running={{.State.Running}} exit_code={{.State.ExitCode}}{{if .State.Health}} health={{.State.Health.Status}}{{end}}' "$id" >&2 || true
+  echo "Recent healthcheck results for $service:" >&2
+  docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}exit_code={{.ExitCode}} output={{.Output}}{{end}}{{else}}No healthcheck configured{{end}}' "$id" >&2 || true
+  echo "Recent container logs for $service:" >&2
+  docker logs --tail 40 "$id" >&2 || true
+}
+
 wait_healthy() {
-  local service="$1" attempts="$2" id state
-  id="$("${compose[@]}" ps -q "$service")"
-  [[ -n "$id" ]] || return 1
+  local service="$1" attempts="$2" id state i
+  echo "Waiting for $service to become healthy" >&2
+  id="$("${compose[@]}" ps -a -q "$service")"
+  if [[ -z "$id" ]]; then
+    show_service_failure "$service" 'container not found'
+    return 1
+  fi
   for ((i=0; i<attempts; i++)); do
-    state="$(docker inspect --format '{{.State.Health.Status}}' "$id")"
-    [[ "$state" == healthy ]] && return 0
-    [[ "$state" != unhealthy ]] || return 1
+    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id")"
+    if [[ "$state" == healthy ]]; then
+      echo "Service $service is healthy" >&2
+      return 0
+    fi
+    if [[ "$state" == unhealthy || "$state" == none ]]; then
+      show_service_failure "$service" "health status is $state"
+      return 1
+    fi
     sleep 5
   done
+  show_service_failure "$service" "healthcheck did not pass within $((attempts * 5)) seconds"
   return 1
 }
 
 watchdog_running() {
   local id
-  id="$("${compose[@]}" ps -q watchdog)"
-  [[ -n "$id" && "$(docker inspect --format '{{.State.Running}}' "$id")" == true ]]
+  id="$("${compose[@]}" ps -a -q watchdog)"
+  if [[ -n "$id" && "$(docker inspect --format '{{.State.Running}}' "$id")" == true ]]; then
+    echo 'Service watchdog is running' >&2
+    return 0
+  fi
+  show_service_failure watchdog 'container is not running'
+  return 1
 }
 
 rollback() {
