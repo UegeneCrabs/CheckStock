@@ -5,7 +5,6 @@ tag="${1:?Usage: deploy-release.sh TAG COMMIT_SHA}"
 expected_sha="${2:?Usage: deploy-release.sh TAG COMMIT_SHA}"
 root=/home/checkstock
 backup_dir=/home/bd_backup
-compose=(docker compose --env-file .env -f deploy/docker-compose.yml)
 
 [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid tag' >&2; exit 1; }
 [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid SHA' >&2; exit 1; }
@@ -13,6 +12,11 @@ cd "$root"
 [[ -f .env ]] || { echo 'Missing .env' >&2; exit 1; }
 [[ -d secrets ]] || { echo 'Missing secrets directory' >&2; exit 1; }
 [[ -d "$backup_dir" && -w "$backup_dir" ]] || { echo 'Backup directory is unavailable' >&2; exit 1; }
+old_compose_file=deploy/docker-compose.yml
+[[ -f "$old_compose_file" ]] || old_compose_file=docker-compose.yml
+[[ -f "$old_compose_file" ]] || { echo 'Missing current Docker Compose file' >&2; exit 1; }
+old_compose=(docker compose --env-file .env -f "$old_compose_file")
+compose=("${old_compose[@]}")
 command -v docker >/dev/null
 docker compose version >/dev/null
 [[ -z "$(git status --porcelain --untracked-files=no)" ]] || {
@@ -79,6 +83,10 @@ rollback() {
   echo "Deployment failed; restoring application commit $old_sha" >&2
   git checkout --detach "$old_sha" || rollback_failed=1
   if ((rollback_failed == 0)); then
+    compose=("${old_compose[@]}")
+    "${compose[@]}" config --quiet </dev/null || rollback_failed=1
+  fi
+  if ((rollback_failed == 0)); then
     "${compose[@]}" build app </dev/null || rollback_failed=1
   fi
   if ((rollback_failed == 0)); then
@@ -99,6 +107,7 @@ rollback() {
 trap rollback ERR
 
 git checkout --detach "$actual_sha"
+compose=(docker compose --env-file .env -f deploy/docker-compose.yml)
 "${compose[@]}" config --quiet </dev/null
 "${compose[@]}" build app </dev/null
 "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null
