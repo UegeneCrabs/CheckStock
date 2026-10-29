@@ -24,13 +24,21 @@ from app.dto.ozon_history import OzonHistory, OzonHistoryQuery
 from app.dto.ozon_logistics import LogisticsCalculation, LogisticsScenario
 from app.dto.ozon_logistics_volume import LogisticsTariffOptions
 from app.dto.ozon_price_calculator import OzonPriceCalculation, OzonPriceCalculationRequest
-from app.dto.ozon_promotions import OzonPromotions, OzonPromotionsQuery
+from app.dto.ozon_promotions import (
+    OzonBoostRecord,
+    OzonBoostUpdate,
+    OzonPromotionCalculation,
+    OzonPromotionCalculationRequest,
+    OzonPromotions,
+    OzonPromotionsQuery,
+)
 from app.dto.ozon_related import OzonRelatedProducts, OzonRelatedQuery
 from app.dto.ozon_tariffs import OzonCategorySelection, OzonTariffCatalog, OzonTariffQuery
 from app.economics import ozon_commissions
 from app.economics.ozon_calculator import calculate as calculate_scenario
 from app.economics.ozon_logistics_volume import calculate as calculate_logistics
 from app.economics.ozon_logistics_volume import tariff_options
+from app.economics.ozon_promotion_calculator import calculate as calculate_promotion
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetConflict, OzonCabinetRepository
 from app.infrastructure.ozon_economics_repository import OzonEconomicsRepository
 from app.infrastructure.ozon_logistics_tariffs import CATALOG as LOGISTICS_TARIFFS
@@ -129,6 +137,37 @@ async def product_promotions(
         raise HTTPException(HTTPStatus.BAD_GATEWAY, code) from None
     except (ValueError, TimeoutError):
         raise HTTPException(HTTPStatus.BAD_GATEWAY, WebErrorCode.OZON_PROMOTIONS_UNAVAILABLE) from None
+
+
+@router.post("/api/unit-economics-1c/ozon/promotions/calculate")
+async def promotion_scenario(
+    request: Request, payload: OzonPromotionCalculationRequest, resources: AsyncResourcesDependency
+) -> OzonPromotionCalculation:
+    require_preview(request.state.user)
+    try:
+        settings = await OzonCabinetRepository(resources.database).boost_settings()
+        return calculate_promotion(payload, ozon_tariff_service(resources).calculate, settings.values)
+    except (ValueError, DecimalException) as error:
+        raise HTTPException(
+            HTTPStatus.UNPROCESSABLE_ENTITY, WebErrorCode.INVALID_CALCULATOR_SCENARIO
+        ) from error
+
+
+@router.get("/api/unit-economics-1c/ozon/promotions/settings")
+async def promotion_settings(request: Request, resources: AsyncResourcesDependency) -> OzonBoostRecord:
+    require_preview(request.state.user)
+    return await OzonCabinetRepository(resources.database).boost_settings()
+
+
+@router.put("/api/unit-economics-1c/ozon/promotions/settings")
+async def save_promotion_settings(
+    request: Request, payload: OzonBoostUpdate, resources: AsyncResourcesDependency
+) -> OzonBoostRecord:
+    require_preview(request.state.user)
+    try:
+        return await ozon_cabinet_service(resources).save_boost(payload, request.state.user.full_name)
+    except OzonCabinetConflict as error:
+        raise HTTPException(HTTPStatus.CONFLICT, WebErrorCode.SETTINGS_CONFLICT) from error
 
 
 @router.get("/api/unit-economics-1c/ozon/cabinets/{store}")

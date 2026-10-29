@@ -1,22 +1,85 @@
-.ozon-promotions { display: grid; gap: 18px; }
+.is-ozon-preview .ue1c-drawer:has(#ue1c-panel-promotions:not([hidden])) { width: min(100vw, 1000px); }
+.ozon-promotions { display: grid; gap: 14px; min-width: 0; }
 .ozon-promotions[hidden] { display: none; }
 .ozon-promotions-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .ozon-promotions-heading h3, .ozon-promotions-group h4, .ozon-promotion-card h5 { margin: 0; color: #17253d; }
-.ozon-promotions-heading h3 { font-size: 17px; }
-.ozon-promotions-group { display: grid; gap: 10px; }
-.ozon-promotions-group h4 { font-size: 13px; }
-.ozon-promotion-card { border: 1px solid #dfe6f1; border-radius: 12px; padding: 16px; background: #fff; min-width: 0; }
-.ozon-promotion-card h5 { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
-.ozon-promotion-dates { color: #64748b; font-size: 12px; margin: 6px 0 12px; }
-.ozon-promotion-prices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin: 14px 0 0; }
-.ozon-promotion-prices dt { color: #64748b; font-size: 12px; line-height: 1.45; }
-.ozon-promotion-prices dd { color: #17253d; font-size: 15px; font-weight: 600; margin: 4px 0 0; overflow-wrap: anywhere; }
-.ozon-promotion-badge { display: inline-block; padding: 3px 8px; border-radius: 6px; color: #4554af; background: #eef1ff; font-size: 11px; }
-.ozon-promotions-note { color: #64748b; font-size: 12px; line-height: 1.5; margin: 0; }
-.ozon-promotion-card > .ozon-promotions-note { margin-top: 12px; }
-.ozon-promotions-warning { color: #925900; font-size: 12px; line-height: 1.5; }
-.ozon-promotions-warning p { margin: 0 0 8px; }
-@media (max-width: 400px) {
-    .ozon-promotion-prices { grid-template-columns: 1fr; }
-    .ozon-promotions-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
+.ozon-promotions-heading h3 { font-size: 15px; }
+.ozon-promotions-group { display: grid; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.ozon-promotions-group h4 { font-size: 12px; position: sticky; left: 0; }
+.ozon-promotion-card {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.6fr) repeat(3, minmax(100px, 1fr)) minmax(90px, 1fr) minmax(60px, .6fr) minmax(76px, .7fr);
+    align-items: center;
+    gap: 10px;
+    min-width: 800px;
+    border: 1px solid #dfe6f1;
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #fff;
 }
+.ozon-promotion-card--unknown > .ozon-promotions-warning { grid-column: 2 / -1; }
+.ozon-promotion-identity { display: grid; gap: 4px; min-width: 0; }
+.ozon-promotion-card h5 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.ozon-promotion-period { margin: 0; color: #64748b; font-size: 10px; line-height: 1.4; }
+.ozon-promotion-placeholder { visibility: hidden; }
+.ozon-promotion-field { display: grid; grid-template-rows: 26px 29px; gap: 2px; min-width: 0; margin: 0; }
+.ozon-promotion-label { align-self: end; }
+.ozon-promotion-label { color: #64748b; font-size: 10px; line-height: 1.3; }
+.ozon-promotion-field strong { align-self: center; color: #17253d; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ozon-promotion-field strong.is-positive { color: #166534; }
+.ozon-promotion-field strong.is-negative { color: #b42318; }
+.ozon-promotion-price {
+    box-sizing: border-box;
+    width: 100%;
+    height: 29px;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    font: inherit;
+    font-size: 12px;
+    color: #17253d;
+    background: #fff;
+}
+.ozon-promotion-price:focus-visible { outline: 2px solid #5465cf; outline-offset: 2px; }
+.ozon-promotion-price.is-eligible { color: #166534; border-color: #86c9a0; background: #edf8f0; }
+.ozon-promotion-price.is-ineligible, .ozon-promotion-price[aria-invalid="true"] { color: #b42318; border-color: #e6a19b; background: #fff0ee; }
+.ozon-promotion-calculation-note { grid-column: 1 / -1; margin: 0; color: #925900; font-size: 10px; line-height: 1.4; }
+.ozon-promotion-calculation-note[hidden] { display: none; }
+.ozon-promotions-note { color: #64748b; font-size: 11px; line-height: 1.5; margin: 0; }
+.ozon-promotions-warning { color: #925900; font-size: 11px; line-height: 1.5; }
+.ozon-promotions-warning p { margin: 0 0 8px; }
+@media (max-width: 500px) { .ozon-promotions-heading { align-items: flex-start; flex-direction: column; gap: 4px; } }
+.ozon-promotions-timeline { border-top: 1px solid #dfe6f1; padding-top: 16px; min-width: 0; }
+.ozon-promotions-timeline[hidden] { display: none; }
+.ozon-gantt-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ozon-gantt-heading h4 { margin: 0; color: #17253d; font-size: 14px; }
+.ozon-gantt-controls { display: flex; gap: 5px; flex-wrap: wrap; }
+.ozon-gantt-control { padding: 5px 9px; border: 1px solid #dfe6f1; border-radius: 5px; background: #fff; color: #334155; font: inherit; font-size: 11px; cursor: pointer; }
+.ozon-gantt-control:hover { background: #f1f5f9; }
+.ozon-gantt-control:focus-visible, .ozon-gantt-bar:focus-visible { outline: 2px solid #5465cf; outline-offset: 2px; }
+.ozon-gantt-range { margin: 8px 0; color: #64748b; font-size: 11px; }
+.ozon-gantt-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px; color: #475569; font-size: 10px; }
+.ozon-gantt-legend span::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: #94a3b8; }
+.ozon-gantt-legend .is-participating::before { background: #368260; }
+.ozon-gantt-legend .is-candidate::before { background: #5d7bd0; }
+.ozon-gantt-scroll { overflow-x: auto; padding: 2px 0 6px; }
+.ozon-gantt-grid { min-width: 700px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.ozon-gantt-row { display: grid; grid-template-columns: 220px minmax(0, 1fr); border-top: 1px solid #e2e8f0; }
+.ozon-gantt-row--axis { border-top: 0; background: #f8fafc; }
+.ozon-gantt-name { display: grid; align-content: center; gap: 4px; min-width: 0; padding: 10px 12px; color: #17253d; font-size: 11px; }
+.ozon-gantt-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.ozon-gantt-name span { color: #64748b; font-size: 10px; line-height: 1.4; }
+.ozon-gantt-axis { position: relative; min-height: 48px; margin: 0 14px; color: #64748b; font-size: 10px; }
+.ozon-gantt-tick { position: absolute; top: 8px; transform: translateX(-50%); white-space: nowrap; }
+.ozon-gantt-tick:first-child { transform: none; }
+.ozon-gantt-tick:nth-child(7) { transform: translateX(-100%); }
+.ozon-gantt-track { position: relative; min-height: 54px; margin: 0 14px; background-image: linear-gradient(to right, #e8edf5 1px, transparent 1px); background-size: 16.6666667% 100%; }
+.ozon-gantt-bar { position: absolute; top: calc(50% - 9px); height: 18px; min-width: 3px; max-width: 100%; box-sizing: border-box; border-radius: 4px; background: #94a3b8; }
+.ozon-gantt-bar.is-participating { background: #368260; }
+.ozon-gantt-bar.is-candidate { background: #5d7bd0; }
+.ozon-gantt-bar.is-open-start { border-left: 2px dashed #f8fafc; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.ozon-gantt-bar.is-open-end { border-right: 2px dashed #f8fafc; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ozon-gantt-empty { position: absolute; top: 50%; transform: translateY(-50%); max-width: 100%; color: #64748b; font-size: 10px; }
+.ozon-gantt-today { position: absolute; z-index: 1; top: 0; bottom: 0; border-left: 1px dashed #c05a49; pointer-events: none; }
+.ozon-gantt-today-label { position: absolute; bottom: 6px; transform: translateX(-50%); padding: 1px 3px; color: #a43e2d; background: #fff4ee; border-radius: 3px; font-size: 10px; }

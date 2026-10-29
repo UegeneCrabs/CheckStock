@@ -293,6 +293,7 @@ window.OzonCalculatorUI = (() => {
         note.classList.toggle('is-error', Boolean(session.error || session.settingsError));
         paintResult(root, session);
         window.OzonCalculatorHelp.refresh();
+        root.dispatchEvent(new CustomEvent('ozon-calculator-changed', { detail: { productId: session.productId } }));
     }
 
     function paintTotalDrr(root, session) {
@@ -375,5 +376,11 @@ window.OzonCalculatorUI = (() => {
         }, 150);
     }
 
-    return { render, reset, clear };
+    function snapshot(root) {
+        const session = sessions.get(root);
+        if (!session || !session.initialized || session.pending || session.pricePending || session.error || session.invalid.size || session.edits.length) return null;
+        return { productId: session.productId, values: structuredClone(session.values) };
+    }
+
+    return { render, reset, clear, snapshot };
 })();

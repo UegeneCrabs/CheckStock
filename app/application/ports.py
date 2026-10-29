@@ -47,6 +47,7 @@ from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonCabinetRecord, OzonCabi
 from app.dto.ozon_history import OzonHistoryEvidence, OzonHistoryQuery
 from app.dto.ozon_logistics import LogisticsStoreSnapshot
 from app.dto.ozon_margin import OzonMarginSnapshot
+from app.dto.ozon_promotions import OzonBoostRecord, OzonBoostSave
 from app.dto.ozon_storage import StorageEvidence, StoragePeriod, StorageReportTicket, StorageStoreSnapshot
 from app.dto.stock import (
     ApplyShipmentCommand,
@@ -64,6 +65,7 @@ from app.dto.stock import (
 from app.dto.supply_arrivals import SupplyStockCommand, SupplyStockState
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
 from app.dto.wb_product_rating import WbRatingObservation
+from app.dto.wb_standard_costs import PublishSnapshot
 
 
 class WbRatingWriter(Protocol):
@@ -72,7 +74,6 @@ class WbRatingWriter(Protocol):
         observations: tuple[WbRatingObservation, ...],
         valid_ratings: tuple[WbRatingObservation, ...],
     ) -> int: ...
-from app.dto.wb_standard_costs import PublishSnapshot
 
 
 class FboStockUnitOfWork(Protocol):
@@ -140,6 +141,10 @@ class OzonMarginStore(Protocol):
 
 
 class OzonCabinetUnitOfWork(Protocol):
+    async def boost_settings(self) -> OzonBoostRecord: ...
+
+    async def save_boost(self, command: OzonBoostSave) -> OzonBoostRecord: ...
+
     async def settings(self, stores: tuple[str, ...]) -> tuple[OzonCabinetRecord, ...]: ...
 
     async def save(self, command: OzonCabinetSave) -> OzonCabinetRecord: ...

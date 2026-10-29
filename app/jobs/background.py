@@ -33,7 +33,6 @@ from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, ScheduledJob
 from app.ozon import catalog as ozon_catalog
-from app.ozon import reputation as ozon_reputation
 from app.ozon import sync as ozon_sync
 from app.stock import history as stock_history
 from app.stock import inbound_supplies, supply_arrivals
@@ -483,16 +482,6 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
         ),
         *_funnel_jobs(),
         *_yandex_unit_economics_jobs(),
-        BackgroundJob(
-            "ozon_reputation_sync",
-            ozon_reputation.sync_all,
-            _fixed_delay(24 * 60 * 60),
-            startup_delay_seconds=150,
-            is_enabled=lambda: _job_enabled("ozon_reputation_sync"),
-            run_callback=lambda: ozon_reputation.sync_all(
-                sync_settings.enabled_stores("ozon_reputation_sync", "OZON")
-            ),
-        ),
         *ozon.jobs(catalog_ready),
         BackgroundJob(
             ya_category_commissions.JOB,

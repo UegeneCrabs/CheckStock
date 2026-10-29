@@ -296,6 +296,8 @@ class OzonPromotionsConfig:
     page_size: int = 100
     max_pages: int = 500
     cache_size: int = 128
+    currency: str = "RUB"
+    settings_scope: str = "__ozon_promotions__"
 
 
 OZON_PROMOTIONS: Final = OzonPromotionsConfig()
@@ -785,6 +787,7 @@ class AdvertisingError(StrEnum):
     INVALID_PERIOD = "invalid_advertising_period"
     NETWORK = "performance_network_error"
     HTTP = "performance_http_error"
+    CAMPAIGN_NOT_FOUND = "performance_campaign_not_found"
     AUTHENTICATION = "performance_authentication_failed"
     PERMISSION = "performance_permission_denied"
     DAILY_LIMIT = "performance_daily_limit"
@@ -809,6 +812,10 @@ class AdvertisingError(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonAdvertisingConfig:
+    missing_campaign_message: str = "кампания не найдена"
+    optional_campaign_sources: frozenset[tuple[str, AdvertisingSource]] = frozenset(
+        (("toyka", AdvertisingSource.ALL_PRODUCTS),)
+    )
     legacy_health_scope: str = "ozon_advertising"
     base_url: str = "https://api-performance.ozon.ru"
     token_path: str = "/api/client/token"
@@ -1676,7 +1683,6 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.yandex_orders.name, yandex_source=YandexSyncSource.ORDERS),
     JobScheduleRule(name=JOBS.yandex_economics.name, seconds=3_600),
     JobScheduleRule(name=JOBS.yandex_reputation.name, yandex_source=YandexSyncSource.REPUTATION),
-    JobScheduleRule(name=JOBS.ozon_reputation.name, seconds=86_400),
     JobScheduleRule(name=JOBS.ozon_orders.name, seconds=OZON_ORDERS.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_prices.name, seconds=OZON_PRICES.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_buyout.name, seconds=OZON_CABINET.interval_seconds),

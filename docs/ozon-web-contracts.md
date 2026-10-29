@@ -77,6 +77,9 @@ WB и Яндекс сохраняют существующие загрузчи�
 | `GET /api/unit-economics-1c/ozon/tariffs` | `OzonTariffCatalog`: официальный справочник FBO с датой действия, источником и диапазонами цен |
 | `GET /api/unit-economics-1c/ozon/category` | `store`, `article` → `OzonCategorySelection`; чтение категории карточки, без изменения Ozon |
 | `GET /api/unit-economics-1c/ozon/related` | `store`, `article` → `OzonRelatedProducts`; варианты с общей моделью в каталоге кабинета, признаки полноты и кэш описаны в [калькуляторе](ozon-calculator.md) |
+| `GET /api/unit-economics-1c/ozon/promotions` | `store`, `article` → `OzonPromotions`: участие, доступность и цены из Seller API; проценты бустинга API игнорируются; [контракт и кэш](ozon-promotions.md) |
+| `GET/PUT /api/unit-economics-1c/ozon/promotions/settings` | `OzonBoostRecord` / `OzonBoostUpdate`: общие минимальный, максимальный и статичный проценты для всех магазинов, атомарная ревизия |
+| `POST /api/unit-economics-1c/ozon/promotions/calculate` | `OzonPromotionCalculationRequest` → `OzonPromotionCalculation`: локальная цена, маржа, ROI, рассчитанный процент бустинга и соответствие пределу акции без сохранения |
 | `POST /api/unit-economics-1c/ozon/prices/calculate` | `OzonPriceCalculationRequest` → `OzonPriceCalculation`: связанные цены, проценты СПП/кошелька и комиссия без сохранения |
 | `POST /api/unit-economics-1c/ozon/commission/calculate` | `OzonCommissionRequest` → `OzonCommissionCalculation`: пересчёт комиссии расширенного калькулятора без сохранения |
 | `POST /api/unit-economics-1c/ozon/logistics/calculate` | `LogisticsScenario` → `LogisticsCalculation`: локальный сценарий логистики FBO без сохранения |
@@ -85,12 +88,11 @@ WB и Яндекс сохраняют существующие загрузчи�
 DTO находятся в `app/dto/{integrations,ui,ozon_economics}.py`. В общем ответе
 состояний новые DTO Ozon соседствуют с прежними состояниями остальных задач;
 контракты истории, запуска и настроек в таблице относятся к задачам из `app/jobs/ozon.py`.
-История `ozon_reputation_sync` также читается асинхронно через `IntegrationViews`
-и возвращает `JobHistory`. Для ошибки подписки в `runs[].error_details[]`
-передаётся код `ozon_review_subscription_required`, цель `target` и исходная
-диагностика `message`. Frontend показывает пояснение о подписке отдельно для
-каждого магазина; остальные ошибки сохраняют свою диагностику. Поле `error`
-остаётся исходным, статусы и расписание загрузки не меняются.
+`ozon_reputation_sync` временно удалена из каталога и расписания. Общие API
+каталога и состояний её не возвращают, а запросы запуска, настроек и истории
+по этому имени возвращают `404`. История запусков и сохранённые рейтинги
+остаются в БД. Карточки Ozon используют сохранённые значения без предупреждений
+об отсутствии отзывов или ошибках отключённой загрузки.
 Старый `?data=1` страницы Ozon направляется в тот же обработчик JSON.
 Период выбирается через `period_days` либо пару `date_from`/`date_to`: до 366
 завершённых дней, начало не позже конца. Магазин проверяется по доступам;

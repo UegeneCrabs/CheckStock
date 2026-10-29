@@ -7,6 +7,11 @@
     const dirty = new Set();
     const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 });
     const definitions = {
+        boost: [
+            ['minimum_percent', 'Минимальный эластичный бустинг', 0, 100, false],
+            ['maximum_percent', 'Максимальный эластичный бустинг', 0, 100, false],
+            ['static_percent', 'Статичный бустинг', 0, 100, false],
+        ],
         goals: [
             ['target_drr_percent', 'Цель по ДРР', 0, 100, true],
             ['target_roi_percent', 'Целевой ROI для остальных кодов', 0, 1000000, true],
@@ -23,6 +28,9 @@
         ],
     };
     let items = [], selected = null, busy = true;
+    const boostEndpoint = '/api/unit-economics-1c/ozon/promotions/settings';
+    const boostForm = panel.querySelector('[data-ozon-boost-settings]');
+    let boostRecord = null, boostBusy = true, boostDirty = false;
 
     function message(node, text, error = false) {
         node.textContent = text;
@@ -50,6 +58,62 @@
         wrap.append(input, unit); label.append(text, wrap);
         return label;
     }
+    function boostControls() {
+        boostForm.querySelector('[type="submit"]').disabled = boostBusy || !boostDirty;
+        boostForm.querySelector('[data-ozon-boost-reset]').disabled = boostBusy || !boostDirty;
+        boostForm.querySelectorAll('input').forEach(input => { input.disabled = boostBusy; });
+    }
+    function drawBoost() {
+        boostForm.querySelector('[data-ozon-boost-fields]').replaceChildren(...definitions.boost.map(definition =>
+            field(definition, boostRecord.values[definition[0]])));
+        boostDirty = false;
+        boostControls();
+    }
+    boostForm.addEventListener('input', () => {
+        boostDirty = true;
+        boostControls();
+        message(boostForm.querySelector('[data-ozon-boost-status]'), 'Есть несохранённые изменения.');
+    });
+    boostForm.querySelector('[data-ozon-boost-reset]').addEventListener('click', () => {
+        if (boostBusy || !boostRecord) return;
+        drawBoost();
+        message(boostForm.querySelector('[data-ozon-boost-status]'), '');
+    });
+    boostForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (boostBusy || !boostRecord || !boostDirty || !boostForm.reportValidity()) return;
+        const values = {};
+        boostForm.querySelectorAll('input').forEach(input => { values[input.name] = input.value === '' ? null : input.value; });
+        const status = boostForm.querySelector('[data-ozon-boost-status]');
+        if (values.minimum_percent != null && values.maximum_percent != null && Number(values.minimum_percent) > Number(values.maximum_percent)) {
+            message(status, 'Минимальный процент не должен превышать максимальный.', true);
+            return;
+        }
+        boostBusy = true; boostControls(); message(status, 'Сохраняем…');
+        try {
+            const response = await fetch(boostEndpoint, {
+                method: 'PUT', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ revision: boostRecord.revision, values }),
+            });
+            if (response.status === 409) throw new Error('Общие настройки изменились в другой вкладке. Обновите страницу перед сохранением.');
+            if (!response.ok || response.redirected) throw new Error('Не удалось сохранить. Проценты должны быть от 0 до 100, минимальный — не выше максимального.');
+            boostRecord = await response.json();
+            drawBoost();
+            try { localStorage.setItem('checkstock.ozon.boost-updated', JSON.stringify({ revision: boostRecord.revision, updated_at: boostRecord.updated_at })); } catch {}
+            message(status, 'Сохранено для всех магазинов Ozon.');
+        } catch (error) { message(status, error.message, true); }
+        finally { boostBusy = false; boostControls(); }
+    });
+    (async () => {
+        const status = boostForm.querySelector('[data-ozon-boost-status]');
+        try {
+            boostRecord = await window.CheckStockUI.request(boostEndpoint);
+            boostBusy = false;
+            drawBoost();
+            message(status, '');
+        } catch (error) { message(status, error.message, true); }
+    })();
     function draw(form) {
         const key = form.dataset.ozonSection;
         const values = selected.values[key];
@@ -134,7 +198,7 @@
         });
     });
     window.addEventListener('beforeunload', event => {
-        if (dirty.size) { event.preventDefault(); event.returnValue = ''; }
+        if (dirty.size || boostDirty) { event.preventDefault(); event.returnValue = ''; }
     });
     (async () => {
         try {

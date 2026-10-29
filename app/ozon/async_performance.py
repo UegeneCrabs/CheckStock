@@ -48,6 +48,13 @@ def response_error(response: httpx.Response) -> AdvertisingError | None:
         return AdvertisingError.AUTHENTICATION
     if response.status_code == HTTPStatus.FORBIDDEN:
         return AdvertisingError.PERMISSION
+    if response.status_code == HTTPStatus.NOT_FOUND:
+        try:
+            message = PerformanceErrorResponse.model_validate_json(response.content).error.strip().casefold()
+        except ValidationError:
+            return AdvertisingError.HTTP
+        if message == OZON_ADVERTISING.missing_campaign_message:
+            return AdvertisingError.CAMPAIGN_NOT_FOUND
     if response.status_code != HTTPStatus.TOO_MANY_REQUESTS:
         return AdvertisingError.HTTP
     try:

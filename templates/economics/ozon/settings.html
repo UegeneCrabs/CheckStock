@@ -5,6 +5,17 @@
         <div class="cabinet-store-nav" data-ozon-cabinet-nav role="group" aria-label="Кабинеты Ozon"></div>
         <p data-ozon-cabinet-status role="status" aria-live="polite">Загружаем настройки Ozon…</p>
     </div>
+    <article class="ue1cs-card">
+        <div class="ue1cs-card-head"><div><h3>Бустинг для всех магазинов Ozon</h3><small>Общие проценты для расчёта акций</small></div></div>
+        <div class="ue1cs-card-body">
+            <form class="ue1cs-field-group" data-ozon-boost-settings>
+                <div class="ue1cs-fields" data-ozon-boost-fields></div>
+                <p class="ozon-settings-help">Минимальный и максимальный проценты задают границы эластичного бустинга. Между ценами процент меняется линейно. Статичный процент действует для остальных акций, когда текущая цена не выше цены для бустинга. Пустое поле — процент не задан.</p>
+                <p data-ozon-boost-status role="status" aria-live="polite">Загружаем общие настройки…</p>
+                <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить для всех магазинов</button><button type="button" data-ozon-boost-reset disabled>Отменить изменения</button></div>
+            </form>
+        </div>
+    </article>
     <article class="ue1cs-card" data-ozon-cabinet-card hidden>
         <div class="ue1cs-card-head"><span class="ue1cs-avatar" data-ozon-avatar></span><div><h3 data-ozon-name></h3><small>Параметры расчёта Ozon</small></div></div>
         <div class="ue1cs-card-body">
@@ -34,4 +45,4 @@
         </div>
     </article>
 </section>
-<script src="/static/economics/ozon/settings.js?v=20261023-buyout30"></script>
+<script src="/static/economics/ozon/settings.js?v=20261029-boost"></script>

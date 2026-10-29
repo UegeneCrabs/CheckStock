@@ -2839,7 +2839,9 @@
             nodes.drawerProductLink.setAttribute('aria-label', label + ' в новой вкладке');
         } else nodes.drawerProductLink.removeAttribute('href');
     }
-    function renderDetailProduct(product) {
+    function renderDetailProduct(product, preserveTab) {
+        var activeTab = preserveTab && root.querySelector('[data-detail-tab][aria-selected="true"]');
+        var tabName = activeTab ? activeTab.dataset.detailTab : 'economics';
         clearTargetCalculator();
         root.classList.remove('is-detail-loading');
         nodes.detailLoading.hidden = true;
@@ -2859,7 +2861,7 @@
             dataErrorsHtml(product, true);
         if (placeholderMode) {
             renderPlaceholderDetail(product);
-            setDetailTab('economics');
+            setDetailTab(tabName);
             Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
                 row.classList.toggle('is-selected', row.dataset.productId === product.id);
             });
@@ -2879,7 +2881,7 @@
         renderGluedProducts(product);
         renderChart(product);
         loadTargetReportPrice(product);
-        setDetailTab('economics');
+        setDetailTab(tabName);
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
             row.classList.toggle('is-selected', row.dataset.productId === product.id);
         });
@@ -2912,7 +2914,7 @@
         try {
             await fetchProductDetail(product);
             if (state.selected === product.id && detailRequestId === requestId && !targetCalculatorContext)
-                renderDetailProduct(product);
+                renderDetailProduct(product, config.ozonPreview === true);
         } catch (error) {
             /* Keep the last valid detail while a background refresh is unavailable. */
         }

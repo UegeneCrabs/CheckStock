@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 
 from app import db
-from app.core.constants import OZON_API, InboundAvailability
+from app.core.constants import InboundAvailability
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.inbound_supplies import InboundSnapshot
@@ -74,7 +74,6 @@ def load_products(
             if inbound_snapshots is not None
             else stock_sheet_inbound.load(slug, MARKETPLACE, catalog)
         )
-        reputation_error = (health.get(slug, {}).get("reputation") or {}).get("error")
         stock_source = health.get(slug, {}).get("stocks") or {}
         source_error = (health.get(slug, {}).get("unit_economics_1c_source") or {}).get("error")
         ad_source_error = (
@@ -130,13 +129,6 @@ def load_products(
                 errors.append("Не загружены остатки товара Ozon")
             elif fbs is None or fbo is None:
                 errors.append("Остатки Ozon FBS/FBO загружены не полностью")
-            if (
-                reputation_error
-                and OZON_API.subscription_error_marker not in str(reputation_error).casefold()
-            ):
-                errors.append("Отзывы Ozon: " + str(reputation_error))
-            elif not review and not reputation_error:
-                errors.append("Оценки и отзывы Ozon ещё не загружены")
             if source_error:
                 errors.append("Данные 1С Ozon: " + str(source_error))
             if not source.get("source_sheet_id"):
