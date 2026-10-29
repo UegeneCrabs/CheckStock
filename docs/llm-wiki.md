@@ -83,6 +83,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 Выпуск из `master` через `dev-release`, тег, обязательный дамп PostgreSQL и
 обновление сервера описаны в [инструкции по релизам](releases.md).
+Для работы агента с выпуском используйте [checkstock-deploy](../.agents/skills/checkstock-deploy/SKILL.md).
 
 Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose --env-file .env -f deploy/docker-compose.yml up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
 
