@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     shm_size: 1gb
     security_opt:
-      - seccomp=./deploy/yandex-parser/seccomp_profile.json
+      - seccomp=./yandex-parser/seccomp_profile.json
     depends_on:
       db:
         condition: service_healthy

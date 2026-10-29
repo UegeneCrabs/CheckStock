@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     shm_size: 1gb
     security_opt: &app-security
-      - seccomp=./deploy/yandex-parser/seccomp_profile.json
+      - seccomp=./yandex-parser/seccomp_profile.json
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
