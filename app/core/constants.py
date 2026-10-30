@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 from enum import IntEnum, StrEnum
 from http import HTTPMethod as HTTPMethod
 from http import HTTPStatus as HTTPStatus
@@ -253,6 +253,25 @@ class OzonOrdersConfig:
 
 
 OZON_ORDERS: Final = OzonOrdersConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonSourceConfig:
+    columns: tuple[tuple[str, str], ...] = (
+        ("product_id", "артикулозон"),
+        ("tag", "тег"),
+        ("purchase_price", "себесруб"),
+        ("fulfillment_cost", "прочзатрруб"),
+        ("team_commission", "дрр"),
+    )
+    header_search_rows: int = 20
+    unmatched_example_limit: int = 10
+    not_ozon_key: str = "нетнаозон"
+    empty_tags: frozenset[str] = frozenset({"#N/A", "N/A", "-"})
+    week_pattern: str = r"^W\d+"
+
+
+OZON_SOURCE: Final = OzonSourceConfig()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -534,6 +553,8 @@ class OzonScenarioField(StrEnum):
     ACQUIRING_AMOUNT = "acquiring_amount"
     TEAM_PERCENT = "team_percent"
     TEAM_AMOUNT = "team_amount"
+    UNALLOCATED_PERCENT = "unallocated_percent"
+    UNALLOCATED_AMOUNT = "unallocated_amount"
     VAT_PERCENT = "vat_percent"
     VAT_AMOUNT = "vat_amount"
     USN_PERCENT = "usn_percent"
@@ -564,6 +585,7 @@ class OzonScenarioConfig:
         OzonScenarioField.BUYOUT,
         OzonScenarioField.ACQUIRING_PERCENT,
         OzonScenarioField.TEAM_PERCENT,
+        OzonScenarioField.UNALLOCATED_PERCENT,
         OzonScenarioField.VAT_PERCENT,
         OzonScenarioField.USN_PERCENT,
     )
@@ -586,6 +608,7 @@ class OzonMarginConfig:
         "advertising_amount",
         "acquiring_amount",
         "team_amount",
+        "unallocated_amount",
         "vat_amount",
         "usn_amount",
     )
@@ -603,6 +626,43 @@ class OzonMarginConfig:
 
 
 OZON_MARGIN: Final = OzonMarginConfig()
+
+
+class OzonCalendarField(StrEnum):
+    SELLER_PRICE = "seller_price"
+    PURCHASE = "purchase"
+    FULFILLMENT = "fulfillment"
+    COMMISSION = "commission_amount"
+    LOGISTICS = "logistics_amount"
+    STORAGE = "storage_amount"
+    ACQUIRING = "acquiring_amount"
+    TEAM = "team_amount"
+    UNALLOCATED = "unallocated_amount"
+    VAT = "vat_amount"
+    USN = "usn_amount"
+    BUYOUT = "buyout_percent"
+
+
+class OzonCalendarEventKind(StrEnum):
+    SOURCE = "source"
+    CORRECTION = "correction"
+    UNDO = "undo"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonCalendarConfig:
+    records_table: str = "economics_daily"
+    events_table: str = "economics_daily_events"
+    page_sizes: tuple[int, ...] = (20, 50, 100)
+    default_page_size: int = 50
+    article_max_length: int = 500
+    reason_min_length: int = 3
+    reason_max_length: int = 2000
+    source_actor: str = "ozon_margin_daily_sync"
+    signed_fields: tuple[OzonCalendarField, ...] = (OzonCalendarField.LOGISTICS, OzonCalendarField.STORAGE)
+
+
+OZON_CALENDAR: Final = OzonCalendarConfig()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -687,6 +747,63 @@ class OzonPricesConfig:
 
 
 OZON_PRICES: Final = OzonPricesConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonPriceChangesConfig:
+    api: str = "/api/unit-economics-1c/ozon/prices"
+    update_path: str = "/v1/product/import/prices"
+    history_limit: int = 10
+    updates_per_hour: int = 10
+    rate_window_seconds: int = 3600
+    write_attempts: int = 1
+    reason_max_length: int = 1000
+    currency: str = "RUB"
+
+
+OZON_PRICE_CHANGES: Final = OzonPriceChangesConfig()
+
+
+class OzonPriceChangeState(StrEnum):
+    PREPARED = "prepared"
+    BLOCKED = "blocked"
+    CHECKING = "checking"
+    SENDING = "sending"
+    VERIFYING = "verifying"
+    UNCERTAIN = "uncertain"
+    SUCCEEDED = "succeeded"
+    REJECTED = "rejected"
+    CHANGED = "changed"
+    EXPIRED = "expired"
+    UNCHANGED = "unchanged"
+    FAILED = "failed"
+
+
+class OzonPriceChangeIssue(StrEnum):
+    INCOMPLETE = "incomplete"
+    PRICE_UNAVAILABLE = "price_unavailable"
+    CURRENCY = "currency"
+    MIN_PRICE = "min_price"
+    OLD_PRICE = "old_price"
+    QUARANTINED = "quarantined"
+    FROZEN = "frozen"
+    RATE_LIMIT = "rate_limit"
+    ACCESS_DENIED = "access_denied"
+    UNAVAILABLE = "unavailable"
+    EXPIRED = "expired"
+    CHANGED = "changed"
+    REJECTED = "rejected"
+    WRITE_UNCERTAIN = "write_uncertain"
+    VERIFY_FAILED = "verify_failed"
+    INTERRUPTED = "interrupted"
+
+
+OZON_PRICE_CHANGE_PENDING: Final = (
+    OzonPriceChangeState.CHECKING,
+    OzonPriceChangeState.SENDING,
+    OzonPriceChangeState.VERIFYING,
+    OzonPriceChangeState.UNCERTAIN,
+)
 
 
 class OzonCommissionState(StrEnum):
@@ -782,6 +899,7 @@ class OzonReservationState(StrEnum):
 class OzonApiLimitsConfig:
     coordination_scope: str = "coordination"
     legacy_scope_prefix: str = "legacy:"
+    aggregate_budget_scope_prefix: str = "aggregate-budget:v1:"
     budget_cleanup_scope: str = "budget-cleanup"
     budget_retention_days: int = 30
     legacy_batch_size: int = 400
@@ -926,6 +1044,7 @@ class AdvertisingError(StrEnum):
     CAMPAIGN_DATE_OUTSIDE_PERIOD = "campaign_date_outside_period"
     INVENTORY_INCOMPLETE = "campaign_inventory_incomplete"
     REPORT_INCOMPLETE = "campaign_report_incomplete"
+    CAMPAIGN_LIMIT = "campaign_limit_exceeded"
     REPORT_MISSING_EXPENSES = "campaign_report_missing_expenses"
     UNKNOWN_CPO_SOURCE = "unknown_cpo_order_source"
     DATE_OUTSIDE_PERIOD = "advertising_date_outside_period"
@@ -1002,6 +1121,10 @@ class OzonAdvertisingConfig:
         AdvertisingKind.CPO_COMBO,
     )
     required_spend_kinds: tuple[AdvertisingKind, ...] = click_kinds + order_kinds
+
+    @property
+    def aggregate_report_paths(self) -> tuple[str, ...]:
+        return self.selected_path, self.all_products_path, self.daily_path
 
 
 OZON_ADVERTISING: Final = OzonAdvertisingConfig()
@@ -1121,8 +1244,168 @@ class DatabaseBackupConstants:
 DATABASE_BACKUP: Final = DatabaseBackupConstants()
 
 
+class OzonAnalyticsCommentKind(StrEnum):
+    COMPETITOR = "competitor"
+    DECISION = "decision"
+    NEXT = "next"
+
+
+class OzonAnalyticsRunState(StrEnum):
+    RUNNING = "running"
+    DEFERRED = "deferred"
+    FAILED = "failed"
+    COMPLETE = "complete"
+
+
+class OzonAnalyticsReason(StrEnum):
+    MISSING_SOURCE = "missing_source"
+    SUBSCRIPTION_REQUIRED = "subscription_required"
+    PARTIAL = "partial"
+    STALE = "stale"
+    NOT_CONFIGURED = "not_configured"
+    OBSERVED = "observed"
+    PROVISIONAL = "provisional"
+    TRANSPORT_ERROR = "transport_error"
+    RATE_LIMITED = "rate_limited"
+    QUOTA_DEFERRED = "quota_deferred"
+    CREDENTIALS_ERROR = "credentials_error"
+    ACCESS_DENIED = "access_denied"
+    API_REJECTED = "api_rejected"
+    MALFORMED_SOURCE = "malformed_source"
+    MAPPING_CONFLICT = "mapping_conflict"
+    REPEATED_PAGE = "repeated_page"
+    RUN_DEFERRED = "run_deferred"
+    LIMITER_REQUIRED = "limiter_required"
+    INACTIVE_USER = "inactive_user"
+    PRODUCT_NOT_FOUND = "product_not_found"
+    NOTE_NOT_FOUND = "note_not_found"
+    CURRENT_DAY_ONLY = "current_day_only"
+    CURRENT_WEEK_ONLY = "current_week_only"
+    INVALID_PERIOD = "invalid_period"
+    INVALID_FORECAST = "invalid_forecast"
+    WRITE_FAILED = "write_failed"
+    CONFLICT = "conflict"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonAnalyticsConfig:
+    pages: str = "/analytics/ozon"
+    api: str = "/api/analytics/ozon"
+    metric_identity: str = "fullArticle"
+    first_week: date = date(2000, 1, 3)
+    first_sales_day: date = date(2000, 1, 1)
+    week_days: int = 7
+    traffic_days: int = 4
+    history_weeks: int = 12
+    decision_weeks: int = 6
+    max_sales_days: int = 366
+    text_max_length: int = 4000
+    store_max_length: int = 100
+    article_max_length: int = 200
+    max_version: int = 2_147_483_646
+    hours: int = 24
+    max_d: float = 1_000_000
+    percent_factor: int = 100
+    money_precision: int = 2
+    stock_days_precision: int = 1
+    months_per_year: int = 12
+    backfill_months: int = 3
+    page_size: int = 1000
+    page_attempts: int = 3
+    max_source_rows: int = 1_000_000
+    max_counter: int = 9_223_372_036_854_775_807
+    max_response_bytes: int = 8_388_608
+    daily_attempt_budget: int = 40
+    budget_window_seconds: int = 86_400
+    interval_seconds: int = 3600
+    refresh_seconds: int = 21_600
+    generation_max_age_seconds: int = 259_200
+    run_attempt_budget: int = 8
+    run_timeout_seconds: int = 600
+    lease_grace_seconds: int = 60
+    method_minimum_spacing_seconds: int = 60
+    funnel_path: str = "/v1/analytics/data"
+    funnel_dimensions: tuple[str, ...] = ("sku",)
+    funnel_metrics: tuple[str, ...] = ("hits_tocart",)
+    product_stocks_path: str = "/v4/product/info/stocks"
+    all_visibility: str = "ALL"
+    source_timezone: str = "UTC"
+    scalar_metric_fields: tuple[str, ...] = (
+        "stock",
+        "stockDays",
+        "drr",
+        "roi",
+        "currentRoi",
+        "previousPrice",
+        "spend",
+        "yesterdayDrr",
+        "totalCtr",
+        "rating",
+        "goal",
+        "dayGoal",
+        "spp",
+        "wallet",
+        "price",
+        "coeff",
+        "fact",
+        "plan",
+        "forecast",
+        "difference",
+        "deviation",
+    )
+    indexed_metric_fields: tuple[str, ...] = ("impressions", "clicks", "ctr", "carts", "week")
+    funnel_source: str = "funnel"
+    transit_source: str = "transit"
+    recent_queue: str = "recent"
+    backfill_queue: str = "backfill"
+    stock_weekday: int = 0
+    stock_hour: int = 0
+    stock_minute: int = 5
+    sources_lock_prefix: str = "ozon-analytics-sources:"
+    stock_lock_prefix: str = "ozon-analytics-stock:"
+    subscription_markers: tuple[str, ...] = (
+        "premium plus subscription is required",
+        "requires premium plus subscription",
+        "требуется подписка premium plus",
+        "необходима подписка premium plus",
+    )
+    daily_quota_markers: tuple[str, ...] = (
+        "daily request limit exceeded",
+        "daily quota exceeded",
+        "суточный лимит запросов исчерпан",
+        "превышен суточный лимит запросов",
+    )
+
+
+OZON_ANALYTICS: Final = OzonAnalyticsConfig()
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class JobCatalog:
+    yandex_analytics_funnel: SyncJobMetadata = SyncJobMetadata(
+        name="yandex_analytics_funnel_sync",
+        title="Корзины Яндекс Маркета",
+        description="Загружает дневные toCart по исходным датам отчётов Маркета, с отдельной полнотой и признаком предварительных данных.",
+        schedule=None,
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.YANDEX_MARKET,),
+    )
+    yandex_customer_transit: SyncJobMetadata = SyncJobMetadata(
+        name="yandex_customer_transit_sync",
+        title="Возвраты от клиентов Яндекс Маркета",
+        description="Сохраняет полный снимок возвратов FBY всех кампаний магазина; ошибка сохраняет последний успешный снимок.",
+        schedule=None,
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.YANDEX_MARKET,),
+    )
+    yandex_ephemerides_stock: SyncJobMetadata = SyncJobMetadata(
+        name="yandex_ephemerides_stock_snapshot",
+        title="Недельный сток эфемерид ЯМ",
+        description="Фиксирует сохранённые FBS, FBY, ФФ и возвраты один раз в понедельник после 00:05 МСК.",
+        schedule="Понедельник, 00:05 МСК",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.YANDEX_MARKET,),
+    )
     database_backup: SyncJobMetadata = SyncJobMetadata(
         name="database_backup_google_drive",
         title="Резервная копия БД в Google Диск",
@@ -1342,6 +1625,22 @@ class JobCatalog:
         title="Дневные параметры маржи Ozon",
         description="Сохраняет цены, расходы и процент выкупа текущего дня для расчёта прибыли за период.",
         schedule="Каждый час",
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.OZON,),
+    )
+    ozon_analytics_sources: SyncJobMetadata = SyncJobMetadata(
+        name="ozon_analytics_sources_sync",
+        title="Источники аналитики Ozon",
+        description="Сохраняет текущие цели, возвраты от покупателей и дневные корзины Ozon с покрытием и контрольными точками.",
+        schedule=None,
+        scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.OZON,),
+    )
+    ozon_ephemerides_stock: SyncJobMetadata = SyncJobMetadata(
+        name="ozon_ephemerides_stock_snapshot",
+        title="Недельный сток эфемерид Ozon",
+        description="Неизменно фиксирует сохранённые остатки в понедельник; пропущенные недели не восстанавливает.",
+        schedule=None,
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
     )
@@ -1607,6 +1906,7 @@ class GoogleWeekConstants:
     max_payload_bytes: int = 1_800_000
     max_cells: int = 20
     max_sheet_name: int = 100
+    diagnostic_sample_size: int = 3
     max_url_length: int = 2048
     freeze_anchor_column: int = 8
     days_per_week: int = 7
@@ -1787,6 +2087,61 @@ class WebConstants:
 WEB: Final = WebConstants()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class YandexAnalyticsConstants:
+    marketplace: str = "YANDEX MARKET"
+    text_limit: int = 4_000
+    version_limit: int = 2_147_483_646
+    hours: int = 24
+    week_days: int = 7
+    traffic_days: int = 4
+    max_days: int = 366
+    history_weeks: int = 12
+    decision_weeks: int = 6
+    funnel_recent_days: int = 8
+    first_week: date = date(2000, 1, 3)
+    first_day: date = date(2000, 1, 1)
+    diagnostic_value_limit: int = 120
+    shipment_statuses: frozenset[str] = frozenset(
+        {
+            "CREATED",
+            "RECEIVED",
+            "IN_TRANSIT",
+            "READY_FOR_PICKUP",
+            "PICKED",
+            "LOST",
+            "EXPIRED",
+            "CANCELLED",
+            "FULFILMENT_RECEIVED",
+            "PREPARED_FOR_UTILIZATION",
+            "NOT_IN_DEMAND",
+            "UTILIZED",
+            "READY_FOR_EXPROPRIATION",
+            "RECEIVED_FOR_EXPROPRIATION",
+        }
+    )
+    return_instance_statuses: frozenset[str] = frozenset(
+        {
+            "CREATED",
+            "RECEIVED",
+            "IN_TRANSIT",
+            "READY_FOR_PICKUP",
+            "PICKED",
+            "RECEIVED_ON_FULFILLMENT",
+            "CANCELLED",
+            "LOST",
+            "UTILIZED",
+            "PREPARED_FOR_UTILIZATION",
+            "EXPROPRIATED",
+            "NOT_IN_DEMAND",
+        }
+    )
+    moving_statuses: frozenset[str] = frozenset({"RECEIVED", "IN_TRANSIT"})
+
+
+YANDEX_ANALYTICS: Final = YandexAnalyticsConstants()
+
+
 class OzonHistoryField(StrEnum):
     ORDERS = "orders"
     STOCK = "stock"
@@ -1826,6 +2181,19 @@ class JobScheduleRule:
 
 JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(
+        name=JOBS.yandex_analytics_funnel.name, interval_setting="yandex_analytics_funnel_interval_seconds"
+    ),
+    JobScheduleRule(
+        name=JOBS.yandex_customer_transit.name, interval_setting="yandex_analytics_transit_interval_seconds"
+    ),
+    JobScheduleRule(
+        name=JOBS.yandex_ephemerides_stock.name,
+        kind=ScheduleKind.WEEKLY,
+        hours=(EPHEMERIDES_STOCK_SCHEDULE.hour,),
+        minute=EPHEMERIDES_STOCK_SCHEDULE.minute,
+        weekdays=(EPHEMERIDES_STOCK_SCHEDULE.weekday,),
+    ),
+    JobScheduleRule(
         name=JOBS.database_backup.name, kind=ScheduleKind.DAILY, hours=(DATABASE_BACKUP.hour_msk,)
     ),
     JobScheduleRule(name=JOBS.wb_standard_costs.name),
@@ -1862,6 +2230,14 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.ozon_prices.name, seconds=OZON_PRICES.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_buyout.name, seconds=OZON_CABINET.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_margin.name, seconds=OZON_MARGIN.interval_seconds),
+    JobScheduleRule(name=JOBS.ozon_analytics_sources.name, seconds=OZON_ANALYTICS.interval_seconds),
+    JobScheduleRule(
+        name=JOBS.ozon_ephemerides_stock.name,
+        kind=ScheduleKind.WEEKLY,
+        hours=(OZON_ANALYTICS.stock_hour,),
+        minute=OZON_ANALYTICS.stock_minute,
+        weekdays=(OZON_ANALYTICS.stock_weekday,),
+    ),
     JobScheduleRule(
         name=JOBS.ozon_logistics.name, kind=ScheduleKind.DAILY, hours=(OZON_LOGISTICS.run_hour_msk,)
     ),

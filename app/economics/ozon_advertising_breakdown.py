@@ -124,19 +124,29 @@ async def cpc_snapshot(
     facts: list[AdvertisingFact] = []
     corrections: list[AdvertisingCorrection] = []
     recent = period.start >= completed_period().end
-    daily = None if recent else await client.daily(period)
+    saved_traffic = await client.saved_product_traffic(period, ids) if not recent and ids else None
+    daily = None if recent or saved_traffic is not None or not ids else await client.daily(period)
     if daily is not None and any(not period.start <= row.day <= period.end for row in daily.rows):
         raise ValueError(AdvertisingError.CAMPAIGN_DATE_OUTSIDE_PERIOD)
     if daily is not None and any(row.campaign_id not in inventory for row in daily.rows):
         raise ValueError(AdvertisingError.INVENTORY_INCOMPLETE)
     historical_ids = {row.campaign_id for row in daily.rows} if daily is not None else set()
-    for offset in range(0, len(ids), OZON_ADVERTISING.campaigns_per_report):
-        batch = ids[offset : offset + OZON_ADVERTISING.campaigns_per_report]
-        traffic = (
-            await client.product_traffic(period, batch)
-            if recent
-            else await client.saved_product_traffic(period, batch)
+    batches = (
+        (ids,)
+        if ids and (recent or saved_traffic is not None)
+        else tuple(
+            ids[offset : offset + OZON_ADVERTISING.campaigns_per_report]
+            for offset in range(0, len(ids), OZON_ADVERTISING.campaigns_per_report)
         )
+    )
+    for batch in batches:
+        traffic = saved_traffic
+        if traffic is None:
+            traffic = (
+                await client.product_traffic(period, batch)
+                if recent
+                else await client.saved_product_traffic(period, batch)
+            )
         if traffic is not None:
             facts.extend(
                 AdvertisingFact(

@@ -49,6 +49,7 @@ def daily(value: OzonMarginDay, net_orders: int | None) -> OzonProfitDay:
         commission_value=number(inputs.commission_amount),
         acquiring_value=number(inputs.acquiring_amount),
         team_commission_value=number(inputs.team_amount),
+        unallocated_value=number(inputs.unallocated_amount),
         vat_value=number(inputs.vat_amount),
         usn_value=number(inputs.usn_amount),
         logistics=number(inputs.logistics_amount),

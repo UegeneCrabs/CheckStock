@@ -38,11 +38,18 @@
                 <div class="ue1cs-field-group-head"><strong>Расходы и налоги</strong><span>Ставки для расчёта юнит-экономики</span></div>
                 <div class="ue1cs-fields" data-ozon-fields></div>
                 <p class="ozon-settings-help" data-ozon-team-note></p>
-                <p class="ozon-settings-help">Пустое поле — ставка не задана. Ноль — явное отсутствие расхода. Значения используются в калькуляторе, марже и целевой цене Ozon.</p>
+                <p class="ozon-settings-help">Прочее нераспределённое задаётся для каждого кабинета: цена селлера × процент / 100 вычитается из чистой прибыли. Начальное значение — 0%. Для остальных ставок пустое поле означает, что ставка не задана. Ноль — явное отсутствие расхода. Значения используются в калькуляторе, марже и целевой цене Ozon.</p>
                 <p data-ozon-status role="status" aria-live="polite"></p>
                 <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить</button><button type="button" data-ozon-reset>Отменить изменения</button></div>
+            </form>
+            <form class="ue1cs-field-group" data-ozon-section="forecast">
+                <div class="ue1cs-field-group-head"><strong>Почасовой прогноз Ozon</strong><span>Собственные коэффициенты D кабинета · МСК</span></div>
+                <div class="ue1cs-fields" data-ozon-fields></div>
+                <p class="ozon-settings-help">Прогноз товарооборота = сегодняшний товарооборот × D текущего часа по Москве. Пустое поле — коэффициент не задан, прогноз и отклонения показываются как «—». Ноль сохраняется как заданное значение. Коэффициенты других площадок не используются.</p>
+                <p data-ozon-status role="status" aria-live="polite"></p>
+                <div class="ue1cs-card-foot"><button type="submit" disabled>Сохранить прогноз</button><button type="button" data-ozon-reset>Отменить изменения</button></div>
             </form>
         </div>
     </article>
 </section>
-<script src="/static/economics/ozon/settings.js?v=20261029-boost"></script>
+<script src="/static/economics/ozon/settings.js?v=20261030-unallocated"></script>

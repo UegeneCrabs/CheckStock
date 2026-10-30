@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.access.resources import accessible_stores
+from app.core.constants import OZON_ANALYTICS, Marketplace
 from app.dto.identity import SectionName, User
 
 S = SectionName
@@ -14,7 +15,17 @@ STOCK_SECTIONS = (
     S.STOCK_OPERATIONS,
 )
 UNIT_ECONOMICS_SECTIONS = (S.UNIT_ECONOMICS_WB, S.UNIT_ECONOMICS_OZON, S.UNIT_ECONOMICS_YANDEX)
-ANALYTICS_SECTIONS = (S.ANALYZER, S.ANALYTICS_SALES_API, S.EPHEMERIDES)
+ANALYTICS_SECTIONS = (
+    S.ANALYZER,
+    S.ANALYTICS_SALES_API,
+    S.EPHEMERIDES,
+    S.YANDEX_ANALYZER,
+    S.YANDEX_EPHEMERIDES,
+    S.YANDEX_SALES_API,
+    S.OZON_ANALYZER,
+    S.OZON_EPHEMERIDES,
+    S.OZON_SALES_API,
+)
 REPORT_SECTIONS = (
     S.REPORT_UNIT_PROFIT,
     S.REPORT_SPP,
@@ -35,6 +46,9 @@ SECTION_GROUPS = (
     ("Администрирование", (S.ADMIN_USERS, S.ADMIN_GOOGLE_EXPORT, S.ADMIN_INTEGRATIONS)),
 )
 SECTION_LABELS = {
+    S.YANDEX_ANALYZER: "Аналитика · Анализатор ЯМ",
+    S.YANDEX_EPHEMERIDES: "Аналитика · Эфемериды ЯМ",
+    S.YANDEX_SALES_API: "Аналитика · Продажи по API ЯМ",
     S.REPORT_WB_CONDITIONS: "Расходы без ИУ · WB",
     S.EPHEMERIDES: "Аналитика · Эфемериды WB",
     S.FINANCE_YANDEX: "Финансовые отчёты · Яндекс Маркет",
@@ -64,6 +78,12 @@ SECTION_LABELS = {
     S.ADMIN_INTEGRATIONS: "API-ключи и фоновые выгрузки",
 }
 SECTION_PATHS = {
+    S.OZON_ANALYZER: OZON_ANALYTICS.pages + "/analyzer",
+    S.OZON_EPHEMERIDES: OZON_ANALYTICS.pages + "/ephemerides",
+    S.OZON_SALES_API: OZON_ANALYTICS.pages + "/sales-api",
+    S.YANDEX_ANALYZER: "/analytics/yandex-market/analyzer",
+    S.YANDEX_EPHEMERIDES: "/analytics/yandex-market/ephemerides",
+    S.YANDEX_SALES_API: "/analytics/yandex-market/sales-api",
     S.REPORT_WB_CONDITIONS: "/sales/unit-economics-1c/reports/standard-costs",
     S.EPHEMERIDES: "/analytics/ephemerides",
     S.FINANCE_YANDEX: "/finance-reports/yandex",
@@ -93,6 +113,9 @@ SECTION_PATHS = {
     S.ADMIN_INTEGRATIONS: "/admin/integrations",
 }
 SECTION_DESCRIPTIONS = {
+    S.YANDEX_ANALYZER: "Каталог, недельные заказы, эффективность и записи Яндекс Маркета.",
+    S.YANDEX_EPHEMERIDES: "Недели, снимки остатков и комментарии Яндекс Маркета.",
+    S.YANDEX_SALES_API: "Заказы и отмены Яндекс Маркета по датам.",
     S.REPORT_WB_CONDITIONS: "Сравнение калькулятора с тарифами WB по складским остаткам.",
     S.EPHEMERIDES: "Сравнение недель WB, оборот и комментарии с историей изменений.",
     S.FINANCE_YANDEX: "Финансовый итог целого магазина: реализация, расходы, закупка и выплаты.",
@@ -142,6 +165,12 @@ SECTION_PARENTS = {
     },
 }
 SECTION_MARKETPLACES = {
+    S.OZON_ANALYZER: Marketplace.OZON,
+    S.OZON_EPHEMERIDES: Marketplace.OZON,
+    S.OZON_SALES_API: Marketplace.OZON,
+    S.YANDEX_ANALYZER: "YANDEX MARKET",
+    S.YANDEX_EPHEMERIDES: "YANDEX MARKET",
+    S.YANDEX_SALES_API: "YANDEX MARKET",
     S.REPORT_WB_CONDITIONS: "WB",
     S.EPHEMERIDES: "WB",
     S.FINANCE_YANDEX: "YANDEX MARKET",
@@ -166,6 +195,20 @@ def _under(path: str, prefix: str) -> bool:
 def section_for_path(path: str) -> SectionName | None:
     path = path.rstrip("/") or "/"
     for prefix, section in (
+        (OZON_ANALYTICS.pages + "/analyzer", S.OZON_ANALYZER),
+        (OZON_ANALYTICS.api + "/analyzer", S.OZON_ANALYZER),
+        (OZON_ANALYTICS.api + "/settings", S.OZON_ANALYZER),
+        (OZON_ANALYTICS.pages + "/ephemerides", S.OZON_EPHEMERIDES),
+        (OZON_ANALYTICS.api + "/ephemerides", S.OZON_EPHEMERIDES),
+        (OZON_ANALYTICS.pages + "/sales-api", S.OZON_SALES_API),
+        (OZON_ANALYTICS.api + "/sales-api", S.OZON_SALES_API),
+        ("/analytics/yandex-market/analyzer", S.YANDEX_ANALYZER),
+        ("/api/analytics/yandex-market/analyzer", S.YANDEX_ANALYZER),
+        ("/api/analytics/yandex-market/settings", S.YANDEX_ANALYZER),
+        ("/analytics/yandex-market/ephemerides", S.YANDEX_EPHEMERIDES),
+        ("/api/analytics/yandex-market/ephemerides", S.YANDEX_EPHEMERIDES),
+        ("/analytics/yandex-market/sales-api", S.YANDEX_SALES_API),
+        ("/api/analytics/yandex-market/sales-api", S.YANDEX_SALES_API),
         ("/sales/unit-economics-1c/reports/standard-costs", S.REPORT_WB_CONDITIONS),
         ("/api/unit-economics-1c/reports/standard-costs", S.REPORT_WB_CONDITIONS),
         ("/finance-reports/yandex", S.FINANCE_YANDEX),
@@ -232,6 +275,9 @@ def landing_path(user: User | None) -> str:
 
 def active_section(active: str) -> SectionName | None:
     return {
+        "yandex_analyzer": S.YANDEX_ANALYZER,
+        "yandex_ephemerides": S.YANDEX_EPHEMERIDES,
+        "yandex_sales_api": S.YANDEX_SALES_API,
         "finance_yandex": S.FINANCE_YANDEX,
         "analytics_sales_api": S.ANALYTICS_SALES_API,
         "analyzer": S.ANALYZER,

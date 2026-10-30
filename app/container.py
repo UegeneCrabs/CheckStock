@@ -10,11 +10,14 @@ from app.application.database_backup import DatabaseBackupService
 from app.application.fbo_stock import FboStockService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
+from app.application.ozon_analytics import OzonAnalyticsService
 from app.application.ozon_cabinet import OzonCabinetService
+from app.application.ozon_calendar import OzonCalendarService
 from app.application.ozon_history import OzonHistoryService
 from app.application.ozon_limits import OzonLimitsService
 from app.application.ozon_logistics import OzonLogisticsService
 from app.application.ozon_margin_service import OzonMarginService
+from app.application.ozon_price_changes import OzonPriceChangeService
 from app.application.ozon_promotion_entry import OzonPromotionEntryService
 from app.application.ozon_promotions import OzonPromotionsService
 from app.application.ozon_related import OzonRelatedService
@@ -26,12 +29,15 @@ from app.application.stock import StockMovementService
 from app.application.supply_arrival_stock import SupplyArrivalStockService
 from app.application.wb_product_rating import WbProductRatingService
 from app.application.wb_standard_costs import WbStandardCostsService
+from app.application.yandex_analytics import YandexAnalyticsService
 from app.config import settings
 from app.core.constants import OZON_PRICES, OZON_PROMOTIONS, TIME, OzonPriceSource, OzonPromotionStatus
+from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.orders import OrderPeriod
 from app.dto.ozon_buyout import OzonBuyoutEvidence
 from app.dto.ozon_economics import OzonProductsQuery
 from app.dto.ozon_logistics import ReturnsFilter
+from app.dto.ozon_price_changes import OzonPriceChangeBusyError, OzonPriceChangeEvidence
 from app.dto.ozon_prices import PriceIdentity, PriceValues, WebsiteEvidence
 from app.dto.ozon_promotion_entry import OzonEntryBusyError, OzonEntryEvidence, OzonEntryRefreshedPrices
 from app.dto.ozon_related import OzonModelProducts
@@ -47,10 +53,13 @@ from app.infrastructure.fbo_stock_repository import FboStockRepository
 from app.infrastructure.finance_repository import FinanceRepository
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
+from app.infrastructure.ozon_analytics_repository import OzonAnalyticsRepository
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
+from app.infrastructure.ozon_calendar_repository import OzonCalendarRepository
 from app.infrastructure.ozon_history_repository import OzonHistoryRepository
 from app.infrastructure.ozon_limits_repository import OzonLimitsRepository
 from app.infrastructure.ozon_margin_repository import OzonMarginRepository
+from app.infrastructure.ozon_price_changes_repository import OzonPriceChangeRepository
 from app.infrastructure.ozon_promotion_entry_repository import OzonPromotionEntryRepository
 from app.infrastructure.ozon_reports_repository import OzonReportsRepository
 from app.infrastructure.ozon_tariff_catalog import CATALOG
@@ -64,10 +73,12 @@ from app.infrastructure.wb_hourly_price_repository import (
 from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_catalog_items
 from app.infrastructure.wb_product_rating_repository import SqlAlchemyWbRatingWriter
 from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
+from app.infrastructure.yandex_analytics_repository import YandexAnalyticsRepository
 from app.jobs.async_locks import hold
 from app.jobs.locks import SyncJobBusyError
 from app.orders.ozon_async import sync_configured_store
 from app.ozon.async_logistics import AsyncLogisticsClient
+from app.ozon.async_price_changes import AsyncPriceChangeClient
 from app.ozon.async_promotions import AsyncPromotionsClient
 from app.ozon.async_storage import AsyncStorageClient
 from app.ozon.price_normalizer import fbo_commission_observation, seller_observation, website_observation
@@ -90,6 +101,10 @@ if TYPE_CHECKING:
 
 def ozon_limits_service(database: "AsyncDatabase") -> OzonLimitsService:
     return OzonLimitsService(OzonLimitsRepository(database))
+
+
+def ozon_analytics_service(database: "AsyncDatabase") -> OzonAnalyticsService:
+    return OzonAnalyticsService(OzonAnalyticsRepository(database))
 
 
 def ozon_reports_service(database: "AsyncDatabase") -> OzonReportsService:
@@ -159,6 +174,9 @@ class ApplicationContainer:
         )
         self.wb_daily_price_closer = SqlAlchemyDailyPriceCloser(self._database_path)
         self.wb_product_rating = wb_product_rating_service(self._database_path)
+        self.yandex_analytics = YandexAnalyticsService(
+            YandexAnalyticsRepository(), lambda: datetime.now(MOSCOW_TIMEZONE)
+        )
 
     def _identity_unit_of_work(self) -> SqlAlchemyIdentityUnitOfWork:
         database = database_for_path(self._database_path())
@@ -201,6 +219,10 @@ def ozon_storage_service(resources: "AsyncResources", store: str) -> OzonStorage
 
 def ozon_history_service(resources: "AsyncResources") -> OzonHistoryService:
     return OzonHistoryService(OzonHistoryRepository(resources.database))
+
+
+def ozon_calendar_service(resources: "AsyncResources") -> OzonCalendarService:
+    return OzonCalendarService(OzonCalendarRepository(resources.database), lambda: datetime.now(UTC))
 
 
 def ozon_related_service(resources: "AsyncResources", store: str) -> OzonRelatedService:
@@ -269,6 +291,36 @@ def ozon_promotion_entry_service(resources: "AsyncResources", store: str) -> Ozo
         ozon_promotions_service(resources, store),
         OzonCabinetRepository(resources.database).boost_settings,
         ozon_tariff_service(resources, store).calculate,
+        lock,
+        refresh,
+        lambda: datetime.now(UTC),
+    )
+
+
+def ozon_price_change_service(resources: "AsyncResources", store: str) -> OzonPriceChangeService:
+    from app.economics.ozon_price_changes import observations, price_values
+
+    @asynccontextmanager
+    async def lock(article: str) -> AsyncIterator[None]:
+        try:
+            async with hold(OZON_PROMOTIONS.entry_lock_prefix + store + ":" + article, resources.database):
+                yield
+        except SyncJobBusyError:
+            raise OzonPriceChangeBusyError() from None
+
+    async def refresh(evidence: OzonPriceChangeEvidence) -> PriceValues:
+        async with hold(OZON_PRICES.lock_prefix + store, resources.database, wait=True):
+            await resources.prices.close_days(store, evidence.received_at)
+            await resources.prices.save(store, observations(evidence))
+            await resources.commissions.save(
+                store, (fbo_commission_observation(evidence.prices, evidence.received_at),)
+            )
+        return price_values(evidence)
+
+    return OzonPriceChangeService(
+        OzonPriceChangeRepository(resources.database),
+        AsyncPriceChangeClient(resources.http, get_order_credentials(store)),
+        ozon_promotions_service(resources, store),
         lock,
         refresh,
         lambda: datetime.now(UTC),

@@ -17,7 +17,7 @@ window.OzonEconomicsUI = (() => {
     const marginLabels = {
         seller_price: 'Цена с учётом акции', purchase: 'Закупка', fulfillment: 'ФФ', commission_amount: 'Комиссия Ozon',
         logistics_amount: 'Логистика на штуку', storage_amount: 'Хранение на штуку', advertising_amount: 'Реклама на штуку',
-        acquiring_amount: 'Эквайринг', team_amount: 'Комиссия компании', vat_amount: 'НДС', usn_amount: 'УСН',
+        acquiring_amount: 'Эквайринг', team_amount: 'Комиссия компании', unallocated_amount: 'Прочее нераспределённое', vat_amount: 'НДС', usn_amount: 'УСН',
         snapshot: 'Нет дневного снимка параметров', orders_count: 'Количество заказов', buyout_percent: 'Процент выкупа',
         advertising_spend: 'Расходы на рекламу',
         orders_partial: 'Выгрузка заказов устарела', advertising_partial: 'Реклама загружена не полностью или устарела',
@@ -69,12 +69,13 @@ window.OzonEconomicsUI = (() => {
         };
     }
 
-    window.CheckStockPage.register(url => url.pathname === '/sales/unit-economics-1c/ozon', (context, url) => {
+    window.CheckStockPage.register(url => url.pathname === '/sales/unit-economics-1c/ozon', async (context, url) => {
         const page = {
             title: 'CheckStock — Юнит-экономика 1С — Ozon', section: 'unit_economics_1c',
             contentClass: 'content--unit-1c', alertMarketplace: 'OZON',
         };
         if (!context.economics_preview) return { ...page, values: {}, template: '<section class="panel"><h1>Раздел Ozon в разработке</h1></section>' };
+        if (url.searchParams.get('calendar') === '1') return window.OzonCalendar.page(context, page);
         const periodQuery = new URLSearchParams();
         url.searchParams.forEach((value, key) => {
             if (['period_days', 'date_from', 'date_to'].includes(key)) periodQuery.append(key, value);
@@ -84,6 +85,7 @@ window.OzonEconomicsUI = (() => {
         const config = {
             userKey: String(context.user.id), storageNamespace: 'checkstock.unit-economics-ozon', marketplaceLabel: 'Ozon',
             placeholderMode: true, ozonPreview: true, periodSelection: true, canEdit: false,
+            canChangeOzonPrices: context.user.is_active === true,
             periodDays: [7, 14, 30].includes(periodDays) ? periodDays : 7,
             periodMode: (periodQuery.get('date_from') || '').trim() || (periodQuery.get('date_to') || '').trim() ? 'custom' : 'preset',
             stores: context.stores.filter(store => store.marketplaces.includes('OZON')),
@@ -92,7 +94,7 @@ window.OzonEconomicsUI = (() => {
         };
         return { ...page, values: {
             unit_1c_config: JSON.stringify(config).replace(/</g, '\\u003c'), marketplace_name: 'Ozon',
-            marketplace_label: 'Ozon', calendar_link: '', loading_description: 'Загружаем товары, отзывы и остатки из базы данных.', unit_1c_notice: '',
+            marketplace_label: 'Ozon', calendar_link: '<a class="ue1c-ghost-button" id="ue1c-calendar-link" href="/sales/unit-economics-1c/ozon?calendar=1">Параметры по дням</a>', loading_description: 'Загружаем товары, отзывы и остатки из базы данных.', unit_1c_notice: '',
         } };
     });
     return { product, marginLabels };

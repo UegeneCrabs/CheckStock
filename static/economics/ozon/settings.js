@@ -23,6 +23,7 @@
         expenses: [
             ['acquiring_percent', 'Эквайринг', 0, 100, false],
             ['team_commission_percent', 'Комиссия команды · из Google Sheets', 0, 100, false],
+            ['unallocated_percent', 'Прочее нераспределённое', 0, 100, true],
             ['vat_percent', 'Налог НДС', 0, 100, false],
             ['usn_percent', 'Налог УСН', 0, 100, false],
         ],
@@ -117,7 +118,11 @@
     function draw(form) {
         const key = form.dataset.ozonSection;
         const values = selected.values[key];
-        form.querySelector('[data-ozon-fields]').replaceChildren(...definitions[key].map(definition => field(
+        if (key === 'forecast') {
+            const saved = new Map((values?.hourly_d_coefficients || []).map(item => [item.hour, item.value]));
+            form.querySelector('[data-ozon-fields]').replaceChildren(...Array.from({length: 24}, (_, hour) =>
+                field(['hour_' + hour, String(hour).padStart(2, '0') + ':00 МСК', 0, 1000000, false, 'D'], saved.get(hour))));
+        } else form.querySelector('[data-ozon-fields]').replaceChildren(...definitions[key].map(definition => field(
             definition, definition[0] === 'team_commission_percent' ? selected.team_commission.percent : values[definition[0]],
         )));
         if (key === 'goals') {
@@ -169,11 +174,12 @@
         form.addEventListener('submit', async event => {
             event.preventDefault();
             if (busy || !selected || !dirty.has(key) || !form.reportValidity()) return;
-            const values = key === 'goals' ? { target_roi_by_code: {} } : {};
+            const values = key === 'goals' ? { target_roi_by_code: {} } : key === 'forecast' ? { hourly_d_coefficients: [] } : {};
             form.querySelectorAll('input').forEach(input => {
                 if (input.readOnly) return;
                 const value = input.value === '' ? null : Number(input.value);
-                if (input.name.startsWith('roi_')) values.target_roi_by_code[input.name.slice(4)] = value;
+                if (key === 'forecast') values.hourly_d_coefficients.push({hour: Number(input.name.slice(5)), value});
+                else if (input.name.startsWith('roi_')) values.target_roi_by_code[input.name.slice(4)] = value;
                 else values[input.name] = value;
             });
             const status = form.querySelector('[data-ozon-status]');

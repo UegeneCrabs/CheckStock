@@ -39,6 +39,7 @@ from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.inbound_read_repository import InboundReadRepository
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
+from app.infrastructure.ozon_calendar_repository import OzonCalendarRepository
 from app.infrastructure.ozon_margin_repository import OzonMarginRepository
 from app.infrastructure.ozon_newness_repository import OzonNewnessRepository
 from app.ozon import drr, tokens
@@ -385,31 +386,41 @@ class OzonEconomicsRepository:
                 query.stores, query.period_from, query.period_to
             )
         }
+        current_snapshots = {
+            (value.store_slug, value.article): value
+            for value in await OzonCalendarRepository(self.database).apply(
+                tuple(
+                    ozon_margin.snapshot(
+                        OzonMarginSource(
+                            store_slug=product.store_slug,
+                            article=product.article,
+                            mp_product_id=product.mp_product_id,
+                            purchase_price=Decimal(str(product.details.purchase_cost))
+                            if product.details.purchase_cost is not None
+                            else None,
+                            fulfillment_cost=Decimal(str(product.details.fulfillment_cost))
+                            if product.details.fulfillment_cost is not None
+                            else None,
+                            team_commission_percent=Decimal(str(product.details.team_commission_percent))
+                            if product.details.team_commission_percent is not None
+                            else None,
+                        ),
+                        product.price,
+                        product.commission,
+                        product.logistics,
+                        product.storage,
+                        product.cabinet,
+                        datetime.now(UTC),
+                    )
+                    for product in products
+                    if product.cabinet is not None
+                )
+            )
+        }
         enriched = []
         for product in products:
             assert product.cabinet is not None
-            saved = ozon_margin.snapshot(
-                OzonMarginSource(
-                    store_slug=product.store_slug,
-                    article=product.article,
-                    mp_product_id=product.mp_product_id,
-                    purchase_price=Decimal(str(product.details.purchase_cost))
-                    if product.details.purchase_cost is not None
-                    else None,
-                    fulfillment_cost=Decimal(str(product.details.fulfillment_cost))
-                    if product.details.fulfillment_cost is not None
-                    else None,
-                    team_commission_percent=Decimal(str(product.details.team_commission_percent))
-                    if product.details.team_commission_percent is not None
-                    else None,
-                ),
-                product.price,
-                product.commission,
-                product.logistics,
-                product.storage,
-                product.cabinet,
-                datetime.now(UTC),
-            )
+            saved = current_snapshots[(product.store_slug, product.article)]
             current_ads = spend_summary(
                 AdvertisingPeriod(start=today, end=today),
                 today_indexes[product.store_slug].article(product.article),

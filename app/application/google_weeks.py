@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -30,6 +31,24 @@ from app.integrations import google_week_plans as plans
 from app.integrations.google_week_client import GoogleWeekClient
 from app.jobs import async_locks
 from app.jobs.locks import SyncJobBusyError
+
+logger = logging.getLogger(__name__)
+
+
+def log_incomplete(report: WeekReport, action: WeekAction) -> None:
+    problems = report.issues + report.missing_data + report.zero_filled
+    samples = [item.model_dump(mode="json") for item in problems[: GOOGLE_WEEK.diagnostic_sample_size]]
+    missing_days = sorted({day.isoformat() for item in problems for day in item.missing_days})
+    logger.warning(
+        "google_week_incomplete marketplace=%s action=%s issues=%s missing=%s zero_filled=%s missing_days=%s samples=%s",
+        report.marketplace,
+        action,
+        len(report.issues),
+        len(report.missing_data),
+        len(report.zero_filled),
+        missing_days,
+        samples,
+    )
 
 
 def job_name(marketplace: Marketplace) -> str:
@@ -487,6 +506,7 @@ class GoogleWeeks:
                 try:
                     report = await self.run(profile, action, now)
                     if not report.complete:
+                        log_incomplete(report, action)
                         errors.append(f"{action.value}:{WeekIssue.MISSING_DATA.value}")
                 except WeekError as error:
                     errors.append(f"{action.value}:{error.problem.code.value}")

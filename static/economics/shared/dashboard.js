@@ -2735,6 +2735,22 @@
             if (window.OzonAdvertisingUI) window.OzonAdvertisingUI.renderCalculator(root, product);
             if (window.OzonLogisticsUI) window.OzonLogisticsUI.render(root, product);
             if (window.OzonCalculatorUI) window.OzonCalculatorUI.render(root, product);
+            if (window.OzonPriceSaveUI) window.OzonPriceSaveUI.render(root, product, {
+                canEdit: config.canChangeOzonPrices === true,
+                completed: function (operation) {
+                    if (state.selected !== product.id) return;
+                    if (operation.refreshed) {
+                        product.price = operation.refreshed;
+                        window.OzonPricesUI.reset(root, product);
+                    }
+                    if (window.OzonPromotionsUI) {
+                        window.OzonPromotionsUI.clear(root);
+                        window.OzonPromotionsUI.render(root, product);
+                    }
+                    loadProducts({ silent: true, refreshDetail: true });
+                    showToast('Предельная цена подтверждена Ozon');
+                },
+            });
             if (window.OzonRelatedUI) window.OzonRelatedUI.render(root, product, function (items) {
                 renderGluedProducts(product, items);
             });
@@ -3026,6 +3042,7 @@
         }, 5000);
     }
     function closeDetail() {
+        if (config.ozonPreview && window.OzonPriceSaveUI) window.OzonPriceSaveUI.clear(root);
         if (config.ozonPreview && window.OzonPromotionsUI) window.OzonPromotionsUI.clear(root);
         if (config.ozonPreview && window.OzonPricesUI) window.OzonPricesUI.clear(root);
         if (config.ozonPreview && window.OzonLogisticsUI) window.OzonLogisticsUI.clear(root);
@@ -3212,6 +3229,10 @@
         nodes.confirmSend.focus();
     }
     async function saveSelectedPrice() {
+        if (config.ozonPreview) {
+            if (window.OzonPriceSaveUI) window.OzonPriceSaveUI.preview(root);
+            return;
+        }
         var product = productsById[state.selected];
         if (!product || !canEdit) {
             if (!canEdit) showToast('Нет права изменять цены');

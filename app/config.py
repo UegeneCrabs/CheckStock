@@ -160,6 +160,28 @@ class DatabaseBackupSettings(BaseModel):
 
 
 class Settings(BaseModel):
+    yandex_analytics_funnel_history_refresh_seconds: int = Field(
+        default_factory=lambda: _env_int(
+            "CHECKSTOCK_YANDEX_ANALYTICS_FUNNEL_HISTORY_REFRESH_SECONDS", 14400, minimum=1
+        ),
+        ge=1,
+    )
+    yandex_analytics_funnel_interval_seconds: int = Field(
+        default_factory=lambda: _env_int(
+            "CHECKSTOCK_YANDEX_ANALYTICS_FUNNEL_INTERVAL_SECONDS", 900, minimum=1
+        ),
+        ge=1,
+    )
+    yandex_analytics_transit_interval_seconds: int = Field(
+        default_factory=lambda: _env_int(
+            "CHECKSTOCK_YANDEX_ANALYTICS_TRANSIT_INTERVAL_SECONDS", 14400, minimum=1
+        ),
+        ge=1,
+    )
+    yandex_analytics_startup_delay_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_YANDEX_ANALYTICS_STARTUP_DELAY_SECONDS", 180, minimum=0),
+        ge=0,
+    )
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
 
     wb_standard_costs: WbStandardCostsSettings = Field(default_factory=WbStandardCostsSettings)
@@ -183,6 +205,9 @@ class Settings(BaseModel):
     ozon_promotions_cache_seconds: int = Field(default=300, ge=0)
     ozon_promotions_timeout_seconds: int = Field(default=60, ge=1)
     ozon_promotion_entry_preview_seconds: int = Field(default=180, ge=10)
+    ozon_price_change_preview_seconds: int = Field(default=180, ge=10)
+    ozon_price_change_verify_attempts: int = Field(default=3, ge=1, le=10)
+    ozon_price_change_verify_interval_seconds: float = Field(default=2, ge=0, le=30)
     yandex_tokens_path: Path
     google_service_account_path: Path
     log_level: str

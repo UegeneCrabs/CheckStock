@@ -7,6 +7,19 @@ window.CheckStockPage = (() => {
 
     function register(matches, prepare) { handlers.push({ matches, prepare }); }
 
+    const ozonAnalyticsPages = new Map([
+        ['/analytics/ozon/analyzer', {tool: 'analyzer', title: 'Анализатор', section: 'ozon_analyzer'}],
+        ['/analytics/ozon/ephemerides', {tool: 'ephemerides', title: 'Эфемериды', section: 'ozon_ephemerides'}],
+        ['/analytics/ozon/ephemerides/comments', {tool: 'ephemerides', title: 'История комментариев', section: 'ozon_ephemerides', history: true}],
+        ['/analytics/ozon/sales-api', {tool: 'sales-api', title: 'Продажи по API', section: 'ozon_sales_api'}],
+    ]);
+    register(url => ozonAnalyticsPages.has(url.pathname), async (context, url) => {
+        const page = ozonAnalyticsPages.get(url.pathname);
+        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date()).map(part => [part.type, part.value]));
+        const config = {marketplace: 'OZON', apiBase: '/api/analytics/ozon', pageBase: '/analytics/ozon', exportPrefix: 'ozon', metricIdentity: 'fullArticle', storageKey: 'checkstock.ozon.' + page.tool + '.v1', today: `${parts.year}-${parts.month}-${parts.day}`, canEdit: !!context.user.is_active, history: !!page.history, maxDays: 366, maxD: 1000000, hourlySettings: page.tool === 'analyzer', labels: {marketplace: 'Ozon', wallet: 'Цена с Ozon Картой', article: 'Артикул продавца', fbo: 'FBO', cartsHelp: 'Корзины за UTC-день источника: 03:00–03:00 МСК. Пропущенная строка не подтверждает ноль; текущий UTC-день предварительный.'}};
+        return {title: 'CheckStock — ' + page.title + ' Ozon', section: page.section, contentClass: page.tool === 'sales-api' ? 'content--sales-api' : 'content--analyzer', alertMarketplace: 'OZON', values: {[page.tool.replace(/-/g, '_') + '_config']: JSON.stringify(config).replace(/</g, '\\u003c')}};
+    });
+
     function script(source) {
         return new Promise((resolve, reject) => {
             const element = document.createElement('script');
@@ -32,7 +45,7 @@ window.CheckStockPage = (() => {
         }
         const operations = links.find(link => link.textContent.trim() === 'История операций');
         if (operations && context.stores.length) operations.href = '/stock/' + context.stores[0].slug + '/operations';
-        if (location.pathname.endsWith('/ozon') || location.pathname.includes('/ozon/reports/')) {
+        if (location.pathname.endsWith('/ozon') || location.pathname.includes('/ozon/reports/') || ozonAnalyticsPages.has(location.pathname)) {
             document.getElementById('app-header').classList.add('marketplace-ozon');
             document.querySelector('[data-ui-marketplace]').textContent = 'Ozon';
         }

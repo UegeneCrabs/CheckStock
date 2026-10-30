@@ -162,7 +162,7 @@ class AsyncPerformanceClient:
                 if any(item.state is None for item in self._quota_campaigns):
                     raise PerformanceApiFailure(AdvertisingError.INVALID_RESPONSE)
             account_limit = account_export_limit(self._quota_campaigns)
-            export_units = estimate_export_units(report, self._quota_campaigns)
+            export_units = estimate_export_units(report)
         refreshed = False
         for attempt in range(OZON_ADVERTISING.attempts):
             if billable and (until := await self.repository.blocked_until(self.store)):

@@ -2,7 +2,10 @@
     'use strict';
     const root=document.getElementById('ephemerides'); if(!root) return;
     const $=id=>document.getElementById('e-'+id), M=window.EphemeridesModel, A=window.CheckStockAnalyzer;
-    const config=JSON.parse(document.getElementById('ephemerides-config').textContent);
+    const config=A.marketplaceConfig(JSON.parse(document.getElementById('ephemerides-config').textContent));
+    A.localize(root,config);
+    const market=config.labels.marketplace;
+    $('other-page').href=config.pageBase+'/ephemerides'+(config.history?'':'/comments');
     const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const formats=[new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}),new Intl.NumberFormat('ru-RU',{maximumFractionDigits:1})];
     const number=(n,percent=false)=>n==null?'—':formats[percent?1:0].format(n)+(percent?'%':'');
@@ -16,19 +19,20 @@
     let data=null, columns=[], columnMap=new Map(), filtered=[], page=1, pageSize=20, query='',segment='all', sort=config.history?null:'today-turnover', direction=-1, revisionsItem=null, latestRevision=null, busy=false;
     let separate=false, dense=false, summaryCollapsed=false, visible=new Set(Object.keys(groups));
     const hiddenColumns=new Set();
-    try { const prefs=JSON.parse(localStorage.getItem('ephemerides-view')||'null'); if(prefs) {separate=!!prefs.separate;dense=!!prefs.dense;summaryCollapsed=!!prefs.summaryCollapsed;visible=new Set((prefs.visible||Object.keys(groups)).filter(g=>g in groups));visible.add('product');(prefs.hiddenColumns||[]).forEach(id=>hiddenColumns.add(id));} } catch {}
+    try { const prefs=JSON.parse(localStorage.getItem(config.storageKey || 'ephemerides-view')||'null'); if(prefs) {separate=!!prefs.separate;dense=!!prefs.dense;summaryCollapsed=!!prefs.summaryCollapsed;visible=new Set((prefs.visible||Object.keys(groups)).filter(g=>g in groups));visible.add('product');(prefs.hiddenColumns||[]).forEach(id=>hiddenColumns.add(id));} } catch {}
     const filters=new Map();
+    let drawerRowId=null, coefficientRetryAfter=0;
     async function jsonFetch(url, options={}) {
         const response=await fetch(url,{credentials:'same-origin',...options});
         let result; try {result=await response.json();} catch { throw new Error('Сервер вернул некорректный ответ. Проверьте соединение и вход в систему.'); }
-        if(!response.ok) {const error=new Error(typeof result.detail==='string'?result.detail:`Ошибка ${response.status}`);error.conflict=response.status===409;throw error;}
+        if(!response.ok) {const error=new Error(typeof result.detail==='string'?A.reasonMessage(result.detail):`Ошибка ${response.status}`);error.conflict=response.status===409;throw error;}
         return result;
     }
     const decisionReadOnly='Решения можно редактировать только за текущую неделю';
     const canEditComment=item=>M.canEditComment(config.canEdit,item.kind,item.week);
     const drafts=new M.Drafts(async payload => {
         if(!canEditComment(payload)) throw new Error(config.canEdit?decisionReadOnly:'Нет прав на изменение комментариев');
-        return (await jsonFetch('/api/analytics/ephemerides/comments',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).comment;
+        return (await jsonFetch(config.apiBase+'/ephemerides/comments',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).comment;
     }, updateSaveState);
     function commentItem(row,c) { return drafts.get(row,c.week,c.kind); }
     function commentHtml(row,c) {
@@ -72,7 +76,7 @@
         revisionsItem=item;latestRevision=null;$('conflict-actions').hidden=true;$('revisions').textContent='Загрузка…';$('revisions-dialog').showModal();
         try {
             const params=new URLSearchParams({store:item.row.store_slug,article:item.row.article,week:item.week,kind:item.kind});
-            const result=await jsonFetch('/api/analytics/ephemerides/comments/revisions?'+params);
+            const result=await jsonFetch(config.apiBase+'/ephemerides/comments/revisions?'+params);
             if(revisionsItem!==item) return;
             latestRevision=result.revisions[0]||null;
             $('revisions').innerHTML=(item.error?.conflict?`<article><strong>Ваш несохранённый текст</strong><p>${escape(item.text)||'Пустой комментарий'}</p></article>`:'')+(result.revisions.map(r=>`<article><strong>Версия ${r.version}</strong> <small>${escape(r.author)} · ${escape(new Date(r.updated_at).toLocaleString('ru-RU'))}</small><p>${escape(r.text)||'Комментарий очищен'}</p></article>`).join('')||'<p>Изменений ещё нет.</p>');
@@ -88,13 +92,13 @@
         add('product','Товар','product',160,'product');
         if(!config.history) {
             add('manager','Менеджер','product',100,'text');add('category','Категория','product',100,'text');add('project','Проект','product',75,'text');
-            if(separate) {add('barcode','Баркод','product',120,'text');add('article','Артикул WB','product',105,'text');add('image','Фото','product',55,'photo');}
+            if(separate) {add('barcode','Баркод','product',120,'text');add('article',config.labels.article,'product',105,'text');add('image','Фото','product',55,'photo');}
             add('code','Код ABC-D','product',65,'text');
             add('today-turnover','ТО сегодня, ₽','product',110,'number',{key:'fact',period:'dayTurnover'});
-            add('fbs','Сток FBS','stock',65);add('fbo','Сток FBO','stock',65);add('fromCustomer','В пути от клиента','stock',75);add('ff','На ФФ','stock',65);add('stock','Общий сток','stock',75);
+            add('fbs','Сток FBS','stock',65);add('fbo','Сток '+config.labels.fbo,'stock',65);add('fromCustomer','В пути от клиента','stock',75);add('ff','На ФФ','stock',65);add('stock','Общий сток','stock',75);
             add('rating','Рейтинг','control',65);add('competitor','Конкуренты','control',180,'comment',{week:data.current.start,kind:'competitor'});
             for(const period of ['previous','current']) {
-                [['spp','СПП','percent',55],['impressions','Показы','number',70],['ctr','CTR','percent',55],['roi','ROI','percent',65],['drr','ДРР','percent',55],['wallet','Цена WB с кошельком, ₽','number',80],['price','Цена поставщика, ₽','number',80],['goal','Цель недели, шт','number',65],['fact','Факт недели, шт','number',65]].forEach(([key,label,type,width=115])=>add(period+'-'+key,label,period,width,type,{key,period}));
+                [['spp','СПП','percent',55],['impressions','Показы','number',70],['ctr','CTR','percent',55],['roi','ROI','percent',65],['drr','ДРР','percent',55],['wallet',config.labels.wallet+', ₽','number',80],['price',config.marketplace==='WB'?'Цена поставщика, ₽':'Цена продавца, ₽','number',80],['goal','Цель недели, шт','number',65],['fact','Факт недели, шт','number',65]].forEach(([key,label,type,width=115])=>add(period+'-'+key,label,period,width,type,{key,period}));
                 if(period==='current') add('current-turnover','ТО эфемериды по цели, ₽',period,110,'number',{key:'turnover',period});
                 add(period+'-decision','Решения',period,155,'comment',{week:data[period].start,kind:'decision'});
             }
@@ -112,16 +116,11 @@
         return c.period?row[c.period]?.[c.key]??null:row[c.key]??null;
     }
     function incomplete(row,c) {
-        if(c.period==='dayTurnover') return false;
-        if(c.key==='stock') return row.stockPartial;
-        if(!c.period) return false;
-        const coverage=row[c.period]?.coverage||{};
-        const key={fact:'orders',impressions:'advertising',ctr:'advertising',drr:'drr'}[c.key];
-        return c.key==='roi'?!coverage.roiComplete:key?coverage[key]<coverage.expected:false;
+        return A.metricQuality(row,(c.period?c.period+'.':'')+c.key).partial;
     }
     function productHtml(row,index) {
-        const image=/^https?:\/\//i.test(row.image||'')?`<img src="${escape(row.image)}" alt="" loading="lazy">`:'<span class="e-photo e-muted">WB</span>';
-        return `<button class="e-product" data-product="${index}">${separate&&!config.history?'':image}<span><strong>${escape(row.name)}</strong><small data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул">WB ${escape(row.article)} ⧉</small><small>${escape(row.barcode)}${config.history?' · '+escape(row.project):''}</small></span></button>`;
+        const image=/^https?:\/\//i.test(row.image||'')?`<img src="${escape(row.image)}" alt="" loading="lazy">`:`<span class="e-photo e-muted">${escape(market)}</span>`;
+        return `<button class="e-product" data-product="${index}">${separate&&!config.history?'':image}<span><strong>${escape(row.name)}</strong><small data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул">${escape(market)} ${escape(row.article)} ⧉</small><small>${escape(row.barcode)}${config.history?' · '+escape(row.project):''}</small></span></button>`;
     }
     function cell(row,c) {
         const val=value(row,c);
@@ -134,11 +133,15 @@
         if(c.period==='dayTurnover') title=`Сумма заказов за сегодня (${data.today}, Москва), без вычета отмен. По умолчанию товары ранжируются по этому показателю.`;
         if(c.period&&c.key==='turnover') title='Цель недели, шт × Цена поставщика, ₽. Если цель или цена неизвестны, ТО не рассчитан.';
         if(c.period&&['price','wallet','spp'].includes(c.key)) title=`Последняя сохранённая цена внутри недели: ${row[c.period].priceDay||'нет данных'}`;
-        if(c.key==='fromCustomer') title=`Снимок понедельника ${row.stockWeek}: ${row.transitUpdated||'ещё не сохранён'}. Показатель всего артикула WB.`;
+        if(c.key==='fromCustomer') title=`Снимок понедельника ${row.stockWeek}: ${row.transitUpdated||'ещё не сохранён'}. Показатель всего артикула ${market}.`;
         if(['fbs','fbo','ff','stock'].includes(c.key)) title=`Сток зафиксирован на неделю с ${row.stockWeek}: ${row.stockUpdated||'снимок понедельника ещё не сохранён'}`;
-        if(c.key==='ff') title+=`. Сумма остатков по всем фулфилментам WB этого товара в магазине.${val==null?' В снимке нет данных ФФ.':''}`;
-        if(c.period&&c.key==='fact') title=row[c.period].factNet?'Завершённая неделя: заказы − отмены. Источник — воронка юнит-экономики WB.':'Заказы текущей недели из воронки юнит-экономики WB, с понедельника по сегодня.';
-        return `<span title="${escape(title)}" class="${val==null?'e-muted':c.key==='roi'?val<0?'e-negative':'e-positive':''}">${number(val,c.type==='percent')}</span>`;
+        if(c.key==='ff') title+=`. Сумма остатков по всем фулфилментам ${market} этого товара в магазине.${val==null?' В снимке нет данных ФФ.':''}`;
+        if(c.period&&c.key==='fact') title=row[c.period].factNet?`Завершённая неделя: заказы − отмены. Источник — сохранённые заказы ${market}.`:`Заказы текущей недели ${market}, с понедельника по сегодня.`;
+        const field=(c.period&&c.period!=='dayTurnover'?c.period+'.':'')+c.key;
+        const help=A.metricHelp(row,field,config,val==null);
+        if(help) title+=(title?'. ':'')+help;
+        const status=A.qualityLabel(A.metricQuality(row,field));
+        return `<span title="${escape(title)}" class="${val==null?'e-muted':c.key==='roi'?val<0?'e-negative':'e-positive':''}">${number(val,c.type==='percent')}</span>${status?`<small class="e-muted" style="display:block;white-space:normal;line-height:1.2">${escape(status)}</small>`:''}`;
     }
     function externalRows() {
         const q=query.toLocaleLowerCase('ru').trim();
@@ -175,7 +178,7 @@
         $('head').innerHTML=`<tr class="e-group">${sections.map(s=>`<th colspan="${s.count}" class="tone-${tones[s.group]} ${s.key==='frozen'?'e-sticky':''}">${s.key==='frozen'?'Товар':escape(label(s.group))}</th>`).join('')}</tr><tr class="e-labels">${columns.map(c=>`<th data-group="${c.group}" data-filter-column="${c.id}" ${['number','percent'].includes(c.type)?'data-filter-type="number"':''} class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':''}" aria-sort="${sort===c.id?direction===1?'ascending':'descending':'none'}"><button class="e-sort" data-sort="${c.id}">${escape(c.label)}${sort===c.id?direction===1?' ↑':' ↓':''}</button></th>`).join('')}</tr>`;
         $('table')._tfFilters=Object.fromEntries(filters);
         window.CheckStockTableFilter.refresh($('table'),{applyFilters:false});
-        if(!config.history) $('head').insertAdjacentHTML('beforeend',`<tr class="e-totals">${columns.map(c=>{const total=M.summary(filtered,c.period,c.key);return `<td class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':'e-number'}">${c.id==='product'?'Итого · '+filtered.length:total==null?'':number(total,c.type==='percent')}</td>`;}).join('')}</tr>`);
+        if(!config.history) $('head').insertAdjacentHTML('beforeend',`<tr class="e-totals">${columns.map(c=>{const total=M.summaryDetails(filtered,c.period,c.key),status=A.qualityLabel(total);return `<td title="${escape(A.qualityHelp(total))}" class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':'e-number'}">${c.id==='product'?'Итого · '+filtered.length:total.value==null&&!status?'':number(total.value,c.type==='percent')+(status?`<small class="e-muted" style="display:block;white-space:normal;line-height:1.2">${escape(status)}</small>`:'')}</td>`;}).join('')}</tr>`);
         const shown=filtered.slice((page-1)*pageSize,page*pageSize);
         $('body').innerHTML=shown.map(row=>`<tr>${columns.map(c=>`<td class="tone-${tones[c.group]} ${c.id==='product'?'e-sticky':''} ${['number','percent'].includes(c.type)?'e-number':''}">${cell(row,c)}</td>`).join('')}</tr>`).join('');
         $('count').textContent=filtered.length;$('empty').hidden=!!filtered.length;$('pagination').textContent=filtered.length?`${(page-1)*pageSize+1}–${Math.min(page*pageSize,filtered.length)} из ${filtered.length}`:'0 товаров';$('page-number').textContent=`${page} / ${pages}`;$('prev-page').disabled=page===1;$('next-page').disabled=page===pages;
@@ -183,7 +186,7 @@
         $('jumps').innerHTML=(config.history?[]:['product','stock','control','previous','current','history']).filter(g=>visible.has(g)).map(g=>`<button data-jump="${g}">${escape(g==='product'?'Все поля':label(g))}</button>`).join('');
         bindComments($('body'));updateSaveState();
     }
-    function prefs() { try {localStorage.setItem('ephemerides-view',JSON.stringify({separate,dense,summaryCollapsed,visible:[...visible],hiddenColumns:[...hiddenColumns]}));} catch {} }
+    function prefs() { try {localStorage.setItem(config.storageKey || 'ephemerides-view',JSON.stringify({separate,dense,summaryCollapsed,visible:[...visible],hiddenColumns:[...hiddenColumns]}));} catch {} }
     $('table')._tfAdapter={
         values: key=>columnMap.has(key)?externalRows().map(row=>String(value(row,columnMap.get(key))??'')):[],
         filter: selected=>{filters.clear();Object.entries(selected||{}).forEach(([key,values])=>filters.set(key,values));page=1;render();},
@@ -204,8 +207,9 @@
     };
     function openDrawer(index) {
         const row=data.rows[index];if(!row)return;$('drawer').hidden=false;
+        drawerRowId=row.id;
         $('drawer-title').textContent=row.name;
-        let html=`<p>${escape(row.project)} · WB ${escape(row.article)}</p><p class="e-muted">${escape(row.manager)} · ${escape(row.category)}</p>`;
+        let html=`<p>${escape(row.project)} · ${escape(market)} ${escape(row.article)}</p><p class="e-muted">${escape(row.manager)} · ${escape(row.category)}</p>`;
         if(!config.history) {
             html+=`<table><thead><tr><th>Показатель</th><th>${escape(weekLabel(data.previous))}</th><th>${escape(weekLabel(data.current))}</th></tr></thead><tbody>${[['fact','Заказы, шт'],['turnover','ТО по цели, ₽'],['roi','ROI, %'],['drr','ДРР, %'],['goal','Цель, шт'],['price','Цена, ₽']].map(([key,label])=>`<tr><td>${label}</td><td>${number(row.previous[key])}</td><td>${number(row.current[key])}</td></tr>`).join('')}</tbody></table><p>FBS ${number(row.fbs)} · FBO ${number(row.fbo)} · От клиента ${number(row.fromCustomer)} · На ФФ ${number(row.ff)} · Общий сток ${number(row.stock)}</p>`;
         }
@@ -250,18 +254,21 @@
     $('columns-done').onclick=()=>{$('column-panel').hidden=true;$('columns').setAttribute('aria-expanded','false');};
     $('export').onclick=()=>{
         if(!data)return;
-        const lines=[columns.map(c=>A.csvCell(c.period==='dayTurnover'?c.label+' · '+data.today:c.period?weekLabel(data[c.period])+' · '+c.label:c.label)).join(';'),...filtered.map(row=>columns.map(c=>A.csvCell(value(row,c))).join(';'))];
-        const url=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`ephemerides-${config.history?'comments-':''}${week}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+        const lines=A.qualityCsv(filtered,columns,value,c=>c.period==='dayTurnover'?c.label+' · '+data.today:c.period?weekLabel(data[c.period])+' · '+c.label:c.label,c=>(c.period?c.period+'.':'')+c.key,config.qualityExport).map(row=>row.map(A.csvCell).join(';'));
+        const url=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`${config.marketplace==='WB'?'':config.exportPrefix+'-'}ephemerides-${config.history?'comments-':''}${week}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };
-    async function load(next=week) {
+    async function load(next=week, refresh=false) {
+        if(refresh&&drafts.dirty())return;
         if(busy)return;busy=true;$('workspace').inert=true;
         try {
             if(!await drafts.flush()) { $('load').textContent='Сначала сохраните комментарии или разрешите конфликт.';return; }
             $('load').textContent='Загрузка данных…';
-            const result=await jsonFetch(`/api/analytics/ephemerides${config.history?'/comments':''}?week=${encodeURIComponent(next)}`);
-            data=result;week=next;drafts.items.clear();filters.clear();page=1;$('drawer').hidden=true;render();
+            const result=await jsonFetch(`${config.apiBase}/ephemerides${config.history?'/comments':''}?week=${encodeURIComponent(next)}`);
+            const reopen=refresh&&!$('drawer').hidden?drawerRowId:null;
+            data=result;week=next;drafts.items.clear();if(!refresh){filters.clear();page=1;$('drawer').hidden=true;}render();
+            if(reopen) openDrawer(data.rows.findIndex(row=>row.id===reopen));
             $('week-label').textContent=config.history?`${weekLabel(data.weeks.at(-1))} → ${weekLabel(data.weeks[0])}`:`${weekLabel(data.previous)} → ${weekLabel(data.current)}`;
-            $('other-page').href=`/analytics/ephemerides${config.history?'':'/comments'}?week=${week}`;
+            $('other-page').href=`${config.pageBase}/ephemerides${config.history?'':'/comments'}?week=${week}`;
             $('load').textContent=config.history?'История за 12 недель. Выберите более раннюю дату для предыдущих записей.':'';
             const url=new URL(location.href);url.searchParams.set('week',week);history.replaceState(null,'',url);
         } catch(error) { $('load').replaceChildren(document.createTextNode(error.message+' '));const button=document.createElement('button');button.className='button';button.textContent='Повторить загрузку';button.onclick=()=>load(next);$('load').append(button); }
@@ -273,5 +280,10 @@
     $('other-page').onclick=async e=>{e.preventDefault();if(await drafts.flush())location.assign($('other-page').href);};
     window.addEventListener('beforeunload',e=>{if(drafts.dirty()){e.preventDefault();e.returnValue='';}});
     if(config.history) {$('title').textContent='История комментариев';$('summary-panel').hidden=true;$('segments').hidden=true;$('kind-wrap').hidden=false;$('other-page').textContent='← К эфемеридам';$('columns').hidden=true;}
+    function refreshCoefficient() {
+        if(config.marketplace!=='OZON'||config.history||document.hidden||busy||drafts.dirty()||!data?.coefficient_valid_until||Date.now()<coefficientRetryAfter||Date.now()<Date.parse(data.coefficient_valid_until))return;
+        coefficientRetryAfter=Date.now()+60000;load(week,true);
+    }
+    if(config.marketplace==='OZON'){setInterval(refreshCoefficient,1000);document.addEventListener('visibilitychange',refreshCoefficient);}
     load();
 })();

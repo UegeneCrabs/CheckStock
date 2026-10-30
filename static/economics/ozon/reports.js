@@ -43,7 +43,7 @@ window.OzonReportsUI = (() => {
             const costs = row.target_calculation?.costs || {};
             const fields = { purchase: 'purchase', fulfillment: 'fulfillment', commission: 'commission_amount',
                 logistics: 'logistics_amount', storage: 'storage_amount', acquiring: 'acquiring_amount',
-                company_commission: 'team_amount', vat: 'vat_amount', usn: 'usn_amount', advertising: 'advertising_amount' };
+                company_commission: 'team_amount', unallocated: 'unallocated_amount', vat: 'vat_amount', usn: 'usn_amount', advertising: 'advertising_amount' };
             return { ...row, target_warnings: (row.issues || []).map(message).concat(
                 row.missing?.length ? ['Нет данных: ' + row.missing.map(key => window.OzonEconomicsUI?.marginLabels[key] || key).join(', ')] : []),
                 current_warnings: (row.current_missing || []).map(key => 'Нет данных: ' + (window.OzonEconomicsUI?.marginLabels[key] || key)),
@@ -77,12 +77,13 @@ window.OzonReportsUI = (() => {
         ['purchase', 'Закупочная стоимость, ₽'], ['fulfillment', 'Затраты на ФФ, ₽'],
         ['commission_amount', 'Комиссия Ozon при исходной цене, ₽'], ['logistics_amount', 'Логистика на выкуп, ₽'],
         ['storage_amount', 'Хранение на выкуп, ₽'], ['team_percent', 'Комиссия компании, %'],
+        ['unallocated_percent', 'Прочее нераспределённое, %'],
         ['acquiring_percent', 'Эквайринг, %'], ['vat_percent', 'НДС, %'], ['usn_percent', 'УСН, %'],
     ];
     window.CheckStockPage.register(url => url.pathname === pageBase + '/unit-profit' || url.pathname === pageBase + '/target-price', async (context, url) => {
         if (!context.economics_preview) throw new Error('Раздел Ozon недоступен');
         const target = url.pathname.endsWith('/target-price');
-        const response = await fetch('/static/economics/ozon/report-columns.json?v=20261029');
+        const response = await fetch('/static/economics/ozon/report-columns.json?v=20261030-unallocated');
         if (!response.ok) throw new Error('Не удалось загрузить описание отчёта');
         const columns = await response.json();
         const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow' }).format(new Date());

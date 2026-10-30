@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool
 
 from app.core.constants import OrderScheme, OzonPriceField, OzonPriceSource, OzonPriceState
 from app.dto.common import DtoModel
@@ -83,6 +83,10 @@ class SellerPriceAmounts(PriceApiModel):
     price: PriceAmount | None = None
     marketing_seller_price: PriceAmount | None = None
     currency_code: str | None = None
+    old_price: PriceAmount | None = None
+    min_price: PriceAmount | None = None
+    auto_action_enabled: StrictBool | None = None
+    auto_add_to_ozon_actions_list_enabled: StrictBool | None = None
 
 
 class SellerCommissions(PriceApiModel):

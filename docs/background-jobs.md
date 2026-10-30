@@ -459,3 +459,15 @@ Docker в текущем окружении недоступен; проверк
 ## Дневные параметры маржи Ozon
 
 `ozon_margin_daily_sync` каждый час сохраняет текущие цены, расходы на единицу и выкуп в `ozon_margin_daily`. Магазины обрабатываются конкурентно с отдельными блокировками. Прошлые даты не перезаписываются; [правила расчёта диапазона и пропусков](ozon-margin.md).
+
+## Аналитика Яндекс Маркета
+
+Собственный контур трёх отчётов использует сохранённые источники и не запускает загрузки по GET. [Контракт](yandex-analytics.md) описывает формулы, календарь корзин, покрытие, комментарии/CAS и схему.
+
+| Задача | Расписание и результат |
+|---|---|
+| `yandex_analytics_funnel_sync` | После завершения 15 минут: today-first, затем missing/stale дни отчёта в окне D−7…D; historical refresh 4 часа через отдельную настройку. Общий persisted business/report shows-sales limiter с выкупом, polling одного reportId. Сохраняются source-date/timezone unknown/received/provisional, nullable toCart и отдельная freshness |
+| `yandex_customer_transit_sync` | Каждые 4 часа/вручную: все собственные FBY campaigns/pages, строгие статусы и количества, атомарный snapshot возвратов; ошибка сохраняет прошлый успех |
+| `yandex_ephemerides_stock_snapshot` | Понедельник после 00:05 МСК, три повтора: локальные FBS/FBY/ФФ и свежие подтверждённые возвраты. Первая запись immutable, пропущенный понедельник не восстанавливается текущими остатками |
+
+Метаданные находятся в JOBS и JOB_SCHEDULE_RULES, исполнение — app/jobs/yandex_analytics.py. Настройки включения/магазинов и ручной запуск используют общую панель интеграций. `CHECKSTOCK_YANDEX_ANALYTICS_FUNNEL_INTERVAL_SECONDS`, `CHECKSTOCK_YANDEX_ANALYTICS_TRANSIT_INTERVAL_SECONDS`, `CHECKSTOCK_YANDEX_ANALYTICS_STARTUP_DELAY_SECONDS` и `CHECKSTOCK_YANDEX_ANALYTICS_FUNNEL_HISTORY_REFRESH_SECONDS` задают интервалы. Магазины обрабатываются конкурентно с изоляцией ошибок. До первого подтверждённого источника данные неизвестны; NO_DATA и DONE не доказывают полный календарный день. Реальные права API и подписка определяют доступность отдельного источника.

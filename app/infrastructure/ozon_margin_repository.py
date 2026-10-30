@@ -17,6 +17,7 @@ from app.infrastructure.async_prices_repository import AsyncPricesRepository
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.orm import StockItemRecord, UnitEconomics1CSourceValueRecord
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
+from app.infrastructure.ozon_calendar_repository import OzonCalendarRepository
 from app.infrastructure.ozon_margin_orm import OzonMarginDailyRecord
 from app.ozon.cabinet_normalizer import effective_parameters
 from app.ozon.price_normalizer import price_freshness
@@ -109,11 +110,12 @@ class OzonMarginRepository:
                     )
                 )
             ).scalars()
-            return tuple(
+            snapshots = tuple(
                 value
                 for payload in payloads
                 if (value := OzonMarginSnapshot.model_validate_json(payload)).version == OZON_MARGIN.version
             )
+        return await OzonCalendarRepository(self.database).apply(snapshots)
 
     async def save(self, snapshots: tuple[OzonMarginSnapshot, ...], now: datetime) -> None:
         table = table_for(OzonMarginDailyRecord)
@@ -150,3 +152,4 @@ class OzonMarginRepository:
                         ("store_slug", "article", "day"),
                     )
                 )
+                await OzonCalendarRepository.observe(connection, item)

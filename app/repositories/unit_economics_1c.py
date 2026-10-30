@@ -1,5 +1,6 @@
 import json
 
+from app.dto.ozon_source import OzonSourceCatalogItem, OzonSourceValues
 from app.dto.unit_economics_1c import (
     UnitEconomics1CCabinetSettings,
     UnitEconomics1CCabinetSettingsRequest,
@@ -91,13 +92,14 @@ def list_purchase_price_stock_items() -> list[dict]:
         conn.close()
 
 
-def list_ozon_source_items() -> list[dict]:
+def list_ozon_source_items() -> tuple[OzonSourceCatalogItem, ...]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, store_slug, article, mp_product_id FROM stock_items "
-            "WHERE marketplace='OZON' AND is_service=0 AND mp_product_id IS NOT NULL"
+            "SELECT id, store_slug, article, mp_product_id, mp_sku FROM stock_items "
+            "WHERE marketplace='OZON' AND is_service=0 "
+            "AND (mp_product_id IS NOT NULL OR mp_sku IS NOT NULL)"
         ).fetchall()
-    return [dict(row) for row in rows]
+    return tuple(OzonSourceCatalogItem.model_validate(dict(row)) for row in rows)
 
 
 def get_ozon_source_values(store_slugs: tuple[str, ...]) -> dict[tuple[str, str], dict]:
@@ -554,14 +556,13 @@ def get_funnel_product_metrics(store_slugs: tuple[str, ...], *, article: str | N
 
 
 def replace_source_values(
-    rows: list[dict],
+    rows: list[dict] | tuple[OzonSourceValues, ...],
     team_commissions: dict[str, float],
     synced_at: str,
     *,
     marketplace: str = "WB",
 ) -> int:
-    """Atomically replace the current Google Sheets snapshot without keeping history."""
-
+    source_rows = [row.model_dump() if isinstance(row, OzonSourceValues) else row for row in rows]
     columns = (
         "stock_item_id",
         "purchase_price",
@@ -599,7 +600,7 @@ def replace_source_values(
                 """,
                 (
                     [row.get(column) if column != "synced_at" else synced_at for column in columns]
-                    for row in rows
+                    for row in source_rows
                 ),
             )
             conn.executemany(

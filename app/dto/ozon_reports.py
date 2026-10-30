@@ -98,6 +98,7 @@ class OzonProfitDay(DtoModel):
     commission_value: Number | None = None
     acquiring_value: Number | None = None
     team_commission_value: Number | None = None
+    unallocated_value: Number | None = None
     vat_value: Number | None = None
     usn_value: Number | None = None
     logistics: Number | None = None

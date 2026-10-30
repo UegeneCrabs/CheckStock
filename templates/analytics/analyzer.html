@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261023-2">
 <section class="analyzer" id="analyzer"><div class="analyzer-main">
  <section class="toolbar" aria-label="Фильтры товаров">
-  <div class="report-search"><div class="heading-left"><h1>Анализатор товаров</h1><span class="demo">WB</span></div>
+  <div class="report-search"><div class="heading-left"><h1>Анализатор товаров</h1><span class="demo">WB</span><button type="button" class="button" id="hourly-settings-open" hidden>Коэффициенты D</button></div>
   <div class="search-row">
    <label class="search"><svg class="ico"><use href="#i-search"/></svg><input type="search" id="search" placeholder="Название, артикул или баркод" aria-label="Поиск товаров"></label>
    <div class="segments" aria-label="Состояние товара"><button data-state="all" class="active" aria-pressed="true">Все товары</button><button data-state="negative" aria-pressed="false">В минус</button><button data-state="new" aria-pressed="false">Новинки</button></div>
@@ -35,7 +35,8 @@
 <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
 <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M3 12h18m-4-4 4 4-4 4M7 8l-4 4 4 4"/></symbol>
 </defs></svg>
+<dialog id="hourly-settings" style="margin:auto;position:fixed;inset:0;width:min(560px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--line);border-radius:16px;padding:20px;color:var(--text);background:var(--panel,#fff)"><form method="dialog"><h2>Почасовой прогноз</h2><p>Собственные коэффициенты магазина, время Москвы. Пустое значение означает отсутствие прогноза.</p><label>Магазин <select id="hourly-store"></select></label><div id="hourly-fields" style="display:grid;grid-template-columns:repeat(4,minmax(70px,1fr));gap:8px;margin:16px 0"></div><p id="hourly-status" role="status"></p><button type="button" class="button primary" id="hourly-save">Сохранить</button><button type="button" class="button" id="hourly-reload">Загрузить сохранённую версию</button><button class="button">Закрыть</button></form></dialog>
 </section>
 <script type="application/json" id="analyzer-config">$analyzer_config</script>
-<script src="/static/analytics/analyzer-model.js?v=20261030-2" defer></script>
-<script src="/static/analytics/analyzer.js?v=20261030" defer></script>
+<script src="/static/analytics/analyzer-model.js?v=20261030-ozym-r2c" defer></script>
+<script src="/static/analytics/analyzer.js?v=20261030-ozym-r2" defer></script>

@@ -20,6 +20,7 @@ class OzonMarginInputs(DtoModel):
     advertising_amount: MarginNumber | None = None
     acquiring_amount: MarginNumber | None = None
     team_amount: MarginNumber | None = None
+    unallocated_amount: MarginNumber | None = Decimal(0)
     vat_amount: MarginNumber | None = None
     usn_amount: MarginNumber | None = None
 

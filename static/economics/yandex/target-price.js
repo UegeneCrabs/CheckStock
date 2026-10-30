@@ -42,7 +42,7 @@
                 delivery: 'Доставка', repeat_delivery: 'Повторная доставка', returns: 'Возвраты', transit: 'Транзит',
                 purchase: 'Закупка', fulfillment: 'ФФ', company_commission: 'Комиссия компании', vat: 'НДС', usn: 'УСН',
                 loss: 'Потери', disposal: 'Утилизация', advertising: 'Реклама', logistics: 'Логистика' };
-            if (ozon) Object.assign(labels, { commission: 'Комиссия Ozon', acquiring: 'Эквайринг', storage: 'Хранение' });
+            if (ozon) Object.assign(labels, { commission: 'Комиссия Ozon', acquiring: 'Эквайринг', storage: 'Хранение', unallocated: 'Прочее нераспределённое' });
             el('target-costs').replaceChildren();
             Object.keys(costs).forEach(function (key) {
                 var dt = document.createElement('dt'), dd = document.createElement('dd');

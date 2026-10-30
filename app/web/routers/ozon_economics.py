@@ -329,6 +329,9 @@ async def page(
         except ValidationError as error:
             raise HTTPException(422, WebErrorCode.INVALID_PERIOD) from error
         return await products(request, query, resources)
+    if request.query_params.get("calendar") == "1":
+        require_preview(request.state.user)
+        return HTMLResponse(client_page("economics/shared/calendar.html"))
     return HTMLResponse(client_page("economics/shared/dashboard.html"))
 
 

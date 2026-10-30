@@ -59,6 +59,7 @@ def calculator_values(product: OzonProduct) -> OzonCalculatorValues:
         team_percent=Decimal(str(details.team_commission_percent))
         if details.team_commission_percent is not None
         else None,
+        unallocated_percent=Decimal(str(cabinet.expenses.unallocated_percent)) if cabinet else None,
         acquiring_percent=Decimal(str(cabinet.expenses.acquiring_percent))
         if cabinet and cabinet.expenses.acquiring_percent is not None
         else None,

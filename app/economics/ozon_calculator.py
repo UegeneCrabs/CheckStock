@@ -90,6 +90,9 @@ def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
         values.wallet_price, values.acquiring_percent, values.acquiring_amount, values.acquiring_basis
     )
     team = pair(values.seller_price, values.team_percent, values.team_amount, values.team_basis)
+    unallocated = pair(
+        values.seller_price, values.unallocated_percent, values.unallocated_amount, values.unallocated_basis
+    )
     clicks = advertising(
         values.turnover, values.buyout_percent, values.click_drr, values.click_spend, values.click_basis
     )
@@ -135,6 +138,8 @@ def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
             "acquiring_amount": acquiring.amount,
             "team_percent": team.percent,
             "team_amount": team.amount,
+            "unallocated_percent": unallocated.percent,
+            "unallocated_amount": unallocated.amount,
             "vat_percent": vat.percent,
             "vat_amount": vat.amount,
             "usn_percent": usn.percent,
@@ -217,6 +222,12 @@ def calculate(request: OzonCalculatorRequest) -> OzonCalculatorValues:
                 changes["team_basis"] = (
                     OzonScenarioBasis.PERCENT
                     if edit.field == OzonScenarioField.TEAM_PERCENT
+                    else OzonScenarioBasis.AMOUNT
+                )
+            case OzonScenarioField.UNALLOCATED_PERCENT | OzonScenarioField.UNALLOCATED_AMOUNT:
+                changes["unallocated_basis"] = (
+                    OzonScenarioBasis.PERCENT
+                    if edit.field == OzonScenarioField.UNALLOCATED_PERCENT
                     else OzonScenarioBasis.AMOUNT
                 )
             case OzonScenarioField.VAT_PERCENT | OzonScenarioField.VAT_AMOUNT:

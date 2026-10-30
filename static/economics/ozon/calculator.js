@@ -17,9 +17,11 @@ window.OzonCalculatorUI = (() => {
         { key: 'acquiring_amount', legacy: 'acquiringRub', label: 'Эквайринг, руб' },
         { key: 'team_percent', legacy: 'team', label: 'Комиссия компании, %', percent: true },
         { key: 'team_amount', legacy: 'teamRub', label: 'Комиссия компании, руб' },
-        { key: 'vat_percent', label: 'Налог НДС, %', percent: true, order: 18 },
+        { key: 'unallocated_percent', label: 'Прочее нераспределённое, %', percent: true, order: 18 },
+        { key: 'unallocated_amount', label: 'Прочее нераспределённое, руб', unit: '₽', order: 19 },
+        { key: 'vat_percent', label: 'Налог НДС, %', percent: true, order: 20 },
         { key: 'vat_amount', legacy: 'vatRub', label: 'Налог НДС, руб' },
-        { key: 'usn_percent', label: 'Налог УСН, %', percent: true, order: 20 },
+        { key: 'usn_percent', label: 'Налог УСН, %', percent: true, order: 22 },
         { key: 'usn_amount', legacy: 'secondaryTaxRub', label: 'Налог УСН, руб' },
     ];
     const inputFormat = new Intl.NumberFormat('en-US', { useGrouping: false, maximumFractionDigits: 2 });
@@ -30,7 +32,7 @@ window.OzonCalculatorUI = (() => {
     const targetFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' });
     const rub = value => value == null ? '—' : moneyFormat.format(Number(value)) + ' ₽';
     const percent = value => value == null ? '—' : percentFormat.format(Number(value));
-    const expensePairs = ['acquiring', 'vat', 'usn'];
+    const expensePairs = ['acquiring', 'unallocated', 'vat', 'usn'];
 
     function pairModified(session, prefix) {
         return session.modified.has(prefix + '_percent') || session.modified.has(prefix + '_amount');
@@ -142,6 +144,7 @@ window.OzonCalculatorUI = (() => {
             storage_amount: display(((product.storage || {}).snapshot || {}).per_unit) || null,
             team_percent: details.team_commission_percent ?? null,
             acquiring_percent: expenses.acquiring_percent ?? null,
+            unallocated_percent: expenses.unallocated_percent ?? 0,
             vat_percent: expenses.vat_percent ?? null, usn_percent: expenses.usn_percent ?? null,
         };
     }
@@ -275,8 +278,8 @@ window.OzonCalculatorUI = (() => {
                 row.firstElementChild.textContent = spec.label;
                 row.style.setProperty('--expanded-order', '7');
             }
-            if (spec.key === 'vat_amount') row.style.setProperty('--expanded-order', '19');
-            if (spec.key === 'usn_amount') row.style.setProperty('--expanded-order', '21');
+            if (spec.key === 'vat_amount') row.style.setProperty('--expanded-order', '21');
+            if (spec.key === 'usn_amount') row.style.setProperty('--expanded-order', '23');
             input.dataset.ozonScenarioInput = spec.key;
             input.type = 'number';
             input.min = spec.signed ? '-1000000000000' : '0';

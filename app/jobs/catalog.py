@@ -67,6 +67,9 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             for metadata in JOBS.google_weeks
         ),
         from_metadata(JOBS.wb_ephemerides_stock, base),
+        from_metadata(JOBS.yandex_analytics_funnel, base),
+        from_metadata(JOBS.yandex_customer_transit, base),
+        from_metadata(JOBS.yandex_ephemerides_stock, base),
         SyncJobDefinition(
             "wb_customer_transit_sync",
             "Возвраты WB в пути",
@@ -160,6 +163,8 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         from_metadata(JOBS.ozon_storage, base),
         from_metadata(JOBS.ozon_buyout, base),
         from_metadata(JOBS.ozon_margin, base),
+        from_metadata(JOBS.ozon_analytics_sources, base),
+        from_metadata(JOBS.ozon_ephemerides_stock, base),
         from_metadata(JOBS.ozon_prices_close, base),
         from_metadata(JOBS.ozon_advertising_breakdown, base),
         SyncJobDefinition(

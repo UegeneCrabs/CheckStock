@@ -1,7 +1,7 @@
 window.OzonPricesUI = (() => {
     'use strict';
     const fields = [
-        ['base_price', 'Цена поставщика'],
+        ['base_price', 'Предельная цена без акций'],
         ['seller_price', 'Цена с учетом акции'],
         ['black_price', 'Цена с СПП'],
         ['green_price', 'Цена с Кошельком'],
@@ -251,6 +251,7 @@ window.OzonPricesUI = (() => {
         const session = sessions.get(root);
         if (!session || !session.initialized || session.helpPending || session.helpError || session.invalid.size || session.edits.length) return null;
         return { productId: session.productId, values: structuredClone(session.values),
+            target_field: session.helpPriceManual || 'base_price',
             tariff_id: session.tariffId || null, product_tariff_id: session.productTariffId || null };
     }
 

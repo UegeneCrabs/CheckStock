@@ -46,15 +46,17 @@
     }
     function total(rows, column) {
         const values = rows.map(row => value(row, column)).filter(value => typeof value === 'number');
-        return {value: values.length ? values.reduce((a, b) => a + b, 0) : null,
-            partial: values.length < rows.length || ['orders','cancels'].includes(column.key) && rows.some(row => !row.complete)};
+        const quality = scope.CheckStockAnalyzer.mergeQuality(rows.map(row => scope.CheckStockAnalyzer.metricQuality(row, column.key)));
+        return {...quality, value: values.length ? values.reduce((a, b) => a + b, 0) : null,
+            partial: quality.partial || values.length < rows.length};
     }
     function csvCell(value) {
         let text = String(value ?? '');
         if (typeof value !== 'number' && /^[\s]*[=+@-]/.test(text)) text = "'" + text;
         return '"' + text.replace(/"/g, '""') + '"';
     }
-    const api = {columns, combined, turnover, value, filterValue, externalRows, filteredRows, total, csvCell};
+    function configure(config) { if (config.marketplace !== 'WB') identities.find(column => column.key === 'article').label = config.labels.article; }
+    const api = {columns, combined, turnover, value, filterValue, externalRows, filteredRows, total, csvCell, configure};
     scope.CheckStockSalesApi = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof window === 'undefined' ? globalThis : window);

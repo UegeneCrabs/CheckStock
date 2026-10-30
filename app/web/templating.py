@@ -226,6 +226,9 @@ def render_page(
         "wb_standard_costs": ("wb", "WB", "Wildberries"),
         "analytics_sales_api": ("wb", "WB", "Wildberries"),
         "analyzer": ("wb", "WB", "Wildberries"),
+        "yandex_analyzer": ("ym", "Я", "Яндекс Маркет"),
+        "yandex_ephemerides": ("ym", "Я", "Яндекс Маркет"),
+        "yandex_sales_api": ("ym", "Я", "Яндекс Маркет"),
         "ephemerides": ("wb", "WB", "Wildberries"),
         "unit_1c_wb": ("wb", "WB", "Wildberries"),
         "unit_1c_ozon": ("ozon", "O", "Ozon"),
@@ -242,7 +245,7 @@ def render_page(
         color, mark, label = marketplace
         marketplace_section = (
             "Аналитика"
-            if active in {"analyzer", "analytics_sales_api", "ephemerides"}
+            if active in {item.value for item in ANALYTICS_SECTIONS}
             else "Отчёты"
             if reports_open
             else "Юнит-экономика"
@@ -260,7 +263,10 @@ def render_page(
         marketplace_header_class=" marketplace-" + marketplace[0] if marketplace else "",
         marketplace_badge=marketplace_badge,
         analytics_hidden=hidden(any(visible[item] for item in ANALYTICS_SECTIONS)),
-        analytics_active="active" if active in {"analyzer", "analytics_sales_api", "ephemerides"} else "",
+        analytics_active="active" if active in {item.value for item in ANALYTICS_SECTIONS} else "",
+        yandex_analyzer_active="active" if active == "yandex_analyzer" else "",
+        yandex_ephemerides_active="active" if active == "yandex_ephemerides" else "",
+        yandex_sales_api_active="active" if active == "yandex_sales_api" else "",
         ephemerides_hidden=hidden(visible[SectionName.EPHEMERIDES]),
         ephemerides_active="active" if active == "ephemerides" else "",
         analyzer_hidden=hidden(visible[SectionName.ANALYZER]),

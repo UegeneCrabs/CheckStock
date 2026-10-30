@@ -20,6 +20,7 @@ from app.dto.ozon_limits import (
     OzonRateFeedback,
     OzonRateScope,
     OzonRateState,
+    PerformanceAccount,
     PerformanceAdmission,
     PerformanceCompletion,
     PerformanceIdentity,
@@ -169,7 +170,9 @@ class OzonLimitsRepository:
                             "account_scope": account.account_scope,
                             "organization_scope": account.organization_scope,
                             "attempted_at": observed,
-                            "export_units": row["export_units"],
+                            "export_units": min(row["export_units"], 1)
+                            if row["path"] in OZON_ADVERTISING.aggregate_report_paths
+                            else row["export_units"],
                             "http_units": int(row["path"] != OZON_ADVERTISING.products_path),
                             "state": OzonReservationState.RESOLVED,
                             "request_key": None,
@@ -191,6 +194,7 @@ class OzonLimitsRepository:
                     )
                     await connection.execute(statement.on_conflict_do_nothing(), batch)
                 await self._insert_ignore(connection, CONTROL, {"scope": marker, "payload": "{}"})
+            await self._recount_aggregate_exports(connection, account, cutoff)
             await connection.execute(
                 update(BUDGET)
                 .where(
@@ -217,6 +221,30 @@ class OzonLimitsRepository:
                     ("scope",),
                 )
             )
+
+    async def _recount_aggregate_exports(
+        self, connection: AsyncConnection, account: PerformanceAccount, cutoff: datetime
+    ) -> None:
+        marker = (
+            OZON_API_LIMITS.aggregate_budget_scope_prefix + account.account_scope + ":" + account.store_slug
+        )
+        if await connection.scalar(select(CONTROL.c.scope).where(CONTROL.c.scope == marker)) is not None:
+            return
+        journal = table_for(OzonAdvertisingRequestRecord)
+        await connection.execute(
+            update(BUDGET)
+            .where(
+                BUDGET.c.account_scope == account.account_scope,
+                BUDGET.c.store_slug == account.store_slug,
+                BUDGET.c.attempted_at > cutoff,
+                BUDGET.c.export_units > 1,
+                BUDGET.c.id.in_(
+                    select(journal.c.id).where(journal.c.path.in_(OZON_ADVERTISING.aggregate_report_paths))
+                ),
+            )
+            .values(export_units=1)
+        )
+        await self._insert_ignore(connection, CONTROL, {"scope": marker, "payload": "{}"})
 
     async def reserve_performance(
         self, request: PerformanceQuotaRequest, now: datetime

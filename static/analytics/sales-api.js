@@ -3,7 +3,11 @@
     const root = document.getElementById('sales-api');
     if (!root) return;
     const M = window.CheckStockSalesApi;
-    const config = JSON.parse(document.getElementById('sales-api-config').textContent);
+    const A = window.CheckStockAnalyzer;
+    const config = A.marketplaceConfig(JSON.parse(document.getElementById('sales-api-config').textContent));
+    M.configure(config);
+    A.localize(root, config);
+    const market = config.labels.marketplace;
     const $ = id => root.querySelector('#' + id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
     const fmt = value => value == null ? '—' : Number(value).toLocaleString('ru-RU');
@@ -18,7 +22,7 @@
         : shortDate(payload.date_from) + '.' + payload.date_from.slice(0, 4) + ' – ' + shortDate(payload.date_to) + '.' + payload.date_to.slice(0, 4);
     const state = {query: '', segment: 'all', filters: {}, sort: M.turnover.index, direction: -1, page: 1, pageSize: 20};
     let payload, rows = [], columns = [], fields = [], loading = false, pending, focusBeforeDrawer, toastTimer;
-    const preferenceKey = 'checkstock.sales-api.view.v1';
+    const preferenceKey = config.storageKey || 'checkstock.sales-api.view.v1';
     const preferences = ['sheet-order', 'compact', 'heat', 'show-days'];
     try {
         const saved = JSON.parse(localStorage.getItem(preferenceKey) || '{}');
@@ -58,22 +62,25 @@
     }
     function photo(row) {
         const url = /^https?:\/\//i.test(row.image) || /^\/(?!\/)/.test(row.image) ? row.image : '';
-        return `<span class="product-photo" aria-hidden="true">${url ? `<img loading="lazy" decoding="async" src="${esc(url)}" alt="">` : 'WB'}</span>`;
+        return `<span class="product-photo" aria-hidden="true">${url ? `<img loading="lazy" decoding="async" src="${esc(url)}" alt="">` : esc(market)}</span>`;
     }
     root.addEventListener('error', event => {
-        if (event.target.matches?.('.product-photo img')) event.target.parentElement.textContent = 'WB';
+        if (event.target.matches?.('.product-photo img')) event.target.parentElement.textContent = market;
     }, true);
     function cell(row, column, i) {
         const value = M.value(row, column), frozen = i === 0 ? ' frozen' : '';
+        const help = A.metricHelp(row, column.day == null ? column.key : payload.dates[column.day], config, value == null);
+        const status = A.qualityLabel(A.metricQuality(row, column.day == null ? column.key : payload.dates[column.day]));
+        const marker = status ? `<small class="partial">${esc(status)}</small>` : '';
         const name = `<button class="product-name" data-product="${esc(row.id)}" title="${esc(row.name)}">${esc(row.name)}</button>`;
-        if (column.key === 'product') return `<td class="text${frozen}"><div class="product-cell">${photo(row)}<div class="product-description">${name}<div class="product-meta"><span>WB ${esc(row.article)}</span><span class="barcode" title="${esc(row.barcode)}">${esc(row.barcode)}</span></div></div></div></td>`;
+        if (column.key === 'product') return `<td class="text${frozen}"><div class="product-cell">${photo(row)}<div class="product-description">${name}<div class="product-meta"><span>${esc(market)} ${esc(row.article)}</span><span class="barcode" title="${esc(row.barcode)}">${esc(row.barcode)}</span></div></div></div></td>`;
         if (column.key === 'name') return `<td class="text${frozen}"><div class="product-cell">${photo(row)}<div class="product-description">${name}</div></div></td>`;
         if (column.key === 'category') return `<td class="text${frozen}"><span class="category-label" title="${esc(value)}">${esc(value) || '—'}</span></td>`;
         if (!column.numeric) return `<td class="text muted${frozen}" title="${esc(value)}">${esc(value) || '—'}</td>`;
-        if (column.day == null) return `<td class="${column.key === 'orders' ? 'section-start' : ''}"><span class="${value === 0 ? 'zero' : column.key === 'cancels' ? 'cancel-main' : 'number-main'}">${fmt(value)}</span>${value != null && ['orders','cancels'].includes(column.key) && !row.complete ? '<small class="partial" title="Сумма только по загруженным дням">неполные данные</small>' : ''}</td>`;
+        if (column.day == null) return `<td title="${esc(help)}" class="${column.key === 'orders' ? 'section-start' : ''}"><span class="${value === 0 ? 'zero' : column.key === 'cancels' ? 'cancel-main' : 'number-main'}">${fmt(value)}</span>${marker}</td>`;
         const max = Math.max(1, ...row.days.filter(value => value != null));
         const alpha = value > 0 ? 0.035 + value / max * 0.11 : 0;
-        return `<td class="daily ${!value ? 'zero' : ''} ${$('heat').checked ? 'heat' : ''} ${column.day === 0 ? 'section-start' : ''}" style="--heat:rgba(57,145,104,${alpha})"><span class="metric-cell">${fmt(value)}</span></td>`;
+        return `<td title="${esc(help)}" class="daily ${!value ? 'zero' : ''} ${$('heat').checked ? 'heat' : ''} ${column.day === 0 ? 'section-start' : ''}" style="--heat:rgba(57,145,104,${alpha})"><span class="metric-cell">${fmt(value)}</span>${marker}</td>`;
     }
     function renderPage() {
         if (!payload) return;
@@ -85,7 +92,8 @@
             if (i === 0) return `<th class="frozen">Итого<small>${fmt(visible.length)} товаров</small></th>`;
             if (!column.numeric) return '<th></th>';
             const total = M.total(visible, column);
-            return `<th title="Сумма по всем отфильтрованным товарам${total.partial ? '; данные загружены не полностью' : ''}">${fmt(total.value)}${total.partial && total.value != null ? '<small>неполные данные</small>' : ''}</th>`;
+            const status = A.qualityLabel(total);
+            return `<th title="${esc('Сумма по всем отфильтрованным товарам. ' + A.qualityHelp(total))}">${fmt(total.value)}${status ? `<small>${esc(status)}</small>` : ''}</th>`;
         }).join('');
         $('head').querySelectorAll('[data-filter-column]').forEach(header => header.setAttribute('aria-sort', Number(header.dataset.filterColumn) === state.sort ? state.direction === 1 ? 'ascending' : 'descending' : 'none'));
         $('rows').innerHTML = visible.slice(start, start + state.pageSize).map(row => `<tr>${columns.map((column, i) => cell(row, column, i)).join('')}</tr>`).join('');
@@ -123,7 +131,7 @@
         closeDrawer();
         try {
             const query = start && end ? '?' + new URLSearchParams({date_from: start, date_to: end}) : '';
-            const response = await fetch('/api/analytics/sales-api' + query, {signal: controller.signal, headers: {'Accept': 'application/json'}});
+            const response = await fetch(config.apiBase + '/sales-api' + query, {signal: controller.signal, headers: {'Accept': 'application/json'}});
             const body = await response.json();
             if (!response.ok || !body.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Не удалось загрузить заказы');
             if (controller !== pending) return;
@@ -186,7 +194,7 @@
         if (!row || loading) return;
         focusBeforeDrawer = document.activeElement;
         const best = Math.max(1, ...row.days.filter(value => value != null));
-        $('drawer-body').innerHTML = `<h3 class="drawer-name">${esc(row.name)}</h3><div class="drawer-meta">${esc(row.category) || 'Без категории'}<br>Артикул WB: ${esc(row.article)}<br>Баркод: ${esc(row.barcode) || '—'}<br>Проект: ${esc(row.project)}</div><div class="detail-grid"><div><small>Заказы, шт.</small><strong class="number-main">${fmt(row.orders)}</strong></div><div><small>Отмены, шт.</small><strong>${fmt(row.cancels)}</strong></div></div><p class="coverage">Загружено ${row.known_days} из ${payload.dates.length} дней. ${row.complete ? '' : 'Итоги учитывают только известные значения.'}</p><h3>${periodLabel()}</h3><div class="chart-scroll" tabindex="0" aria-label="Заказы по дням с прокруткой"><div class="chart" style="min-width:${Math.max(370, payload.dates.length * 49)}px">${row.days.map((value, i) => `<div class="bar ${value === best ? 'peak' : ''}" style="height:${value == null ? 2 : Math.max(2, value / best * 100)}%" title="${payload.dates[i]}: ${fmt(value)}"><b>${fmt(value)}</b><small>${shortDate(payload.dates[i])}</small></div>`).join('')}</div></div><h3>Детализация периода</h3><table class="detail-list"><thead><tr><th>Дата</th><th>Заказы, шт.</th><th>Отмены, шт.</th></tr></thead><tbody>${payload.dates.map((day, i) => `<tr><td>${shortDate(day)}.${day.slice(0, 4)} <span class="muted">${weekday(day)}</span></td><td>${fmt(row.days[i])}</td><td>${fmt(row.cancellations[i])}</td></tr>`).join('')}</tbody></table>`;
+        $('drawer-body').innerHTML = `<h3 class="drawer-name">${esc(row.name)}</h3><div class="drawer-meta">${esc(row.category) || 'Без категории'}<br>${esc(config.labels.article)}: ${esc(row.article)}<br>Баркод: ${esc(row.barcode) || '—'}<br>Проект: ${esc(row.project)}</div><div class="detail-grid"><div><small>Заказы, шт.</small><strong class="number-main">${fmt(row.orders)}</strong></div><div><small>Отмены, шт.</small><strong>${fmt(row.cancels)}</strong></div></div><p class="coverage">Загружено ${row.known_days} из ${payload.dates.length} дней. ${A.metricQuality(row, 'orders').partial ? 'Итоги учитывают только известные значения.' : ''} ${esc(A.qualityHelp(A.metricQuality(row, 'orders')))}</p><h3>${periodLabel()}</h3><div class="chart-scroll" tabindex="0" aria-label="Заказы по дням с прокруткой"><div class="chart" style="min-width:${Math.max(370, payload.dates.length * 49)}px">${row.days.map((value, i) => `<div class="bar ${value === best ? 'peak' : ''}" style="height:${value == null ? 2 : Math.max(2, value / best * 100)}%" title="${payload.dates[i]}: ${fmt(value)}"><b>${fmt(value)}</b><small>${shortDate(payload.dates[i])}</small></div>`).join('')}</div></div><h3>Детализация периода</h3><table class="detail-list"><thead><tr><th>Дата</th><th>Заказы, шт.</th><th>Отмены, шт.</th></tr></thead><tbody>${payload.dates.map((day, i) => `<tr><td>${shortDate(day)}.${day.slice(0, 4)} <span class="muted">${weekday(day)}</span></td><td>${fmt(row.days[i])}</td><td>${fmt(row.cancellations[i])}</td></tr>`).join('')}</tbody></table>`;
         $('drawer').hidden = $('overlay').hidden = false;
         root.querySelector('.sales-main').inert = true;
         $('close-drawer').focus();
@@ -236,10 +244,10 @@
     $('export').addEventListener('click', () => {
         if (!payload || loading) return;
         const visible = M.filteredRows(rows, state, fields), exportColumns = M.columns(payload.dates, true);
-        const content = '\ufeff' + [exportColumns.map(column => column.label), ...visible.map(row => exportColumns.map(column => M.value(row, column)))].map(row => row.map(M.csvCell).join(';')).join('\r\n');
+        const content = '\ufeff' + A.qualityCsv(visible, exportColumns, M.value, column => column.label, undefined, config.qualityExport).map(row => row.map(M.csvCell).join(';')).join('\r\n');
         const url = URL.createObjectURL(new Blob([content], {type: 'text/csv;charset=utf-8'})), link = document.createElement('a');
         link.href = url;
-        link.download = `wb-orders-${payload.date_from}-${payload.date_to}.csv`;
+        link.download = `${config.exportPrefix}-orders-${payload.date_from}-${payload.date_to}.csv`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1500);
         toast(`В CSV выгружено ${fmt(visible.length)} товаров`);

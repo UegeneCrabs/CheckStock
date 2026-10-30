@@ -67,6 +67,8 @@ class OzonCalculatorValues(DtoModel):
     acquiring_amount: ScenarioNumber | None = None
     team_percent: ScenarioPercent | None = None
     team_amount: ScenarioNumber | None = None
+    unallocated_percent: ScenarioPercent | None = Decimal(0)
+    unallocated_amount: ScenarioNumber | None = None
     vat_percent: ScenarioPercent | None = None
     vat_amount: ScenarioNumber | None = None
     usn_percent: ScenarioPercent | None = None
@@ -75,6 +77,7 @@ class OzonCalculatorValues(DtoModel):
     order_basis: OzonScenarioBasis = OzonScenarioBasis.AMOUNT
     acquiring_basis: OzonScenarioBasis = OzonScenarioBasis.PERCENT
     team_basis: OzonScenarioBasis = OzonScenarioBasis.PERCENT
+    unallocated_basis: OzonScenarioBasis = OzonScenarioBasis.PERCENT
     vat_basis: OzonScenarioBasis = OzonScenarioBasis.PERCENT
     usn_basis: OzonScenarioBasis = OzonScenarioBasis.PERCENT
 

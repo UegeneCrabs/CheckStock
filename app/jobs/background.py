@@ -12,7 +12,7 @@ from app import db
 from app.access import auth
 from app.config import settings
 from app.container import ApplicationContainer
-from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE
+from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE, JOBS
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.dto.wb_hourly_prices import WbHourlyCollection
@@ -27,7 +27,15 @@ from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
 from app.infrastructure.async_resources import AsyncResources
-from app.jobs import database_backup, google_weeks, inbound_schedule, ozon, wb_ephemerides, wb_transit
+from app.jobs import (
+    database_backup,
+    google_weeks,
+    inbound_schedule,
+    ozon,
+    wb_ephemerides,
+    wb_transit,
+    yandex_analytics,
+)
 from app.jobs import finance as finance_sync
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
@@ -433,6 +441,37 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
             is_enabled=lambda: settings.background_sync_enabled and _job_enabled(wb_ephemerides.JOB),
         ),
         *google_weeks.jobs(),
+        BackgroundJob(
+            JOBS.yandex_analytics_funnel.name,
+            lambda: yandex_analytics.sync("funnel"),
+            _fixed_delay(settings.yandex_analytics_funnel_interval_seconds),
+            startup_delay_seconds=settings.yandex_analytics_startup_delay_seconds,
+            ready_event=catalog_ready,
+            is_enabled=lambda: (
+                settings.background_sync_enabled and _job_enabled(JOBS.yandex_analytics_funnel.name)
+            ),
+        ),
+        BackgroundJob(
+            JOBS.yandex_customer_transit.name,
+            lambda: yandex_analytics.sync("transit"),
+            _fixed_delay(settings.yandex_analytics_transit_interval_seconds),
+            startup_delay_seconds=settings.yandex_analytics_startup_delay_seconds,
+            ready_event=catalog_ready,
+            is_enabled=lambda: (
+                settings.background_sync_enabled and _job_enabled(JOBS.yandex_customer_transit.name)
+            ),
+        ),
+        BackgroundJob(
+            JOBS.yandex_ephemerides_stock.name,
+            yandex_analytics.snapshot,
+            yandex_analytics.delay,
+            startup_delay_seconds=yandex_analytics.delay(startup=True),
+            ready_event=catalog_ready,
+            retry_delays=EPHEMERIDES_STOCK_SCHEDULE.retry_delays,
+            is_enabled=lambda: (
+                settings.background_sync_enabled and _job_enabled(JOBS.yandex_ephemerides_stock.name)
+            ),
+        ),
         BackgroundJob(
             "catalog_sync",
             _sync_catalogs,

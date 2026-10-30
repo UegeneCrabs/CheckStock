@@ -169,7 +169,7 @@ class OzonCabinetRepository:
             values = stored_cabinet_values(row.payload).model_copy(
                 update={
                     key: value
-                    for key in ("goals", "buyout", "expenses")
+                    for key in ("goals", "buyout", "expenses", "forecast")
                     if (value := getattr(command.change, key)) is not None
                 }
             )

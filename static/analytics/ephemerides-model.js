@@ -2,7 +2,7 @@
     'use strict';
     const sum = values => { const numbers = values.filter(v => typeof v === 'number' && Number.isFinite(v)); return numbers.length ? numbers.reduce((a,b) => a+b,0) : null; };
     const ratio = (a,b) => a != null && b > 0 ? a/b*100 : null;
-    const metricKey = row => JSON.stringify([row.store_slug, String(row.article).split(' / ')[0].trim()]);
+    const metricKey = row => JSON.stringify([row.store_slug, row.metricIdentity === 'fullArticle' ? String(row.article) : String(row.article).split(' / ')[0].trim()]);
     function unique(rows) {
         const result = new Map();
         rows.forEach(row => { const key = metricKey(row); if (!result.has(key)) result.set(key, []); result.get(key).push(row); });
@@ -12,19 +12,26 @@
         const values = new Set(rows.map(value).filter(v => v != null));
         return values.size === 1 ? [...values][0] : null;
     }
-    function summary(rows, period, key) {
+    function summaryValue(rows, period, key) {
         const value = row => period ? row[period]?.[key] : row[key];
         if (['goal','turnover','fbs','fbo','ff'].includes(key)) return sum(rows.map(value));
-        if (key === 'stock') return sum([summary(rows,null,'fbs'),summary(rows,null,'fbo'),summary(rows,null,'ff'),summary(rows,null,'fromCustomer')]);
+        if (key === 'stock') return sum([summaryValue(rows,null,'fbs'),summaryValue(rows,null,'fbo'),summaryValue(rows,null,'ff'),summaryValue(rows,null,'fromCustomer')]);
         if (['fact','impressions','fromCustomer'].includes(key)) return sum(unique(rows).map(group => shared(group,value)));
-        const weights = {ctr:['clicks','impressions'], drr:['spend','boughtAmount'], roi:['profit','purchase']}[key];
-        if (period && weights) {
-            const pairs = unique(rows).map(group => weights.map(k => shared(group, row => row[period]?.weights?.[k]))).filter(p => p.every(v => v != null));
-            const a=sum(pairs.map(p=>p[0])), b=sum(pairs.map(p=>p[1]));
-            return key === 'drr' && a === 0 && b === 0 ? 0 : ratio(a,b);
-        }
         return null;
     }
+    function summaryDetails(rows, period, key) {
+        const A = scope.CheckStockAnalyzer;
+        const field = period ? period + '.' + key : key;
+        const weights = {ctr:['clicks','impressions'], drr:['spend','boughtAmount'], roi:['profit','purchase']}[key];
+        if (period && weights) {
+            return A.weightedSummary(rows, field, row => row[period]?.weights?.[weights[0]], row => row[period]?.weights?.[weights[1]]);
+        }
+        const value = summaryValue(rows, period, key);
+        const quality = A.mergeQuality(rows.map(row => A.metricQuality(row, field)));
+        if (value != null && rows.some(row => (period ? row[period]?.[key] : row[key]) == null)) quality.partial = true;
+        return {...quality, value};
+    }
+    const summary = (rows, period, key) => summaryDetails(rows, period, key).value;
     function monday(iso) { const d=new Date(iso+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7); return d.toISOString().slice(0,10); }
     function shift(iso, days) { const d=new Date(iso+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); }
     const moscowDateFormat = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -85,5 +92,5 @@
             item.dirty=item.text!==item.saved; item.error=null; this.notify(item);
         }
     }
-    scope.EphemeridesModel={sum,ratio,unique,shared,summary,monday,shift,moscowToday,canEditComment,weeklyCommentColumns,commentPresentation,Drafts};
+    scope.EphemeridesModel={sum,ratio,unique,shared,summary,summaryDetails,monday,shift,moscowToday,canEditComment,weeklyCommentColumns,commentPresentation,Drafts};
 })(typeof window==='undefined'?globalThis:window);

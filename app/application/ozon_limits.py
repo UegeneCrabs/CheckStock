@@ -7,7 +7,15 @@ from urllib.parse import urlsplit
 
 from app.application.ports import OzonLimitStore
 from app.config import settings
-from app.core.constants import OZON_ADVERTISING, OZON_API, OZON_API_LIMITS, OZON_LOGISTICS, AdvertisingError
+from app.core.constants import (
+    OZON_ADVERTISING,
+    OZON_ANALYTICS,
+    OZON_API,
+    OZON_API_LIMITS,
+    OZON_LOGISTICS,
+    OZON_STOCK_ANALYTICS,
+    AdvertisingError,
+)
 from app.dto.ozon_limits import (
     OzonRateFeedback,
     OzonRateScope,
@@ -55,7 +63,11 @@ class OzonLimitsService:
             OzonRateScope(key=OZON_API_LIMITS.seller_scope_prefix + account, minimum_spacing=spacing),
             OzonRateScope(
                 key=OZON_API_LIMITS.method_scope_prefix + account_digest(account + target.path),
-                minimum_spacing=settings.ozon_logistics_request_interval_seconds
+                minimum_spacing=OZON_ANALYTICS.method_minimum_spacing_seconds
+                if target.path == OZON_ANALYTICS.funnel_path
+                else max(spacing, OZON_STOCK_ANALYTICS.minimum_interval_seconds)
+                if target.path == OZON_STOCK_ANALYTICS.path
+                else settings.ozon_logistics_request_interval_seconds
                 if target.path == OZON_LOGISTICS.accrual_path
                 else spacing,
             ),

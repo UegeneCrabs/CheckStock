@@ -50,6 +50,7 @@ def snapshot(
             if cabinet.expenses.acquiring_percent is not None
             else None,
             team_percent=source.team_commission_percent,
+            unallocated_percent=Decimal(str(cabinet.expenses.unallocated_percent)),
             vat_percent=Decimal(str(cabinet.expenses.vat_percent))
             if cabinet.expenses.vat_percent is not None
             else None,

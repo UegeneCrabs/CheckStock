@@ -67,7 +67,7 @@
         return rows.filter(row => (!query || [row.name, row.article, row.barcode, ...(row.barcodes || []), row.project, row.manager].join(' ').toLocaleLowerCase('ru').includes(query))
             && (!state.project || row.project === state.project)
             && (!state.manager || row.manager === state.manager)
-            && (state.segment === 'all' || state.segment === 'negative' && row.currentRoi != null && row.currentRoi < 0 || state.segment === 'new' && row.code.toUpperCase() === 'NEW')
+            && (state.segment === 'all' || state.segment === 'negative' && row.currentRoi != null && row.currentRoi < 0 || state.segment === 'new' && (row.marketplace === 'OZON' ? row.is_new === true : row.code.toUpperCase() === 'NEW'))
             && (!state.color || state.color === 'all' || color(row, fields[state.colorColumn]) === state.color));
     }
     function tableRows(rows, state) {
@@ -105,7 +105,8 @@
     function cardGroups(rows) {
         const articles = new Map();
         rows.forEach(row => {
-            const key = JSON.stringify([storeKey(row), String(row.article || row.id || '').split(' / ')[0].trim()]);
+            const article = String(row.article || row.id || '');
+            const key = JSON.stringify([storeKey(row), row.metricIdentity === 'fullArticle' ? article : article.split(' / ')[0].trim()]);
             if (!articles.has(key)) articles.set(key, []);
             articles.get(key).push(row);
         });
@@ -125,14 +126,18 @@
             return {plan, completePlan, fact, forecast,
                 difference: completePlan && forecast != null ? forecast - plan : null};
         });
-        const result = {partial: {}};
+        const result = {partial: {}, stale: {}};
         ['plan', 'fact', 'forecast', 'difference'].forEach(key => {
             result[key] = sum(grouped.map(group => group[key]));
-            result.partial[key] = grouped.some(group => key === 'plan' ? !group.completePlan : group[key] == null);
+            const quality = mergeQuality(rows.map(row => metricQuality(row, key)));
+            result.partial[key] = quality.partial || grouped.some(group => key === 'plan' ? !group.completePlan : group[key] == null);
+            result.stale[key] = quality.stale;
         });
         const paired = grouped.filter(group => group.completePlan && group.fact != null && group.difference != null);
         result.deviation = ratio(sum(paired.map(group => group.difference)), sum(paired.map(group => group.plan)));
-        result.partial.deviation = paired.length < grouped.length;
+        const quality = mergeQuality(rows.map(row => metricQuality(row, 'deviation')));
+        result.partial.deviation = quality.partial || paired.length < grouped.length;
+        result.stale.deviation = quality.stale;
         return result;
     }
     function storeTurnover(rows) {
@@ -146,6 +151,68 @@
             store: store.store, project: store.project, ...turnoverTotals(store.rows),
         }));
     }
+    const orderMetricField = field => /^(?:day[0-6]|week|\d{4}-\d{2}-\d{2})$/.test(field);
+    function metricQuality(row, field) {
+        const parts = field.split('.'), key = parts.at(-1);
+        const source = parts.length > 1 ? row[parts[0]] || {} : row;
+        const explicit = source.quality?.[key] || row.quality?.[field];
+        const coverage = source.coverage || {}, reasons = new Set(explicit?.reasons || []);
+        let partial = explicit?.complete === false, stale = explicit?.stale === true;
+        if (!explicit) {
+            const details = coverage[key + 'Details'];
+            const completeKey = {drr:'drrComplete', yesterdayDrr:'yesterdayDrrComplete', roi:'roiComplete', currentRoi:'currentRoiComplete'}[key];
+            const countKey = {drr:'drr', fact:'orders', impressions:'advertising', ctr:'advertising', totalCtr:'advertising'}[key];
+            if (details && typeof details.complete === 'boolean') partial ||= !details.complete;
+            if (completeKey && typeof coverage[completeKey] === 'boolean') partial ||= !coverage[completeKey];
+            else if (countKey && typeof coverage[countKey] === 'number' && typeof coverage.expected === 'number') partial ||= coverage[countKey] < coverage.expected;
+            if (key === 'stock' || key === 'stockDays') partial ||= row.stockPartial === true;
+            if (key === 'stockDays') partial ||= row.stockOrdersComplete === false;
+            if (['orders','cancels'].includes(key) && typeof row.complete === 'boolean') partial ||= !row.complete;
+            stale ||= coverage[key + 'Stale'] === true || coverage.stale === true && (countKey != null || ['roi','currentRoi','spend','previousPrice','orders','cancels'].includes(key));
+        }
+        const issues = explicit ? [] : (row.field_issues || []).filter(item => item.field === field || item.field === 'orders' && orderMetricField(key));
+        issues.forEach(item => {
+            if (item.reason) reasons.add(item.reason);
+            partial ||= item.reason === 'partial' || item.complete === false;
+            stale ||= ['stale','source_error','transport_error'].includes(item.reason) || item.stale === true;
+        });
+        if (partial && !reasons.size) reasons.add('partial');
+        if (stale) reasons.add('stale');
+        return {complete: !partial, partial, stale, reasons: [...reasons], expected_dates: explicit?.expected_dates || [], known_dates: explicit?.known_dates || []};
+    }
+    function mergeQuality(qualities) {
+        return {partial: qualities.some(item => item.partial), stale: qualities.some(item => item.stale), reasons: [...new Set(qualities.flatMap(item => item.reasons || []))]};
+    }
+    function qualityLabel(quality) {
+        return [quality.partial ? 'неполные данные' : '', quality.stale ? 'сохранённые данные' : ''].filter(Boolean).join(' · ');
+    }
+    function qualityHelp(quality) {
+        return [...new Set([qualityLabel(quality), ...(quality.reasons || []).map(reasonMessage)].filter(Boolean))].join('. ');
+    }
+    function weightedSummary(rows, field, numeratorValue, denominatorValue) {
+        const known = amount => typeof amount === 'number' && Number.isFinite(amount);
+        const pairs = [], qualities = [];
+        let missingCards = 0, conflictingCards = 0;
+        cardGroups(rows).forEach(products => {
+            qualities.push(...products.map(row => metricQuality(row, field)));
+            const parts = products.map(row => ({numerator: numeratorValue(row), denominator: denominatorValue(row)}));
+            const numerators = new Set(parts.map(part => part.numerator).filter(known));
+            const denominators = new Set(parts.map(part => part.denominator).filter(known));
+            if (numerators.size > 1 || denominators.size > 1) { conflictingCards++; return; }
+            const pair = parts.find(part => known(part.numerator) && known(part.denominator));
+            if (pair) pairs.push(pair);
+            else missingCards++;
+        });
+        const numerator = sum(pairs.map(pair => pair.numerator));
+        const denominator = sum(pairs.map(pair => pair.denominator));
+        const zeroDrr = ['drr', 'yesterdayDrr'].includes(field.split('.').at(-1)) && numerator === 0 && denominator === 0;
+        const quality = mergeQuality(qualities);
+        if (missingCards) quality.reasons.push('missing_source');
+        if (conflictingCards) quality.reasons.push('mapping_conflict');
+        return {...quality, value: zeroDrr ? 0 : ratio(numerator, denominator),
+            partial: quality.partial || missingCards > 0 || conflictingCards > 0,
+            includedCards: pairs.length, missingCards, conflictingCards};
+    }
     function ratioSummary(rows, column) {
         const weights = {
             currentRoi: ['currentProfit', 'currentPurchase'], roi: ['profit', 'purchase'],
@@ -153,33 +220,17 @@
             totalCtr: ['clicks', 'impressions'],
         }[column.key];
         if (column.metric !== 'ctr' && !weights) return null;
-        const known = amount => typeof amount === 'number' && Number.isFinite(amount);
-        const pairs = [];
-        let missingCards = 0, conflictingCards = 0;
-        cardGroups(rows).forEach(products => {
-            const parts = products.map(row => ({
-                numerator: column.metric === 'ctr' ? row.clicks?.[column.idx] : row.weights?.[weights[0]],
-                denominator: column.metric === 'ctr' ? row.impressions?.[column.idx] : row.weights?.[weights[1]],
-            }));
-            const numerators = new Set(parts.map(part => part.numerator).filter(known));
-            const denominators = new Set(parts.map(part => part.denominator).filter(known));
-            if (numerators.size > 1 || denominators.size > 1) {
-                conflictingCards++;
-                return;
-            }
-            const pair = parts.find(part => known(part.numerator) && known(part.denominator));
-            if (pair) pairs.push(pair);
-            else missingCards++;
-        });
-        const numerator = sum(pairs.map(pair => pair.numerator));
-        const denominator = sum(pairs.map(pair => pair.denominator));
-        const zeroDrr = ['drr', 'yesterdayDrr'].includes(column.key) && numerator === 0 && denominator === 0;
-        return {value: zeroDrr ? 0 : ratio(numerator, denominator),
-            partial: missingCards > 0 || conflictingCards > 0,
-            includedCards: pairs.length, missingCards, conflictingCards};
+        return weightedSummary(rows, column.key,
+            row => column.metric === 'ctr' ? row.clicks?.[column.idx] : row.weights?.[weights[0]],
+            row => column.metric === 'ctr' ? row.impressions?.[column.idx] : row.weights?.[weights[1]]);
     }
     function summaryDetails(rows, column) {
-        return ratioSummary(rows, column) || {value: summary(rows, column), partial: false};
+        const result = ratioSummary(rows, column);
+        if (result) return result;
+        const amount = summary(rows, column);
+        const quality = mergeQuality(rows.map(row => metricQuality(row, column.key)));
+        if (amount != null && numeric(column) && column.metric !== 'carts' && rows.some(row => value(row, column) == null)) quality.partial = true;
+        return {...quality, value: amount};
     }
     function summary(rows, column) {
         const result = ratioSummary(rows, column);
@@ -216,7 +267,67 @@
         if (/^[\s]*[=+@\-]/.test(text) && typeof value !== 'number') text = "'" + text;
         return '"' + text.replace(/"/g, '""') + '"';
     }
-    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, summaryDetails, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress, columnId, color};
+    function csvQuality(row, field, value) {
+        const quality = metricQuality(row, field);
+        const state = [value == null ? 'unknown' : '', quality.partial ? 'partial' : '', quality.stale ? 'stale' : ''].filter(Boolean).join('|') || 'full';
+        return [state, [...new Set([...quality.reasons, ...(value == null && !quality.reasons.length ? ['missing_source'] : [])])].join('|')];
+    }
+    function qualityCsv(rows, columns, getValue, getLabel, getField = column => column.key, enabled = false) {
+        const extra = enabled ? columns.filter(column => (column.numeric === true || ['number','money','decimal','percent','drr','roi','stock','rating','day','difference','deviation'].includes(column.type))
+            && !getField(column).startsWith('carts') && rows.some(row => csvQuality(row, getField(column), getValue(row, column))[0] !== 'full')) : [];
+        return [[...columns.map(getLabel), ...extra.flatMap(column => [getLabel(column) + ' · качество', getLabel(column) + ' · причины'])],
+            ...rows.map(row => [...columns.map(column => getValue(row, column)), ...extra.flatMap(column => csvQuality(row, getField(column), getValue(row, column)))])];
+    }
+    function marketplaceConfig(config = {}) {
+        const marketplace = config.marketplace || 'WB';
+        const labels = {marketplace: marketplace === 'YANDEX MARKET' ? 'ЯМ' : marketplace === 'OZON' ? 'Ozon' : 'WB', wallet: marketplace === 'YANDEX MARKET' ? 'Цена с Пэй' : marketplace === 'OZON' ? 'Цена с Ozon Картой' : 'Цена WB с кошельком', article: marketplace === 'WB' ? 'Артикул WB' : 'Артикул продавца', fbo: marketplace === 'YANDEX MARKET' ? 'FBY' : 'FBO', ...config.labels};
+        return {...config, marketplace, labels, qualityExport: config.qualityExport ?? marketplace !== 'WB', apiBase: config.apiBase || '/api/analytics', pageBase: config.pageBase || '/analytics', exportPrefix: config.exportPrefix || 'wb', metricIdentity: config.metricIdentity || 'wbCard'};
+    }
+    const reasonMessages = {missing_source: 'Нет подтверждённых данных источника', not_configured: 'Коэффициент D этого часа не задан в параметрах кабинета', subscription_required: 'Источник сообщил, что требуется подписка', partial: 'Известна только часть данных', stale: 'Сохранённые данные: последнее обновление не завершено', provisional: 'Предварительные данные текущего дня источника', observed: 'Сохранённое наблюдение; финализация источником не подтверждена', mapping_conflict: 'Источник не подтвердил однозначную привязку товара', quota_deferred: 'Обновление отложено по суточному бюджету запросов', transport_error: 'Источник временно недоступен', rate_limited: 'Источник ограничил частоту запросов', credentials_error: 'Источник отклонил учётные данные', access_denied: 'Источник отклонил доступ к методу', api_rejected: 'Источник отклонил запрос', run_deferred: 'Обновление будет продолжено с сохранённой точки', conflict: 'Данные изменились в другой вкладке. Сравните сохранённую версию перед повтором.', current_day_only: 'Запись можно изменять только за сегодняшний день по Москве', current_week_only: 'Решения можно изменять только за текущую неделю по Москве', invalid_period: 'Проверьте выбранный период', product_not_found: 'Товар не найден или недоступен', note_not_found: 'Запись не найдена или недоступна', inactive_user: 'Учётная запись неактивна'};
+    Object.assign(reasonMessages, {source_missing: reasonMessages.missing_source, field_missing: reasonMessages.missing_source, hourly_d_missing: reasonMessages.not_configured, estimated_price: 'Расчётная цена', stale_price: 'Последняя сохранённая цена устарела', source_error: 'Последнее обновление источника завершилось ошибкой', source_timezone_unknown: 'Границы суток источника не подтверждены; дата отчёта может отличаться от московских суток', source_calendar_unconfirmed: 'Календарные границы источника не подтверждены'});
+    Object.assign(reasonMessages, {malformed_source: 'Источник вернул данные в неожиданном формате; предыдущие значения сохранены', repeated_page: 'Источник повторил страницу или SKU; незавершённые данные не опубликованы', limiter_required: 'Ограничитель запросов недоступен; загрузка не выполнялась', write_failed: 'Не удалось сохранить данные. Повторите действие'});
+    reasonMessages.invalid_forecast = 'Нужны 24 разных часа от 0 до 23 и неотрицательные конечные коэффициенты либо пустые значения';
+    reasonMessages.source_date_unverified = 'Источник не подтвердил исходную дату наблюдения';
+    const reasonMessage = code => reasonMessages[code] || code;
+    function cartInterval(day) {
+        const next = new Date(day + 'T12:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
+        return `С 03:00 ${day} до 03:00 ${next.toISOString().slice(0,10)} по Москве (UTC-день ${day})`;
+    }
+    function metricHelp(row, field, config, unknown = false) {
+        if (config.marketplace === 'WB') return '';
+        const issues = (row.field_issues || []).filter(item => item.field === field || item.field === 'orders' && orderMetricField(field));
+        if (field.startsWith('carts') && row.cartSources?.[Number(field.slice(5))]) issues.push(row.cartSources[Number(field.slice(5))]);
+        const text = issues.map(item => [reasonMessage(item.reason), item.source_scope === 'report_date' && item.source_day ? 'Дата отчёта: ' + item.source_day : '', item.source_timezone ? 'Часовой пояс источника: ' + item.source_timezone : '', item.calendar_warning ? reasonMessage(item.calendar_warning) : '', item.provisional ? reasonMessages.provisional : '', item.complete === false ? reasonMessages.partial : '', item.stale ? reasonMessages.stale : '', (item.observed_at || item.received_at) ? 'Наблюдение: ' + new Date(item.observed_at || item.received_at).toLocaleString('ru-RU', {timeZone: 'Europe/Moscow'}) : '', item.next_retry_at ? 'Следующая попытка: ' + new Date(item.next_retry_at).toLocaleString('ru-RU', {timeZone: 'Europe/Moscow'}) : ''].filter(Boolean).join('. '));
+        const reason = row.reasons?.[field] || (/^(price|wallet|spp)$/.test(field) ? row.reasons?.prices : null) || (field.startsWith('carts') ? row.reasons?.carts : null);
+        if (reason) text.push(reasonMessage(reason));
+        const quality = qualityHelp(metricQuality(row, field));
+        if (quality) text.push(quality);
+        if (unknown && !text.length) text.push(reasonMessages.missing_source);
+        if (config.marketplace === 'OZON' && field.startsWith('carts')) {
+            const day = row.carts_source_days?.[Number(field.slice(5))];
+            if (day) text.unshift(cartInterval(day));
+        }
+        return text.join('. ');
+    }
+    function configure(config) {
+        if (config.marketplace === 'WB') return;
+        fields.find(column => column.key === 'wallet').label = config.labels.wallet;
+        fields.find(column => column.key === 'price').label = 'Цена продавца';
+    }
+    function localize(root, config) {
+        if (config.marketplace === 'WB' || !root) return;
+        const text = value => {
+            let result = value.replace(/Заказы из воронки WB|Заказы WB из воронки/g, config.marketplace === 'OZON' ? 'Заказы Ozon FBO + FBS' : 'Заказы по API ' + config.labels.marketplace);
+            result = result.replace(/Цена WB(?:<br>| )с кошельком/g, config.labels.wallet).replace(/WILDBERRIES|Wildberries|WB/g, config.labels.marketplace).replace(/\bFBO\b/g,config.labels.fbo);
+            return result;
+        };
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) if (!['SCRIPT','STYLE'].includes(walker.currentNode.parentElement?.tagName)) nodes.push(walker.currentNode);
+        nodes.forEach(node => { node.nodeValue = text(node.nodeValue); });
+        root.querySelectorAll('[title],[aria-label]').forEach(node => ['title','aria-label'].forEach(attribute => {if(node.hasAttribute(attribute)) node.setAttribute(attribute,text(node.getAttribute(attribute)));}));
+    }
+    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, summaryDetails, weightedSummary, metricQuality, mergeQuality, qualityLabel, qualityHelp, csvQuality, qualityCsv, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress, columnId, color, marketplaceConfig, configure, localize, metricHelp, reasonMessage, cartInterval};
     scope.CheckStockAnalyzer = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof window === 'undefined' ? globalThis : window);

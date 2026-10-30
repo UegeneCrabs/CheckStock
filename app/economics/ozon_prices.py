@@ -142,6 +142,18 @@ async def sync_store(store: str, resources: AsyncResources) -> PriceSyncResult:
         try:
             website = await website_observations(client, tuple(identities.values()))
             await repository.save(store, website)
+            for observation in website:
+                for change in observation.changes:
+                    if change.value.state == OzonPriceState.CONFLICT:
+                        logger.warning(
+                            "ozon_website_price_conflict store=%s product_id=%s offer_id=%s field=%s scheme=%s action_ids=%s",
+                            store,
+                            observation.product_id,
+                            observation.offer_id,
+                            change.field,
+                            change.value.scheme,
+                            change.value.action_ids,
+                        )
             if any(
                 change.value.state == OzonPriceState.CONFLICT for item in website for change in item.changes
             ):

@@ -17,6 +17,10 @@ python_version = "3.13"
 strict = true
 follow_imports = "silent"
 files = [
+    "app/dto/ozon_price_changes.py", "app/application/ozon_price_changes.py",
+    "app/ozon/async_price_changes.py", "app/economics/ozon_price_changes.py",
+    "app/infrastructure/ozon_price_changes_orm.py", "app/infrastructure/ozon_price_changes_repository.py",
+    "app/web/routers/ozon_prices.py",
     "app/dto/database_backup.py", "app/application/database_backup.py",
     "app/infrastructure/database_backup_store.py", "app/integrations/database_backup_drive.py",
     "app/jobs/database_backup.py", "scripts/ops/create_database_backup.py", "scripts/ops/backup_to_drive.py",
@@ -36,6 +40,9 @@ files = [
     "app/dto/ozon_newness.py", "app/ozon/newness.py", "app/infrastructure/ozon_newness_repository.py",
     "app/dto/ozon_calculator.py", "app/economics/ozon_calculator.py",
     "app/dto/ozon_margin.py", "app/ozon/margin_normalizer.py", "app/economics/ozon_margin.py",
+    "app/dto/ozon_calendar.py", "app/economics/ozon_calendar.py",
+    "app/application/ozon_calendar.py", "app/infrastructure/ozon_calendar_repository.py",
+    "app/web/routers/ozon_calendar.py",
     "app/application/ozon_margin_service.py", "app/infrastructure/ozon_margin_orm.py",
     "app/infrastructure/ozon_margin_repository.py", "app/jobs/ozon_margin.py",
     "app/dto/ozon_buyout.py",

@@ -191,11 +191,16 @@ class PerformanceReportRequest(DtoModel):
     method: HTTPMethod
     path: str
     period: AdvertisingPeriod
-    campaigns: tuple[str, ...] = Field(default=(), max_length=OZON_ADVERTISING.campaigns_per_report)
+    campaigns: tuple[str, ...] = ()
     refresh_slot: str | None = None
 
     @model_validator(mode="after")
     def valid_limits(self) -> Self:
+        if (
+            self.path == OZON_ADVERTISING.statistics_path
+            and len(self.campaigns) > OZON_ADVERTISING.campaigns_per_report
+        ):
+            raise ValueError(AdvertisingError.CAMPAIGN_LIMIT)
         if (self.period.end - self.period.start).days >= OZON_API_LIMITS.report_max_days:
             raise ValueError(AdvertisingError.INVALID_PERIOD)
         if len(set(self.campaigns)) != len(self.campaigns):

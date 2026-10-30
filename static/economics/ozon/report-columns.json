@@ -46,6 +46,7 @@
     {"key":"storage","label":"Хранение на выкуп, ₽","format":"money"},
     {"key":"acquiring_value","label":"Эквайринг на выкуп, ₽","format":"money"},
     {"key":"team_commission_value","label":"Комиссия компании на выкуп, ₽","format":"money"},
+    {"key":"unallocated_value","label":"Прочее нераспределённое на выкуп, ₽","format":"money"},
     {"key":"vat_value","label":"НДС на выкуп, ₽","format":"money"},
     {"key":"usn_value","label":"УСН на выкуп, ₽","format":"money"},
     {"key":"advertising_spend","label":"Реклама за день, ₽","format":"money"},

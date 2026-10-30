@@ -3,11 +3,34 @@ from typing import Annotated, Self
 
 from pydantic import Field, model_validator
 
-from app.core.constants import OZON_CABINET, OzonBuyoutState, OzonRoiCode
+from app.core.constants import OZON_ANALYTICS, OZON_CABINET, OzonAnalyticsReason, OzonBuyoutState, OzonRoiCode
 from app.dto.common import DtoModel
 
 Percent = Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
 RoiPercent = Annotated[float, Field(ge=0, le=OZON_CABINET.max_roi_percent, allow_inf_nan=False)]
+ForecastCoefficient = Annotated[float, Field(strict=True, ge=0, le=OZON_ANALYTICS.max_d, allow_inf_nan=False)]
+
+
+class OzonHourlyD(DtoModel):
+    hour: int = Field(strict=True, ge=0, lt=OZON_ANALYTICS.hours)
+    value: ForecastCoefficient | None = None
+
+
+class OzonCabinetForecast(DtoModel):
+    hourly_d_coefficients: tuple[OzonHourlyD, ...] = Field(
+        default_factory=lambda: tuple(OzonHourlyD(hour=hour) for hour in range(OZON_ANALYTICS.hours))
+    )
+
+    @model_validator(mode="after")
+    def complete_hours(self) -> Self:
+        if len(self.hourly_d_coefficients) != OZON_ANALYTICS.hours or {
+            item.hour for item in self.hourly_d_coefficients
+        } != set(range(OZON_ANALYTICS.hours)):
+            raise ValueError(OzonAnalyticsReason.INVALID_FORECAST)
+        return self
+
+    def coefficient_at_hour(self, hour: int) -> float | None:
+        return next((item.value for item in self.hourly_d_coefficients if item.hour == hour), None)
 
 
 class OzonCabinetGoals(DtoModel):
@@ -31,6 +54,7 @@ class OzonBuyoutSettings(DtoModel):
 
 class OzonCabinetExpenses(DtoModel):
     acquiring_percent: Percent | None = None
+    unallocated_percent: Percent = 0
     vat_percent: Percent | None = None
     usn_percent: Percent | None = None
 
@@ -39,6 +63,7 @@ class OzonCabinetValues(DtoModel):
     goals: OzonCabinetGoals = OzonCabinetGoals()
     buyout: OzonBuyoutSettings = OzonBuyoutSettings()
     expenses: OzonCabinetExpenses = OzonCabinetExpenses()
+    forecast: OzonCabinetForecast = OzonCabinetForecast()
 
 
 class OzonCabinetRecord(DtoModel):
@@ -67,14 +92,15 @@ class OzonCabinets(DtoModel):
 
 
 class OzonCabinetUpdate(DtoModel):
-    revision: int = Field(ge=0)
+    revision: int = Field(strict=True, ge=0, le=OZON_ANALYTICS.max_version)
     goals: OzonCabinetGoals | None = None
     buyout: OzonBuyoutSettings | None = None
     expenses: OzonCabinetExpenses | None = None
+    forecast: OzonCabinetForecast | None = None
 
     @model_validator(mode="after")
     def one_section(self) -> Self:
-        if sum(value is not None for value in (self.goals, self.buyout, self.expenses)) != 1:
+        if sum(value is not None for value in (self.goals, self.buyout, self.expenses, self.forecast)) != 1:
             raise ValueError("Exactly one settings section is required")
         if self.buyout is not None and self.buyout.period_days != OZON_CABINET.default_period_days:
             raise ValueError("Ozon buyout period must be 30 completed days")

@@ -9,7 +9,7 @@ window.OzonCalculatorHelpContent = (() => {
     const rub = value => n(value) + ' ₽';
     const pct = value => n(value) + '%';
     const lines = (...values) => values.filter(Boolean).join('\n');
-    const priceNames = { base_price: 'Цена поставщика', seller_price: 'Цена с учётом акции', black_price: 'Цена с СПП', green_price: 'Цена с Кошельком' };
+    const priceNames = { base_price: 'Предельная цена без акций', seller_price: 'Цена с учётом акции', black_price: 'Цена с СПП', green_price: 'Цена с Кошельком' };
     const priceKeys = Object.keys(priceNames);
     const discountKeys = ['action_discount_percent', 'spp_percent', 'wallet_percent'];
     const discountNames = ['Скидка акции', 'СПП', 'Скидка Кошелька'];
@@ -88,17 +88,18 @@ window.OzonCalculatorHelpContent = (() => {
         const modified = key === 'advertising_amount' ? Boolean(v.advertising_manual) : session.modified.has(key) || session.modified.has(prefix + '_percent') || session.modified.has(prefix + '_amount') || ['click', 'order'].includes(prefix) && (session.modified.has(prefix + '_drr') || session.modified.has(prefix + '_spend'));
         const d = { title, formula: '', calculation: '', source: '', dates: '', note: '' };
         const value = key === 'margin' || key === 'roi' ? v.result?.[key] : v[key];
-        if (['acquiring', 'team'].includes(prefix)) {
+        if (['acquiring', 'team', 'unallocated'].includes(prefix)) {
             const amountBasis = v[prefix + '_basis'] === 'amount';
             const acquiring = prefix === 'acquiring';
+            const cabinetRate = prefix !== 'team';
             const base = acquiring ? v.wallet_price : v.seller_price;
             const priceKey = acquiring ? 'green_price' : 'seller_price';
             const priceLabel = acquiring ? 'цена с Кошельком' : 'цена с учётом акции';
             d.formula = amountBasis ? 'Ставка = сумма / ' + priceLabel + ' × 100.' : 'Сумма = ' + priceLabel + ' × ставка / 100.';
             d.calculation = amountBasis ? rub(v[prefix + '_amount']) + ' / ' + rub(base) + ' × 100 = ' + pct(v[prefix + '_percent'])
                 : rub(base) + ' × ' + n(v[prefix + '_percent']) + ' / 100 = ' + rub(v[prefix + '_amount']);
-            d.source = lines(acquiring ? 'Ставка: настройки кабинета «' + (p.store_name || p.store_slug || 'не указан') + '».' : sheet(p, 'ДРР %'), priceSource(p, priceKey));
-            d.dates = lines(acquiring ? stamp('Настройки сохранены', session.expensesUpdatedAt) : stamp('Загрузка Sheets', p.details?.source_synced_at), priceDates(p, [priceKey]));
+            d.source = lines(cabinetRate ? 'Ставка: настройки кабинета «' + (p.store_name || p.store_slug || 'не указан') + '».' : sheet(p, 'ДРР %'), priceSource(p, priceKey));
+            d.dates = lines(cabinetRate ? stamp('Настройки сохранены', session.expensesUpdatedAt) : stamp('Загрузка Sheets', p.details?.source_synced_at), priceDates(p, [priceKey]));
         } else if (['vat', 'usn'].includes(prefix)) {
             const amountBasis = v[prefix + '_basis'] === 'amount';
             if (prefix === 'vat') {
@@ -146,9 +147,9 @@ window.OzonCalculatorHelpContent = (() => {
             d.source = lines('Ozon: отчёт размещения /v1/report/placement/by-products/create; продажи и возвраты из /v1/finance/accrual/by-day.', state(source), state(s), s?.state === 'insufficient' && 'Нет положительного количества выкупленных единиц.');
             d.dates = lines(period(s?.period.start, s?.period.end), '30 завершённых дней без сегодня.', stamp('Снимок хранения', s?.observed_at));
         } else if (key === 'margin' || key === 'roi') {
-            const costs = ['purchase', 'fulfillment', 'commission_amount', 'logistics_amount', 'storage_amount', 'advertising_amount', 'acquiring_amount', 'team_amount', 'vat_amount', 'usn_amount'];
+            const costs = ['purchase', 'fulfillment', 'commission_amount', 'logistics_amount', 'storage_amount', 'advertising_amount', 'acquiring_amount', 'team_amount', 'unallocated_amount', 'vat_amount', 'usn_amount'];
             d.formula = key === 'roi' ? 'ROI = чистая прибыль на штуку / закупочная стоимость × 100.'
-                : 'Цена с учётом акции − закупка − ФФ − комиссия Ozon − логистика − хранение − реклама − эквайринг − комиссия компании − НДС − УСН.';
+                : 'Цена с учётом акции − закупка − ФФ − комиссия Ozon − логистика − хранение − реклама − эквайринг − комиссия компании − прочее нераспределённое − НДС − УСН.';
             d.calculation = key === 'roi' ? rub(v.result?.margin) + ' / ' + rub(v.purchase) + ' × 100 = ' + pct(value)
                 : [v.seller_price, ...costs.map(field => v[field])].map(rub).join(' − ') + ' = ' + rub(value);
             d.source = 'Серверный расчёт из текущих полей калькулятора. Ручные значения имеют приоритет. Источник каждого расхода показан в подсказке его поля.';
