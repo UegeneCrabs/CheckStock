@@ -6,6 +6,7 @@
     if (!root || !configNode) return;
 
     var config = JSON.parse(configNode.textContent || '{}');
+    if (config.marketplace === 'OZON') window.OzonReportsUI.prepareProfit(root);
     var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     var AUTO_REFRESH_STALE_MS = 60 * 1000;
     var filterRequestId = 0;
@@ -49,7 +50,7 @@
         pagePrev: document.getElementById('ue1cr-page-prev'),
         pageNext: document.getElementById('ue1cr-page-next'),
     };
-    var preferenceKey = 'unit-profit-report-view-v1' + (config.marketplace === 'YM' ? '-ym' : '');
+    var preferenceKey = 'unit-profit-report-view-v1' + (config.marketplace === 'YM' ? '-ym' : config.marketplace === 'OZON' ? '-ozon' : '');
     var preferences = {};
     try {
         preferences = JSON.parse(window.localStorage.getItem(preferenceKey) || '{}');
@@ -233,6 +234,17 @@
             ],
         },
     ];
+    if (config.marketplace === 'OZON') {
+        dailyColumns = config.dailyColumns;
+        reportColumnGroups.forEach(function (group) {
+            if (group.key === 'funnel') group.label = 'Заказы Ozon';
+            group.columns.forEach(function (column) {
+                if (column.help) column.help = column.help.replace(/WB/g, 'Ozon');
+                if (column.key === 'stock_days') column.help = 'Текущие остатки / среднесуточные заказы Ozon за последние 21 день. Без подтверждённого спроса показатель неизвестен.';
+                if (column.key === 'drr') column.help = 'Реклама / (ТО после отмен × выкуп / 100) × 100%. Расходы и ТО берутся за совпадающие дни.';
+            });
+        });
+    }
     if (config.marketplace === 'YM') {
         // Expenses are per expected buyout, using the saved calculation for this date.
         dailyColumns = [
@@ -799,6 +811,26 @@
             : total.advertising_spend
               ? (config.marketplace === 'YM' ? null : 100)
               : 0;
+        if (config.marketplace === 'OZON') {
+            var buyoutRows = rows.filter(function (row) { return row.buyout_percent != null && row.buyout_orders_count != null; });
+            var buyoutWeight = buyoutRows.reduce(function (sum, row) { return sum + Number(row.buyout_orders_count); }, 0);
+            total.buyout_percent = buyoutWeight > 0 ? buyoutRows.reduce(function (sum, row) {
+                return sum + Number(row.buyout_percent) * Number(row.buyout_orders_count);
+            }, 0) / buyoutWeight : null;
+            var known = function (key) { return rows.some(function (row) { return row[key] != null; }); };
+            ['orders_count', 'cancel_count', 'net_orders_count', 'orders_amount', 'cancel_amount', 'net_orders_amount',
+             'stock', 'stock_fbs', 'stock_fbo', 'stock_fulfillment', 'impressions', 'clicks', 'advertising_spend',
+             'margin_orders_count', 'expected_buyout_amount', 'stock_average_daily_orders'].forEach(function (key) {
+                if (!known(key)) total[key] = null;
+            });
+            var drrSpend = rows.filter(function (row) { return row.drr_spend != null && row.expected_buyout_amount != null; })
+                .reduce(function (sum, row) { return sum + Number(row.drr_spend); }, 0);
+            total.drr = total.expected_buyout_amount > 0 ? drrSpend / total.expected_buyout_amount * 100 : null;
+            var clickSpend = rows.filter(function (row) { return row.click_spend != null; }).reduce(function (sum, row) { return sum + Number(row.click_spend); }, 0);
+            total.cpc = total.clicks > 0 && known('click_spend') ? clickSpend / total.clicks : null;
+            total.ctr = total.impressions > 0 && total.clicks != null ? total.clicks / total.impressions * 100 : null;
+            total.stock_days = total.stock != null && total.stock_average_daily_orders > 0 ? total.stock / total.stock_average_daily_orders : null;
+        }
         if (!total.margin_available) total.margin = null;
         if (!total.purchase_available) total.purchase_value = null;
         total.roi = total.margin !== null && total.roi_basis_known && total.roi_basis > 0 ? Math.round(total.margin / total.roi_basis * 10000) / 100 : null;
@@ -939,7 +971,7 @@
     }
     function appendFilters(query, kind, parameter) {
         state[kind].forEach(function (item) {
-            query.append(parameter, item);
+            query.append(parameter, config.marketplace === 'OZON' && kind === 'subject' && item === 'Без категории' ? '' : item);
         });
     }
     function reportQuery(includeView) {
@@ -970,6 +1002,7 @@
                 headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
             });
             var result = await response.json();
+            if (config.marketplace === 'OZON' && result.ok) result = window.OzonReportsUI.profitPayload(result);
             if (!response.ok || !result.ok) {
                 throw new Error(result.error || 'Не удалось загрузить параметры отчёта');
             }
@@ -1069,6 +1102,7 @@
             );
             var result = await response.json();
             if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось сформировать отчёт');
+            if (config.marketplace === 'OZON') result = window.OzonReportsUI.profitPayload(result);
             nodes.error.hidden = true;
             nodes.scopeNote.hidden = true;
             nodes.marginCoverageNote.hidden = true;

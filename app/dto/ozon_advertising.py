@@ -6,6 +6,7 @@ from pydantic import AliasChoices, BaseModel, BeforeValidator, ConfigDict, Field
 
 from app.core.constants import (
     OZON_ADVERTISING,
+    OZON_API_LIMITS,
     AdvertisingAllocation,
     AdvertisingError,
     AdvertisingKind,
@@ -74,6 +75,9 @@ class PerformanceCampaign(PerformanceResponse):
     adv_object_type: str = Field(alias="advObjectType", min_length=1)
     payment_type: str = Field(default="", validation_alias=AliasChoices("PaymentType", "paymentType"))
     placement: tuple[str, ...] | str = ()
+    state: str | None = None
+    from_date: str | None = Field(default=None, alias="fromDate")
+    to_date: str | None = Field(default=None, alias="toDate")
 
 
 class CampaignPage(PerformanceResponse):
@@ -187,8 +191,16 @@ class PerformanceReportRequest(DtoModel):
     method: HTTPMethod
     path: str
     period: AdvertisingPeriod
-    campaigns: tuple[str, ...] = ()
+    campaigns: tuple[str, ...] = Field(default=(), max_length=OZON_ADVERTISING.campaigns_per_report)
     refresh_slot: str | None = None
+
+    @model_validator(mode="after")
+    def valid_limits(self) -> Self:
+        if (self.period.end - self.period.start).days >= OZON_API_LIMITS.report_max_days:
+            raise ValueError(AdvertisingError.INVALID_PERIOD)
+        if len(set(self.campaigns)) != len(self.campaigns):
+            raise ValueError(AdvertisingError.PAGINATION_REPEATED)
+        return self
 
 
 class SavedPerformanceReport(DtoModel):
@@ -197,6 +209,7 @@ class SavedPerformanceReport(DtoModel):
 
 
 class PerformanceRequestEvent(DtoModel):
+    request_id: str | None = None
     store_slug: str
     method: HTTPMethod
     path: str

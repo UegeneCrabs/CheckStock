@@ -56,7 +56,7 @@ python -m scripts.ops.agent_key revoke ID_КЛЮЧА
 
 Контракт новых методов СПП: [почасовая и дневная история](agent-spp-history.md).
 Проверки интерфейса: `node --test tests/agent_instructions.cjs` и
-`python -m unittest discover -s tests -p test_agent_instruction_pages.py -v`.
+`python -m unittest discover -s tests -p test_agent_management.py -v`.
 
 ### Термины в общей инструкции ИИ
 

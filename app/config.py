@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -110,10 +111,36 @@ class WbStandardCostsSettings(BaseModel):
     )
 
 
+class OzonApiLimitsSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, validate_default=True)
+
+    seller_requests_per_second: float = Field(
+        default_factory=lambda: float(os.getenv("CHECKSTOCK_OZON_SELLER_REQUESTS_PER_SECOND", "40")),
+        gt=0,
+        le=50,
+        allow_inf_nan=False,
+    )
+    performance_organizations: dict[str, str] = Field(
+        default_factory=lambda: json.loads(
+            os.getenv("CHECKSTOCK_OZON_PERFORMANCE_ORGANIZATIONS", "").strip() or "{}"
+        )
+    )
+
+    @model_validator(mode="after")
+    def nonempty_organizations(self) -> "OzonApiLimitsSettings":
+        if any(
+            not store.strip() or not organization.strip()
+            for store, organization in self.performance_organizations.items()
+        ):
+            raise ValueError("Performance organization mappings must be nonempty")
+        return self
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
 
     wb_standard_costs: WbStandardCostsSettings = Field(default_factory=WbStandardCostsSettings)
+    ozon_api_limits: OzonApiLimitsSettings = Field(default_factory=OzonApiLimitsSettings)
 
     base_dir: Path
     database_path: Path
@@ -131,6 +158,7 @@ class Settings(BaseModel):
     ozon_related_cache_seconds: int = Field(default=3600, ge=0)
     ozon_promotions_cache_seconds: int = Field(default=300, ge=0)
     ozon_promotions_timeout_seconds: int = Field(default=60, ge=1)
+    ozon_promotion_entry_preview_seconds: int = Field(default=180, ge=10)
     yandex_tokens_path: Path
     google_service_account_path: Path
     log_level: str

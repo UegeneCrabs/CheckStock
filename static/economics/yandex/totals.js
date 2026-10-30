@@ -58,6 +58,9 @@
         ratio(3, current, currentProfit, dayPurchase,
             100, 'percent', 'ROI за сегодня: прибыль / закупочная стоимость ожидаемых выкупов.', function (p) { return currentPartial(p) || !known(dayPurchase(p)); });
         if (current.some(function (p) { return !known(dayPurchase(p)); })) result[3].value = null;
+        sum(26, function (p) { return (p.current_economics || {}).turnover; }, 'money',
+            'Сумма ТО FBO и FBS после отмен за сегодня · МСК. Данные на момент последней выгрузки.',
+            function (p) { return (p.current_economics || {}).turnover_coverage; });
         sum(4, function (p) { return p.economics_7d.turnover; }, 'money', 'Сумма ТО после отмен.', function (p) { return p.economics_7d.turnover_coverage; });
         sum(5, function (p) { return p.economics_7d.margin; }, 'money', 'Сумма сохранённой прибыли за выбранный период.', function (p) { return p.economics_7d.margin_coverage; });
         function periodPurchase(p) { var e = p.economics_7d; return e.roi_purchase_value !== undefined ? e.roi_purchase_value : e.purchase_value; }

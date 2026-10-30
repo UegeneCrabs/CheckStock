@@ -15,7 +15,7 @@ class AsyncCatalogRepository:
         table = table_for(StockItemRecord)
         async with self.database.transaction() as connection:
             rows = await connection.execute(
-                select(table.c.article, table.c.name)
+                select(table.c.article, table.c.name, table.c.image_url)
                 .where(
                     table.c.store_slug == store_slug,
                     table.c.marketplace == Marketplace.OZON,

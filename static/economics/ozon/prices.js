@@ -247,5 +247,12 @@ window.OzonPricesUI = (() => {
         }, 120);
     }
 
-    return { render, reset, clear };
+    function snapshot(root) {
+        const session = sessions.get(root);
+        if (!session || !session.initialized || session.helpPending || session.helpError || session.invalid.size || session.edits.length) return null;
+        return { productId: session.productId, values: structuredClone(session.values),
+            tariff_id: session.tariffId || null, product_tariff_id: session.productTariffId || null };
+    }
+
+    return { render, reset, clear, snapshot };
 })();

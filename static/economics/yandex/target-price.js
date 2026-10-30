@@ -1,16 +1,21 @@
 (function () {
     'use strict';
-    var api = '/api/unit-economics-1c/yandex-market/reports/target-price';
     async function request(path, options) {
         var response = await fetch(path, Object.assign({ cache: 'no-store', headers: {
             'Content-Type': 'application/json', 'X-Requested-With': 'fetch', Accept: 'application/json'
         } }, options || {}));
         var data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(typeof data.detail === 'string' ? data.detail : data.error || 'Не удалось выполнить запрос');
+        if (path.includes('/ozon/') && data.rows && data.ok) data = window.OzonReportsUI.targetPayload(data);
+        if (!response.ok || !data.ok) {
+            var detail = typeof data.detail === 'string' ? data.detail : data.error || 'Не удалось выполнить запрос';
+            throw new Error(path.includes('/ozon/') ? window.OzonReportsUI.message(detail) : detail);
+        }
         return data;
     }
     window.YandexTargetReport = { init: function (context) {
         var root = context.root, node = context.node, config = context.config, format = context.format;
+        var api = config.dataEndpoint || '/api/unit-economics-1c/yandex-market/reports/target-price';
+        var ozon = config.marketplace === 'OZON';
         var row = null, sequence = 0, timer, busy = false, scenario = {};
         function el(id) { return document.getElementById('ym-' + id); }
         function message(text) { el('target-message').textContent = text || ''; }
@@ -26,7 +31,7 @@
         function show(result) {
             el('target-result').replaceChildren();
             [['Цена продавца', result.target_retail_price, ' ₽'], ['Цена с СПП', result.target_spp_price, ' ₽'],
-             ['Цена с Пэй', result.target_price, ' ₽'], ['Расчётный ROI', result.target_actual_roi, '%']].forEach(function (metric) {
+             [config.walletLabel || 'Цена с Пэй', result.target_price, ' ₽'], ['Расчётный ROI', result.target_actual_roi, '%']].forEach(function (metric) {
                 var item = document.createElement('div'), label = document.createElement('span'), value = document.createElement('strong');
                 label.textContent = metric[0]; value.textContent = format(metric[1]) + (metric[1] == null ? '' : metric[2]);
                 item.append(label, value); el('target-result').append(item);
@@ -37,6 +42,7 @@
                 delivery: 'Доставка', repeat_delivery: 'Повторная доставка', returns: 'Возвраты', transit: 'Транзит',
                 purchase: 'Закупка', fulfillment: 'ФФ', company_commission: 'Комиссия компании', vat: 'НДС', usn: 'УСН',
                 loss: 'Потери', disposal: 'Утилизация', advertising: 'Реклама', logistics: 'Логистика' };
+            if (ozon) Object.assign(labels, { commission: 'Комиссия Ozon', acquiring: 'Эквайринг', storage: 'Хранение' });
             el('target-costs').replaceChildren();
             Object.keys(costs).forEach(function (key) {
                 var dt = document.createElement('dt'), dd = document.createElement('dd');
@@ -53,6 +59,7 @@
             ['company_commission_percent', 'Комиссия компании, %'], ['vat_percent', 'НДС, %'], ['usn_percent', 'УСН, %'],
             ['loss_percent', 'Потери, %'], ['disposal_cost', 'Утилизация, ₽']
         ];
+        if (ozon) fields = config.scenarioFields;
         function inputs() {
             el('target-inputs').replaceChildren();
             fields.forEach(function (spec) {
@@ -71,7 +78,7 @@
             clearTimeout(timer); sequence++; row = next; scenario = {};
             node('drawer-title').textContent = row.name;
             node('drawer-meta').textContent = row.store_name + ' · Арт. ' + row.article;
-            node('drawer-thumb').textContent = 'ЯМ';
+            node('drawer-thumb').textContent = config.marketplaceLabel || 'ЯМ';
             el('goal-drr').value = row.target_drr; el('goal-roi').value = row.target_roi;
             root.classList.add('has-calculator'); document.body.classList.add('uetp-calculator-open');
             node('drawer').classList.add('is-open'); node('overlay').classList.add('is-open');
@@ -105,11 +112,11 @@
             busy = true; buttons(); clearTimeout(timer); sequence++;
             try {
                 var path = api + '/' + encodeURIComponent(selected.store_slug) + '/targets';
-                await request(reset ? path + '?article=' + encodeURIComponent(selected.article) + '&revision=' + selected.target_revision : path,
+                await request(reset ? path + '?article=' + encodeURIComponent(selected.article) + '&revision=' + encodeURIComponent(selected.target_revision) : path,
                     reset ? { method: 'DELETE' } : { method: 'PUT', body: JSON.stringify(Object.assign(payload, { revision: selected.target_revision })) });
                 await context.load();
                 var fresh = context.rows().find(function (item) { return item.store_slug + '|' + item.article === key; });
-                if (row === selected && fresh) { open(fresh); message(reset ? 'Цели сброшены к настройкам кабинета.' : 'Цели сохранены. Цены на Маркете не изменялись.'); }
+                if (row === selected && fresh) { open(fresh); message(reset ? 'Цели сброшены к настройкам кабинета.' : ozon ? 'Цели Ozon сохранены.' : 'Цели сохранены. Цены на Маркете не изменялись.'); }
             } catch (error) { message(error.message); }
             finally { busy = false; buttons(); }
         }
@@ -133,6 +140,7 @@
                     .forEach(function (spec) {
                         var label = document.createElement('label'), text = document.createElement('span'), input = document.createElement('input');
                         text.textContent = spec[1]; input.type = 'number'; input.name = spec[0]; input.value = spec[2]; input.min = '0'; input.max = spec[0] === 'target_drr_percent' ? '100' : '1000000'; input.step = 'any'; input.required = true;
+                        if (ozon && !spec[0].startsWith('target_')) { input.required = false; input.value = spec[2] == null ? '' : spec[2]; input.placeholder = 'Общий ROI'; }
                         label.append(text, input); el('cabinet-goals').append(label);
                     });
                 el('goal-status').textContent = ''; el('goal-form').querySelector('[type="submit"]').disabled = false;
@@ -147,7 +155,7 @@
             var payload = { revision: cabinetRevision, target_roi_by_code: {} };
             Array.from(el('cabinet-goals').querySelectorAll('input')).forEach(function (input) {
                 if (input.name.startsWith('target_')) payload[input.name] = Number(input.value);
-                else payload.target_roi_by_code[input.name] = Number(input.value);
+                else payload.target_roi_by_code[input.name] = ozon && input.value === '' ? null : Number(input.value);
             });
             form.querySelector('[type="submit"]').disabled = true;
             try {

@@ -122,7 +122,7 @@ volume. Для принудительного отключения всех по
 
 В ответе с фильтром connections содержит выбранный сервис, other_connections — неизвестные подключения пользователя. Обе вкладки показывают их отдельным блоком «Другие подключения MCP» с отзывом. Без фильтра connections сохраняет полный список, other_connections пуст. При отсутствии публичного URL список и отзыв остаются доступны. Отзыв проверяет владельца и прекращает действие токенов.
 
-Проверки миграции и сохранения токенов: tests/test_agent_mcp_connections.py; обеих вкладок и ошибок отзыва: tests/agent_mcp_connections.cjs. OAuth использует отдельный SQLite-файл независимо от основной СУБД сайта; схема PostgreSQL этим изменением не затрагивается.
+Проверки миграции и сохранения токенов: tests/agents/test_mcp_store.py; фильтрации и отзыва через HTTP: tests/web/routers/test_agent_mcp.py; обеих вкладок и ошибок отзыва: tests/agent_mcp_connections.cjs. OAuth использует отдельный SQLite-файл независимо от основной СУБД сайта; схема PostgreSQL этим изменением не затрагивается.
 Существующий `/ai-agents/gpt` с Actions и API-ключами сохранён.
 
 В ChatGPT Plugins добавьте custom MCP server, укажите публичный HTTPS `/mcp`,
@@ -139,7 +139,7 @@ callback ChatGPT. Если CHECKSTOCK_MCP_REDIRECT_URIS задан явно, о�
 не разрешайте wildcard. Подтверждение доступа принимает Origin только сайта,
 регистрация/обмен токенов также допускают Origin ChatGPT и Claude.
 
-Проверка `tests/test_agent_mcp_oauth.py` проходит DCR, подтверждение/отказ,
+Проверка `tests/web/routers/test_agent_mcp.py` проходит DCR, подтверждение/отказ,
 PKCE-обмен для обоих callback, issuer и запрет посторонних redirect/Origin.
 Она не заменяет проверку реального подключения ChatGPT после развёртывания.
 Источник требований: https://developers.openai.com/plugins/build/auth

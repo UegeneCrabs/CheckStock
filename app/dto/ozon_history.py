@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import Field
 
-from app.core.constants import OzonHistoryField
+from app.core.constants import OZON_HISTORY, OzonHistoryField, OzonHistoryPeriod
 from app.dto.common import DtoModel
 from app.dto.ozon_advertising import AdvertisingSourceStatus
 from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonEffectiveBuyout
@@ -15,6 +15,7 @@ from app.dto.ozon_prices import PriceValue
 class OzonHistoryQuery(DtoModel):
     store: str = Field(min_length=1)
     article: str = Field(min_length=1)
+    days: OzonHistoryPeriod = OZON_HISTORY.visible_days
 
 
 class OzonStockDay(DtoModel):

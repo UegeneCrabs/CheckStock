@@ -200,7 +200,7 @@ limit, offset, sort_by, order. Даты и фильтр схемы не подд
 обновление снимка — sources[].updated_at; generated_at не является датой источника.
 Нет снимка: context.available=false, пустые rows и предупреждение. Ошибка источника: 503.
 Отсутствующие значения остаются null; complete/missing передаются для каждого сценария.
-Общая инструкция GPT/MCP содержит правила StandardCosts. Тесты: test_agent_standard_costs.py.
+Общая инструкция GPT/MCP содержит правила StandardCosts. Тесты: test_agent_full.py.
 
 Публичная проекция API задана моделями `ProfitSummary` и `StandardCostsRow` в `app/dto/agent_standard_costs.py`. Новые внутренние поля расчёта не попадают в ответ автоматически.
 

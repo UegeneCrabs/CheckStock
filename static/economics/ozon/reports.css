@@ -1,0 +1,23 @@
+.ozon-profit-report .ue1cr-filters {
+    display: flex;
+    flex-wrap: wrap;
+}
+.ozon-profit-report .ue1cr-period {
+    flex: 1 1 310px;
+}
+.ozon-profit-report .ue1cr-filter {
+    flex: 1 1 145px;
+}
+.ozon-profit-report .ue1cr-images-toggle {
+    flex: 0 0 130px;
+}
+.ozon-profit-report .ue1cr-actions {
+    flex: 0 0 auto;
+}
+@media (max-width: 720px) {
+    .ozon-profit-report .ue1cr-period,
+    .ozon-profit-report .ue1cr-filter,
+    .ozon-profit-report .ue1cr-actions {
+        flex-basis: 100%;
+    }
+}

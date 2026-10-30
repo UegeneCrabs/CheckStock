@@ -69,8 +69,8 @@ python -m mypy
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up --build -d
-docker compose logs --follow app scheduler
+docker compose --env-file .env -f deploy/docker-compose.yml up --build -d
+docker compose --env-file .env -f deploy/docker-compose.yml logs --follow app scheduler
 ```
 
 Перед запуском задайте `POSTGRES_PASSWORD` в `.env`. Приложение доступно на `http://localhost:8000`. Docker Compose использует PostgreSQL: база хранится в именованном volume `postgres-data`, секреты подключаются read-only из локального каталога `secrets/`. `/healthz` проверяет процесс, `/readyz` дополнительно проверяет соединение с настроенной БД. При обычном локальном запуске без `CHECKSTOCK_DATABASE_URL` используется SQLite в `data/checkstock.db`.
@@ -80,10 +80,10 @@ docker compose logs --follow app scheduler
 Остановка:
 
 ```text
-docker compose down
+docker compose --env-file .env -f deploy/docker-compose.yml down
 ```
 
-Для удаления данных требуется отдельное явное действие `docker compose down --volumes`; обычная остановка volume не удаляет.
+Для удаления данных требуется отдельное явное действие `docker compose --env-file .env -f deploy/docker-compose.yml down --volumes`; обычная остановка volume не удаляет.
 
 ## Отчёт «Целевая цена» WB
 

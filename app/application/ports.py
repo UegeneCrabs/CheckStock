@@ -4,6 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import date, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
+from uuid import UUID
 
 from app.dto.fbo_stock import (
     FboActor,
@@ -14,12 +15,6 @@ from app.dto.fbo_stock import (
     FboStockResult,
     FboTarget,
 )
-from app.dto.spp_history import DailySppRow, HourlySppRow, SppHistoryQuery
-
-if TYPE_CHECKING:
-    from app.infrastructure.database import DatabaseConnection
-
-
 from app.dto.identity import (
     AccessDecision,
     ActivityCommand,
@@ -46,9 +41,28 @@ from app.dto.identity import (
 )
 from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonCabinetRecord, OzonCabinetSave
 from app.dto.ozon_history import OzonHistoryEvidence, OzonHistoryQuery
+from app.dto.ozon_limits import (
+    OzonRateFeedback,
+    OzonRateScope,
+    PerformanceAdmission,
+    PerformanceCompletion,
+    PerformanceIdentity,
+    PerformanceLease,
+    PerformanceQuotaRequest,
+)
 from app.dto.ozon_logistics import LogisticsStoreSnapshot
 from app.dto.ozon_margin import OzonMarginSnapshot
+from app.dto.ozon_promotion_entry import OzonEntryOperation
+from app.dto.ozon_promotions import OzonBoostRecord, OzonBoostSave
+from app.dto.ozon_reports import (
+    OzonProfitQuery,
+    OzonReportCatalogItem,
+    OzonReportEvidence,
+    OzonTargetRecord,
+    OzonTargetSave,
+)
 from app.dto.ozon_storage import StorageEvidence, StoragePeriod, StorageReportTicket, StorageStoreSnapshot
+from app.dto.spp_history import DailySppRow, HourlySppRow, SppHistoryQuery
 from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
@@ -66,6 +80,9 @@ from app.dto.supply_arrivals import SupplyStockCommand, SupplyStockState
 from app.dto.wb_hourly_prices import WbHourlyPriceObservation, WbHourlyTurnover
 from app.dto.wb_product_rating import WbRatingObservation
 from app.dto.wb_standard_costs import PublishSnapshot
+
+if TYPE_CHECKING:
+    from app.infrastructure.database import DatabaseConnection
 
 
 class WbRatingWriter(Protocol):
@@ -141,6 +158,10 @@ class OzonMarginStore(Protocol):
 
 
 class OzonCabinetUnitOfWork(Protocol):
+    async def boost_settings(self) -> OzonBoostRecord: ...
+
+    async def save_boost(self, command: OzonBoostSave) -> OzonBoostRecord: ...
+
     async def settings(self, stores: tuple[str, ...]) -> tuple[OzonCabinetRecord, ...]: ...
 
     async def save(self, command: OzonCabinetSave) -> OzonCabinetRecord: ...
@@ -148,6 +169,18 @@ class OzonCabinetUnitOfWork(Protocol):
     async def save_buyout(self, snapshot: OzonBuyoutSnapshot) -> None: ...
 
     async def fail_buyout(self, store: str, error: str) -> None: ...
+
+
+class OzonPromotionEntryStore(Protocol):
+    async def create(self, operation: OzonEntryOperation) -> None: ...
+
+    async def get(self, operation_id: UUID) -> OzonEntryOperation: ...
+
+    async def history(self, store: str, article: str, user_id: int) -> tuple[OzonEntryOperation, ...]: ...
+
+    async def save(self, operation: OzonEntryOperation, *, release: bool = False) -> None: ...
+
+    async def claim(self, operation: OzonEntryOperation) -> bool: ...
 
 
 class StorageSource(Protocol):
@@ -295,3 +328,33 @@ class StockUnitOfWorkFactory(Protocol):
 
 class SppHistoryRepository(Protocol):
     def read(self, query: SppHistoryQuery) -> list[HourlySppRow] | list[DailySppRow]: ...
+
+
+class OzonLimitStore(Protocol):
+    async def reserve_rate(self, scopes: tuple[OzonRateScope, ...], now: datetime) -> float: ...
+
+    async def observe_rate(self, scope: OzonRateScope, feedback: OzonRateFeedback, now: datetime) -> None: ...
+
+    async def reserve_performance(
+        self, request: PerformanceQuotaRequest, now: datetime
+    ) -> PerformanceAdmission: ...
+
+    async def finish_performance(self, completion: PerformanceCompletion) -> None: ...
+
+    async def acquire_report(
+        self, identity: PerformanceIdentity, now: datetime
+    ) -> PerformanceLease | None: ...
+
+    async def renew_report(self, lease: PerformanceLease, now: datetime) -> None: ...
+
+    async def release_report(self, lease: PerformanceLease) -> None: ...
+
+    async def resolve_report(self, identity: PerformanceIdentity, request_key: str) -> None: ...
+
+
+class OzonReportsStore(Protocol):
+    async def catalog(self, stores: tuple[str, ...]) -> tuple[OzonReportCatalogItem, ...]: ...
+    async def has_product(self, store: str, article: str) -> bool: ...
+    async def evidence(self, query: OzonProfitQuery, stores: tuple[str, ...]) -> OzonReportEvidence: ...
+    async def targets(self, stores: tuple[str, ...]) -> dict[tuple[str, str], OzonTargetRecord]: ...
+    async def save_target(self, command: OzonTargetSave) -> OzonTargetRecord: ...

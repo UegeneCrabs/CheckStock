@@ -40,6 +40,7 @@ from app.ozon.advertising_normalizer import (
 )
 from app.ozon.async_api import AsyncSellerApi
 from app.ozon.async_performance import AsyncPerformanceClient, PerformanceApiFailure
+from app.ozon.limit_identity import performance_identity
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,8 @@ async def sync_store(
             resources.advertising,
             store,
             PerformanceCredentials(client_id=client_id, client_secret=secret),
+            limits=resources.ozon_limits,
+            identity=performance_identity(store, client_id),
         )
         resolver = AdvertisingArticleResolver(
             store,
@@ -348,25 +351,37 @@ async def sync_store(
                     len(snapshot.facts),
                 )
             except Exception as error:
-                success = False
+                optional_missing = (
+                    (store, item.source) in OZON_ADVERTISING.optional_campaign_sources
+                    and isinstance(error, PerformanceApiFailure)
+                    and error.status_code == HTTPStatus.NOT_FOUND
+                    and error.code == AdvertisingError.CAMPAIGN_NOT_FOUND
+                )
+                if not optional_missing:
+                    success = False
                 code = safe_error(error)
                 await resources.advertising.fail(
                     AdvertisingSourceStatus(
                         store_slug=store,
                         source=item.source,
                         period=item.period,
-                        state=AdvertisingState.ERROR,
+                        state=AdvertisingState.MISSING if optional_missing else AdvertisingState.ERROR,
                         refresh_slot=previous_slot,
                         attempted_at=datetime.now(UTC),
-                        error=code,
+                        error=None if optional_missing else code,
                     )
                 )
-                logger.warning(
-                    "ozon_advertising_source_failed store=%s source=%s code=%s",
-                    store,
-                    item.source.value,
-                    code,
-                )
+                if optional_missing:
+                    logger.info(
+                        "ozon_advertising_campaign_absent store=%s source=%s", store, item.source.value
+                    )
+                else:
+                    logger.warning(
+                        "ozon_advertising_source_failed store=%s source=%s code=%s",
+                        store,
+                        item.source.value,
+                        code,
+                    )
                 if isinstance(error, PerformanceApiFailure) and error.status_code in (
                     HTTPStatus.UNAUTHORIZED,
                     HTTPStatus.FORBIDDEN,

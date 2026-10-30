@@ -127,7 +127,8 @@ window.OzonAdvertisingUI = (() => {
     function drrTooltip(product) {
         const basis = (product.advertising || {}).drr_basis || {};
         const buyout = basis.buyout || {};
-        return ['ТО после отмен: ' + amount(basis.turnover), 'Расходы на рекламу: ' + amount(basis.spend),
+        return ['ДРР = расходы / (ТО после отмен × выкуп / 100) × 100%.',
+            'ТО после отмен: ' + amount(basis.turnover), 'Расходы на рекламу: ' + amount(basis.spend),
             'Процент выкупа за 30 дней: ' + percent(basis.buyout_percent),
             'Период выкупа: ' + (buyout.period_from || '—') + ' — ' + (buyout.period_to || '—'),
             buyout.default_applied ? 'Применён выкуп по умолчанию из настроек кабинета.' : '',
@@ -188,6 +189,7 @@ window.OzonAdvertisingUI = (() => {
             const value = data[key] || {};
             const missing = !value.coverage || !value.coverage.days ? 'Нет совместной выгрузки заказов и рекламы.' :
                 value.buyout_percent == null ? 'Нет процента выкупа за период кабинета или значения по умолчанию.' :
+                Number(value.buyout_percent) <= 0 ? 'Нет положительного выкупа для расчёта ДРР.' :
                 Number(value.turnover) <= 0 ? 'Нет положительного ТО для расчёта ДРР.' : '';
             fields.push(
                 { key: key + 'Spend', label: 'Расходы за ' + label, unit: '₽', value: data[prefix + '_spend'],

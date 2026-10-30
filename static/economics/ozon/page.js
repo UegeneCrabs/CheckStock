@@ -32,6 +32,8 @@ window.OzonEconomicsUI = (() => {
     function product(value) {
         const current = value.current_economics || {};
         const period = value.economics_7d || {};
+        const advertising = value.advertising || {};
+        const drrBasis = advertising.drr_basis || {};
         const currentMessages = calculationMessages(current.calculation);
         const periodMessages = [...new Set((period.daily || []).flatMap(calculationMessages))];
         const coverage = (value, label) => value ? { ...value, messages: [
@@ -45,6 +47,8 @@ window.OzonEconomicsUI = (() => {
             (marginLabels[key] || key) + ': ' + (amount == null ? '—' : numbers.format(Number(amount)) + ' ₽')).join('\n');
         if (current.expected_buyouts != null && Number(current.expected_buyouts) === 0) currentMessages.push('Нет ожидаемых выкупов: маржа на штуку не определена. Расходы на рекламу учтены в прибыли дня.');
         return { ...value,
+            advertising: { ...advertising, orders_amount: drrBasis.turnover ?? null,
+                drr_spend: drrBasis.spend ?? null, buyout_percent: drrBasis.buyout_percent ?? null },
             current_economics: { ...current, formula, issues: { margin: currentMessages, roi: currentMessages }, messages: currentMessages, daily_messages: currentMessages },
             economics_7d: { ...period, messages: periodMessages,
                 margin_coverage: coverage(period.margin_coverage, 'Сумма прибыли по отдельным дням.'),

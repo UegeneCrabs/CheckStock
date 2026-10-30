@@ -1,12 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import BeforeValidator, Field, StrictBool
+from pydantic import BeforeValidator, Field, StrictBool, model_validator
 
 from app.core.constants import OZON_PROMOTIONS, OzonPromotionIssue, OzonPromotionStatus
 from app.dto.common import DtoModel
+from app.dto.ozon_calculator import OzonCalculatorValues, ScenarioNumber, ScenarioPercent
+from app.dto.ozon_margin import OzonMarginResult
 from app.dto.ozon_orders import OzonPayload, optional_date
+from app.dto.ozon_price_calculator import OzonPriceCalculationRequest
+from app.dto.ozon_prices import WebsitePrices
 
 PromotionDate = Annotated[datetime | None, BeforeValidator(optional_date)]
 
@@ -47,13 +51,12 @@ class OzonActionProduct(OzonPayload):
     min_seller_price: OzonPromotionMoney | None = None
     price_min_elastic: OzonPromotionMoney | None = None
     price_max_elastic: OzonPromotionMoney | None = None
-    min_boost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    max_boost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     add_mode: str | None = None
     stock: int | None = Field(default=None, ge=0)
     min_stock: int | None = Field(default=None, ge=0)
     is_quarantined: StrictBool | None = None
     alert_max_action_price_failed: StrictBool | None = None
+    website_prices: WebsitePrices | None = None
 
 
 class OzonActionProductsRequest(DtoModel):
@@ -89,3 +92,51 @@ class OzonPromotions(DtoModel):
     items: tuple[OzonPromotionItem, ...]
     complete: bool
     checked_at: datetime
+
+
+class OzonPromotionCalculationRequest(DtoModel):
+    product: OzonActionProduct
+    price: ScenarioNumber | None = None
+    currency: str = Field(min_length=1)
+    values: OzonCalculatorValues
+    prices: OzonPriceCalculationRequest
+
+
+class OzonPromotionCalculation(DtoModel):
+    result: OzonMarginResult
+    eligible: bool | None = None
+    boost_percent: ScenarioPercent | None = None
+
+
+class OzonBoostSettings(DtoModel):
+    minimum_percent: ScenarioPercent | None = None
+    maximum_percent: ScenarioPercent | None = None
+    static_percent: ScenarioPercent | None = None
+
+    @model_validator(mode="after")
+    def ordered_bounds(self) -> Self:
+        if (
+            self.minimum_percent is not None
+            and self.maximum_percent is not None
+            and self.minimum_percent > self.maximum_percent
+        ):
+            raise ValueError("Minimum boost cannot exceed maximum boost")
+        return self
+
+
+class OzonBoostRecord(DtoModel):
+    values: OzonBoostSettings = OzonBoostSettings()
+    revision: int = Field(default=0, ge=0)
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
+
+class OzonBoostUpdate(DtoModel):
+    values: OzonBoostSettings
+    revision: int = Field(ge=0)
+
+
+class OzonBoostSave(DtoModel):
+    change: OzonBoostUpdate
+    user_name: str
+    saved_at: datetime

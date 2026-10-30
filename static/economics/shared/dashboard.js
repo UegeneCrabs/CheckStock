@@ -236,7 +236,11 @@
         currentGroup.columns = currentGroup.columns.filter(function (column) { return column.index !== 24; });
     }
     if (config.ozonPreview === true) {
-        columnGroups.find(function (group) { return group.key === 'advertising'; }).columns[0].label = 'ДРР после отмен, %';
+        columnGroups.find(function (group) { return group.key === 'current'; }).columns.unshift({
+            index: 26, label: 'ТО, ₽', number: true, width: 105,
+            help: 'Оборот заказов FBO и FBS после отмен за сегодня по московскому времени на момент последней выгрузки.',
+        });
+        columnGroups.find(function (group) { return group.key === 'advertising'; }).columns[0].label = 'ДРР с выкупом, %';
     }
     columnGroups.find(function (group) { return group.key === 'stock'; }).columns.push({
         index: 25, label: 'В пути на склады FBO', number: true, width: 125,
@@ -671,6 +675,7 @@
             product.advertising.cpc,
             product.current_economics && product.current_economics.margin,
             product.current_economics && product.current_economics.roi,
+            product.current_economics && product.current_economics.turnover,
             calculateSppPercent(product),
             product.economics_7d && product.economics_7d.turnover,
             product.economics_7d && product.economics_7d.margin,
@@ -719,6 +724,7 @@
                     : 'Нет',
             calculateSppPercent(product),
             product.stock.inbound,
+            product.current_economics && product.current_economics.turnover,
         ];
         var value = values[Number(columnIndex)];
         return String(value === null || value === undefined ? '—' : value);
@@ -880,6 +886,13 @@
         var marginIssues = currentIssues.margin || [];
         var roiIssues = currentIssues.roi || [];
         cells.current = window.CheckStockUI.render('economics/shared/dashboard/render-product-6', {
+            turnoverCell: config.ozonPreview === true ? window.CheckStockUI.render(
+                'economics/shared/dashboard/current-turnover-cell', {
+                    state: coverageCellClass(current.turnover_coverage),
+                    value: coverageValue('ТО за сегодня после отмен · ' + coverageDate(current.period_to) + ' · МСК',
+                        current.turnover, money, current.turnover_coverage),
+                }) : '',
+            currentStart: config.ozonPreview === true ? '' : ' ue1c-group-start',
             marginState: marginIssues.length ? ' ue1c-partial-cell' : '',
             currentTitle: currentTitle + (marginIssues.length
                 ? '\n' + (current.margin === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + marginIssues.join('\n• ')
@@ -2050,6 +2063,7 @@
                     product.store_slug + ':' + item.article;
                 return window.CheckStockUI.render('economics/shared/dashboard/render-glued-products', {
                     targetId: targetId,
+                    media: config.ozonPreview ? mediaHtml(item, 'ozon-related-thumb') : '',
                     name: item.name,
                     article: item.article,
                     article_2: item.article,
@@ -2057,6 +2071,11 @@
                 });
             })
             .join('');
+        if (config.ozonPreview) {
+            nodes.gluedProducts.querySelectorAll('img').forEach(function (image) {
+                image.addEventListener('error', function () { image.remove(); }, { once: true });
+            });
+        }
     }
     function chartPath(points) {
         return points
@@ -2125,9 +2144,10 @@
             }
             return;
         }
-        var history = allHistory.slice(-14);
+        var visibleDays = config.ozonPreview ? product.history_days || 14 : 14;
+        var history = allHistory.slice(-visibleDays);
         renderChartDailySales(history);
-        var previousHistory = allHistory.length >= 21 ? allHistory.slice(-21, -7) : [];
+        var previousHistory = allHistory.length >= visibleDays + 7 ? allHistory.slice(-visibleDays - 7, -7) : [];
         var canCompare =
             previousHistory.length === history.length &&
             (!(config.yandexEconomics || config.ozonPreview) ||
@@ -2266,6 +2286,7 @@
         var barWidth = compare
             ? Math.max(5, (chartSlotWidth - barGap * 2) / 2)
             : Math.max(7, Math.min(22, chartSlotWidth * 0.64));
+        if (config.ozonPreview) barWidth = Math.min(barWidth, compare ? (chartSlotWidth - barGap * 2) / 2 : chartSlotWidth * 0.64);
         function orderBars(items, previous) {
             if (!enabled('orders') || !items.length) return '';
             return items
@@ -2349,8 +2370,11 @@
                 ? line(history, 'price_with_spp_rub', moneyY, 'is-price', 'price')
                 : { visual: '', hit: '' },
         };
+        var labelStep = config.ozonPreview && history.length > 14 ? 3 : 1;
         var labels = history
             .map(function (item, index) {
+                if (labelStep > 1 && index !== history.length - 1 &&
+                    (index % labelStep !== 0 || history.length - 1 - index < labelStep)) return '';
                 return window.CheckStockUI.render('economics/shared/dashboard/labels', {
                     index: x(index),
                     label: item.label,
@@ -2590,9 +2614,10 @@
                 .join(''),
         });
     }
-    function renderMarketplaceHistory(product, rows, message) {
+    function renderMarketplaceHistory(product, rows, message, days) {
         product.history = rows;
-        var visible = product.history.slice(-14);
+        if (config.ozonPreview) product.history_days = days || product.history_days || 14;
+        var visible = product.history.slice(-(config.ozonPreview ? product.history_days : 14));
         var seriesKeys = {
             orders: 'orders_count',
             stock: 'stock_units',
@@ -2702,8 +2727,8 @@
                 parameter('Период выкупа кабинета', escapeHtml((ozonCabinet.buyout || {}).period_from || '—') + ' — ' + escapeHtml((ozonCabinet.buyout || {}).period_to || '—')) +
                 parameter('Тег', nullText(product.tag));
             id('ue1c-panel-params').querySelector('.ue1c-section-head span').textContent = 'Ozon';
-            if (window.OzonHistoryUI) window.OzonHistoryUI.render(root, product, function (rows, message) {
-                renderMarketplaceHistory(product, rows, message);
+            if (window.OzonHistoryUI) window.OzonHistoryUI.render(root, product, function (rows, message, days) {
+                renderMarketplaceHistory(product, rows, message, days);
             });
             if (window.OzonPricesUI) window.OzonPricesUI.render(root, product);
             if (window.OzonPromotionsUI) window.OzonPromotionsUI.render(root, product);
@@ -2839,7 +2864,9 @@
             nodes.drawerProductLink.setAttribute('aria-label', label + ' в новой вкладке');
         } else nodes.drawerProductLink.removeAttribute('href');
     }
-    function renderDetailProduct(product) {
+    function renderDetailProduct(product, preserveTab) {
+        var activeTab = preserveTab && root.querySelector('[data-detail-tab][aria-selected="true"]');
+        var tabName = activeTab ? activeTab.dataset.detailTab : 'economics';
         clearTargetCalculator();
         root.classList.remove('is-detail-loading');
         nodes.detailLoading.hidden = true;
@@ -2859,7 +2886,7 @@
             dataErrorsHtml(product, true);
         if (placeholderMode) {
             renderPlaceholderDetail(product);
-            setDetailTab('economics');
+            setDetailTab(tabName);
             Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
                 row.classList.toggle('is-selected', row.dataset.productId === product.id);
             });
@@ -2879,7 +2906,7 @@
         renderGluedProducts(product);
         renderChart(product);
         loadTargetReportPrice(product);
-        setDetailTab('economics');
+        setDetailTab(tabName);
         Array.prototype.forEach.call(nodes.rows.querySelectorAll('tr'), function (row) {
             row.classList.toggle('is-selected', row.dataset.productId === product.id);
         });
@@ -2912,7 +2939,7 @@
         try {
             await fetchProductDetail(product);
             if (state.selected === product.id && detailRequestId === requestId && !targetCalculatorContext)
-                renderDetailProduct(product);
+                renderDetailProduct(product, config.ozonPreview === true);
         } catch (error) {
             /* Keep the last valid detail while a background refresh is unavailable. */
         }

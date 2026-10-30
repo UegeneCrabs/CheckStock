@@ -38,7 +38,10 @@ class AsyncResources:
             ),
             transport=transport,
         )
-        self.http = AsyncHttp(self.client)
+        from app.container import ozon_limits_service
+
+        self.ozon_limits = ozon_limits_service(self.database)
+        self.http = AsyncHttp(self.client, limits=self.ozon_limits)
         self.ozon_categories = AsyncCategoryReader(self.http)
         self.ozon_related = AsyncRelatedReader(self.http)
         self.ozon_promotions_cache = OzonPromotionsCache()

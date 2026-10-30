@@ -147,8 +147,6 @@ def normalize(
             if not has_expense:
                 continue
             paid += line.quantity
-            if line_counts[OzonLogisticsPart.FORWARD] != line.quantity:
-                issues.add("paid_without_full_forward")
             if line.status == OZON_LOGISTICS.delivered_status:
                 received += line.quantity
                 returned_units += line.returned

@@ -4,6 +4,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
+from app.core.constants import OZON_STOCK_ANALYTICS
 from app.core.stores import STORES
 from app.exports.project_scope import stores_for_marketplace
 from app.exports.stock_sheet import StockSheetExportError
@@ -79,7 +80,7 @@ def _wb(store: str) -> TransitSnapshot:
 
 def _ozon(store: str) -> TransitSnapshot:
     client_id, api_key = ozon_tokens.get_credentials(store)
-    sku_articles = {}
+    sku_articles: dict[int, str] = {}
     for product in ozon_api.get_product_stocks(client_id, api_key):
         article = _article(product.get("offer_id"))
         for stock in _rows(product.get("stocks")):
@@ -96,12 +97,12 @@ def _ozon(store: str) -> TransitSnapshot:
         article = _article(row.get("offer_id"))
         if sku_articles.get(sku) != article:
             raise ValueError("Ozon вернул неизвестный SKU или другой артикул в аналитике FBO")
+        if OZON_STOCK_ANALYTICS.fbs_return_tag in (row.get("item_tags") or []):
+            continue
         identity = (sku, _warehouse_id(row.get("warehouse_id")))
         if identity in seen:
             raise ValueError("Ozon повторил товар на складе в аналитике FBO")
         seen.add(identity)
-        if "FBS_RETURN" in (row.get("item_tags") or []):
-            continue
         result.to_customer[article] += _quantity(row.get("outbound_pending_delivery"))
         result.from_customer[article] += _quantity(row.get("return_from_customer_stock_count"))
     return result

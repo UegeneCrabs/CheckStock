@@ -32,7 +32,7 @@ window.CheckStockPage = (() => {
         }
         const operations = links.find(link => link.textContent.trim() === 'История операций');
         if (operations && context.stores.length) operations.href = '/stock/' + context.stores[0].slug + '/operations';
-        if (location.pathname.endsWith('/ozon')) {
+        if (location.pathname.endsWith('/ozon') || location.pathname.includes('/ozon/reports/')) {
             document.getElementById('app-header').classList.add('marketplace-ozon');
             document.querySelector('[data-ui-marketplace]').textContent = 'Ozon';
         }

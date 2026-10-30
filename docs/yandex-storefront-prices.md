@@ -185,18 +185,18 @@ headless-вариант при проверке получал HTTP 403.
 
 ```bash
 # Обновить приложение, чтобы оно показывало новые поля, и запустить сборщик
-docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml up -d --build app yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d --build app yandex-parser
 # Проверить журнал
-docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml logs --tail=100 -f yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml logs --tail=100 -f yandex-parser
 ```
 
 Для полного обхода сразу после установки остановите автоматический контейнер,
 выполните разовый запуск и затем верните расписание:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml stop yandex-parser
-docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml run --rm --no-deps yandex-parser xvfb-run -a python -u scripts/parsers/parse_yandex_storefront_prices.py --force
-docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml up -d yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml stop yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml run --rm --no-deps yandex-parser xvfb-run -a python -u scripts/parsers/parse_yandex_storefront_prices.py --force
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d yandex-parser
 ```
 
 Проверьте итоговый отчёт: `selected`, `checked`, `statuses` и `skipped`.

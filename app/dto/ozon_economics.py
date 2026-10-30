@@ -47,6 +47,8 @@ class OzonPrices(PriceValues):
 
 
 class OzonCurrentEconomics(DtoModel):
+    turnover: float | None = None
+    turnover_coverage: "OzonCoverage | None" = None
     margin: float | None = None
     roi: float | None = None
     orders: int | None = None
@@ -77,6 +79,8 @@ class OzonOrderDay(DtoModel):
     article: str
     day: date
     amount: Decimal
+    gross_amount: Decimal | None = None
+    cancelled_amount: Decimal | None = None
     ordered: int = 0
     received: int = 0
     cancelled: int = 0

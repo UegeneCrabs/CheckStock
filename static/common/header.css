@@ -310,6 +310,17 @@ html.sidebar-collapsed .app-header .nav-group.is-open .nav-submenu {
     background: #ffe765;
 }
 
+.app-header #nav-reports-submenu .marketplace-report-ozon {
+    color: #11324a;
+    background: #80d4ff;
+}
+
+.app-header #nav-reports-submenu .marketplace-report-ozon:hover,
+.app-header #nav-reports-submenu .marketplace-report-ozon.active {
+    color: #11324a;
+    background: #abe4ff;
+}
+
 .app-header .sidebar-bottom {
     min-width: 0;
     margin: 0;

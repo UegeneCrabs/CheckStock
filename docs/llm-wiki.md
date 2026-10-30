@@ -23,10 +23,12 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Цены Ozon, комиссия за продажу FBO и дневная история | `app/economics/ozon_prices.py`, `app/ozon/async_prices.py`, `app/infrastructure/async_prices_repository.py`, `app/infrastructure/async_commissions_repository.py`, [контракт](ozon-prices.md) |
 | Связанные цены калькулятора Ozon, СПП, кошелёк и комиссия | `app/economics/ozon_price_calculator.py`, `app/dto/ozon_price_calculator.py`, `static/economics/ozon/prices.js`, [формулы и источники себестоимости](ozon-prices.md#связь-цен-калькулятора) |
 | Связанные артикулы Ozon (варианты одной модели) | `app/application/ozon_related.py`, `app/ozon/async_related.py`, `static/economics/ozon/related.js`, [контракт и кэш](ozon-calculator.md#контракт-и-модули) |
-| Акции товара Ozon: доступные и текущие, цены и сроки | `app/application/ozon_promotions.py`, `app/ozon/async_promotions.py`, `static/economics/ozon/promotions.js`, [контракт Seller API v2 и ограничения](ozon-promotions.md) |
-| График Ozon за 14 дней и сравнение с прошлой неделей | `app/application/ozon_history.py`, `app/infrastructure/ozon_history_repository.py`, `static/economics/ozon/history.js`, [источники и пропуски](ozon-history.md) |
+| Акции товара Ozon: ручное вступление с подтверждением, журнал, сроки, Гант, бустинг и экономика | `app/application/{ozon_promotions,ozon_promotion_entry}.py`, `app/ozon/async_promotions.py`, `app/infrastructure/ozon_promotion_entry_repository.py`, `app/economics/ozon_promotion_calculator.py`, `static/economics/ozon/{promotions,promotion-entry,promotions-timeline,settings}.js`, [контракт и календарь](ozon-promotions.md), [реализованный план](ozon-promotion-entry-plan.md) |
+| График Ozon за 7/14/30 дней и сравнение с прошлой неделей | `app/application/ozon_history.py`, `app/infrastructure/ozon_history_repository.py`, `static/economics/ozon/history.js`, [источники и пропуски](ozon-history.md) |
 | Редактирование расходов, выкупа, рекламы и налогов Ozon; подсказки с формулами и источниками | `app/economics/ozon_calculator.py`, `app/dto/ozon_calculator.py`, `static/economics/ozon/calculator.js`, `static/economics/ozon/calculator-help{,-content}.js`, [локальные сценарии и подсказки](ozon-calculator.md) |
 | Маржа Ozon за сегодня и диапазон | `app/economics/ozon_margin.py`, `app/ozon/margin_normalizer.py`, `app/infrastructure/ozon_margin_repository.py`, `app/jobs/ozon_margin.py`, [формула и история](ozon-margin.md) |
+| Отчёты Ozon: юниточная прибыль, целевая цена, ROI кабинета и товара | `app/application/ozon_reports.py`, `app/economics/{ozon_reports,ozon_target_prices}.py`, `app/infrastructure/ozon_reports_repository.py`, `app/web/routers/ozon_reports.py`, `static/economics/ozon/reports.js`, [расчёты, источники и HTTP-контракты](ozon-reports.md) |
+| Лимиты Seller/Performance API Ozon, квоты организаций и продолжение отчётов | `app/application/ozon_limits.py`, `app/infrastructure/ozon_limits_repository.py`, `app/ozon/performance_limits.py`, [контроль запросов и резервов](ozon-api-limits.md) |
 | Выбор категории Ozon и тариф FBO по цене | `app/application/ozon_tariffs.py`, `app/ozon/async_categories.py`, `static/economics/ozon/categories.js`, общий с ЯМ выбор `static/economics/shared/categories.{js,css}`, [источник и обновление справочника](ozon-tariffs.md) |
 | Каталог задач, названия и подписи расписаний | `app/core/constants.py`, `app/jobs/catalog.py`, [метаданные](background-jobs.md#метаданные-каталога-задач) |
 | Автоматическое расписание, повторы и восстановление | `app/jobs/worker.py`, `app/jobs/scheduling.py`, `app/repositories/job_schedules.py`, [контракт планировщика](background-jobs.md) |
@@ -78,7 +80,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Где живёт состояние
 
-- Локально по умолчанию используется SQLite `data/checkstock.db`; при `CHECKSTOCK_DATABASE_URL` — PostgreSQL. В `docker-compose.yml` PostgreSQL хранится в томе `postgres-data`.
+- Локально по умолчанию используется SQLite `data/checkstock.db`; при `CHECKSTOCK_DATABASE_URL` — PostgreSQL. В `deploy/docker-compose.yml` PostgreSQL хранится в томе `postgres-data`.
 - Настройки окружения и значения по умолчанию определены в `app/config.py`; образец — `.env.example`. Настройки отдельных фоновых задач дополнительно хранятся в БД через `app/jobs/settings.py`.
 - Сроки и попытки автоматических загрузок хранятся в `sync_job_schedules`; история и отображаемые статусы — в `sync_job_runs` и `sync_job_states`. Они переживают перезапуск планировщика.
 - Секреты берутся из `secrets/` или путей, заданных переменными окружения. Образцы файлов — в `secrets/example/`; реальные секреты и локальные данные не коммитятся.
@@ -86,9 +88,13 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## Запуск и проверка
 
-Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
+Выпуск из `master` через `dev-release`, тег, обязательный дамп PostgreSQL и
+обновление сервера описаны в [инструкции по релизам](releases.md). Для работы
+агента с выпуском и ошибками Actions применяйте [скилл деплоя](../.agents/skills/checkstock-deploy/SKILL.md).
 
-Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
+Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose --env-file .env -f deploy/docker-compose.yml up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
+
+Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Расположение тестов, оформление тест-кейсов и команды проверки определяет [скилл тестирования](../.agents/skills/checkstock-testing/SKILL.md). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 
 После объединения локальной ветки и stash 19 октября 2026 года модули Ozon подключены через `app/jobs/ozon.py`, `app/web/ozon_jobs.py` и `app/web/routers/ozon_economics.py`. Страница использует асинхронный JSON API; пять задач обслуживают заказы, цены с комиссией, закрытие дней, рекламу и дневную логистику. Общие складские страницы сохраняют прежние обработчики; [фактические подключения и совместимость](architecture.md#состояние-объединения-19-октября-2026).
 

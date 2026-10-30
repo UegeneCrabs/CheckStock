@@ -6,11 +6,19 @@ from app.dto.ozon_economics import OzonCoverage, OzonTurnoverData, OzonTurnoverV
 
 
 def period_turnover(
-    data: OzonTurnoverData, store: str, article: str, start: date, end: date
+    data: OzonTurnoverData,
+    store: str,
+    article: str,
+    start: date,
+    end: date,
+    *,
+    include_open_days: bool = False,
 ) -> OzonTurnoverValue:
     expected = {start + timedelta(days=index) for index in range((end - start).days + 1)}
     rows = tuple(row for row in data.products.get((store, article), ()) if row.day in expected)
     confirmed = data.confirmed_days.get(store, frozenset()) & expected
+    if include_open_days:
+        confirmed |= data.eligible_days.get(store, frozenset()) & expected
     available = {row.day for row in rows} | confirmed
     partial = available - confirmed
     missing = expected - available

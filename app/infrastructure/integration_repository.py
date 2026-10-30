@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from app.core import health as health_service
-from app.core.constants import UiAlertCode, UiAlertScope
+from app.core.constants import OZON_ADVERTISING, OZON_API, Marketplace, UiAlertCode, UiAlertScope
 from app.dto.integrations import JobRun, JobState, SyncSettingUpdate
 from app.dto.ui import UiAlert
 from app.infrastructure.async_database import AsyncDatabase, table_for, upsert
@@ -31,10 +31,23 @@ class IntegrationRepository:
                     health.c.scope,
                     health.c.error,
                     health.c.checked_at,
-                ).where(health.c.store_slug.in_(store_slugs), health.c.ok == 0)
+                ).where(
+                    health.c.store_slug.in_(store_slugs),
+                    health.c.ok == 0,
+                    ~(
+                        (health.c.marketplace == Marketplace.OZON)
+                        & (health.c.scope == OZON_ADVERTISING.legacy_health_scope)
+                    ),
+                )
             )
             alerts = []
             for row in rows.mappings():
+                if (
+                    row["marketplace"] == Marketplace.OZON
+                    and row["scope"] == UiAlertScope.REPUTATION
+                    and OZON_API.subscription_error_marker in str(row["error"] or "").casefold()
+                ):
+                    continue
                 updated = health_service._credentials_updated_at(row["marketplace"])
                 checked = health_service._checked_at(dict(row))
                 if updated and checked and checked < updated:

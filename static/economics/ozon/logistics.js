@@ -77,12 +77,10 @@ window.OzonLogisticsUI = (() => {
         });
         const model = element('div', 'ue1c-calculator-row');
         model.dataset.ozonLogisticsReference = 'modeled';
-        model.tabIndex = 0;
         model.append(element('span', '', 'Оценка по формуле в дневном снимке'), element('strong', '', amount(snapshot && snapshot.modeled_per_unit) + ' ₽'));
         content.append(model);
         const actual = element('div', 'ue1c-calculator-row');
         actual.dataset.ozonLogisticsReference = 'actual';
-        actual.tabIndex = 0;
         actual.append(element('span', '', 'Исходные начисления на выкуп'), element('strong', '', amount(snapshot && snapshot.actual_per_unit) + ' ₽'));
         content.append(actual);
         const note = element('p', 'ym-logistics-note');
@@ -145,7 +143,7 @@ window.OzonLogisticsUI = (() => {
         session.block.querySelectorAll('[data-ozon-logistics-input], [data-ozon-logistics-reference]').forEach(input => {
             const key = input.dataset.ozonLogisticsInput || input.dataset.ozonLogisticsReference;
             const row = input.closest('label, summary, [data-ozon-logistics-reference]');
-            const title = input.getAttribute('aria-label') || row.firstElementChild.textContent;
+            const title = input.getAttribute('aria-label') || row.firstElementChild.firstChild.textContent;
             window.OzonCalculatorHelp.bind(row, () => window.OzonCalculatorHelpContent.logistics(session, key, title));
         });
         window.OzonCalculatorHelp.refresh();

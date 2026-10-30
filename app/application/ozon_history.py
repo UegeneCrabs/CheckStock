@@ -12,11 +12,11 @@ class OzonHistoryService:
         self.reader = reader
 
     async def history(self, query: OzonHistoryQuery, today: date) -> OzonHistory:
-        start = today - timedelta(days=OZON_HISTORY.visible_days + OZON_HISTORY.comparison_days - 1)
+        start = today - timedelta(days=query.days + OZON_HISTORY.comparison_days - 1)
         evidence = await self.reader.load(query, start, today)
         return OzonHistory(
             today=today,
-            period_from=today - timedelta(days=OZON_HISTORY.visible_days - 1),
+            period_from=today - timedelta(days=query.days - 1),
             period_to=today,
             days=history_days(query, AdvertisingPeriod(start=start, end=today), evidence),
         )

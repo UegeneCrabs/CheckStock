@@ -39,7 +39,7 @@ Ozon и Яндекс не поддерживаются. Пагинация: `lim
 После выкладки обновите схему действия GPT. MCP обнаруживает методы через общий
 список инструментов. Каталог показывает названия, параметры и поля обоих методов.
 
-Проверки: `python -m unittest discover -s tests -p test_agent_spp_history.py -v`.
+Проверки: `python -m unittest discover -s tests -p test_agent_full.py -v`.
 
 
 ## Слои реализации

@@ -1,14 +1,14 @@
-# Run with: docker compose -f docker-compose.yml -f docker-compose.yandex-parser.yml up -d --build yandex-parser
+# Run from repository root with: docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d --build yandex-parser
 services:
   yandex-parser:
     build:
-      context: .
+      context: ..
       dockerfile: deploy/yandex-parser/Dockerfile
     init: true
     restart: unless-stopped
     shm_size: 1gb
     security_opt:
-      - seccomp=./deploy/yandex-parser/seccomp_profile.json
+      - seccomp=./yandex-parser/seccomp_profile.json
     depends_on:
       db:
         condition: service_healthy
@@ -17,7 +17,7 @@ services:
       CHECKSTOCK_YANDEX_TOKENS_PATH: /app/secrets/yandex_tokens.json
       CHECKSTOCK_CAPTCHA_KEY_PATH: /app/secrets/captcha.json
     volumes:
-      - ./secrets:/app/secrets:ro
+      - ../secrets:/app/secrets:ro
       - yandex-parser-data:/app/data/yandex-storefront
     stop_grace_period: 45s
 volumes:

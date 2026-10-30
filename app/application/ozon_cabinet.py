@@ -6,6 +6,7 @@ from app.core.constants import OZON_CABINET, TIME, OzonBuyoutError, OzonBuyoutSt
 from app.dto.ozon_buyout import OzonBuyoutEvidence
 from app.dto.ozon_cabinet import OzonBuyoutSyncResult, OzonCabinetRecord, OzonCabinetSave, OzonCabinetUpdate
 from app.dto.ozon_economics import OzonProductsQuery
+from app.dto.ozon_promotions import OzonBoostRecord, OzonBoostSave, OzonBoostUpdate
 from app.ozon.cabinet_normalizer import buyout_snapshot
 
 
@@ -30,6 +31,11 @@ class OzonCabinetService:
                 user_name=user_name,
                 saved_at=self.clock(),
             )
+        )
+
+    async def save_boost(self, change: OzonBoostUpdate, user_name: str) -> OzonBoostRecord:
+        return await self.repository.save_boost(
+            OzonBoostSave(change=change, user_name=user_name, saved_at=self.clock())
         )
 
     async def sync_buyout(self, store: str) -> OzonBuyoutSyncResult:

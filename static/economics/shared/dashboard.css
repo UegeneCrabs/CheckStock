@@ -2209,6 +2209,59 @@ body:has(.content--unit-1c) {
 .ozon-related .ue1c-glued-products[hidden] {
     display: none;
 }
+.ozon-related .ue1c-glued-products > div {
+    align-items: center;
+}
+.ozon-related .ue1c-glued-name {
+    flex: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.ozon-related-thumb {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    overflow: hidden;
+    border: 1px solid var(--ue-line);
+    border-radius: 6px;
+    color: var(--ue-muted);
+    background: var(--ue-surface-2);
+}
+.ozon-related-thumb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: var(--ue-surface);
+}
+.ozon-history-periods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-left: auto;
+}
+.ozon-history-periods button {
+    padding: 5px 9px;
+    border: 1px solid var(--ue-line);
+    border-radius: 6px;
+    color: var(--ue-muted);
+    background: var(--ue-surface);
+    font: inherit;
+    cursor: pointer;
+}
+.ozon-history-periods button[aria-pressed="true"] {
+    border-color: var(--ue-accent);
+    color: var(--ue-accent);
+    background: var(--ue-surface-2);
+}
+.ozon-history-periods button:focus-visible {
+    outline: 2px solid var(--ue-accent);
+    outline-offset: 2px;
+}
 .ue1c-glued-products {
     min-width: 0;
     max-width: 100%;

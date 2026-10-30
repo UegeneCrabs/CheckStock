@@ -1,17 +1,21 @@
 import asyncio
 import logging
+import math
 import random
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 import httpx
 
+from app.application.ozon_limits import OzonLimitsService
 from app.core.constants import (
     HTTP,
+    OZON_API_LIMITS,
     HTTPStatus,
 )
+from app.dto.ozon_limits import OzonRateFeedback
 
 logger = logging.getLogger(__name__)
 store_context: ContextVar[str] = ContextVar("async_http_store", default="")
@@ -21,7 +25,8 @@ def retry_after(value: str | None) -> float | None:
     if not value:
         return None
     try:
-        return max(0, float(value))
+        parsed = float(value)
+        return max(0, parsed) if math.isfinite(parsed) else None
     except ValueError:
         try:
             moment = parsedate_to_datetime(value)
@@ -33,8 +38,16 @@ def retry_after(value: str | None) -> float | None:
 
 
 class AsyncHttp:
-    def __init__(self, client: httpx.AsyncClient):
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        limits: OzonLimitsService | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ):
         self.client = client
+        self.limits = limits
+        self.sleep = sleep
 
     async def request(
         self,
@@ -47,10 +60,26 @@ class AsyncHttp:
         params: Mapping[str, str | int] | None = None,
         json: object = None,
     ) -> httpx.Response:
+        scopes = self.limits.seller_scopes(url, headers) if self.limits is not None else ()
         for attempt in range(1, attempts + 1):
             pause = None
+            if self.limits is not None:
+                await self.limits.wait(scopes)
             try:
                 response = await self.client.request(method, url, headers=headers, params=params, json=json)
+                if self.limits is not None and scopes:
+                    try:
+                        remaining = int(response.headers[OZON_API_LIMITS.remaining_header])
+                    except (KeyError, ValueError):
+                        remaining = None
+                    await self.limits.observe(
+                        scopes[-1],
+                        OzonRateFeedback(
+                            status=response.status_code,
+                            retry_seconds=retry_after(response.headers.get(OZON_API_LIMITS.retry_header)),
+                            remaining=remaining,
+                        ),
+                    )
                 if (
                     response.status_code != HTTPStatus.TOO_MANY_REQUESTS
                     and response.status_code < HTTPStatus.INTERNAL_SERVER_ERROR
@@ -70,5 +99,5 @@ class AsyncHttp:
             logger.warning(
                 "async_http_retry store=%s attempt=%s delay=%.1f", store_context.get(), attempt, pause
             )
-            await asyncio.sleep(pause)
+            await self.sleep(pause)
         raise ValueError("HTTP attempts must be positive")

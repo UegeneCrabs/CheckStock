@@ -73,8 +73,11 @@ def effective(store, article, scheme, *, scenario=None, state_cache=None, estima
         buyout_settings.get("default_buyout_percent"),
     )
     layers = [
-        ("Начальные данные 1С", base),
-        ("Перенесено из листа", seed.get("values", {})),
+        ("Google-таблица 1С · лист YM · последняя загрузка", base),
+        (
+            "Перенесено из листа",
+            {key: value for key, value in seed.get("values", {}).items() if key != "purchase_price"},
+        ),
         ("API: каталог", catalog.get("values", {})),
         *price_layers,
         ("API: выкуп", {"buyout_percent": buyout}),

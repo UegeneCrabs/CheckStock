@@ -21,6 +21,9 @@ files = [
     "app/infrastructure/fbo_stock_repository.py", "app/infrastructure/fbo_stock_orm.py",
     "app/stock/fbo_sync.py", "app/web/routers/fbo_stock.py",
     "app/dto/ozon_promotions.py", "app/application/ozon_promotions.py", "app/ozon/async_promotions.py",
+    "app/economics/ozon_promotion_calculator.py",
+    "app/dto/ozon_promotion_entry.py", "app/application/ozon_promotion_entry.py",
+    "app/infrastructure/ozon_promotion_entry_repository.py", "app/infrastructure/ozon_promotion_entry_orm.py",
     "app/dto/ozon_history.py", "app/application/ozon_history.py",
     "app/ozon/history_normalizer.py", "app/infrastructure/ozon_history_repository.py",
     "app/dto/ozon_related.py", "app/application/ozon_related.py", "app/ozon/async_related.py",
@@ -68,6 +71,14 @@ files = [
     "app/infrastructure/async_orders_repository.py", "app/infrastructure/async_job_repository.py",
     "app/infrastructure/async_catalog_repository.py",
     "app/infrastructure/async_resources.py", "app/jobs/async_locks.py",
+    "app/application/ozon_limits.py", "app/dto/ozon_limits.py",
+    "app/infrastructure/ozon_limits_orm.py", "app/infrastructure/ozon_limits_repository.py",
+    "app/ozon/limit_identity.py",
+    "app/ozon/performance_limits.py",
+    "app/dto/ozon_reports.py", "app/application/ozon_reports.py",
+    "app/economics/ozon_reports.py", "app/economics/ozon_target_prices.py",
+    "app/infrastructure/ozon_reports_repository.py", "app/infrastructure/ozon_report_export.py",
+    "app/web/routers/ozon_reports.py",
     "app/jobs/async_scheduling.py", "app/jobs/async_tracking.py",
     "app/jobs/settings.py", "app/jobs/scheduling.py",
     "app/application/integration_views.py",
@@ -91,3 +102,7 @@ files = [
     "app/jobs/ozon.py", "app/web/ozon_jobs.py",
     "app/web/routers/ozon_economics.py", "app/web/routers/ui.py",
 ]
+
+[[tool.mypy.overrides]]
+module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true

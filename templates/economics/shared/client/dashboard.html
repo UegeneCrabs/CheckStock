@@ -69,7 +69,11 @@
 <!-- endtemplate -->
 
 <!-- template: render-product-6 -->
-<td class="ue1c-num ue1c-group-start{{{marginState}}}" title="{{currentTitle}}"><strong>{{{content}}}</strong></td><td class="ue1c-num{{{roi}}}{{{roiState}}}" title="{{currentTitle_2}}"><strong>{{{content_2}}}</strong></td>{{{discountCell}}}
+{{{turnoverCell}}}<td class="ue1c-num{{{currentStart}}}{{{marginState}}}" title="{{currentTitle}}"><strong>{{{content}}}</strong></td><td class="ue1c-num{{{roi}}}{{{roiState}}}" title="{{currentTitle_2}}"><strong>{{{content_2}}}</strong></td>{{{discountCell}}}
+<!-- endtemplate -->
+
+<!-- template: current-turnover-cell -->
+<td class="ue1c-num ue1c-group-start{{{state}}}"><strong>{{{value}}}</strong></td>
 <!-- endtemplate -->
 
 <!-- template: current-discount-cell -->
@@ -143,7 +147,7 @@
 <!-- endtemplate -->
 
 <!-- template: render-glued-products -->
-<div><button class="ue1c-glued-name" type="button" data-glued-product-open="{{targetId}}" title="Открыть карточку товара">{{name}}</button><button class="ue1c-copy-value ue1c-glued-article" type="button" data-copy-value="{{article}}" data-copy-kind="Артикул" data-copy-tooltip="нажмите чтобы скопировать" data-copy-tooltip-default="нажмите чтобы скопировать" aria-label="Скопировать артикул {{article_2}}">Арт. <strong>{{article_3}}</strong></button></div>
+<div>{{{media}}}<button class="ue1c-glued-name" type="button" data-glued-product-open="{{targetId}}" title="Открыть карточку товара">{{name}}</button><button class="ue1c-copy-value ue1c-glued-article" type="button" data-copy-value="{{article}}" data-copy-kind="Артикул" data-copy-tooltip="нажмите чтобы скопировать" data-copy-tooltip-default="нажмите чтобы скопировать" aria-label="Скопировать артикул {{article_2}}">Арт. <strong>{{article_3}}</strong></button></div>
 <!-- endtemplate -->
 
 <!-- template: render-chart-daily-sales -->

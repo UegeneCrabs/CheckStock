@@ -1,22 +1,16 @@
 window.OzonCalculatorHelp = (() => {
     'use strict';
     const providers = new WeakMap();
-    let popup, active, described, showTimer, hideTimer;
+    let popup, active, trigger;
 
     function hide() {
-        window.clearTimeout(showTimer);
-        window.clearTimeout(hideTimer);
         if (popup) popup.hidden = true;
-        if (described) {
-            const ids = (described.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== popup.id);
-            if (ids.length) described.setAttribute('aria-describedby', ids.join(' '));
-            else described.removeAttribute('aria-describedby');
-        }
-        active = described = null;
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        active = trigger = null;
     }
 
     function position() {
-        const rect = active.getBoundingClientRect();
+        const rect = trigger.getBoundingClientRect();
         const gap = 8;
         const width = document.documentElement.clientWidth;
         const height = window.innerHeight;
@@ -27,13 +21,14 @@ window.OzonCalculatorHelp = (() => {
 
     function refresh() {
         if (!active) return;
-        if (!active.isConnected || !active.getClientRects().length) { hide(); return; }
-        const rect = active.getBoundingClientRect();
+        if (!active.isConnected || !trigger.isConnected || !trigger.getClientRects().length) { hide(); return; }
+        const rect = trigger.getBoundingClientRect();
         if (rect.bottom < 0 || rect.top > window.innerHeight) { hide(); return; }
         const data = providers.get(active)?.();
         if (!data) { hide(); return; }
         popup.replaceChildren();
         const title = document.createElement('strong');
+        title.id = popup.id + '-title';
         title.className = 'ozon-calculator-help-title';
         title.textContent = data.title;
         popup.append(title);
@@ -56,26 +51,12 @@ window.OzonCalculatorHelp = (() => {
         position();
     }
 
-    function show(target, control) {
+    function show(target, button) {
         hide();
         active = target;
-        described = control || target.querySelector('input, select, button') || target;
-        const ids = new Set((described.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
-        ids.add(popup.id);
-        described.setAttribute('aria-describedby', [...ids].join(' '));
+        trigger = button;
+        trigger.setAttribute('aria-expanded', 'true');
         refresh();
-    }
-
-    function target(node) {
-        return node instanceof Element ? node.closest('[data-ozon-help]') : null;
-    }
-
-    function scheduleHide() {
-        window.clearTimeout(showTimer);
-        window.clearTimeout(hideTimer);
-        hideTimer = window.setTimeout(() => {
-            if (!active?.contains(document.activeElement)) hide();
-        }, 180);
     }
 
     function initialize() {
@@ -83,28 +64,25 @@ window.OzonCalculatorHelp = (() => {
         popup = document.createElement('div');
         popup.id = 'ozon-calculator-help';
         popup.className = 'ozon-calculator-help';
-        popup.setAttribute('role', 'tooltip');
+        popup.setAttribute('role', 'region');
+        popup.setAttribute('aria-labelledby', popup.id + '-title');
         popup.hidden = true;
         document.body.append(popup);
-        document.addEventListener('pointerover', event => {
-            const row = target(event.target);
-            if (!row || row.contains(event.relatedTarget)) return;
-            window.clearTimeout(hideTimer);
-            window.clearTimeout(showTimer);
-            showTimer = window.setTimeout(() => show(row), 180);
-        });
-        document.addEventListener('pointerout', event => {
-            const row = target(event.target);
-            if (row && !row.contains(event.relatedTarget)) scheduleHide();
-        });
+        document.addEventListener('click', event => {
+            const button = event.target instanceof Element ? event.target.closest('[data-ozon-help-toggle]') : null;
+            const row = button?.closest('[data-ozon-help]');
+            if (row && providers.has(row)) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (trigger === button) hide();
+                else show(row, button);
+            } else if (active && !popup.contains(event.target)) hide();
+        }, true);
+        document.addEventListener('pointerdown', event => {
+            if (active && !trigger.contains(event.target) && !popup.contains(event.target)) hide();
+        }, true);
         document.addEventListener('focusin', event => {
-            const row = target(event.target);
-            if (row) show(row, event.target);
-            else if (!popup.contains(event.target)) hide();
-        });
-        document.addEventListener('focusout', event => {
-            const row = target(event.target);
-            if (row && !row.contains(event.relatedTarget)) scheduleHide();
+            if (active && !trigger.contains(event.target) && !popup.contains(event.target)) hide();
         });
         document.addEventListener('keydown', event => {
             if (event.key === 'Escape' && active) {
@@ -114,13 +92,10 @@ window.OzonCalculatorHelp = (() => {
         }, true);
         document.addEventListener('scroll', event => {
             if (popup.contains(event.target)) return;
-            if (active?.contains(document.activeElement)) refresh();
-            else hide();
+            refresh();
         }, true);
         document.addEventListener('change', refresh);
         window.addEventListener('resize', hide);
-        popup.addEventListener('pointerenter', () => window.clearTimeout(hideTimer));
-        popup.addEventListener('pointerleave', scheduleHide);
     }
 
     function bind(node, provider) {
@@ -130,6 +105,18 @@ window.OzonCalculatorHelp = (() => {
         providers.set(node, provider);
         node.removeAttribute('title');
         node.querySelectorAll('[title]').forEach(child => child.removeAttribute('title'));
+        if (!node.querySelector('[data-ozon-help-toggle]')) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'ozon-calculator-help-toggle';
+            button.dataset.ozonHelpToggle = '';
+            button.textContent = '?';
+            button.setAttribute('aria-label', 'Пояснение: ' + provider().title);
+            button.setAttribute('aria-controls', popup.id);
+            button.setAttribute('aria-expanded', 'false');
+            const label = node.firstElementChild;
+            (label?.tagName === 'SPAN' ? label : node).append(button);
+        }
         if (active === node) refresh();
     }
 

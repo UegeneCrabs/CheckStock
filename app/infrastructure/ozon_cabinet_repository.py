@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.engine import ScalarResult
 
-from app.core.constants import OZON_CABINET, Marketplace
+from app.core.constants import OZON_CABINET, OZON_PROMOTIONS, Marketplace
 from app.core.stores import STORES
 from app.dto.ozon_buyout import OzonBuyoutLine
 from app.dto.ozon_cabinet import (
@@ -17,6 +17,7 @@ from app.dto.ozon_cabinet import (
     OzonTeamCommission,
 )
 from app.dto.ozon_economics import OzonProductsQuery
+from app.dto.ozon_promotions import OzonBoostRecord, OzonBoostSave, OzonBoostSettings
 from app.infrastructure.async_database import AsyncDatabase, table_for, upsert
 from app.infrastructure.orm import (
     SalesOrderLineRecord,
@@ -42,6 +43,67 @@ def stored_cabinet_values(payload: str) -> OzonCabinetValues:
 class OzonCabinetRepository:
     def __init__(self, database: AsyncDatabase):
         self.database = database
+
+    async def boost_settings(self) -> OzonBoostRecord:
+        table = table_for(CabinetTable)
+        async with self.database.transaction() as connection:
+            row = (
+                await connection.execute(
+                    select(table).where(table.c.store_slug == OZON_PROMOTIONS.settings_scope)
+                )
+            ).first()
+        return (
+            OzonBoostRecord(
+                values=OzonBoostSettings.model_validate_json(row.payload),
+                revision=row.revision,
+                updated_at=row.updated_at,
+                updated_by=row.updated_by,
+            )
+            if row is not None
+            else OzonBoostRecord()
+        )
+
+    async def save_boost(self, command: OzonBoostSave) -> OzonBoostRecord:
+        table = table_for(CabinetTable)
+        async with self.database.transaction(write=True) as connection:
+            if command.change.revision == 0:
+                await connection.execute(
+                    upsert(
+                        connection,
+                        table,
+                        {
+                            "store_slug": OZON_PROMOTIONS.settings_scope,
+                            "revision": 0,
+                            "payload": OzonBoostSettings().model_dump_json(),
+                            "updated_at": command.saved_at.isoformat(),
+                            "updated_by": command.user_name,
+                        },
+                        ("store_slug",),
+                        updates={"store_slug": OZON_PROMOTIONS.settings_scope},
+                    )
+                )
+            revision = await connection.scalar(
+                update(table)
+                .where(
+                    table.c.store_slug == OZON_PROMOTIONS.settings_scope,
+                    table.c.revision == command.change.revision,
+                )
+                .values(
+                    payload=command.change.values.model_dump_json(),
+                    revision=command.change.revision + 1,
+                    updated_at=command.saved_at.isoformat(),
+                    updated_by=command.user_name,
+                )
+                .returning(table.c.revision)
+            )
+            if revision is None:
+                raise OzonCabinetConflict()
+        return OzonBoostRecord(
+            values=command.change.values,
+            revision=revision,
+            updated_at=command.saved_at,
+            updated_by=command.user_name,
+        )
 
     async def buyout_lines(self, query: OzonProductsQuery) -> tuple[OzonBuyoutLine, ...]:
         orders = table_for(SalesOrderLineRecord)

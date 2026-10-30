@@ -6,6 +6,7 @@ from app import db
 from app.core.stores import STORES
 from app.economics.sources import purchase_prices as source
 from app.repositories import yandex_source_values as repository
+from app.yandex import economics
 
 logger = logging.getLogger(__name__)
 MARKETPLACE = "YANDEX MARKET"
@@ -97,6 +98,7 @@ def sync_all(sheets: list[dict] | None = None) -> dict:
     try:
         report = parse_source_values(sheets if sheets is not None else source.fetch_sheet_rows(SHEET_TITLE))
         saved = repository.replace_values(report.pop("rows"), now)
+        economics.capture_today(STORES)
     except Exception as error:
         for slug in STORES:
             db.record_sync_health(slug, MARKETPLACE, "unit_economics_1c_source", False, str(error), now)

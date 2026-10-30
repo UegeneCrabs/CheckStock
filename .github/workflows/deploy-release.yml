@@ -1,0 +1,92 @@
+name: Deploy CheckStock release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checkstock-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check release tag and branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "Release tag must have the form vMAJOR.MINOR.PATCH" >&2; exit 1;
+          }
+          git fetch --force --tags origin
+          git fetch origin dev-release:refs/remotes/origin/dev-release
+          release_sha="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          git merge-base --is-ancestor "$release_sha" refs/remotes/origin/dev-release || {
+            echo "Tagged commit is not in dev-release" >&2; exit 1;
+          }
+          previous_tags=()
+          while IFS= read -r candidate; do
+            [[ "$candidate" == "$GITHUB_REF_NAME" ]] && continue
+            [[ "$candidate" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            previous_tags+=("$candidate")
+          done < <(git tag --list 'v*')
+          if ((${#previous_tags[@]})); then
+            highest="$(printf '%s\n' "${previous_tags[@]}" | sort -V | tail -n 1)"
+            [[ "$(printf '%s\n%s\n' "$highest" "$GITHUB_REF_NAME" | sort -V | tail -n 1)" == "$GITHUB_REF_NAME" && "$GITHUB_REF_NAME" != "$highest" ]] || {
+              echo "Release tag $GITHUB_REF_NAME must exceed previous tag $highest" >&2; exit 1;
+            }
+          fi
+          echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check Python
+        run: python -m ruff check app scripts run.py
+      - name: Build image
+        run: docker compose --env-file .env.example -f deploy/docker-compose.yml build app
+        env:
+          POSTGRES_PASSWORD: build-only-placeholder
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEV_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEV_DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEV_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEV_DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            [[ -n "${!name}" ]] || { echo "Missing $name" >&2; exit 1; }
+          done
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || {
+            echo 'DEPLOY_PORT must be a numeric SSH port' >&2; exit 1;
+          }
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/checkstock_deploy"
+          chmod 600 "$HOME/.ssh/checkstock_deploy"
+          ssh-keygen -y -f "$HOME/.ssh/checkstock_deploy" >/dev/null || {
+            echo 'DEV_DEPLOY_SSH_KEY is not a valid SSH private key' >&2; exit 1;
+          }
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy on server
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEV_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEV_DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/checkstock_deploy" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            bash -s -- "$GITHUB_REF_NAME" "$RELEASE_SHA" < deploy/deploy-release.sh

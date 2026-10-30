@@ -296,6 +296,13 @@ class OzonPromotionsConfig:
     page_size: int = 100
     max_pages: int = 500
     cache_size: int = 128
+    currency: str = "RUB"
+    settings_scope: str = "__ozon_promotions__"
+    update_path: str = "/v1/actions/products/update"
+    entry_lock_prefix: str = "ozon-promotion-entry:"
+    entry_history_limit: int = 10
+    entry_reason_max_length: int = 1000
+    entry_write_attempts: int = 1
 
 
 OZON_PROMOTIONS: Final = OzonPromotionsConfig()
@@ -312,6 +319,55 @@ class OzonPromotionIssue(StrEnum):
     UNAVAILABLE = "unavailable"
     INCOMPLETE = "incomplete"
     TIMEOUT = "timeout"
+
+
+class OzonEntryState(StrEnum):
+    PREPARED = "prepared"
+    BLOCKED = "blocked"
+    CHECKING = "checking"
+    SENDING = "sending"
+    VERIFYING = "verifying"
+    UNCERTAIN = "uncertain"
+    SUCCEEDED = "succeeded"
+    REJECTED = "rejected"
+    CHANGED = "changed"
+    EXPIRED = "expired"
+    ALREADY = "already_participating"
+    FAILED = "failed"
+
+
+class OzonEntryIssue(StrEnum):
+    ACTION_UNAVAILABLE = "action_unavailable"
+    NOT_CANDIDATE = "not_candidate"
+    INCOMPLETE = "incomplete"
+    STOCK_UNKNOWN = "stock_unknown"
+    NO_STOCK = "no_stock"
+    QUARANTINED = "quarantined"
+    FROZEN = "frozen"
+    ENDED = "ended"
+    PRICE_UNAVAILABLE = "price_unavailable"
+    CURRENCY = "currency"
+    PRICE_LIMIT = "price_limit"
+    STOCK_REQUIRED = "stock_required"
+    STOCK_LIMIT = "stock_limit"
+    STOCK_UNSUPPORTED = "stock_unsupported"
+    ACCESS_DENIED = "access_denied"
+    UNAVAILABLE = "unavailable"
+    BUSY = "busy"
+    EXPIRED = "expired"
+    CHANGED = "changed"
+    REJECTED = "rejected"
+    WRITE_UNCERTAIN = "write_uncertain"
+    VERIFY_FAILED = "verify_failed"
+    INTERRUPTED = "interrupted"
+
+
+OZON_ENTRY_PENDING: Final = (
+    OzonEntryState.CHECKING,
+    OzonEntryState.SENDING,
+    OzonEntryState.VERIFYING,
+    OzonEntryState.UNCERTAIN,
+)
 
 
 class OzonLogisticsState(StrEnum):
@@ -347,7 +403,7 @@ class OzonLogisticsConfig:
     types_path: str = "/v1/finance/accrual/types"
     returns_path: str = "/v1/returns/list"
     attributes_path: str = "/v4/product/info/attributes"
-    accrual_batch_size: int = 50
+    accrual_batch_size: int = 200
     returns_page_size: int = 500
     attributes_batch_size: int = 100
     max_returns: int = 500_000
@@ -578,6 +634,7 @@ OZON_CABINET: Final = OzonCabinetConfig()
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonStockAnalyticsConfig:
     path: str = "/v1/analytics/stocks"
+    fbs_return_tag: str = "FBS_RETURN"
     sku_batch_size: int = 100
     request_attempts: int = 8
     minimum_interval_seconds: float = 1.5
@@ -713,6 +770,77 @@ class HttpConfig:
 HTTP: Final = HttpConfig()
 
 
+class OzonReservationState(StrEnum):
+    RESERVED = "reserved"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    UNCERTAIN = "uncertain"
+    RESOLVED = "resolved"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonApiLimitsConfig:
+    coordination_scope: str = "coordination"
+    legacy_scope_prefix: str = "legacy:"
+    budget_cleanup_scope: str = "budget-cleanup"
+    budget_retention_days: int = 30
+    legacy_batch_size: int = 400
+    seller_scope_prefix: str = "seller:"
+    method_scope_prefix: str = "seller-method:"
+    performance_scope_prefix: str = "performance:"
+    remaining_header: str = "Ratelimit-Remaining"
+    retry_header: str = "Retry-After"
+    window_seconds: int = 86_400
+    seller_requests_per_second: int = 50
+    performance_requests_per_day: int = 100_000
+    performance_exports_per_day: int = 2_000
+    exports_per_active_campaign: int = 240
+    organization_active_reports: int = 5
+    report_max_days: int = 62
+    running_campaign_state: str = "CAMPAIGN_STATE_RUNNING"
+    lease_seconds: int = 1_020
+    queue_poll_seconds: float = 0.25
+    minimum_retry_seconds: float = 2
+    maximum_spacing_seconds: float = 120
+    successes_before_decrease: int = 10
+    spacing_decrease_factor: float = 0.9
+
+
+OZON_API_LIMITS: Final = OzonApiLimitsConfig()
+
+
+class OzonReportGroup(StrEnum):
+    PRODUCT = "product"
+    SUBJECT = "subject"
+
+
+class OzonReportRowKind(StrEnum):
+    PRODUCT = "product"
+    CATEGORY = "category"
+
+
+class OzonTargetIssue(StrEnum):
+    PURCHASE = "purchase_required"
+    PRICES = "prices_required"
+    PARAMETERS = "parameters_required"
+    UNREACHABLE = "target_unreachable"
+    PARTIAL = "partial_sources"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonReportsConfig:
+    api: str = "/api/unit-economics-1c/ozon/reports"
+    pages: str = "/sales/unit-economics-1c/ozon/reports"
+    default_page_size: int = 50
+    max_page_size: int = 100
+    price_scale: int = 100
+    max_price: int = 1_000_000_000
+    columns_path: str = "static/economics/ozon/report-columns.json"
+
+
+OZON_REPORTS: Final = OzonReportsConfig()
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonTariffsConfig:
     category_tree_path: str = "/v1/description-category/tree"
@@ -784,6 +912,7 @@ class AdvertisingError(StrEnum):
     INVALID_PERIOD = "invalid_advertising_period"
     NETWORK = "performance_network_error"
     HTTP = "performance_http_error"
+    CAMPAIGN_NOT_FOUND = "performance_campaign_not_found"
     AUTHENTICATION = "performance_authentication_failed"
     PERMISSION = "performance_permission_denied"
     DAILY_LIMIT = "performance_daily_limit"
@@ -808,6 +937,11 @@ class AdvertisingError(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonAdvertisingConfig:
+    missing_campaign_message: str = "кампания не найдена"
+    optional_campaign_sources: frozenset[tuple[str, AdvertisingSource]] = frozenset(
+        (("toyka", AdvertisingSource.ALL_PRODUCTS),)
+    )
+    legacy_health_scope: str = "ozon_advertising"
     base_url: str = "https://api-performance.ozon.ru"
     token_path: str = "/api/client/token"
     campaigns_path: str = "/api/client/campaign"
@@ -1519,6 +1653,7 @@ class UiAlertCode(StrEnum):
 class UiAlertScope(StrEnum):
     CREDENTIALS = "credentials"
     ADVERTISING = "advertising"
+    REPUTATION = "reputation"
 
 
 class StockScheme(StrEnum):
@@ -1619,9 +1754,15 @@ class OzonHistoryField(StrEnum):
     PRICE = "price"
 
 
+class OzonHistoryPeriod(IntEnum):
+    WEEK = 7
+    FORTNIGHT = 14
+    MONTH = 30
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonHistoryConstants:
-    visible_days: int = 14
+    visible_days: OzonHistoryPeriod = OzonHistoryPeriod.FORTNIGHT
     comparison_days: int = 7
 
 
@@ -1673,7 +1814,6 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.yandex_orders.name, yandex_source=YandexSyncSource.ORDERS),
     JobScheduleRule(name=JOBS.yandex_economics.name, seconds=3_600),
     JobScheduleRule(name=JOBS.yandex_reputation.name, yandex_source=YandexSyncSource.REPUTATION),
-    JobScheduleRule(name=JOBS.ozon_reputation.name, seconds=86_400),
     JobScheduleRule(name=JOBS.ozon_orders.name, seconds=OZON_ORDERS.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_prices.name, seconds=OZON_PRICES.interval_seconds),
     JobScheduleRule(name=JOBS.ozon_buyout.name, seconds=OZON_CABINET.interval_seconds),
