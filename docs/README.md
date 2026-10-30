@@ -5,6 +5,7 @@
 ## Устройство проекта и эксплуатация
 
 - [Обязательные правила разработки Ozon для всех чатов CheckStock](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon)
+- [Правила размещения, оформления и запуска тестов](../.agents/skills/checkstock-testing/SKILL.md)
 - [Архитектура и структура](architecture.md)
 - [Интерфейс Ozon: действующие JSON-маршруты и границы переноса общих страниц](ozon-web-contracts.md)
 - [График динамики Ozon за 7/14/30 дней: источники, пропуски и сравнение](ozon-history.md)
@@ -80,8 +81,12 @@
 
 ## API для ИИ-агентов
 
-- [API аналитики CheckStock](chatgpt-analytics.md)
-- [Подключение Claude через MCP](claude-mcp.md)
+- [Расходы WB без ИУ — сравнение прибыли и ROI](wb-standard-costs.md#api-для-ии-агентов)
+
+- [Почасовая и дневная история СПП WB](agent-spp-history.md)
+
+- [API аналитики CheckStock](chatgpt-analytics.md) — полная инструкция MCP и компактная версия для GPT с Actions.
+- [Подключение Claude и ChatGPT через MCP](claude-mcp.md)
 - [Развёртывание API агентов](agent-api-deployment.md)
 - [Сводка прибыли](agent-profit-summary.md)
 - [Серверный анализ товаров](agent-server-analysis.md)

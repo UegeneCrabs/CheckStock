@@ -21,6 +21,7 @@ from app.application.ozon_related import OzonRelatedService
 from app.application.ozon_reports import OzonReportsService
 from app.application.ozon_storage import OzonStorageService
 from app.application.ozon_tariffs import OzonTariffService
+from app.application.spp_history import SppHistoryService
 from app.application.stock import StockMovementService
 from app.application.supply_arrival_stock import SupplyArrivalStockService
 from app.application.wb_product_rating import WbProductRatingService
@@ -53,6 +54,7 @@ from app.infrastructure.ozon_margin_repository import OzonMarginRepository
 from app.infrastructure.ozon_promotion_entry_repository import OzonPromotionEntryRepository
 from app.infrastructure.ozon_reports_repository import OzonReportsRepository
 from app.infrastructure.ozon_tariff_catalog import CATALOG
+from app.infrastructure.spp_history_repository import SqlAlchemySppHistoryRepository
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.infrastructure.supply_arrival_stock_repository import SupplyArrivalStockRepository
 from app.infrastructure.wb_hourly_price_repository import (
@@ -122,6 +124,12 @@ def wb_product_rating_service(database_path: Callable[[], Path] | None = None) -
 
 
 class ApplicationContainer:
+    @property
+    def spp_history(self) -> SppHistoryService:
+        return SppHistoryService(
+            SqlAlchemySppHistoryRepository(database_for_path(self._database_path()).session_factory)
+        )
+
     @property
     def finance(self) -> FinanceService:
         return FinanceService(FinanceRepository(database_for_path(self._database_path()).session_factory))

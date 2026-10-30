@@ -1,5 +1,5 @@
-<link rel="stylesheet" href="/static/agents/index.css?v=20260925" />
-<section class="agent-page"><div class="agent-heading"><h1>Подключение ChatGPT</h1><span class="agent-badge">Только чтение данных</span></div><div id="agent-message" role="status" aria-live="polite"></div><nav class="agent-provider-nav" aria-label="API и интеграции"><a href="/ai-agents/keys">API-ключи</a><a href="/ai-agents/catalog">Каталог API</a><a href="/ai-agents/gpt" aria-current="page">ChatGPT</a><a href="/ai-agents/claude">Claude / MCP</a></nav>
+<link rel="stylesheet" href="/static/agents/index.css?v=20261023" />
+<section class="agent-page"><div class="agent-heading"><h1>Подключение ChatGPT</h1><span class="agent-badge">Только чтение данных</span></div><div id="agent-message" role="status" aria-live="polite"></div>$agent_navigation
 <p>Создайте ключ на вкладке <a href="/ai-agents/keys">«API-ключи»</a> и используйте его в своём GPT.</p>        <section class="agent-card"
             ><h2>Подключить к ChatGPT</h2
             ><ol
@@ -14,13 +14,13 @@
                         >?</button
                     ></li
                 ><li
-                    >Вставьте готовую инструкцию в поле «Инструкции» вашего GPT.<br /><button
+                    >Вставьте компактную инструкцию (до 8 000 символов) в поле «Инструкции» вашего GPT.<br /><button
                         type="button"
-                        id="agent-copy-instructions"
+                        id="agent-copy-instructions" data-instruction-url="/static/agents/agent-instructions.txt"
                         >Скопировать инструкцию</button
                     >
                     <a href="/static/agents/agent-instructions.txt" target="_blank" rel="noopener"
-                        >Открыть инструкцию</a
+                        >Открыть компактную инструкцию</a
                     ></li
                 ><li>Добавьте <a href="/static/agents/conversation-starters.txt" target="_blank" rel="noopener">5 готовых фраз для начала разговора</a> в поле «Фразы для начала разговора» вашего GPT — каждую отдельной строкой.<br /><button type="button" id="agent-copy-starters">Скопировать фразы</button></li
                 ><li>Нажмите <strong>«Создать новое действие»</strong>.</li
@@ -67,4 +67,5 @@
         alt="В меню ChatGPT выделены Больше, GPT и кнопка Создать в правом верхнем углу."
     />
 </dialog>
-<script src="/static/agents/index.js?v=20260929-api" defer></script>
+<script src="/static/agents/index.js?v=20261023" defer></script>
+<script src="/static/agents/instructions.js?v=20261026-2" defer></script>

@@ -44,6 +44,17 @@ async def storage_call(function):
         raise HTTPException(503, "Хранилище ключей недоступно. Обратитесь к администратору.") from error
 
 
+def agent_content(template: str, active: str) -> str:
+    navigation = fill_template(
+        "agents/navigation.html",
+        **{
+            key.replace("-", "_") + "_current": 'aria-current="page"' if key == active else ""
+            for key in ("keys", "catalog", "instructions", "gpt", "claude", "gpt-mcp")
+        },
+    )
+    return fill_template(template, agent_navigation=navigation)
+
+
 @router.get("/ai-agents", response_class=HTMLResponse)
 async def agent_page(request: Request, user: Owner):
     return RedirectResponse("/ai-agents/keys", status_code=303, headers={"Cache-Control": "no-store"})
@@ -52,7 +63,9 @@ async def agent_page(request: Request, user: Owner):
 @router.get("/ai-agents/keys", response_class=HTMLResponse)
 async def keys_page(request: Request, user: Owner):
     return HTMLResponse(
-        render_page("CheckStock — API и интеграции", "ai_agents", fill_template("agents/keys.html"), user),
+        render_page(
+            "CheckStock — API и интеграции", "ai_agents", agent_content("agents/keys.html", "keys"), user
+        ),
         headers={"Cache-Control": "no-store"},
     )
 
@@ -68,7 +81,7 @@ async def catalog_page(request: Request, user: Owner):
         render_page(
             "CheckStock — Каталог API",
             "ai_agents",
-            fill_template("agents/catalog.html"),
+            agent_content("agents/catalog.html", "catalog"),
             user,
         ),
         headers={"Cache-Control": "no-store"},
@@ -86,7 +99,20 @@ async def catalog_data(response: Response, user: Owner):
 @router.get("/ai-agents/gpt", response_class=HTMLResponse)
 async def gpt_page(request: Request, user: Owner):
     return HTMLResponse(
-        render_page("CheckStock — GPT", "ai_agents", fill_template("agents/index.html"), user),
+        render_page("CheckStock — GPT", "ai_agents", agent_content("agents/index.html", "gpt"), user),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/ai-agents/instructions", response_class=HTMLResponse)
+async def instructions_page(request: Request, user: Owner):
+    return HTMLResponse(
+        render_page(
+            "CheckStock — Инструкция ИИ",
+            "ai_agents",
+            agent_content("agents/instructions.html", "instructions"),
+            user,
+        ),
         headers={"Cache-Control": "no-store"},
     )
 
@@ -94,7 +120,20 @@ async def gpt_page(request: Request, user: Owner):
 @router.get("/ai-agents/claude", response_class=HTMLResponse)
 async def claude_page(request: Request, user: Owner):
     return HTMLResponse(
-        render_page("CheckStock — Claude", "ai_agents", fill_template("agents/claude.html"), user),
+        render_page("CheckStock — Claude", "ai_agents", agent_content("agents/claude.html", "claude"), user),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/ai-agents/gpt-mcp", response_class=HTMLResponse)
+async def gpt_mcp_page(request: Request, user: Owner):
+    return HTMLResponse(
+        render_page(
+            "CheckStock — ChatGPT / MCP",
+            "ai_agents",
+            agent_content("agents/gpt-mcp.html", "gpt-mcp"),
+            user,
+        ),
         headers={"Cache-Control": "no-store"},
     )
 

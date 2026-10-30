@@ -63,12 +63,17 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Интерфейс Ozon и общие страницы без Python-разметки | `app/web/client_page.py`, `app/dto/{integrations,ui,stock_pages,ozon_economics,google_export}.py`, `app/infrastructure/async_read_models.py`, `static/common/client-page.js`, [контракты и границы переноса](ozon-web-contracts.md) |
 | Выгрузки и Google-интеграция | `app/exports/`, `app/integrations/`, [формат выгрузки](project-sheet-export.md) |
 | Три независимых недельных блока WB/Ozon/ЯМ | `app/application/google_weeks.py`, `app/infrastructure/google_week_repository.py`, `app/integrations/google_week_{client,plans}.py`, `app/web/routers/google_weeks.py`, [контракт и перенос WB](google-week-update.md) |
+| Инструкции ИИ: полная MCP и компактная GPT | `static/agents/agent-instructions-full.txt`, `static/agents/agent-instructions.txt`, [правила обновления](chatgpt-analytics.md#общая-инструкция-ии-агентов) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |
 | Ежедневный бэкап БД в Google Диск, 08:00 МСК | `app/jobs/database_backup.py`, `app/application/database_backup.py`, `app/integrations/database_backup_drive.py`, [хранение, загрузка и восстановление](database-backups.md) |
 | Статические проверки | `pyproject.toml`, цели `lint` и `check` в `Makefile` |
 
 ## Поток запроса и данных
+
+История СПП WB для ИИ-агентов: `app/application/spp_history.py`, модели `app/dto/spp_history.py`,
+репозиторий `app/infrastructure/spp_history_repository.py`, регистрация в
+`app/agents/extended_reports.py`; [поля и ограничения](agent-spp-history.md).
 
 `app.main:create_app` создаёт приложение и `ApplicationContainer`, подключает middleware и роутеры. Для части новых сценариев маршрут вызывает сервис из `app/application`, а тот работает через порт и SQLAlchemy Unit of Work в `app/infrastructure`. Часть аналитических чтений и загрузчиков по-прежнему использует `app/repositories` и фасад `app/db.py`; поэтому не следует предполагать, что весь код проходит через один слой. `app/jobs/background.py` содержит общую инициализацию и описания задач. Автоматические задачи запускает отдельный `app/jobs/worker.py`; вебовый `lifespan` их не запускает.
 
@@ -90,7 +95,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 Из корня проекта установите `requirements-dev.txt`, скопируйте `.env.example` в `.env`, добавьте необходимые файлы в `secrets/` и запустите `python run.py` с активированным окружением. Команда запускает сайт с reload и планировщик в одном терминале; `Ctrl+C` останавливает оба процесса. Для Docker используйте `docker compose --env-file .env -f deploy/docker-compose.yml up --build -d`; Compose запускает отдельный сервис `scheduler` и требует `POSTGRES_PASSWORD` в `.env`. Веб проверяется через `/healthz` и `/readyz`, планировщик — командой `python -m app.jobs.worker --healthcheck`.
 
-Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
+Статические проверки: `python -m ruff format --check app scripts run.py` и `python -m ruff check app scripts run.py`. Регрессионные Python-тесты находятся в `tests/` (`python -m unittest discover -s tests -v`), клиентские — в `tests/*.cjs` (`node --test` с нужными файлами). Расположение тестов, оформление тест-кейсов и команды проверки определяет [скилл тестирования](../.agents/skills/checkstock-testing/SKILL.md). Проверки поведения описаны в предметных документах; интеграции с внешними API, браузером, Google и FTP требуют отдельных доступов и проверки в соответствующем окружении.
 
 После объединения локальной ветки и stash 19 октября 2026 года модули Ozon подключены через `app/jobs/ozon.py`, `app/web/ozon_jobs.py` и `app/web/routers/ozon_economics.py`. Страница использует асинхронный JSON API; пять задач обслуживают заказы, цены с комиссией, закрытие дней, рекламу и дневную логистику. Общие складские страницы сохраняют прежние обработчики; [фактические подключения и совместимость](architecture.md#состояние-объединения-19-октября-2026).
 

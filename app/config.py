@@ -9,6 +9,9 @@ MIN_PBKDF2_ITERATIONS = 100_000
 MAX_PBKDF2_ITERATIONS = 5_000_000
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
+MCP_DEFAULT_REDIRECT_URIS = (
+    "https://claude.ai/api/mcp/auth_callback https://chatgpt.com/connector_platform_oauth_redirect"
+)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 

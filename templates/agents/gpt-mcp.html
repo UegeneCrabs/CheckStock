@@ -1,0 +1,18 @@
+<link rel="stylesheet" href="/static/agents/index.css?v=20261023" />
+<section class="agent-page" data-mcp-provider="chatgpt">
+    <div class="agent-heading"><h1>Подключение ChatGPT / MCP</h1><span class="agent-badge">Только чтение данных</span></div>
+    $agent_navigation
+    <section class="agent-card" aria-labelledby="mcp-title">
+        <h2 id="mcp-title">Подключить к ChatGPT</h2>
+        <ol>
+            <li>В ChatGPT откройте раздел плагинов (Plugins), нажмите «+» и выберите «Добавить собственный MCP-сервер» (Add custom MCP server). Доступность зависит от настроек вашего аккаунта и рабочего пространства.</li>
+            <li>Укажите название «CheckStock» и вставьте адрес: <code id="mcp-url">Загрузка…</code> <button type="button" id="mcp-copy" disabled>Скопировать</button></li>
+            <li>Для авторизации используйте OAuth с динамической регистрацией клиента (DCR), если предлагается выбор. Войдите на сайт CheckStock и разрешите чтение данных.</li>
+            <li>В новом чате выберите подключение CheckStock через @ и спросите: «Какие магазины доступны? Покажи данные СПП WB за выбранный период».</li>
+        </ol>
+        <p>API-ключ и схема из вкладки ChatGPT здесь не нужны. Для GPT с Actions остаётся <a href="/ai-agents/gpt">прежний способ подключения</a>.</p>
+        <p>Общая <a href="/ai-agents/instructions">инструкция ИИ</a> передаётся MCP-сервером. После добавления методов обновите инструменты подключения в ChatGPT. Через 30 дней разрешите доступ заново.</p>
+        <!-- include: agents/mcp-connections.html -->
+    </section>
+</section>
+<script src="/static/agents/mcp.js?v=20261026-3" defer></script>

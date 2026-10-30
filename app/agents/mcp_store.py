@@ -12,6 +12,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.dto.mcp_connection import McpConnection, provider_for_redirects
+
 ACCESS_TTL = 3600
 GRANT_TTL = 30 * 86400
 
@@ -49,6 +51,18 @@ class OAuthStore:
                 CREATE INDEX IF NOT EXISTS tokens_grant ON tokens(grant_id);
             """)
             db.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(grants)")}
+            if "provider" not in columns:
+                db.execute("ALTER TABLE grants ADD COLUMN provider TEXT")
+            # Backfill before expired client metadata is removed; never reclassify a saved grant.
+            legacy = db.execute(
+                """SELECT g.id, c.payload FROM grants g LEFT JOIN clients c ON c.id = g.client_id
+                   WHERE g.provider IS NULL"""
+            ).fetchall()
+            for row in legacy:
+                metadata = json.loads(row["payload"]) if row["payload"] else {}
+                provider = provider_for_redirects(metadata.get("redirect_uris", []))
+                db.execute("UPDATE grants SET provider = ? WHERE id = ?", (provider.value, row["id"]))
             now = time.time()
             db.execute("DELETE FROM temporary WHERE expires < ?", (now,))
             db.execute("DELETE FROM clients WHERE expires < ?", (now,))
@@ -160,10 +174,11 @@ class OAuthStore:
                 "name": payload["name"],
                 "created": now,
                 "expires": now + GRANT_TTL,
+                "provider": provider_for_redirects([payload["redirect_uri"]]).value,
             }
             db.execute(
-                """INSERT INTO grants(id, user_id, client_id, resource, scope, name, created, expires)
-                          VALUES (:id, :user_id, :client_id, :resource, :scope, :name, :created, :expires)""",
+                """INSERT INTO grants(id, user_id, client_id, resource, scope, name, created, expires, provider)
+                          VALUES (:id, :user_id, :client_id, :resource, :scope, :name, :created, :expires, :provider)""",
                 grant,
             )
             return self._tokens(db, grant)
@@ -200,15 +215,24 @@ class OAuthStore:
             ).fetchone()
             return dict(row) if row else None
 
-    def connections(self, user_id):
+    def connections(self, user_id) -> list[McpConnection]:
         with self.transaction() as db:
-            return [
-                dict(row)
-                for row in db.execute(
-                    "SELECT id, name, created, expires FROM grants WHERE user_id = ? AND revoked = 0",
-                    (user_id,),
+            result = []
+            for row in db.execute(
+                """SELECT id, name, created, expires, provider
+                   FROM grants WHERE user_id = ? AND revoked = 0""",
+                (user_id,),
+            ):
+                result.append(
+                    McpConnection(
+                        id=row["id"],
+                        name=row["name"],
+                        created=row["created"],
+                        expires=row["expires"],
+                        provider=row["provider"],
+                    )
                 )
-            ]
+            return result
 
     def revoke(self, grant_id, user_id):
         with self.transaction() as db:

@@ -1,4 +1,4 @@
-# Личный Claude → CheckStock
+# Claude и ChatGPT → CheckStock
 
 С 10 октября 2026 года роли и индивидуальные ограничения отключены: активные пользователи имеют одинаковый доступ. Проверки сессий и принадлежности API/OAuth-ключей сохраняются. Актуальный контракт — [учётные записи и миграция](authentication.md).
 
@@ -8,9 +8,9 @@ MCP-сервис встроен в FastAPI-приложение. Адрес ко
 
 ## Что реализовано
 
-- Общая полная инструкция GPT из `static/agents/agent-instructions.txt` передаётся
+- Полная инструкция из `static/agents/agent-instructions-full.txt` передаётся
   в MCP initialize.instructions и через инструмент getAnalyticsInstructions.
-  Указания по Action заменены на OAuth; добавлены явные умолчания для топа по ТО
+  Полная версия содержит указания по OAuth; добавлены явные умолчания для топа по ТО
   по всем доступным WB и правило ROI за тот же исторический период.
   Существенные ограничения данных должны оставаться видимыми в ответе.
   Перенесены используемые инструкцией ProductAnalysis и ProfitSummary из локальной
@@ -71,7 +71,8 @@ MCP-сервис встроен в FastAPI-приложение. Адрес ко
 6. Не включать access/refresh tokens, Cookie и тела OAuth-запросов в журналы.
    На `/oauth/mcp/authorize` желательно логировать путь без query string.
 
-По умолчанию разрешён только callback `https://claude.ai/api/mcp/auth_callback`.
+По умолчанию разрешены точные callback `https://claude.ai/api/mcp/auth_callback` и
+`https://chatgpt.com/connector_platform_oauth_redirect`.
 `CHECKSTOCK_MCP_REDIRECT_URIS` позволяет задать точные HTTPS URI через пробел.
 Не использовать wildcard и не добавлять произвольные домены.
 
@@ -110,3 +111,35 @@ volume. Для принудительного отключения всех по
 - https://claude.com/docs/connectors/building/authentication
 - https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization
 - https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
+
+## ChatGPT / MCP
+
+Страница `/ai-agents/gpt-mcp` доступна в общих вкладках и верхнем меню.
+Она использует общий компонент списка MCP-подключений с Claude, но списки разделены:
+`?provider=chatgpt` и `?provider=claude`. При обмене кода провайдер определяется по точному hostname выбранного и проверенного redirect URI, затем сохраняется в grants.provider. Список больше не зависит от срока жизни регистрации клиента или других разрешённых callback этого клиента.
+
+Миграция OAuth SQLite добавляет nullable provider под BEGIN IMMEDIATE и заполняет старые записи до очистки истёкших клиентов. Однозначный hostname старой регистрации сохраняется как claude/chatgpt; отсутствующие или смешанные metadata дают unknown. Заполненный provider не пересчитывается. Токены, сроки и принадлежность доступа не меняются; повторная авторизация из-за этой миграции не нужна.
+
+В ответе с фильтром connections содержит выбранный сервис, other_connections — неизвестные подключения пользователя. Обе вкладки показывают их отдельным блоком «Другие подключения MCP» с отзывом. Без фильтра connections сохраняет полный список, other_connections пуст. При отсутствии публичного URL список и отзыв остаются доступны. Отзыв проверяет владельца и прекращает действие токенов.
+
+Проверки миграции и сохранения токенов: tests/agents/test_mcp_store.py; фильтрации и отзыва через HTTP: tests/web/routers/test_agent_mcp.py; обеих вкладок и ошибок отзыва: tests/agent_mcp_connections.cjs. OAuth использует отдельный SQLite-файл независимо от основной СУБД сайта; схема PostgreSQL этим изменением не затрагивается.
+Существующий `/ai-agents/gpt` с Actions и API-ключами сохранён.
+
+В ChatGPT Plugins добавьте custom MCP server, укажите публичный HTTPS `/mcp`,
+выберите OAuth DCR, войдите в CheckStock и подтвердите доступ. CIMD не реализован.
+Наличие этой функции зависит от настроек аккаунта/рабочего пространства ChatGPT.
+Инструменты и общая инструкция поступают с сервера; после изменений обновите подключение.
+
+OAuth metadata объявляет RFC 9207; успешный ответ и отказ пользователя возвращают
+`iss`, совпадающий с issuer и authorization_servers. Невалидные запросы возвращают
+локальную HTTP-ошибку без перенаправления. Это позволяет использовать стабильный
+callback ChatGPT. Если CHECKSTOCK_MCP_REDIRECT_URIS задан явно, он полностью заменяет
+список по умолчанию: администратор должен включить оба нужных точных URI.
+Для подключения с другим callback скопируйте точный URI из настроек ChatGPT;
+не разрешайте wildcard. Подтверждение доступа принимает Origin только сайта,
+регистрация/обмен токенов также допускают Origin ChatGPT и Claude.
+
+Проверка `tests/web/routers/test_agent_mcp.py` проходит DCR, подтверждение/отказ,
+PKCE-обмен для обоих callback, issuer и запрет посторонних redirect/Origin.
+Она не заменяет проверку реального подключения ChatGPT после развёртывания.
+Источник требований: https://developers.openai.com/plugins/build/auth

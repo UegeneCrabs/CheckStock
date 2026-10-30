@@ -17,27 +17,6 @@ from app.dto.fbo_stock import (
     FboStockResult,
     FboTarget,
 )
-from app.dto.ozon_limits import (
-    OzonRateFeedback,
-    OzonRateScope,
-    PerformanceAdmission,
-    PerformanceCompletion,
-    PerformanceIdentity,
-    PerformanceLease,
-    PerformanceQuotaRequest,
-)
-from app.dto.ozon_reports import (
-    OzonProfitQuery,
-    OzonReportCatalogItem,
-    OzonReportEvidence,
-    OzonTargetRecord,
-    OzonTargetSave,
-)
-
-if TYPE_CHECKING:
-    from app.infrastructure.database import DatabaseConnection
-
-
 from app.dto.identity import (
     AccessDecision,
     ActivityCommand,
@@ -64,11 +43,28 @@ from app.dto.identity import (
 )
 from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonCabinetRecord, OzonCabinetSave
 from app.dto.ozon_history import OzonHistoryEvidence, OzonHistoryQuery
+from app.dto.ozon_limits import (
+    OzonRateFeedback,
+    OzonRateScope,
+    PerformanceAdmission,
+    PerformanceCompletion,
+    PerformanceIdentity,
+    PerformanceLease,
+    PerformanceQuotaRequest,
+)
 from app.dto.ozon_logistics import LogisticsStoreSnapshot
 from app.dto.ozon_margin import OzonMarginSnapshot
 from app.dto.ozon_promotion_entry import OzonEntryOperation
 from app.dto.ozon_promotions import OzonBoostRecord, OzonBoostSave
+from app.dto.ozon_reports import (
+    OzonProfitQuery,
+    OzonReportCatalogItem,
+    OzonReportEvidence,
+    OzonTargetRecord,
+    OzonTargetSave,
+)
 from app.dto.ozon_storage import StorageEvidence, StoragePeriod, StorageReportTicket, StorageStoreSnapshot
+from app.dto.spp_history import DailySppRow, HourlySppRow, SppHistoryQuery
 from app.dto.stock import (
     ApplyShipmentCommand,
     ApplyTransferCommand,
@@ -330,6 +326,10 @@ class StockUnitOfWork(Protocol):
 
 class StockUnitOfWorkFactory(Protocol):
     def __call__(self) -> StockUnitOfWork: ...
+
+
+class SppHistoryRepository(Protocol):
+    def read(self, query: SppHistoryQuery) -> list[HourlySppRow] | list[DailySppRow]: ...
 
 
 class OzonLimitStore(Protocol):
