@@ -48,6 +48,13 @@ services:
       CHECKSTOCK_OZON_TOKENS_PATH: ${CHECKSTOCK_OZON_TOKENS_PATH:-/app/secrets/ozon_tokens.json}
       CHECKSTOCK_YANDEX_TOKENS_PATH: ${CHECKSTOCK_YANDEX_TOKENS_PATH:-/app/secrets/yandex_tokens.json}
       CHECKSTOCK_GOOGLE_SERVICE_ACCOUNT_PATH: ${CHECKSTOCK_GOOGLE_SERVICE_ACCOUNT_PATH:-/app/secrets/google_service_account.json}
+      CHECKSTOCK_BACKUP_ENABLED: ${CHECKSTOCK_BACKUP_ENABLED:-0}
+      CHECKSTOCK_BACKUP_DRIVE_FOLDER_ID: ${CHECKSTOCK_BACKUP_DRIVE_FOLDER_ID:-}
+      CHECKSTOCK_BACKUP_DIRECTORY: /app/data/backups/database
+      CHECKSTOCK_BACKUP_PG_DUMP: ${CHECKSTOCK_BACKUP_PG_DUMP:-pg_dump}
+      CHECKSTOCK_BACKUP_PG_RESTORE: ${CHECKSTOCK_BACKUP_PG_RESTORE:-pg_restore}
+      CHECKSTOCK_BACKUP_TIMEOUT_SECONDS: ${CHECKSTOCK_BACKUP_TIMEOUT_SECONDS:-7200}
+      CHECKSTOCK_BACKUP_HTTP_TIMEOUT_SECONDS: ${CHECKSTOCK_BACKUP_HTTP_TIMEOUT_SECONDS:-180}
       CHECKSTOCK_SUPPLY_ARRIVALS_SPREADSHEET_ID: ${CHECKSTOCK_SUPPLY_ARRIVALS_SPREADSHEET_ID:-16yqGq_tIuhtjgDG55QrF8asiAPIMFNq1zrqOdBEPBoc}
       CHECKSTOCK_SUPPLY_ARRIVALS_SHEET_GID: ${CHECKSTOCK_SUPPLY_ARRIVALS_SHEET_GID:-582873931}
       CHECKSTOCK_SUPPLY_ARRIVALS_SYNC_INTERVAL_SECONDS: ${CHECKSTOCK_SUPPLY_ARRIVALS_SYNC_INTERVAL_SECONDS:-900}
@@ -117,6 +124,7 @@ services:
       - yandex-finance-credentials:/app/finance-credentials
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
+      - database-backups:/app/data/backups/database
     stop_grace_period: 60s
 
   scheduler:
@@ -166,3 +174,4 @@ volumes:
   yandex-parser-data:
   postgres-data:
   yandex-finance-credentials:
+  database-backups:

@@ -1089,8 +1089,49 @@ class EphemeridesStockSchedule:
 EPHEMERIDES_STOCK_SCHEDULE: Final = EphemeridesStockSchedule()
 
 
+class BackupIssue(StrEnum):
+    CONFIGURATION = "backup_configuration"
+    SOURCE = "backup_source_unavailable"
+    DUMP = "backup_dump_failed"
+    CREDENTIALS = "backup_credentials"
+    GOOGLE = "backup_google_error"
+    FOLDER = "backup_folder_unavailable"
+    INTEGRITY = "backup_checksum_mismatch"
+    SESSION = "backup_upload_interrupted"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DatabaseBackupConstants:
+    hour_msk: int = 8
+    chunk_bytes: int = 8 * 1024 * 1024
+    hash_chunk_bytes: int = 1024 * 1024
+    token_seconds: int = 3600
+    token_refresh_seconds: int = 60
+    retry_seconds: tuple[int, ...] = (2, 5, 15)
+    job_retry_seconds: tuple[int, ...] = (300, 900, 3600)
+    token_url: str = "https://oauth2.googleapis.com/token"
+    token_grant: str = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    scope: str = "https://www.googleapis.com/auth/drive"
+    api_url: str = "https://www.googleapis.com/drive/v3"
+    upload_url: str = "https://www.googleapis.com/upload/drive/v3/files"
+    folder_mime: str = "application/vnd.google-apps.folder"
+    file_fields: str = "id,name,size,md5Checksum,webViewLink"
+
+
+DATABASE_BACKUP: Final = DatabaseBackupConstants()
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class JobCatalog:
+    database_backup: SyncJobMetadata = SyncJobMetadata(
+        name="database_backup_google_drive",
+        title="Резервная копия БД в Google Диск",
+        description="Создаёт проверенную копию всей БД и загружает её в Google Диск. Облачные копии не удаляются.",
+        schedule=None,
+        scope=JobScope.GLOBAL,
+        marketplaces=(),
+        manual_run=True,
+    )
     wb_standard_costs: SyncJobMetadata = SyncJobMetadata(
         name="wb_standard_costs_sync",
         title="WB: сравнение ИУ и без ИУ",
@@ -1784,6 +1825,9 @@ class JobScheduleRule:
 
 
 JOB_SCHEDULE_RULES: Final = (
+    JobScheduleRule(
+        name=JOBS.database_backup.name, kind=ScheduleKind.DAILY, hours=(DATABASE_BACKUP.hour_msk,)
+    ),
     JobScheduleRule(name=JOBS.wb_standard_costs.name),
     *(JobScheduleRule(name=job.name, kind=ScheduleKind.EXTERNAL) for job in JOBS.google_weeks),
     JobScheduleRule(name=JOBS.ozon_advertising.name, kind=ScheduleKind.DAILY, hours=(4,)),

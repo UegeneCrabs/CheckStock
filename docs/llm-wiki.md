@@ -65,6 +65,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Три независимых недельных блока WB/Ozon/ЯМ | `app/application/google_weeks.py`, `app/infrastructure/google_week_repository.py`, `app/integrations/google_week_{client,plans}.py`, `app/web/routers/google_weeks.py`, [контракт и перенос WB](google-week-update.md) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |
+| Ежедневный бэкап БД в Google Диск, 08:00 МСК | `app/jobs/database_backup.py`, `app/application/database_backup.py`, `app/integrations/database_backup_drive.py`, [хранение, загрузка и восстановление](database-backups.md) |
 | Статические проверки | `pyproject.toml`, цели `lint` и `check` в `Makefile` |
 
 ## Поток запроса и данных

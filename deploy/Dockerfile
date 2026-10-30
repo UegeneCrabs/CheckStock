@@ -13,7 +13,7 @@ COPY requirements.txt requirements-parser.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements-parser.txt \
     && python -m playwright install --with-deps chromium \
-    && apt-get update && apt-get install -y --no-install-recommends xvfb xauth \
+    && apt-get update && apt-get install -y --no-install-recommends xvfb xauth postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
@@ -21,7 +21,7 @@ COPY scripts ./scripts
 COPY static ./static
 COPY templates ./templates
 
-RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/secrets /app/finance-credentials \
+RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/data/backups/database /app/secrets /app/finance-credentials \
     && chmod 700 /app/finance-credentials && chown -R checkstock:checkstock /app
 
 USER checkstock

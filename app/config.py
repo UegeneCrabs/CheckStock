@@ -133,11 +133,35 @@ class OzonApiLimitsSettings(BaseModel):
         return self
 
 
+class DatabaseBackupSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, validate_default=True)
+
+    enabled: bool = Field(default_factory=lambda: _env_bool("CHECKSTOCK_BACKUP_ENABLED", False))
+    folder_id: str = Field(
+        default_factory=lambda: os.getenv("CHECKSTOCK_BACKUP_DRIVE_FOLDER_ID", "").strip(),
+        pattern=r"^[A-Za-z0-9_-]*$",
+    )
+    directory: Path = Field(
+        default_factory=lambda: Path(
+            os.getenv("CHECKSTOCK_BACKUP_DIRECTORY", BASE_DIR / "data" / "backups" / "database")
+        )
+    )
+    pg_dump: str = Field(default_factory=lambda: os.getenv("CHECKSTOCK_BACKUP_PG_DUMP", "pg_dump"))
+    pg_restore: str = Field(default_factory=lambda: os.getenv("CHECKSTOCK_BACKUP_PG_RESTORE", "pg_restore"))
+    process_timeout_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_BACKUP_TIMEOUT_SECONDS", 7200, minimum=60), ge=60
+    )
+    http_timeout_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_BACKUP_HTTP_TIMEOUT_SECONDS", 180, minimum=10), ge=10
+    )
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
 
     wb_standard_costs: WbStandardCostsSettings = Field(default_factory=WbStandardCostsSettings)
     ozon_api_limits: OzonApiLimitsSettings = Field(default_factory=OzonApiLimitsSettings)
+    database_backup: DatabaseBackupSettings = Field(default_factory=DatabaseBackupSettings)
 
     base_dir: Path
     database_path: Path

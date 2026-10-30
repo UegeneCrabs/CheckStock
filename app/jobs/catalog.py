@@ -52,6 +52,7 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
     funnel = base or settings.funnel_orders_sync_enabled
     prices = settings.unit_economics_1c_price_sync_enabled
     return (
+        from_metadata(JOBS.database_backup, settings.database_backup.enabled),
         *(
             SyncJobDefinition(
                 name=metadata.name,

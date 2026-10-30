@@ -59,8 +59,8 @@
 
     var search = document.querySelector('[data-sync-search]');
     var statusFilter = document.querySelector('[data-sync-filter]');
-    var jobRows = Array.from(document.querySelectorAll('[data-sync-job]'));
-    var jobGroups = Array.from(document.querySelectorAll('[data-sync-group]'));
+    var jobRows = Array.from(document.querySelectorAll('#integration-sync [data-sync-job]'));
+    var jobGroups = Array.from(document.querySelectorAll('#integration-sync [data-sync-group]'));
     var groupFilters = Array.from(document.querySelectorAll('[data-sync-group-filter]'));
     var selectedGroup = 'all';
     function filterJobs() {
@@ -502,11 +502,11 @@
             return run.error_details.map(function (detail) {
                 var message = detail.code === 'ozon_review_subscription_required'
                     ? 'Отзывы недоступны на текущей подписке Ozon (403). Проверьте подписку с доступом к API отзывов в кабинете Ozon.'
-                    : detail.message;
+                    : window.IntegrationPage.errorMessage(detail.message);
                 return (detail.target ? detail.target + ': ' : '') + message;
             }).join('\n');
         }
-        if (run.error) return run.error;
+        if (run.error) return window.IntegrationPage.errorMessage(run.error);
         if (run.error_code === 'interrupted')
             return 'Запуск больше не выполняется, но результат не был сохранён. Возможно, приложение перезапустили или процесс остановился. Точное время завершения неизвестно.';
         return 'Текст ошибки для этого запуска не сохранился.';

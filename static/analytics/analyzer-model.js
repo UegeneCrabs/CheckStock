@@ -102,20 +102,23 @@
                 && (separate || !['barcode', 'article', 'image'].includes(column.key)))];
     }
     const storeKey = row => row.store_slug || row.project || '';
-    function turnoverTotals(rows) {
+    function cardGroups(rows) {
         const articles = new Map();
         rows.forEach(row => {
-            const key = JSON.stringify([storeKey(row), String(row.article || row.id || '').split(' / ')[0]]);
+            const key = JSON.stringify([storeKey(row), String(row.article || row.id || '').split(' / ')[0].trim()]);
             if (!articles.has(key)) articles.set(key, []);
             articles.get(key).push(row);
         });
+        return [...articles.values()];
+    }
+    function turnoverTotals(rows) {
         const known = value => typeof value === 'number' && Number.isFinite(value);
         const sharedValue = (products, key) => {
             const values = new Set(products.map(row => row[key]).filter(known));
             return values.size === 1 ? values.values().next().value : null;
         };
         // Funnel turnover belongs to an nmID; targets belong to individual size rows.
-        const grouped = [...articles.values()].map(products => {
+        const grouped = cardGroups(rows).map(products => {
             const plan = sum(products.map(row => row.plan));
             const completePlan = products.every(row => known(row.plan));
             const fact = sharedValue(products, 'fact'), forecast = sharedValue(products, 'forecast');
@@ -143,30 +146,55 @@
             store: store.store, project: store.project, ...turnoverTotals(store.rows),
         }));
     }
+    function ratioSummary(rows, column) {
+        const weights = {
+            currentRoi: ['currentProfit', 'currentPurchase'], roi: ['profit', 'purchase'],
+            drr: ['spend', 'boughtAmount'], yesterdayDrr: ['yesterdaySpend', 'yesterdayAmount'],
+            totalCtr: ['clicks', 'impressions'],
+        }[column.key];
+        if (column.metric !== 'ctr' && !weights) return null;
+        const known = amount => typeof amount === 'number' && Number.isFinite(amount);
+        const pairs = [];
+        let missingCards = 0, conflictingCards = 0;
+        cardGroups(rows).forEach(products => {
+            const parts = products.map(row => ({
+                numerator: column.metric === 'ctr' ? row.clicks?.[column.idx] : row.weights?.[weights[0]],
+                denominator: column.metric === 'ctr' ? row.impressions?.[column.idx] : row.weights?.[weights[1]],
+            }));
+            const numerators = new Set(parts.map(part => part.numerator).filter(known));
+            const denominators = new Set(parts.map(part => part.denominator).filter(known));
+            if (numerators.size > 1 || denominators.size > 1) {
+                conflictingCards++;
+                return;
+            }
+            const pair = parts.find(part => known(part.numerator) && known(part.denominator));
+            if (pair) pairs.push(pair);
+            else missingCards++;
+        });
+        const numerator = sum(pairs.map(pair => pair.numerator));
+        const denominator = sum(pairs.map(pair => pair.denominator));
+        const zeroDrr = ['drr', 'yesterdayDrr'].includes(column.key) && numerator === 0 && denominator === 0;
+        return {value: zeroDrr ? 0 : ratio(numerator, denominator),
+            partial: missingCards > 0 || conflictingCards > 0,
+            includedCards: pairs.length, missingCards, conflictingCards};
+    }
+    function summaryDetails(rows, column) {
+        return ratioSummary(rows, column) || {value: summary(rows, column), partial: false};
+    }
     function summary(rows, column) {
+        const result = ratioSummary(rows, column);
+        if (result) return result.value;
         const weighted = (numerator, denominator) => {
             const pairs = rows.filter(row => row.weights[numerator] != null && row.weights[denominator] != null);
             return ratio(sum(pairs.map(row => row.weights[numerator])), sum(pairs.map(row => row.weights[denominator])));
         };
-        if (column.key === 'currentRoi') return weighted('currentProfit', 'currentPurchase');
-        if (column.metric === 'carts') {
-            const articles = new Map();
-            rows.forEach(row => {
-                const key = JSON.stringify([storeKey(row), String(row.article || row.id || '').split(' / ')[0]]);
-                if (!articles.has(key)) articles.set(key, new Set());
-                const count = value(row, column);
-                if (typeof count === 'number' && Number.isFinite(count)) articles.get(key).add(count);
-            });
-            return sum([...articles.values()].map(counts => counts.size === 1 ? [...counts][0] : null));
+        if (['carts', 'impressions'].includes(column.metric) || column.type === 'day' || column.key === 'spend') {
+            return sum(cardGroups(rows).map(products => {
+                const counts = new Set(products.map(row => value(row, column))
+                    .filter(count => typeof count === 'number' && Number.isFinite(count)));
+                return counts.size === 1 ? [...counts][0] : null;
+            }));
         }
-        if (column.metric === 'ctr') {
-            const pairs = rows.filter(row => row.impressions[column.idx] != null && row.clicks[column.idx] != null);
-            return ratio(sum(pairs.map(row => row.clicks[column.idx])), sum(pairs.map(row => row.impressions[column.idx])));
-        }
-        if (column.key === 'drr') return weighted('spend', 'boughtAmount');
-        if (column.key === 'yesterdayDrr') return weighted('yesterdaySpend', 'yesterdayAmount');
-        if (column.key === 'roi') return weighted('profit', 'purchase');
-        if (column.key === 'totalCtr') return weighted('clicks', 'impressions');
         if (column.key === 'previousPrice') {
             const percent = weighted('previousAmount', 'previousCount');
             return percent == null ? null : percent / 100;
@@ -188,7 +216,7 @@
         if (/^[\s]*[=+@\-]/.test(text) && typeof value !== 'number') text = "'" + text;
         return '"' + text.replace(/"/g, '""') + '"';
     }
-    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress, columnId, color};
+    const api = {fields, combined, groups, numeric, value, filterValue, filter, tableRows, sum, summary, summaryDetails, csvCell, displayColumns, storeTurnover, turnoverTotals, orderProgress, columnId, color};
     scope.CheckStockAnalyzer = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof window === 'undefined' ? globalThis : window);

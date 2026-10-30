@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.access.security import Pbkdf2PasswordService
+from app.application.database_backup import DatabaseBackupService
 from app.application.fbo_stock import FboStockService
 from app.application.finance import FinanceService
 from app.application.identity import IdentityService
@@ -271,6 +272,15 @@ def ozon_tariff_service(resources: "AsyncResources", store: str = "") -> OzonTar
         return await resources.ozon_categories.product(get_order_credentials(store), article)
 
     return OzonTariffService(CATALOG, category, lambda: datetime.now(TIME.moscow_timezone).date())
+
+
+def database_backup_service(resources: "AsyncResources") -> DatabaseBackupService:
+    from app.infrastructure.database_backup_store import DatabaseBackupStore
+    from app.integrations.database_backup_drive import DatabaseBackupDrive
+
+    return DatabaseBackupService(
+        DatabaseBackupStore(settings), DatabaseBackupDrive(resources.client, settings)
+    )
 
 
 def ozon_cabinet_service(resources: "AsyncResources") -> OzonCabinetService:

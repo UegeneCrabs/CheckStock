@@ -166,8 +166,11 @@
         state.page = Math.min(Math.max(1, state.page), pages);
         const start = (state.page - 1) * state.pageSize;
         $('thead').querySelector('.totals').innerHTML = columns.map((column, i) => {
-            const value = M.summary(filtered, column);
-            return `<th ${columnAttributes(column)} title="Итоги по всем отфильтрованным товарам; неизвестные значения не включены">${i === 0 ? 'Итого · ' + filtered.length : value == null ? '' : `<span class="${['difference', 'deviation'].includes(column.type) ? 'turnover-change ' + (value < 0 ? 'below' : value > 0 ? 'above' : '') : ''}">${format(value, column)}</span>`}</th>`;
+            const total = M.summaryDetails(filtered, column), value = total.value;
+            const title = total.partial
+                ? `Неполные данные. Учтено карточек WB: ${total.includedCards}. Без полной пары исходных значений: ${total.missingCards}. Исключено из-за различий исходных значений размеров: ${total.conflictingCards}.`
+                : 'Итоги по всем отфильтрованным товарам; неизвестные значения не включены';
+            return `<th ${columnAttributes(column)} title="${esc(title)}">${i === 0 ? 'Итого · ' + filtered.length : value == null && !total.partial ? '' : `<span class="${['difference', 'deviation'].includes(column.type) ? 'turnover-change ' + (value < 0 ? 'below' : value > 0 ? 'above' : '') : ''}">${format(value, column)}</span>${total.partial ? '<span class="cell-sub">частично</span>' : ''}`}</th>`;
         }).join('');
         $('tbody').innerHTML = filtered.slice(start, start + state.pageSize).map(row => `<tr data-row="${esc(row.id)}" class="${selected?.id === row.id ? 'selected' : ''}">${columns.map(column => `<td ${columnAttributes(column, ['product', 'person', 'name', 'text', 'note', 'goal'].includes(column.type) ? 'text' : ['project', 'code', 'photo', 'day'].includes(column.type) ? 'center' : '')}>${cell(row, column)}</td>`).join('')}</tr>`).join('');
         renderStoreSummary(filtered);

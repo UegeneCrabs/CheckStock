@@ -27,8 +27,8 @@ from app.exports import ftp as ftp_export
 from app.exports import ftp_schedule as ftp_export_schedule
 from app.exports import project_sheet as stock_sheet_export
 from app.infrastructure.async_resources import AsyncResources
+from app.jobs import database_backup, google_weeks, inbound_schedule, ozon, wb_ephemerides, wb_transit
 from app.jobs import finance as finance_sync
-from app.jobs import google_weeks, inbound_schedule, ozon, wb_ephemerides, wb_transit
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, ScheduledJob
@@ -585,6 +585,7 @@ def _initialize_application() -> None:
 
 def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
+    jobs += (database_backup.job(),)
     if not settings.background_sync_enabled and settings.funnel_orders_sync_enabled:
         jobs += _funnel_jobs()
     if settings.unit_economics_1c_price_sync_enabled:

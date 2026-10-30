@@ -11,10 +11,12 @@ from app import db
 from app.access.authentication import is_active_user
 from app.access.economics_preview import PRIVATE_JOB_NAMES, can_preview, require_preview
 from app.application.integration_views import IntegrationViews
+from app.config import settings
 from app.core.constants import JOBS, CredentialMarketplace, WebErrorCode
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.formatting import format_dt
 from app.core.stores import STORES
+from app.dto.database_backup import BackupConfiguration
 from app.dto.integrations import (
     CredentialList,
     CredentialResult,
@@ -25,9 +27,10 @@ from app.dto.integrations import (
 from app.dto.integrations import SyncSettingUpdate as TypedSyncSettingUpdate
 from app.infrastructure.integration_repository import IntegrationRepository
 from app.integrations import credentials as marketplace_credentials
-from app.jobs import async_locks
+from app.jobs import async_locks, database_backup
 from app.jobs import manual as manual_sync
 from app.jobs import settings as sync_settings
+from app.jobs.async_tracking import queue_tracked as queue_async_tracked
 from app.jobs.catalog import job_definitions
 from app.jobs.locks import SyncJobBusyError
 from app.jobs.tracking import queue_tracked
@@ -101,6 +104,16 @@ async def integrations_page(request: Request):
     return client_page("integrations/index.html")
 
 
+@router.get("/api/admin/integrations/database-backup", response_model=BackupConfiguration)
+async def database_backup_configuration(request: Request) -> BackupConfiguration:
+    _require_active_account(request)
+    return BackupConfiguration(
+        folder_id=settings.database_backup.folder_id,
+        configured=bool(settings.database_backup.folder_id and settings.google_service_account_path.is_file()),
+        database="postgresql" if settings.database_url else "sqlite",
+    )
+
+
 @router.get("/api/admin/integrations/sync-jobs/{job_name}/history")
 async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     _require_active_account(request)
@@ -109,6 +122,8 @@ async def sync_job_history(request: Request, job_name: str, limit: int = 50):
     definition = definitions.get(job_name)
     if definition is None:
         return JSONResponse({"ok": False, "error": "Выгрузка не найдена"}, status_code=404)
+    if job_name == JOBS.database_backup.name:
+        return await _views(request).history(definition, min(max(limit, 1), 200))
     if ozon_jobs.owns(job_name) or job_name == JOBS.ozon_reputation.name:
         return await ozon_jobs.history(job_name, limit, get_async_resources(request))
     runs = await run_in_threadpool(_sync_history, job_name, min(max(limit, 1), 200))
@@ -126,7 +141,7 @@ async def sync_job_states(request: Request):
     states = await run_in_threadpool(_sync_states, request.state.user)
     service = ozon_jobs.views(get_async_resources(request))
     for definition in _visible_jobs(request.state.user):
-        if ozon_jobs.owns(definition.name):
+        if ozon_jobs.owns(definition.name) or definition.name == JOBS.database_backup.name:
             states.append((await service.state(definition.name)).model_dump(mode="json"))
     return {"ok": True, "states": states}
 
@@ -138,6 +153,14 @@ async def run_sync_job(request: Request, job_name: str):
     definition = next((item for item in job_definitions() if item.name == job_name and item.manual_run), None)
     if definition is None:
         return JSONResponse({"ok": False, "error": "Выгрузка не найдена"}, status_code=404)
+    if job_name == JOBS.database_backup.name:
+        resources = get_async_resources(request)
+        try:
+            run_id = await queue_async_tracked(database_backup.job(), resources)
+        except SyncJobBusyError:
+            return _failure(WebErrorCode.JOB_BUSY, 409)
+        await resources.jobs.log_action(request.state.user.id, request.state.user.full_name, definition.title, datetime.now(UTC))
+        return JSONResponse({"ok": True, "run_id": run_id}, status_code=202)
     if ozon_jobs.owns(job_name):
         result = await ozon_jobs.launch(request, job_name, get_async_resources(request))
         return JSONResponse(result.model_dump(mode="json"), status_code=202)
@@ -182,7 +205,7 @@ async def update_sync_job_setting(
 ):
     _require_active_account(request)
     _require_job_access(request, job_name)
-    if ozon_jobs.owns(job_name):
+    if ozon_jobs.owns(job_name) or job_name == JOBS.database_backup.name:
         return await ozon_jobs.save(
             request,
             job_name,
@@ -390,7 +413,7 @@ def _sync_states(user=None) -> list[dict]:
     stored = {state["name"]: state for state in db.list_sync_job_states()}
     states = []
     for definition in _visible_jobs(user):
-        if ozon_jobs.owns(definition.name):
+        if ozon_jobs.owns(definition.name) or definition.name == JOBS.database_backup.name:
             continue
         state = {"name": definition.name, **stored.get(definition.name, {})}
         state["running"] = manual_sync.is_running(definition.name)

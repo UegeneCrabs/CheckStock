@@ -17,6 +17,9 @@ python_version = "3.13"
 strict = true
 follow_imports = "silent"
 files = [
+    "app/dto/database_backup.py", "app/application/database_backup.py",
+    "app/infrastructure/database_backup_store.py", "app/integrations/database_backup_drive.py",
+    "app/jobs/database_backup.py", "scripts/ops/create_database_backup.py", "scripts/ops/backup_to_drive.py",
     "app/application/fbo_stock.py", "app/dto/fbo_stock.py",
     "app/infrastructure/fbo_stock_repository.py", "app/infrastructure/fbo_stock_orm.py",
     "app/stock/fbo_sync.py", "app/web/routers/fbo_stock.py",

@@ -1,6 +1,22 @@
 window.IntegrationPage = (() => {
     'use strict';
     const ui = window.CheckStockUI;
+    const backupJobName = 'database_backup_google_drive';
+    const backupErrors = {
+        backup_configuration: 'Не задана папка резервных копий.',
+        backup_source_unavailable: 'Исходная база данных недоступна.',
+        backup_dump_failed: 'Не удалось создать или проверить копию базы данных.',
+        backup_credentials: 'Не удалось авторизоваться сервисным аккаунтом Google.',
+        backup_google_error: 'Ошибка Google Диска. Локальная копия сохранена для повторной отправки.',
+        backup_folder_unavailable: 'Нет доступа к папке общего Google Диска или прав добавления файлов.',
+        backup_checksum_mismatch: 'Размер или контрольная сумма копии не совпали. Локальный архив сохранён.',
+        backup_upload_interrupted: 'Загрузка прервана. Локальный архив сохранён для повтора.',
+    };
+
+    function errorMessage(value) {
+        const parts = String(value || '').split(': HTTP ');
+        return backupErrors[parts[0]] ? backupErrors[parts[0]] + (parts[1] ? ' HTTP ' + parts[1] : '') : value;
+    }
     const labels = { wb: 'Wildberries', ozon: 'Ozon', yandex: 'Яндекс Маркет', WB: 'Wildberries', OZON: 'Ozon', 'YANDEX MARKET': 'Яндекс Маркет' };
     const groups = [
         { key: 'general', title: 'Общее', description: 'Все площадки, 1С и Google Таблицы', mark: 'ВСЕ' },
@@ -69,8 +85,9 @@ window.IntegrationPage = (() => {
     }
 
     async function load() {
-        const [context, credentials, catalog] = await Promise.all([
+        const [context, credentials, catalog, backup] = await Promise.all([
             ui.context(), ui.request('/api/admin/integrations/credentials'), ui.request('/api/admin/integrations/sync-jobs/catalog'),
+            ui.request('/api/admin/integrations/database-backup'),
         ]);
         const tabs = document.querySelector('[data-store-tabs]');
         const panels = document.querySelector('[data-store-panels]');
@@ -99,23 +116,42 @@ window.IntegrationPage = (() => {
             button.setAttribute('aria-pressed', String(key === 'all')); button.textContent = title + ' ' + count;
             navigation.append(button);
         }
-        filter('all', 'Все', catalog.jobs.length);
+        const syncJobs = catalog.jobs.filter(job => job.name !== backupJobName);
+        filter('all', 'Все', syncJobs.length);
         host.append(navigation);
         for (const section of groups) {
-            const jobs = catalog.jobs.filter(job => group(job) === section.key);
+            const jobs = syncJobs.filter(job => group(job) === section.key);
             if (!jobs.length) continue;
             filter(section.key, section.title, jobs.length);
             host.insertAdjacentHTML('beforeend', ui.render('integrations/render/group', { ...section, rows: jobs.map(job => jobRow(job, context.stores)).join('') }));
         }
+        const backupJob = catalog.jobs.find(job => job.name === backupJobName);
+        if (backupJob) {
+            const backupHost = document.querySelector('[data-google-backup-jobs]');
+            backupHost.innerHTML = ui.render('integrations/render/group', {
+                key: 'backup', title: 'База данных', mark: 'БД',
+                description: 'Расписание, ручной запуск и история резервного копирования',
+                rows: jobRow(backupJob, context.stores),
+            });
+            backupHost.querySelector('[data-sync-group-count]').textContent = '1';
+        }
+        const folder = document.querySelector('[data-backup-folder]');
+        if (/^[A-Za-z0-9_-]+$/.test(backup.folder_id || '')) {
+            folder.href = 'https://drive.google.com/drive/folders/' + encodeURIComponent(backup.folder_id);
+            folder.hidden = false;
+        }
+        document.querySelector('[data-backup-configuration]').textContent = backup.configured
+            ? 'Источник: ' + (backup.database === 'postgresql' ? 'PostgreSQL' : 'SQLite')
+            : 'Для выгрузки нужны папка Google Диска и ключ сервисного аккаунта в настройках приложения.';
         for (const job of catalog.jobs) {
             const row = document.querySelector('[data-sync-job="' + job.name + '"]');
             row.querySelector('[data-sync-targets-toggle]').hidden = !job.configuration.targets.length;
             row.querySelector('[data-sync-run]').hidden = !job.manual_run;
         }
-        document.querySelector('[data-job-count]').textContent = catalog.jobs.length;
+        document.querySelector('[data-job-count]').textContent = syncJobs.length;
         document.querySelector('[data-integration-loading]').hidden = true;
         window.CheckStockPage.colors();
         return catalog;
     }
-    return { load, summary, applyCredential };
+    return { load, summary, applyCredential, errorMessage };
 })();
