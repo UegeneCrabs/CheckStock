@@ -22,7 +22,6 @@ from app.infrastructure.orm import (
     FulfillmentStockDailyHistoryRecord,
     MarketplaceStockDailyHistoryRecord,
     StockItemRecord,
-    UnitEconomics1CProductCategoryRecord,
     UnitEconomics1CProductSettingRecord,
     UnitEconomics1CSourceValueRecord,
 )
@@ -35,7 +34,6 @@ class OzonReportsRepository:
 
     async def catalog(self, stores: tuple[str, ...]) -> tuple[OzonReportCatalogItem, ...]:
         catalog = table_for(StockItemRecord)
-        category = table_for(UnitEconomics1CProductCategoryRecord)
         source = table_for(UnitEconomics1CSourceValueRecord)
         async with self.database.transaction() as connection:
             rows = await connection.execute(
@@ -44,14 +42,9 @@ class OzonReportsRepository:
                     catalog.c.article,
                     catalog.c.name,
                     catalog.c.image_url,
-                    category.c.category.label("subject"),
                     source.c.manager,
                 )
-                .select_from(
-                    catalog.outerjoin(category, category.c.stock_item_id == catalog.c.id).outerjoin(
-                        source, source.c.stock_item_id == catalog.c.id
-                    )
-                )
+                .select_from(catalog.outerjoin(source, source.c.stock_item_id == catalog.c.id))
                 .where(
                     catalog.c.marketplace == Marketplace.OZON,
                     catalog.c.store_slug.in_(stores),
@@ -87,15 +80,16 @@ class OzonReportsRepository:
         )
         turnover = await AsyncTurnoverRepository(self.database).load(request)
         catalog = table_for(StockItemRecord)
-        category = table_for(UnitEconomics1CProductCategoryRecord)
         async with self.database.transaction() as connection:
             identities = tuple(
                 OzonReportIdentity.model_validate(row)
                 for row in (
                     await connection.execute(
-                        select(catalog.c.store_slug, catalog.c.article, category.c.category.label("subject"))
-                        .select_from(catalog.outerjoin(category, category.c.stock_item_id == catalog.c.id))
-                        .where(catalog.c.marketplace == Marketplace.OZON, catalog.c.store_slug.in_(stores))
+                        select(catalog.c.store_slug, catalog.c.article).where(
+                            catalog.c.marketplace == Marketplace.OZON,
+                            catalog.c.store_slug.in_(stores),
+                            catalog.c.is_service == 0,
+                        )
                     )
                 ).mappings()
             )

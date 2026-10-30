@@ -78,6 +78,10 @@ class OzonCategorySelection(OzonCategoryIdentity):
     received_at: datetime
 
 
+class OzonProductCategorySelection(OzonCategorySelection):
+    article: str
+
+
 class OzonTariffQuery(DtoModel):
     store: str = Field(min_length=1)
     article: str = Field(min_length=1)

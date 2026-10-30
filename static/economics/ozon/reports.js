@@ -19,6 +19,18 @@ window.OzonReportsUI = (() => {
         if (template && !document.getElementById('ue1cr-manager-options')) {
             root.querySelector('.ue1cr-filter--articles').before(template.content.cloneNode(true));
         }
+        const categoryNote = document.createElement('div');
+        categoryNote.id = 'ozon-report-category-note';
+        categoryNote.className = 'ue1cr-scope-note';
+        categoryNote.setAttribute('role', 'status');
+        categoryNote.hidden = true;
+        root.querySelector('#ue1cr-error').after(categoryNote);
+    }
+    function profitCategoryStatus(root, report) {
+        const note = root.querySelector('#ozon-report-category-note');
+        if (!note) return;
+        note.hidden = !(report.category_unavailable_stores || []).length;
+        note.textContent = note.hidden ? '' : 'Не удалось определить часть категорий Ozon. Эти товары показаны как «Без категории»; фильтрация и группировка по категориям могут быть неполными. Повторите формирование отчёта.';
     }
     function profitPayload(report) {
         const labels = window.OzonEconomicsUI?.marginLabels || {};
@@ -103,5 +115,5 @@ window.OzonReportsUI = (() => {
             },
         };
     });
-    return { message, prepareProfit, profitPayload, targetPayload, prepareTarget };
+    return { message, prepareProfit, profitCategoryStatus, profitPayload, targetPayload, prepareTarget };
 })();

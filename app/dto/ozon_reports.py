@@ -42,6 +42,12 @@ class OzonReportIdentity(DtoModel):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class OzonReportCategories:
+    identities: tuple[OzonReportIdentity, ...]
+    unavailable_stores: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class OzonReportEvidence:
     products: tuple[OzonProduct, ...]
     turnover: OzonTurnoverData
@@ -159,6 +165,7 @@ class OzonReportCatalogItem(OzonReportArticle):
 class OzonFilterResult(DtoModel):
     ok: bool = True
     filters: OzonReportFilters
+    category_unavailable_stores: tuple[str, ...] = ()
 
 
 class OzonProfitReport(DtoModel):
@@ -170,6 +177,7 @@ class OzonProfitReport(DtoModel):
     category_rows: tuple[OzonProfitRow, ...] = ()
     totals: OzonProfitMetrics
     filters: OzonReportFilters
+    category_unavailable_stores: tuple[str, ...] = ()
     group_by: OzonReportGroup = OzonReportGroup.PRODUCT
     daily_details: bool = False
     pagination: OzonReportPagination = OzonReportPagination()

@@ -1007,6 +1007,7 @@
                 throw new Error(result.error || 'Не удалось загрузить параметры отчёта');
             }
             if (requestId !== filterRequestId) return;
+            if (config.marketplace === 'OZON') window.OzonReportsUI.profitCategoryStatus(root, result);
             setFilterOptions('subject', result.filters.subjects);
             setFilterOptions('manager', result.filters.managers);
             setFilterOptions('article', result.filters.articles);
@@ -1103,6 +1104,7 @@
             var result = await response.json();
             if (!response.ok || !result.ok) throw new Error(result.error || 'Не удалось сформировать отчёт');
             if (config.marketplace === 'OZON') result = window.OzonReportsUI.profitPayload(result);
+            if (config.marketplace === 'OZON') window.OzonReportsUI.profitCategoryStatus(root, result);
             nodes.error.hidden = true;
             nodes.scopeNote.hidden = true;
             nodes.marginCoverageNote.hidden = true;

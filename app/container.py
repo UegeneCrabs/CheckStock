@@ -41,7 +41,7 @@ from app.dto.ozon_price_changes import OzonPriceChangeBusyError, OzonPriceChange
 from app.dto.ozon_prices import PriceIdentity, PriceValues, WebsiteEvidence
 from app.dto.ozon_promotion_entry import OzonEntryBusyError, OzonEntryEvidence, OzonEntryRefreshedPrices
 from app.dto.ozon_related import OzonModelProducts
-from app.dto.ozon_tariffs import OzonCategorySelection
+from app.dto.ozon_tariffs import OzonCategorySelection, OzonProductCategorySelection
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
 from app.economics.ozon_commissions import snapshot as commission_snapshot
 from app.economics.wb.prices import calculate_wallet_price
@@ -107,8 +107,13 @@ def ozon_analytics_service(database: "AsyncDatabase") -> OzonAnalyticsService:
     return OzonAnalyticsService(OzonAnalyticsRepository(database))
 
 
-def ozon_reports_service(database: "AsyncDatabase") -> OzonReportsService:
-    return OzonReportsService(OzonReportsRepository(database), lambda: datetime.now(UTC))
+def ozon_reports_service(resources: "AsyncResources") -> OzonReportsService:
+    async def categories(store: str, articles: tuple[str, ...]) -> tuple[OzonProductCategorySelection, ...]:
+        return await resources.ozon_categories.products(get_order_credentials(store), articles)
+
+    return OzonReportsService(
+        OzonReportsRepository(resources.database), lambda: datetime.now(UTC), categories
+    )
 
 
 def ozon_margin_service(resources: "AsyncResources") -> OzonMarginService:

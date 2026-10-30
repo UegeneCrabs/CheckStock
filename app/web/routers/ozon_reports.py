@@ -57,21 +57,21 @@ async def target_page(request: Request) -> str:
 async def profit_data(
     request: Request, query: Annotated[OzonProfitQuery, Query()], resources: AsyncResourcesDependency
 ) -> OzonProfitReport:
-    return await ozon_reports_service(resources.database).profit(query, stores_for(request, query.store))
+    return await ozon_reports_service(resources).profit(query, stores_for(request, query.store))
 
 
 @router.get(OZON_REPORTS.api + "/unit-profit/filters")
 async def profit_filters(
     request: Request, query: Annotated[OzonProfitQuery, Query()], resources: AsyncResourcesDependency
 ) -> OzonFilterResult:
-    return await ozon_reports_service(resources.database).filter_options(stores_for(request, query.store))
+    return await ozon_reports_service(resources).filter_options(stores_for(request, query.store))
 
 
 @router.get(OZON_REPORTS.pages + "/unit-profit.xlsx")
 async def profit_export(
     request: Request, query: Annotated[OzonProfitQuery, Query()], resources: AsyncResourcesDependency
 ) -> Response:
-    report = await ozon_reports_service(resources.database).profit(
+    report = await ozon_reports_service(resources).profit(
         query, stores_for(request, query.store), export=True
     )
     body = await run_in_threadpool(build_workbook, report)
@@ -86,14 +86,14 @@ async def profit_export(
 async def target_data(
     request: Request, resources: AsyncResourcesDependency, store: str = "", article: str = ""
 ) -> OzonTargetReport:
-    return await ozon_reports_service(resources.database).targets(stores_for(request, (store,)), article)
+    return await ozon_reports_service(resources).targets(stores_for(request, (store,)), article)
 
 
 @router.post(OZON_REPORTS.api + "/target-price/{store}/preview")
 async def target_preview(
     request: Request, store: str, payload: OzonTargetPreview, resources: AsyncResourcesDependency
 ) -> OzonTargetReport:
-    report = await ozon_reports_service(resources.database).targets(
+    report = await ozon_reports_service(resources).targets(
         stores_for(request, (store,)), payload.article, payload
     )
     if not report.rows:
@@ -107,7 +107,7 @@ async def target_save(
 ) -> OzonTargetRecord:
     stores_for(request, (store,))
     try:
-        return await ozon_reports_service(resources.database).save_target(
+        return await ozon_reports_service(resources).save_target(
             store, payload, request.state.user.id, request.state.user.full_name
         )
     except OzonTargetConflict:
@@ -162,7 +162,7 @@ async def target_export(
     selected = tuple(dict.fromkeys(row.store_slug for row in payload.rows))
     stores = stores_for(request, selected)
     keys = {(row.store_slug, row.article) for row in payload.rows}
-    report = await ozon_reports_service(resources.database).targets(stores)
+    report = await ozon_reports_service(resources).targets(stores)
     report = report.model_copy(
         update={"rows": tuple(row for row in report.rows if (row.store_slug, row.article) in keys)}
     )

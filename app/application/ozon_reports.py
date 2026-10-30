@@ -1,4 +1,7 @@
-from collections.abc import Callable
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from app.application.ports import OzonReportsStore
@@ -8,7 +11,9 @@ from app.dto.ozon_reports import (
     OzonProfitQuery,
     OzonProfitReport,
     OzonReportArticle,
+    OzonReportCategories,
     OzonReportFilters,
+    OzonReportIdentity,
     OzonReportPagination,
     OzonTargetChange,
     OzonTargetPreview,
@@ -16,20 +21,63 @@ from app.dto.ozon_reports import (
     OzonTargetReport,
     OzonTargetSave,
 )
+from app.dto.ozon_tariffs import OzonProductCategorySelection
 from app.economics.ozon_reports import categories, filters, profit_row, selected, totals
 from app.economics.ozon_target_prices import target_row
 
+logger = logging.getLogger(__name__)
+
 
 class OzonReportsService:
-    def __init__(self, repository: OzonReportsStore, clock: Callable[[], datetime]):
+    def __init__(
+        self,
+        repository: OzonReportsStore,
+        clock: Callable[[], datetime],
+        category_reader: Callable[
+            [str, tuple[str, ...]], Awaitable[tuple[OzonProductCategorySelection, ...]]
+        ],
+    ):
         self.repository = repository
         self.clock = clock
+        self.category_reader = category_reader
+
+    async def _categories(self, identities: tuple[OzonReportIdentity, ...]) -> OzonReportCategories:
+        subjects: dict[tuple[str, str], str] = {}
+        unavailable: set[str] = set()
+
+        async def load(store: str) -> None:
+            articles = tuple(item.article for item in identities if item.store_slug == store)
+            try:
+                products = await self.category_reader(store, articles)
+                subjects.update({(store, item.article): item.type_name for item in products})
+            except Exception as error:
+                logger.warning(
+                    "ozon_report_categories_unavailable store=%s error=%s", store, type(error).__name__
+                )
+                unavailable.add(store)
+            if any(not subjects.get((store, article)) for article in articles):
+                unavailable.add(store)
+
+        async with asyncio.TaskGroup() as group:
+            for store in sorted({item.store_slug for item in identities}):
+                group.create_task(load(store))
+        return OzonReportCategories(
+            identities=tuple(
+                item.model_copy(update={"subject": subjects.get((item.store_slug, item.article))})
+                for item in identities
+            ),
+            unavailable_stores=tuple(sorted(unavailable)),
+        )
 
     async def filter_options(self, stores: tuple[str, ...]) -> OzonFilterResult:
         items = await self.repository.catalog(stores) if stores else ()
+        category_data = await self._categories(
+            tuple(OzonReportIdentity(store_slug=item.store_slug, article=item.article) for item in items)
+        )
         return OzonFilterResult(
+            category_unavailable_stores=category_data.unavailable_stores,
             filters=OzonReportFilters(
-                subjects=tuple(sorted({item.subject or "" for item in items})),
+                subjects=tuple(sorted({item.subject or "" for item in category_data.identities})),
                 managers=tuple(sorted({item.manager for item in items if item.manager})),
                 articles=tuple(
                     OzonReportArticle(
@@ -41,7 +89,7 @@ class OzonReportsService:
                     )
                     for item in items
                 ),
-            )
+            ),
         )
 
     async def profit(
@@ -56,6 +104,8 @@ class OzonReportsService:
                 filters=OzonReportFilters(),
             )
         evidence = await self.repository.evidence(query, stores)
+        category_data = await self._categories(evidence.identities)
+        evidence = replace(evidence, identities=category_data.identities)
         today = self.clock().astimezone(TIME.moscow_timezone).date()
         rows = tuple(
             profit_row(product, evidence)
@@ -86,6 +136,7 @@ class OzonReportsService:
             category_rows=grouped if export else (),
             totals=totals(rows),
             filters=options,
+            category_unavailable_stores=category_data.unavailable_stores,
             group_by=query.group_by,
             daily_details=query.daily_details or export,
             pagination=OzonReportPagination(
