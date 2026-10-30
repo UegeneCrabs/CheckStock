@@ -2,6 +2,21 @@
 
 # Fields describe the main response fields, not an exhaustive schema for every view.
 DOCS = {
+    "standard-costs": (
+        "Расходы WB без ИУ",
+        "Последний сохранённый отчёт магазина: прибыль и ROI без ИУ и с ИУ, разница и состояние отчёта. Значения на единицу товара; это не фактическая прибыль за неделю. Произвольный период не поддерживается.",
+        "article:Артикул:str|scheme:Схема FBW/FBS:str|name:Название товара:str|profit:Сценарий без ИУ:object|current_profit:Сценарий с ИУ:object|delta:Без ИУ минус с ИУ:object",
+    ),
+    "spp-hourly": (
+        "СПП WB — почасовые данные",
+        "Сохранённые наблюдения. Даты отбираются по МСК. После закрытия дня часы удаляются; отсутствие записи не означает ноль.",
+        "article:Артикул:str|observed_at:Точное время наблюдения:datetime|customer_price_with_spp:Цена покупателя с СПП, ₽:number|spp_percent:СПП, %:number|null|customer_price_with_wallet:Цена с WB Кошельком, ₽:number|null",
+    ),
+    "spp-daily": (
+        "СПП WB — дневные средние",
+        "Сохранённые средние закрытых дней. Веса — положительный накопленный оборот в момент наблюдения; без весов — обычное среднее. Пропуски не заменяются нулём.",
+        "article:Артикул:str|day:Дата дня по МСК:date|observed_at:Время последнего наблюдения:datetime|average_customer_price_with_spp:Средняя цена покупателя с СПП, ₽:number|average_spp_percent:Средний СПП, %:number|null|average_customer_price_with_wallet:Средняя цена с WB Кошельком, ₽:number|null",
+    ),
     "stores": (
         "Магазины",
         "Доступные магазины и площадки.",
