@@ -5,6 +5,7 @@
 ## Устройство проекта и эксплуатация
 
 - [Обязательные правила разработки Ozon для всех чатов CheckStock](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon)
+- [Правила размещения, оформления и запуска тестов](../.agents/skills/checkstock-testing/SKILL.md)
 - [Архитектура и структура](architecture.md)
 - [Интерфейс Ozon: действующие JSON-маршруты и границы переноса общих страниц](ozon-web-contracts.md)
 - [График динамики Ozon за 7/14/30 дней: источники, пропуски и сравнение](ozon-history.md)
