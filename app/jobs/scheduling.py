@@ -12,6 +12,7 @@ from app.core.constants import (
     TIME,
     JobStatus,
 )
+from app.core.logging_config import log_tags, tagged_logger
 from app.dto.jobs import AsyncJobResult
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import locks
@@ -21,7 +22,7 @@ from app.repositories import job_schedules
 ERROR_RETRY_SECONDS = SCHEDULER.error_retry_seconds
 POLL_SECONDS = SCHEDULER.poll_seconds
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "scheduling")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -107,7 +108,9 @@ def run_scheduled_step(job: BackgroundJob) -> datetime:
                 next_run_at=next_run,
                 attempt_number=retry,
             )
-            logger.warning("scheduled_run_interrupted job=%s attempt=%s", job.name, attempt)
+            logger.warning(
+                "scheduled_run_interrupted job=%s attempt=%s", job.name, attempt, extra=log_tags(job.name)
+            )
             return next_run
 
         if not enabled:
@@ -127,7 +130,9 @@ def run_scheduled_step(job: BackgroundJob) -> datetime:
             error = result_error(result)
         except Exception as exc:
             error = exception_error(exc)
-            logger.exception("background_job_failed job=%s attempt=%s", job.name, attempt)
+            logger.exception(
+                "background_job_failed job=%s attempt=%s", job.name, attempt, extra=log_tags(job.name)
+            )
         elapsed = monotonic() - started
         finished = _now()
         next_run, retry = _next_attempt(job, finished, attempt, error, elapsed)
@@ -148,6 +153,7 @@ def run_scheduled_step(job: BackgroundJob) -> datetime:
             JobStatus.ERROR.value if error else JobStatus.SUCCESS.value,
             next_run.isoformat(),
             error,
+            extra=log_tags(job.name),
         )
         return next_run
 
@@ -193,9 +199,9 @@ async def run_background_job(
                 job.on_attempt()
             delay = min(POLL_SECONDS, max(SCHEDULER.min_delay_seconds, (planned - _now()).total_seconds()))
         except locks.SyncJobBusyError:
-            logger.info("background_job_already_running job=%s", job.name)
+            logger.info("background_job_already_running job=%s", job.name, extra=log_tags(job.name))
             delay = POLL_SECONDS
         except Exception:
-            logger.exception("background_job_scheduler_error job=%s", job.name)
+            logger.exception("background_job_scheduler_error job=%s", job.name, extra=log_tags(job.name))
             delay = ERROR_RETRY_SECONDS
         await wait_for_stop(stop, delay)

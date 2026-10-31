@@ -1,13 +1,13 @@
 import asyncio
-import logging
 
 from app.container import ozon_cabinet_service
 from app.core.constants import OZON_CABINET
+from app.core.logging_config import tagged_logger
 from app.dto.ozon_cabinet import OzonBuyoutSyncResult
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import async_locks
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "ozon", "ozon_buyout")
 
 
 async def sync_all(stores: tuple[str, ...], resources: AsyncResources) -> OzonBuyoutSyncResult:

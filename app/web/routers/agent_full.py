@@ -1,7 +1,6 @@
 """Read-only employee API for the site's implemented business sections."""
 
 import json
-import logging
 import threading
 import time
 from datetime import date
@@ -19,6 +18,7 @@ from app.agents import reports as reports
 from app.agents import yandex_reports
 from app.agents.extended_reports import EXTRA_SPECS
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.identity import SectionName
 from app.stock import supply_planning
@@ -31,7 +31,7 @@ from app.web.routers.target_prices import target_price_data
 from app.web.routers.unit_economics import _unit_economics_1c_unit_profit_report_data
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "agent_full")
 SUPPLY_CACHE = {}
 SUPPLY_LOCK = threading.Lock()
 

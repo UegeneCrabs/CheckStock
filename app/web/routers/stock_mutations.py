@@ -1,6 +1,5 @@
 import hashlib
 import json
-import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -19,6 +18,7 @@ from app.application.stock_requests import (
 from app.core.constants import FboStockErrorCode
 from app.core.errors import StockValidationError
 from app.core.formatting import format_dt
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.marketplace import Marketplace
 from app.dto.stock import (
@@ -45,7 +45,7 @@ from app.web.common import _now_iso
 from app.web.dependencies import StockMovementServiceDependency
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "stock_mutations")
 
 
 async def _run_stock_mutation(request, slug, stock, payload, action):

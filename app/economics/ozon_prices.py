@@ -1,8 +1,8 @@
 import asyncio
-import logging
 from datetime import UTC, datetime
 
 from app.core.constants import OZON_PRICES, OzonPriceSource, OzonPriceState
+from app.core.logging_config import tagged_logger
 from app.dto.ozon_commissions import FboCommissionObservation, FboCommissionValue
 from app.dto.ozon_prices import (
     PriceChange,
@@ -23,7 +23,7 @@ from app.ozon.price_normalizer import (
     website_value,
 )
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "ozon", "ozon_prices")
 
 
 async def website_observations(

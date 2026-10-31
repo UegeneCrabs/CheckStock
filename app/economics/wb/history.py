@@ -3,26 +3,31 @@
 from __future__ import annotations
 
 import json
-import logging
 from datetime import UTC, date, datetime
 
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.unit_economics_1c import UnitEconomics1CProductSettings
 from app.economics.daily_calculation import calculate as calculate_daily
 from app.economics.wb import calculations as unit_economics_1c
 from app.repositories import daily_economics
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "wb", "history")
 
 CALCULATION_VERSION = 3
 
 # These costs still participate in formulas; only report warnings are deferred.
-DEFERRED_REPORT_COST_WARNINGS = frozenset({
-    "delivery_wb_rub", "return_cost_rub", "delivery_with_returns",
-    "storage_wb_rub", "turnover_days",
-})
+DEFERRED_REPORT_COST_WARNINGS = frozenset(
+    {
+        "delivery_wb_rub",
+        "return_cost_rub",
+        "delivery_with_returns",
+        "storage_wb_rub",
+        "turnover_days",
+    }
+)
 
 
 def _price_value(value: object) -> float | None:
@@ -69,8 +74,16 @@ def unit_margin_without_advertising(
     return calculate_daily("WB", inputs, snapshot.get("calculation_version"))[1].get("margin")
 
 
-def report_day(day, snapshot, order, advertising, *, orders_known=False, ads_known=False,
-               ignore_deferred_cost_warnings=False):
+def report_day(
+    day,
+    snapshot,
+    order,
+    advertising,
+    *,
+    orders_known=False,
+    ads_known=False,
+    ignore_deferred_cost_warnings=False,
+):
     """One resolved day for the screen, report and export, with dated overlays."""
     inputs = _json_object((snapshot or {}).get("inputs_json"))
     overrides = (snapshot or {}).get("overrides") or {}
@@ -79,25 +92,40 @@ def report_day(day, snapshot, order, advertising, *, orders_known=False, ads_kno
     # Successful empty source days carry a real zero.
     if ads_known and spend is None:
         spend = 0.0
-    values, result = calculate_daily("WB", {**inputs, "orders_count": count, "advertising_spend": spend}, (snapshot or {}).get("calculation_version"))
+    values, result = calculate_daily(
+        "WB",
+        {**inputs, "orders_count": count, "advertising_spend": spend},
+        (snapshot or {}).get("calculation_version"),
+    )
     from app.economics.completeness import annotate, describe, status
 
     if ignore_deferred_cost_warnings:
-        annotate(result, [key for key in result.get("missing", []) if key not in DEFERRED_REPORT_COST_WARNINGS])
+        annotate(
+            result, [key for key in result.get("missing", []) if key not in DEFERRED_REPORT_COST_WARNINGS]
+        )
         missing = [key for key in result["daily_missing"] if key not in DEFERRED_REPORT_COST_WARNINGS]
         result.update(
-            daily_missing=missing, daily_complete=not missing,
+            daily_missing=missing,
+            daily_complete=not missing,
             daily_status=status(result["day_profit"], missing),
             daily_messages=["Не учтены / неизвестны: " + ", ".join(describe(missing))] if missing else [],
         )
     missing = result["daily_missing"]
 
-    return {"day": day, "inputs": values, "result": result, "profit": result["day_profit"],
-            "purchase_value": result["purchase_value"], "orders_count": count,
-            "advertising_spend": spend, "expected_buyouts": result["expected_buyouts"],
-            "missing": missing, "complete": result["daily_complete"],
-            "messages": ["Не учтены / неизвестны: " + ", ".join(describe(missing, day))] if missing else [],
-            "snapshot_available": bool(snapshot)}
+    return {
+        "day": day,
+        "inputs": values,
+        "result": result,
+        "profit": result["day_profit"],
+        "purchase_value": result["purchase_value"],
+        "orders_count": count,
+        "advertising_spend": spend,
+        "expected_buyouts": result["expected_buyouts"],
+        "missing": missing,
+        "complete": result["daily_complete"],
+        "messages": ["Не учтены / неизвестны: " + ", ".join(describe(missing, day))] if missing else [],
+        "snapshot_available": bool(snapshot),
+    }
 
 
 def snapshot_buyout_percent(snapshot: dict | None) -> float | None:
@@ -127,10 +155,16 @@ def calculate_snapshot_row(
     retail_price = _price_value(price_snapshot.get("retail_price"))
     orders_count = max(_integer(product_metrics.get("orders_count")), 0)
     average_customer_price = (
-        unit_economics_1c.money(float(product_metrics.get("orders_amount") or 0) / orders_count) if orders_count else None
+        unit_economics_1c.money(float(product_metrics.get("orders_amount") or 0) / orders_count)
+        if orders_count
+        else None
     )
     customer_price = spp_price if spp_price is not None else average_customer_price
-    economics_retail_price = retail_price if retail_price is not None else _price_value(product_metrics.get("average_retail_price"))
+    economics_retail_price = (
+        retail_price
+        if retail_price is not None
+        else _price_value(product_metrics.get("average_retail_price"))
+    )
 
     product_metrics = unit_economics_1c.apply_buyout_default(
         product_metrics,
@@ -147,7 +181,11 @@ def calculate_snapshot_row(
         product_settings.return_cost_rub,
         paid_acceptance_cost,
     )
-    turnover_days = _integer(product_reference["turnover_days"]) if product_reference.get("turnover_days") is not None else None
+    turnover_days = (
+        _integer(product_reference["turnover_days"])
+        if product_reference.get("turnover_days") is not None
+        else None
+    )
     purchase_price = _price_value(product_reference.get("purchase_price"))
     fulfillment_cost = _price_value(product_reference.get("fulfillment_cost"))
     source_team_commission = _price_value(product_reference.get("team_commission_percent"))
@@ -160,7 +198,11 @@ def calculate_snapshot_row(
     wb_extra_tariff_percent = unit_economics_1c.money(
         max(float(getattr(cabinet, "wb_extra_tariff_percent", 0) or 0), 0.0)
     )
-    commission_percent = unit_economics_1c.money(subject_commission_percent + wb_extra_tariff_percent) if subject_commission_percent is not None else None
+    commission_percent = (
+        unit_economics_1c.money(subject_commission_percent + wb_extra_tariff_percent)
+        if subject_commission_percent is not None
+        else None
+    )
     advertising_per_unit = unit_economics_1c.calculate_advertising_per_unit(
         float(product_metrics.get("spend") or 0),
         orders_count,
@@ -218,17 +260,29 @@ def calculate_snapshot_row(
         for field in ("delivery_wb_rub", "return_cost_rub", "volume_l", "storage_wb_rub"):
             inputs[field] = None
     if getattr(cabinet, "updated_at", None) is None:
-        for field in ("acquiring_percent", "acceptance_coefficient", "wb_extra_tariff_percent", "vat_percent", "usn_percent", "osno_percent", "tax_system"):
+        for field in (
+            "acquiring_percent",
+            "acceptance_coefficient",
+            "wb_extra_tariff_percent",
+            "vat_percent",
+            "usn_percent",
+            "osno_percent",
+            "tax_system",
+        ):
             inputs[field] = None
         if source_team_commission is None:
             inputs["team_commission_percent"] = None
-    if product_metrics.get("raw_buyout_percent") is None and not product_metrics.get("buyout_default_applied"):
+    if product_metrics.get("raw_buyout_percent") is None and not product_metrics.get(
+        "buyout_default_applied"
+    ):
         inputs["buyout_percent"] = None
     if price_snapshot.get("day") and price_snapshot["day"] != snapshot_day.isoformat():
         # An old observation is not evidence of today's sale price.
         inputs["retail_price"] = None
         inputs["customer_price"] = None
-        inputs["price_missing_reason"] = "Цена за день не загружена; последняя запись за " + str(price_snapshot["day"])
+        inputs["price_missing_reason"] = "Цена за день не загружена; последняя запись за " + str(
+            price_snapshot["day"]
+        )
     inputs["orders_count"] = orders_count if product_metrics.get("snapshot_orders_known") else None
     inputs["advertising_spend"] = product_metrics.get("snapshot_advertising_spend")
     inputs, result = calculate_daily("WB", inputs, CALCULATION_VERSION)
@@ -245,7 +299,9 @@ def calculate_snapshot_row(
         "result_json": json.dumps(result, ensure_ascii=False, sort_keys=True),
         "captured_at": captured_at,
         "raw_sources": {
-            "prices": price_snapshot, "metrics": product_metrics, "reference": product_reference,
+            "prices": price_snapshot,
+            "metrics": product_metrics,
+            "reference": product_reference,
             "product_settings": product_settings.model_dump(mode="json"),
             "cabinet": cabinet.model_dump(mode="json") if hasattr(cabinet, "model_dump") else vars(cabinet),
         },
@@ -263,7 +319,9 @@ def save_daily_margin_snapshots(
     today = datetime.now(MOSCOW_TIMEZONE).date()
     day = snapshot_day or today
     if day != today:
-        raise ValueError("Прошлые дни доступны только из сохранённых снимков. Используйте корректировку даты.")
+        raise ValueError(
+            "Прошлые дни доступны только из сохранённых снимков. Используйте корректировку даты."
+        )
     stores = tuple(
         store for store in (tuple(STORES) if store_slugs is None else store_slugs) if store in STORES
     )
@@ -288,7 +346,10 @@ def save_daily_margin_snapshots(
     from app.repositories.economics_coverage import wb_days
 
     coverage = wb_days(stores, day.isoformat(), day.isoformat())
-    ads = {(str(r["store_slug"]), str(r["nm_id"])): r for r in db.get_unit_economics_1c_daily_advertising(stores, day.isoformat(), day.isoformat())}
+    ads = {
+        (str(r["store_slug"]), str(r["nm_id"])): r
+        for r in db.get_unit_economics_1c_daily_advertising(stores, day.isoformat(), day.isoformat())
+    }
     rows: list[dict] = []
     skipped = 0
     for store_slug in stores:
@@ -307,10 +368,18 @@ def save_daily_margin_snapshots(
                 article=article,
                 price_snapshot=prices.get((store_slug, article)) or {},
                 product_metrics=(
-                    {**(metrics.get((store_slug, _nm_id(article)))
-                    or unit_economics_1c.empty_product_metrics(today=day)),
-                    "snapshot_orders_known": day.isoformat() in coverage[store_slug]["orders"],
-                    "snapshot_advertising_spend": (ads.get((store_slug, _nm_id(article)), {}).get("spend", 0.0) if day.isoformat() in coverage[store_slug]["advertising"] else None)}
+                    {
+                        **(
+                            metrics.get((store_slug, _nm_id(article)))
+                            or unit_economics_1c.empty_product_metrics(today=day)
+                        ),
+                        "snapshot_orders_known": day.isoformat() in coverage[store_slug]["orders"],
+                        "snapshot_advertising_spend": (
+                            ads.get((store_slug, _nm_id(article)), {}).get("spend", 0.0)
+                            if day.isoformat() in coverage[store_slug]["advertising"]
+                            else None
+                        ),
+                    }
                 ),
                 product_settings=settings,
                 product_reference=references.get((store_slug, article)) or {},
@@ -324,14 +393,21 @@ def save_daily_margin_snapshots(
     saved = 0
     for row in rows:
         source = daily_economics.observation(
-            json.loads(row["inputs_json"]), raw=row["raw_sources"], captured_at=captured_at,
+            json.loads(row["inputs_json"]),
+            raw=row["raw_sources"],
+            captured_at=captured_at,
             version=CALCULATION_VERSION,
             origins={
-                key: "Настройки кабинета WB" if key == "team_commission_percent" and row["raw_sources"]["reference"].get(key) is None
-                else "Google Sheets" if key in {"purchase_price", "fulfillment_cost", "team_commission_percent"}
-                else "WB: дневная цена" if key in {"retail_price", "customer_price"}
-                else "WB: дневные метрики" if key in {"orders_count", "advertising_spend"}
-                else "Справочник комиссий WB" if key == "subject_commission_percent"
+                key: "Настройки кабинета WB"
+                if key == "team_commission_percent" and row["raw_sources"]["reference"].get(key) is None
+                else "Google Sheets"
+                if key in {"purchase_price", "fulfillment_cost", "team_commission_percent"}
+                else "WB: дневная цена"
+                if key in {"retail_price", "customer_price"}
+                else "WB: дневные метрики"
+                if key in {"orders_count", "advertising_spend"}
+                else "Справочник комиссий WB"
+                if key == "subject_commission_percent"
                 else "Сохранённые настройки / справочник"
                 for key in json.loads(row["inputs_json"])
             },

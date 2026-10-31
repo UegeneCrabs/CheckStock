@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from collections.abc import Callable, Coroutine
 from types import TracebackType
 from typing import Self
@@ -11,6 +10,7 @@ from app.config import settings
 from app.core.constants import (
     HTTP,
 )
+from app.core.logging_config import tagged_logger
 from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepository
 from app.infrastructure.async_catalog_repository import AsyncCatalogRepository
 from app.infrastructure.async_commissions_repository import AsyncCommissionsRepository
@@ -22,7 +22,7 @@ from app.infrastructure.async_prices_repository import AsyncPricesRepository
 from app.ozon.async_categories import AsyncCategoryReader
 from app.ozon.async_related import AsyncRelatedReader
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "infrastructure", "async_resources")
 Finalizer = Callable[[asyncio.Task[None]], Coroutine[object, object, None]]
 
 

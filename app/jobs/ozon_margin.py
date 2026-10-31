@@ -1,13 +1,13 @@
 import asyncio
-import logging
 
 from app.container import ozon_margin_service
 from app.core.constants import OZON_MARGIN
+from app.core.logging_config import tagged_logger
 from app.dto.ozon_margin import OzonMarginSyncResult
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import async_locks
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "ozon", "ozon_margin")
 
 
 async def sync_all(stores: tuple[str, ...], resources: AsyncResources) -> OzonMarginSyncResult:

@@ -1,5 +1,4 @@
 import json
-import logging
 import math
 import random
 import socket
@@ -20,6 +19,7 @@ from app.core.constants import (
     OzonErrorCode,
     SortDirection,
 )
+from app.core.logging_config import tagged_logger
 
 PAGE_SIZE = OZON_API.page_size
 FBS_POSTINGS_V4_PAGE_SIZE = OZON_API.fbs_postings_v4_page_size
@@ -28,7 +28,7 @@ BASE_URL = OZON_API.base_url
 SCHEME_FBO = OrderScheme.FBO.value
 SCHEME_FBS = OrderScheme.FBS.value
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "ozon", "api")
 
 
 _current = threading.local()

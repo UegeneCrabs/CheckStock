@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 from app import db
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.ff_import.importer import (
     FFImportError,
@@ -14,7 +14,7 @@ from app.ff_import.importer import (
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "wb", "reference_data")
 
 ABC_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/1uP5RZioJgAoX-LTkXay7nbZvp_tk2EPAl0hCAeM8fdE/edit?gid=516789637"

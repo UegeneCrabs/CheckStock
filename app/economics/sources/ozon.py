@@ -1,10 +1,10 @@
-import logging
 import re
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 
 from app import db
 from app.core.constants import OZON_SOURCE, Marketplace
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.ozon_source import (
     OzonSourceCatalogIndex,
@@ -20,7 +20,7 @@ from app.dto.ozon_source import (
 from app.economics.sources import purchase_prices as source
 from app.repositories import unit_economics_1c as repository
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "sources", "ozon")
 MARKETPLACE = Marketplace.OZON.value
 
 

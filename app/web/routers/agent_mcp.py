@@ -5,7 +5,6 @@ import base64
 import hashlib
 import html
 import json
-import logging
 import math
 import os
 import re
@@ -24,12 +23,13 @@ from app.access import auth
 from app.access.authentication import is_active_user
 from app.agents.mcp_store import OAuthError, OAuthStore, digest
 from app.config import MCP_DEFAULT_REDIRECT_URIS, settings
+from app.core.logging_config import tagged_logger
 from app.dto.identity import SessionToken, UserId
 from app.dto.mcp_connection import McpProvider
 from app.web.routers.agent_management import Owner
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "agent_mcp")
 VERSIONS = ("2025-03-26", "2025-06-18", "2025-11-25")
 SCOPE = "analytics:read"
 COOKIE = "checkstock_mcp_consent"

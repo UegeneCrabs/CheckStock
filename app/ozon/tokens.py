@@ -1,11 +1,11 @@
 import json
-import logging
 from functools import lru_cache
 
 from app.config import settings
+from app.core.logging_config import tagged_logger
 from app.dto.orders import OzonCredentials
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "ozon", "tokens")
 
 TOKENS_PATH = settings.ozon_tokens_path
 

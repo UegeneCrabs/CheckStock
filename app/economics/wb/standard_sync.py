@@ -1,10 +1,10 @@
 """Load a rolling completed week through WB API; publish only a complete snapshot."""
 
-import logging
 from datetime import date, datetime, timedelta
 
 from app.container import ApplicationContainer
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.dto.wb_standard_costs import PublishSnapshot, StoreSyncResult, SyncResult
 from app.economics.wb.standard_costs import build
 from app.jobs import settings
@@ -13,7 +13,7 @@ from app.wb.standard_costs import fetch_sources as fetch_sources
 
 JOB = "wb_standard_costs_sync"
 WEEK_DAYS = 7
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "wb", "standard_sync")
 
 
 def completed_week(now: datetime | None = None) -> tuple[date, date]:

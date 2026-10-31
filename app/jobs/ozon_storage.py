@@ -1,9 +1,9 @@
 import asyncio
-import logging
 from datetime import UTC, datetime
 
 from app.container import ozon_storage_service
 from app.core.constants import OZON_STORAGE
+from app.core.logging_config import tagged_logger
 from app.dto.ozon_logistics import moscow_day
 from app.dto.ozon_storage import StorageSyncResult
 from app.infrastructure.async_http import store_context
@@ -11,7 +11,7 @@ from app.infrastructure.async_resources import AsyncResources
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.jobs import async_locks
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "ozon", "ozon_storage")
 
 
 async def sync_all(stores: tuple[str, ...], resources: AsyncResources) -> StorageSyncResult:

@@ -33,6 +33,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Каталог задач, названия и подписи расписаний | `app/core/constants.py`, `app/jobs/catalog.py`, [метаданные](background-jobs.md#метаданные-каталога-задач) |
 | Автоматическое расписание, повторы и восстановление | `app/jobs/worker.py`, `app/jobs/scheduling.py`, `app/repositories/job_schedules.py`, [контракт планировщика](background-jobs.md) |
 | Локальный запуск сайта и загрузчика одной командой | `run.py`, `app/development.py`, `app/infrastructure/process_job.py`, [запуск и остановка](background-jobs.md#запуск) |
+| Логирование и просмотр логов FastAPI и планировщика | `app/core/logging_config.py`, `deploy/observability/`, [правила записи логов](../.agents/skills/checkstock-logging/SKILL.md), [локальный стенд](local-observability.md), [серверный Compose](server-observability.md) |
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |

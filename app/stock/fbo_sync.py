@@ -1,16 +1,16 @@
 import asyncio
-import logging
 from pathlib import Path
 
 from sqlalchemy import select
 
 from app.application.fbo_stock import FboStockService
+from app.core.logging_config import tagged_logger
 from app.dto.fbo_stock import FboTarget
 from app.infrastructure.async_database import AsyncDatabase, table_for
 from app.infrastructure.fbo_stock_repository import FboStockRepository
 from app.infrastructure.orm import InboundSupplySnapshotRecord
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "stock", "fbo_sync")
 
 
 async def reconcile_saved(database: AsyncDatabase) -> None:

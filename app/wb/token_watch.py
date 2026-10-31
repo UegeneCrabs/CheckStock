@@ -1,11 +1,11 @@
-import logging
 from datetime import UTC, datetime, timedelta
 
 from app import db
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "token_watch")
 
 WARN_DAYS = 7
 

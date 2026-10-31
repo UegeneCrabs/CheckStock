@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -14,12 +13,13 @@ from app.core.constants import (
     JobStatus,
     JobTrigger,
 )
+from app.core.logging_config import log_tags, tagged_logger
 from app.dto.orders import OrderSyncResult
 from app.jobs import locks as sync_locks
 
 MAX_SYNC_ERROR_LENGTH = SCHEDULER.max_error_length
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "tracking")
 
 
 def _now() -> datetime:
@@ -96,7 +96,7 @@ def _start_run(name: str, trigger: str, *, required: bool = False) -> tuple[str,
     except Exception:
         if required:
             raise
-        logger.exception("sync_job_start_tracking_failed job=%s", name)
+        logger.exception("sync_job_start_tracking_failed job=%s", name, extra=log_tags(name))
     return run_id, started_clock
 
 
@@ -112,7 +112,7 @@ def queue_tracked(name: str, callback: Callable[[], object]) -> str:
         try:
             _finish_run(name, run_id, started_clock, callback)
         except Exception:
-            logger.exception("manual_sync_failed job=%s", name)
+            logger.exception("manual_sync_failed job=%s", name, extra=log_tags(name))
         finally:
             handle.close()
 
@@ -149,7 +149,7 @@ def _finish_run(name: str, run_id: str, started_clock: float, callback: Callable
                 error=exception_error(error),
             )
         except Exception:
-            logger.exception("sync_job_failure_tracking_failed job=%s", name)
+            logger.exception("sync_job_failure_tracking_failed job=%s", name, extra=log_tags(name))
         raise
 
     error = result_error(result)
@@ -164,7 +164,7 @@ def _finish_run(name: str, run_id: str, started_clock: float, callback: Callable
             error=error,
         )
     except Exception:
-        logger.exception("sync_job_success_tracking_failed job=%s", name)
+        logger.exception("sync_job_success_tracking_failed job=%s", name, extra=log_tags(name))
     return result
 
 
@@ -173,4 +173,4 @@ def set_next_run(name: str, delay_seconds: float) -> None:
     try:
         db.record_sync_job_next_run(name, next_run.isoformat(), reschedule=True)
     except Exception:
-        logger.exception("sync_job_next_run_tracking_failed job=%s", name)
+        logger.exception("sync_job_next_run_tracking_failed job=%s", name, extra=log_tags(name))

@@ -1,4 +1,3 @@
-import logging
 from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
@@ -6,6 +5,7 @@ from pydantic import ValidationError
 from app.access.security import Pbkdf2PasswordService
 from app.application.identity import IdentityService
 from app.config import settings
+from app.core.logging_config import tagged_logger
 from app.dto.identity import (
     CreateUserCommand,
     Credentials,
@@ -20,7 +20,7 @@ from app.infrastructure.database import database_for_path
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.repositories import core
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "access", "auth")
 
 SEED_PATH = settings.admin_seed_path
 SESSION_COOKIE = "paketa_session"

@@ -39,6 +39,7 @@ services:
       CHECKSTOCK_DB_TIMEOUT_SECONDS: ${CHECKSTOCK_DB_TIMEOUT_SECONDS:-30}
       CHECKSTOCK_DB_BUSY_TIMEOUT_MS: ${CHECKSTOCK_DB_BUSY_TIMEOUT_MS:-30000}
       CHECKSTOCK_LOG_LEVEL: ${CHECKSTOCK_LOG_LEVEL:-INFO}
+      CHECKSTOCK_LOG_FILE: /app/data/logs/app.log
       CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS: ${CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS:-1000}
       CHECKSTOCK_BITRIX_WEBHOOK_URL: ${CHECKSTOCK_BITRIX_WEBHOOK_URL:-}
       CHECKSTOCK_BITRIX_DIALOG_ID: ${CHECKSTOCK_BITRIX_DIALOG_ID:-}
@@ -125,6 +126,7 @@ services:
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
       - database-backups:/app/data/backups/database
+      - checkstock-logs:/app/data/logs
     stop_grace_period: 60s
 
   scheduler:
@@ -136,7 +138,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      CHECKSTOCK_LOG_FILE: /app/data/logs/scheduler.log
     volumes: *app-volumes
     command: ["python", "-m", "app.jobs.worker"]
     healthcheck:
@@ -175,3 +179,4 @@ volumes:
   postgres-data:
   yandex-finance-credentials:
   database-backups:
+  checkstock-logs:

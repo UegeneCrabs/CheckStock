@@ -1,6 +1,5 @@
 """Server-side product joins and filtering for common analyst questions."""
 
-import logging
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated, Literal
@@ -14,12 +13,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from app import db
 from app.agents.product_analysis import covered_articles, evaluate, manager_key, number
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.identity import SectionName
 from app.web.routers.agent_analytics import Employee
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "agent_product_analysis")
 SCENARIOS = (
     "stock_without_orders",
     "turnover_drop",

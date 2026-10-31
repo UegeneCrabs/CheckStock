@@ -94,12 +94,21 @@ def stop_services(children: list[ServiceProcess]) -> None:
         child.process.wait(timeout=DEVELOPMENT.force_wait_seconds)
 
 
+def service_environment(service: LocalService) -> dict[str, str]:
+    environment = os.environ.copy()
+    if log_file := environment.get("CHECKSTOCK_LOG_FILE", "").strip():
+        filename = "app.log" if service == LocalService.WEB else "scheduler.log"
+        environment["CHECKSTOCK_LOG_FILE"] = str(Path(log_file).with_name(filename))
+    return environment
+
+
 def start_service(command: ServiceCommand, root: Path) -> ServiceProcess:
     job = WindowsProcessJob() if sys.platform == "win32" else None
     try:
         process = subprocess.Popen(
             command.arguments,
             cwd=root,
+            env=service_environment(command.service),
             stdin=subprocess.PIPE,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
             start_new_session=sys.platform != "win32",

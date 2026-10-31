@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ftplib
 import json
-import logging
 import re
 import threading
 from collections.abc import Mapping, Sequence
@@ -13,9 +12,10 @@ from typing import Any
 
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.ff_import import google_service_account
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "exports", "ftp")
 
 SOURCE_SPREADSHEET_ID = "1q0WL6OB3Edh2O1ogqx7CK3MAij3O6xjD6gE0i3q3qEY"
 SOURCE_SHEETS = {

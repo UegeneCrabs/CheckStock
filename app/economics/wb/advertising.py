@@ -1,16 +1,16 @@
-import logging
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.economics.wb import campaigns as advertising_campaigns
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "wb", "advertising")
 
 MARKETPLACE = "WB"
 DEFAULT_PERIOD_DAYS = 7

@@ -1,12 +1,11 @@
 """Read-only standard WB costs enriched with local calculator inputs."""
 
-import logging
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.access.resources import accessible_stores
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.wb_standard_costs import ExportItem, ExportRequest, Reports, StoreReport
 from app.dto.wb_standard_costs import ExportRow as ExportRow
@@ -17,7 +16,7 @@ from app.web.templating import fill_template, render_page
 
 router = APIRouter()
 API = "/api/unit-economics-1c/reports/standard-costs"
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "wb", "wb_standard_costs")
 
 
 def load_reports(stores: list[str] | tuple[str, ...]) -> Reports:

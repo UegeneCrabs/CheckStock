@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import socket
@@ -18,10 +17,11 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from app.config import BASE_DIR, settings
+from app.core.logging_config import tagged_logger
 from app.jobs import locks
 from app.wb import storefront_session
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "storefront_browser")
 LOCK_WAIT_SECONDS = 150
 FAILURE_COOLDOWN_SECONDS = 120
 

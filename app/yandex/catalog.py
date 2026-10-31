@@ -1,13 +1,13 @@
-import logging
 from datetime import UTC, datetime
 
 from app import db
+from app.core.logging_config import log_tags, tagged_logger
 from app.core.stores import STORES
 from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
 from app.yandex.accounts import resolve_business_id
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "yandex", "catalog")
 
 MARKETPLACE = "YANDEX MARKET"
 
@@ -90,7 +90,7 @@ def sync_store(store_slug: str) -> dict:
     yandex_economics.save_sources(store_slug, sources, updated_at=now)
 
     report = {"total": len(items), "archived": len(archived), "no_barcode": no_barcode, **result}
-    logger.debug("Каталог Яндекса %s: %s", _store_label(store_slug), report)
+    logger.debug("Каталог Яндекса %s: %s", _store_label(store_slug), report, extra=log_tags(store_slug))
     return report
 
 
@@ -106,7 +106,9 @@ def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
             report[slug] = {"ok": True, **sync_store(slug)}
             db.record_sync_health(slug, MARKETPLACE, "catalog", True, None, _now())
         except ya_api.YandexApiError as e:
-            logger.error("Яндекс %s: каталог не выгружен — %s", _store_label(slug), e.friendly)
+            logger.error(
+                "Яндекс %s: каталог не выгружен — %s", _store_label(slug), e.friendly, extra=log_tags(slug)
+            )
             report[slug] = {"ok": False, "error": e.friendly}
             db.record_sync_health(slug, MARKETPLACE, "catalog", False, e.friendly, _now())
         except Exception as e:
@@ -115,6 +117,7 @@ def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
                 _store_label(slug),
                 type(e).__name__,
                 e,
+                extra=log_tags(slug),
             )
             report[slug] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
             db.record_sync_health(slug, MARKETPLACE, "catalog", False, f"{type(e).__name__}: {e}", _now())

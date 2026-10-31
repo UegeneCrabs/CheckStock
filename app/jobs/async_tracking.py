@@ -1,17 +1,17 @@
 import asyncio
-import logging
 from datetime import UTC, datetime
 from time import monotonic
 
 from app.core.constants import (
     TIME,
 )
+from app.core.logging_config import log_tags, tagged_logger
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import async_locks, settings
 from app.jobs.scheduling import AsyncBackgroundJob
 from app.jobs.tracking import exception_error
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "async_tracking")
 
 
 async def queue_tracked(job: AsyncBackgroundJob, resources: AsyncResources) -> str:
@@ -35,7 +35,7 @@ async def queue_tracked(job: AsyncBackgroundJob, resources: AsyncResources) -> s
             raise
         except Exception as exc:
             error = exception_error(exc)
-            logger.exception("manual_sync_failed job=%s", job.name)
+            logger.exception("manual_sync_failed job=%s", job.name, extra=log_tags(job.name))
 
     async def finish(task: asyncio.Task[None]) -> None:
         try:

@@ -1,15 +1,14 @@
-import logging
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.core.constants import WebErrorCode
+from app.core.logging_config import tagged_logger
 from app.infrastructure.stock_page_repository import StockPageRepository
 from app.web.client_page import client_page
 from app.web.stock_scope import stock_scope
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "stock_pages")
 
 
 @router.get("/stock", response_class=HTMLResponse)

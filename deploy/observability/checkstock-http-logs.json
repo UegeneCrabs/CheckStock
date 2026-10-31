@@ -1,0 +1,713 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "type": "link",
+      "title": "Обзор",
+      "url": "/d/checkstock-local-logs/checkstock-local-logs",
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "type": "link",
+      "title": "Все логи",
+      "url": "/d/checkstock-log-search/checkstock-log-search",
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "type": "link",
+      "title": "Фоновые задачи",
+      "url": "/d/checkstock-scheduler-logs/checkstock-scheduler-logs",
+      "targetBlank": false,
+      "icon": "external link"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Total number of requests in the selected time range ($__range).\n\nUpdates automatically when you adjust the Grafana time window.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\"[$__range])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Записанных запросов",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Total number of requests in the selected time range ($__range).\n\nUpdates automatically when you adjust the Grafana time window.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\" | http_status=~\"4..\" [$__range])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Ответов 4xx",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Total number of requests in the selected time range ($__range).\n\nUpdates automatically when you adjust the Grafana time window.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\" | http_status=~\"5..\" [$__range])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Ответов 5xx",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Log event count per severity level over time. Sudden spike in error/warn → correlate with RPS and P99 panels above.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (http_status) (count_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\"[$__interval]))",
+          "legendFormat": "{{http_status}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Записанные запросы по статусу",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Среднее время завершённых HTTP-запросов в каждом интервале графика, мс.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "avg_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\" | regexp \"duration_ms=(?P<duration_ms>[0-9.]+)\" | unwrap duration_ms [$__interval]) by ()",
+          "legendFormat": "",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Среднее время записанных запросов",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Среднее время завершённых запросов по методу и маршруту за выбранный период. Показаны все ручки с запросами; учитываются фильтры страницы.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 15
+      },
+      "id": 9,
+      "options": {
+        "displayMode": "lcd",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 32,
+        "minVizHeight": 20,
+        "minVizWidth": 8,
+        "namePlacement": "left",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true,
+          "limit": 5000
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sort_desc(avg_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\" | regexp \"method=(?P<method>[^ ]+) path=(?P<path>[^ ]+)(?: route=(?P<route>[^ ]+))? status=[0-9]+ duration_ms=(?P<duration_ms>[0-9.]+)\" | label_format endpoint=\"{{if .route}}{{.route}}{{else}}{{.path}}{{end}}\" | unwrap duration_ms [$__range]) by (method, endpoint))",
+          "legendFormat": "{{method}} {{endpoint}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Среднее время по каждой HTTP-ручке",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Live log stream from the backend service. Click a line to expand details and follow the TraceID link to open the full trace in Tempo.",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 17
+      },
+      "id": 6,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showControls": false,
+        "showLabels": true,
+        "showTime": false,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "{service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" | regexp \"(?P<http_event>request_completed) method=\" | http_event=\"request_completed\" |= \"$search\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Журнал HTTP-запросов",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Live log stream from the backend service. Click a line to expand details and follow the TraceID link to open the full trace in Tempo.",
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 24,
+        "h": 9
+      },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showControls": false,
+        "showLabels": true,
+        "showTime": false,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "{service_name=\"app\",level=~\"ERROR|CRITICAL\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"$search\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Исключения FastAPI",
+      "type": "logs"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": [
+    "checkstock",
+    "local",
+    "loki"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "http_status",
+        "label": "HTTP-статус",
+        "type": "query",
+        "query": "label_values({service_name=\"app\",record_type=~\"log|\"}, http_status)",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "datasource": {
+          "type": "loki",
+          "uid": "checkstock-loki"
+        }
+      },
+      {
+        "name": "level",
+        "label": "Уровень",
+        "type": "custom",
+        "query": "DEBUG,INFO,WARNING,ERROR,CRITICAL",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 0,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "logger",
+        "label": "Модуль",
+        "type": "query",
+        "query": "label_values({service_name=\"app\",record_type=~\"log|\"}, logger)",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "datasource": {
+          "type": "loki",
+          "uid": "checkstock-loki"
+        }
+      },
+      {
+        "name": "tag",
+        "label": "Теги",
+        "type": "query",
+        "query": "label_values({service_name=~\"app\",record_type=\"tag_catalog\"}, tag)",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "^",
+        "datasource": {
+          "type": "loki",
+          "uid": "checkstock-loki"
+        }
+      },
+      {
+        "name": "search",
+        "label": "Текст",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CheckStock — HTTP-запросы",
+  "uid": "checkstock-http-logs",
+  "version": 1,
+  "weekStart": "",
+  "description": "HTTP-статусы и длительность только для запросов, записанных FastAPI в лог."
+}

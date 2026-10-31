@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass, replace
@@ -9,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.exports import stock_sheet_inbound
 from app.ff_import import google_service_account
@@ -17,7 +17,7 @@ from app.repositories import stock_sheet_export as repository
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "exports", "stock_sheet")
 
 RIMILI_SPREADSHEET_URL = (
     "https://docs.google.com/spreadsheets/d/1O3LmZuRQPr_sO4-JX87g_6gfuK2hdM-2yjaPXppPKXo/edit?gid=0#gid=0"

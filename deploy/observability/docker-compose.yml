@@ -1,0 +1,42 @@
+name: checkstock-observability
+
+services:
+  loki:
+    image: grafana/loki:3.7.0
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./loki.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+  alloy:
+    image: grafana/alloy:v1.11.3
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - ../../data/logs:/var/log/checkstock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/checkstock-logs.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasource.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
+      - ./grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/checkstock.yaml:ro
+      - ./grafana-dashboard.json:/var/lib/grafana/dashboards/checkstock-logs.json:ro
+      - ./checkstock-log-search.json:/var/lib/grafana/dashboards/checkstock-log-search.json:ro
+      - ./checkstock-http-logs.json:/var/lib/grafana/dashboards/checkstock-http-logs.json:ro
+      - ./checkstock-scheduler-logs.json:/var/lib/grafana/dashboards/checkstock-scheduler-logs.json:ro
+    depends_on:
+      - loki
+
+volumes:
+  loki-data:
+  alloy-data:
+  grafana-data:

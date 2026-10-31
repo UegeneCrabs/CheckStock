@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import math
 import random
 from collections.abc import Awaitable, Callable, Mapping
@@ -15,9 +14,10 @@ from app.core.constants import (
     OZON_API_LIMITS,
     HTTPStatus,
 )
+from app.core.logging_config import tagged_logger
 from app.dto.ozon_limits import OzonRateFeedback
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "infrastructure", "async_http")
 store_context: ContextVar[str] = ContextVar("async_http_store", default="")
 
 

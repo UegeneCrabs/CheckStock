@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -14,6 +13,7 @@ from app.config import settings
 from app.container import ApplicationContainer
 from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE, JOBS
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.dto.wb_hourly_prices import WbHourlyCollection
 from app.economics.sources import ozon as ozon_source_sync
@@ -57,7 +57,7 @@ from app.yandex import product_novelty as ya_product_novelty
 from app.yandex import sync as ya_sync
 from app.yandex import unit_economics_sync as ya_unit_sync
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "background")
 
 SyncTarget = tuple[str, Callable[[], object]]
 

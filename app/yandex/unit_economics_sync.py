@@ -1,7 +1,6 @@
 """Read Yandex reports into a separate cache without changing the existing ledgers."""
 
 import json
-import logging
 import math
 import time
 import urllib.parse
@@ -17,6 +16,7 @@ from threading import Lock
 
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.jobs import locks as sync_locks
 from app.orders.normalizers import yandex as order_normalizer
@@ -25,7 +25,7 @@ from app.repositories import yandex_report_limits as report_limits
 from app.yandex import api, tokens
 from app.yandex.accounts import resolve_business_id
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "yandex", "unit_economics_sync")
 SYNC_INTERVAL_SECONDS = {
     "orders": 15 * 60,
     "reputation": 24 * 60 * 60,

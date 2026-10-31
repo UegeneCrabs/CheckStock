@@ -1,5 +1,4 @@
 import json
-import logging
 import socket
 import threading
 import time
@@ -10,9 +9,10 @@ from hashlib import sha256
 
 from app.config import settings
 from app.core.barcodes import ordered_barcodes
+from app.core.logging_config import tagged_logger
 from app.wb import storefront_session
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "api")
 
 FBS_BASE = "https://marketplace-api.wildberries.ru"
 SUPPLIES_BASE = "https://supplies-api.wildberries.ru"
