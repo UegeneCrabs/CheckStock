@@ -16,6 +16,11 @@ old_compose_file=deploy/docker-compose.yml
 [[ -f "$old_compose_file" ]] || old_compose_file=docker-compose.yml
 [[ -f "$old_compose_file" ]] || { echo 'Missing current Docker Compose file' >&2; exit 1; }
 old_compose=(docker compose --env-file .env -f "$old_compose_file")
+old_observability=false
+if [[ -f deploy/docker-compose.observability.yml ]] && grep -q '^GRAFANA_ADMIN_PASSWORD=.' .env; then
+  old_compose+=(-f deploy/docker-compose.observability.yml)
+  old_observability=true
+fi
 compose=("${old_compose[@]}")
 command -v docker >/dev/null || { echo 'Docker is not installed on the server' >&2; exit 1; }
 docker compose version >/dev/null || { echo 'Docker Compose is unavailable on the server' >&2; exit 1; }
@@ -115,10 +120,24 @@ watchdog_running() {
   return 1
 }
 
+service_running() {
+  local service="$1" id
+  id="$("${compose[@]}" ps -a -q "$service")"
+  if [[ -n "$id" && "$(docker inspect --format '{{.State.Running}}' "$id")" == true ]]; then
+    echo "Service $service is running" >&2
+    return 0
+  fi
+  show_service_failure "$service" 'container is not running'
+  return 1
+}
+
 rollback() {
   local status=$? rollback_failed=0
   trap - ERR
   echo "Deployment failed during $deploy_stage (exit status $status); restoring application commit $old_sha" >&2
+  if [[ "$old_observability" == false ]]; then
+    "${compose[@]}" stop grafana alloy loki </dev/null || true
+  fi
   git checkout --detach "$old_sha" || rollback_failed=1
   if ((rollback_failed == 0)); then
     compose=("${old_compose[@]}")
@@ -128,12 +147,21 @@ rollback() {
     "${compose[@]}" build app </dev/null || rollback_failed=1
   fi
   if ((rollback_failed == 0)); then
-    "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null || rollback_failed=1
+    if [[ "$old_observability" == true ]]; then
+      "${compose[@]}" up -d --no-deps app scheduler watchdog loki grafana alloy </dev/null || rollback_failed=1
+    else
+      "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null || rollback_failed=1
+    fi
   fi
   if ((rollback_failed == 0)); then
     wait_healthy app 24 || rollback_failed=1
     wait_healthy scheduler 30 || rollback_failed=1
     watchdog_running || rollback_failed=1
+    if [[ "$old_observability" == true ]]; then
+      service_running loki || rollback_failed=1
+      service_running alloy || rollback_failed=1
+      wait_healthy grafana 24 || rollback_failed=1
+    fi
   fi
   if ((rollback_failed)); then
     echo "Rollback did not restore healthy services; inspect the server immediately" >&2
@@ -147,7 +175,7 @@ trap rollback ERR
 
 echo "Switching checkout to release $tag ($actual_sha)"
 git checkout --detach "$actual_sha"
-compose=(docker compose --env-file .env -f deploy/docker-compose.yml)
+compose=(docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml)
 deploy_stage='validation of release Compose configuration'
 echo 'Checking release Compose configuration'
 "${compose[@]}" config --quiet </dev/null
@@ -155,8 +183,8 @@ deploy_stage='release image build'
 echo 'Building release image on server'
 "${compose[@]}" build app </dev/null
 deploy_stage='container update'
-echo 'Updating app, scheduler and watchdog containers'
-"${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null
+echo 'Updating application and observability containers'
+"${compose[@]}" up -d --no-deps app scheduler watchdog loki grafana alloy </dev/null
 
 deploy_stage='app healthcheck'
 wait_healthy app 24
@@ -164,6 +192,10 @@ deploy_stage='scheduler healthcheck'
 wait_healthy scheduler 30
 deploy_stage='watchdog running check'
 watchdog_running
+deploy_stage='observability service checks'
+service_running loki
+service_running alloy
+wait_healthy grafana 24
 trap - ERR
 
 # Only completed CheckStock dumps are eligible for retention cleanup.
