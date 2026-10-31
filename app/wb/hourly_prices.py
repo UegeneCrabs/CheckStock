@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -12,6 +11,7 @@ from time import monotonic
 
 from app.application.ports import HourlyPriceWriter
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import log_tags, tagged_logger
 from app.dto.wb_hourly_prices import (
     WbCatalogItem,
     WbHourlyCollection,
@@ -22,7 +22,7 @@ from app.dto.wb_hourly_prices import (
     WbStorefrontSize,
 )
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "hourly_prices")
 
 
 def storefront_result_from_payload(response: dict) -> WbStorefrontResult:
@@ -179,13 +179,19 @@ class WbHourlyPriceService:
             try:
                 catalogs[store] = self.catalog_items(store)
             except Exception as error:
-                logger.warning("Почасовые цены WB: каталог недоступен, магазин=%s: %s", store, error)
+                logger.warning(
+                    "Почасовые цены WB: каталог недоступен, магазин=%s: %s",
+                    store,
+                    error,
+                    extra=log_tags(store),
+                )
                 reports.append(WbHourlyStoreReport(store_slug=store, ok=False, rows=0, error=str(error)))
             else:
                 logger.info(
                     "Почасовые цены WB: каталог загружен, магазин=%s, артикулов=%s",
                     store,
                     len(catalogs[store]),
+                    extra=log_tags(store),
                 )
         nm_ids = tuple(
             sorted(
@@ -245,7 +251,12 @@ class WbHourlyPriceService:
                     for seller_price in self.seller_prices(store, store_nm_ids):
                         seller_by_nm[seller_price.nm_id].append(seller_price)
             except Exception as error:
-                logger.warning("Почасовые цены WB: цены продавца недоступны, магазин=%s: %s", store, error)
+                logger.warning(
+                    "Почасовые цены WB: цены продавца недоступны, магазин=%s: %s",
+                    store,
+                    error,
+                    extra=log_tags(store),
+                )
                 seller_by_nm.clear()
             else:
                 logger.info(
@@ -253,6 +264,7 @@ class WbHourlyPriceService:
                     store,
                     len(store_nm_ids),
                     sum(len(sizes) for sizes in seller_by_nm.values()),
+                    extra=log_tags(store),
                 )
             observed_at = self.clock().astimezone(UTC)
             hour = observed_at.replace(minute=0, second=0, microsecond=0).isoformat()
@@ -264,7 +276,12 @@ class WbHourlyPriceService:
                     )
                 }
             except Exception as error:
-                logger.warning("Почасовые цены WB: оборот недоступен, магазин=%s: %s", store, error)
+                logger.warning(
+                    "Почасовые цены WB: оборот недоступен, магазин=%s: %s",
+                    store,
+                    error,
+                    extra=log_tags(store),
+                )
                 daily_turnover = {}
             rows: list[WbHourlyPriceObservation] = []
             missing = 0
@@ -309,7 +326,9 @@ class WbHourlyPriceService:
             try:
                 saved = self.writer.upsert(rows)
             except Exception as error:
-                logger.exception("Почасовые цены WB: запись не удалась, магазин=%s", store)
+                logger.exception(
+                    "Почасовые цены WB: запись не удалась, магазин=%s", store, extra=log_tags(store)
+                )
                 reports.append(WbHourlyStoreReport(store_slug=store, ok=False, rows=0, error=str(error)))
                 continue
             affected = tuple(sorted({item.article.partition(" / ")[0] for item in items} & failed))
@@ -321,6 +340,7 @@ class WbHourlyPriceService:
                 sum(row.spp_percent is not None for row in rows),
                 missing,
                 len(affected),
+                extra=log_tags(store),
             )
             reports.append(
                 WbHourlyStoreReport(

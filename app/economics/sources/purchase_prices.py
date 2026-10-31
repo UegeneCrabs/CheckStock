@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import logging
 import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
 from app import db
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.ff_import import google_service_account
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "sources", "purchase_prices")
 
 SOURCE_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/1q0WL6OB3Edh2O1ogqx7CK3MAij3O6xjD6gE0i3q3qEY/edit?gid=1248315136"

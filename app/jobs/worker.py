@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import json
-import logging
 import os
 import signal
 from datetime import UTC, datetime
@@ -13,7 +12,7 @@ from app.config import settings
 from app.core.constants import (
     SCHEDULER,
 )
-from app.core.logging_config import configure_logging
+from app.core.logging_config import configure_logging, tagged_logger
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs.background import _initialize_application, scheduled_jobs
 from app.jobs.scheduling import run_background_job, wait_for_stop
@@ -22,7 +21,7 @@ from app.repositories.core import get_connection
 HEARTBEAT_INTERVAL_SECONDS = SCHEDULER.heartbeat_interval_seconds
 HEARTBEAT_MAX_AGE_SECONDS = SCHEDULER.heartbeat_max_age_seconds
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "worker")
 
 
 def heartbeat_path() -> Path:

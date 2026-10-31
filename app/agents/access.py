@@ -2,7 +2,6 @@
 
 import hashlib
 import hmac
-import logging
 import os
 import secrets
 import tempfile
@@ -12,7 +11,9 @@ from pathlib import Path
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
-logger = logging.getLogger(__name__)
+from app.core.logging_config import tagged_logger
+
+logger = tagged_logger(__name__, "agents", "access")
 
 
 class AgentCredential(BaseModel):

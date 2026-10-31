@@ -1,4 +1,3 @@
-import logging
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -10,12 +9,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from app import db
+from app.core.logging_config import tagged_logger
 from app.dto.yandex_prices import PriceConfirmation, PricePreview
 from app.web.routers.yandex_economics import authorize
 from app.yandex import api, prices
 
 router = APIRouter(prefix="/api/unit-economics-1c/yandex-market/prices")
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "yandex", "yandex_prices")
 EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ym-price")
 LOCK = Lock()
 PREVIEW_TTL = 600

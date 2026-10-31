@@ -1,16 +1,16 @@
 import asyncio
-import logging
 from datetime import UTC, datetime
 
 from app.container import ozon_logistics_service
 from app.core.constants import OZON_LOGISTICS
+from app.core.logging_config import tagged_logger
 from app.dto.ozon_logistics import LogisticsSyncResult, moscow_day
 from app.infrastructure.async_http import store_context
 from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import async_locks
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "ozon", "ozon_logistics")
 
 
 async def sync_all(stores: tuple[str, ...], resources: AsyncResources) -> LogisticsSyncResult:

@@ -1,17 +1,17 @@
 import json
-import logging
 from datetime import UTC, datetime, timedelta
 
 from app.access.authentication import is_active_user
 from app.access.resources import accessible_stores
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.dto.identity import coerce_user
 from app.integrations.supply_arrivals_sheet import SupplySheetError, fetch_arrivals
 from app.jobs import locks
 from app.repositories import supply_arrivals as repository
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "stock", "supply_arrivals")
 JOB_NAME = "supply_arrivals_sync"
 
 

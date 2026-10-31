@@ -1,6 +1,5 @@
 """Small read-only API for ChatGPT Actions, reusing the website's reports and active accounts."""
 
-import logging
 import math
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
@@ -16,6 +15,7 @@ from app.access.resources import accessible_stores
 from app.agents.access import resolve_credential
 from app.config import settings
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.identity import SectionName, User, UserId
 from app.web.routers.unit_economics import _unit_economics_1c_unit_profit_report_data
@@ -23,7 +23,7 @@ from app.web.routers.unit_economics import _unit_economics_1c_unit_profit_report
 PREFIX = "/api/agent/v1"
 router = APIRouter(prefix=PREFIX, tags=["Employee analytics"])
 bearer = HTTPBearer(auto_error=False, scheme_name="EmployeeApiKey")
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "agent_analytics")
 
 
 async def employee(

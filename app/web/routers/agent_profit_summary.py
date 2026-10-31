@@ -1,6 +1,5 @@
 """Compact store summaries from the website report, before product pagination."""
 
-import logging
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated
@@ -14,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app import db
 from app.agents.product_analysis import covered_articles, number
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.identity import SectionName
 from app.web.routers.agent_analytics import Employee
@@ -23,7 +23,7 @@ from app.web.routers.unit_economics import (
 )
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "agent_profit_summary")
 
 
 class SummaryQuery(BaseModel):

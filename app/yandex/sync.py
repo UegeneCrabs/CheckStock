@@ -1,7 +1,7 @@
-import logging
 from datetime import UTC, datetime
 
 from app import db
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.repositories.stock_snapshot import replace_snapshot
 from app.stock.fulfillment_names import fulfillment_lookup, normalize
@@ -9,7 +9,7 @@ from app.yandex import api as ya_api
 from app.yandex import tokens as ya_tokens
 from app.yandex.accounts import resolve_business_id
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "yandex", "sync")
 
 MARKETPLACE = "YANDEX MARKET"
 _DB_LOCK = db.WRITE_LOCK

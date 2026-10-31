@@ -20,6 +20,9 @@
 - [Миграция SQLite в PostgreSQL](postgresql-migration.md)
 - [Выпуск версии и развёртывание на сервере](releases.md)
 - [Ежедневные резервные копии БД в Google Диск](database-backups.md)
+- [Локальный просмотр логов: Grafana, Loki и Alloy](local-observability.md)
+- [Серверный Compose для Grafana, Loki и Alloy](server-observability.md)
+- [Скилл агента для логирования приложения](../.agents/skills/checkstock-logging/SKILL.md)
 - [Скилл агента для выпуска и диагностики деплоя](../.agents/skills/checkstock-deploy/SKILL.md)
 - [Параметры асинхронного PostgreSQL и SSL](postgresql-migration.md#async-order-connections)
 

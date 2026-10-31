@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -8,6 +7,7 @@ from urllib.parse import urlsplit
 
 from app.core.constants import Marketplace
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import PROJECT_STORE_ALIASES, STORES
 from app.exports import fbo_transit
 from app.exports import stock_sheet as legacy
@@ -16,7 +16,7 @@ from app.infrastructure.legacy_google_export import schedule_managed
 from app.jobs import locks as sync_locks
 from app.repositories import project_sheet_export as repository
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "exports", "project_sheet")
 
 MARKETPLACES = repository.MARKETPLACES
 EXPORT_KINDS = (*legacy.EXPORT_KINDS, "fbo_transit")

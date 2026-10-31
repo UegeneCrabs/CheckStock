@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
@@ -10,11 +9,12 @@ from threading import Lock
 
 from app import db
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "funnel_orders")
 
 ENDPOINT = f"{wb_api.ANALYTICS_BASE}/api/analytics/v3/sales-funnel/products"
 PAGE_SIZE = 1_000

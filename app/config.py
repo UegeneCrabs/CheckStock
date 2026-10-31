@@ -211,6 +211,7 @@ class Settings(BaseModel):
     yandex_tokens_path: Path
     google_service_account_path: Path
     log_level: str
+    log_file: Path | None = None
     slow_request_threshold_ms: int = Field(ge=1)
     background_sync_enabled: bool
     yandex_finance_enabled: bool = False
@@ -327,6 +328,7 @@ class Settings(BaseModel):
                 )
             ),
             log_level=log_level,
+            log_file=Path(log_file) if (log_file := os.getenv("CHECKSTOCK_LOG_FILE", "").strip()) else None,
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
             yandex_finance_enabled=_env_bool("CHECKSTOCK_YANDEX_FINANCE_ENABLED", False),

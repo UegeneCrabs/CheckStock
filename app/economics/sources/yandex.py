@@ -1,14 +1,13 @@
 """Import the single YM sheet using explicit store and ARTICLE identifiers."""
 
-import logging
-
 from app import db
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.economics.sources import purchase_prices as source
 from app.repositories import yandex_source_values as repository
 from app.yandex import economics
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "sources", "yandex")
 MARKETPLACE = "YANDEX MARKET"
 SHEET_TITLE = "YM"
 SOURCE_COLUMNS = {

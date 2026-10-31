@@ -1,14 +1,14 @@
 """Change the business default seller price; never write storefront estimates."""
 
-import logging
 import time
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.core.logging_config import tagged_logger
 from app.repositories import yandex_storefront
 from app.yandex import api, economics, tokens
 from app.yandex.accounts import resolve_business_id
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "yandex", "prices")
 POLL_ATTEMPTS = 60
 POLL_SECONDS = 5
 PRICE_FIELDS = ("value", "currencyId", "discountBase", "minimumForBestseller")

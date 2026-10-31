@@ -1,4 +1,3 @@
-import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 
@@ -8,6 +7,7 @@ from app.core.constants import (
     OrderScheme,
     OrderSyncStage,
 )
+from app.core.logging_config import tagged_logger
 from app.dto.orders import (
     OrderPeriod,
     OrderSaveBatch,
@@ -27,7 +27,7 @@ from app.orders.normalizers import ozon
 from app.ozon import tokens as ozon_tokens
 from app.ozon.async_api import AsyncSellerApi
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "orders", "ozon", "ozon_async")
 
 
 async def record_failure(batch: OrderSaveBatch, resources: AsyncResources) -> StoreOrderSyncResult:

@@ -1,13 +1,13 @@
 """Cached Ozon buyer review scores, grouped by marketplace SKU."""
 
-import logging
 from collections import defaultdict
 from datetime import UTC, datetime
 
+from app.core.logging_config import tagged_logger
 from app.ozon import api, tokens
 from app.repositories.core import get_connection
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "ozon", "reputation")
 
 
 def get_store(store_slug: str) -> dict[str, dict]:
@@ -39,9 +39,7 @@ def sync_store(store_slug: str) -> dict:
             scores[sku].append(rating)
 
     catalog_skus = {
-        str(row["mp_sku"])
-        for row in db.get_catalog_items(store_slug, "OZON")
-        if row.get("mp_sku")
+        str(row["mp_sku"]) for row in db.get_catalog_items(store_slug, "OZON") if row.get("mp_sku")
     }
 
     now = datetime.now(UTC).isoformat()

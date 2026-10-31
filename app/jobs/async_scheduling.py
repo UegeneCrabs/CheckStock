@@ -7,12 +7,13 @@ from app.core.constants import (
     SCHEDULER,
     TIME,
 )
+from app.core.logging_config import log_tags, tagged_logger
 from app.infrastructure.async_resources import AsyncResources
 from app.jobs import async_locks, scheduling
 from app.jobs.scheduling import AsyncBackgroundJob
 from app.jobs.tracking import exception_error
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "async_scheduling")
 
 
 async def run_scheduled_step(job: AsyncBackgroundJob, resources: AsyncResources) -> datetime:
@@ -51,7 +52,9 @@ async def run_scheduled_step(job: AsyncBackgroundJob, resources: AsyncResources)
                 next_run_at=next_run,
                 attempt_number=retry,
             )
-            logger.warning("scheduled_run_interrupted job=%s attempt=%s", job.name, attempt)
+            logger.warning(
+                "scheduled_run_interrupted job=%s attempt=%s", job.name, attempt, extra=log_tags(job.name)
+            )
             return next_run
         if not enabled:
             next_run = scheduling._regular_next(job, now)
@@ -69,7 +72,9 @@ async def run_scheduled_step(job: AsyncBackgroundJob, resources: AsyncResources)
             error = result.error
         except Exception as exc:
             error = exception_error(exc)
-            logger.exception("background_job_failed job=%s attempt=%s", job.name, attempt)
+            logger.exception(
+                "background_job_failed job=%s attempt=%s", job.name, attempt, extra=log_tags(job.name)
+            )
         elapsed = monotonic() - started
         finished = scheduling._now()
         next_run, retry = scheduling._next_attempt(job, finished, attempt, error, elapsed)
@@ -89,5 +94,6 @@ async def run_scheduled_step(job: AsyncBackgroundJob, resources: AsyncResources)
             attempt,
             next_run.isoformat(),
             error,
+            extra=log_tags(job.name),
         )
         return next_run

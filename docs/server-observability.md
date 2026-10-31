@@ -1,0 +1,66 @@
+# Grafana, Loki и Alloy на сервере CheckStock
+
+Серверный стек добавляется к основному Docker Compose через
+`deploy/docker-compose.observability.yml`. Он запускает Grafana, Loki и Alloy
+в той же сети, что `app` и `scheduler`. FastAPI и планировщик пишут логи в
+общий именованный том `checkstock-logs`; Alloy читает этот том без доступа к
+Docker socket. Локальный стенд `deploy/observability/docker-compose.yml` остаётся
+отдельным проектом.
+
+## Запуск
+
+На Linux-сервере перейдите в корень актуального checkout CheckStock. В `.env`
+задайте `POSTGRES_PASSWORD` и новый длинный `GRAFANA_ADMIN_PASSWORD`. Настройки
+приложения и каталог `secrets/` подготовьте как для обычного серверного запуска.
+Если порт 3000 на сервере занят, задайте `GRAFANA_PORT` в `.env`.
+
+```bash
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml config --quiet
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml up -d --build
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml ps
+```
+
+Команда запускает PostgreSQL, `app`, `scheduler`, `watchdog`, Loki, Alloy и
+Grafana. Grafana доступна только на `127.0.0.1` сервера; Loki не публикует порт.
+Для доступа со своего компьютера откройте SSH-туннель, затем перейдите на
+`http://127.0.0.1:3300`:
+
+```bash
+ssh -L 3300:127.0.0.1:3000 user@server
+```
+
+Если изменён `GRAFANA_PORT`, замените правый порт в команде туннеля. Логин
+Grafana — `admin`, пароль — `GRAFANA_ADMIN_PASSWORD` из `.env`. После первого
+создания тома Grafana изменение этой переменной не меняет сохранённый пароль.
+
+## Проверка
+
+```bash
+curl -fsS http://127.0.0.1:3000/api/health
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml exec -T grafana curl -fsS http://loki:3100/ready
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml logs --tail=50 alloy grafana
+```
+
+Если изменён `GRAFANA_PORT`, замените порт в первой проверке. После появления
+логов откройте в Grafana дашборды CheckStock. `app` пишет в `app.log`, а
+`scheduler` — в `scheduler.log`; рядом создаются `app.tags.log` и
+`scheduler.tags.log` для выпадающего списка тегов. Новые данные появляются
+после событий в приложении или работы фоновой задачи.
+Страница HTTP-запросов показывает среднее время каждой ручки, по которой были
+запросы в выбранном периоде. Список содержит HTTP-метод и маршрут; график
+показывает среднее время по интервалам. Новые записи группируются по
+HTTP-методу и шаблону маршрута FastAPI (`route`), старые — по фактическому
+`path`. Ручки без запросов в периоде не отображаются.
+При уровне INFO записываются и быстрые успешные GET-запросы; проверки
+`/healthz`, `/readyz` и файлы `/static/` в этот журнал не входят.
+
+Обычный выпуск через `deploy/deploy-release.sh` использует основной Compose,
+где общий том логов и пути файлов закреплены за `app` и `scheduler`. Поэтому
+пересоздание этих сервисов не отключает сбор логов. Сервисы наблюдаемости
+остаются запущенными; при изменении их конфигурации повторите команду `up -d`
+с обоими Compose-файлами.
+
+Loki хранит записи семь дней в томе `loki-data`. Тома Grafana и Alloy также
+сохраняются между перезапусками. Исходные файлы в `checkstock-logs` Loki не
+очищает: следите за размером тома и настройте ротацию файлов до длительной
+эксплуатации. Не выполняйте `down --volumes`, если данные нужно сохранить.

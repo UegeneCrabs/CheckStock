@@ -1,15 +1,15 @@
-import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from app import db
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.repositories.stock_snapshot import replace_snapshot
 from app.stock.catalog_identity import barcodes as item_barcodes
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "sync")
 
 
 _DB_LOCK = db.WRITE_LOCK

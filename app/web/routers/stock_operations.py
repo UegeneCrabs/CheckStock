@@ -1,4 +1,3 @@
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
@@ -8,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from app import db
 from app.access.resources import has_store_marketplace, store_marketplace_pairs
 from app.core.constants import STOCK_READ, StockOperationFilter
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.ff_import import export as ff_export
 from app.stock.export_schemes import schemes_for
@@ -16,7 +16,7 @@ from app.web.downloads import _download_headers
 from app.web.stock_scope import stock_scope
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "stock_operations")
 
 
 def _history_kinds(kind: str) -> tuple[str, ...] | None:

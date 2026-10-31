@@ -1,12 +1,11 @@
-import logging
-
+from app.core.logging_config import tagged_logger
 from app.dto.orders import OzonArticleIndex
 from app.dto.ozon_advertising import AdvertisingSnapshot
 from app.ozon.advertising_normalizer import attach_articles
 from app.ozon.api import OzonApiError
 from app.ozon.async_api import AsyncSellerApi
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "ozon", "ozon_advertising_articles")
 
 
 class AdvertisingArticleResolver:

@@ -1,5 +1,4 @@
 import json
-import logging
 import math
 import time
 from collections import defaultdict
@@ -8,12 +7,13 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app import db
 from app.application.wb_product_rating import WbProductRatingService
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.wb_product_rating import WbRatingObservation
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "wb", "prices")
 
 MARKETPLACE = "WB"
 MAX_SELLER_DISCOUNT = 99

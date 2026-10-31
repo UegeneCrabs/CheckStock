@@ -1,0 +1,434 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "type": "link",
+      "title": "Обзор",
+      "url": "/d/checkstock-local-logs/checkstock-local-logs",
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "type": "link",
+      "title": "Все логи",
+      "url": "/d/checkstock-log-search/checkstock-log-search",
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "type": "link",
+      "title": "HTTP-запросы",
+      "url": "/d/checkstock-http-logs/checkstock-http-logs",
+      "targetBlank": false,
+      "icon": "external link"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Total number of requests in the selected time range ($__range).\n\nUpdates automatically when you adjust the Grafana time window.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"scheduler\",level=~\"$level\",logger=~\"$logger\",job=~\"$job\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"$search\"[$__range])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Записей планировщика",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Total number of requests in the selected time range ($__range).\n\nUpdates automatically when you adjust the Grafana time window.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({service_name=\"scheduler\",level=~\"$level\",logger=~\"$logger\",job=~\"$job\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"$search\" | level=~\"ERROR|CRITICAL\" [$__range])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Ошибок планировщика",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Log event count per severity level over time. Sudden spike in error/warn → correlate with RPS and P99 panels above.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 8
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (level) (count_over_time({service_name=\"scheduler\",level=~\"$level\",logger=~\"$logger\",job=~\"$job\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"$search\"[$__interval]))",
+          "legendFormat": "{{level}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "События по уровню",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "checkstock-loki"
+      },
+      "description": "Live log stream from the backend service. Click a line to expand details and follow the TraceID link to open the full trace in Tempo.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 18
+      },
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showControls": false,
+        "showLabels": true,
+        "showTime": false,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.4.0-20082909961",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "checkstock-loki"
+          },
+          "editorMode": "code",
+          "expr": "{service_name=\"scheduler\",level=~\"$level\",logger=~\"$logger\",job=~\"$job\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"$search\"",
+          "legendFormat": "",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Журнал фоновых задач",
+      "type": "logs"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": [
+    "checkstock",
+    "local",
+    "loki"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Задача",
+        "type": "query",
+        "query": "label_values({service_name=\"scheduler\",record_type=~\"log|\"}, job)",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "datasource": {
+          "type": "loki",
+          "uid": "checkstock-loki"
+        }
+      },
+      {
+        "name": "level",
+        "label": "Уровень",
+        "type": "custom",
+        "query": "DEBUG,INFO,WARNING,ERROR,CRITICAL",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 0,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "logger",
+        "label": "Модуль",
+        "type": "query",
+        "query": "label_values({service_name=\"scheduler\",record_type=~\"log|\"}, logger)",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "datasource": {
+          "type": "loki",
+          "uid": "checkstock-loki"
+        }
+      },
+      {
+        "name": "tag",
+        "label": "Теги",
+        "type": "query",
+        "query": "label_values({service_name=~\"scheduler\",record_type=\"tag_catalog\"}, tag)",
+        "hide": 0,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "^",
+        "datasource": {
+          "type": "loki",
+          "uid": "checkstock-loki"
+        }
+      },
+      {
+        "name": "search",
+        "label": "Текст",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CheckStock — фоновые задачи",
+  "uid": "checkstock-scheduler-logs",
+  "version": 1,
+  "weekStart": "",
+  "description": "Логи отдельного локального планировщика. Для появления данных нужен файл data/logs/scheduler.log."
+}

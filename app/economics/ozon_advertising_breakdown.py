@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from datetime import UTC, datetime, time
 from decimal import Decimal
 
@@ -15,6 +14,7 @@ from app.core.constants import (
     HTTPMethod,
     HTTPStatus,
 )
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.ozon_advertising import (
     AdvertisingCorrection,
@@ -42,7 +42,7 @@ from app.ozon.async_api import AsyncSellerApi
 from app.ozon.async_performance import AsyncPerformanceClient, PerformanceApiFailure
 from app.ozon.limit_identity import performance_identity
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "ozon", "ozon_advertising_breakdown")
 
 
 async def campaign_snapshot(

@@ -1,4 +1,3 @@
-import logging
 import time
 
 from fastapi import Request
@@ -8,12 +7,12 @@ from pydantic import ValidationError
 
 from app.access import auth
 from app.config import settings
-from app.core.logging_config import new_request_id, request_id_context
+from app.core.logging_config import new_request_id, request_id_context, tagged_logger
 from app.dto.identity import SessionToken
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
 QUIET_PATH_PREFIXES = ("/static/",)
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "middleware")
 
 
 async def authentication_middleware(request: Request, call_next):
@@ -83,16 +82,21 @@ async def request_logging_middleware(request: Request, call_next):
         response = await call_next(request)
     except Exception:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        route = request.scope.get("route")
+        route_path = route.path if route is not None else request.url.path
         logger.exception(
-            "request_failed method=%s path=%s duration_ms=%s client=%s",
+            "request_failed method=%s path=%s route=%s duration_ms=%s client=%s",
             request.method,
             request.url.path,
+            route_path,
             elapsed_ms,
             request.client.host if request.client else "-",
         )
         raise
     else:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        route = request.scope.get("route")
+        route_path = route.path if route is not None else request.url.path
         quiet_path = request.url.path in {"/healthz", "/readyz"} or request.url.path.startswith(
             QUIET_PATH_PREFIXES
         )
@@ -101,18 +105,16 @@ async def request_logging_middleware(request: Request, call_next):
                 log = logger.error
             elif response.status_code >= 400:
                 log = logger.warning
-            elif request.method not in {"GET", "HEAD", "OPTIONS"}:
-                log = logger.info
-            elif elapsed_ms >= settings.slow_request_threshold_ms:
-                log = logger.info
             else:
-                log = logger.debug
+                log = logger.info
             log(
-                "request_completed method=%s path=%s status=%s duration_ms=%s client=%s",
+                "request_completed method=%s path=%s route=%s status=%s duration_ms=%s slow=%s client=%s",
                 request.method,
                 request.url.path,
+                route_path,
                 response.status_code,
                 elapsed_ms,
+                str(elapsed_ms >= settings.slow_request_threshold_ms).lower(),
                 request.client.host if request.client else "-",
             )
         response.headers["X-Request-ID"] = request_id

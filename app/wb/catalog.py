@@ -1,12 +1,12 @@
-import logging
 from datetime import UTC, datetime
 
 from app import db
+from app.core.logging_config import log_tags, tagged_logger
 from app.core.stores import STORES
 from app.wb import api as wb_api
 from app.wb import tokens as wb_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "catalog")
 
 MARKETPLACE = "WB"
 
@@ -92,7 +92,11 @@ def sync_store(store_slug: str, apply: bool = True) -> dict:
     items, stats = build_items(cards)
 
     if not items:
-        logger.warning("Каталог WB %s: карточек не пришло, каталог не трогаем", _store_label(store_slug))
+        logger.warning(
+            "Каталог WB %s: карточек не пришло, каталог не трогаем",
+            _store_label(store_slug),
+            extra=log_tags(store_slug),
+        )
         return {"total": 0, "added": 0, "updated": 0, "removed": 0, "kept": 0, **stats}
 
     if not apply:
@@ -107,7 +111,7 @@ def sync_store(store_slug: str, apply: bool = True) -> dict:
         )
 
     report = {"total": len(items), **stats, **result}
-    logger.debug("Каталог WB %s: %s", _store_label(store_slug), report)
+    logger.debug("Каталог WB %s: %s", _store_label(store_slug), report, extra=log_tags(store_slug))
     return report
 
 
@@ -128,12 +132,18 @@ def sync_all(store_slugs: tuple[str, ...] | None = None) -> dict:
                 _store_label(slug),
                 e.status or "network",
                 e.friendly,
+                extra=log_tags(slug),
             )
             report[slug] = {"ok": False, "error": e.friendly}
             db.record_sync_health(slug, MARKETPLACE, "catalog", False, e.friendly, _now())
         except Exception as e:
             message = _error_message(e)
-            logger.exception("wb_catalog_sync_crashed store=%s error=%s", _store_label(slug), message)
+            logger.exception(
+                "wb_catalog_sync_crashed store=%s error=%s",
+                _store_label(slug),
+                message,
+                extra=log_tags(slug),
+            )
             report[slug] = {"ok": False, "error": message}
             db.record_sync_health(slug, MARKETPLACE, "catalog", False, message, _now())
 

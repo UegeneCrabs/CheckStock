@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 
 from app import db
 from app.config import settings
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.orders.normalizers import ozon as ozon_normalizer
 from app.orders.normalizers import wb as wb_normalizer
@@ -22,7 +22,7 @@ from app.wb import tokens as wb_tokens
 from app.yandex import api as yandex_api
 from app.yandex import tokens as yandex_tokens
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "orders", "sync")
 MOSCOW = MOSCOW_TIMEZONE
 MAX_RANGE_DAYS = {"WB": 90, "OZON": 365, "YANDEX MARKET": 365}
 SOURCE_WINDOW_DAYS = {"WB": 90, "OZON": 30, "YANDEX MARKET": 30}

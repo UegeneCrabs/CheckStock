@@ -1,5 +1,4 @@
 import json
-import logging
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +14,7 @@ from app.access.authentication import is_active_user
 from app.access.resources import accessible_stores, has_store_marketplace
 from app.core import health
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.identity import coerce_user
 from app.dto.unit_economics_1c import (
@@ -53,7 +53,7 @@ from app.web.downloads import _download_headers
 from app.web.templating import fill_template, render_page
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "web", "unit_economics")
 PRICE_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ue1c-price")
 UNIT_ECONOMICS_COLUMNS_PREFERENCE_SCOPE = "unit_economics_1c.columns"
 UNIT_ECONOMICS_COLUMN_GROUPS = (

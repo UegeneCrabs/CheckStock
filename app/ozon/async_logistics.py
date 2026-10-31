@@ -1,11 +1,11 @@
 import asyncio
-import logging
 from datetime import datetime, time, timedelta
 
 import httpx
 
 from app.config import settings
 from app.core.constants import OZON_LOGISTICS, TIME, HTTPStatus, OrderScheme
+from app.core.logging_config import tagged_logger
 from app.dto.common import DtoModel
 from app.dto.ozon_logistics import (
     AccrualsPage,
@@ -26,7 +26,7 @@ from app.dto.ozon_logistics import (
 from app.ozon.api import OzonApiError
 from app.ozon.async_api import AsyncSellerApi
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "ozon", "async_logistics")
 
 
 class AsyncLogisticsClient(AsyncSellerApi):

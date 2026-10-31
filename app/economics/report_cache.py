@@ -1,17 +1,17 @@
 """Bounded report cache; committed database changes invalidate every stored result."""
 
-import logging
 import pickle
 from collections import OrderedDict
 from concurrent.futures import Future
 from threading import Lock
 from time import monotonic
 
+from app.core.logging_config import tagged_logger
 from app.dto.identity import coerce_user
 from app.infrastructure.database import database_for_path
 from app.repositories import core
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "economics", "report_cache")
 
 
 def user_key(user):

@@ -1,0 +1,96 @@
+local.file_match "checkstock" {
+  path_targets = [
+    {"__path__" = "/var/log/checkstock/app.log", "service_name" = "app", "record_type" = "log"},
+    {"__path__" = "/var/log/checkstock/scheduler.log", "service_name" = "scheduler", "record_type" = "log"},
+  ]
+}
+
+local.file_match "tags" {
+  path_targets = [
+    {"__path__" = "/var/log/checkstock/app.tags.log", "service_name" = "app", "record_type" = "tag_catalog"},
+    {"__path__" = "/var/log/checkstock/scheduler.tags.log", "service_name" = "scheduler", "record_type" = "tag_catalog"},
+  ]
+}
+
+loki.source.file "checkstock" {
+  targets       = local.file_match.checkstock.targets
+  forward_to    = [loki.process.checkstock.receiver]
+  tail_from_end = false
+}
+
+loki.source.file "tags" {
+  targets       = local.file_match.tags.targets
+  forward_to    = [loki.process.tags.receiver]
+  tail_from_end = false
+}
+
+loki.process "checkstock" {
+  stage.multiline {
+    firstline = "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{2}:\\d{2} \\| |\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} )"
+    max_wait_time = "2s"
+  }
+
+  stage.regex {
+    expression = "^(?P<event_time>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{2}:\\d{2}) \\| (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) \\| (?P<logger>[^ |]+) \\| "
+  }
+
+  stage.regex {
+    expression = "^(?P<legacy_time>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) (?P<logger>[^ ]+)"
+  }
+
+  stage.labels {
+    values = { "level" = "level", "logger" = "logger" }
+  }
+
+  stage.timestamp {
+    source = "event_time"
+    format = "RFC3339"
+    action_on_failure = "skip"
+  }
+
+  stage.timestamp {
+    source = "legacy_time"
+    format = "2006-01-02 15:04:05"
+    location = "Europe/Moscow"
+    action_on_failure = "skip"
+  }
+
+  stage.regex {
+    expression = "\\bstatus=(?P<http_status>[1-5][0-9]{2})\\b"
+  }
+
+  stage.regex {
+    expression = "\\bjob=(?P<job>[A-Za-z0-9_-]+)\\b"
+  }
+
+  stage.labels {
+    values = { "http_status" = "http_status", "job" = "job" }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.process "tags" {
+  stage.json {
+    expressions = { "event_time" = "timestamp", "tag" = "tag" }
+    drop_malformed = true
+  }
+
+  stage.timestamp {
+    source = "event_time"
+    format = "RFC3339"
+    action_on_failure = "skip"
+  }
+
+  stage.labels {
+    values = { "tag" = "tag" }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

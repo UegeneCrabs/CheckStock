@@ -1,6 +1,5 @@
 import http.client
 import json
-import logging
 import socket
 import time
 import urllib.error
@@ -11,8 +10,9 @@ from email.utils import parsedate_to_datetime
 
 from app.config import settings
 from app.core.barcodes import ordered_barcodes, preferred_barcode
+from app.core.logging_config import tagged_logger
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "yandex", "api")
 
 BASE_URL = "https://api.partner.market.yandex.ru"
 REQUEST_TIMEOUT = settings.yandex_request_timeout_seconds

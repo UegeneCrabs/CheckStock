@@ -1,12 +1,12 @@
 import base64
 import json
-import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 
 from app.config import settings
+from app.core.logging_config import tagged_logger
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "wb", "tokens")
 
 TOKENS_PATH = settings.wb_tokens_path
 

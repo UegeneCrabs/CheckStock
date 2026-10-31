@@ -75,7 +75,9 @@ docker compose --env-file .env -f deploy/docker-compose.yml logs --follow app sc
 
 Перед запуском задайте `POSTGRES_PASSWORD` в `.env`. Приложение доступно на `http://localhost:8000`. Docker Compose использует PostgreSQL: база хранится в именованном volume `postgres-data`, секреты подключаются read-only из локального каталога `secrets/`. `/healthz` проверяет процесс, `/readyz` дополнительно проверяет соединение с настроенной БД. При обычном локальном запуске без `CHECKSTOCK_DATABASE_URL` используется SQLite в `data/checkstock.db`.
 
-Сервис `scheduler` запускается на том же образе и имеет отдельную проверку здоровья: `python -m app.jobs.worker --healthcheck`. Перезапуск `app` не перезапускает автоматические загрузки. При первом переходе остановите старый `app` со встроенными задачами перед запуском новой версии и `scheduler`.
+Для запуска Grafana, Loki и Alloy вместе с приложением на Linux-сервере используйте [серверный Compose для логов](docs/server-observability.md).
+
+Сервис `scheduler` запускается на том же образе и имеет отдельную проверку здоровья: `python -m app.jobs.worker --healthcheck`. Перезапуск `app` не перезапускает автоматические загрузки. Оба сервиса сохраняют отдельные файлы логов в общем томе `checkstock-logs`. При первом переходе остановите старый `app` со встроенными задачами перед запуском новой версии и `scheduler`.
 
 Остановка:
 

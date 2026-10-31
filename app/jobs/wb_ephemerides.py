@@ -1,9 +1,9 @@
-import logging
 from datetime import datetime, timedelta
 
 from app import db
 from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE, JOBS
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.logging_config import tagged_logger
 from app.dto.ephemerides_stock import EphemeridesStockProduct, EphemeridesStockSnapshot
 from app.dto.system import SyncFailure, SyncGroupReport
 from app.infrastructure.ephemerides_stock_repository import freeze_stock
@@ -11,7 +11,7 @@ from app.jobs import settings
 from app.repositories import ephemerides
 
 JOB = JOBS.wb_ephemerides_stock.name
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "wb", "wb_ephemerides")
 
 
 def delay(*, startup: bool = False) -> float:

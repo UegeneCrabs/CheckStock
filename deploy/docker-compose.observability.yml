@@ -1,0 +1,53 @@
+services:
+  loki:
+    image: grafana/loki:3.7.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.11.3
+    restart: unless-stopped
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./observability/config.alloy:/etc/alloy/config.alloy:ro
+      - checkstock-logs:/var/log/checkstock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - app
+      - scheduler
+      - loki
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/checkstock-logs.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
+      - ./observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/checkstock.yaml:ro
+      - ./observability/grafana-dashboard.json:/var/lib/grafana/dashboards/checkstock-logs.json:ro
+      - ./observability/checkstock-log-search.json:/var/lib/grafana/dashboards/checkstock-log-search.json:ro
+      - ./observability/checkstock-http-logs.json:/var/lib/grafana/dashboards/checkstock-http-logs.json:ro
+      - ./observability/checkstock-scheduler-logs.json:/var/lib/grafana/dashboards/checkstock-scheduler-logs.json:ro
+    depends_on:
+      - loki
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  checkstock-logs:
+  loki-data:
+  alloy-data:
+  grafana-data:

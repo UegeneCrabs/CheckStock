@@ -1,13 +1,12 @@
 """Persist complete customer-return snapshots independently of stock writers."""
 
-import logging
-
+from app.core.logging_config import tagged_logger
 from app.exports.fbo_transit import _wb
 from app.jobs import settings
 from app.repositories.ephemerides import replace_transit
 
 JOB = "wb_customer_transit_sync"
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "jobs", "wb", "wb_transit")
 
 
 def sync_all():
