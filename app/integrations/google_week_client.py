@@ -140,3 +140,21 @@ class GoogleWeekClient:
                 }
             )
         await self.request("POST", f"{quote(doc_id, safe='')}:batchUpdate", body={"requests": requests})
+
+    async def batch_update(self, doc_id: str, requests: list[dict[str, object]]) -> None:
+        batches: list[list[dict[str, object]]] = []
+        batch: list[dict[str, object]] = []
+        size = 0
+        for request in requests:
+            length = len(json.dumps(request).encode())
+            if length > GOOGLE_WEEK.max_payload_bytes:
+                raise WeekError(WeekIssue.TOO_LARGE)
+            if batch and size + length > GOOGLE_WEEK.max_payload_bytes:
+                batches.append(batch)
+                batch, size = [], 0
+            batch.append(request)
+            size += length
+        if batch:
+            batches.append(batch)
+        for batch in batches:
+            await self.request("POST", f"{quote(doc_id, safe='')}:batchUpdate", body={"requests": batch})

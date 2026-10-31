@@ -6,11 +6,13 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from urllib.parse import urlsplit
 
+from app.core.constants import Marketplace
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import PROJECT_STORE_ALIASES, STORES
 from app.exports import fbo_transit
 from app.exports import stock_sheet as legacy
 from app.exports.project_scope import stores_for_marketplace
+from app.infrastructure.legacy_google_export import schedule_managed
 from app.jobs import locks as sync_locks
 from app.repositories import project_sheet_export as repository
 
@@ -268,17 +270,22 @@ def _plan_quantities(
     sheet: dict,
     *,
     label: str,
+    preloaded_rows: list[list[object]] | None = None,
 ) -> OrderSheetPlan:
     sheet_name = sheet_name.strip()
     column_index = _order_column_index(column)
     column = legacy._column_letter(column_index)
     quoted_sheet = legacy._quote_sheet(sheet_name)
     rows = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=quoted_sheet, valueRenderOption="FORMATTED_VALUE")
-        .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
-        .get("values", [])
+        preloaded_rows
+        if preloaded_rows is not None
+        else (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=quoted_sheet, valueRenderOption="FORMATTED_VALUE")
+            .execute(num_retries=legacy.GOOGLE_REQUEST_RETRIES)
+            .get("values", [])
+        )
     )
     headers = []
     for index, row in enumerate(rows):
@@ -318,7 +325,11 @@ def _plan_quantities(
     last_row = len(rows)
     grid = sheet["properties"].get("gridProperties", {})
     grid_columns = grid.get("columnCount", column_index + 1)
-    if column_index < grid_columns and first_row <= grid.get("rowCount", first_row):
+    if (
+        preloaded_rows is None
+        and column_index < grid_columns
+        and first_row <= grid.get("rowCount", first_row)
+    ):
         existing_values = (
             service.spreadsheets()
             .values()
@@ -474,6 +485,7 @@ def export_all(
     *,
     marketplace: str | None = None,
     export_kind: str | None = None,
+    scheduled: bool = False,
 ) -> dict:
     if marketplace is not None and marketplace not in MARKETPLACES:
         raise ValueError("Неизвестный маркетплейс")
@@ -486,6 +498,9 @@ def export_all(
     spreadsheet_ids: dict[str, str] = {}
     reports = []
     for selected in (marketplace,) if marketplace is not None else MARKETPLACES:
+        if scheduled and schedule_managed(Marketplace(selected)):
+            reports.append({"marketplace": selected, "skipped": True, "updated_cells": 0})
+            continue
         target = settings.target(selected)
         include_stocks = export_kind in (None, "stocks") and bool(target.stock_sheet_name.strip())
         include_orders = export_kind in (None, "fbs_orders") and bool(target.orders_sheet_name.strip())
@@ -585,6 +600,7 @@ def run_export(
     *,
     marketplace: str | None = None,
     export_kind: str | None = None,
+    scheduled: bool = False,
 ) -> dict:
     ensure_defaults()
     now = now or datetime.now(MOSCOW_TIMEZONE)
@@ -593,7 +609,7 @@ def run_export(
     if not scoped:
         repository.record_attempt(attempted_at)
     try:
-        report = export_all(now, marketplace=marketplace, export_kind=export_kind)
+        report = export_all(now, marketplace=marketplace, export_kind=export_kind, scheduled=scheduled)
     except Exception as error:
         if not scoped:
             try:
@@ -618,4 +634,4 @@ def run_due(now: datetime | None = None) -> dict:
     current = now or datetime.now(MOSCOW_TIMEZONE)
     if not is_due(get_settings(), current):
         return {}
-    return {"all_projects": {"ok": True, "report": run_export(current)}}
+    return {"all_projects": {"ok": True, "report": run_export(current, scheduled=True)}}

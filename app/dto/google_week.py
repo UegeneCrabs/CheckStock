@@ -1,11 +1,28 @@
 import re
 from datetime import date, datetime
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    field_validator,
+    model_validator,
+)
 
-from app.core.constants import GOOGLE_WEEK, Marketplace, WeekAction, WeekIssue
+from app.core.constants import (
+    GOOGLE_MARKETPLACE_DEFAULTS,
+    GOOGLE_WEEK,
+    GoogleExportKind,
+    Marketplace,
+    ScheduleKind,
+    WeekAction,
+    WeekIssue,
+)
 
 
 class WeekModel(BaseModel):
@@ -33,17 +50,98 @@ def document_id(url: str) -> str:
     return match[1]
 
 
+class ExportDestination(WeekModel):
+    model_config = ConfigDict(extra="forbid")
+    stock_sheet_name: str = ""
+    orders_sheet_name: str = ""
+    orders_quantity_column: str = "C"
+    fbo_sheet_name: str = ""
+    fbo_to_customer_column: str = "J"
+    fbo_from_customer_column: str = "L"
+
+    @field_validator("stock_sheet_name", "orders_sheet_name", "fbo_sheet_name")
+    @classmethod
+    def title(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) > GOOGLE_WEEK.max_sheet_name or any(
+            ord(char) < 32 or char in "[]:*?/\\" for char in value
+        ):
+            raise ValueError(WeekIssue.INVALID_SETTINGS)
+        return value
+
+    @field_validator("orders_quantity_column", "fbo_to_customer_column", "fbo_from_customer_column")
+    @classmethod
+    def column(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{1,3}", value):
+            raise ValueError(WeekIssue.INVALID_SETTINGS)
+        return value
+
+    @model_validator(mode="after")
+    def destinations(self) -> Self:
+        if self.fbo_to_customer_column == self.fbo_from_customer_column:
+            raise ValueError(WeekIssue.INVALID_SETTINGS)
+        if self.stock_sheet_name and self.stock_sheet_name.casefold() in {
+            self.orders_sheet_name.casefold(),
+            self.fbo_sheet_name.casefold(),
+        }:
+            raise ValueError(WeekIssue.INVALID_SETTINGS)
+        if (
+            self.orders_sheet_name
+            and self.orders_sheet_name.casefold() == self.fbo_sheet_name.casefold()
+            and self.orders_quantity_column in {self.fbo_to_customer_column, self.fbo_from_customer_column}
+        ):
+            raise ValueError(WeekIssue.INVALID_SETTINGS)
+        return self
+
+
 class WeekSettings(WeekModel):
     model_config = ConfigDict(extra="forbid")
     spreadsheet_url: str = Field(default="", max_length=GOOGLE_WEEK.max_url_length)
     sheet_name: str = GOOGLE_WEEK.default_sheet
+    sales_sheet_name: str = ""
     stock_sheet_name: str = GOOGLE_WEEK.default_stock_sheets[0]
     cells: tuple[str, ...] = GOOGLE_WEEK.default_cells
     weekday: int = Field(default=GOOGLE_WEEK.default_weekday, ge=0, lt=GOOGLE_WEEK.days_per_week)
     run_time: str = Field(default=GOOGLE_WEEK.default_time, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
     enabled_actions: frozenset[WeekAction] = frozenset()
+    schedule_kind: Literal[ScheduleKind.DAILY, ScheduleKind.WEEKLY] = ScheduleKind.WEEKLY
+    schedule_managed: bool = Field(
+        default=False, validation_alias=AliasChoices("schedule_managed", "wb_schedule_managed")
+    )
+    export_actions: frozenset[GoogleExportKind] = Field(
+        default=frozenset(), validation_alias=AliasChoices("export_actions", "wb_export_actions")
+    )
+    export_target: ExportDestination = Field(default_factory=ExportDestination)
     freeze_sheet_ids: tuple[int, ...] = ()
     selection_initialized: bool = False
+
+    @classmethod
+    def defaults_for(cls, marketplace: Marketplace) -> Self:
+        preset = next(value for value in GOOGLE_MARKETPLACE_DEFAULTS if value.marketplace == marketplace)
+        return cls(
+            spreadsheet_url=preset.spreadsheet_url,
+            sheet_name=preset.sheet_name,
+            sales_sheet_name=preset.sales_sheet_name,
+            stock_sheet_name=preset.stock_sheet_name,
+            cells=preset.cells,
+            weekday=preset.weekday,
+            run_time=preset.run_time,
+            schedule_kind=preset.schedule_kind,
+            schedule_managed=preset.schedule_managed,
+            enabled_actions=preset.enabled_actions,
+            export_actions=preset.export_actions,
+            export_target=ExportDestination(
+                stock_sheet_name=preset.export_stock_sheet_name,
+                orders_sheet_name=preset.export_orders_sheet_name,
+                orders_quantity_column=preset.export_orders_quantity_column,
+                fbo_sheet_name=preset.export_fbo_sheet_name,
+                fbo_to_customer_column=preset.export_fbo_to_customer_column,
+                fbo_from_customer_column=preset.export_fbo_from_customer_column,
+            ),
+            freeze_sheet_ids=preset.freeze_sheet_ids,
+            selection_initialized=preset.selection_initialized,
+        )
 
     @field_validator("sheet_name", "stock_sheet_name")
     @classmethod
@@ -52,6 +150,11 @@ class WeekSettings(WeekModel):
         if not value or len(value) > GOOGLE_WEEK.max_sheet_name or any(ord(char) < 32 for char in value):
             raise ValueError(WeekIssue.INVALID_SETTINGS)
         return value
+
+    @field_validator("sales_sheet_name")
+    @classmethod
+    def sales_title(cls, value: str) -> str:
+        return cls.sheet_title(value) if value.strip() else ""
 
     @field_validator("cells")
     @classmethod
@@ -137,6 +240,15 @@ class SnapshotTime(WeekModel):
     captured_at: datetime
 
 
+class ProductExportResult(WeekModel):
+    row: int
+    article: str
+    project: str
+    checked_cells: int = 0
+    written_cells: int = 0
+    unchanged_cells: int = 0
+
+
 class WeekReport(WeekModel):
     marketplace: Marketplace = Marketplace.WB
     spreadsheet_url: str = ""
@@ -153,6 +265,7 @@ class WeekReport(WeekModel):
     missing_data: list[ProductIssue] = Field(default_factory=list)
     zero_filled: list[ProductIssue] = Field(default_factory=list)
     matched_products: int = 0
+    products: list[ProductExportResult] | None = None
     product_rows: int = 0
     complete: bool = True
     processed_at: datetime | None = None
@@ -168,6 +281,7 @@ class WeekReport(WeekModel):
     week: str = ""
     value: str = ""
     dry_run: bool = False
+    warnings: list[str] = Field(default_factory=list)
     total_formulas: int = 0
 
 
@@ -199,6 +313,10 @@ class WeekProfile(WeekModel):
     states: dict[WeekAction, WeekActionState] = Field(
         default_factory=lambda: {a: WeekActionState() for a in WeekAction}
     )
+    export_states: dict[GoogleExportKind, WeekActionState] = Field(
+        default_factory=lambda: {kind: WeekActionState() for kind in GoogleExportKind},
+        validation_alias=AliasChoices("export_states", "wb_export_states"),
+    )
     catalog: WeekCatalog = Field(default_factory=WeekCatalog)
 
 
@@ -206,6 +324,7 @@ class WeekView(WeekModel):
     profile: WeekProfile
     value: str
     next_runs: dict[WeekAction, datetime | None]
+    export_next_runs: dict[GoogleExportKind, datetime | None] = Field(default_factory=dict)
     freeze_waiting: bool
     catalog_due: bool
     background_enabled: bool
@@ -294,6 +413,20 @@ class Product(WeekModel):
     store_slug: str
     article: str
     aliases: list[str] = Field(default_factory=list)
+    image_url: str = ""
+
+
+class ProductImageKey(WeekModel):
+    article: str
+    project: str
+
+
+class ProductImageRequest(WeekModel):
+    items: tuple[ProductImageKey, ...] = Field(max_length=GOOGLE_WEEK.image_batch_size)
+
+
+class ProductImage(ProductImageKey):
+    image_url: str = ""
 
 
 class MatchedProduct(Product):

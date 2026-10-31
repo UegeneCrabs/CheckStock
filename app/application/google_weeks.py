@@ -7,7 +7,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.config import settings as app_settings
-from app.core.constants import GOOGLE_WEEK, JOBS, TIME, Marketplace, WeekAction, WeekIssue
+from app.core.constants import (
+    GOOGLE_WEEK,
+    JOBS,
+    TIME,
+    GoogleExportKind,
+    Marketplace,
+    ScheduleKind,
+    WeekAction,
+    WeekIssue,
+)
+from app.core.stores import PROJECT_STORE_ALIASES
 from app.dto.google_week import (
     CellWrite,
     FreezePlan,
@@ -15,7 +25,10 @@ from app.dto.google_week import (
     GoogleSheet,
     GridCell,
     HeaderCell,
+    ProductImage,
+    ProductImageKey,
     SheetOption,
+    WeekActionState,
     WeekCatalog,
     WeekError,
     WeekJobResult,
@@ -25,6 +38,7 @@ from app.dto.google_week import (
     WeekView,
     document_id,
 )
+from app.infrastructure import legacy_google_export
 from app.infrastructure.async_resources import AsyncResources
 from app.infrastructure.google_week_repository import GoogleWeekRepository
 from app.integrations import google_week_plans as plans
@@ -35,7 +49,7 @@ from app.jobs.locks import SyncJobBusyError
 logger = logging.getLogger(__name__)
 
 
-def log_incomplete(report: WeekReport, action: WeekAction) -> None:
+def log_incomplete(report: WeekReport, action: WeekAction | GoogleExportKind) -> None:
     problems = report.issues + report.missing_data + report.zero_filled
     samples = [item.model_dump(mode="json") for item in problems[: GOOGLE_WEEK.diagnostic_sample_size]]
     missing_days = sorted({day.isoformat() for item in problems for day in item.missing_days})
@@ -59,42 +73,67 @@ def slot_at(settings: WeekSettings, now: datetime) -> datetime:
     now = now.astimezone(TIME.moscow_timezone)
     hour, minute = map(int, settings.run_time.split(":"))
     slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    slot -= timedelta(days=(slot.weekday() - settings.weekday) % GOOGLE_WEEK.days_per_week)
-    return slot - timedelta(days=GOOGLE_WEEK.days_per_week) if slot > now else slot
+    days = 1 if settings.schedule_kind == ScheduleKind.DAILY else GOOGLE_WEEK.days_per_week
+    if settings.schedule_kind == ScheduleKind.WEEKLY:
+        slot -= timedelta(days=(slot.weekday() - settings.weekday) % GOOGLE_WEEK.days_per_week)
+    return slot - timedelta(days=days) if slot > now else slot
 
 
-def pending(profile: WeekProfile, action: WeekAction, now: datetime) -> bool:
-    state = profile.states[action]
+def action_state(profile: WeekProfile, action: WeekAction | GoogleExportKind) -> WeekActionState:
+    return profile.export_states[action] if isinstance(action, GoogleExportKind) else profile.states[action]
+
+
+def action_enabled(profile: WeekProfile, action: WeekAction | GoogleExportKind) -> bool:
+    if isinstance(action, GoogleExportKind):
+        return profile.settings.schedule_managed and action in profile.settings.export_actions
+    return action in profile.settings.enabled_actions
+
+
+def scheduled_actions(profile: WeekProfile) -> tuple[WeekAction | GoogleExportKind, ...]:
+    exports = tuple(GoogleExportKind)
+    return (
+        WeekAction.NUMBER,
+        WeekAction.SALES,
+        WeekAction.STOCK,
+        WeekAction.SEARCH,
+        *exports,
+        WeekAction.FREEZE,
+    )
+
+
+def pending(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> bool:
+    state = action_state(profile, action)
     activation = state.activated_at or profile.saved_at
-    if action not in profile.settings.enabled_actions or not activation:
+    if not action_enabled(profile, action) or not activation:
         return False
     slot = slot_at(profile.settings, now)
     return slot > activation and (state.last_success_slot is None or state.last_success_slot < slot)
 
 
-def due(profile: WeekProfile, action: WeekAction, now: datetime) -> bool:
-    attempt = profile.states[action].last_attempt_at
+def due(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> bool:
+    attempt = action_state(profile, action).last_attempt_at
     return pending(profile, action, now) and (
         attempt is None or now - attempt >= timedelta(seconds=GOOGLE_WEEK.retry_seconds)
     )
 
 
-def next_run(profile: WeekProfile, action: WeekAction, now: datetime) -> datetime | None:
-    if action not in profile.settings.enabled_actions or not profile.saved_at:
+def next_run(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> datetime | None:
+    if not action_enabled(profile, action) or not profile.saved_at:
         return None
     if pending(profile, action, now):
-        attempt = profile.states[action].last_attempt_at
+        attempt = action_state(profile, action).last_attempt_at
         return max(now, attempt + timedelta(seconds=GOOGLE_WEEK.retry_seconds)) if attempt else now
-    return slot_at(profile.settings, now) + timedelta(days=GOOGLE_WEEK.days_per_week)
+    days = 1 if profile.settings.schedule_kind == ScheduleKind.DAILY else GOOGLE_WEEK.days_per_week
+    return slot_at(profile.settings, now) + timedelta(days=days)
 
 
 def freeze_ready(profile: WeekProfile, now: datetime) -> bool:
     if pending(profile, WeekAction.NUMBER, now):
         return False
-    for action in (WeekAction.SALES, WeekAction.STOCK):
-        if action not in profile.settings.enabled_actions:
+    for action in (WeekAction.SALES, WeekAction.STOCK, *GoogleExportKind):
+        if not action_enabled(profile, action):
             continue
-        state = profile.states[action]
+        state = action_state(profile, action)
         if (
             state.last_error
             or not state.result
@@ -127,6 +166,31 @@ class GoogleWeeks:
         self.repository = GoogleWeekRepository(resources.database)
         self.google = GoogleWeekClient(resources.http)
 
+    async def product_images(
+        self, marketplace: Marketplace, items: tuple[ProductImageKey, ...]
+    ) -> list[ProductImage]:
+        if not items:
+            return []
+        products = await self.repository.products(marketplace)
+        catalog = {(product.store_slug, product.article): product for product in products}
+        aliases: dict[tuple[str, str], set[str]] = {}
+        for product in products:
+            for alias in (product.article, *product.aliases):
+                aliases.setdefault((product.store_slug, alias.strip()), set()).add(product.article)
+        result = []
+        for item in items:
+            store = PROJECT_STORE_ALIASES.get(plans.normalized(item.project).casefold(), "")
+            matched = aliases.get((store, item.article.strip()), set())
+            matched_product = catalog.get((store, next(iter(matched)))) if len(matched) == 1 else None
+            result.append(
+                ProductImage(
+                    article=item.article,
+                    project=item.project,
+                    image_url=matched_product.image_url if matched_product else "",
+                )
+            )
+        return result
+
     async def view(self, marketplace: Marketplace, *, preview: WeekReport | None = None) -> WeekView:
         profile = await self.repository.get(marketplace)
         now = datetime.now(TIME.moscow_timezone)
@@ -134,6 +198,7 @@ class GoogleWeeks:
             profile=profile,
             value=plans.current_week(now),
             next_runs={action: next_run(profile, action, now) for action in WeekAction},
+            export_next_runs={kind: next_run(profile, kind, now) for kind in GoogleExportKind},
             freeze_waiting=pending(profile, WeekAction.FREEZE, now) and not freeze_ready(profile, now),
             catalog_due=catalog_due(profile, now),
             background_enabled=app_settings.background_sync_enabled,
@@ -146,6 +211,21 @@ class GoogleWeeks:
     ) -> None:
         now = now or datetime.now(TIME.moscow_timezone)
         document_id(settings.spreadsheet_url)
+        target = settings.export_target
+        for kind, title in (
+            (GoogleExportKind.STOCKS, target.stock_sheet_name),
+            (GoogleExportKind.FBS_ORDERS, target.orders_sheet_name),
+            (GoogleExportKind.FBO_TRANSIT, target.fbo_sheet_name),
+        ):
+            if kind in settings.export_actions and not title:
+                raise WeekError(WeekIssue.INVALID_SETTINGS)
+        if target.stock_sheet_name and target.stock_sheet_name.casefold() in {
+            settings.sheet_name.casefold(),
+            (settings.sales_sheet_name or settings.sheet_name).casefold(),
+            settings.stock_sheet_name.casefold(),
+        }:
+            raise WeekError(WeekIssue.TARGET)
+        await self.repository.validate_export(marketplace, settings)
         profile = await self.repository.get(marketplace)
         before = profile.settings
         if settings.spreadsheet_url != before.spreadsheet_url:
@@ -163,7 +243,17 @@ class GoogleWeeks:
                 raise WeekError(WeekIssue.SELECTION)
         if WeekAction.FREEZE in settings.enabled_actions and not settings.freeze_sheet_ids:
             raise WeekError(WeekIssue.SELECTION)
-        schedule_changed = (settings.weekday, settings.run_time) != (before.weekday, before.run_time)
+        schedule_changed = (
+            settings.schedule_kind,
+            settings.weekday,
+            settings.run_time,
+            settings.schedule_managed,
+        ) != (
+            before.schedule_kind,
+            before.weekday,
+            before.run_time,
+            before.schedule_managed,
+        )
         source_changed = (settings.spreadsheet_url, settings.sheet_name, settings.cells) != (
             before.spreadsheet_url,
             before.sheet_name,
@@ -173,6 +263,11 @@ class GoogleWeeks:
             state = profile.states[action]
             target_changed = (
                 source_changed
+                or (
+                    action in (WeekAction.SALES, WeekAction.SEARCH)
+                    and (settings.sales_sheet_name or settings.sheet_name)
+                    != (before.sales_sheet_name or before.sheet_name)
+                )
                 or (action == WeekAction.STOCK and settings.stock_sheet_name != before.stock_sheet_name)
                 or (action == WeekAction.FREEZE and settings.freeze_sheet_ids != before.freeze_sheet_ids)
             )
@@ -190,8 +285,23 @@ class GoogleWeeks:
                 state.activated_at = now
             elif state.activated_at is None:
                 state.activated_at = profile.saved_at
+        for kind, state in profile.export_states.items():
+            if (
+                not profile.saved_at
+                or schedule_changed
+                or not before.schedule_managed
+                or settings.spreadsheet_url != before.spreadsheet_url
+                or kind in settings.export_actions - before.export_actions
+                or settings.export_target != before.export_target
+            ):
+                state.activated_at = now
+                state.last_attempt_at = None
+                state.last_success_slot = None
+            if settings.spreadsheet_url != before.spreadsheet_url:
+                state.result = None
+                state.last_error = None
         profile.settings, profile.saved_at = settings, now
-        await self.repository.save(profile)
+        await self.repository.save(profile, settings_changed=True)
 
     async def refresh_catalog(self, profile: WeekProfile, now: datetime) -> None:
         if not profile.saved_at:
@@ -222,11 +332,16 @@ class GoogleWeeks:
             await self.repository.save(profile)
 
     async def run(
-        self, profile: WeekProfile, action: WeekAction, now: datetime, *, preview: bool = False
+        self,
+        profile: WeekProfile,
+        action: WeekAction | GoogleExportKind,
+        now: datetime,
+        *,
+        preview: bool = False,
     ) -> WeekReport:
         if not profile.saved_at:
             raise WeekError(WeekIssue.NOT_SAVED)
-        state = profile.states[action]
+        state = action_state(profile, action)
         if not preview:
             state.last_attempt_at = now
             state.last_error = None
@@ -236,7 +351,19 @@ class GoogleWeeks:
                 "google-week-document:" + document_id(profile.settings.spreadsheet_url),
                 self.resources.database,
             ):
-                if action == WeekAction.FREEZE:
+                if isinstance(action, GoogleExportKind):
+                    if profile.marketplace == Marketplace.OZON:
+                        from app.container import ozon_google_export_service
+
+                        async with async_locks.hold(JOBS.stock_sheet_export.name, self.resources.database):
+                            report = await ozon_google_export_service(self.resources).run(
+                                profile, action, now
+                            )
+                    else:
+                        report = await legacy_google_export.run(
+                            action, profile.settings.spreadsheet_url, now, profile.marketplace
+                        )
+                elif action == WeekAction.FREEZE:
                     report = await self._freeze(profile, now, preview=preview)
                 else:
                     report = await self._export(profile, action, now)
@@ -294,7 +421,10 @@ class GoogleWeeks:
             for cell in settings.cells
         ]
         stock = action == WeekAction.STOCK
-        sheet = await self._sheet(doc_id, settings.stock_sheet_name) if stock else source
+        target_title = (
+            settings.stock_sheet_name if stock else settings.sales_sheet_name or settings.sheet_name
+        )
+        sheet = await self._sheet(doc_id, target_title) if target_title != settings.sheet_name else source
         report = plans.headers(profile, sheet, origins, stock=stock)
         report.processed_at = now
         if action == WeekAction.SEARCH:
@@ -325,12 +455,13 @@ class GoogleWeeks:
             if grid.get(plans.position(write.cell), GridCell()).userEnteredValue.numberValue != write.value
         ]
         report.unchanged_cells = len(plan.writes) - len(changed)
+        report.products = plans.product_results(products, plan.writes, changed)
         if not changed:
             return report
         fresh = await self._sheet(doc_id, sheet.properties.title)
         fresh_grid = plans.cells(fresh)
         watched = {entry.cell for entry in plan.writes} | {entry.cell for entry in header.headers}
-        if not stock:
+        if target_title == settings.sheet_name:
             watched.update(settings.cells)
         for source_result in report.sources:
             for match in source_result.matches:
@@ -354,7 +485,7 @@ class GoogleWeeks:
             )
         ):
             raise WeekError(WeekIssue.CHANGED)
-        if stock:
+        if target_title != settings.sheet_name:
             new_source = await self._sheet(doc_id, settings.sheet_name)
             if (
                 new_source.properties != source.properties
@@ -497,7 +628,7 @@ class GoogleWeeks:
                 await self.refresh_catalog(profile, now)
             except WeekError as error:
                 errors.append(error.problem.code.value)
-        for action in WeekAction:
+        for action in scheduled_actions(profile):
             if action != WeekAction.NUMBER and pending(profile, WeekAction.NUMBER, now):
                 break
             if action == WeekAction.FREEZE and not freeze_ready(profile, now):
@@ -521,5 +652,5 @@ class GoogleWeeks:
             return due(profile, WeekAction.NUMBER, now)
         return any(
             due(profile, action, now) and (action != WeekAction.FREEZE or freeze_ready(profile, now))
-            for action in WeekAction
+            for action in scheduled_actions(profile)
         )

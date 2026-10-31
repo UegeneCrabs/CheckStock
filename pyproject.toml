@@ -55,6 +55,8 @@ files = [
     "app/infrastructure/ozon_logistics_orm.py", "app/jobs/ozon_logistics.py",
     "app/dto/google_week.py", "app/application/google_weeks.py",
     "app/infrastructure/google_week_orm.py", "app/infrastructure/google_week_repository.py",
+    "app/infrastructure/legacy_google_export.py",
+    "app/application/ozon_google_export.py",
     "app/integrations/google_week_client.py", "app/integrations/google_week_plans.py",
     "app/jobs/google_weeks.py", "app/web/routers/google_weeks.py",
     "run.py", "app/development.py", "app/infrastructure/process_job.py",

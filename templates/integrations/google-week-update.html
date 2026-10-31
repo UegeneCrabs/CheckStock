@@ -1,5 +1,4 @@
-<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261016-marketplaces" />
-<div data-week-marketplaces><p role="status" data-week-loading>Загружаем настройки недель…</p></div>
+<link rel="stylesheet" href="/static/integrations/google-week-update.css?v=20261031-marketplace-blocks" />
 <template data-week-card>
 <form class="panel week-update" data-week-update-form aria-labelledby="$prefix-week-update-title">
     <div class="week-update-head">
@@ -88,6 +87,32 @@
             <p class="week-action-status $stock_status_class" data-week-stock-status role="status" aria-live="polite">$stock_status_text</p>
             <details class="week-report" data-week-stock-report><summary>Результат выгрузки</summary><div class="week-report-body" data-week-stock-results>$stock_results</div></details>
         </section>
+        <section class="week-action" aria-labelledby="$prefix-export-stocks-title">
+            <div class="week-action-title"><span class="week-action-icon" aria-hidden="true">▦</span><h3 id="$prefix-export-stocks-title">Отчёт «Остатки»</h3></div>
+            <label class="week-field"><span>Лист отчёта</span><input class="input-control" name="report_sheet_name" maxlength="100" /></label>
+            <label class="week-update-switch"><input type="checkbox" name="export_stocks_enabled" /><span class="week-switch-track" aria-hidden="true"></span><span>Автозапуск</span></label>
+            <button class="btn-secondary week-run-button" type="button" data-week-export="stocks">Выгрузить остатки</button>
+            <div class="week-action-status" data-export-result="stocks" role="status" aria-live="polite"></div>
+        </section>
+        <section class="week-action" aria-labelledby="$prefix-export-fbs-title">
+            <div class="week-action-title"><span class="week-action-icon" aria-hidden="true">▦</span><h3 id="$prefix-export-fbs-title">FBS в пути</h3></div>
+            <label class="week-field"><span>Лист FBS в пути</span><input class="input-control" name="fbs_sheet_name" maxlength="100" /></label>
+            <label class="week-field"><span>Столбец количества</span><input class="input-control" name="fbs_quantity_column" pattern="[A-Za-z]{1,3}" maxlength="3" required /></label>
+            <label class="week-update-switch"><input type="checkbox" name="export_fbs_orders_enabled" /><span class="week-switch-track" aria-hidden="true"></span><span>Автозапуск</span></label>
+            <button class="btn-secondary week-run-button" type="button" data-week-export="fbs_orders">Выгрузить FBS в пути</button>
+            <div class="week-action-status" data-export-result="fbs_orders" role="status" aria-live="polite"></div>
+        </section>
+        <section class="week-action" aria-labelledby="$prefix-export-fbo-title">
+            <div class="week-action-title"><span class="week-action-icon" aria-hidden="true">▦</span><h3 id="$prefix-export-fbo-title">$stock_scheme в пути</h3></div>
+            <label class="week-field"><span>Лист $stock_scheme в пути</span><input class="input-control" name="fbo_sheet_name" maxlength="100" /></label>
+            <div class="week-number-fields">
+                <label class="week-field"><span>Столбец к клиенту</span><input class="input-control" name="fbo_to_customer_column" pattern="[A-Za-z]{1,3}" maxlength="3" required /></label>
+                <label class="week-field"><span>Столбец от клиента</span><input class="input-control" name="fbo_from_customer_column" pattern="[A-Za-z]{1,3}" maxlength="3" required /></label>
+            </div>
+            <label class="week-update-switch"><input type="checkbox" name="export_fbo_transit_enabled" /><span class="week-switch-track" aria-hidden="true"></span><span>Автозапуск</span></label>
+            <button class="btn-secondary week-run-button" type="button" data-week-export="fbo_transit">Выгрузить $stock_scheme в пути</button>
+            <div class="week-action-status" data-export-result="fbo_transit" role="status" aria-live="polite"></div>
+        </section>
     </div>
     <section class="week-action week-freeze" aria-labelledby="$prefix-week-freeze-title">
         <div class="week-action-title"><span class="week-action-icon" aria-hidden="true">=</span><h3 id="$prefix-week-freeze-title">Фиксация прошлых недель</h3></div>
@@ -160,4 +185,5 @@
     </details>
 </form>
 </template>
-<script src="/static/integrations/google-week-update.js?v=20261016-ozon-accepted"></script>
+<script src="/static/integrations/google-week-report.js?v=20261031-product-photos"></script>
+<script src="/static/integrations/google-week-update.js?v=20261031-marketplace-defaults"></script>

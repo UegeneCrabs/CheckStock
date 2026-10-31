@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
 from app.core.constants import GOOGLE_WEEK, TIME, Marketplace, WeekIssue
@@ -22,6 +22,7 @@ from app.dto.google_week import (
     HeaderStop,
     MatchedProduct,
     Product,
+    ProductExportResult,
     ProductIssue,
     SnapshotTime,
     StoreFacts,
@@ -317,6 +318,24 @@ def export_plan(
     report.snapshot_times = list(captured.values())
     report.processed_at = now
     return plan
+
+
+def product_results(
+    matched: list[MatchedProduct], writes: list[CellWrite], changed: list[CellWrite]
+) -> list[ProductExportResult]:
+    checked = Counter(position(write.cell)[0] + 1 for write in writes)
+    updated = Counter(position(write.cell)[0] + 1 for write in changed)
+    return [
+        ProductExportResult(
+            row=product.row,
+            article=product.article,
+            project=product.project,
+            checked_cells=checked[product.row],
+            written_cells=updated[product.row],
+            unchanged_cells=checked[product.row] - updated[product.row],
+        )
+        for product in matched
+    ]
 
 
 def contains(region: GridRange, row: int, col: int, sheet: GoogleSheet) -> bool:

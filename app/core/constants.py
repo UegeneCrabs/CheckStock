@@ -1868,6 +1868,8 @@ class WeekAction(StrEnum):
 
 
 class WeekIssue(StrEnum):
+    EXPORT = "export"
+    SOURCE_INCOMPLETE = "source_incomplete"
     INVALID_SETTINGS = "invalid_settings"
     NOT_SAVED = "not_saved"
     BUSY = "busy"
@@ -1898,6 +1900,12 @@ class WeekIssue(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GoogleWeekConstants:
+    export_period_days: int = 30
+    export_batch_rows: int = 100
+    export_clear_columns: int = 26
+    sheet_epoch: str = "1899-12-30"
+    fbs_export_statuses: frozenset[str] = frozenset({"awaiting_packaging", "awaiting_deliver", "delivering"})
+    image_batch_size: int = 50
     poll_seconds: int = 60
     retry_seconds: int = 300
     startup_seconds: int = 10
@@ -2065,6 +2073,64 @@ class ScheduleKind(StrEnum):
     WEEKLY = "weekly"
     WINDOW = "window"
     EXTERNAL = "external"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GoogleMarketplaceDefaults:
+    marketplace: Marketplace
+    spreadsheet_url: str
+    stock_sheet_name: str
+    export_orders_sheet_name: str
+    export_fbo_sheet_name: str
+    freeze_sheet_ids: tuple[int, ...]
+    run_time: str
+    weekday: int = 0
+    sheet_name: str = "2. Факт продаж"
+    sales_sheet_name: str = "2. Факт продаж"
+    cells: tuple[str, ...] = ("B2",)
+    schedule_kind: Literal[ScheduleKind.DAILY, ScheduleKind.WEEKLY] = ScheduleKind.DAILY
+    schedule_managed: bool = True
+    enabled_actions: frozenset[WeekAction] = frozenset(
+        {WeekAction.NUMBER, WeekAction.SALES, WeekAction.STOCK, WeekAction.FREEZE}
+    )
+    export_actions: frozenset[GoogleExportKind] = frozenset(GoogleExportKind)
+    export_stock_sheet_name: str = "Товары на ФФ + FBS"
+    export_orders_quantity_column: str = "K"
+    export_fbo_to_customer_column: str = "J"
+    export_fbo_from_customer_column: str = "I"
+    selection_initialized: bool = True
+
+
+GOOGLE_MARKETPLACE_DEFAULTS: Final[tuple[GoogleMarketplaceDefaults, ...]] = (
+    GoogleMarketplaceDefaults(
+        marketplace=Marketplace.WB,
+        spreadsheet_url="https://docs.google.com/spreadsheets/d/1h7JaZ4-AYnJ9K0ctddA4G43aNUdLTjpr_U6ZDufaabI/edit",
+        stock_sheet_name="Сток на складах МП",
+        export_orders_sheet_name="Сток на складах МП",
+        export_fbo_sheet_name="Сток на складах МП",
+        freeze_sheet_ids=(593127650,),
+        run_time="06:00",
+        weekday=4,
+    ),
+    GoogleMarketplaceDefaults(
+        marketplace=Marketplace.OZON,
+        spreadsheet_url="https://docs.google.com/spreadsheets/d/1_yyIJwl2COPbEUATOMGfABig6zoyWXyy27KlW3mC_ao/edit",
+        stock_sheet_name="Сток на складах МП",
+        export_orders_sheet_name="Сток на складах МП",
+        export_fbo_sheet_name="Сток на складах МП",
+        freeze_sheet_ids=(593127650,),
+        run_time="06:05",
+    ),
+    GoogleMarketplaceDefaults(
+        marketplace=Marketplace.YANDEX_MARKET,
+        spreadsheet_url="https://docs.google.com/spreadsheets/d/18GNDg4Y9Ocnc4olfz9VIGMpEm_du6xxZAB9Tp1XRYd8/edit",
+        stock_sheet_name="Сток на складах ЯМ",
+        export_orders_sheet_name="Сток на складах ЯМ",
+        export_fbo_sheet_name="Сток на складах ЯМ",
+        freeze_sheet_ids=(1090366001,),
+        run_time="06:10",
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

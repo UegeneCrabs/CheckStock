@@ -148,7 +148,9 @@ class AsyncOzonAnalyticsClient:
             )
             raise OzonAnalyticsApiError(reason, raw_payload=parsed.model_dump_json()) from error
 
-    async def transit(self, store: str, now: datetime) -> OzonAnalyticsTransit:
+    async def transit(
+        self, store: str, now: datetime, *, include_to_customer: bool = False
+    ) -> OzonAnalyticsTransit:
         mapping: dict[str, str] = {}
         seen_products: set[int] = set()
         seen_cursors: set[str] = set()
@@ -192,6 +194,7 @@ class AsyncOzonAnalyticsClient:
             seen_cursors.add(page.cursor)
             cursor = page.cursor
         quantities: dict[str, int] = {}
+        outbound: dict[str, int] = {}
         seen: set[tuple[str, str]] = set()
         skus = tuple(sorted(mapping))
         for offset in range(0, len(skus), OZON_STOCK_ANALYTICS.sku_batch_size):
@@ -212,6 +215,10 @@ class AsyncOzonAnalyticsClient:
                     raise OzonAnalyticsApiError(OzonAnalyticsReason.MAPPING_CONFLICT)
                 if OZON_STOCK_ANALYTICS.fbs_return_tag in row.item_tags:
                     continue
+                if include_to_customer:
+                    if row.outbound_pending_delivery is None:
+                        raise OzonAnalyticsApiError(OzonAnalyticsReason.MALFORMED_SOURCE)
+                    outbound[row.offer_id] = outbound.get(row.offer_id, 0) + row.outbound_pending_delivery
                 key = sku, str(row.warehouse_id)
                 if key in seen:
                     raise OzonAnalyticsApiError(OzonAnalyticsReason.REPEATED_PAGE)
@@ -223,7 +230,11 @@ class AsyncOzonAnalyticsClient:
             store_slug=store,
             observed_at=now,
             products=tuple(
-                OzonAnalyticsStock(article=article, from_customer=value)
+                OzonAnalyticsStock(
+                    article=article,
+                    from_customer=value,
+                    to_customer=outbound.get(article) if include_to_customer else None,
+                )
                 for article, value in quantities.items()
             ),
         )

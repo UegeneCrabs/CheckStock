@@ -5,8 +5,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.access.authentication import is_active_user
 from app.application.google_weeks import GoogleWeeks, job_name
-from app.core.constants import TIME, Marketplace, WeekAction, WeekIssue
-from app.dto.google_week import WeekError, WeekSettings, WeekView
+from app.core.constants import JOBS, TIME, GoogleExportKind, Marketplace, WeekAction, WeekIssue
+from app.dto.google_week import ProductImage, ProductImageRequest, WeekError, WeekSettings, WeekView
 from app.jobs import async_locks
 from app.jobs.locks import SyncJobBusyError
 
@@ -35,7 +35,8 @@ async def save(request: Request, marketplace: Marketplace, settings: WeekSetting
     application = service(request)
     try:
         async with async_locks.hold(job_name(marketplace), application.resources.database):
-            await application.save(marketplace, settings)
+            async with async_locks.hold(JOBS.stock_sheet_export.name, application.resources.database):
+                await application.save(marketplace, settings)
     except SyncJobBusyError as error:
         raise HTTPException(status_code=409, detail={"code": WeekIssue.BUSY}) from error
     except WeekError as error:
@@ -58,9 +59,16 @@ async def catalog(request: Request, marketplace: Marketplace) -> WeekView:
     return await application.view(marketplace)
 
 
+@router.post("/{marketplace}/product-images", response_model=list[ProductImage])
+async def product_images(
+    request: Request, marketplace: Marketplace, payload: ProductImageRequest
+) -> list[ProductImage]:
+    return await service(request).product_images(marketplace, payload.items)
+
+
 @router.post("/{marketplace}/{action}", response_model=WeekView)
 async def run(
-    request: Request, marketplace: Marketplace, action: WeekAction, preview: bool = False
+    request: Request, marketplace: Marketplace, action: WeekAction | GoogleExportKind, preview: bool = False
 ) -> WeekView:
     application = service(request)
     if preview and action != WeekAction.FREEZE:

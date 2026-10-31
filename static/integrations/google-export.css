@@ -61,6 +61,23 @@
     min-width: 0;
 }
 
+.export-project-copy {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    margin: 14px 0 24px;
+}
+
+.export-project-copy .export-marketplace {
+    padding: 14px;
+    gap: 10px;
+}
+
+.export-project-copy .export-actions {
+    padding-top: 0;
+    border-top: 0;
+}
+
 .export-projects {
     display: flex;
     flex-wrap: wrap;

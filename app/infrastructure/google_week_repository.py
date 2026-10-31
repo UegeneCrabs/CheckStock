@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 from datetime import date, datetime
 
 from sqlalchemy import JSON, cast, func, select, text, type_coerce
@@ -10,18 +11,23 @@ from app.core.constants import (
     OZON_ORDERS,
     TIME,
     DatabaseDialect,
+    GoogleExportKind,
     Marketplace,
+    ScheduleKind,
     WeekAction,
     WeekIssue,
 )
+from app.dto.google_export import GoogleExportSettings
 from app.dto.google_week import (
     DailyFact,
+    ExportDestination,
     OzonWeekOrder,
     Product,
     SheetOption,
     StoreFacts,
     WeekActionState,
     WeekCatalog,
+    WeekError,
     WeekProblem,
     WeekProfile,
     WeekReport,
@@ -29,9 +35,14 @@ from app.dto.google_week import (
     document_id,
 )
 from app.dto.orders import OzonOrderDayState
-from app.infrastructure.async_database import AsyncDatabase, upsert
+from app.infrastructure.async_database import AsyncDatabase, table_for, upsert
+from app.infrastructure.async_read_models import AsyncReadModels
 from app.infrastructure.google_week_orm import google_week_marketplaces
-from app.infrastructure.orm import SalesOrderLineRecord
+from app.infrastructure.orm import (
+    ProjectSheetExportSettingRecord,
+    ProjectSheetExportTargetRecord,
+    SalesOrderLineRecord,
+)
 
 
 class GoogleWeekRepository:
@@ -39,6 +50,68 @@ class GoogleWeekRepository:
         self.database = database
 
     async def get(self, marketplace: Marketplace) -> WeekProfile:
+        profile = await self._week_profile(marketplace)
+        async with self.database.transaction() as connection:
+            target = (
+                (
+                    await connection.execute(
+                        select(table_for(ProjectSheetExportTargetRecord)).where(
+                            ProjectSheetExportTargetRecord.marketplace == marketplace.value
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            legacy = (
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT enabled, schedule_kind, weekday, run_time FROM project_sheet_export_settings WHERE id=1"
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        if profile is None:
+            configured = target is not None and any(
+                target[key]
+                for key in ("spreadsheet_url", "stock_sheet_name", "orders_sheet_name", "fbo_sheet_name")
+            )
+            settings = (
+                WeekSettings(
+                    stock_sheet_name=GOOGLE_WEEK.default_stock_sheets[list(Marketplace).index(marketplace)]
+                )
+                if configured
+                else WeekSettings.defaults_for(marketplace)
+            )
+            profile = WeekProfile(marketplace=marketplace, settings=settings)
+        if target and "export_target" not in profile.settings.model_fields_set:
+            profile.settings.export_target = ExportDestination.model_validate(
+                {key: target[key] for key in ExportDestination.model_fields}
+            )
+        if target and not profile.settings.spreadsheet_url:
+            profile.settings.spreadsheet_url = str(target["spreadsheet_url"] or "")
+        if not profile.settings.schedule_managed and legacy:
+            if legacy["enabled"]:
+                destination = profile.settings.export_target
+                profile.settings.export_actions = frozenset(
+                    kind
+                    for kind, title in (
+                        (GoogleExportKind.STOCKS, destination.stock_sheet_name),
+                        (GoogleExportKind.FBS_ORDERS, destination.orders_sheet_name),
+                        (GoogleExportKind.FBO_TRANSIT, destination.fbo_sheet_name),
+                    )
+                    if title
+                )
+                if not profile.settings.enabled_actions:
+                    profile.settings.schedule_kind = legacy["schedule_kind"]
+                    profile.settings.weekday = legacy["weekday"]
+                    profile.settings.run_time = legacy["run_time"]
+        return profile
+
+    async def _week_profile(self, marketplace: Marketplace) -> WeekProfile | None:
         async with self.database.transaction() as connection:
             payload = (
                 await connection.execute(
@@ -56,14 +129,14 @@ class GoogleWeekRepository:
                 ),
             )
             if marketplace != Marketplace.WB:
-                return profile
+                return None
             original = (
                 (await connection.execute(text("SELECT * FROM google_week_update_settings WHERE id=1")))
                 .mappings()
                 .first()
             )
-            if original is None:
-                return profile
+            if original is None or not original["spreadsheet_url"]:
+                return None
             profile.saved_at = datetime.fromisoformat(original["updated_at"])
             profile.settings = WeekSettings(
                 spreadsheet_url=original["spreadsheet_url"],
@@ -130,7 +203,37 @@ class GoogleWeekRepository:
                 )
             return profile
 
-    async def save(self, profile: WeekProfile) -> None:
+    async def validate_export(self, marketplace: Marketplace, settings: WeekSettings) -> None:
+        from app.exports import project_sheet
+
+        def validate() -> GoogleExportSettings:
+            current = project_sheet.get_settings()
+            target = project_sheet.MarketplaceExportTarget(
+                marketplace=marketplace.value,
+                spreadsheet_url=settings.spreadsheet_url,
+                **settings.export_target.model_dump(),
+            )
+            targets = {item.marketplace: item for item in current.targets}
+            targets[marketplace.value] = target
+            candidate = replace(
+                current,
+                targets=tuple(
+                    targets.get(item.value)
+                    or project_sheet.MarketplaceExportTarget(
+                        marketplace=item.value, stock_sheet_name="", orders_sheet_name=""
+                    )
+                    for item in Marketplace
+                ),
+            )
+            project_sheet.validate_settings(candidate)
+            return GoogleExportSettings.model_validate(candidate)
+
+        try:
+            await AsyncReadModels(self.database).read(validate)
+        except ValueError as error:
+            raise WeekError(WeekIssue.EXPORT, detail=str(error)) from error
+
+    async def save(self, profile: WeekProfile, *, settings_changed: bool = False) -> None:
         async with self.database.transaction(write=True) as connection:
             await connection.execute(
                 upsert(
@@ -140,13 +243,45 @@ class GoogleWeekRepository:
                     ("marketplace",),
                 )
             )
+            if settings_changed:
+                await connection.execute(
+                    upsert(
+                        connection,
+                        table_for(ProjectSheetExportSettingRecord),
+                        {
+                            "id": 1,
+                            "enabled": 0,
+                            "schedule_kind": ScheduleKind.DAILY,
+                            "weekday": GOOGLE_WEEK.default_weekday,
+                            "run_time": GOOGLE_WEEK.default_time,
+                            "updated_at": profile.saved_at.isoformat()
+                            if profile.saved_at
+                            else datetime.now(TIME.moscow_timezone).isoformat(),
+                        },
+                        ("id",),
+                        updates={"id": 1},
+                    )
+                )
+                await connection.execute(
+                    upsert(
+                        connection,
+                        table_for(ProjectSheetExportTargetRecord),
+                        {
+                            "marketplace": profile.marketplace.value,
+                            "spreadsheet_url": profile.settings.spreadsheet_url,
+                            **profile.settings.export_target.model_dump(),
+                        },
+                        ("marketplace",),
+                    )
+                )
 
     async def products(self, marketplace: Marketplace) -> list[Product]:
         async with self.database.transaction() as connection:
             rows = (
                 await connection.execute(
                     text(
-                        "SELECT store_slug, article FROM stock_items WHERE marketplace=:marketplace AND is_service=0"
+                        "SELECT store_slug, article, COALESCE(image_url, '') AS image_url "
+                        "FROM stock_items WHERE marketplace=:marketplace AND is_service=0"
                     ),
                     {"marketplace": marketplace.value},
                 )

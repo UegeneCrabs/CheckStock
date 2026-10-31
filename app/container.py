@@ -13,6 +13,7 @@ from app.application.identity import IdentityService
 from app.application.ozon_analytics import OzonAnalyticsService
 from app.application.ozon_cabinet import OzonCabinetService
 from app.application.ozon_calendar import OzonCalendarService
+from app.application.ozon_google_export import OzonGoogleExport
 from app.application.ozon_history import OzonHistoryService
 from app.application.ozon_limits import OzonLimitsService
 from app.application.ozon_logistics import OzonLogisticsService
@@ -337,6 +338,10 @@ def ozon_tariff_service(resources: "AsyncResources", store: str = "") -> OzonTar
         return await resources.ozon_categories.product(get_order_credentials(store), article)
 
     return OzonTariffService(CATALOG, category, lambda: datetime.now(TIME.moscow_timezone).date())
+
+
+def ozon_google_export_service(resources: "AsyncResources") -> OzonGoogleExport:
+    return OzonGoogleExport(resources)
 
 
 def database_backup_service(resources: "AsyncResources") -> DatabaseBackupService:

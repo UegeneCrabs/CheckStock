@@ -211,6 +211,7 @@ class OzonAnalyticsStock(OzonAnalyticsModel):
     fbo: int | None = None
     ff: int | None = None
     from_customer: int | None = None
+    to_customer: int | None = None
     field_issues: tuple[OzonAnalyticsIssue, ...] = ()
 
 
@@ -679,6 +680,7 @@ class OzonAnalyticsTransitRow(OzonAnalyticsApiModel):
     offer_id: str = Field(min_length=1)
     warehouse_id: AnalyticsWarehouseId
     return_from_customer_stock_count: AnalyticsCounter
+    outbound_pending_delivery: AnalyticsCounter | None = None
     item_tags: tuple[str, ...] = ()
 
     @field_validator("warehouse_id")
