@@ -71,6 +71,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Закупка, ФФ и теги Ozon из Google Таблицы; сопоставление product_id/SKU | `app/economics/sources/ozon.py`, `app/dto/ozon_source.py`, `app/repositories/unit_economics_1c.py`, [источник и полнота](f05-economics-completeness.md#исходные-параметры-ozon-из-google-таблицы) |
 | Сохранение предельной цены Ozon из калькулятора, подтверждение и журнал | `app/application/ozon_price_changes.py`, `app/dto/ozon_price_changes.py`, `app/economics/ozon_price_changes.py`, `app/ozon/async_price_changes.py`, `app/web/routers/ozon_prices.py`, `static/economics/ozon/price-save.js`, [контракт](ozon-prices.md#сохранение-цены-из-калькулятора) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
+| Постоянные хранилища API/MCP в Docker | `deploy/docker-compose.yml`, `scripts/ops/prepare_agent_storage.py`, [перенос и права](agent-api-deployment.md#переход-с-файлов-в-secrets) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |
 | Ежедневный бэкап БД в Google Диск, 08:00 МСК | `app/jobs/database_backup.py`, `app/application/database_backup.py`, `app/integrations/database_backup_drive.py`, [хранение, загрузка и восстановление](database-backups.md) |
 | Статические проверки | `pyproject.toml`, цели `lint` и `check` в `Makefile` |

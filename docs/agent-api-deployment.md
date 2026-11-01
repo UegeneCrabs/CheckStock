@@ -28,33 +28,59 @@ GPT блокировал вызовы временного туннеля; ту�
   как HTTP, и создание/отзыв ключей отклоняется проверкой Origin с кодом 403.
   Не используйте `*`; при пересоздании Docker-сети проверьте адрес gateway.
 - `CHECKSTOCK_SESSION_COOKIE_SECURE=1`: включить для HTTPS.
-- `CHECKSTOCK_AGENT_TOKENS_PATH`: путь к файлу ключей в отдельном постоянном записываемом каталоге.
-  Например `/app/agent-credentials/chatgpt_tokens.json`. По умолчанию используется
-  `secrets/chatgpt_tokens.json`; стандартный mount secrets:ro не позволяет выпускать ключи через UI.
+- Docker Compose задаёт `CHECKSTOCK_AGENT_TOKENS_PATH=/app/agent-credentials/chatgpt_tokens.json`
+  и `CHECKSTOCK_MCP_DB_PATH=/app/agent-credentials/mcp_oauth.sqlite3`. Оба файла находятся
+  в постоянном записываемом томе `agent-credentials`, общем для `app` и `scheduler`.
+  При прямом запуске Python значения можно задать через окружение; без них остаётся
+  локальный путь `secrets/chatgpt_tokens.json` и SQLite рядом с ним.
 - Не переносить `.env`, локальную SQLite, ключи пользователей ноутбука и временный Cloudflare tunnel.
 - Каталог `work/` содержит только локальные тестовые материалы и исключён из Git.
 - Каталог ключей должен быть доступен только процессу приложения и администраторам.
   Существующие секреты интеграций оставьте read-only. При нескольких экземплярах приложения
   нужен общий каталог ключей с атомарной заменой файлов и эксклюзивным созданием lock-файла.
 
-Пример дополнения Docker Compose (подставить адрес компании через окружение):
-
-```yaml
-services:
-  app:
-    environment:
-      CHECKSTOCK_AGENT_PUBLIC_URL: ${CHECKSTOCK_AGENT_PUBLIC_URL:?set company HTTPS origin}
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:?set trusted proxy addresses}
-      CHECKSTOCK_SESSION_COOKIE_SECURE: "1"
-      CHECKSTOCK_AGENT_TOKENS_PATH: /app/agent-credentials/chatgpt_tokens.json
-    volumes:
-      - agent-credentials:/app/agent-credentials
-volumes:
-  agent-credentials:
+```text
+CHECKSTOCK_AGENT_PUBLIC_URL=https://rocketbm.ru
+CHECKSTOCK_SESSION_COOKIE_SECURE=1
 ```
 
-Существующие volumes и переменные сохраняются. Обеспечьте владельца/права каталога
-для UID приложения. Настройки TLS и применение Compose выполняет команда сервера.
+`FORWARDED_ALLOW_IPS` задайте для фактического прокси. Основной `secrets` остаётся
+подключённым только для чтения. Образ создаёт `/app/agent-credentials` с режимом `0700`
+и владельцем `10001:10001`; новый именованный том наследует эти метаданные при первом
+подключении. Скрипт подготовки также исправляет владельца уже существующего тома;
+для перенесённых файлов задаёт `0600`. Приложение продолжает работать пользователем `checkstock`.
+
+## Переход с файлов в secrets
+
+Смена пути сама по себе не переносит существующие ключи и OAuth-разрешения.
+Автоматический выпуск через `deploy/deploy-release.sh` после сборки образа останавливает
+`app` и `scheduler`, запускает подготовку хранилища и только затем поднимает контейнеры.
+При ошибке подготовки выпуск прерывается и запускается штатный откат к предыдущему коду.
+
+Для ручного обновления из checkout новой версии выполните из корня проекта:
+
+```shell
+docker compose --env-file .env -f deploy/docker-compose.yml build app &&
+docker compose --env-file .env -f deploy/docker-compose.yml stop app scheduler &&
+docker compose --env-file .env -f deploy/docker-compose.yml run --rm --no-deps -T --user 0:0 --entrypoint python app -m scripts.ops.prepare_agent_storage --uid 10001 --gid 10001 --apply &&
+docker compose --env-file .env -f deploy/docker-compose.yml up -d --no-deps app scheduler
+```
+
+Последнюю команду выполняйте только после успешного завершения подготовки. Если
+используется дополнительный Compose-файл наблюдаемости, передавайте его во всех командах.
+
+Подготовка копирует `chatgpt_tokens.json` без изменения хешей и ID пользователей;
+`mcp_oauth.sqlite3` переносит через SQLite backup API, включая данные WAL. Исходные файлы
+сохраняются. Уже существующие целевые файлы проверяются и не перезаписываются; повторный
+запуск сохраняет выданные после перехода ключи и подключения. Файлы, отсутствующие в старом
+каталоге, приложение создаст при первом использовании. Без `--apply` команда только
+показывает план. Для нестандартного исходного каталога используйте `--source-directory`.
+
+Не копируйте локальные тестовые подключения на рабочий сервер. Перед обновлением
+сохраните резервную копию серверных файлов; после перехода включите том `agent-credentials`
+в резервное копирование. PostgreSQL dump не содержит файлы API/MCP. При откате старый код
+может читать старый каталог: новые подключения, выданные после перехода, туда автоматически
+не возвращаются. Не удаляйте том через `docker compose down -v`.
 
 ## Проверка после развёртывания
 
@@ -72,9 +98,8 @@ volumes:
    и `/oauth/mcp/*`, включая POST. Сохранить доступ к обычному входу на сайт и cookies:
    OAuth требует входа сотрудника и его согласия. Не ограничивать весь прокси методом GET.
    MCP по-прежнему предоставляет только чтение бизнес-данных; POST нужен протоколу и OAuth.
-9. `CHECKSTOCK_MCP_DB_PATH` должен указывать на постоянный записываемый файл SQLite
-   для OAuth-подключений (по умолчанию рядом с файлом API-ключей).
-   Проверить авторизацию Claude, список инструментов, чтение отчёта и отзыв подключения.
+9. Проверить авторизацию Claude и ChatGPT, разделение списков, чтение отчёта и отзыв подключения.
+   Пересоздать `app` и проверить ранее выданный ключ и оба OAuth-подключения снова.
    Настроенный адрес на странице Claude сам по себе не подтверждает доступность MCP снаружи.
 
 `stocks` по умолчанию сохраняет детализацию; `view=summary` возвращает колонки таблицы.

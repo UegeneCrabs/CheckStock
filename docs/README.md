@@ -98,7 +98,7 @@
 
 - [API аналитики CheckStock](chatgpt-analytics.md) — полная инструкция MCP и компактная версия для GPT с Actions.
 - [Подключение Claude и ChatGPT через MCP](claude-mcp.md)
-- [Развёртывание API агентов](agent-api-deployment.md)
+- [Развёртывание API агентов](agent-api-deployment.md) — постоянный том API/MCP, перенос файлов и права контейнера.
 - [Сводка прибыли](agent-profit-summary.md)
 - [Серверный анализ товаров](agent-server-analysis.md)
 - [Расширенные отчёты WB](agent-extended-reports.md)

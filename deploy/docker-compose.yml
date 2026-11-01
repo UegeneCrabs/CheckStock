@@ -36,6 +36,8 @@ services:
       CHECKSTOCK_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-checkstock}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-checkstock}
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       CHECKSTOCK_AGENT_PUBLIC_URL: ${CHECKSTOCK_AGENT_PUBLIC_URL:-}
+      CHECKSTOCK_AGENT_TOKENS_PATH: /app/agent-credentials/chatgpt_tokens.json
+      CHECKSTOCK_MCP_DB_PATH: /app/agent-credentials/mcp_oauth.sqlite3
       CHECKSTOCK_DB_TIMEOUT_SECONDS: ${CHECKSTOCK_DB_TIMEOUT_SECONDS:-30}
       CHECKSTOCK_DB_BUSY_TIMEOUT_MS: ${CHECKSTOCK_DB_BUSY_TIMEOUT_MS:-30000}
       CHECKSTOCK_LOG_LEVEL: ${CHECKSTOCK_LOG_LEVEL:-INFO}
@@ -122,6 +124,7 @@ services:
       CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS: ${CHECKSTOCK_RNP_REPORT_POLL_INTERVAL_SECONDS:-1}
     volumes: &app-volumes
       - ../secrets:/app/secrets:ro
+      - agent-credentials:/app/agent-credentials
       - yandex-finance-credentials:/app/finance-credentials
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
@@ -174,6 +177,7 @@ services:
     stop_grace_period: 10s
 
 volumes:
+  agent-credentials:
   wb-storefront-data:
   yandex-parser-data:
   postgres-data:
