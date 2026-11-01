@@ -243,8 +243,9 @@ LABELS.update(
         "order_spend": "Расходы рекламы за заказы, ₽",
         "order_drr": "ДРР рекламы за заказы, %",
         "total_drr": "Суммарный ДРР, %",
-        "stock_days": "Обеспеченность запасом, дни",
-        "stock_average_daily_orders": "Средние заказы в день для обеспеченности",
+        "stock_days": "Обеспеченность запасом, дни; окно и база в stock_basis",
+        "stock_average_daily_orders": "Средние заказы после отмен за день окна stock_basis",
+        "stock_basis": "Окно, база заказов и покрытие расчёта текущего запаса; отдельно от периода прибыли",
         "drr_spend": "Расходы в базе расчёта ДРР, ₽",
         "acquiring_percent": "Эквайринг, %",
         "acquiring_amount": "Эквайринг, ₽",
@@ -372,6 +373,25 @@ def guide(name: str, base: Mapping[str, object]) -> dict[str, object]:
                 "description": "Заказы покрывают весь период независимо от полноты прибыли",
                 "type": "bool",
             }
+        )
+    if name in {"profit", "ozon-profit-details"}:
+        fields.extend(
+            {"path": "rows[].stock_basis." + key, "name": key, "description": label, "type": kind}
+            for key, label, kind in (
+                ("period_from", "Начало скользящего окна спроса", "date"),
+                ("period_to", "Конец окна спроса, включая текущий день", "date"),
+                ("period_days", "Длина окна усреднения спроса в днях", "integer"),
+                ("orders_basis", "after_cancellations: заказы после отмен, не подтверждённые выкупы", "str"),
+                ("orders_count", "Заказано единиц после отмен за окно спроса", "integer|null"),
+                ("current_day_partial", "Текущий день окна ещё не завершён", "bool"),
+                ("coverage", "Покрытие сохранённых наблюдений спроса, независимо от прибыли", "object"),
+                ("coverage.complete", "Все дни окна представлены сохранёнными наблюдениями", "bool"),
+                ("coverage.days", "Число дней с наблюдениями", "integer"),
+                ("coverage.expected_days", "Ожидаемое число дней окна", "integer"),
+                ("coverage.missing_dates", "Даты отсутствующих наблюдений спроса", "array"),
+                ("coverage.partial_dates", "Даты неполных наблюдений источника", "array"),
+                ("coverage.stale", "Наблюдения источника устарели", "bool"),
+            )
         )
     if name == "prices":
         fields.append(

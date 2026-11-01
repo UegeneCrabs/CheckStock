@@ -2365,6 +2365,10 @@ class AgentOzonRecordType(StrEnum):
     NOTE = "note"
 
 
+class OzonStockOrdersBasis(StrEnum):
+    AFTER_CANCELLATIONS = "after_cancellations"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AgentOzonConfig:
     marketplace: str = "OZON"
