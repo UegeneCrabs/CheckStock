@@ -760,23 +760,11 @@
       ],
       "transformations": [
         {
-          "id": "reduce",
-          "options": {
-            "mode": "seriesToRows",
-            "reducers": [
-              "lastNotNull"
-            ],
-            "fields": {
-              "id": "numeric"
-            }
-          }
-        },
-        {
           "id": "sortBy",
           "options": {
             "sort": [
               {
-                "field": "Last *",
+                "field": "Value #A",
                 "desc": true
               }
             ]
