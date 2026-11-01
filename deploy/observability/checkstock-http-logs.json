@@ -504,6 +504,23 @@
           "refId": "A"
         }
       ],
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Value",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
       "title": "Среднее время по каждой HTTP-ручке",
       "type": "bargauge"
     },
