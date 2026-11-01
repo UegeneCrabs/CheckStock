@@ -506,15 +506,23 @@
       ],
       "transformations": [
         {
-          "id": "seriesToRows",
-          "options": {}
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "fields": {
+              "id": "numeric"
+            }
+          }
         },
         {
           "id": "sortBy",
           "options": {
             "sort": [
               {
-                "field": "Value",
+                "field": "Last *",
                 "desc": true
               }
             ]
