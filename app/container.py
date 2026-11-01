@@ -96,6 +96,7 @@ from app.wb.hourly_prices import (
 )
 
 if TYPE_CHECKING:
+    from app.application.agent_ozon import AgentOzonService
     from app.infrastructure.async_database import AsyncDatabase
     from app.infrastructure.async_resources import AsyncResources
 
@@ -383,4 +384,25 @@ def ozon_cabinet_service(resources: "AsyncResources") -> OzonCabinetService:
         load_orders,
         AsyncLogisticsRepository(resources.database).articles,
         lambda: datetime.now(UTC),
+    )
+
+
+def agent_ozon_service(resources: "AsyncResources") -> "AgentOzonService":
+    from app.application.agent_ozon import AgentOzonService
+    from app.infrastructure.agent_ozon_repository import AgentOzonRepository
+    from app.infrastructure.ozon_economics_repository import OzonEconomicsRepository
+
+    async def stored_categories(
+        store: str, articles: tuple[str, ...]
+    ) -> tuple[OzonProductCategorySelection, ...]:
+        return ()
+
+    return AgentOzonService(
+        AgentOzonRepository(resources.database),
+        OzonEconomicsRepository(resources.database),
+        OzonReportsService(
+            OzonReportsRepository(resources.database), lambda: datetime.now(UTC), stored_categories
+        ),
+        ozon_history_service(resources),
+        ozon_analytics_service(resources.database),
     )

@@ -5,7 +5,7 @@
   const search = document.getElementById('catalog-search');
   let methods = [], selected;
   const node = (tag, text) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
-  const typeName = value => value.split('|').map(t => ({str:'Текст', number:'Число', integer:'Целое число', bool:'Да / нет', boolean:'Да / нет', date:'Дата YYYY-MM-DD', datetime:'Дата и время ISO 8601', array:'Список', object:'Объект', null:'нет данных'}[t] || t)).join(' / ');
+  const typeName = value => value.split('|').map(t => ({str:'Текст', string:'Текст', number:'Число', integer:'Целое число', bool:'Да / нет', boolean:'Да / нет', date:'Дата YYYY-MM-DD', datetime:'Дата и время ISO 8601', array:'Список', object:'Объект', null:'нет данных'}[t] || t)).join(' / ');
   function table(headers, rows) {
     const wrap = node('div'); wrap.className = 'agent-table-wrap';
     const t = node('table'), head = node('thead'), tr = node('tr');
@@ -28,7 +28,8 @@
   function renderMethod(m) {
     selected = m.name; renderList(); detail.replaceChildren();
     detail.append(node('h2', m.title), node('code', 'GET '+m.path));
-    const platforms=['WB','YANDEX MARKET'];
+    const platforms=['WB','YANDEX MARKET','OZON'];
+    const labels=['WB','Яндекс Маркет','Ozon'];
     const supported=mp=>Boolean(m.marketplace_support?.[mp]);
     const guide=mp=>m.marketplace_guides?.[mp] || m;
     const maps=platforms.map(mp=>new Map((supported(mp)?guide(mp).fields:[]).map(f=>[f.path,f])));
@@ -44,14 +45,14 @@
           const note=f.notes && !['—','Яндекс Маркет'].includes(f.notes)?f.notes:'';
           return [f.description,typeName(f.type)+(f.unit && f.unit!=='—'?' · '+f.unit:''),note].filter(Boolean).join('\n');
         });
-        if(!descriptions[0] || !descriptions[1] || descriptions[0]===descriptions[1]) return descriptions[0] || descriptions[1];
-        return 'WB: '+descriptions[0]+'\n\nЯндекс Маркет: '+descriptions[1];
+        const unique=[...new Set(descriptions.filter(Boolean))];
+        return unique.length===1 ? unique[0] : descriptions.map((text,i)=>text ? labels[i]+': '+text : '').filter(Boolean).join('\n\n');
       };
-      const fieldPaths=row=>row.paths[0]===row.paths[1]?row.paths[0]:row.fields.map((f,i)=>f?(i===0?'WB: ':'Яндекс: ')+row.paths[i]:null).filter(Boolean).join('\n\n');
-      const comparison=table(['Поле в JSON','Описание поля','WB','Яндекс Маркет'],comparisonRows.map(row=>[fieldPaths(row),description(row),...row.fields.map(f=>f?'Есть':'Нет')]));
+      const fieldPaths=row=>new Set(row.paths.filter(Boolean)).size===1?row.paths[0]:row.fields.map((f,i)=>f?labels[i]+': '+row.paths[i]:null).filter(Boolean).join('\n\n');
+      const comparison=table(['Поле в JSON','Описание поля',...labels],comparisonRows.map(row=>[fieldPaths(row),description(row),...row.fields.map(f=>f?'Есть':'Нет')]));
       comparison.classList.add('catalog-comparison');
       comparison.querySelectorAll('tbody tr').forEach(row=> {
-        [2,3].forEach(index=> {
+        [2,3,4].forEach(index=> {
           const cell=row.cells[index], badge=node('span',cell.textContent);
           badge.className=cell.textContent==='Есть'?'catalog-availability catalog-availability--yes':'catalog-availability catalog-availability--no';
           cell.replaceChildren(badge);

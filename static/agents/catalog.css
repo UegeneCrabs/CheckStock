@@ -15,9 +15,10 @@
 #catalog-detail td { white-space: pre-line; vertical-align: top; }
 .catalog-comparison table { table-layout: fixed; width: 100%; min-width: 600px; }
 .catalog-comparison th:first-child { width: 25%; }
-.catalog-comparison th:nth-child(2) { width: 49%; }
+.catalog-comparison th:nth-child(2) { width: 39%; }
 .catalog-comparison th:nth-child(3) { width: 10%; }
 .catalog-comparison th:nth-child(4) { width: 16%; }
+.catalog-comparison th:nth-child(5) { width: 10%; }
 #catalog-detail .catalog-comparison th:nth-child(n+3), #catalog-detail .catalog-comparison td:nth-child(n+3) { text-align: center; }
 #catalog-detail .catalog-comparison td:nth-child(2) { text-align: left; }
 .catalog-comparison td:first-child { font-family: monospace; font-size: 12px; }

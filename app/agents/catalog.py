@@ -1,4 +1,5 @@
-"""Human-readable reference shared by OpenAPI and the employee API catalog."""
+from app.agents.ozon_catalog import TITLES as OZON_TITLES
+from app.agents.ozon_reports import SPECS as OZON_SPECS
 
 # Fields describe the main response fields, not an exhaustive schema for every view.
 DOCS = {
@@ -170,6 +171,14 @@ DOCS = {
 }
 
 
+DOCS.update(
+    {
+        name: (title, OZON_SPECS[name][3], "article:Точный offer_id Ozon:str")
+        for name, title in OZON_TITLES.items()
+    }
+)
+
+
 def documentation(name):
     from app.agents.catalog_fields import enrich
 
@@ -194,13 +203,18 @@ def documentation(name):
     yandex = guide(name, result)
     if yandex:
         result["marketplace_guides"] = {"YANDEX MARKET": yandex}
+    from app.agents.marketplaces import supports
+    from app.agents.ozon_catalog import guide as ozon_guide
+
+    if supports(name, "OZON"):
+        result.setdefault("marketplace_guides", {})["OZON"] = ozon_guide(name, result)
     return result
 
 
 async def employee_catalog(user):
     from app.access.resources import store_marketplace_pairs
     from app.agents.catalog_fields import ENVELOPE
-    from app.agents.yandex_reports import SUPPORTED
+    from app.agents.marketplaces import supports
     from app.web.routers.agent_analytics import action_schema
     from app.web.routers.agent_full import SPECS, capabilities
 
@@ -223,12 +237,7 @@ async def employee_catalog(user):
                 "path": path,
                 "operation_id": operation["operationId"],
                 **documentation(name),
-                "marketplace_support": {
-                    "WB": True,
-                    "YANDEX MARKET": name in SUPPORTED
-                    or (name in SPECS and not SPECS[name][1])
-                    or name in {"stores", "capabilities", "article-stores", "data-status", "loss-products"},
-                },
+                "marketplace_support": {mp: supports(name, mp) for mp in ("WB", "YANDEX MARKET", "OZON")},
                 "scopes": allowed,
                 "parameters": operation.get("parameters", []),
                 "response_schema": operation.get("responses", {}).get("200", {}),

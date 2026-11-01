@@ -70,6 +70,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Анализатор, эфемериды и Продажи по API Яндекс Маркета | `app/application/yandex_analytics.py`, `app/analytics/yandex_*.py`, `app/infrastructure/yandex_analytics_repository.py`, `app/web/routers/yandex_analytics.py`, общие `static/analytics/`, [контракт](yandex-analytics.md) |
 | Закупка, ФФ и теги Ozon из Google Таблицы; сопоставление product_id/SKU | `app/economics/sources/ozon.py`, `app/dto/ozon_source.py`, `app/repositories/unit_economics_1c.py`, [источник и полнота](f05-economics-completeness.md#исходные-параметры-ozon-из-google-таблицы) |
 | Сохранение предельной цены Ozon из калькулятора, подтверждение и журнал | `app/application/ozon_price_changes.py`, `app/dto/ozon_price_changes.py`, `app/economics/ozon_price_changes.py`, `app/ozon/async_price_changes.py`, `app/web/routers/ozon_prices.py`, `static/economics/ozon/price-save.js`, [контракт](ozon-prices.md#сохранение-цены-из-калькулятора) |
+| API Ozon для ИИ | `app/application/agent_ozon.py`, `app/agents/ozon_*.py`, `app/infrastructure/agent_ozon_repository.py`, [контракт и приёмка](agent-ozon-reports.md) |
 | API ИИ-агентов | `app/agents/`, `app/web/routers/agent_*.py`, [контракт API](chatgpt-analytics.md) |
 | Постоянные хранилища API/MCP в Docker | `deploy/docker-compose.yml`, `scripts/ops/prepare_agent_storage.py`, [перенос и права](agent-api-deployment.md#переход-с-файлов-в-secrets) |
 | Команды обслуживания | `scripts/`, [список команд](../scripts/README.md) |

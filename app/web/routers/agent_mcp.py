@@ -534,6 +534,8 @@ async def call_tool(request, user, path, arguments):
     # user leakage under concurrency. No network request, caller URL or bearer forwarding.
     internal = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     internal.state.container = request.app.state.container
+    if hasattr(request.app.state, "async_resources"):
+        internal.state.async_resources = request.app.state.async_resources
     internal.include_router(analytics)
 
     async def verified_employee(request: Request):

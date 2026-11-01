@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from app.core.constants import OzonAnalyticsReason
+from app.dto.agent_ozon import AgentOzonRows
+from app.dto.agent_query import ReportQuery
 from app.dto.database_backup import BackupArtifact, BackupReceipt, BackupUpload, DriveBackupFile
 from app.dto.fbo_stock import (
     FboActor,
@@ -44,6 +46,7 @@ from app.dto.ozon_analytics import (
     OzonAnalyticsTransit,
 )
 from app.dto.ozon_calendar import OzonCalendarEvent, OzonCalendarKey, OzonCalendarSave, OzonCalendarSources
+from app.dto.ozon_economics import OzonCoverage, OzonProducts, OzonProductsQuery
 from app.dto.ozon_limits import (
     OzonRateFeedback,
     OzonRateScope,
@@ -564,3 +567,20 @@ class OzonAnalyticsStore(Protocol):
         account_wide: bool = False,
         raw_payload: str | None = None,
     ) -> None: ...
+
+
+class AgentOzonReader(Protocol):
+    async def commissions(self, query: ReportQuery) -> AgentOzonRows: ...
+    async def order_coverage(self, query: ReportQuery) -> OzonCoverage: ...
+    async def common(self, name: str, query: ReportQuery, user: User) -> AgentOzonRows: ...
+    async def prices(self, query: ReportQuery) -> AgentOzonRows: ...
+    async def status(self, store: str) -> AgentOzonRows: ...
+    async def inbound(self, query: ReportQuery) -> AgentOzonRows: ...
+    async def campaigns(self, query: ReportQuery) -> AgentOzonRows: ...
+    async def comments(self, query: ReportQuery) -> AgentOzonRows: ...
+
+
+class AgentOzonProductsReader(Protocol):
+    async def products(
+        self, query: OzonProductsQuery, last_complete_day: date, custom: bool
+    ) -> OzonProducts: ...

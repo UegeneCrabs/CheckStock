@@ -17,6 +17,10 @@ python_version = "3.13"
 strict = true
 follow_imports = "silent"
 files = [
+    "app/dto/agent_ozon.py", "app/dto/agent_query.py", "app/dto/agent_summary.py", "app/dto/agent_analysis.py",
+    "app/application/agent_ozon.py", "app/application/agent_ozon_analysis.py",
+    "app/infrastructure/agent_ozon_repository.py", "app/agents/marketplaces.py",
+    "app/agents/ozon_fields.py", "app/agents/ozon_campaigns.py", "app/agents/ozon_catalog.py", "app/agents/ozon_reports.py",
     "app/dto/ozon_price_changes.py", "app/application/ozon_price_changes.py",
     "app/ozon/async_price_changes.py", "app/economics/ozon_price_changes.py",
     "app/infrastructure/ozon_price_changes_orm.py", "app/infrastructure/ozon_price_changes_repository.py",

@@ -7,11 +7,14 @@ from urllib.parse import urlencode
 
 from fastapi import HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from pydantic import JsonValue
 
 from app.access.resources import store_marketplace_pairs
 from app.agents import reports
 from app.core.constants import INBOUND_SCHEDULE
+from app.dto.agent_query import ReportQuery
 from app.dto.identity import SectionName as S
+from app.dto.identity import User
 
 EXTRA_SPECS = {
     "standard-costs": (
@@ -71,7 +74,7 @@ EXTRA_SPECS = {
 }
 
 
-def stock_history(query):
+def stock_history(query: ReportQuery) -> list[dict[str, JsonValue]]:
     params = (query.store, query.marketplace, str(query.date_from), str(query.date_to))
     rows = reports.read(
         "SELECT article, day, scheme, quantity, captured_at AS updated_at, NULL AS warehouse "
@@ -88,7 +91,7 @@ def stock_history(query):
     return reports.filtered(rows, query)
 
 
-def orders(query, user):
+def orders(query: ReportQuery, user: User | None) -> list[dict[str, JsonValue]]:
     clause, dates = reports.date_clause(query, "ordered_at")
     # The registry normalizes timestamps to Moscow; ISO date boundaries are inclusive/exclusive.
     rows = reports.read(
@@ -147,7 +150,7 @@ def inbound(request, query):
     return reports.filtered(rows, query), sources
 
 
-def arrivals(query, user):
+def arrivals(query: ReportQuery, user: User) -> tuple[list[dict[str, JsonValue]], list[dict[str, JsonValue]]]:
     from app.stock import supply_arrivals
 
     data = supply_arrivals.report(user)
@@ -176,7 +179,7 @@ def arrivals(query, user):
     ]
 
 
-def cost_report(query, user):
+def cost_report(query: ReportQuery, user: User) -> tuple[list[dict[str, JsonValue]], dict[str, JsonValue]]:
     from app.stock import cost_report as source
 
     data = source.build_report(
