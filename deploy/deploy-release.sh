@@ -195,9 +195,9 @@ echo 'Updating application and observability containers'
 "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null
 "${compose[@]}" up -d --no-deps --force-recreate loki grafana alloy </dev/null
 deploy_stage='dashboard mount verification'
-"${compose[@]}" exec -T grafana cat /var/lib/grafana/dashboards/checkstock-http-logs.json \
+"${compose[@]}" exec -T grafana cat /var/lib/grafana/dashboards/checkstock-http-logs.json </dev/null \
   | cmp - deploy/observability/checkstock-http-logs.json
-"${compose[@]}" exec -T grafana cat /var/lib/grafana/dashboards/checkstock-logs.json \
+"${compose[@]}" exec -T grafana cat /var/lib/grafana/dashboards/checkstock-logs.json </dev/null \
   | cmp - deploy/observability/grafana-dashboard.json
 echo 'Grafana dashboard mounts match release files'
 

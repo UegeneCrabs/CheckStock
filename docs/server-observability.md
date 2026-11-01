@@ -63,7 +63,25 @@ Grafana и запуск Loki и Alloy. Общий том логов сохран
 обновления смонтированных файлов конфигурации; сценарий сравнивает JSON
 HTTP-дашбордов внутри Grafana с файлами релизного коммита.
 
+Чтобы вручную перечитать JSON из текущего серверного checkout, выполните в
+`/home/checkstock`:
+
+```bash
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml up -d --no-deps --force-recreate grafana
+sha256sum deploy/observability/checkstock-http-logs.json
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml exec -T grafana sha256sum /var/lib/grafana/dashboards/checkstock-http-logs.json
+```
+
+Хеши должны совпасть. Эта операция перечитывает файл из текущего checkout; она
+не меняет сам запрос. Текущий запрос откройте в панели Grafana через **Edit →
+Queries**. Если он начинается с `topk(100, avg_over_time(`, JSON новой версии
+уже загружен и ошибку нужно исправлять в LogQL или лимитах Loki.
+
 Loki хранит записи семь дней в томе `loki-data`. Тома Grafana и Alloy также
 сохраняются между перезапусками. Исходные файлы в `checkstock-logs` Loki не
 очищает: следите за размером тома и настройте ротацию файлов до длительной
 эксплуатации. Не выполняйте `down --volumes`, если данные нужно сохранить.
+Лимит Loki `max_query_series` равен 5000: панель времени по HTTP-ручкам
+создаёт промежуточные ряды до отбора `topk(100)`. Больший лимит требует больше
+памяти при широких запросах. При новой ошибке лимита сначала сузьте период
+или фильтры и проверьте количество различных маршрутов в логах.
