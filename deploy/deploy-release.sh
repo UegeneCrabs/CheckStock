@@ -182,6 +182,11 @@ echo 'Checking release Compose configuration'
 deploy_stage='release image build'
 echo 'Building release image on server'
 "${compose[@]}" build app </dev/null
+deploy_stage='API and MCP storage preparation'
+echo 'Stopping API/OAuth writers before preparing persistent credentials'
+"${compose[@]}" stop app scheduler </dev/null
+"${compose[@]}" run --rm --no-deps -T --user 0:0 --entrypoint python app \
+  -m scripts.ops.prepare_agent_storage --uid 10001 --gid 10001 --apply </dev/null
 deploy_stage='container update'
 echo 'Updating application and observability containers'
 "${compose[@]}" up -d --no-deps app scheduler watchdog loki grafana alloy </dev/null
