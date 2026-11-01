@@ -434,7 +434,7 @@
         "type": "loki",
         "uid": "checkstock-loki"
       },
-      "description": "Среднее время завершённых запросов по методу и маршруту за выбранный период. Показаны все ручки с запросами; учитываются фильтры страницы.",
+      "description": "100 ручек с наибольшим средним временем завершённых запросов за выбранный период. Учитываются фильтры страницы.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -498,7 +498,7 @@
             "uid": "checkstock-loki"
           },
           "editorMode": "code",
-          "expr": "sort_desc(avg_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\" | regexp \"method=(?P<method>[^ ]+) path=(?P<path>[^ ]+)(?: route=(?P<route>[^ ]+))? status=[0-9]+ duration_ms=(?P<duration_ms>[0-9.]+)\" | label_format endpoint=\"{{if .route}}{{.route}}{{else}}{{.path}}{{end}}\" | unwrap duration_ms [$__range]) by (method, endpoint))",
+          "expr": "topk(100, avg_over_time({service_name=\"app\",http_status=~\"$http_status\",level=~\"$level\",logger=~\"$logger\",record_type=~\"log|\"} |~ \"^(?:${tag:regex})^|^[^ ]+ [|] [A-Z]+ [|] [^|]+ [|] \\\\[(\\\"[^\\\"]*\\\", )*\\\"(${tag:regex})\\\"\" |= \"request_completed\" |= \"$search\" | regexp \"method=(?P<method>[^ ]+) path=(?P<path>[^ ]+)(?: route=(?P<route>[^ ]+))? status=[0-9]+ duration_ms=(?P<duration_ms>[0-9.]+)\" | label_format endpoint=\"{{if .route}}{{.route}}{{else}}{{.path}}{{end}}\" | keep method, endpoint, duration_ms | unwrap duration_ms [$__range]) by (method, endpoint))",
           "legendFormat": "{{method}} {{endpoint}}",
           "queryType": "instant",
           "refId": "A"
