@@ -148,7 +148,10 @@ rollback() {
   fi
   if ((rollback_failed == 0)); then
     if [[ "$old_observability" == true ]]; then
-      "${compose[@]}" up -d --no-deps app scheduler watchdog loki grafana alloy </dev/null || rollback_failed=1
+      "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null || rollback_failed=1
+      if ((rollback_failed == 0)); then
+        "${compose[@]}" up -d --no-deps --force-recreate loki grafana alloy </dev/null || rollback_failed=1
+      fi
     else
       "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null || rollback_failed=1
     fi
@@ -189,7 +192,14 @@ echo 'Stopping API/OAuth writers before preparing persistent credentials'
   -m scripts.ops.prepare_agent_storage --uid 10001 --gid 10001 --apply </dev/null
 deploy_stage='container update'
 echo 'Updating application and observability containers'
-"${compose[@]}" up -d --no-deps app scheduler watchdog loki grafana alloy </dev/null
+"${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null
+"${compose[@]}" up -d --no-deps --force-recreate loki grafana alloy </dev/null
+deploy_stage='dashboard mount verification'
+"${compose[@]}" exec -T grafana cat /var/lib/grafana/dashboards/checkstock-http-logs.json \
+  | cmp - deploy/observability/checkstock-http-logs.json
+"${compose[@]}" exec -T grafana cat /var/lib/grafana/dashboards/checkstock-logs.json \
+  | cmp - deploy/observability/grafana-dashboard.json
+echo 'Grafana dashboard mounts match release files'
 
 deploy_stage='app healthcheck'
 wait_healthy app 24
