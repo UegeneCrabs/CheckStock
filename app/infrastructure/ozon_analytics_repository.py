@@ -790,6 +790,12 @@ class OzonAnalyticsRepository:
             for item in catalog
         )
 
+    async def transit_snapshot(self, store: str) -> OzonAnalyticsTransit | None:
+        table = table_for(OzonAnalyticsTransitRecord)
+        async with self.database.transaction() as connection:
+            payload = await connection.scalar(select(table.c.payload).where(table.c.store_slug == store))
+        return OzonAnalyticsTransit.model_validate_json(payload) if payload is not None else None
+
     async def save_transit(self, snapshot: OzonAnalyticsTransit) -> None:
         async with self.database.transaction(write=True) as connection:
             await connection.execute(

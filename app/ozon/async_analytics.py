@@ -229,6 +229,7 @@ class AsyncOzonAnalyticsClient:
         return OzonAnalyticsTransit(
             store_slug=store,
             observed_at=now,
+            includes_to_customer=include_to_customer,
             products=tuple(
                 OzonAnalyticsStock(
                     article=article,

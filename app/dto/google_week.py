@@ -225,6 +225,11 @@ class ProductIssue(WeekModel):
     missing_days: list[date] = Field(default_factory=list)
 
 
+class FreezeCellSkip(WeekModel):
+    cell: str
+    reason: WeekIssue
+
+
 class FreezeSheetResult(WeekModel):
     sheet_id: int
     sheet_name: str
@@ -232,6 +237,7 @@ class FreezeSheetResult(WeekModel):
     formula_count: int = 0
     written_cells: int = 0
     issue: str | None = None
+    skipped_cells: list[FreezeCellSkip] = Field(default_factory=list)
 
 
 class SnapshotTime(WeekModel):
@@ -465,6 +471,11 @@ class FormulaBackup(WeekModel):
     cell: str
     previous: CellValue
     effective_value: CellValue
+
+
+class FreezeValueRange(WeekModel):
+    range: str
+    values: list[list[float | str | bool]]
 
 
 class FreezePlan(WeekModel):

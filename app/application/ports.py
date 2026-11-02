@@ -497,10 +497,16 @@ class OzonAnalyticsClient(Protocol):
     async def funnel(
         self, source_day: date, offset: int, catalog: OzonArticleIndex
     ) -> OzonAnalyticsFunnelPage: ...
-    async def transit(self, store: str, now: datetime) -> OzonAnalyticsTransit: ...
+    async def transit(
+        self, store: str, now: datetime, *, include_to_customer: bool = False
+    ) -> OzonAnalyticsTransit: ...
 
 
-class OzonAnalyticsStore(Protocol):
+class OzonTransitSnapshotStore(Protocol):
+    async def transit_snapshot(self, store: str) -> OzonAnalyticsTransit | None: ...
+
+
+class OzonAnalyticsStore(OzonTransitSnapshotStore, Protocol):
     async def forecast_settings(self, store: str) -> OzonAnalyticsForecastSettings: ...
     async def save_forecast(
         self, store: str, change: OzonAnalyticsForecastSettings, author: OzonAnalyticsAuthor, now: datetime

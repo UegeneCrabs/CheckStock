@@ -341,7 +341,7 @@ def ozon_tariff_service(resources: "AsyncResources", store: str = "") -> OzonTar
 
 
 def ozon_google_export_service(resources: "AsyncResources") -> OzonGoogleExport:
-    return OzonGoogleExport(resources)
+    return OzonGoogleExport(resources, OzonAnalyticsRepository(resources.database))
 
 
 def database_backup_service(resources: "AsyncResources") -> DatabaseBackupService:

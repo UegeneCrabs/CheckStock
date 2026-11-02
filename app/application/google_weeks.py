@@ -521,22 +521,26 @@ class GoogleWeeks:
             raise WeekError(WeekIssue.SELECTION)
         doc_id = document_id(profile.settings.spreadsheet_url)
         metadata = await self.google.metadata(doc_id)
-        titles = [
-            sheet.properties.title
-            for sheet in metadata.sheets
-            if sheet.properties.sheetId in profile.settings.freeze_sheet_ids
-        ]
-        document = await self.google.read(doc_id, titles) if titles else metadata
-        sheets = {sheet.properties.sheetId: sheet for sheet in document.sheets}
+        sheets = {sheet.properties.sheetId: sheet for sheet in metadata.sheets}
         wanted = plans.current_week(now)
-        prepared = [
-            plans.freeze_plan(profile, sheets[sid], document, wanted)
-            if sid in sheets
-            else FreezePlan(
-                report=FreezeSheetResult(sheet_id=sid, sheet_name="", issue=WeekIssue.SHEET_MISSING)
+        prepared: list[FreezePlan] = []
+        for sid in profile.settings.freeze_sheet_ids:
+            if sid not in sheets:
+                prepared.append(
+                    FreezePlan(
+                        report=FreezeSheetResult(sheet_id=sid, sheet_name="", issue=WeekIssue.SHEET_MISSING)
+                    )
+                )
+                continue
+            document = await self.google.read(doc_id, [sheets[sid].properties.title])
+            sheet = next((item for item in document.sheets if item.properties.sheetId == sid), None)
+            prepared.append(
+                plans.freeze_plan(profile, sheet, document, wanted)
+                if sheet is not None
+                else FreezePlan(
+                    report=FreezeSheetResult(sheet_id=sid, sheet_name="", issue=WeekIssue.SHEET_MISSING)
+                )
             )
-            for sid in profile.settings.freeze_sheet_ids
-        ]
         report = WeekReport(
             marketplace=profile.marketplace,
             spreadsheet_url=profile.settings.spreadsheet_url,
@@ -550,12 +554,13 @@ class GoogleWeeks:
             sheets=[plan.report for plan in prepared],
         )
         if not preview and any(plan.ranges for plan in prepared):
-            fresh = await self.google.read(doc_id, titles)
-            by_id = {sheet.properties.sheetId: sheet for sheet in fresh.sheets}
             for plan in prepared:
                 if not plan.ranges:
                     continue
-                sheet = by_id.get(plan.report.sheet_id)
+                fresh = await self.google.read(doc_id, [plan.report.sheet_name])
+                sheet = next(
+                    (item for item in fresh.sheets if item.properties.sheetId == plan.report.sheet_id), None
+                )
                 checked = plans.freeze_plan(profile, sheet, fresh, wanted) if sheet else None
                 if checked is None or checked.report.issue or checked.signature != plan.signature:
                     plan.report.issue = WeekIssue.CHANGED
@@ -583,7 +588,9 @@ class GoogleWeeks:
                         ],
                     },
                 )
-                await self.google.freeze(doc_id, ranges)
+                await self.google.freeze(
+                    doc_id, [write for plan in prepared for write in plans.freeze_values(plan)]
+                )
                 for plan in prepared:
                     if plan.ranges:
                         plan.report.written_cells = plan.report.formula_count

@@ -9,7 +9,7 @@ from google.auth import jwt
 from pydantic import BaseModel
 
 from app.core.constants import GOOGLE_WEEK, WeekIssue
-from app.dto.google_week import CellWrite, GoogleDocument, GridRange, WeekError
+from app.dto.google_week import CellWrite, FreezeValueRange, GoogleDocument, WeekError
 from app.ff_import.google_service_account import get_credentials
 from app.infrastructure.async_http import AsyncHttp
 
@@ -37,6 +37,28 @@ def value_batches(title: str, writes: list[CellWrite]) -> list[list[CellWrite]]:
             separator_size = 0
         batch.append(entry)
         size += separator_size + entry_size
+    if batch:
+        batches.append(batch)
+    return batches
+
+
+def freeze_batches(writes: list[FreezeValueRange]) -> list[list[FreezeValueRange]]:
+    overhead = len(json.dumps({"valueInputOption": "RAW", "data": []}).encode())
+    batches: list[list[FreezeValueRange]] = []
+    batch: list[FreezeValueRange] = []
+    size = overhead
+    for write in writes:
+        length = len(json.dumps(write.model_dump()).encode())
+        if overhead + length > GOOGLE_WEEK.max_payload_bytes:
+            raise WeekError(WeekIssue.TOO_LARGE, cell=write.range)
+        separator = len(", ") if batch else 0
+        if batch and size + separator + length > GOOGLE_WEEK.max_payload_bytes:
+            batches.append(batch)
+            batch = []
+            size = overhead
+            separator = 0
+        batch.append(write)
+        size += separator + length
     if batch:
         batches.append(batch)
     return batches
@@ -81,21 +103,34 @@ class GoogleWeekClient:
     async def request(
         self, method: str, path: str, *, body: object = None, params: list[tuple[str, str]] | None = None
     ) -> httpx.Response:
-        try:
-            token = await self._token(read_only=method == "GET")
-            response = await self.http.client.request(
-                method,
-                f"{GOOGLE_WEEK.api_url}/{path}",
-                headers={"Authorization": f"Bearer {token}"},
-                params=tuple(params) if params is not None else None,
-                json=body,
-                timeout=GOOGLE_WEEK.timeout_seconds,
-            )
-        except httpx.HTTPError as error:
-            raise WeekError(WeekIssue.GOOGLE, detail=type(error).__name__) from error
-        if response.is_error:
-            raise WeekError(WeekIssue.GOOGLE, status=response.status_code)
-        return response
+        read_only = method == "GET"
+        attempts = GOOGLE_WEEK.read_attempts if read_only else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                token = await self._token(read_only=read_only)
+                response = await self.http.client.request(
+                    method,
+                    f"{GOOGLE_WEEK.api_url}/{path}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params=tuple(params) if params is not None else None,
+                    json=body,
+                    timeout=(
+                        GOOGLE_WEEK.read_timeout_seconds if read_only else GOOGLE_WEEK.write_timeout_seconds
+                    ),
+                )
+            except httpx.HTTPError as error:
+                if attempt == attempts or not isinstance(
+                    error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+                ):
+                    raise WeekError(WeekIssue.GOOGLE, detail=type(error).__name__) from error
+            else:
+                if not response.is_error:
+                    return response
+                if attempt == attempts or response.status_code not in GOOGLE_WEEK.retryable_statuses:
+                    raise WeekError(WeekIssue.GOOGLE, status=response.status_code)
+                await response.aclose()
+            await self.http.sleep(GOOGLE_WEEK.read_retry_seconds * attempt)
+        raise WeekError(WeekIssue.GOOGLE)
 
     async def metadata(self, doc_id: str) -> GoogleDocument:
         response = await self.request(
@@ -125,35 +160,31 @@ class GoogleWeekClient:
             }
             await self.request("POST", f"{quote(doc_id, safe='')}/values:batchUpdate", body=body)
 
-    async def freeze(self, doc_id: str, ranges: list[GridRange]) -> None:
-        requests = []
-        for region in ranges:
-            grid = region.model_dump(exclude_none=True)
-            requests.append(
-                {
-                    "copyPaste": {
-                        "source": grid,
-                        "destination": grid,
-                        "pasteType": "PASTE_VALUES",
-                        "pasteOrientation": "NORMAL",
-                    }
-                }
+    async def freeze(self, doc_id: str, writes: list[FreezeValueRange]) -> None:
+        for batch in freeze_batches(writes):
+            await self.request(
+                "POST",
+                f"{quote(doc_id, safe='')}/values:batchUpdate",
+                body={"valueInputOption": "RAW", "data": [write.model_dump() for write in batch]},
             )
-        await self.request("POST", f"{quote(doc_id, safe='')}:batchUpdate", body={"requests": requests})
 
     async def batch_update(self, doc_id: str, requests: list[dict[str, object]]) -> None:
         batches: list[list[dict[str, object]]] = []
         batch: list[dict[str, object]] = []
-        size = 0
+        overhead = len(json.dumps({"requests": []}).encode())
+        size = overhead
         for request in requests:
             length = len(json.dumps(request).encode())
-            if length > GOOGLE_WEEK.max_payload_bytes:
+            if overhead + length > GOOGLE_WEEK.max_payload_bytes:
                 raise WeekError(WeekIssue.TOO_LARGE)
-            if batch and size + length > GOOGLE_WEEK.max_payload_bytes:
+            separator = len(", ") if batch else 0
+            if batch and size + separator + length > GOOGLE_WEEK.max_payload_bytes:
                 batches.append(batch)
-                batch, size = [], 0
+                batch = []
+                size = overhead
+                separator = 0
             batch.append(request)
-            size += length
+            size += separator + length
         if batch:
             batches.append(batch)
         for batch in batches:
