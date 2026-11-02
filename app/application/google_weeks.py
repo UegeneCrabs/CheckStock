@@ -112,17 +112,18 @@ def pending(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: da
 
 def due(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> bool:
     attempt = action_state(profile, action).last_attempt_at
-    return pending(profile, action, now) and (
-        attempt is None or now - attempt >= timedelta(seconds=GOOGLE_WEEK.retry_seconds)
-    )
+    return pending(profile, action, now) and (attempt is None or attempt < slot_at(profile.settings, now))
 
 
 def next_run(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> datetime | None:
     if not action_enabled(profile, action) or not profile.saved_at:
         return None
-    if pending(profile, action, now):
-        attempt = action_state(profile, action).last_attempt_at
-        return max(now, attempt + timedelta(seconds=GOOGLE_WEEK.retry_seconds)) if attempt else now
+    if (
+        due(profile, action, now)
+        and (action == WeekAction.NUMBER or not pending(profile, WeekAction.NUMBER, now))
+        and (action != WeekAction.FREEZE or freeze_ready(profile, now))
+    ):
+        return now
     days = 1 if profile.settings.schedule_kind == ScheduleKind.DAILY else GOOGLE_WEEK.days_per_week
     return slot_at(profile.settings, now) + timedelta(days=days)
 
@@ -155,8 +156,10 @@ def catalog_due(profile: WeekProfile, now: datetime) -> bool:
         >= now.astimezone(TIME.moscow_timezone).date()
     ):
         return False
-    return catalog.last_attempt_at is None or now - catalog.last_attempt_at >= timedelta(
-        seconds=GOOGLE_WEEK.retry_seconds
+    return (
+        catalog.last_attempt_at is None
+        or catalog.last_attempt_at.astimezone(TIME.moscow_timezone).date()
+        < now.astimezone(TIME.moscow_timezone).date()
     )
 
 
