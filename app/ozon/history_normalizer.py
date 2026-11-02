@@ -1,9 +1,10 @@
 from datetime import datetime, time
 from decimal import Decimal
 
-from app.core.constants import TIME, OzonHistoryField, OzonPriceState
+from app.core.constants import OZON_MARGIN, TIME, OzonHistoryField, OzonPriceState
 from app.dto.ozon_advertising import AdvertisingPeriod
 from app.dto.ozon_history import OzonHistoryDay, OzonHistoryEvidence, OzonHistoryQuery, OzonStockDay
+from app.economics.ozon_margin import calculate_day
 from app.ozon.advertising_normalizer import period_days, source_days, spend_summary
 from app.ozon.advertising_read_index import AdvertisingReadIndex
 from app.ozon.cabinet_normalizer import effective_buyout
@@ -23,6 +24,11 @@ def history_days(
     stocks = {row.day: row for row in evidence.stocks}
     prices = {row.day: row.value for row in evidence.prices}
     buyouts = {row.day: row for row in evidence.buyouts if row.store_slug == query.store}
+    margins = {
+        row.day: row
+        for row in evidence.margins
+        if row.store_slug == query.store and row.article == query.article
+    }
     result = []
     for day in period_days(period):
         partial = []
@@ -38,6 +44,17 @@ def history_days(
             partial.append(OzonHistoryField.ADS)
         if expense.amount is not None and expense.stale:
             stale.append(OzonHistoryField.ADS)
+        margin = calculate_day(query.store, query.article, day, margins.get(day), turnover, expense)
+        if margin.profit is not None:
+            if margin.missing or margin.issues or day not in confirmed:
+                partial.append(OzonHistoryField.MARGIN)
+            if (
+                OZON_MARGIN.sources_stale in margin.issues
+                or day not in eligible
+                or query.store in turnover.stale_stores
+                or expense.stale
+            ):
+                stale.append(OzonHistoryField.MARGIN)
         saved_buyout = buyouts.get(day)
         buyout = effective_buyout(
             query.article,
@@ -93,6 +110,7 @@ def history_days(
                 fbs_units=stock.fbs,
                 fulfillment_units=stock.fulfillment,
                 price_with_spp_rub=price_amount,
+                margin_rub=margin.profit,
                 partial_fields=tuple(partial),
                 stale_fields=tuple(stale),
             )

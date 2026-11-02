@@ -9,6 +9,7 @@ from app.dto.common import DtoModel
 from app.dto.ozon_advertising import AdvertisingSourceStatus
 from app.dto.ozon_cabinet import OzonBuyoutSnapshot, OzonEffectiveBuyout
 from app.dto.ozon_economics import OzonTurnoverData
+from app.dto.ozon_margin import OzonMarginSnapshot
 from app.dto.ozon_prices import PriceValue
 
 
@@ -37,6 +38,7 @@ class OzonHistoryEvidence:
     stocks: tuple[OzonStockDay, ...]
     prices: tuple[OzonPriceDay, ...]
     buyouts: tuple[OzonBuyoutSnapshot, ...] = ()
+    margins: tuple[OzonMarginSnapshot, ...] = ()
 
 
 class OzonHistoryDay(DtoModel):
@@ -52,7 +54,7 @@ class OzonHistoryDay(DtoModel):
     fbs_units: int | None
     fulfillment_units: int | None
     price_with_spp_rub: Decimal | None
-    margin_rub: None = None
+    margin_rub: Decimal | None = None
     partial_fields: tuple[OzonHistoryField, ...] = ()
     stale_fields: tuple[OzonHistoryField, ...] = ()
 

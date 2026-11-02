@@ -98,18 +98,17 @@ class OzonMarginRepository:
         )
 
     async def history(
-        self, stores: tuple[str, ...], start: date, end: date
+        self, stores: tuple[str, ...], start: date, end: date, *, article: str | None = None
     ) -> tuple[OzonMarginSnapshot, ...]:
         table = table_for(OzonMarginDailyRecord)
+        statement = select(table.c.payload).where(
+            table.c.store_slug.in_(stores),
+            table.c.day.between(start.isoformat(), end.isoformat()),
+        )
+        if article is not None:
+            statement = statement.where(table.c.article == article)
         async with self.database.transaction() as connection:
-            payloads: ScalarResult[str] = (
-                await connection.execute(
-                    select(table.c.payload).where(
-                        table.c.store_slug.in_(stores),
-                        table.c.day.between(start.isoformat(), end.isoformat()),
-                    )
-                )
-            ).scalars()
+            payloads: ScalarResult[str] = (await connection.execute(statement)).scalars()
             snapshots = tuple(
                 value
                 for payload in payloads

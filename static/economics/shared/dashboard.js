@@ -2540,7 +2540,7 @@
                 content_2: nullable(item.orders_count, decimal, ' шт.') + chartDataNote(item, 'orders'),
                 content_3: nullable(item.advertising_rub, preciseMoney) + chartDataNote(item, 'ads'),
                 content_4: nullable(item.drr_percent, decimal, '%') + chartDataNote(item, 'drr'),
-                content_5: nullable(item.margin_rub, preciseMoney) + calculationNote(item.margin_rub, item.messages),
+                content_5: nullable(item.margin_rub, preciseMoney) + calculationNote(item.margin_rub, item.messages) + chartDataNote(item, 'margin'),
                 content_6: nullable(item.stock_units, integer, ' шт.') + chartDataNote(item, 'stock'),
                 price: nullable(item.price_with_spp_rub, preciseMoney) + (item.price_with_spp_rub != null && item.price_with_spp_estimated ? ' · расчётная' : '') + chartDataNote(item, 'price'),
                 content_7: previous

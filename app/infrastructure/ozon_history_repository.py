@@ -17,6 +17,7 @@ from app.infrastructure.orm import (
     StockItemRecord,
 )
 from app.infrastructure.ozon_cabinet_orm import OzonBuyoutDailyRecord
+from app.infrastructure.ozon_margin_repository import OzonMarginRepository
 from app.infrastructure.ozon_prices_orm import OzonPriceDailyRecord
 
 
@@ -111,10 +112,14 @@ class OzonHistoryRepository:
         advertising = await AsyncAdvertisingRepository(self.database).overlapping(
             (query.store,), AdvertisingPeriod(start=start, end=end)
         )
+        margins = await OzonMarginRepository(self.database).history(
+            (query.store,), start, end, article=query.article
+        )
         return OzonHistoryEvidence(
             turnover=turnover,
             advertising=advertising,
             stocks=tuple(stock_days.values()),
             prices=price_days,
             buyouts=buyout_days,
+            margins=margins,
         )

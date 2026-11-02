@@ -2219,6 +2219,7 @@ YANDEX_ANALYTICS: Final = YandexAnalyticsConstants()
 class OzonHistoryField(StrEnum):
     ORDERS = "orders"
     STOCK = "stock"
+    MARGIN = "margin"
     ADS = "ads"
     DRR = "drr"
     PRICE = "price"
