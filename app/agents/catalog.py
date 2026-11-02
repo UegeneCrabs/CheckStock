@@ -3,6 +3,16 @@ from app.agents.ozon_reports import SPECS as OZON_SPECS
 
 # Fields describe the main response fields, not an exhaustive schema for every view.
 DOCS = {
+    "rating-comparison": (
+        "Рейтинг склейки WB — сравнение периодов",
+        "Последний сохранённый рейтинг склейки WB в выбранном и предыдущем равном периоде, изменение в пунктах. Индивидуальный рейтинг без склейки в БД отсутствует. Итоги считаются по всей отфильтрованной выборке до пагинации, по карточкам, не по уникальным склейкам.",
+        "store_slug:Магазин:str|nm_id:Артикул карточки WB, не идентификатор склейки:str|article:Артикул товара:str|name:Название товара:str|brand:Бренд:str|null|manager:Менеджер:str|null|subject:Категория:str|null|latest_rating:Свежий рейтинг склейки WB, отдельно от периода:number|null|reviews_count:Свежий счётчик отзывов:integer|null|latest_observed_at:Время обновления текущего кэша:datetime|null|current_rating:Последний рейтинг склейки WB внутри выбранного периода:number|null|current_observed_day:Фактический день замера выбранного периода:date|null|current_observed_at:Фактическое время замера выбранного периода:datetime|null|previous_rating:Последний рейтинг склейки WB предыдущего равного периода:number|null|previous_observed_day:Фактический день замера предыдущего периода:date|null|previous_observed_at:Фактическое время замера предыдущего периода:datetime|null|change:Изменение рейтинга склейки WB в пунктах, не процентах:number|null|status:Состояние сравнения problem / healthy / no_data:str|context.previous_from:Начало предыдущего равного периода:date|context.previous_to:Конец предыдущего равного периода:date|context.rating_label:Обязательная подпись показателя:str|context.individual_rating_available:Рейтинг без склейки отсутствует в БД:bool|totals.checked:Карточек во всей отфильтрованной выборке:integer|totals.problem:Карточек с падением больше tolerance:integer|totals.healthy:Карточек без падения больше tolerance:integer|totals.no_data:Карточек с недостаточными данными для сравнения:integer",
+    ),
+    "rating-history": (
+        "Рейтинг склейки WB — дневная история",
+        "Рейтинг склейки WB и отзывы за каждый день выбранного периода для одной карточки. Пропуски остаются null; индивидуальный рейтинг без склейки неизвестен. Сохранённые данные, без запуска синхронизации.",
+        "store_slug:Магазин:str|nm_id:Артикул карточки WB, не идентификатор склейки:str|article:Артикул товара:str|name:Название товара:str|brand:Бренд:str|null|manager:Менеджер:str|null|subject:Категория:str|null|day:День по Москве:date|rating:Сохранённый дневной рейтинг склейки WB:number|null|reviews_count:Число отзывов в дневном замере:integer|null|observed_at:Фактическое время дневного замера:datetime|null|context.rating_label:Обязательная подпись показателя:str|context.individual_rating_available:Рейтинг без склейки отсутствует в БД:bool|context.coverage_complete:Все дни имеют сохранённый замер:bool|totals.expected_days:Всего дней периода:integer|totals.observed_days:Дней с замером:integer|totals.missing_days:Дней без замера:integer",
+    ),
     "standard-costs": (
         "Расходы WB без ИУ",
         "Последний сохранённый отчёт магазина: прибыль и ROI без ИУ и с ИУ, разница и состояние отчёта. Значения на единицу товара; это не фактическая прибыль за неделю. Произвольный период не поддерживается.",

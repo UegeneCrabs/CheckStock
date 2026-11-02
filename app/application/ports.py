@@ -10,6 +10,7 @@ from uuid import UUID
 from app.core.constants import OzonAnalyticsReason
 from app.dto.agent_ozon import AgentOzonRows
 from app.dto.agent_query import ReportQuery
+from app.dto.agent_rating import RatingRequest, RatingSources
 from app.dto.database_backup import BackupArtifact, BackupReceipt, BackupUpload, DriveBackupFile
 from app.dto.fbo_stock import (
     FboActor,
@@ -590,3 +591,7 @@ class AgentOzonProductsReader(Protocol):
     async def products(
         self, query: OzonProductsQuery, last_complete_day: date, custom: bool
     ) -> OzonProducts: ...
+
+
+class AgentRatingReader(Protocol):
+    async def read(self, query: RatingRequest) -> RatingSources: ...

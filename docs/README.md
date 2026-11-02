@@ -95,6 +95,7 @@
 - [Расходы WB без ИУ — сравнение прибыли и ROI](wb-standard-costs.md#api-для-ии-агентов)
 
 - [Почасовая и дневная история СПП WB](agent-spp-history.md)
+- [Рейтинг склейки WB: сравнение и дневная история через API/MCP](agent-wb-rating.md)
 
 - [API аналитики CheckStock](chatgpt-analytics.md) — полная инструкция MCP и компактная версия для GPT с Actions.
 - [Каталог по маркетплейсам](chatgpt-analytics.md#каталог-по-площадкам) и [общие/отдельные правила ИИ](chatgpt-analytics.md#общая-инструкция-ии-агентов) — просмотр WB, Яндекса и Ozon при едином MCP-подключении.

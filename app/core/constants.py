@@ -2463,3 +2463,26 @@ class AgentOzonConfig:
 
 
 AGENT_OZON: Final = AgentOzonConfig()
+
+
+class WbRatingStatus(StrEnum):
+    PROBLEM = "problem"
+    HEALTHY = "healthy"
+    NO_DATA = "no_data"
+
+
+class WbRatingReportKind(StrEnum):
+    COMPARISON = "rating-comparison"
+    HISTORY = "rating-history"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentWbRatingConfig:
+    maximum_rating: int = 5
+    maximum_period_days: int = 90
+    precision: int = 2
+    scope: str = "wb_joined_products"
+    label: str = "Рейтинг склейки WB"
+
+
+AGENT_WB_RATING: Final = AgentWbRatingConfig()

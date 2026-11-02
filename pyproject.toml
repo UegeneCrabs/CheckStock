@@ -17,6 +17,8 @@ python_version = "3.13"
 strict = true
 follow_imports = "silent"
 files = [
+    "app/dto/agent_rating.py", "app/application/agent_rating.py",
+    "app/infrastructure/agent_rating_repository.py", "app/agents/rating_reports.py",
     "app/dto/agent_ozon.py", "app/dto/agent_query.py", "app/dto/agent_summary.py", "app/dto/agent_analysis.py",
     "app/application/agent_ozon.py", "app/application/agent_ozon_analysis.py",
     "app/infrastructure/agent_ozon_repository.py", "app/agents/marketplaces.py",

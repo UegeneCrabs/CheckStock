@@ -97,6 +97,7 @@ from app.wb.hourly_prices import (
 
 if TYPE_CHECKING:
     from app.application.agent_ozon import AgentOzonService
+    from app.application.agent_rating import AgentRatingService
     from app.infrastructure.async_database import AsyncDatabase
     from app.infrastructure.async_resources import AsyncResources
 
@@ -406,3 +407,10 @@ def agent_ozon_service(resources: "AsyncResources") -> "AgentOzonService":
         ozon_history_service(resources),
         ozon_analytics_service(resources.database),
     )
+
+
+def agent_rating_service(resources: "AsyncResources") -> "AgentRatingService":
+    from app.application.agent_rating import AgentRatingService
+    from app.infrastructure.agent_rating_repository import AgentRatingRepository
+
+    return AgentRatingService(AgentRatingRepository(resources.database))

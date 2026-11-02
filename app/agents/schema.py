@@ -36,8 +36,16 @@ def build_action_schema(routes):
                 parameter["description"] = (
                     "Required inclusive date in YYYY-MM-DD format. Supply both dates; at most 90 days."
                 )
-            if name in {"product-details", "economics-history"} and parameter["name"] == "article":
+            if (
+                name in {"product-details", "economics-history", "rating-history"}
+                and parameter["name"] == "article"
+            ):
                 parameter["required"] = True
+            if name in {"rating-comparison", "rating-history"}:
+                if parameter["name"] == "order":
+                    parameter["schema"]["default"] = "asc"
+                if parameter["name"] == "status":
+                    parameter["schema"]["enum"] = ["problem", "healthy", "no_data"]
             if parameter["name"] == "store" and (name in SPECS or name == "data-status"):
                 parameter["required"] = name == "data-status"
                 parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 100}

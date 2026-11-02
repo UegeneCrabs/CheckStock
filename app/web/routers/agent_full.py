@@ -19,6 +19,8 @@ from app.agents import yandex_reports
 from app.agents.extended_reports import EXTRA_SPECS
 from app.agents.marketplaces import supports
 from app.agents.ozon_reports import SPECS as OZON_SPECS
+from app.agents.rating_reports import SPECS as RATING_SPECS
+from app.core.constants import AGENT_WB_RATING
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
@@ -179,10 +181,12 @@ SPECS = {
 PERIOD_REPORTS = {"advertising-campaigns", "advertising", "stock-operations", "supplies", "profit"}
 SPECS.update(EXTRA_SPECS)
 SPECS.update(OZON_SPECS)
+SPECS.update(RATING_SPECS)
 PERIOD_REPORTS.update({"stock-history", "orders", "stock-cost-report"})
 PERIOD_REPORTS.update(
     {"spp-hourly", "spp-daily", "ozon-advertising-breakdown", "ozon-profit-details", "ozon-sales"}
 )
+PERIOD_REPORTS.update(RATING_SPECS)
 ECONOMIC = {
     name
     for name, spec in SPECS.items()
@@ -262,7 +266,10 @@ def validate(name, query, supplied):
             and query.date_to > datetime.now(MOSCOW_TIMEZONE).date()
         ):
             raise HTTPException(422, "Будущие даты недоступны")
-    if name in {"product-details", "profit-calculator", "economics-history"} and not query.article:
+    if (
+        name in {"product-details", "profit-calculator", "economics-history", "rating-history"}
+        and not query.article
+    ):
         raise HTTPException(422, "Укажите article")
     return yandex_reports.section_for(section, query.marketplace)
 
@@ -507,6 +514,10 @@ async def execute(name, request, user, query, *, paginate=True):
         match = lookup.matches[0]
         query = query.model_copy(update={"store": match.store, "marketplace": match.marketplace})
     guard(user, section, query)
+    if name in RATING_SPECS:
+        from app.agents.rating_reports import execute as execute_rating
+
+        return await execute_rating(name, request, query, paginate=paginate)
     if query.marketplace == "OZON":
         from app.agents.ozon_reports import execute as execute_ozon
 
@@ -629,10 +640,12 @@ async def execute(name, request, user, query, *, paginate=True):
         elif name == "product-reputation":
             context = {
                 "block": "Товар",
-                "labels": {"rating": "Рейтинг товара", "reviews_count": "Количество отзывов"},
+                "labels": {"rating": AGENT_WB_RATING.label, "reviews_count": "Количество отзывов"},
+                "rating_scope": AGENT_WB_RATING.scope,
+                "individual_rating_available": False,
             }
             warnings = [
-                "Сохранённые рейтинг и количество отзывов из таблицы сайта. null означает отсутствие данных, а не ноль. Количество отдельных оценок без отзывов этим полем не подтверждается."
+                "Рейтинг склейки WB. Индивидуальный рейтинг товара без склейки может отличаться; таких данных в БД нет. null означает отсутствие данных, а не ноль. Количество отдельных оценок без отзывов этим полем не подтверждается."
             ]
     elif name == "profit-calculator":
         from app.agents.calculator import calculator

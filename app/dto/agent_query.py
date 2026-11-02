@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.constants import AGENT_WB_RATING
+
 
 class ReportQuery(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -11,6 +13,39 @@ class ReportQuery(BaseModel):
     week: date | None = None
     include_history: bool = False
     details: bool = False
+    brand: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=150,
+        description="Бренд из текущего каталога; точное совпадение без учёта регистра.",
+    )
+    subject: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=150,
+        description="Категория из текущего каталога; точное совпадение без учёта регистра.",
+    )
+    rating_below: float | None = Field(
+        default=None,
+        ge=0,
+        le=AGENT_WB_RATING.maximum_rating,
+        allow_inf_nan=False,
+        description="Только рейтинг склейки WB выбранного периода строго ниже порога; неизвестные значения исключаются.",
+    )
+    drop_at_least: float | None = Field(
+        default=None,
+        ge=0,
+        le=AGENT_WB_RATING.maximum_rating,
+        allow_inf_nan=False,
+        description="Минимальное снижение рейтинга склейки WB в пунктах, включительно; не проценты.",
+    )
+    tolerance: float = Field(
+        default=0,
+        ge=0,
+        le=AGENT_WB_RATING.maximum_rating,
+        allow_inf_nan=False,
+        description="Допустимое снижение рейтинга склейки WB в пунктах; problem только при падении больше допуска.",
+    )
     store: str | None = Field(default=None, min_length=1, max_length=100)
     marketplace: Literal["WB", "OZON", "YANDEX MARKET"] = "WB"
     date_from: date | None = None
