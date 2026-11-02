@@ -1319,6 +1319,7 @@ class OzonAnalyticsConfig:
     budget_window_seconds: int = 86_400
     interval_seconds: int = 3600
     refresh_seconds: int = 21_600
+    transit_max_age_seconds: int = 7200
     generation_max_age_seconds: int = 259_200
     run_attempt_budget: int = 8
     run_timeout_seconds: int = 600
@@ -1631,7 +1632,7 @@ class JobCatalog:
     ozon_analytics_sources: SyncJobMetadata = SyncJobMetadata(
         name="ozon_analytics_sources_sync",
         title="Источники аналитики Ozon",
-        description="Сохраняет текущие цели, возвраты от покупателей и дневные корзины Ozon с покрытием и контрольными точками.",
+        description="Сохраняет текущие цели, FBO в пути к клиенту и от клиента, дневные корзины Ozon с покрытием и контрольными точками.",
         schedule=None,
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
@@ -1870,6 +1871,8 @@ class WeekAction(StrEnum):
 class WeekIssue(StrEnum):
     EXPORT = "export"
     SOURCE_INCOMPLETE = "source_incomplete"
+    SOURCE_MISSING = "source_missing"
+    SOURCE_STALE = "source_stale"
     INVALID_SETTINGS = "invalid_settings"
     NOT_SAVED = "not_saved"
     BUSY = "busy"
@@ -1910,6 +1913,11 @@ class GoogleWeekConstants:
     retry_seconds: int = 300
     startup_seconds: int = 10
     timeout_seconds: int = 30
+    read_timeout_seconds: int = 60
+    write_timeout_seconds: int = 180
+    read_attempts: int = 3
+    read_retry_seconds: float = 2
+    retryable_statuses: frozenset[int] = frozenset({429, 500, 502, 503, 504})
     token_seconds: int = 3600
     max_payload_bytes: int = 1_800_000
     max_cells: int = 20

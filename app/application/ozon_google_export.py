@@ -3,12 +3,22 @@ from datetime import UTC, datetime, time, timedelta
 
 from pydantic import Field, JsonValue
 
-from app.core.constants import GOOGLE_WEEK, TIME, GoogleExportKind, Marketplace, OrderScheme, WeekIssue
+from app.application.ports import OzonTransitSnapshotStore
+from app.core.constants import (
+    GOOGLE_WEEK,
+    OZON_ANALYTICS,
+    TIME,
+    GoogleExportKind,
+    Marketplace,
+    OrderScheme,
+    WeekIssue,
+)
 from app.core.stores import STORES
 from app.dto.common import DtoModel
 from app.dto.google_week import (
     GoogleSheet,
     GridCell,
+    SnapshotTime,
     WeekError,
     WeekProblem,
     WeekProfile,
@@ -24,7 +34,6 @@ from app.infrastructure.async_resources import AsyncResources
 from app.integrations import google_week_plans as plans
 from app.integrations.google_week_client import GoogleWeekClient
 from app.ozon import tokens
-from app.ozon.async_analytics import AsyncOzonAnalyticsClient
 from app.ozon.async_api import AsyncSellerApi
 
 
@@ -39,6 +48,7 @@ class AccountQuantities(DtoModel):
     to_customer: dict[str, int] = Field(default_factory=dict)
     from_customer: dict[str, int] = Field(default_factory=dict)
     error: WeekProblem | None = None
+    observed_at: datetime | None = None
 
 
 def stock_table() -> StockTable:
@@ -94,23 +104,42 @@ def matrix(sheet: GoogleSheet) -> list[list[object]]:
 
 
 class OzonGoogleExport:
-    def __init__(self, resources: AsyncResources):
+    def __init__(self, resources: AsyncResources, transit: OzonTransitSnapshotStore):
         self.resources = resources
         self.google = GoogleWeekClient(resources.http)
+        self.transit = transit
 
     async def _account(self, store: str, kind: GoogleExportKind, now: datetime) -> AccountQuantities:
         context = store_context.set(store)
         try:
-            credentials = tokens.get_order_credentials(store)
             if kind == GoogleExportKind.FBO_TRANSIT:
-                snapshot = await AsyncOzonAnalyticsClient(self.resources.http, credentials).transit(
-                    store, now, include_to_customer=True
-                )
+                snapshot = await self.transit.transit_snapshot(store)
+                if snapshot is None:
+                    raise WeekError(WeekIssue.SOURCE_MISSING, detail=store)
+                if (
+                    snapshot.store_slug != store
+                    or not snapshot.includes_to_customer
+                    or snapshot.observed_at.tzinfo is None
+                    or len({item.article for item in snapshot.products}) != len(snapshot.products)
+                    or any(
+                        item.to_customer is None
+                        or item.from_customer is None
+                        or item.to_customer < 0
+                        or item.from_customer < 0
+                        for item in snapshot.products
+                    )
+                ):
+                    raise WeekError(WeekIssue.SOURCE_INCOMPLETE, detail=store)
+                age = (now - snapshot.observed_at).total_seconds()
+                if not 0 <= age <= OZON_ANALYTICS.transit_max_age_seconds:
+                    raise WeekError(WeekIssue.SOURCE_STALE, detail=store)
                 return AccountQuantities(
                     store_slug=store,
                     to_customer={item.article: item.to_customer or 0 for item in snapshot.products},
                     from_customer={item.article: item.from_customer or 0 for item in snapshot.products},
+                    observed_at=snapshot.observed_at,
                 )
+            credentials = tokens.get_order_credentials(store)
             end = now.astimezone(TIME.moscow_timezone).date()
             start = end - timedelta(days=GOOGLE_WEEK.export_period_days)
             since = datetime.combine(start, time.min, TIME.moscow_timezone).astimezone(UTC).isoformat()
@@ -140,6 +169,8 @@ class OzonGoogleExport:
             return AccountQuantities(store_slug=store, to_customer=quantities)
         except asyncio.CancelledError:
             raise
+        except WeekError as error:
+            return AccountQuantities(store_slug=store, error=error.problem)
         except Exception as error:
             status = getattr(error, "status", None)
             return AccountQuantities(
@@ -161,7 +192,11 @@ class OzonGoogleExport:
         for account in accounts:
             if account.error:
                 raise WeekError(
-                    WeekIssue.SOURCE_INCOMPLETE, detail=account.store_slug, status=account.error.status
+                    account.error.code
+                    if kind == GoogleExportKind.FBO_TRANSIT
+                    else WeekIssue.SOURCE_INCOMPLETE,
+                    detail=account.store_slug,
+                    status=account.error.status,
                 )
         return accounts
 
@@ -241,6 +276,15 @@ class OzonGoogleExport:
             sheet_name=title,
             sheet_id=sheet.properties.sheetId,
             processed_at=now,
+            snapshot_times=[
+                SnapshotTime(
+                    store_slug=account.store_slug,
+                    day=account.observed_at.astimezone(TIME.moscow_timezone).date(),
+                    captured_at=account.observed_at,
+                )
+                for account in accounts
+                if account.observed_at is not None
+            ],
         )
         if table is not None:
             columns = max(

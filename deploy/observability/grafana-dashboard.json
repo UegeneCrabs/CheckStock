@@ -758,6 +758,19 @@
           "refId": "A"
         }
       ],
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
       "title": "Среднее время по каждой HTTP-ручке",
       "type": "bargauge"
     },

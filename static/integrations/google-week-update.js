@@ -7,6 +7,7 @@
     const labels = { WB: ['wb', 'WB', 'FBO'], OZON: ['ozon', 'Ozon', 'FBO'], 'YANDEX MARKET': ['yandex', 'Яндекс Маркет', 'FBY'] };
     const actions = ['number', 'sales', 'stock', 'search', 'freeze'];
     const exportKinds = ['stocks', 'fbs_orders', 'fbo_transit'];
+    const skippedPreviewLimit = 50;
     const exportFields = { stock_sheet_name: 'report_sheet_name', orders_sheet_name: 'fbs_sheet_name', orders_quantity_column: 'fbs_quantity_column', fbo_sheet_name: 'fbo_sheet_name', fbo_to_customer_column: 'fbo_to_customer_column', fbo_from_customer_column: 'fbo_from_customer_column' };
     const weekdays = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
     const errors = {
@@ -15,6 +16,8 @@
         google: 'Не удалось обратиться к Google Таблице. Проверьте доступ и повторите запуск.',
         source: 'Не удалось прочитать данные проекта. Запись для него пропущена.', sheet_missing: 'Лист удалён или недоступен.',
         source_incomplete: 'Не удалось подтвердить данные всех проектов. Запись в таблицу не запускалась.',
+        source_missing: 'В БД ещё нет снимка FBO в пути. Дождитесь фонового обновления источников Ozon.',
+        source_stale: 'Снимок FBO в пути устарел. Дождитесь фонового обновления источников Ozon.',
         week_missing: 'Не найдена неделя в нужном формате или непрерывный блок прошлых недель.',
         headers: 'Не найдены обязательные заголовки в одной строке.', ambiguous: 'Неоднозначные строки, диапазоны или порядок недель.',
         product: 'Не найден единственный товар по ARTICLE и проекту.', project: 'Не заполнен или неизвестен проект.',
@@ -32,31 +35,36 @@
         problem.code === 'export' && problem.detail ? problem.detail :
         problem.code === 'internal' && problem.detail === 'ValidationError' ? 'Сервер не смог обработать результат выгрузки. Данные могли быть записаны в таблицу. Повторите запуск после обновления страницы.' :
         (errors[problem.code] || problem.code || 'Не удалось выполнить запрос.') +
-        (problem.code === 'source_incomplete' && problem.detail ? ' Проект: ' + problem.detail + '.' : '') +
+        (['source_incomplete', 'source_missing', 'source_stale'].includes(problem.code) && problem.detail ? ' Проект: ' + problem.detail + '.' : '') +
         (problem.cell ? ' Ячейка: ' + problem.cell + '.' : '') + (problem.status ? ' HTTP ' + problem.status + '.' : '');
     const reason = value => errors[value] || value;
 
     function freezeOutcome(result) {
         const issues = (result.sheets || []).filter(sheet => sheet.issue);
+        const skipped = (result.sheets || []).filter(sheet => sheet.skipped_cells?.length);
+        const skippedCount = skipped.reduce((total, sheet) => total + sheet.skipped_cells.length, 0);
         const incomplete = !result.complete || issues.length > 0;
         const written = result.written_cells || 0;
         if (result.dry_run) return {
-            tone: incomplete ? 'error' : 'success',
-            text: incomplete ? 'Проверка не пройдена' : 'Проверка пройдена',
+            tone: incomplete ? 'error' : skippedCount ? 'warning' : 'success',
+            text: incomplete ? 'Проверка не пройдена' : skippedCount ? 'Проверка пройдена с пропусками' : 'Проверка пройдена',
             message: `Формул для фиксации: ${result.total_formulas || 0}. Проверка не изменяет таблицу.`,
             issues,
+            skipped, skippedCount,
         };
         if (incomplete) return {
             tone: written ? 'warning' : 'error',
             text: written ? 'Выполнено частично' : 'Фиксация не выполнена',
             message: written ? `Зафиксировано формул: ${written}. Остальные листы не обработаны.` : 'Зафиксировано формул: 0. Ни одна формула не заменена значением.',
             issues,
+            skipped, skippedCount,
         };
         return {
-            tone: written ? 'success' : 'idle',
-            text: written ? 'Зафиксировано' : 'Изменения не требуются',
+            tone: skippedCount ? 'warning' : written ? 'success' : 'idle',
+            text: written ? skippedCount ? 'Зафиксировано с пропусками' : 'Зафиксировано' : skippedCount ? 'Нет изменений; есть пропуски' : 'Изменения не требуются',
             message: written ? `Зафиксировано формул: ${written}.` : 'В прошлых неделях нет формул для фиксации.',
             issues,
+            skipped, skippedCount,
         };
     }
 
@@ -68,7 +76,9 @@
         const when = pending ? null : failure ? state.last_error ? state.last_attempt_at : null : result && (result.processed_at || state.last_success_at);
         const message = pending ? 'Сохраните настройки площадки перед выгрузкой.' : failure || freeze?.message;
         const issues = freeze ? freeze.issues.map(sheet => `<span class="week-status-message">${e(sheet.sheet_name || 'Лист #' + sheet.sheet_id)}: ${e(reason(sheet.issue))}</span>`).join('') : '';
-        const html = `<span class="week-status-line"><span class="week-result-badge">${text}</span>${when ? `<time>${e(date(when))}</time>` : ''}</span>${message ? `<span class="week-status-message">${e(message)}</span>` : ''}${issues}`;
+        const skippedOpen = Boolean(node.querySelector('[data-freeze-skipped]')?.open);
+        const skipped = freeze?.skippedCount ? `<details data-freeze-skipped${skippedOpen ? ' open' : ''}><summary>Пропущено ячеек: ${freeze.skippedCount}</summary>${freeze.skipped.map(sheet => `<p>${e(sheet.sheet_name || 'Лист #' + sheet.sheet_id)}: ${sheet.skipped_cells.length}</p><ul>${sheet.skipped_cells.slice(0, skippedPreviewLimit).map(cell => `<li>${e(cell.cell)}: ${e(reason(cell.reason))}</li>`).join('')}</ul>${sheet.skipped_cells.length > skippedPreviewLimit ? `<p>Показаны первые ${skippedPreviewLimit} ячеек этого листа.</p>` : ''}`).join('')}<button type="button" class="btn-secondary" data-freeze-download>Скачать полный список пропусков</button></details>` : '';
+        const html = `<span class="week-status-line"><span class="week-result-badge">${text}</span>${when ? `<time>${e(date(when))}</time>` : ''}</span>${message ? `<span class="week-status-message">${e(message)}</span>` : ''}${issues}${skipped}`;
         node.dataset.outcome = tone;
         node.classList.toggle('export-status--error', tone === 'error');
         if (node.innerHTML !== html) node.innerHTML = html;
@@ -337,7 +347,7 @@
         }
 
         function compactStatus(action, state, result) {
-            renderStatus(statusNodes[action], state, result, { action });
+            renderStatus(statusNodes[action], state, result, { action, requestError: statusNodes[action].dataset.requestError || '' });
         }
 
         function updateExportStatuses() {
@@ -357,6 +367,13 @@
                     summary.className = failed ? 'week-previous-result' : 'week-status-message';
                     summary.textContent = (failed ? 'Предыдущая выгрузка. ' : '') + 'Записано ячеек: ' + result.written_cells;
                     node.append(summary);
+                    if (result.snapshot_times?.length) {
+                        const oldest = result.snapshot_times.map(item => item.captured_at).sort((left, right) => Date.parse(left) - Date.parse(right))[0];
+                        const source = document.createElement('span');
+                        source.className = 'week-status-message';
+                        source.textContent = (failed ? 'Источник предыдущей выгрузки: ' : 'Самый ранний снимок источника: ') + date(oldest);
+                        node.append(source);
+                    }
                 }
                 if (!pending && warnings.length) {
                     const details = document.createElement('details');
@@ -476,6 +493,21 @@
         }
         for (const event of ['input', 'change']) form.addEventListener(event, event => { if (event.target.name) draftChanged(); });
         form.addEventListener('click', event => {
+            if (event.target.closest('[data-freeze-download]')) {
+                const result = preview || view.profile.states.freeze.result;
+                if (!result) return;
+                const skipped = (result.sheets || []).filter(sheet => sheet.skipped_cells?.length).map(sheet => ({
+                    sheet: sheet.sheet_name, sheet_id: sheet.sheet_id,
+                    cells: sheet.skipped_cells.map(cell => ({ cell: cell.cell, reason: reason(cell.reason) })),
+                }));
+                const url = URL.createObjectURL(new Blob([JSON.stringify(skipped, null, 2)], { type: 'application/json;charset=utf-8' }));
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'freeze-skipped-' + market.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '.json';
+                link.click();
+                window.setTimeout(() => URL.revokeObjectURL(url), 0);
+                return;
+            }
             const button = event.target.closest('[data-week-products]');
             if (!button) return;
             const action = button.dataset.weekProducts;

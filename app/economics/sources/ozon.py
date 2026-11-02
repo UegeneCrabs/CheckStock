@@ -13,6 +13,7 @@ from app.dto.ozon_source import (
     OzonSourceHeader,
     OzonSourceMatch,
     OzonSourceReport,
+    OzonSourceSelection,
     OzonSourceSheet,
     OzonSourceTag,
     OzonSourceValues,
@@ -78,15 +79,32 @@ def _match_item(
     return OzonSourceMatch(candidates=tuple(candidates), by_sku=by_sku)
 
 
+def _select_source(candidates: Sequence[OzonSourceSelection]) -> OzonSourceSelection:
+    with_fulfillment = [candidate for candidate in candidates if (candidate.values.fulfillment_cost or 0) > 0]
+    preferred = with_fulfillment or candidates
+    selected = preferred[0]
+    for candidate in preferred[1:]:
+        if not selected.values.equivalent_to(candidate.values):
+            raise source.SourceDataError(
+                f"Разные данные Ozon для артикула {candidate.identifier}: "
+                f"{selected.values.source_sheet_title}:{selected.values.source_row} и "
+                f"{candidate.values.source_sheet_title}:{candidate.values.source_row}"
+            )
+    return selected
+
+
+def _number(value: OzonSourceCell) -> float | None:
+    return source._number(str(value))
+
+
 def parse_source_values(
     sheets: Sequence[OzonSourceSheet], catalog: Sequence[OzonSourceCatalogItem]
 ) -> OzonSourceReport:
     index = _catalog_index(catalog)
     source_columns = dict(OZON_SOURCE.columns)
-    parsed_by_item: dict[int, OzonSourceValues] = {}
+    candidates_by_item: dict[int, list[OzonSourceSelection]] = defaultdict(list)
     commissions_by_store: dict[str, Counter[float]] = defaultdict(Counter)
-    source_rows = skipped_not_ozon = unmatched = ambiguous = duplicates = 0
-    sku_matched = outside_sheet_store_matched = 0
+    source_rows = skipped_not_ozon = unmatched = ambiguous = 0
     unmatched_examples: list[str] = []
 
     for sheet in sheets:
@@ -126,32 +144,32 @@ def parse_source_values(
                 manager=source._text(row[manager_column]) or None
                 if manager_column is not None and manager_column < len(row)
                 else None,
-                purchase_price=source._number(cell("purchase_price")),
-                fulfillment_cost=source._number(cell("fulfillment_cost")),
-                team_commission_percent=source._number(cell("team_commission")),
+                purchase_price=_number(cell("purchase_price")),
+                fulfillment_cost=_number(cell("fulfillment_cost")),
+                team_commission_percent=_number(cell("team_commission")),
                 source_sheet_id=sheet.sheet_id,
                 source_sheet_title=title,
                 source_row=source_row,
                 **_parse_tag(cell("tag")).model_dump(),
             )
-            previous = parsed_by_item.get(item.id)
-            if previous is not None:
-                if not previous.equivalent_to(parsed):
-                    raise source.SourceDataError(
-                        f"Разные данные Ozon для артикула {identifier}: "
-                        f"{previous.source_sheet_title}:{previous.source_row} и {title}:{source_row}"
-                    )
-                duplicates += 1
-                continue
-            parsed_by_item[item.id] = parsed
-            sku_matched += int(match.by_sku)
-            outside_sheet_store_matched += int(item.store_slug not in sheet_stores)
-            commission = parsed.team_commission_percent
-            if commission is not None:
-                commissions_by_store[item.store_slug][commission] += 1
+            candidates_by_item[item.id].append(
+                OzonSourceSelection(
+                    values=parsed,
+                    identifier=identifier,
+                    store_slug=item.store_slug,
+                    by_sku=match.by_sku,
+                    outside_sheet_store=item.store_slug not in sheet_stores,
+                )
+            )
+
+    selected_rows = tuple(_select_source(candidates) for candidates in candidates_by_item.values())
+    for selected in selected_rows:
+        commission = selected.values.team_commission_percent
+        if commission is not None:
+            commissions_by_store[selected.store_slug][commission] += 1
 
     return OzonSourceReport(
-        rows=tuple(parsed_by_item.values()),
+        rows=tuple(selected.values for selected in selected_rows),
         team_commissions={
             store_slug: counts.most_common(1)[0][0]
             for store_slug, counts in commissions_by_store.items()
@@ -160,13 +178,13 @@ def parse_source_values(
         sheet_count=len(sheets),
         source_rows=source_rows,
         skipped_not_ozon=skipped_not_ozon,
-        matched=len(parsed_by_item),
+        matched=len(selected_rows),
         unmatched=unmatched,
         unmatched_examples=tuple(unmatched_examples),
         ambiguous=ambiguous,
-        duplicates=duplicates,
-        sku_matched=sku_matched,
-        outside_sheet_store_matched=outside_sheet_store_matched,
+        duplicates=sum(len(candidates) - 1 for candidates in candidates_by_item.values()),
+        sku_matched=sum(selected.by_sku for selected in selected_rows),
+        outside_sheet_store_matched=sum(selected.outside_sheet_store for selected in selected_rows),
         commission_conflicts={
             store_slug: dict(sorted(counts.items()))
             for store_slug, counts in commissions_by_store.items()

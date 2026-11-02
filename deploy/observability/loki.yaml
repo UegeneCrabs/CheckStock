@@ -31,3 +31,4 @@ compactor:
 
 limits_config:
   retention_period: 168h
+  max_query_series: 5000

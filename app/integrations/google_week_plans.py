@@ -10,8 +10,10 @@ from app.dto.google_week import (
     CellWrite,
     ExportPlan,
     FormulaBackup,
+    FreezeCellSkip,
     FreezePlan,
     FreezeSheetResult,
+    FreezeValueRange,
     GoogleDocument,
     GoogleSheet,
     GridCell,
@@ -370,6 +372,72 @@ def check_targets(
                 raise WeekError(WeekIssue.MERGED, cell=write.cell)
 
 
+def freeze_ranges(sheet_id: int, positions: list[tuple[int, int]]) -> list[GridRange]:
+    rows: dict[int, list[int]] = defaultdict(list)
+    for row, col in positions:
+        rows[row].append(col)
+    ranges: list[GridRange] = []
+    active: dict[tuple[int, int], GridRange] = {}
+    for row, columns in sorted(rows.items()):
+        spans: list[tuple[int, int]] = []
+        for column in sorted(columns):
+            if spans and spans[-1][1] == column:
+                spans[-1] = spans[-1][0], column + 1
+            else:
+                spans.append((column, column + 1))
+        current: dict[tuple[int, int], GridRange] = {}
+        for span in spans:
+            region = active.get(span)
+            if region is not None and region.endRowIndex == row:
+                region.endRowIndex = row + 1
+            else:
+                region = GridRange(
+                    sheetId=sheet_id,
+                    startRowIndex=row,
+                    endRowIndex=row + 1,
+                    startColumnIndex=span[0],
+                    endColumnIndex=span[1],
+                )
+                ranges.append(region)
+            current[span] = region
+        active = current
+    return ranges
+
+
+def freeze_values(plan: FreezePlan) -> list[FreezeValueRange]:
+    values: dict[tuple[int, int], float | str | bool] = {}
+    for entry in plan.formulas:
+        effective = entry.effective_value
+        value = (
+            effective.numberValue
+            if effective.numberValue is not None
+            else effective.stringValue
+            if effective.stringValue is not None
+            else effective.boolValue
+        )
+        if value is None:
+            raise WeekError(WeekIssue.FORMULA, cell=entry.cell)
+        values[position(entry.cell)] = value
+    title = "'" + plan.report.sheet_name.replace("'", "''") + "'"
+    writes: list[FreezeValueRange] = []
+    for region in plan.ranges:
+        if region.endRowIndex is None or region.endColumnIndex is None:
+            raise WeekError(WeekIssue.INTERNAL)
+        for row in range(region.startRowIndex, region.endRowIndex):
+            writes.append(
+                FreezeValueRange(
+                    range=(
+                        f"{title}!{address(row, region.startColumnIndex)}:"
+                        f"{address(row, region.endColumnIndex - 1)}"
+                    ),
+                    values=[
+                        [values[row, col] for col in range(region.startColumnIndex, region.endColumnIndex)]
+                    ],
+                )
+            )
+    return writes
+
+
 def freeze_plan(
     profile: WeekProfile, sheet: GoogleSheet, document: GoogleDocument, wanted: str
 ) -> FreezePlan:
@@ -398,47 +466,40 @@ def freeze_plan(
             raise WeekError(WeekIssue.WEEK_MISSING)
         target = week_start(wanted)
         assert target is not None
-        spans: dict[tuple[int, int], list[int]] = defaultdict(list)
-        signatures: dict[tuple[int, int], list[str]] = {}
+        signatures: list[tuple[int, int, int, list[str]]] = []
+        skipped: dict[tuple[int, int], WeekIssue] = {}
+        accepted_rows: set[int] = set()
         for row, anchor in anchors:
+            if row in accepted_rows:
+                skipped[row, anchor] = WeekIssue.AMBIGUOUS
+                continue
+            accepted_rows.add(row)
             start, previous = anchor, target
             for col in range(anchor - 1, -1, -1):
                 period = week_start(labels.get((row, col), ""))
                 if period is None:
                     break
                 if period >= previous:
-                    raise WeekError(WeekIssue.AMBIGUOUS)
+                    skipped[row, col] = WeekIssue.AMBIGUOUS
+                    break
                 start, previous = col, period
             if start == anchor:
                 continue
-            span = start, anchor
-            if any(start < right and left < anchor and span != (left, right) for left, right in spans):
-                raise WeekError(WeekIssue.AMBIGUOUS)
             signature = [labels[row, col] for col in range(start, anchor + 1)]
-            if span in signatures and signatures[span] != signature:
-                raise WeekError(WeekIssue.AMBIGUOUS)
-            signatures[span] = signature
-            spans[span].append(row)
-        if not spans:
-            raise WeekError(WeekIssue.WEEK_MISSING)
-        for (left, right), header_rows in spans.items():
-            ordered = sorted(header_rows)
-            for index, row in enumerate(ordered):
-                bottom = ordered[index + 1] if index + 1 < len(ordered) else bounds.rowCount
-                if row + 1 < bottom:
-                    plan.ranges.append(
-                        GridRange(
-                            sheetId=sheet.properties.sheetId,
-                            startRowIndex=row + 1,
-                            endRowIndex=bottom,
-                            startColumnIndex=left,
-                            endColumnIndex=right,
-                        )
+            signatures.append((row, start, anchor, signature))
+            bottom = min((following for following in rows if following > row), default=bounds.rowCount)
+            if row + 1 < bottom:
+                plan.ranges.append(
+                    GridRange(
+                        sheetId=sheet.properties.sheetId,
+                        startRowIndex=row + 1,
+                        endRowIndex=bottom,
+                        startColumnIndex=start,
+                        endColumnIndex=anchor,
                     )
-        plan.report.ranges = [
-            f"{address(r.startRowIndex, r.startColumnIndex)}:{address(edges(r, sheet)[1] - 1, edges(r, sheet)[3] - 1)}"
-            for r in plan.ranges
-        ]
+                )
+        if not signatures:
+            raise WeekError(WeekIssue.WEEK_MISSING)
 
         def inside(row: int, col: int) -> bool:
             return any(contains(region, row, col, sheet) for region in plan.ranges)
@@ -465,14 +526,25 @@ def freeze_plan(
             for region in plan.ranges:
                 if protection_blocks(region, protected, protection.unprotectedRanges, sheet):
                     raise WeekError(WeekIssue.PROTECTED)
-        leftmost_formula = bounds.columnCount
+        derived_rightmost = [-1] * bounds.rowCount
+        for (row, col), cell in grid.items():
+            if (
+                row < bounds.rowCount
+                and cell.effectiveValue.model_dump(exclude_none=True)
+                and not cell.userEnteredValue.model_dump(exclude_none=True)
+            ):
+                derived_rightmost[row] = max(derived_rightmost[row], col)
+        for row in range(bounds.rowCount - 2, -1, -1):
+            derived_rightmost[row] = max(derived_rightmost[row], derived_rightmost[row + 1])
+        positions: list[tuple[int, int]] = []
         for (row, col), cell in sorted(grid.items()):
             if inside(row, col):
                 if cell.effectiveValue.errorValue or any(
                     value is not None
                     for value in (cell.pivotTable, cell.dataSourceTable, cell.dataSourceFormula)
                 ):
-                    raise WeekError(WeekIssue.FORMULA)
+                    skipped[row, col] = WeekIssue.FORMULA
+                    continue
                 if cell.userEnteredValue.formulaValue is not None:
                     if all(
                         value is None
@@ -482,8 +554,15 @@ def freeze_plan(
                             cell.effectiveValue.boolValue,
                         )
                     ):
-                        raise WeekError(WeekIssue.FORMULA)
-                    leftmost_formula = min(leftmost_formula, col)
+                        skipped[row, col] = WeekIssue.FORMULA
+                        continue
+                    if any(contains(merge, row, col, sheet) for merge in sheet.merges):
+                        skipped[row, col] = WeekIssue.MERGED
+                        continue
+                    if col <= derived_rightmost[row]:
+                        skipped[row, col] = WeekIssue.ARRAY
+                        continue
+                    positions.append((row, col))
                     plan.formulas.append(
                         FormulaBackup(
                             cell=address(row, col),
@@ -494,16 +573,27 @@ def freeze_plan(
             if (
                 cell.effectiveValue.model_dump(exclude_none=True)
                 and not cell.userEnteredValue.model_dump(exclude_none=True)
-                and (inside(row, col) or col >= leftmost_formula)
+                and inside(row, col)
             ):
-                raise WeekError(WeekIssue.ARRAY)
+                skipped[row, col] = WeekIssue.ARRAY
+        plan.ranges = freeze_ranges(sheet.properties.sheetId, positions)
+        plan.report.ranges = [
+            f"{address(r.startRowIndex, r.startColumnIndex)}:{address(edges(r, sheet)[1] - 1, edges(r, sheet)[3] - 1)}"
+            for r in plan.ranges
+        ]
+        plan.report.skipped_cells = [
+            FreezeCellSkip(cell=address(row, col), reason=reason)
+            for (row, col), reason in sorted(skipped.items())
+        ]
         plan.report.formula_count = len(plan.formulas)
         payload = {
             "properties": sheet.properties.model_dump(),
             "merges": [r.model_dump() for r in sheet.merges],
             "protections": [r.model_dump() for r in sheet.protectedRanges],
             "named": [r.model_dump() for r in document.namedRanges],
-            "headers": [(key, value, signatures[key]) for key, value in spans.items()],
+            "headers": signatures,
+            "ranges": [region.model_dump() for region in plan.ranges],
+            "skipped": [item.model_dump() for item in plan.report.skipped_cells],
             "values": [
                 (row, col, cell.userEnteredValue.model_dump())
                 for (row, col), cell in sorted(grid.items())

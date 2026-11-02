@@ -299,7 +299,7 @@ class OzonAnalyticsService:
 
     async def transit(self, store: str, client: OzonAnalyticsClient) -> int:
         try:
-            snapshot = await client.transit(store, self.clock())
+            snapshot = await client.transit(store, self.clock(), include_to_customer=True)
         except OzonAnalyticsApiError as error:
             attempted_at = self.clock()
             await self.repository.save_status(

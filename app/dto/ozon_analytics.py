@@ -226,6 +226,7 @@ class OzonAnalyticsTransit(OzonAnalyticsModel):
     store_slug: str
     observed_at: datetime
     products: tuple[OzonAnalyticsStock, ...]
+    includes_to_customer: bool = False
 
 
 class OzonAnalyticsSourceStatus(OzonAnalyticsModel):
