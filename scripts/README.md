@@ -32,6 +32,7 @@
 ```shell
 python -m scripts.sync.sync_unit_economics_1c_source_data
 python -m scripts.sync.sync_unit_economics_yandex --store rimili --source orders
+python -m scripts.sync.backfill_yandex_orders --date-from 2026-08-02 --date-to 2026-11-01
 python -m scripts.diagnostics.check_inbound_access
 python -m scripts.ops.agent_key --help
 python -m scripts.imports.migrate_sqlite_to_postgres --help

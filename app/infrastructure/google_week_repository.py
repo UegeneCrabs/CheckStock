@@ -32,6 +32,7 @@ from app.dto.google_week import (
     WeekProfile,
     WeekReport,
     WeekSettings,
+    YandexWeekOrder,
     document_id,
 )
 from app.dto.orders import OzonOrderDayState
@@ -324,6 +325,8 @@ class GoogleWeekRepository:
     ) -> StoreFacts:
         if marketplace == Marketplace.OZON and not stock:
             return await self._ozon_sales_facts(store, start, end)
+        if marketplace == Marketplace.YANDEX_MARKET and not stock:
+            return await self._yandex_sales_facts(store, start, end)
         params: dict[str, str | int] = {
             "marketplace": marketplace.value,
             "store": store,
@@ -343,13 +346,7 @@ class GoogleWeekRepository:
                 UNION ALL SELECT store_slug, NULL, day, 0, NULL, 1 FROM economics_source_days
                 WHERE marketplace=:marketplace AND store_slug=:store AND source='orders' AND day BETWEEN :start AND :end"""
         else:
-            query = """SELECT store_slug, article, substr(ordered_at,1,10) AS day,
-                SUM(quantity-cancelled_quantity) AS quantity, NULL AS captured_at, 0 AS confirmed
-                FROM sales_order_lines WHERE marketplace=:marketplace AND store_slug=:store
-                AND substr(ordered_at,1,10) BETWEEN :start AND :end
-                GROUP BY store_slug, article, substr(ordered_at,1,10)
-                UNION ALL SELECT store_slug, NULL, day, 0, NULL, 1 FROM unit_economics_yandex_loaded_days
-                WHERE store_slug=:store AND source='orders' AND day BETWEEN :start AND :end"""
+            raise ValueError("Unsupported weekly order marketplace")
         result = StoreFacts()
         async with self.database.transaction() as connection:
             rows = (await connection.execute(text(query), params)).mappings()
@@ -359,6 +356,36 @@ class GoogleWeekRepository:
                     result.confirmed.add(fact.day)
                 if fact.article is not None:
                     result.facts.append(fact)
+        return result
+
+    async def _yandex_sales_facts(self, store: str, start: date, end: date) -> StoreFacts:
+        query = text("""SELECT article, day, data_json FROM unit_economics_yandex_daily_metrics
+            WHERE store_slug=:store AND source='orders' AND day BETWEEN :start AND :end
+            UNION ALL SELECT NULL, day, NULL FROM unit_economics_yandex_loaded_days
+            WHERE store_slug=:store AND source='orders' AND day BETWEEN :start AND :end""")
+        result = StoreFacts()
+        async with self.database.transaction() as connection:
+            rows = (
+                await connection.execute(
+                    query, {"store": store, "start": start.isoformat(), "end": end.isoformat()}
+                )
+            ).mappings()
+            for row in rows:
+                day = date.fromisoformat(row["day"])
+                if row["article"] is None:
+                    result.confirmed.add(day)
+                    continue
+                order = YandexWeekOrder.model_validate_json(row["data_json"])
+                if order.article != row["article"] or order.day != day:
+                    raise ValueError("Inconsistent Yandex daily order identity")
+                result.facts.append(
+                    DailyFact(
+                        store_slug=store,
+                        article=order.article,
+                        day=day,
+                        quantity=order.orders_count - order.cancel_count,
+                    )
+                )
         return result
 
     async def _ozon_sales_facts(self, store: str, start: date, end: date) -> StoreFacts:

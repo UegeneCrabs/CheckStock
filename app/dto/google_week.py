@@ -17,6 +17,7 @@ from pydantic import (
 from app.core.constants import (
     GOOGLE_MARKETPLACE_DEFAULTS,
     GOOGLE_WEEK,
+    YANDEX_ORDERS,
     GoogleExportKind,
     Marketplace,
     ScheduleKind,
@@ -459,6 +460,20 @@ class OzonWeekOrder(WeekModel):
     quantity: int = Field(ge=0)
     accepted_at: AwareDatetime
     ordered_at: AwareDatetime
+
+
+class YandexWeekOrder(WeekModel):
+    article: str = Field(min_length=1)
+    day: date
+    orders_count: int = Field(ge=0, strict=True)
+    cancel_count: int = Field(ge=0, strict=True)
+    orders_scope: str
+
+    @model_validator(mode="after")
+    def valid_counts(self) -> Self:
+        if self.orders_scope != YANDEX_ORDERS.scope or self.cancel_count > self.orders_count:
+            raise ValueError(WeekIssue.SOURCE)
+        return self
 
 
 class ExportPlan(WeekModel):

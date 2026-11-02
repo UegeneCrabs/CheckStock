@@ -1288,6 +1288,16 @@ class OzonAnalyticsReason(StrEnum):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class YandexOrdersConfig:
+    programs: frozenset[str] = frozenset({"FBY", "FBS"})
+    scope: str = "fby_fbs_v1"
+    history_window_days: int = 7
+
+
+YANDEX_ORDERS: Final = YandexOrdersConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class OzonAnalyticsConfig:
     pages: str = "/analytics/ozon"
     api: str = "/api/analytics/ozon"

@@ -15,6 +15,7 @@ from io import BytesIO
 from threading import Lock
 
 from app.config import settings
+from app.core.constants import YANDEX_ORDERS
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
@@ -276,24 +277,51 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
     orders = api.get_business_orders(
         api_key, business_id, start.isoformat(), (end + timedelta(days=1)).isoformat()
     )
-    lines = order_normalizer.normalize(store_slug, orders)
+    supported = []
+    for order in orders:
+        program = str(order.get("programType") or "").strip().upper()
+        if not program:
+            raise ValueError("В заказе ЯМ отсутствует схема работы")
+        if program in YANDEX_ORDERS.programs:
+            created = order.get("creationDate") or order.get("createdAt")
+            if not created or not (order.get("orderId") or order.get("id")):
+                raise ValueError("В заказе ЯМ отсутствует дата или идентификатор")
+            datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+            items = order.get("items")
+            if not isinstance(items, list) or not items:
+                raise ValueError("В заказе ЯМ отсутствует состав товаров")
+            for product in items:
+                quantity = product.get("count")
+                if (
+                    not (product.get("offerId") or product.get("shopSku"))
+                    or type(quantity) is not int
+                    or quantity <= 0
+                ):
+                    raise ValueError("Некорректный товар заказа ЯМ")
+            supported.append({**order, "programType": program})
+    lines = order_normalizer.normalize(store_slug, supported)
     unique_lines = {(line["order_key"], line["line_key"]): line for line in lines}
+    if len(unique_lines) != len(lines):
+        raise ValueError("Повтор строки заказа ЯМ")
     grouped = defaultdict(
         lambda: dict.fromkeys(
             ("orders_count", "orders_amount", "cancel_count", "cancel_amount", "sold_count"), 0
         )
     )
     for line in unique_lines.values():
+        if not 0 <= line["cancelled_quantity"] <= line["quantity"]:
+            raise ValueError("Некорректное количество отмен ЯМ")
         day = str(line["ordered_at"])[:10]
         if not start.isoformat() <= day <= end.isoformat():
             continue
         item = grouped[(line["article"], day)]
         scheme = "FBY" if line["scheme"] == "fbo" else "FBS"
         scheme_data = item.setdefault("schemes", {}).setdefault(
-            scheme, {"orders_count": 0, "orders_amount": 0}
+            scheme, {"orders_count": 0, "orders_amount": 0, "cancel_count": 0}
         )
         scheme_data["orders_count"] += line["quantity"]
         scheme_data["orders_amount"] += line["order_amount"]
+        scheme_data["cancel_count"] += line["cancelled_quantity"]
         for field, source in (
             ("orders_count", "quantity"),
             ("orders_amount", "order_amount"),
@@ -303,7 +331,13 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
         ):
             item[field] += line[source]
     return [
-        {"article": article, "day": day, "amount_basis": "with_subsidy", **values}
+        {
+            "article": article,
+            "day": day,
+            "amount_basis": "with_subsidy",
+            "orders_scope": YANDEX_ORDERS.scope,
+            **values,
+        }
         for (article, day), values in grouped.items()
     ]
 
