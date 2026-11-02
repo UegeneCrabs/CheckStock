@@ -1,10 +1,17 @@
 <link rel="stylesheet" href="/static/agents/index.css?v=20261023" />
-<link rel="stylesheet" href="/static/agents/catalog.css?v=4" />
+<link rel="stylesheet" href="/static/agents/catalog.css?v=5" />
+<link rel="stylesheet" href="/static/agents/marketplaces.css?v=1" />
 <section class="agent-page">
   <div class="agent-heading"><h1>Каталог API</h1><span class="agent-badge">Только чтение данных</span></div>
   $agent_navigation
   <p>Выберите метод и изучите, какие данные он возвращает. Показаны методы для доступных вам магазинов и разделов. Отдельные сценарии могут требовать дополнительных прав.</p>
   <p><a href="/ai-agents/keys">Создать API-ключ</a></p>
+  <div class="agent-marketplace-switch" id="catalog-marketplaces" role="group" aria-label="Маркетплейс каталога">
+    <button type="button" data-marketplace="all" aria-pressed="true">Все площадки</button>
+    <button type="button" data-marketplace="WB" aria-pressed="false">Wildberries</button>
+    <button type="button" data-marketplace="YANDEX MARKET" aria-pressed="false">Яндекс Маркет</button>
+    <button type="button" data-marketplace="OZON" aria-pressed="false">Ozon</button>
+  </div>
   <div id="catalog-message" role="status" aria-live="polite">Загрузка методов…</div>
   <label for="catalog-search">Найти данные или метод</label>
   <input id="catalog-search" type="search" placeholder="Например: остатки, заказы, profit" />
@@ -14,5 +21,5 @@
   </div>
   <section class="agent-card"><h2>Как читать ответы</h2><p><code>rows</code> — строки отчёта; <code>total_rows</code> — число найденных строк; <code>next_offset</code> — значение offset для следующей страницы, null означает конец. Некоторые служебные методы имеют другой формат ответа.</p><p><code>null</code> означает неизвестное значение, а не ноль. Проверяйте <code>warnings</code>, <code>sources</code> и <code>context</code>. Даты периода включают обе границы; время — МСК, если источник не указал другое смещение. Обычно допустимо до 90 дней.</p><p>401 — ключ не принят; 403 — недостаточно прав; 422 — некорректные параметры; 503 — источник временно недоступен. Наличие метода не означает, что данные уже загружены.</p></section>
 </section>
-<script src="/static/agents/catalog-comparison.js?v=1" defer></script>
-<script src="/static/agents/catalog.js?v=8" defer></script>
+<script src="/static/agents/catalog-comparison.js?v=2" defer></script>
+<script src="/static/agents/catalog.js?v=11" defer></script>

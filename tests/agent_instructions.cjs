@@ -77,3 +77,62 @@ test('manual clipboard retry preserves text and status target', async () => {
     assert.match(status.textContent, /Ctrl\+C/);
     assert.equal(status.children[3].value, app.ids['agent-instruction-text'].textContent);
 });
+
+function setupViewer({ value, ok = true, rejectFetch = false } = {}) {
+    const source = value ?? fs.readFileSync(path.join(__dirname, '../static/agents/agent-instructions-full.txt'), 'utf8');
+    const element = () => ({ textContent: '', dataset: {}, attributes: {}, disabled: true,
+        setAttribute(key, text) { this.attributes[key] = text; } });
+    const ids = Object.fromEntries(['agent-instruction-viewer', 'agent-instruction-text', 'agent-instruction-status', 'agent-instruction-heading', 'agent-instruction-panel'].map(id => [id, element()]));
+    ids['agent-instruction-viewer'].dataset.instructionUrl = '/static/agents/agent-instructions-full.txt';
+    const controls = [['common', 'Общие правила'], ['WB', 'Wildberries'], ['YANDEX MARKET', 'Яндекс Маркет'], ['OZON', 'Ozon']].map(([section, label]) => ({ ...element(), dataset: { section }, textContent: label }));
+    const fetched = [];
+    const context = { document: { getElementById: id => ids[id] || null, querySelectorAll: () => controls },
+        fetch: async (url, options) => { fetched.push([url, options]); if (rejectFetch) throw Error('offline'); return { ok, text: async () => source }; } };
+    context.window = context;
+    vm.createContext(context);
+    for (const file of ['instruction-sections.js', 'instructions.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/agents', file), 'utf8'), context);
+    return { ids, controls, fetched, context };
+}
+
+// Справочник читает один источник с MCP, переключает площадки и не требует кнопок копирования.
+test('marketplace viewer switches actual rules without clipboard or extra requests', async () => {
+    const app = setupViewer();
+    await flush();
+    const text = app.ids['agent-instruction-text'];
+    assert.match(text.textContent, /Расчёт неполный/);
+    assert.doesNotMatch(text.textContent, /SppHourly: observed_at/);
+    const cases = [[1, /SppHourly: observed_at/, /seller_price\/black_price/], [2, /buyer_price\/pay_price/, /SppHourly: observed_at/], [3, /stock_basis/, /StandardCosts: profit — без ИУ/]];
+    for (const [index, includes, excludes] of cases) {
+        app.controls[index].onclick();
+        assert.match(text.textContent, includes);
+        assert.doesNotMatch(text.textContent, excludes);
+        assert.equal(app.ids['agent-instruction-heading'].textContent, app.controls[index].textContent);
+        assert.equal(app.controls.filter(control => control.attributes['aria-pressed'] === 'true').length, 1);
+        assert.equal(app.controls[index].attributes['aria-pressed'], 'true');
+    }
+    assert.ok(app.controls.every(control => !control.disabled));
+    assert.equal(app.fetched.length, 1);
+    assert.equal(app.fetched[0][0], '/static/agents/agent-instructions-full.txt');
+    assert.equal(app.fetched[0][1].cache, 'no-store');
+    assert.equal(app.ids['agent-instruction-panel'].attributes['aria-busy'], 'false');
+});
+
+// Повреждённая структура или ошибка загрузки не показывают чужой/частичный раздел как правильную инструкцию.
+for (const options of [{ ok: false }, { value: '' }, { rejectFetch: true }, { value: '## Общие правила\nПравила' }, { value: '## Общие правила\nПравила\n## Общие правила\nДубликат' }]) {
+    test(`marketplace viewer fails closed on invalid source ${JSON.stringify(options)}`, async () => {
+        const app = setupViewer(options);
+        await flush();
+        assert.match(app.ids['agent-instruction-status'].textContent, /Не удалось загрузить/);
+        assert.ok(app.controls.every(control => control.disabled));
+        assert.equal(app.ids['agent-instruction-text'].textContent, '');
+        assert.equal(app.ids['agent-instruction-panel'].attributes['aria-busy'], 'false');
+    });
+}
+
+// HTML в исходнике остаётся текстом; CRLF не нарушает границы разделов.
+test('marketplace viewer preserves source as text with CRLF', async () => {
+    const source = ['## Общие правила', '<b>Правила</b>', '## Wildberries', 'WB', '## Яндекс Маркет', 'Яндекс', '## Ozon', 'Ozon'].join('\r\n');
+    const app = setupViewer({ value: source });
+    await flush();
+    assert.equal(app.ids['agent-instruction-text'].textContent, '<b>Правила</b>');
+});

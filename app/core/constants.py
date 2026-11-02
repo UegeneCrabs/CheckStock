@@ -2377,3 +2377,123 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.ftp_ozon_export.name, kind=ScheduleKind.WINDOW),
     JobScheduleRule(name=JOBS.wb_token_check.name, interval_setting="token_check_interval_seconds"),
 )
+
+
+class AgentOzonRecordType(StrEnum):
+    COMMENT = "comment"
+    NOTE = "note"
+
+
+class AgentOzonDataStatus(StrEnum):
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    MISSING = "missing"
+
+
+class AgentOzonAnalysisStatus(StrEnum):
+    MATCH = "match"
+    UNKNOWN = "unknown"
+
+
+class OzonStockOrdersBasis(StrEnum):
+    AFTER_CANCELLATIONS = "after_cancellations"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentOzonConfig:
+    marketplace: str = "OZON"
+    analysis_sample_limit: int = 7
+    discovery: frozenset[str] = frozenset({"stores", "capabilities", "article-stores", "data-status"})
+    exclusive: frozenset[str] = frozenset(
+        {
+            "ozon-buyout",
+            "ozon-logistics",
+            "ozon-storage",
+            "ozon-advertising-breakdown",
+            "ozon-commissions",
+            "ozon-profit-details",
+            "ozon-analyzer",
+            "ozon-ephemerides",
+            "ozon-sales",
+            "ozon-analytics-comments",
+        }
+    )
+    supported: frozenset[str] = frozenset(
+        {
+            "stores",
+            "capabilities",
+            "article-stores",
+            "data-status",
+            "products",
+            "product-details",
+            "product-newness",
+            "product-reputation",
+            "product-tags",
+            "current-economics",
+            "profit-calculator",
+            "advertising",
+            "advertising-campaigns",
+            "stocks",
+            "stock-value",
+            "stock-operations",
+            "prices",
+            "costs",
+            "profit",
+            "target-prices",
+            "loss-products",
+            "profit-summary",
+            "product-analysis",
+            "stock-history",
+            "orders",
+            "inbound-supplies",
+            "supply-arrivals",
+            "stock-cost-report",
+            "economics-history",
+            "ozon-buyout",
+            "ozon-logistics",
+            "ozon-storage",
+            "ozon-advertising-breakdown",
+            "ozon-commissions",
+            "ozon-profit-details",
+            "ozon-analyzer",
+            "ozon-ephemerides",
+            "ozon-sales",
+            "ozon-analytics-comments",
+        }
+    )
+    source_tables: tuple[tuple[str, bool], ...] = (
+        ("ozon_prices_current", False),
+        ("ozon_prices_daily", True),
+        ("ozon_margin_daily", True),
+        ("ozon_buyout_daily", True),
+        ("ozon_logistics_daily", True),
+        ("ozon_storage_daily", True),
+        ("ozon_advertising_source_windows", False),
+        ("ozon_fbo_commissions_daily", True),
+    )
+
+
+AGENT_OZON: Final = AgentOzonConfig()
+
+
+class WbRatingStatus(StrEnum):
+    PROBLEM = "problem"
+    HEALTHY = "healthy"
+    NO_DATA = "no_data"
+
+
+class WbRatingReportKind(StrEnum):
+    COMPARISON = "rating-comparison"
+    HISTORY = "rating-history"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentWbRatingConfig:
+    maximum_rating: int = 5
+    maximum_period_days: int = 90
+    precision: int = 2
+    scope: str = "wb_joined_products"
+    label: str = "Рейтинг склейки WB"
+
+
+AGENT_WB_RATING: Final = AgentWbRatingConfig()

@@ -95,14 +95,18 @@
 - [Расходы WB без ИУ — сравнение прибыли и ROI](wb-standard-costs.md#api-для-ии-агентов)
 
 - [Почасовая и дневная история СПП WB](agent-spp-history.md)
+- [Рейтинг склейки WB: сравнение и дневная история через API/MCP](agent-wb-rating.md)
 
 - [API аналитики CheckStock](chatgpt-analytics.md) — полная инструкция MCP и компактная версия для GPT с Actions.
+- [Каталог по маркетплейсам](chatgpt-analytics.md#каталог-по-площадкам) и [общие/отдельные правила ИИ](chatgpt-analytics.md#общая-инструкция-ии-агентов) — просмотр WB, Яндекса и Ozon при едином MCP-подключении.
 - [Подключение Claude и ChatGPT через MCP](claude-mcp.md)
+- [Автоматическое продление MCP](claude-mcp.md#автоматическое-продление-mcp) — refresh token для доступа только на чтение, ротация и переход старых подключений.
 - [Развёртывание API агентов](agent-api-deployment.md) — постоянный том API/MCP, перенос файлов и права контейнера.
 - [Сводка прибыли](agent-profit-summary.md)
 - [Серверный анализ товаров](agent-server-analysis.md)
 - [Расширенные отчёты WB](agent-extended-reports.md)
 - [Отчёты Яндекс Маркета](agent-yandex-reports.md)
+- [API Ozon для ИИ: методы, поля, ограничения и приёмка](agent-ozon-reports.md)
 - [Примеры запросов менеджера](agent-manager-queries.md)
 
 Документы с версиями формул и описаниями выпусков содержат историю изменений. Текущий контракт всегда сверяйте с кодом, тестами и, для HTTP API, с OpenAPI работающего приложения.

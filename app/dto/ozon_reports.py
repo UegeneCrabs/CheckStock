@@ -5,11 +5,19 @@ from typing import Annotated, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
-from app.core.constants import OZON_REPORTS, TIME, WEB, OzonReportGroup, OzonReportRowKind, OzonTargetIssue
+from app.core.constants import (
+    OZON_REPORTS,
+    TIME,
+    WEB,
+    OzonReportGroup,
+    OzonReportRowKind,
+    OzonStockOrdersBasis,
+    OzonTargetIssue,
+)
 from app.dto.common import DtoModel
 from app.dto.ozon_cabinet import OzonCabinetGoals, OzonProductGoals, Percent, RoiPercent
 from app.dto.ozon_calculator import OzonCalculatorValues
-from app.dto.ozon_economics import OzonProduct, OzonTurnoverData
+from app.dto.ozon_economics import OzonCoverage, OzonProduct, OzonTurnoverData
 
 Number = Annotated[float, Field(allow_inf_nan=False)]
 
@@ -121,6 +129,16 @@ class OzonProfitDay(DtoModel):
     issues: tuple[str, ...] = ()
 
 
+class OzonProfitStockBasis(DtoModel):
+    period_from: date
+    period_to: date
+    period_days: int = Field(ge=1)
+    orders_basis: OzonStockOrdersBasis = OzonStockOrdersBasis.AFTER_CANCELLATIONS
+    orders_count: int | None = None
+    coverage: OzonCoverage
+    current_day_partial: bool = True
+
+
 class OzonProfitRow(OzonProfitMetrics):
     store_slug: str = ""
     store_name: str = ""
@@ -132,6 +150,7 @@ class OzonProfitRow(OzonProfitMetrics):
     code: str | None = None
     row_kind: OzonReportRowKind = OzonReportRowKind.PRODUCT
     product_count: int = 1
+    stock_basis: OzonProfitStockBasis | None = None
     daily_calculations: tuple[OzonProfitDay, ...] = ()
 
 

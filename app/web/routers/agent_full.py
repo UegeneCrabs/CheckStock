@@ -10,16 +10,21 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import db
 from app.access.resources import has_store_marketplace, store_marketplace_pairs
 from app.agents import reports as reports
 from app.agents import yandex_reports
 from app.agents.extended_reports import EXTRA_SPECS
+from app.agents.marketplaces import supports
+from app.agents.ozon_reports import SPECS as OZON_SPECS
+from app.agents.rating_reports import SPECS as RATING_SPECS
+from app.core.constants import AGENT_WB_RATING
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
+from app.dto.agent_query import ReportQuery
 from app.dto.identity import SectionName
 from app.stock import supply_planning
 from app.web.routers.agent_analytics import Employee
@@ -34,47 +39,6 @@ router = APIRouter()
 logger = tagged_logger(__name__, "web", "agent_full")
 SUPPLY_CACHE = {}
 SUPPLY_LOCK = threading.Lock()
-
-
-class ReportQuery(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    store: str | None = Field(default=None, min_length=1, max_length=100)
-    marketplace: Literal["WB", "OZON", "YANDEX MARKET"] = "WB"
-    date_from: date | None = None
-    date_to: date | None = None
-    article: str | None = Field(default=None, min_length=1, max_length=100)
-    search: str | None = Field(default=None, min_length=1, max_length=100)
-    warehouse: str | None = Field(default=None, min_length=1, max_length=150)
-    scheme: str | None = Field(
-        default=None, pattern=r"^(fbo|fbs|rfbs|ff|transit|fbs_[a-zA-Z0-9_-]+)$", max_length=100
-    )
-    view: Literal["details", "summary"] = "details"
-    fulfillment: str | None = Field(default=None, min_length=1, max_length=150)
-    manager: str | None = Field(default=None, min_length=1, max_length=150)
-    kind: str | None = Field(default=None, min_length=1, max_length=50)
-    group_by: Literal["article", "day"] = "article"
-    sort_by: str | None = Field(default=None, max_length=60)
-    order: Literal["asc", "desc"] = "desc"
-    limit: int = Field(default=20, ge=1, le=100)
-    offset: int = Field(default=0, ge=0, le=100000)
-    order_id: str | None = Field(default=None, min_length=1, max_length=100)
-    supply_id: str | None = Field(default=None, min_length=1, max_length=100)
-    status: str | None = Field(default=None, min_length=1, max_length=100)
-    cost_view: Literal[
-        "summary", "deliveries", "transfers", "shipments", "fbs_transfers", "fbs_sales", "fbs_actual_sales"
-    ] = "summary"
-    is_new: bool | None = None
-    active_only: bool = True
-    ctr_below: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    tag_column: Literal["goal_week", "goal_day", "status", "ends", "code", "fact", "plan"] | None = None
-    tag_value: str | None = Field(default=None, min_length=1, max_length=100)
-    tag_operator: Literal["eq", "gte", "lte"] = "eq"
-
-    @field_validator("store")
-    @classmethod
-    def normalize_store(cls, value: str | None) -> str | None:
-        return value.strip().lower() if value is not None else None
 
 
 class ReportResponse(BaseModel):
@@ -216,8 +180,13 @@ SPECS = {
 }
 PERIOD_REPORTS = {"advertising-campaigns", "advertising", "stock-operations", "supplies", "profit"}
 SPECS.update(EXTRA_SPECS)
+SPECS.update(OZON_SPECS)
+SPECS.update(RATING_SPECS)
 PERIOD_REPORTS.update({"stock-history", "orders", "stock-cost-report"})
-PERIOD_REPORTS.update({"spp-hourly", "spp-daily"})
+PERIOD_REPORTS.update(
+    {"spp-hourly", "spp-daily", "ozon-advertising-breakdown", "ozon-profit-details", "ozon-sales"}
+)
+PERIOD_REPORTS.update(RATING_SPECS)
 ECONOMIC = {
     name
     for name, spec in SPECS.items()
@@ -238,15 +207,13 @@ def guard(user, section, query):
 def allowed_fields(name):
     if name == "profit-calculator":
         return {"store", "marketplace", "article"}
-    return COMMON | set(SPECS[name][2].split())
+    return COMMON | set(SPECS[name][2].split()) | ({"days"} if name == "economics-history" else set())
 
 
 def report_permitted(user, name, store, mp):
     section, wb_only, _, _ = SPECS[name]
     section = yandex_reports.section_for(section, mp)
-    supported = (
-        not wb_only or mp == "WB" or (mp == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED)
-    )
+    supported = supports(name, mp)
     if not supported or not permitted(user, section, store, mp):
         return False
     if name == "supply-arrivals" and (
@@ -271,12 +238,8 @@ def validate(name, query, supplied):
         raise HTTPException(
             422, "summary поддерживает fulfillment; warehouse и scheme используйте с view=details"
         )
-    if (
-        wb_only
-        and query.marketplace != "WB"
-        and not (query.marketplace == yandex_reports.MARKETPLACE and name in yandex_reports.SUPPORTED)
-    ):
-        raise HTTPException(422, "Этот отчёт пока реализован только для WB")
+    if not supports(name, query.marketplace):
+        raise HTTPException(422, "Метод не поддерживает выбранную площадку")
     if (
         name == "prices"
         and query.marketplace == yandex_reports.MARKETPLACE
@@ -285,6 +248,8 @@ def validate(name, query, supplied):
         raise HTTPException(
             422, "Для Яндекс Маркета доступны текущие цены; история цен этим методом не предоставляется"
         )
+    if query.marketplace != "OZON" and "days" in supplied:
+        raise HTTPException(422, "Параметр days доступен только для истории Ozon")
     if set(supplied) - allowed_fields(name):
         raise HTTPException(422, "Фильтр не поддерживается этим отчётом; см. capabilities")
     if bool(query.date_from) != bool(query.date_to):
@@ -301,7 +266,10 @@ def validate(name, query, supplied):
             and query.date_to > datetime.now(MOSCOW_TIMEZONE).date()
         ):
             raise HTTPException(422, "Будущие даты недоступны")
-    if name in {"product-details", "profit-calculator", "economics-history"} and not query.article:
+    if (
+        name in {"product-details", "profit-calculator", "economics-history", "rating-history"}
+        and not query.article
+    ):
         raise HTTPException(422, "Укажите article")
     return yandex_reports.section_for(section, query.marketplace)
 
@@ -330,10 +298,26 @@ async def article_stores(user: Employee, query: Annotated[ArticleLookupQuery, Qu
             )
             if not allowed:
                 continue
-        rows = await run_in_threadpool(reports.catalog, store, mp)
+        if mp == "OZON":
+            from app.infrastructure.async_database import AsyncDatabase
+            from app.infrastructure.async_read_models import AsyncReadModels
+
+            database = AsyncDatabase()
+            try:
+                rows = await AsyncReadModels(database).read(
+                    lambda store=store, mp=mp: reports.catalog(store, mp)
+                )
+            finally:
+                await database.close()
+        else:
+            rows = await run_in_threadpool(reports.catalog, store, mp)
         if any(
             str(row["article"]) == query.article
-            or (" / " not in query.article and str(row["article"]).partition(" / ")[0] == query.article)
+            or (
+                mp != "OZON"
+                and " / " not in query.article
+                and str(row["article"]).partition(" / ")[0] == query.article
+            )
             for row in rows
         ):
             matches.append(ArticleStoreMatch(store=store, marketplace=mp, article=query.article))
@@ -356,7 +340,7 @@ async def capabilities(user: Employee):
 
     loss_scopes = [
         {"store": store, "marketplace": mp}
-        for mp in ("WB", yandex_reports.MARKETPLACE)
+        for mp in ("WB", yandex_reports.MARKETPLACE, "OZON")
         for store in accessible_stores(user, mp)
         if permitted(user, yandex_reports.section_for(S.UNIT_ECONOMICS_WB, mp), store, mp)
     ]
@@ -373,6 +357,13 @@ async def capabilities(user: Employee):
                     else ""
                 ),
                 "filters": sorted(allowed_fields(name)),
+                "marketplace_filters": {
+                    "OZON": sorted(
+                        allowed_fields(name) - ({"warehouse", "scheme"} if name == "stock-value" else set())
+                    )
+                }
+                if supports(name, "OZON")
+                else {},
                 "scopes": [
                     {"store": store, "marketplace": mp}
                     for store, mp in store_marketplace_pairs(user)
@@ -389,9 +380,10 @@ async def capabilities(user: Employee):
                 "description": "Server totals and equal-period comparison without product pagination.",
                 "filters": sorted(SummaryQuery.model_fields),
                 "scopes": [
-                    {"store": store, "marketplace": "WB"}
+                    {"store": store, "marketplace": mp}
                     for store in STORES
-                    if permitted(user, S.REPORT_UNIT_PROFIT, store, "WB")
+                    for mp in ("WB", "OZON")
+                    if permitted(user, S.REPORT_UNIT_PROFIT, store, mp)
                 ],
             }
         ]
@@ -402,9 +394,10 @@ async def capabilities(user: Employee):
                 "description": "Complete server-side product joins, filters and turnover ranking for six common questions.",
                 "filters": sorted(AnalysisQuery.model_fields),
                 "scopes": [
-                    {"store": store, "marketplace": "WB"}
+                    {"store": store, "marketplace": mp}
                     for store in STORES
-                    if permitted(user, S.REPORT_UNIT_PROFIT, store, "WB")
+                    for mp in ("WB", "OZON")
+                    if permitted(user, S.REPORT_UNIT_PROFIT, store, mp)
                 ],
             }
         ]
@@ -422,7 +415,7 @@ async def capabilities(user: Employee):
             else []
         ),
         "unavailable": [
-            "Расчёты юнит-экономики Ozon",
+            "Для Ozon: standard-costs, spp-hourly, spp-daily, supplies; акции и связанные товары без постоянного источника",
             "Для Яндекс Маркета: advertising-campaigns, supplies, profit-summary, product-analysis; история цен",
         ],
         "notes": [
@@ -448,6 +441,11 @@ async def data_status(request: Request, user: Employee, query: Annotated[ReportQ
     ]
     if not sections:
         raise HTTPException(403, "Нет доступа к данным")
+    if query.marketplace == "OZON":
+        from app.container import agent_ozon_service
+
+        data = await agent_ozon_service(request.app.state.async_resources).load("data-status", query, user)
+        return {"sources": data.rows, "warnings": ["Счётчики и крайние даты не гарантируют полноту периода."]}
     rows = []
     for section in sections:
         if section is S.UNIT_ECONOMICS_YANDEX:
@@ -516,6 +514,16 @@ async def execute(name, request, user, query, *, paginate=True):
         match = lookup.matches[0]
         query = query.model_copy(update={"store": match.store, "marketplace": match.marketplace})
     guard(user, section, query)
+    if name in RATING_SPECS:
+        from app.agents.rating_reports import execute as execute_rating
+
+        return await execute_rating(name, request, query, paginate=paginate)
+    if query.marketplace == "OZON":
+        from app.agents.ozon_reports import execute as execute_ozon
+
+        if not report_permitted(user, name, query.store, query.marketplace):
+            raise HTTPException(403, "Нет доступа к данным отчёта")
+        return await execute_ozon(name, request, user, query, paginate=paginate)
     if query.marketplace == yandex_reports.MARKETPLACE and name in yandex_reports.ECONOMIC:
         if not report_permitted(user, name, query.store, query.marketplace):
             raise HTTPException(403, "Нет доступа к данным отчёта")
@@ -632,10 +640,12 @@ async def execute(name, request, user, query, *, paginate=True):
         elif name == "product-reputation":
             context = {
                 "block": "Товар",
-                "labels": {"rating": "Рейтинг товара", "reviews_count": "Количество отзывов"},
+                "labels": {"rating": AGENT_WB_RATING.label, "reviews_count": "Количество отзывов"},
+                "rating_scope": AGENT_WB_RATING.scope,
+                "individual_rating_available": False,
             }
             warnings = [
-                "Сохранённые рейтинг и количество отзывов из таблицы сайта. null означает отсутствие данных, а не ноль. Количество отдельных оценок без отзывов этим полем не подтверждается."
+                "Рейтинг склейки WB. Индивидуальный рейтинг товара без склейки может отличаться; таких данных в БД нет. null означает отсутствие данных, а не ноль. Количество отдельных оценок без отзывов этим полем не подтверждается."
             ]
     elif name == "profit-calculator":
         from app.agents.calculator import calculator

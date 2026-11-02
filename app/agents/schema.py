@@ -36,8 +36,16 @@ def build_action_schema(routes):
                 parameter["description"] = (
                     "Required inclusive date in YYYY-MM-DD format. Supply both dates; at most 90 days."
                 )
-            if name in {"product-details", "economics-history"} and parameter["name"] == "article":
+            if (
+                name in {"product-details", "economics-history", "rating-history"}
+                and parameter["name"] == "article"
+            ):
                 parameter["required"] = True
+            if name in {"rating-comparison", "rating-history"}:
+                if parameter["name"] == "order":
+                    parameter["schema"]["default"] = "asc"
+                if parameter["name"] == "status":
+                    parameter["schema"]["enum"] = ["problem", "healthy", "no_data"]
             if parameter["name"] == "store" and (name in SPECS or name == "data-status"):
                 parameter["required"] = name == "data-status"
                 parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 100}
@@ -61,6 +69,18 @@ def build_action_schema(routes):
         name = path.rsplit("/", 1)[-1]
         if name in DOCS:
             doc = documentation(name)
+            from app.agents.marketplaces import supports
+
+            item["get"]["x-marketplace-support"] = {
+                mp: supports(name, mp) for mp in ("WB", "YANDEX MARKET", "OZON")
+            }
+            if supports(name, "OZON"):
+                item["get"]["description"] = (
+                    item["get"].get("description", "")
+                    + " Ozon: use marketplace=OZON, exact full offer_id, saved local sources only; see x-marketplace-guides.OZON. Unknown is not zero."
+                )
+            else:
+                item["get"]["description"] = item["get"].get("description", "") + " Not available for Ozon."
             item["get"]["summary"] = doc["title"]
             item["get"]["x-response-field-guide"] = doc["fields"]
             if doc.get("marketplace_guides"):

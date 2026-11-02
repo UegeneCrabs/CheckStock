@@ -148,7 +148,7 @@ def enrich(name, fields):
         key = f["name"]
         root = (
             name in root_methods
-            or key.startswith("context.")
+            or key.startswith(("context.", "totals."))
             or (name == "loss-products" and key == "excluded_incomplete_products")
         )
         f["path"] = ("[]." if name == "stores" else "" if root else "rows[].") + key

@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.agents.mcp_store import OAuthStore
+from app.agents.mcp_store import ACCESS_TTL, OAuthStore
 from app.dto.identity import User
 from app.web.routers import agent_management, agent_mcp
 
@@ -58,11 +58,11 @@ class McpOAuthTests(unittest.TestCase):
         self.assertEqual(response.json()["issuer"], "https://site.test")
         self.assertTrue(response.json()["authorization_response_iss_parameter_supported"])
 
-    # Тест-кейс: Claude и ChatGPT получают токен только после согласия пользователя.
+    # Тест-кейс: Claude и ChatGPT получают и продлевают доступ после согласия, блокировка прекращает доступ.
     def test_both_clients_authorize_and_deny_with_issuer(self) -> None:
-        """Тест-кейс: оба клиента проходят OAuth с согласием и с отказом.
+        """Тест-кейс: оба клиента проходят OAuth с согласием, отказом и продлением после истечения часа.
 
-        Ожидается токен при согласии, access_denied при отказе и сохранение state и iss.
+        Ожидается доступ только на чтение без повторного входа; отказ и блокировка прекращают доступ.
         """
         # Given
         callbacks = (
@@ -127,6 +127,71 @@ class McpOAuthTests(unittest.TestCase):
                     else:
                         self.assertEqual(tokens.status_code, 200, tokens.text)
                         self.assertIn("access_token", tokens.json())
+                        self.assertTrue("refresh_token" in tokens.json())
+                        issued = tokens.json()
+                        clock = time.time() + ACCESS_TTL + 1
+                        request_headers = {"Accept": "application/json, text/event-stream"}
+                        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+
+                        # When
+                        with patch("app.agents.mcp_store.time.time", return_value=clock):
+                            expired = self.client.post(
+                                "/mcp",
+                                json=ping,
+                                headers={
+                                    **request_headers,
+                                    "Authorization": "Bearer " + issued["access_token"],
+                                },
+                            )
+                            renewed = self.client.post(
+                                "/oauth/mcp/token",
+                                data={
+                                    "grant_type": "refresh_token",
+                                    "client_id": client_id,
+                                    "refresh_token": issued["refresh_token"],
+                                    "resource": "https://site.test/mcp",
+                                },
+                            )
+                            self.assertEqual(renewed.status_code, 200)
+                            refreshed = renewed.json()
+                            authenticated = self.client.post(
+                                "/mcp",
+                                json=ping,
+                                headers={
+                                    **request_headers,
+                                    "Authorization": "Bearer " + refreshed["access_token"],
+                                },
+                            )
+                            with patch.object(agent_mcp, "active_user", AsyncMock(return_value=None)):
+                                disabled = self.client.post(
+                                    "/oauth/mcp/token",
+                                    data={
+                                        "grant_type": "refresh_token",
+                                        "client_id": client_id,
+                                        "refresh_token": refreshed["refresh_token"],
+                                        "resource": "https://site.test/mcp",
+                                    },
+                                )
+                            after_disable = self.client.post(
+                                "/mcp",
+                                json=ping,
+                                headers={
+                                    **request_headers,
+                                    "Authorization": "Bearer " + refreshed["access_token"],
+                                },
+                            )
+
+                        # Then
+                        self.assertEqual(expired.status_code, 401)
+                        self.assertIn("resource_metadata", expired.headers["www-authenticate"])
+                        self.assertEqual(refreshed["scope"], "analytics:read")
+                        self.assertEqual(refreshed["expires_in"], ACCESS_TTL)
+                        self.assertTrue(refreshed["refresh_token"] != issued["refresh_token"])
+                        self.assertEqual(authenticated.status_code, 200)
+                        self.assertEqual(authenticated.json()["result"], {})
+                        self.assertEqual(disabled.status_code, 400)
+                        self.assertEqual(disabled.json()["error"], "invalid_grant")
+                        self.assertEqual(after_disable.status_code, 401)
 
     # Тест-кейс: чужие callback и Origin не позволяют зарегистрировать клиента.
     def test_untrusted_registration_is_rejected(self) -> None:

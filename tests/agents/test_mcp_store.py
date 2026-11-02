@@ -5,8 +5,9 @@ import time
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
-from app.agents.mcp_store import OAuthStore, digest
+from app.agents.mcp_store import ACCESS_TTL, GRANT_TTL, OAuthError, OAuthStore, digest
 
 
 class OAuthStoreTests(unittest.TestCase):
@@ -130,3 +131,164 @@ class OAuthStoreTests(unittest.TestCase):
             self.assertFalse(foreign)
             self.assertTrue(own)
             self.assertEqual({r.id for r in remaining}, {"old", "mixed"})
+
+
+class RefreshTokenTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.store = OAuthStore(Path(directory.name) / "oauth.db")
+        self.resource = "https://site.test/mcp"
+        self.callback = "https://chatgpt.com/connector_platform_oauth_redirect"
+        self.client_id = self.store.register({"redirect_uris": [self.callback]})
+
+    def issue(self, scope: str = "analytics:read"):
+        pending = self.store.pending(
+            {
+                "user_id": 1,
+                "cookie_hash": digest("cookie"),
+                "client_id": self.client_id,
+                "redirect_uri": self.callback,
+                "code_challenge": "challenge",
+                "resource": self.resource,
+                "scope": scope,
+                "name": "Refresh test",
+            }
+        )
+        code, _ = self.store.consent(pending, 1, "cookie", True)
+        return self.store.exchange(code, self.client_id, self.callback, "challenge", self.resource)
+
+    # Тест-кейс: Согласованный доступ только на чтение получает продление без дополнительного scope.
+    def test_read_only_grant_receives_hashed_refresh_without_offline_scope(self) -> None:
+        """Тест-кейс: Клиент запрашивает только analytics:read.
+
+        Ожидается refresh token без расширения scope и без хранения секретов открытым текстом.
+        """
+        # Given
+        scope = "analytics:read"
+
+        # When
+        tokens = self.issue(scope)
+        with self.store.transaction() as db:
+            saved = db.execute("SELECT hash, kind FROM tokens").fetchall()
+
+        # Then
+        self.assertTrue("refresh_token" in tokens, "Read-only consent must issue a refresh token")
+        self.assertEqual(tokens["scope"], scope)
+        self.assertEqual(tokens["expires_in"], ACCESS_TTL)
+        self.assertEqual({row["kind"] for row in saved}, {"access", "refresh"})
+        self.assertEqual(
+            {row["hash"] for row in saved}, {digest(tokens["access_token"]), digest(tokens["refresh_token"])}
+        )
+
+    # Тест-кейс: После истечения часа клиент обновляет доступ в пределах исходного разрешения.
+    def test_refresh_after_expiry_preserves_identity_scope_and_grant_deadline(self) -> None:
+        """Тест-кейс: Исходный access token истёк, refresh token ещё действителен.
+
+        Ожидается новый доступ с тем же владельцем и сроком разрешения без повторного согласия.
+        """
+        for scope in ("analytics:read", "analytics:read offline_access"):
+            with self.subTest(scope=scope):
+                # Given
+                tokens = self.issue(scope)
+                grant = self.store.resolve(tokens["access_token"], self.resource)
+                now = time.time()
+
+                # When
+                with patch("app.agents.mcp_store.time.time", return_value=now + ACCESS_TTL + 1):
+                    self.store = OAuthStore(self.store.path)
+                    expired = self.store.resolve(tokens["access_token"], self.resource)
+                    renewed = self.store.refresh(tokens["refresh_token"], self.client_id, self.resource)
+                    current = self.store.resolve(renewed["access_token"], self.resource)
+
+                # Then
+                self.assertIsNone(expired)
+                self.assertEqual(current["id"], grant["id"])
+                self.assertEqual(current["user_id"], grant["user_id"])
+                self.assertEqual(current["scope"], scope)
+                self.assertEqual(current["expires"], grant["expires"])
+                self.assertEqual(renewed["scope"], scope)
+                self.assertNotEqual(renewed["refresh_token"], tokens["refresh_token"])
+                self.assertEqual(renewed["expires_in"], ACCESS_TTL)
+
+    # Тест-кейс: Чужой клиент или ресурс не могут использовать и погасить токен владельца.
+    def test_wrong_client_and_resource_do_not_consume_refresh(self) -> None:
+        """Тест-кейс: Продление пытаются выполнить с чужой привязкой.
+
+        Ожидается отказ, после которого правильный клиент по-прежнему может обновить доступ.
+        """
+        # Given
+        tokens = self.issue()
+
+        # When
+        for client_id, resource in (("other", self.resource), (self.client_id, "https://other.test/mcp")):
+            with self.assertRaisesRegex(OAuthError, "invalid_grant"):
+                self.store.refresh(tokens["refresh_token"], client_id, resource)
+        renewed = self.store.refresh(tokens["refresh_token"], self.client_id, self.resource)
+
+        # Then
+        self.assertIsNotNone(self.store.resolve(renewed["access_token"], self.resource))
+        self.assertEqual(renewed["scope"], "analytics:read")
+
+    # Тест-кейс: Повторное предъявление уже заменённого refresh token отзывает всё подключение.
+    def test_refresh_replay_revokes_token_family(self) -> None:
+        """Тест-кейс: После успешной ротации повторно используют старый токен.
+
+        Ожидается отказ и прекращение действия как старых, так и новых токенов подключения.
+        """
+        # Given
+        tokens = self.issue()
+        renewed = self.store.refresh(tokens["refresh_token"], self.client_id, self.resource)
+
+        # When
+        with self.assertRaisesRegex(OAuthError, "invalid_grant"):
+            self.store.refresh(tokens["refresh_token"], self.client_id, self.resource)
+
+        # Then
+        self.assertIsNone(self.store.resolve(tokens["access_token"], self.resource))
+        self.assertIsNone(self.store.resolve(renewed["access_token"], self.resource))
+        with self.assertRaisesRegex(OAuthError, "invalid_grant"):
+            self.store.refresh(renewed["refresh_token"], self.client_id, self.resource)
+
+    # Тест-кейс: Отзыв и окончание тридцатидневного разрешения запрещают продление.
+    def test_revoked_and_expired_grants_cannot_refresh(self) -> None:
+        """Тест-кейс: Разрешение отозвано либо закончился его предельный срок.
+
+        Ожидается отказ в продлении без восстановления или увеличения срока доступа.
+        """
+        # Given
+        revoked = self.issue()
+        expired = self.issue()
+        grant = self.store.resolve(revoked["access_token"], self.resource)
+
+        # When
+        self.store.revoke(grant["id"], grant["user_id"])
+
+        # Then
+        with self.assertRaisesRegex(OAuthError, "invalid_grant"):
+            self.store.refresh(revoked["refresh_token"], self.client_id, self.resource)
+        with patch("app.agents.mcp_store.time.time", return_value=time.time() + GRANT_TTL + 1):
+            with self.assertRaisesRegex(OAuthError, "invalid_grant"):
+                self.store.refresh(expired["refresh_token"], self.client_id, self.resource)
+
+    # Тест-кейс: Продление перед окончанием разрешения не выдаёт доступ сверх оставшегося срока.
+    def test_refresh_near_grant_deadline_limits_access_lifetime(self) -> None:
+        """Тест-кейс: До окончания исходного разрешения осталось меньше часа.
+
+        Ожидается ограниченный остатком времени access token и отказ после предельной даты.
+        """
+        # Given
+        tokens = self.issue()
+        grant = self.store.resolve(tokens["access_token"], self.resource)
+
+        # When
+        with patch("app.agents.mcp_store.time.time", return_value=grant["expires"] - 25):
+            renewed = self.store.refresh(tokens["refresh_token"], self.client_id, self.resource)
+
+        # Then
+        self.assertGreater(renewed["expires_in"], 0)
+        self.assertLessEqual(renewed["expires_in"], 25)
+        with patch("app.agents.mcp_store.time.time", return_value=grant["expires"] + 1):
+            self.assertIsNone(self.store.resolve(renewed["access_token"], self.resource))
+            with self.assertRaisesRegex(OAuthError, "invalid_grant"):
+                self.store.refresh(renewed["refresh_token"], self.client_id, self.resource)

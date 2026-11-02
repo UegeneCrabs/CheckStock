@@ -28,7 +28,7 @@
 
   function rows(method, maps) {
     const definitions = aliases[method] || [];
-    const used = [new Set(), new Set()];
+    const used = maps.map(() => new Set());
     const result = [];
     const add = (paths, definition) => {
       const fields = paths.map((path, i) => maps[i].get(path));
@@ -37,9 +37,9 @@
     };
     maps.forEach((map, side) => map.forEach((field, path) => {
       if (used[side].has(path)) return;
-      const definition = definitions.find(pair => 'rows[].' + pair[side] === path);
-      if (definition) add(definition.slice(0, 2).map(key => 'rows[].' + key), definition);
-      else add([path, path]);
+      const definition = definitions.find(pair => side < 2 && 'rows[].' + pair[side] === path);
+      if (definition) add(maps.map((map, i) => i < 2 ? 'rows[].' + definition[i] : path), definition);
+      else add(maps.map(() => path));
     }));
     return result;
   }

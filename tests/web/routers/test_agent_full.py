@@ -1,7 +1,9 @@
+import asyncio
 import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -12,6 +14,7 @@ from app.agents.schema import build_action_schema
 from app.container import ApplicationContainer
 from app.dto.identity import User
 from app.dto.wb_standard_costs import MarginRoi, ReportRow, Scenario, Snapshot
+from app.infrastructure.async_database import AsyncDatabase
 from app.infrastructure.database import Database
 from app.web.routers import agent_analytics, agent_full
 
@@ -443,3 +446,193 @@ class StandardCostsTests(unittest.TestCase):
                     },
                 )
                 self.assertTrue(returned["current_profit"]["complete"])
+
+
+class RatingApiTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.database = Database(path=Path(directory.name) / "rating.db")
+        self.addCleanup(self.database.engine.dispose)
+        with self.database.engine.begin() as connection:
+            for statement in (
+                "CREATE TABLE stock_items (id INTEGER PRIMARY KEY, store_slug TEXT, marketplace TEXT, article TEXT, barcode TEXT, name TEXT, is_service INTEGER)",
+                "CREATE TABLE unit_economics_1c_product_categories (stock_item_id INTEGER, brand TEXT, category TEXT)",
+                "CREATE TABLE unit_economics_1c_source_values (stock_item_id INTEGER, manager TEXT)",
+                "CREATE TABLE wb_product_rating_daily (store_slug TEXT, nm_id TEXT, day TEXT, rating REAL, reviews_count INTEGER, observed_at TEXT)",
+                "CREATE TABLE unit_economics_1c_product_reputation (store_slug TEXT, nm_id TEXT, rating REAL, reviews_count INTEGER, synced_at TEXT)",
+            ):
+                connection.exec_driver_sql(statement)
+            for identity, article, nm_id in (
+                (1, "100 / M", "100"),
+                (2, "100 / L", "100"),
+                (3, "200", "200"),
+                (4, "300", "300"),
+            ):
+                connection.exec_driver_sql(
+                    "INSERT INTO stock_items VALUES (?, 'rimili', 'WB', ?, '', ?, 0)",
+                    (identity, article, "Card " + nm_id),
+                )
+                connection.exec_driver_sql(
+                    "INSERT INTO unit_economics_1c_product_categories VALUES (?, 'Brand', 'Category')",
+                    (identity,),
+                )
+                connection.exec_driver_sql(
+                    "INSERT INTO unit_economics_1c_source_values VALUES (?, 'Manager')", (identity,)
+                )
+            for store, nm_id, day, rating, reviews in (
+                ("rimili", "100", "2026-10-12", 4.8, 10),
+                ("rimili", "100", "2026-10-19", 4.5, 0),
+                ("rimili", "200", "2026-10-13", 4.6, 2),
+                ("rimili", "200", "2026-10-20", 4.8, 5),
+                ("rimili", "300", "2026-10-19", 4.7, 1),
+                ("tris", "100", "2026-10-20", 1.0, 999),
+            ):
+                connection.exec_driver_sql(
+                    "INSERT INTO wb_product_rating_daily VALUES (?, ?, ?, ?, ?, ?)",
+                    (store, nm_id, day, rating, reviews, day + "T12:00:00+00:00"),
+                )
+            connection.exec_driver_sql(
+                "INSERT INTO unit_economics_1c_product_reputation VALUES ('rimili', '100', 4.9, 30, '2026-10-21T12:00:00+00:00')"
+            )
+        database = AsyncDatabase(url="", path=Path(directory.name) / "rating.db")
+        self.addCleanup(lambda: asyncio.run(database.close()))
+        self.app = FastAPI()
+        self.app.state.async_resources = SimpleNamespace(database=database)
+        self.app.include_router(agent_full.router, prefix="/api/agent/v1")
+        self.user = User(id=1, full_name="Test", login="test", created_at=datetime.now(UTC))
+        self.app.dependency_overrides[agent_analytics.employee] = lambda: self.user
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+
+    def get(self, method="rating-comparison", **params):
+        return self.client.get(
+            "/api/agent/v1/" + method,
+            params={"store": "rimili", "date_from": "2026-10-14", "date_to": "2026-10-20", **params},
+        )
+
+    # Тест-кейс: Сравнение использует реальные даты замеров, отдельный свежий кэш и итоги до пагинации.
+    def test_comparison_periods_cache_deduplication_and_totals(self):
+        """Тест-кейс: Сравнение рейтинга склейки WB за два периода.
+
+        Ожидается: размеры не дублируются, чужой магазин исключён, кэш не заменяет историю.
+        """
+        # Given
+        limit = 1
+        # When
+        response = self.get(limit=limit)
+        page = self.get(limit=1, offset=1).json()
+        # Then
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["total_rows"], 3)
+        self.assertEqual(result["totals"], {"checked": 3, "problem": 1, "healthy": 1, "no_data": 1})
+        self.assertEqual(result["context"]["previous_from"], "2026-10-07")
+        self.assertEqual(result["context"]["previous_to"], "2026-10-13")
+        row = result["rows"][0]
+        self.assertEqual(row["nm_id"], "100")
+        self.assertEqual(row["current_observed_day"], "2026-10-19")
+        self.assertEqual(row["previous_observed_day"], "2026-10-12")
+        self.assertEqual((row["current_rating"], row["previous_rating"], row["change"]), (4.5, 4.8, -0.3))
+        self.assertEqual((row["latest_rating"], row["reviews_count"]), (4.9, 30))
+        self.assertEqual(page["totals"], result["totals"])
+        self.assertEqual(result["context"]["rating_label"], "Рейтинг склейки WB")
+        self.assertFalse(result["context"]["individual_rating_available"])
+
+    # Тест-кейс: Фильтры применяются до подсчётов; границы падения и порога различаются.
+    def test_filters_and_tolerance_boundaries(self):
+        """Тест-кейс: Фильтры рейтинга и допуска падения.
+
+        Ожидается: rating_below строгий, drop_at_least включительный, падение ровно tolerance допустимо.
+        """
+        # Given
+        params = {"brand": "brand", "manager": "manager", "subject": "category", "search": "Card"}
+        # When
+        selected = self.get(rating_below=4.6, drop_at_least=0.3, **params).json()
+        strict = self.get(rating_below=4.5).json()
+        allowed = self.get(tolerance=0.3, article="100").json()
+        # Then
+        self.assertEqual(selected["totals"]["checked"], 1)
+        self.assertEqual(selected["rows"][0]["nm_id"], "100")
+        self.assertEqual(strict["total_rows"], 0)
+        self.assertEqual(allowed["rows"][0]["status"], "healthy")
+        self.assertEqual(self.get(status="no_data").json()["rows"][0]["nm_id"], "300")
+
+    # Тест-кейс: История выдаёт каждый день с null при пропуске и сохраняет ноль отзывов.
+    def test_history_gaps_zero_reviews_and_exact_article(self):
+        """Тест-кейс: Дневная история рейтинга склейки WB.
+
+        Ожидается: семь дней, шесть пропусков, ноль отзывов и точное время наблюдения.
+        """
+        # Given
+        article = "100 / M"
+        # When
+        response = self.get("rating-history", article=article, limit=3)
+        next_page = self.get("rating-history", article=article, offset=3).json()
+        # Then
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["total_rows"], 7)
+        self.assertEqual(result["rows"][0]["day"], "2026-10-14")
+        self.assertIsNone(result["rows"][0]["rating"])
+        observation = next(item for item in next_page["rows"] if item["rating"] is not None)
+        self.assertEqual(observation["reviews_count"], 0)
+        self.assertEqual(observation["observed_at"], "2026-10-19T12:00:00Z")
+        self.assertEqual(result["totals"], {"expected_days": 7, "observed_days": 1, "missing_days": 6})
+        self.assertFalse(result["context"]["coverage_complete"])
+        self.assertEqual(self.get("rating-history", article="404").status_code, 404)
+
+    # Тест-кейс: API отклоняет неразрешённые параметры, площадки и интервалы.
+    def test_invalid_parameters_and_platforms(self):
+        """Тест-кейс: Валидация новых методов рейтинга.
+
+        Ожидается: ошибочные параметры дают 422, недоступный магазин — 403.
+        """
+        # Given
+        invalid = (
+            {"marketplace": "OZON"},
+            {"marketplace": "YANDEX MARKET"},
+            {"tolerance": "nan"},
+            {"status": "other"},
+            {"rating_below": 6},
+            {"drop_at_least": -1},
+            {"date_to": "2026-10-01"},
+            {"date_from": "2026-01-01"},
+            {"date_to": "2999-01-01"},
+            {"date_from": "0001-01-01", "date_to": "0001-01-01"},
+        )
+        # When
+        responses = [self.get(**params) for params in invalid]
+        missing_article = self.get("rating-history")
+        extra_filter = self.get("rating-history", article="100", manager="Manager")
+        # Then
+        self.assertTrue(
+            all(response.status_code == 422 for response in responses),
+            [(r.status_code, r.text) for r in responses],
+        )
+        self.assertEqual(missing_article.status_code, 422)
+        self.assertEqual(extra_filter.status_code, 422)
+        self.assertEqual(self.get(store="unknown").status_code, 403)
+        self.app.dependency_overrides.clear()
+        self.assertEqual(self.get().status_code, 401)
+
+    # Тест-кейс: Схема и каталог объявляют новые поля и поддержку только WB.
+    def test_schema_and_catalog(self):
+        """Тест-кейс: Новые методы доступны в схеме API и каталоге.
+
+        Ожидается: обязательные даты и артикул истории; единицы — пункты, доступность только WB.
+        """
+        # Given
+        paths = build_action_schema(self.app.routes)["paths"]
+        # When
+        history = paths["/api/agent/v1/rating-history"]["get"]
+        doc = documentation("rating-comparison")
+        # Then
+        self.assertEqual(
+            history["x-marketplace-support"], {"WB": True, "YANDEX MARKET": False, "OZON": False}
+        )
+        parameters = {value["name"]: value for value in history["parameters"]}
+        self.assertTrue(all(parameters[key]["required"] for key in ("date_from", "date_to", "article")))
+        self.assertEqual(parameters["order"]["schema"]["default"], "asc")
+        self.assertIn("totals.checked", {field["path"] for field in doc["fields"]})
+        self.assertIn("rows[].current_observed_day", {field["path"] for field in doc["fields"]})

@@ -1,6 +1,6 @@
 """Compact store summaries from the website report, before product pagination."""
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated
 from urllib.parse import urlencode
@@ -8,13 +8,14 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 
 from app import db
 from app.agents.product_analysis import covered_articles, number
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
+from app.dto.agent_query import ReportQuery
+from app.dto.agent_summary import SummaryQuery
 from app.dto.identity import SectionName
 from app.web.routers.agent_analytics import Employee
 from app.web.routers.unit_economics import (
@@ -24,16 +25,6 @@ from app.web.routers.unit_economics import (
 
 router = APIRouter()
 logger = tagged_logger(__name__, "web", "agent_profit_summary")
-
-
-class SummaryQuery(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    date_from: date
-    date_to: date
-    compare_from: date | None = None
-    compare_to: date | None = None
-    store: str | None = Field(default=None, min_length=1, max_length=100)
-    manager: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 async def order_coverage(store, start, end):
@@ -122,6 +113,26 @@ async def profit_summary(request: Request, user: Employee, query: Annotated[Summ
         or max(query.date_to, compare_to) > today
     ):
         raise HTTPException(422, "Нужны равные периоды 1–90 дней без будущих дат")
+    if query.marketplace == "OZON":
+        from app.application.agent_ozon_analysis import summary
+        from app.container import agent_ozon_service
+
+        stores = (
+            [query.store.lower()]
+            if query.store
+            else [s for s in STORES if permitted(user, SectionName.REPORT_UNIT_PROFIT, s, "OZON")]
+        )
+        for store in stores:
+            guard(user, SectionName.REPORT_UNIT_PROFIT, ReportQuery(store=store, marketplace="OZON"))
+        result = await summary(
+            agent_ozon_service(request.app.state.async_resources),
+            query,
+            tuple(stores),
+            user,
+            compare_from,
+            compare_to,
+        )
+        return result.model_dump(mode="json", exclude_unset=True)
     stores = (
         [query.store.lower()]
         if query.store

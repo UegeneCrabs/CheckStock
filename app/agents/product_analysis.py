@@ -3,8 +3,10 @@
 import math
 from datetime import timedelta
 
+from pydantic import JsonValue
 
-def number(value):
+
+def number(value: object) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
     try:
@@ -44,22 +46,22 @@ def stock_evidence(row, fulfillment=None):
 
 
 def evaluate(
-    scenario,
-    product,
-    previous,
-    stock,
-    tag,
-    campaigns,
+    scenario: str,
+    product: dict[str, JsonValue],
+    previous: dict[str, JsonValue] | None,
+    stock: dict[str, JsonValue] | None,
+    tag: dict[str, JsonValue] | None,
+    campaigns: list[dict[str, JsonValue]] | None,
     *,
-    orders_known,
-    previous_orders_known,
-    impressions_known,
-    previous_impressions_known,
-    drr_max,
-    ctr_below,
-    days,
-    fulfillment=None,
-):
+    orders_known: bool,
+    previous_orders_known: bool,
+    impressions_known: bool,
+    previous_impressions_known: bool,
+    drr_max: float,
+    ctr_below: float,
+    days: int,
+    fulfillment: str | None = None,
+) -> tuple[str, dict[str, JsonValue], list[str]]:
     """Return match/no-match/unknown and reviewable metrics for one product."""
     metrics = {}
     reasons = []

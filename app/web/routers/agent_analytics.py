@@ -62,7 +62,7 @@ class StoreInfo(BaseModel):
 class LossQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    marketplace: Literal["WB", "YANDEX MARKET"] = "WB"
+    marketplace: Literal["WB", "YANDEX MARKET", "OZON"] = "WB"
     date_from: date
     date_to: date
     store: str = Field(min_length=1, max_length=100, description="Store slug from listAnalyticsStores")
@@ -89,7 +89,7 @@ class LossRow(BaseModel):
 
 
 class LossReport(BaseModel):
-    marketplace: Literal["WB", "YANDEX MARKET"] = "WB"
+    marketplace: Literal["WB", "YANDEX MARKET", "OZON"] = "WB"
     currency: Literal["RUB"] = "RUB"
     metric: Literal["estimated_period_profit"] = "estimated_period_profit"
     date_from: date
@@ -198,6 +198,22 @@ async def losses(request: Request, user: Employee, query: Annotated[LossQuery, Q
         raise HTTPException(422, "Future dates are not supported")
     if query.store not in accessible_stores(user, query.marketplace):
         raise HTTPException(403, "No access to this marketplace store")
+    if query.marketplace == "OZON":
+        from app.container import agent_ozon_service
+        from app.dto.agent_query import ReportQuery
+
+        data = await agent_ozon_service(request.app.state.async_resources).load(
+            "profit",
+            ReportQuery(
+                store=query.store,
+                marketplace="OZON",
+                date_from=query.date_from,
+                date_to=query.date_to,
+                article=query.article,
+            ),
+            user,
+        )
+        return summarize_losses({"rows": data.rows}, query)
     if query.marketplace == "YANDEX MARKET":
         from app.economics.yandex.reports import load_rows
 

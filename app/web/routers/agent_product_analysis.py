@@ -1,20 +1,21 @@
 """Server-side product joins and filtering for common analyst questions."""
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
-from typing import Annotated, Literal
+from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 
 from app import db
 from app.agents.product_analysis import covered_articles, evaluate, manager_key, number
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
+from app.dto.agent_analysis import AnalysisQuery
+from app.dto.agent_query import ReportQuery
 from app.dto.identity import SectionName
 from app.web.routers.agent_analytics import Employee
 
@@ -28,32 +29,6 @@ SCENARIOS = (
     "active_low_ctr",
     "goal_gap",
 )
-
-
-class AnalysisQuery(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    scenario: Literal[
-        "stock_without_orders",
-        "turnover_drop",
-        "drr_negative_roi",
-        "stock_impressions_drop",
-        "active_low_ctr",
-        "goal_gap",
-    ]
-    date_from: date
-    date_to: date
-    compare_from: date | None = None
-    compare_to: date | None = None
-    store: str | None = Field(default=None, min_length=1, max_length=100)
-    manager: str | None = Field(default=None, min_length=1, max_length=100)
-    code: str | None = Field(default=None, min_length=1, max_length=100)
-    is_new: bool | None = None
-    fulfillment: str | None = Field(default=None, min_length=1, max_length=100)
-    drr_max: float = Field(default=10, ge=0, le=100, allow_inf_nan=False)
-    ctr_below: float = Field(default=5, ge=0, le=100, allow_inf_nan=False)
-    include_unknown: bool = False
-    limit: int = Field(default=20, ge=1, le=100)
-    offset: int = Field(default=0, ge=0, le=100000)
 
 
 def required_sections(query):
@@ -78,7 +53,7 @@ def periods(query):
     previous_from = previous_to = None
     if compare:
         try:
-            shift = 7 if query.scenario == "turnover_drop" else days
+            shift = 7 if query.scenario == "turnover_drop" and query.marketplace == "WB" else days
             previous_from = query.compare_from or query.date_from - timedelta(days=shift)
             previous_to = query.compare_to or query.date_to - timedelta(days=shift)
         except OverflowError as error:
@@ -154,6 +129,28 @@ async def product_analysis(request: Request, user: Employee, query: Annotated[An
     from app.web.routers.agent_full import guard, permitted
 
     previous_from, previous_to, days, today = periods(query)
+    if query.marketplace == "OZON":
+        from app.application.agent_ozon_analysis import analysis
+        from app.container import agent_ozon_service
+
+        stores = (
+            [query.store.lower()]
+            if query.store
+            else [s for s in STORES if permitted(user, SectionName.REPORT_UNIT_PROFIT, s, "OZON")]
+        )
+        for store in stores:
+            for section in required_sections(query):
+                guard(user, section, ReportQuery(store=store, marketplace="OZON"))
+        result = await analysis(
+            agent_ozon_service(request.app.state.async_resources),
+            query,
+            tuple(stores),
+            user,
+            previous_from,
+            previous_to,
+            days,
+        )
+        return result.model_dump(mode="json", exclude_unset=True)
     sections = required_sections(query)
     allowed = [s for s in STORES if all(permitted(user, section, s, "WB") for section in sections)]
     stores = [query.store.lower()] if query.store else allowed

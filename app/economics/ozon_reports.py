@@ -11,6 +11,7 @@ from app.dto.ozon_reports import (
     OzonProfitMetrics,
     OzonProfitQuery,
     OzonProfitRow,
+    OzonProfitStockBasis,
     OzonReportArticle,
     OzonReportEvidence,
     OzonReportFilters,
@@ -91,6 +92,12 @@ def profit_row(product: OzonProduct, evidence: OzonReportEvidence) -> OzonProfit
         if coverage
         else tuple(day.day for day in days)
     )
+    stock_coverage = product.stock.coverage
+    stock_dates = (
+        tuple(date.fromisoformat(day) for day in (*stock_coverage.dates, *stock_coverage.missing_dates))
+        if stock_coverage
+        else ()
+    )
     return OzonProfitRow(
         store_slug=product.store_slug,
         store_name=product.store_name,
@@ -121,6 +128,15 @@ def profit_row(product: OzonProduct, evidence: OzonReportEvidence) -> OzonProfit
         stock_fulfillment=product.stock.fulfillment,
         stock_days=product.stock.days,
         stock_average_daily_orders=product.stock.average_daily_orders,
+        stock_basis=OzonProfitStockBasis(
+            period_from=min(stock_dates),
+            period_to=max(stock_dates),
+            period_days=stock_coverage.expected_days,
+            orders_count=product.stock.orders_21d,
+            coverage=stock_coverage,
+        )
+        if stock_coverage and stock_dates
+        else None,
         impressions=product.advertising.impressions,
         clicks=product.advertising.clicks,
         ctr=product.advertising.ctr,
