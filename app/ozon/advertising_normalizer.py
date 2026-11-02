@@ -35,6 +35,11 @@ def completed_period(now: datetime | None = None) -> AdvertisingPeriod:
     return AdvertisingPeriod(start=end - timedelta(days=OZON_ADVERTISING.period_days - 1), end=end)
 
 
+def refresh_slot(now: datetime) -> str:
+    start = int(now.timestamp()) // OZON_ADVERTISING.interval_seconds * OZON_ADVERTISING.interval_seconds
+    return datetime.fromtimestamp(start, TIME.moscow_timezone).isoformat()
+
+
 def period_days(period: AdvertisingPeriod) -> tuple[date, ...]:
     return tuple(
         period.start + timedelta(days=index) for index in range((period.end - period.start).days + 1)

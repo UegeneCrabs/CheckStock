@@ -246,7 +246,7 @@ class OzonOrdersConfig:
     health_scope: str = "orders"
     coverage_source: str = "orders"
     money_quantum: str = "0.01"
-    interval_seconds: int = 3600
+    interval_seconds: int = 1800
     retry_days: int = 7
     lock_prefix: str = "ozon-orders:"
     pending_batch_size: int = 100
@@ -470,6 +470,9 @@ class OzonStorageConfig:
     window_days: int = 30
     formula_version: int = 1
     run_hour_msk: int = 6
+    run_weekday_msk: int = 0
+    days_per_week: int = 7
+    alignment_tolerance_seconds: int = 1
     create_path: str = "/v1/report/placement/by-products/create"
     info_path: str = "/v1/report/info"
     accrual_path: str = "/v1/finance/accrual/by-day"
@@ -1108,7 +1111,7 @@ class OzonAdvertisingConfig:
     daily_limit_markers: tuple[str, ...] = ("дневной лимит", "суточный лимит", "daily limit")
     active_limit_markers: tuple[str, ...] = ("лимит активных запросов", "active requests limit")
     lock_prefix: str = "ozon-performance-breakdown:"
-    interval_seconds: int = 3600
+    interval_seconds: int = 1800
     intraday_sources: tuple[AdvertisingSource, ...] = (
         AdvertisingSource.CPC,
         AdvertisingSource.SELECTED,
@@ -1593,8 +1596,8 @@ class JobCatalog:
     ozon_orders: SyncJobMetadata = SyncJobMetadata(
         name="ozon_unit_economics_turnover_sync",
         title="ТО заказов Ozon",
-        description="Каждый час загружает новые заказы и обновляет незавершённые отправления FBO/FBS; считает ТО и выкуп по дате заказа.",
-        schedule="Каждый час; при ошибке до 3 повторов через 1, 5 и 15 мин.",
+        description="Каждые 30 минут загружает новые заказы и обновляет незавершённые отправления FBO/FBS; считает ТО и выкуп по дате заказа.",
+        schedule="Каждые 30 мин.; при ошибке до 3 повторов через 1, 5 и 15 мин.",
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
         manual_run=True,
@@ -1619,7 +1622,7 @@ class JobCatalog:
         name="ozon_storage_daily_sync",
         title="Хранение Ozon FBO за 30 дней",
         description="Сохраняет дневной снимок расходов на размещение и реализации FBO за 30 полных дней до вчера включительно.",
-        schedule="Ежедневно в 06:00 МСК; пропущенный запуск — после старта",
+        schedule="По понедельникам в 06:00 МСК",
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
     )
@@ -1675,8 +1678,8 @@ class JobCatalog:
     ozon_advertising_breakdown: SyncJobMetadata = SyncJobMetadata(
         name="ozon_advertising_breakdown_sync",
         title="Реклама Ozon по дням",
-        description="Каждый час обновляет сегодняшние CPC/CPO и догружает ошибки последних семи дней. Завершённые дни сохраняет однократно.",
-        schedule="Каждый час; вчерашний день закрывается после 04:30 МСК",
+        description="Каждые 30 минут обновляет сегодняшние CPC/CPO и догружает ошибки последних семи дней. Завершённые дни сохраняет однократно.",
+        schedule="Каждые 30 мин.; вчерашний день закрывается после 04:30 МСК",
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
         manual_run=True,
@@ -2326,7 +2329,12 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(
         name=JOBS.ozon_logistics.name, kind=ScheduleKind.DAILY, hours=(OZON_LOGISTICS.run_hour_msk,)
     ),
-    JobScheduleRule(name=JOBS.ozon_storage.name, kind=ScheduleKind.DAILY, hours=(OZON_STORAGE.run_hour_msk,)),
+    JobScheduleRule(
+        name=JOBS.ozon_storage.name,
+        kind=ScheduleKind.WEEKLY,
+        hours=(OZON_STORAGE.run_hour_msk,),
+        weekdays=(OZON_STORAGE.run_weekday_msk,),
+    ),
     JobScheduleRule(
         name=JOBS.ozon_prices_close.name, kind=ScheduleKind.DAILY, hours=(OZON_PRICES.close_hour_msk,)
     ),

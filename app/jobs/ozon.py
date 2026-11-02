@@ -19,7 +19,14 @@ from app.dto.jobs import AsyncJobResult
 from app.dto.orders import OrderPeriod, OrderSyncResult
 from app.economics import ozon_advertising_breakdown, ozon_prices
 from app.infrastructure.async_resources import AsyncResources
-from app.jobs import ozon_analytics, ozon_buyout, ozon_logistics, ozon_margin, ozon_storage
+from app.jobs import (
+    ozon_analytics,
+    ozon_buyout,
+    ozon_logistics,
+    ozon_margin,
+    ozon_storage,
+    ozon_storage_schedule,
+)
 from app.jobs.scheduling import AsyncBackgroundJob
 from app.jobs.settings import configuration_from_rows
 from app.orders.ozon_async import sync_configured_store
@@ -90,7 +97,7 @@ def jobs(ready: asyncio.Event | None = None) -> tuple[AsyncBackgroundJob, ...]:
             if metadata == JOBS.ozon_ephemerides_stock
             else partial(daily_close_delay, OZON_LOGISTICS.run_hour_msk)
             if metadata == JOBS.ozon_logistics
-            else partial(daily_close_delay, OZON_STORAGE.run_hour_msk)
+            else ozon_storage_schedule.delay
             if metadata == JOBS.ozon_storage
             else daily_close_delay
             if metadata == JOBS.ozon_prices_close
@@ -98,9 +105,12 @@ def jobs(ready: asyncio.Event | None = None) -> tuple[AsyncBackgroundJob, ...]:
             ready_event=ready,
             startup_delay_seconds=weekly_stock_delay(startup=True)
             if metadata == JOBS.ozon_ephemerides_stock
+            else ozon_storage_schedule.delay()
+            if metadata == JOBS.ozon_storage
             else 0,
             is_enabled=partial(enabled, metadata.name),
             retry_delays=OZON_ORDERS.retry_delays_seconds,
+            align_scheduled_run=ozon_storage_schedule.align if metadata == JOBS.ozon_storage else None,
             interval_from_start=metadata
             not in (
                 JOBS.ozon_prices_close,
@@ -114,7 +124,7 @@ def jobs(ready: asyncio.Event | None = None) -> tuple[AsyncBackgroundJob, ...]:
             (JOBS.ozon_prices, OZON_PRICES.interval_seconds),
             (JOBS.ozon_prices_close, TIME.seconds_per_day),
             (JOBS.ozon_logistics, TIME.seconds_per_day),
-            (JOBS.ozon_storage, TIME.seconds_per_day),
+            (JOBS.ozon_storage, TIME.seconds_per_day * OZON_STORAGE.days_per_week),
             (JOBS.ozon_buyout, OZON_CABINET.interval_seconds),
             (JOBS.ozon_margin, OZON_MARGIN.interval_seconds),
             (JOBS.ozon_analytics_sources, OZON_ANALYTICS.interval_seconds),

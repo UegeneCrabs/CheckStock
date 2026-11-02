@@ -23,6 +23,11 @@ async def run_scheduled_step(job: AsyncBackgroundJob, resources: AsyncResources)
         schedule = await repository.ensure(job.name, now + timedelta(seconds=job.startup_delay_seconds), now)
         planned = datetime.fromisoformat(schedule.next_run_at)
         attempt = schedule.attempt_number
+        if job.align_scheduled_run and not schedule.active_run_id and not attempt:
+            aligned = job.align_scheduled_run(planned, now)
+            if aligned != planned:
+                await repository.defer(job.name, aligned, now)
+                return aligned
         if (
             job.name in (JOBS.ozon_orders.name, JOBS.ozon_advertising_breakdown.name)
             and not schedule.active_run_id

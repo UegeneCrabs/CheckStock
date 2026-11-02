@@ -36,6 +36,7 @@ from app.ozon.advertising_normalizer import (
     campaign_kind,
     completed_period,
     import_plan,
+    refresh_slot,
     selected_facts,
 )
 from app.ozon.async_api import AsyncSellerApi
@@ -250,7 +251,7 @@ async def sync_store(
             raise ValueError(AdvertisingError.INVALID_PERIOD)
         now = datetime.now(TIME.moscow_timezone)
         today = AdvertisingPeriod(start=now.date(), end=now.date())
-        slot = now.replace(minute=0, second=0, microsecond=0).isoformat()
+        slot = refresh_slot(now)
         statuses = await resources.advertising.overlapping(
             (store,), AdvertisingPeriod(start=period.start, end=today.end if intraday else period.end)
         )
