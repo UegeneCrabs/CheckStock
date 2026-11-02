@@ -77,6 +77,15 @@ class OzonSourceValues(OzonSourceTag):
         )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonSourceSelection:
+    values: OzonSourceValues
+    identifier: str
+    store_slug: str
+    by_sku: bool
+    outside_sheet_store: bool
+
+
 class OzonSourceReport(DtoModel):
     rows: tuple[OzonSourceValues, ...]
     team_commissions: dict[str, float]
