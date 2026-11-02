@@ -2373,6 +2373,17 @@ class AgentOzonRecordType(StrEnum):
     NOTE = "note"
 
 
+class AgentOzonDataStatus(StrEnum):
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    MISSING = "missing"
+
+
+class AgentOzonAnalysisStatus(StrEnum):
+    MATCH = "match"
+    UNKNOWN = "unknown"
+
+
 class OzonStockOrdersBasis(StrEnum):
     AFTER_CANCELLATIONS = "after_cancellations"
 
@@ -2380,6 +2391,7 @@ class OzonStockOrdersBasis(StrEnum):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AgentOzonConfig:
     marketplace: str = "OZON"
+    analysis_sample_limit: int = 7
     discovery: frozenset[str] = frozenset({"stores", "capabilities", "article-stores", "data-status"})
     exclusive: frozenset[str] = frozenset(
         {

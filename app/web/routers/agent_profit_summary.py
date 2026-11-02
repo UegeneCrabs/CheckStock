@@ -14,6 +14,7 @@ from app.agents.product_analysis import covered_articles, number
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
+from app.dto.agent_query import ReportQuery
 from app.dto.agent_summary import SummaryQuery
 from app.dto.identity import SectionName
 from app.web.routers.agent_analytics import Employee
@@ -122,8 +123,8 @@ async def profit_summary(request: Request, user: Employee, query: Annotated[Summ
             else [s for s in STORES if permitted(user, SectionName.REPORT_UNIT_PROFIT, s, "OZON")]
         )
         for store in stores:
-            guard(user, SectionName.REPORT_UNIT_PROFIT, SimpleNamespace(store=store, marketplace="OZON"))
-        return await summary(
+            guard(user, SectionName.REPORT_UNIT_PROFIT, ReportQuery(store=store, marketplace="OZON"))
+        result = await summary(
             agent_ozon_service(request.app.state.async_resources),
             query,
             tuple(stores),
@@ -131,6 +132,7 @@ async def profit_summary(request: Request, user: Employee, query: Annotated[Summ
             compare_from,
             compare_to,
         )
+        return result.model_dump(mode="json", exclude_unset=True)
     stores = (
         [query.store.lower()]
         if query.store

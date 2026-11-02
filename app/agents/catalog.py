@@ -173,7 +173,7 @@ DOCS = {
 
 DOCS.update(
     {
-        name: (title, OZON_SPECS[name][3], "article:Точный offer_id Ozon:str")
+        name: (title, OZON_SPECS[name].description, "article:Точный offer_id Ozon:str")
         for name, title in OZON_TITLES.items()
     }
 )

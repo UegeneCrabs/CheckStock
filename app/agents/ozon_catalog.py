@@ -1,3 +1,4 @@
+import re
 from collections.abc import Mapping
 
 from pydantic import BaseModel
@@ -316,8 +317,6 @@ LABELS["wallet"] = "Цена с Ozon Картой, ₽"
 
 
 def guide(name: str, base: Mapping[str, object]) -> dict[str, object]:
-    import re
-
     if name not in FIELDS and name not in {
         "profit",
         "ozon-profit-details",
@@ -405,7 +404,6 @@ def guide(name: str, base: Mapping[str, object]) -> dict[str, object]:
                 "type": "bool",
             }
         )
-    if name in {"profit", "ozon-profit-details"}:
         fields.extend(
             {"path": "rows[].stock_basis." + key, "name": key, "description": label, "type": kind}
             for key, label, kind in (
@@ -447,7 +445,7 @@ def guide(name: str, base: Mapping[str, object]) -> dict[str, object]:
         )
     return {
         "title": TITLES.get(name, str(base.get("title", ""))),
-        "description": SPECS[name][3]
+        "description": SPECS[name].description
         if name in SPECS
         else DESCRIPTIONS.get(name, "Сохранённые источники и расчёты Ozon; null не равен нулю."),
         "fields": list({item["path"]: item for item in fields}.values()),

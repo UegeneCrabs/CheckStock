@@ -5,66 +5,67 @@ from pydantic import JsonValue
 
 from app.agents import reports
 from app.core.constants import AGENT_OZON, TIME
+from app.dto.agent_ozon import AgentOzonReportSpec
 from app.dto.agent_query import ReportQuery
 from app.dto.identity import SectionName as S
 from app.dto.identity import User
 
-SPECS = {
-    "ozon-buyout": (
+SPECS: dict[str, AgentOzonReportSpec] = {
+    "ozon-buyout": AgentOzonReportSpec(
         S.UNIT_ECONOMICS_OZON,
         True,
         "article search manager",
         "Ozon saved buyout counts, actual/effective percentage, default flag and source period. Not confirmed revenue.",
     ),
-    "ozon-logistics": (
+    "ozon-logistics": AgentOzonReportSpec(
         S.UNIT_ECONOMICS_OZON,
         True,
         "article search manager details",
         "Ozon latest saved 30-day logistics snapshot: actual/modeled per-unit expense, counts and issues. details=true includes charges. No live tariff request.",
     ),
-    "ozon-storage": (
+    "ozon-storage": AgentOzonReportSpec(
         S.UNIT_ECONOMICS_OZON,
         True,
         "article search manager details",
         "Ozon latest saved storage snapshot: expense, retained units, per-unit expense, source days and issues. details=true includes daily expense rows.",
     ),
-    "ozon-advertising-breakdown": (
+    "ozon-advertising-breakdown": AgentOzonReportSpec(
         S.UNIT_ECONOMICS_OZON,
         True,
         "date_from date_to article search manager",
         "Ozon advertising by expense kind and day with missing/stale coverage. Unallocated store expenses are separate, never distribute them to products.",
     ),
-    "ozon-commissions": (
+    "ozon-commissions": AgentOzonReportSpec(
         S.UNIT_ECONOMICS_OZON,
         True,
         "article search manager date_from date_to",
         "Ozon saved FBO commission rate, price basis, amount, observation time and state. Optional dates return first/last saved daily rates, not a current tariff backdated. Not all Ozon fees.",
     ),
-    "ozon-profit-details": (
+    "ozon-profit-details": AgentOzonReportSpec(
         S.REPORT_UNIT_PROFIT,
         True,
         "date_from date_to article search manager",
         "Ozon estimated period profit with daily calculation components, missing inputs and coverage. Same calculation as website Unit Profit, not confirmed financial profit.",
     ),
-    "ozon-analyzer": (
+    "ozon-analyzer": AgentOzonReportSpec(
         S.OZON_ANALYZER,
         True,
         "week article search",
         "Ozon weekly Analyzer: saved goals, orders, advertising, forecast, quality and freshness. Future weeks unavailable; gross-turnover DRR differs from Unit Profit.",
     ),
-    "ozon-ephemerides": (
+    "ozon-ephemerides": AgentOzonReportSpec(
         S.OZON_EPHEMERIDES,
         True,
         "week article search",
         "Ozon weekly Ephemerides from persisted sources. Read only; metrics retain their source periods and quality.",
     ),
-    "ozon-sales": (
+    "ozon-sales": AgentOzonReportSpec(
         S.OZON_SALES_API,
         True,
         "date_from date_to article search",
         "Ozon daily ordered/cancelled unit counts from the Sales report. days/orders/cancellations/cancels are units; today_turnover alone is RUB. Not confirmed sales.",
     ),
-    "ozon-analytics-comments": (
+    "ozon-analytics-comments": AgentOzonReportSpec(
         S.OZON_ANALYZER,
         True,
         "week article search include_history",

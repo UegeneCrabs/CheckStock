@@ -15,6 +15,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.agent_analysis import AnalysisQuery
+from app.dto.agent_query import ReportQuery
 from app.dto.identity import SectionName
 from app.web.routers.agent_analytics import Employee
 
@@ -139,8 +140,8 @@ async def product_analysis(request: Request, user: Employee, query: Annotated[An
         )
         for store in stores:
             for section in required_sections(query):
-                guard(user, section, SimpleNamespace(store=store, marketplace="OZON"))
-        return await analysis(
+                guard(user, section, ReportQuery(store=store, marketplace="OZON"))
+        result = await analysis(
             agent_ozon_service(request.app.state.async_resources),
             query,
             tuple(stores),
@@ -149,6 +150,7 @@ async def product_analysis(request: Request, user: Employee, query: Annotated[An
             previous_to,
             days,
         )
+        return result.model_dump(mode="json", exclude_unset=True)
     sections = required_sections(query)
     allowed = [s for s in STORES if all(permitted(user, section, s, "WB") for section in sections)]
     stores = [query.store.lower()] if query.store else allowed

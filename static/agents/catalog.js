@@ -21,7 +21,7 @@
   }
   const fieldDescription = field => [field.description,typeName(field.type)+(field.unit && field.unit!=='—'?' · '+field.unit:''),field.notes && !['—','Яндекс Маркет'].includes(field.notes)?field.notes:''].filter(Boolean).join('\n');
   function eligible(method) {
-    return marketplace === 'all' || supported(method, marketplace) && method.scopes.some(scope => scope.marketplace === marketplace);
+    return marketplace === 'all' || (supported(method, marketplace) && method.scopes.some(scope => scope.marketplace === marketplace));
   }
   function visibleMethods() {
     const term = search.value.trim().toLocaleLowerCase();
@@ -59,22 +59,21 @@
       detail.append(fields);
     } else {
       const maps=platforms.map(mp=>new Map((supported(m,mp)?guide(m,mp).fields:[]).map(f=>[f.path,f])));
-    const comparisonRows=CheckStockCatalogComparison.rows(m.name,maps);
+      const comparisonRows=CheckStockCatalogComparison.rows(m.name,maps);
       const description=row=> {
         if(row.label) {
           const types=[...new Set(row.fields.filter(Boolean).map(f=>typeName(f.type)))];
           const notes=[...new Set(row.fields.filter(Boolean).map(f=>f.notes).filter(n=>n && !['—','Яндекс Маркет'].includes(n)))];
           return [row.label,types.join(' / ')+(row.unit?' · '+row.unit:''),...notes,row.note].filter(Boolean).join('\n');
         }
-        const descriptions=row.fields.map(f=> {
-          if(!f) return '';
-          const note=f.notes && !['—','Яндекс Маркет'].includes(f.notes)?f.notes:'';
-          return [f.description,typeName(f.type)+(f.unit && f.unit!=='—'?' · '+f.unit:''),note].filter(Boolean).join('\n');
-        });
+        const descriptions=row.fields.map(f=>f ? fieldDescription(f) : '');
         const unique=[...new Set(descriptions.filter(Boolean))];
         return unique.length===1 ? unique[0] : descriptions.map((text,i)=>text ? labels[i]+': '+text : '').filter(Boolean).join('\n\n');
       };
-      const fieldPaths=row=>new Set(row.paths.filter(Boolean)).size===1?row.paths[0]:row.fields.map((f,i)=>f?labels[i]+': '+row.paths[i]:null).filter(Boolean).join('\n\n');
+      const fieldPaths=row=> {
+        const unique=[...new Set(row.paths.filter((path,index)=>path && row.fields[index]))];
+        return unique.length===1 ? unique[0] : row.fields.map((f,i)=>f?labels[i]+': '+row.paths[i]:null).filter(Boolean).join('\n\n');
+      };
       const comparison=table(['Поле в JSON','Описание поля',...labels],comparisonRows.map(row=>[fieldPaths(row),description(row),...row.fields.map(f=>f?'Есть':'Нет')]));
       comparison.classList.add('catalog-comparison');
       comparison.querySelectorAll('tbody tr').forEach(row=> {
