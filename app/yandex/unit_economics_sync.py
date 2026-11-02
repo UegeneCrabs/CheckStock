@@ -290,15 +290,29 @@ def load_orders(store_slug: str, api_key: str, business_id: int, start: date, en
             items = order.get("items")
             if not isinstance(items, list) or not items:
                 raise ValueError("В заказе ЯМ отсутствует состав товаров")
+            normalized_items = []
             for product in items:
                 quantity = product.get("count")
                 if (
                     not (product.get("offerId") or product.get("shopSku"))
                     or type(quantity) is not int
-                    or quantity <= 0
+                    or quantity < 0
                 ):
                     raise ValueError("Некорректный товар заказа ЯМ")
-            supported.append({**order, "programType": program})
+                statuses = product.get("itemStatuses") or []
+                if not isinstance(statuses, list) or any(
+                    not isinstance(status, dict)
+                    or not status.get("status")
+                    or type(status.get("count")) is not int
+                    or status["count"] < 0
+                    for status in statuses
+                ):
+                    raise ValueError("Некорректные статусы единиц товара ЯМ")
+                quantity = max(quantity, sum(status["count"] for status in statuses))
+                if quantity:
+                    normalized_items.append({**product, "count": quantity})
+            if normalized_items:
+                supported.append({**order, "programType": program, "items": normalized_items})
     lines = order_normalizer.normalize(store_slug, supported)
     unique_lines = {(line["order_key"], line["line_key"]): line for line in lines}
     if len(unique_lines) != len(lines):

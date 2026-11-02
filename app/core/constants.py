@@ -1290,7 +1290,7 @@ class OzonAnalyticsReason(StrEnum):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class YandexOrdersConfig:
     programs: frozenset[str] = frozenset({"FBY", "FBS"})
-    scope: str = "fby_fbs_v1"
+    scope: str = "fby_fbs_v2"
     history_window_days: int = 7
 
 
