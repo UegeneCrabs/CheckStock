@@ -473,7 +473,7 @@
           "placement": "bottom",
           "showLegend": false
         },
-        "maxVizHeight": 32,
+        "maxVizHeight": 20,
         "minVizHeight": 20,
         "minVizWidth": 8,
         "namePlacement": "left",
@@ -487,7 +487,11 @@
           "limit": 5000
         },
         "showUnfilled": true,
-        "sizing": "auto",
+        "sizing": "manual",
+        "text": {
+          "titleSize": 12,
+          "valueSize": 14
+        },
         "valueMode": "color"
       },
       "pluginVersion": "12.4.0-20082909961",
