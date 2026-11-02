@@ -69,6 +69,14 @@ class InstructionPagesTests(unittest.TestCase):
                                 if "data-instruction-url" in attrs
                             ]
                             self.assertEqual(sources, [expected_url])
+                            if active == "instructions":
+                                sections = [
+                                    attrs["data-section"]
+                                    for tag, attrs in elements
+                                    if tag == "button" and "data-section" in attrs
+                                ]
+                                self.assertEqual(sections, ["common", "WB", "YANDEX MARKET", "OZON"])
+                                self.assertNotIn("agent-copy-visible-instructions", ids)
                             if active == "gpt":
                                 self.assertIn(expected_url, links)
                             scripts = [attrs.get("src") for tag, attrs in elements if tag == "script"]

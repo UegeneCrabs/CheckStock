@@ -131,13 +131,12 @@ class OAuthStore:
             "INSERT INTO tokens VALUES (?, 'access', ?, ?, 0)", (digest(access), grant["id"], now + ttl)
         )
         result = {"access_token": access, "token_type": "Bearer", "expires_in": ttl, "scope": grant["scope"]}
-        if "offline_access" in grant["scope"].split():
-            refresh = "csmcpr_" + secrets.token_urlsafe(32)
-            db.execute(
-                "INSERT INTO tokens VALUES (?, 'refresh', ?, ?, 0)",
-                (digest(refresh), grant["id"], grant["expires"]),
-            )
-            result["refresh_token"] = refresh
+        refresh = "csmcpr_" + secrets.token_urlsafe(32)
+        db.execute(
+            "INSERT INTO tokens VALUES (?, 'refresh', ?, ?, 0)",
+            (digest(refresh), grant["id"], grant["expires"]),
+        )
+        result["refresh_token"] = refresh
         return result
 
     def exchange(self, code, client_id, redirect_uri, challenge, resource):

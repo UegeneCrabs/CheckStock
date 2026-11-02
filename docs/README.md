@@ -97,7 +97,9 @@
 - [Почасовая и дневная история СПП WB](agent-spp-history.md)
 
 - [API аналитики CheckStock](chatgpt-analytics.md) — полная инструкция MCP и компактная версия для GPT с Actions.
+- [Каталог по маркетплейсам](chatgpt-analytics.md#каталог-по-площадкам) и [общие/отдельные правила ИИ](chatgpt-analytics.md#общая-инструкция-ии-агентов) — просмотр WB, Яндекса и Ozon при едином MCP-подключении.
 - [Подключение Claude и ChatGPT через MCP](claude-mcp.md)
+- [Автоматическое продление MCP](claude-mcp.md#автоматическое-продление-mcp) — refresh token для доступа только на чтение, ротация и переход старых подключений.
 - [Развёртывание API агентов](agent-api-deployment.md) — постоянный том API/MCP, перенос файлов и права контейнера.
 - [Сводка прибыли](agent-profit-summary.md)
 - [Серверный анализ товаров](agent-server-analysis.md)

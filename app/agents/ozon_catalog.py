@@ -12,6 +12,34 @@ from app.dto.ozon_prices import PriceValues
 from app.dto.ozon_reports import OzonProfitRow, OzonTargetRow
 from app.dto.ozon_storage import StorageData
 
+DESCRIPTIONS: dict[str, str] = {
+    "products": "Каталог товаров Ozon: поиск по названию, штрихкоду и точному полному offer_id. Без закупочных цен.",
+    "product-details": "Карточка товара Ozon и сохранённые остатки по складам. Артикул — точный полный offer_id.",
+    "product-newness": "Признак новинки и возраст по загруженным наблюдениям Ozon, а не дата создания карточки.",
+    "product-reputation": "Сохранённые рейтинг и количество отзывов Ozon. Отсутствующее значение не равно нулю.",
+    "product-tags": "Теги, цели, план и факт товара Ozon из сохранённых данных сайта.",
+    "current-economics": "Текущие расчётные прибыль на единицу, ROI и цены Ozon. Не прибыль за выбранный период.",
+    "profit-calculator": "Сохранённые вводные и результат калькулятора Ozon на единицу товара. Несохранённые правки браузера не учитываются; ограничения — в result.",
+    "advertising": "Сохранённые рекламные расходы, показы, клики, CTR и CPC Ozon за период. Без выдуманной атрибуции заказов; проверяйте покрытие источников.",
+    "advertising-campaigns": "Сохранённые кампании и показатели рекламы Ozon. Статус и состав кампании относятся к наблюдению, а не подтверждают её текущее состояние.",
+    "stocks": "Сохранённые остатки Ozon по схемам и складам либо сводка. Учитывайте состав итогов, общий ФФ и неизвестные компоненты.",
+    "stock-value": "Стоимость остатков Ozon по известной закупочной цене. Товары без цены отмечены отдельно, их стоимость неизвестна.",
+    "stock-operations": "Движения товаров Ozon на складе за период без имён сотрудников и закупочных цен.",
+    "prices": "Цены продавца, покупателя и с Ozon Картой, их состояние и время наблюдения. За даты — первое и последнее сохранённые наблюдения дня, не среднее.",
+    "costs": "Текущие сохранённые закупочные цены, затраты, менеджер и ABC-данные Ozon. Не исторические затраты за период.",
+    "profit": "Юниточная прибыль Ozon: заказы, отмены, реклама и расчётная прибыль за период. Неполные расчёты сохраняют доступные числа с пометкой; оборот заказов не равен выручке выкупов.",
+    "target-prices": "Целевые цены Ozon по сохранённым данным закрытой недели и расчётному ROI. Проверяйте покрытие недели и недостающие вводные; цены на площадке не меняются.",
+    "loss-products": "Товары Ozon с отрицательной расчётной прибылью за период. Неполные расчёты исключаются и учитываются отдельно.",
+    "profit-summary": "Итоги расчётной прибыли Ozon по магазинам и сравнение равных периодов. Частичные итоги и исключённые товары отмечены отдельно.",
+    "product-analysis": "Проверки товаров Ozon: остатки без заказов, падение оборота, ДРР и ROI, реклама и выполнение целей. Неизвестные данные не считаются подтверждённым нулём.",
+    "stock-history": "Сохранённые дневные остатки Ozon по складам и схемам за период. Пропуск снимка не означает нулевой остаток.",
+    "orders": "Строки заказов Ozon по дате создания в МСК. Статус — последний сохранённый; несколько строк одного заказа не являются отдельными заказами.",
+    "inbound-supplies": "Сохранённый состав поставок Ozon, приёмка и расхождения. Проверяйте свежесть, ошибки и наличие состава поставки.",
+    "supply-arrivals": "Общий реестр поступлений магазина, не отдельный реестр Ozon. Нужен доступ ко всем площадкам магазина; не дублируйте записи между площадками.",
+    "stock-cost-report": "Движение и закупочная стоимость товаров Ozon за период. Расчётные продажи по остаткам отличаются от фактических; проверяйте сверку и пропуски.",
+    "economics-history": "График сохранённых показателей Ozon за 7, 14 или 30 дней. Текущий день неполный; прибыль margin_rub в этом методе не предоставляется.",
+}
+
 TITLES = {
     "ozon-buyout": "Ozon — выкуп и возвраты",
     "ozon-logistics": "Ozon — логистика",
@@ -128,12 +156,12 @@ LABELS.update(
         "missing": "Недостающие вводные",
         "issues": "Ограничения расчёта",
         "code": "ABC-код",
-        "current_price": "Текущая цена с Кошельком, ₽",
+        "current_price": "Текущая цена с Ozon Картой, ₽",
         "current_drr": "ДРР с выкупом, %",
         "current_roi": "Текущий ROI, %",
         "target_retail_price": "Целевая цена продавца, ₽",
-        "target_spp_price": "Целевая цена с СПП, ₽",
-        "target_price": "Целевая цена с Кошельком, ₽",
+        "target_spp_price": "Целевая цена покупателя, ₽",
+        "target_price": "Целевая цена с Ozon Картой, ₽",
         "target_drr": "Цель ДРР, %",
         "target_roi": "Цель ROI, %",
         "target_actual_roi": "Расчётный ROI при целевой цене, %",
@@ -190,7 +218,7 @@ LABELS.update(
         "week": "Дневные фактические заказы недели",
         "goal": "Недельная цель",
         "dayGoal": "Дневная цель",
-        "spp": "Скидка покупателя Ozon, %; не СПП WB",
+        "spp": "Соинвест (СПП Ozon): скидка покупателя, %; не СПП WB",
         "wallet": "Дополнительная скидка с Ozon Картой, %",
         "coeff": "Коэффициент прогноза",
         "updated": "Даты обновления отдельных источников",
@@ -279,7 +307,7 @@ LABELS.update(
 
 
 FIELDS["current-economics"] += (
-    "|seller_price:Цена продавца, ₽:number|null|buyer_price:Цена покупателя, ₽:number|null|wallet_price:Цена с Ozon Картой, ₽:number|null|spp_percent:Скидка покупателя Ozon относительно цены продавца, %:number|null"
+    "|seller_price:Цена продавца, ₽:number|null|buyer_price:Цена покупателя, ₽:number|null|wallet_price:Цена с Ozon Картой, ₽:number|null|spp_percent:Соинвест (СПП Ozon): скидка покупателя относительно цены продавца, %:number|null"
 )
 FIELDS["costs"] += (
     "|abc_code:ABC-код:str|null|goal_week:Цель недели:number|null|goal_day:Цель дня:number|null|fact_sales:Факт из справочника:number|null|plan_sales:План из справочника:number|null"
@@ -300,7 +328,10 @@ def guide(name: str, base: Mapping[str, object]) -> dict[str, object]:
         "ozon-storage",
         "ozon-commissions",
     }:
-        return {key: base.get(key) for key in ("title", "description", "fields")}
+        return {
+            **{key: base.get(key) for key in ("title", "description", "fields")},
+            "description": DESCRIPTIONS.get(name, str(base.get("description", ""))),
+        }
     fields = [
         {"path": "rows[].article", "name": "article", "description": "Точный offer_id Ozon", "type": "str"},
         {"path": "rows[].name", "name": "name", "description": "Название товара", "type": "str|null"},
@@ -418,6 +449,6 @@ def guide(name: str, base: Mapping[str, object]) -> dict[str, object]:
         "title": TITLES.get(name, str(base.get("title", ""))),
         "description": SPECS[name][3]
         if name in SPECS
-        else "Сохранённые источники и расчёты Ozon; null не равен нулю.",
+        else DESCRIPTIONS.get(name, "Сохранённые источники и расчёты Ozon; null не равен нулю."),
         "fields": list({item["path"]: item for item in fields}.values()),
     }
