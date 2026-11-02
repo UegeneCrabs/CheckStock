@@ -15,6 +15,7 @@ from app.core.constants import (
     OZON_LOGISTICS,
     OZON_STOCK_ANALYTICS,
     AdvertisingError,
+    OzonRatePolicy,
 )
 from app.dto.ozon_limits import (
     OzonRateFeedback,
@@ -60,7 +61,11 @@ class OzonLimitsService:
         account = account_digest(client)
         spacing = 1 / settings.ozon_api_limits.seller_requests_per_second
         return (
-            OzonRateScope(key=OZON_API_LIMITS.seller_scope_prefix + account, minimum_spacing=spacing),
+            OzonRateScope(
+                key=OZON_API_LIMITS.seller_scope_prefix + account,
+                minimum_spacing=spacing,
+                policy=OzonRatePolicy.RETRY_AFTER,
+            ),
             OzonRateScope(
                 key=OZON_API_LIMITS.method_scope_prefix + account_digest(account + target.path),
                 minimum_spacing=OZON_ANALYTICS.method_minimum_spacing_seconds
@@ -70,6 +75,7 @@ class OzonLimitsService:
                 else settings.ozon_logistics_request_interval_seconds
                 if target.path == OZON_LOGISTICS.accrual_path
                 else spacing,
+                policy=OzonRatePolicy.RETRY_AFTER,
             ),
         )
 

@@ -13,7 +13,6 @@ from app.core.constants import (
     OZON_API_LIMITS,
     AdvertisingError,
     DatabaseDialect,
-    HTTPStatus,
     OzonReservationState,
 )
 from app.dto.ozon_limits import (
@@ -35,6 +34,7 @@ from app.infrastructure.ozon_limits_orm import (
     OzonPerformanceBudgetRecord,
     OzonPerformanceLeaseRecord,
 )
+from app.ozon import rate_normalizer
 
 CONTROL = table_for(OzonApiControlRecord)
 BUDGET = table_for(OzonPerformanceBudgetRecord)
@@ -93,7 +93,7 @@ class OzonLimitsRepository:
                 await self._save_rate(
                     connection,
                     scope,
-                    state.model_copy(update={"next_at": now + timedelta(seconds=state.spacing)}),
+                    rate_normalizer.reservation(scope, state, now),
                 )
         return 0
 
@@ -101,36 +101,7 @@ class OzonLimitsRepository:
         async with self._locked() as connection:
             now = max(now, self.clock())
             saved = await self._rate(connection, scope, now)
-            spacing, successes, next_at = saved.spacing, saved.successes, saved.next_at
-            if feedback.status == HTTPStatus.TOO_MANY_REQUESTS:
-                spacing = max(
-                    scope.minimum_spacing,
-                    min(
-                        OZON_API_LIMITS.maximum_spacing_seconds,
-                        max(spacing, OZON_API_LIMITS.minimum_retry_seconds) * 2,
-                    ),
-                )
-                delay = max(spacing, feedback.retry_seconds or 0)
-                next_at = max(next_at, now + timedelta(seconds=delay))
-                successes = 0
-            elif HTTPStatus.OK <= feedback.status < HTTPStatus.MULTIPLE_CHOICES:
-                successes += 1
-                if successes >= OZON_API_LIMITS.successes_before_decrease:
-                    spacing = max(scope.minimum_spacing, spacing * OZON_API_LIMITS.spacing_decrease_factor)
-                    successes = 0
-                if feedback.remaining is not None and feedback.remaining <= 0:
-                    next_at = max(
-                        next_at,
-                        now
-                        + timedelta(
-                            seconds=max(
-                                spacing, feedback.retry_seconds or OZON_API_LIMITS.minimum_retry_seconds
-                            )
-                        ),
-                    )
-            await self._save_rate(
-                connection, scope, OzonRateState(next_at=next_at, spacing=spacing, successes=successes)
-            )
+            await self._save_rate(connection, scope, rate_normalizer.observe(scope, saved, feedback, now))
 
     async def _import_legacy(
         self, connection: AsyncConnection, identity: PerformanceIdentity, now: datetime

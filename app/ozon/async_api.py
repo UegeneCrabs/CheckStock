@@ -24,8 +24,11 @@ from app.ozon.api import OzonApiError, _parse_error_body
 
 
 class AsyncSellerApi:
-    def __init__(self, http: AsyncHttp, credentials: OzonCredentials):
+    def __init__(self, http: AsyncHttp, credentials: OzonCredentials, *, request_attempts: int | None = None):
         self.http = http
+        self.request_attempts = (
+            request_attempts if request_attempts is not None else settings.ozon_request_attempts
+        )
         self.headers = {
             "Client-Id": credentials.client_id,
             "Api-Key": credentials.api_key,
@@ -39,7 +42,7 @@ class AsyncSellerApi:
                 OZON_API.base_url + path,
                 headers=self.headers,
                 json=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
-                attempts=settings.ozon_request_attempts,
+                attempts=self.request_attempts,
                 backoff=settings.ozon_retry_backoff_seconds,
             )
         except httpx.TimeoutException as error:

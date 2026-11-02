@@ -83,7 +83,7 @@
 - [Цены WB Кошелька](wb-wallet-prices.md)
 - [Выкуп и ДРР Ozon: период кабинета, возвраты и сегодняшний калькулятор](ozon-buyout.md)
 - [Реклама Ozon: обновления каждые 30 минут, привязка SKU, догрузка пропусков и лимиты API](ozon-performance-api.md)
-- [Общие лимиты Seller и Performance API Ozon: частота, квоты ИП/ООО, очереди и восстановление](ozon-api-limits.md)
+- [Общие лимиты Seller и Performance API Ozon: Retry-After, частота, квоты ИП/ООО, очереди и восстановление](ozon-api-limits.md)
 
 ## Аналитика Ozon и Яндекс Маркета
 

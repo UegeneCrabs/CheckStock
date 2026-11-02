@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import AwareDatetime, Field
 
-from app.core.constants import AdvertisingError, OzonReservationState
+from app.core.constants import AdvertisingError, OzonRatePolicy, OzonReservationState
 from app.dto.common import DtoModel
 
 Seconds = Annotated[float, Field(ge=0, allow_inf_nan=False)]
@@ -11,6 +11,7 @@ Seconds = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 class OzonRateScope(DtoModel):
     key: str
     minimum_spacing: Seconds
+    policy: OzonRatePolicy = OzonRatePolicy.ADAPTIVE
 
 
 class OzonRateState(DtoModel):

@@ -91,6 +91,7 @@ files = [
     "app/infrastructure/async_resources.py", "app/jobs/async_locks.py",
     "app/application/ozon_limits.py", "app/dto/ozon_limits.py",
     "app/infrastructure/ozon_limits_orm.py", "app/infrastructure/ozon_limits_repository.py",
+    "app/ozon/rate_normalizer.py",
     "app/ozon/limit_identity.py",
     "app/ozon/performance_limits.py",
     "app/dto/ozon_reports.py", "app/application/ozon_reports.py",

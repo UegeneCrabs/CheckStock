@@ -268,6 +268,7 @@ class Settings(BaseModel):
     wb_request_timeout_seconds: int = Field(ge=1)
     ozon_request_timeout_seconds: int = Field(ge=1)
     ozon_logistics_request_interval_seconds: float = Field(default=2, ge=0, allow_inf_nan=False)
+    ozon_logistics_request_attempts: int = Field(default=20, ge=1, le=20)
     ozon_storage_request_interval_seconds: float = Field(default=1, ge=0, allow_inf_nan=False)
     yandex_request_timeout_seconds: int = Field(ge=1)
     wb_request_attempts: int = Field(ge=1, le=20)
@@ -449,6 +450,9 @@ class Settings(BaseModel):
             ozon_request_timeout_seconds=_env_int("CHECKSTOCK_OZON_REQUEST_TIMEOUT_SECONDS", 60, minimum=1),
             ozon_logistics_request_interval_seconds=float(
                 os.getenv("CHECKSTOCK_OZON_LOGISTICS_REQUEST_INTERVAL_SECONDS", "2")
+            ),
+            ozon_logistics_request_attempts=_env_int(
+                "CHECKSTOCK_OZON_LOGISTICS_REQUEST_ATTEMPTS", 20, minimum=1, maximum=20
             ),
             ozon_storage_request_interval_seconds=float(
                 os.getenv("CHECKSTOCK_OZON_STORAGE_REQUEST_INTERVAL_SECONDS", "1")

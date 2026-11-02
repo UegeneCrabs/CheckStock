@@ -96,6 +96,8 @@ class AsyncHttp:
                 pause = backoff * HTTP.retry_backoff_multiplier ** (attempt - 1) + random.uniform(
                     0, HTTP.retry_jitter_max_seconds
                 )
+                if scopes:
+                    pause = min(pause, OZON_API_LIMITS.seller_maximum_backoff_seconds)
             logger.warning(
                 "async_http_retry store=%s attempt=%s delay=%.1f", store_context.get(), attempt, pause
             )

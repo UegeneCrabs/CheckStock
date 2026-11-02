@@ -1,10 +1,8 @@
 import asyncio
 from datetime import datetime, time, timedelta
 
-import httpx
-
 from app.config import settings
-from app.core.constants import OZON_LOGISTICS, TIME, HTTPStatus, OrderScheme
+from app.core.constants import OZON_LOGISTICS, TIME, OrderScheme
 from app.core.logging_config import tagged_logger
 from app.dto.common import DtoModel
 from app.dto.ozon_logistics import (
@@ -23,24 +21,12 @@ from app.dto.ozon_logistics import (
     ReturnsPage,
     ReturnsRequest,
 )
-from app.ozon.api import OzonApiError
 from app.ozon.async_api import AsyncSellerApi
 
 logger = tagged_logger(__name__, "ozon", "async_logistics")
 
 
 class AsyncLogisticsClient(AsyncSellerApi):
-    async def _response(self, path: str, payload: DtoModel) -> httpx.Response:
-        for pause in (*OZON_LOGISTICS.rate_limit_delays_seconds, None):
-            try:
-                return await super()._response(path, payload)
-            except OzonApiError as error:
-                if error.status != HTTPStatus.TOO_MANY_REQUESTS or pause is None:
-                    raise
-                logger.warning("ozon_logistics_rate_limit path=%s delay=%s", path, pause)
-                await asyncio.sleep(pause)
-        raise RuntimeError("Ozon logistics response retry exhausted")
-
     async def returns(self, numbers: tuple[str, ...], filters: ReturnsFilter) -> tuple[LogisticsReturn, ...]:
         returns: list[LogisticsReturn] = []
         seen: set[int] = set()
@@ -91,7 +77,6 @@ class AsyncLogisticsClient(AsyncSellerApi):
             if len(set(returned)) != len(returned) or set(returned) != set(batch):
                 raise ValueError("Incomplete or repeated posting accruals")
             accruals.extend(page.posting_accruals)
-            await asyncio.sleep(settings.ozon_logistics_request_interval_seconds)
         returns = await self.returns(numbers, ReturnsFilter())
         dimensions: list[LogisticsDimensions] = []
         dimensions_available = True

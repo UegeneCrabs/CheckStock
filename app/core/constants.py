@@ -426,7 +426,6 @@ class OzonLogisticsConfig:
     returns_page_size: int = 500
     attributes_batch_size: int = 100
     max_returns: int = 500_000
-    rate_limit_delays_seconds: tuple[int, ...] = (15, 30, 60)
     lock_prefix: str = "ozon-logistics:"
     delivered_status: str = "delivered"
     cancelled_status: str = "cancelled"
@@ -898,6 +897,11 @@ class OzonReservationState(StrEnum):
     RESOLVED = "resolved"
 
 
+class OzonRatePolicy(StrEnum):
+    ADAPTIVE = "adaptive"
+    RETRY_AFTER = "retry_after"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonApiLimitsConfig:
     coordination_scope: str = "coordination"
@@ -923,6 +927,7 @@ class OzonApiLimitsConfig:
     queue_poll_seconds: float = 0.25
     minimum_retry_seconds: float = 2
     maximum_spacing_seconds: float = 120
+    seller_maximum_backoff_seconds: float = 30
     successes_before_decrease: int = 10
     spacing_decrease_factor: float = 0.9
 

@@ -211,7 +211,11 @@ def ozon_logistics_service(resources: "AsyncResources", store: str) -> OzonLogis
     return OzonLogisticsService(
         store,
         AsyncLogisticsRepository(resources.database),
-        AsyncLogisticsClient(resources.http, get_order_credentials(store)).evidence,
+        AsyncLogisticsClient(
+            resources.http,
+            get_order_credentials(store),
+            request_attempts=settings.ozon_logistics_request_attempts,
+        ).evidence,
         lambda: datetime.now(UTC),
     )
 
