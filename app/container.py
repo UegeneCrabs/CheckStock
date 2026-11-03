@@ -25,6 +25,7 @@ from app.application.ozon_related import OzonRelatedService
 from app.application.ozon_reports import OzonReportsService
 from app.application.ozon_storage import OzonStorageService
 from app.application.ozon_tariffs import OzonTariffService
+from app.application.ozon_tax_history import OzonTaxHistoryService
 from app.application.spp_history import SppHistoryService
 from app.application.stock import StockMovementService
 from app.application.supply_arrival_stock import SupplyArrivalStockService
@@ -46,6 +47,7 @@ from app.dto.ozon_tariffs import OzonCategorySelection, OzonProductCategorySelec
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
 from app.economics.ozon_commissions import snapshot as commission_snapshot
 from app.economics.wb.prices import calculate_wallet_price
+from app.infrastructure.async_database import AsyncDatabase
 from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
@@ -64,6 +66,7 @@ from app.infrastructure.ozon_price_changes_repository import OzonPriceChangeRepo
 from app.infrastructure.ozon_promotion_entry_repository import OzonPromotionEntryRepository
 from app.infrastructure.ozon_reports_repository import OzonReportsRepository
 from app.infrastructure.ozon_tariff_catalog import CATALOG
+from app.infrastructure.ozon_tax_history_repository import OzonTaxHistoryRepository
 from app.infrastructure.spp_history_repository import SqlAlchemySppHistoryRepository
 from app.infrastructure.stock_repository import SqlAlchemyStockUnitOfWork
 from app.infrastructure.supply_arrival_stock_repository import SupplyArrivalStockRepository
@@ -235,6 +238,10 @@ def ozon_history_service(resources: "AsyncResources") -> OzonHistoryService:
 
 def ozon_calendar_service(resources: "AsyncResources") -> OzonCalendarService:
     return OzonCalendarService(OzonCalendarRepository(resources.database), lambda: datetime.now(UTC))
+
+
+def ozon_tax_history_service(database: AsyncDatabase) -> OzonTaxHistoryService:
+    return OzonTaxHistoryService(OzonTaxHistoryRepository(database), lambda: datetime.now(UTC))
 
 
 def ozon_related_service(resources: "AsyncResources", store: str) -> OzonRelatedService:

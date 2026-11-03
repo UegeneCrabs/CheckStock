@@ -190,6 +190,15 @@ echo 'Stopping API/OAuth writers before preparing persistent credentials'
 "${compose[@]}" stop app scheduler </dev/null
 "${compose[@]}" run --rm --no-deps -T --user 0:0 --entrypoint python app \
   -m scripts.ops.prepare_agent_storage --uid 10001 --gid 10001 --apply </dev/null
+deploy_stage='Sokoloff Ozon historical tax correction'
+echo 'Applying audited Sokoloff tax correction through 2026-11-03: VAT 0%, USN 8%'
+"${compose[@]}" run --rm --no-deps -T --entrypoint python app \
+  -m scripts.ops.repair_ozon_tax_history \
+  --store sokoloff --through 2026-11-03 --vat-percent 0 --usn-percent 8 \
+  --operation sokoloff-taxes-20261103 \
+  --reason 'User-confirmed Sokoloff history correction: VAT 0%, USN 8%.' \
+  --apply --backup-directory /app/data/backups/database/ozon-tax-history </dev/null
+
 deploy_stage='container update'
 echo 'Updating application and observability containers'
 "${compose[@]}" up -d --no-deps app scheduler watchdog </dev/null

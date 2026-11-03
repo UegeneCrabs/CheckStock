@@ -64,6 +64,7 @@ from app.dto.ozon_reports import (
     OzonTargetRecord,
     OzonTargetSave,
 )
+from app.dto.ozon_tax_history import OzonTaxHistoryCommand, OzonTaxHistoryData, OzonTaxHistoryPlan
 from app.dto.yandex_analytics import (
     Comment,
     CommentChange,
@@ -436,6 +437,11 @@ class OzonCalendarStore(Protocol):
     async def days(self, store: str, day: date, article: str = "") -> OzonCalendarSources: ...
     async def events(self, key: OzonCalendarKey) -> tuple[OzonCalendarEvent, ...]: ...
     async def save(self, command: OzonCalendarSave) -> None: ...
+
+
+class OzonTaxHistoryStore(Protocol):
+    async def load(self, command: OzonTaxHistoryCommand) -> OzonTaxHistoryData: ...
+    async def save(self, plan: OzonTaxHistoryPlan) -> None: ...
 
 
 class OzonReportsStore(Protocol):
