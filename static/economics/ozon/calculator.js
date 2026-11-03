@@ -1,7 +1,9 @@
 window.OzonCalculatorUI = (() => {
     'use strict';
     const sessions = new WeakMap();
+    const targetFields = ['margin', 'margin_percent', 'roi'];
     const fields = [
+        { key: 'total_drr', legacy: 'drr', label: 'Общий ДРР с выкупом', signed: true },
         { key: 'other_spend', label: 'Прочая реклама за сегодня, руб', order: 7, unit: '₽', signed: true },
         { key: 'other_drr', label: 'ДРР прочей рекламы', order: 7, signed: true, readOnly: true },
         { key: 'advertising_amount', legacy: 'advertisingRub', label: 'Реклама на штуку, руб', signed: true },
@@ -27,11 +29,7 @@ window.OzonCalculatorUI = (() => {
     const inputFormat = new Intl.NumberFormat('en-US', { useGrouping: false, maximumFractionDigits: 2 });
     const numericValue = value => value == null ? null : Number(value);
     const display = value => value == null ? '' : inputFormat.format(Number(value));
-    const moneyFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
-    const percentFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
     const targetFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' });
-    const rub = value => value == null ? '—' : moneyFormat.format(Number(value)) + ' ₽';
-    const percent = value => value == null ? '—' : percentFormat.format(Number(value));
     const expensePairs = ['acquiring', 'unallocated', 'vat', 'usn'];
 
     function pairModified(session, prefix) {
@@ -195,6 +193,7 @@ window.OzonCalculatorUI = (() => {
                 if (event.detail.productId !== session.productId) return;
                 const prices = event.detail.values;
                 session.pricePending = false;
+                if (event.detail.source === 'calculator') return;
                 if (event.detail.modified) session.changed = true;
                 edit(session, 'seller_price', prices.seller_price);
                 edit(session, 'buyer_price', prices.black_price);
@@ -204,6 +203,14 @@ window.OzonCalculatorUI = (() => {
             };
             session.pricesPending = event => {
                 if (event.detail.productId !== session.productId) return;
+                if (event.detail.edited && session.priceTarget) {
+                    session.priceTarget = null;
+                    targetFields.forEach(key => delete session.draft[key]);
+                }
+                window.clearTimeout(session.timer);
+                if (session.controller) session.controller.abort();
+                ++session.sequence;
+                session.pending = false;
                 session.pricePending = true;
                 paint(root, session);
             };
@@ -245,7 +252,7 @@ window.OzonCalculatorUI = (() => {
         totalDrrRow.style.setProperty('--compact-order', '2');
         totalDrrRow.style.setProperty('--expanded-order', '4');
         totalDrr.dataset.ozonTotalDrr = '';
-        totalDrr.readOnly = true;
+        totalDrr.readOnly = false;
         totalDrr.disabled = false;
         totalDrr.placeholder = '—';
         totalDrr.removeAttribute('min');
@@ -329,11 +336,10 @@ window.OzonCalculatorUI = (() => {
     }
 
     function paint(root, session) {
-        paintTotalDrr(root, session);
         root.querySelectorAll('[data-ozon-scenario-input]').forEach(input => {
             const key = input.dataset.ozonScenarioInput;
-            const unavailable = input.readOnly && (session.pending || session.pricePending || !session.initialized || session.error || session.invalid.size);
-            input.value = unavailable ? '' : Object.hasOwn(session.draft, key) ? session.draft[key] : display(session.values[key]);
+            const unavailable = (input.readOnly || key === 'total_drr') && (session.pending || session.pricePending || !session.initialized || session.error || session.invalid.size);
+            input.value = Object.hasOwn(session.draft, key) ? session.draft[key] : unavailable ? '' : display(session.values[key]);
             window.OzonCalculatorHelp.bind(input.closest('.ue1c-calculator-row'), () =>
                 window.OzonCalculatorHelpContent.calculator(session, key, input.getAttribute('aria-label')));
         });
@@ -355,15 +361,39 @@ window.OzonCalculatorUI = (() => {
         root.dispatchEvent(new CustomEvent('ozon-calculator-changed', { detail: { productId: session.productId } }));
     }
 
-    function paintTotalDrr(root, session) {
-        const input = root.querySelector('[data-ozon-total-drr]');
-        if (!input) return;
-        const values = session.values;
-        const waiting = session.pending || session.pricePending || !session.initialized;
-        const unavailable = waiting || session.error || session.invalid.size;
-        input.value = unavailable ? '' : display(values.total_drr);
-        window.OzonCalculatorHelp.bind(input.closest('.ue1c-calculator-row'), () =>
-            window.OzonCalculatorHelpContent.calculator(session, 'total_drr', 'Общий ДРР с выкупом'));
+    function createTargetInput(key, label) {
+        const input = document.createElement('input');
+        input.className = 'ozon-target-input';
+        input.type = 'number';
+        input.step = 'any';
+        input.min = '-1000000000000';
+        input.max = '1000000000000';
+        input.placeholder = '—';
+        if (key === 'roi') input.dataset.ozonRoiInput = '';
+        else if (key === 'margin') input.dataset.ozonMarginInput = '';
+        else input.dataset.ozonMarginPercentInput = '';
+        input.setAttribute('aria-label', label);
+        return input;
+    }
+
+    function bindTarget(root, session, input, key, value) {
+        const drafting = Object.hasOwn(session.draft, key);
+        if (!drafting || document.activeElement !== input) input.value = drafting ? session.draft[key] : display(value);
+        input.oninput = () => {
+            session.changed = true;
+            targetFields.filter(field => field !== key).forEach(field => {
+                delete session.draft[field];
+                session.invalid.delete(field);
+            });
+            session.draft[key] = input.value;
+            session.priceTarget = null;
+            if (!input.checkValidity()) session.invalid.add(key);
+            else {
+                session.invalid.delete(key);
+                if (input.value !== '') session.priceTarget = { target: key, value: input.value };
+            }
+            queue(root, session);
+        };
     }
 
     function paintResult(root, session) {
@@ -377,7 +407,7 @@ window.OzonCalculatorUI = (() => {
         Array.from(node.childNodes).forEach(item => {
             if (item.nodeType !== 1 || !item.hasAttribute('data-ozon-result')) item.remove();
         });
-        [['Чистая прибыль на штуку', margin, rub, 'margin'], ['ROI', roi, value => value == null ? '—' : percent(value) + '%', 'roi']].forEach(([label, value, format, key]) => {
+        [['Чистая прибыль на штуку', margin, 'margin'], ['ROI', roi, 'roi']].forEach(([label, value, key]) => {
             const row = node.querySelector('[data-ozon-result="' + key + '"]') || document.createElement('div');
             row.dataset.ozonResult = key;
             if (!row.parentNode) {
@@ -387,8 +417,38 @@ window.OzonCalculatorUI = (() => {
                 node.append(row);
             }
             const amount = row.querySelector('strong');
-            amount.textContent = format(value);
-            amount.className = value == null ? '' : Number(value) < 0 ? 'is-negative' : 'is-positive';
+            if (key === 'roi') {
+                let input = amount.querySelector('input');
+                if (!input) {
+                    amount.classList.add('ozon-roi-field');
+                    input = createTargetInput('roi', 'ROI, %');
+                    const unit = document.createElement('b');
+                    unit.textContent = '%';
+                    amount.append(input, unit);
+                }
+                bindTarget(root, session, input, 'roi', value);
+            } else {
+                amount.classList.add('ozon-margin-value');
+                let money = amount.querySelector('[data-ozon-margin-amount]');
+                if (!money) {
+                    money = document.createElement('span');
+                    money.dataset.ozonMarginAmount = '';
+                    const moneyInput = createTargetInput('margin', 'Чистая прибыль на штуку, руб');
+                    const currency = document.createElement('b');
+                    currency.textContent = '₽';
+                    money.append(moneyInput, currency);
+                    const field = document.createElement('small');
+                    const input = createTargetInput('margin_percent', 'Чистая прибыль, %');
+                    const unit = document.createElement('b');
+                    unit.textContent = '%';
+                    field.append(input, unit);
+                    amount.replaceChildren(money, field);
+                }
+                bindTarget(root, session, money.querySelector('input'), 'margin', value);
+                bindTarget(root, session, amount.querySelector('[data-ozon-margin-percent-input]'), 'margin_percent', unavailable ? null : result.margin_percent);
+            }
+            amount.classList.toggle('is-negative', value != null && Number(value) < 0);
+            amount.classList.toggle('is-positive', value != null && Number(value) >= 0);
             window.OzonCalculatorHelp.bind(row, () => window.OzonCalculatorHelpContent.calculator(session, key, label));
         });
         if (!node.querySelector('[data-ozon-result="target"]')) {
@@ -414,26 +474,43 @@ window.OzonCalculatorUI = (() => {
         window.clearTimeout(session.timer);
         if (session.controller) session.controller.abort();
         const sequence = ++session.sequence;
-        session.error = session.invalid.size ? 'Проверьте диапазоны: выкуп и ставки от 0 до 100%; отрицательные суммы допустимы для рекламы и корректировок хранения.' : '';
+        session.error = session.invalid.has('margin') ? 'Введите чистую прибыль целиком, например 200 или −50,5.' : session.invalid.has('margin_percent') ? 'Введите процент чистой прибыли целиком, например 20 или −12,5.' : session.invalid.has('roi') ? 'Введите ROI целиком, например −20 или −12,5.' : session.invalid.size ? 'Проверьте диапазоны: выкуп и ставки от 0 до 100%; отрицательные суммы допустимы для рекламы и корректировок хранения.' : '';
         session.pending = !session.invalid.size;
         paint(root, session);
-        if (session.invalid.size) return;
+        if (session.invalid.size || session.pricePending) return;
         session.timer = window.setTimeout(async () => {
             session.controller = new AbortController();
             try {
-                const response = await window.fetch('/api/unit-economics-1c/ozon/calculator/calculate', {
+                const target = session.priceTarget;
+                const prices = target ? window.OzonPricesUI.snapshot(root) : null;
+                if (target && !prices) throw new Error('Дождитесь пересчёта цен и исправьте ошибки в полях цены, скидок и комиссии.');
+                const payload = { values: session.values, edits: session.edits };
+                if (target) {
+                    payload.target = target.target;
+                    payload.value = target.value;
+                    payload.prices = { values: prices.values, tariff_id: prices.tariff_id, product_tariff_id: prices.product_tariff_id };
+                }
+                const response = await window.fetch('/api/unit-economics-1c/ozon/calculator/' + (target ? 'target' : 'calculate'), {
                     method: 'POST', signal: session.controller.signal,
                     headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'fetch' },
-                    body: JSON.stringify({ values: session.values, edits: session.edits }),
+                    body: JSON.stringify(payload),
                 });
-                if (!response.ok) throw new Error('Не удалось пересчитать. Проверьте суммы, ставки и базы: ненулевой ДРР требует выкупа больше нуля, налог и комиссии должны соответствовать цене.');
+                if (!response.ok) throw new Error(target
+                    ? (target.target === 'roi'
+                        ? 'Не удалось подобрать цену для ROI. Нужны положительная закупочная стоимость, известные скидки и все расходы; заданный ROI должен быть достижим с текущими ставками.'
+                        : target.target === 'margin'
+                        ? 'Не удалось подобрать цену для чистой прибыли. Нужны известные скидки и все расходы; заданная прибыль должна быть достижима с текущими ставками.'
+                        : 'Не удалось подобрать цену для процента чистой прибыли. Нужны известные скидки и все расходы; заданный процент должен быть достижим с текущими ставками.')
+                    : 'Не удалось пересчитать. Проверьте суммы, ставки и базы: ненулевой ДРР требует выкупа больше нуля, налог и комиссии должны соответствовать цене.');
                 const result = await response.json();
                 if (sessions.get(root) !== session || sequence !== session.sequence) return;
-                session.values = result;
+                session.values = target ? result.values : result;
                 session.edits = [];
                 session.draft = {};
+                session.priceTarget = null;
                 session.initialized = true;
                 session.pending = false;
+                if (target) window.OzonPricesUI.applyCalculated(root, session.productId, result.prices);
                 paint(root, session);
             } catch (error) {
                 if (error.name !== 'AbortError' && sessions.get(root) === session && sequence === session.sequence) {

@@ -4,10 +4,17 @@ from typing import Annotated, Self
 
 from pydantic import Field, model_validator
 
-from app.core.constants import OZON_ADVERTISING, OZON_SCENARIO, OzonScenarioBasis, OzonScenarioField
+from app.core.constants import (
+    OZON_ADVERTISING,
+    OZON_SCENARIO,
+    OzonCalculatorTarget,
+    OzonScenarioBasis,
+    OzonScenarioField,
+)
 from app.dto.common import DtoModel
 from app.dto.ozon_advertising import AdvertisingDailyExpense, AdvertisingPeriod
 from app.dto.ozon_margin import OzonMarginResult
+from app.dto.ozon_price_calculator import OzonPriceCalculation, OzonPriceCalculationRequest
 
 ScenarioSignedNumber = Annotated[
     Decimal,
@@ -60,6 +67,7 @@ class OzonCalculatorValues(DtoModel):
     order_spend: ScenarioSignedNumber | None = None
     order_drr: ScenarioSignedNumber | None = None
     total_drr: ScenarioSignedNumber | None = None
+    total_drr_manual: bool = False
     purchase: ScenarioNumber | None = None
     fulfillment: ScenarioNumber | None = None
     storage_amount: ScenarioSignedNumber | None = None
@@ -112,3 +120,23 @@ class OzonCalculatorEdit(DtoModel):
 class OzonCalculatorRequest(DtoModel):
     values: OzonCalculatorValues
     edits: tuple[OzonCalculatorEdit, ...] = Field(default=(), max_length=OZON_SCENARIO.max_edits)
+
+
+class OzonCalculatorRoiRequest(OzonCalculatorRequest):
+    prices: OzonPriceCalculationRequest
+    roi: ScenarioSignedNumber
+
+
+class OzonCalculatorPriceResult(DtoModel):
+    values: OzonCalculatorValues
+    prices: OzonPriceCalculation
+
+
+class OzonCalculatorRoiResult(OzonCalculatorPriceResult):
+    pass
+
+
+class OzonCalculatorTargetRequest(OzonCalculatorRequest):
+    prices: OzonPriceCalculationRequest
+    target: OzonCalculatorTarget
+    value: ScenarioSignedNumber

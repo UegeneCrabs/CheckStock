@@ -27,6 +27,7 @@ class OzonMarginInputs(DtoModel):
 
 class OzonMarginResult(DtoModel):
     margin: MarginNumber | None = None
+    margin_percent: MarginNumber | None = None
     roi: MarginNumber | None = None
     missing: tuple[str, ...] = ()
 

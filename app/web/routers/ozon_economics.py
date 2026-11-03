@@ -20,7 +20,14 @@ from app.container import (
 )
 from app.core.constants import OZON_PROMOTIONS, TIME, HTTPStatus, Marketplace, WebErrorCode
 from app.dto.ozon_cabinet import OzonCabinetRecord, OzonCabinets, OzonCabinetUpdate
-from app.dto.ozon_calculator import OzonCalculatorRequest, OzonCalculatorValues
+from app.dto.ozon_calculator import (
+    OzonCalculatorPriceResult,
+    OzonCalculatorRequest,
+    OzonCalculatorRoiRequest,
+    OzonCalculatorRoiResult,
+    OzonCalculatorTargetRequest,
+    OzonCalculatorValues,
+)
 from app.dto.ozon_commissions import OzonCommissionCalculation, OzonCommissionRequest
 from app.dto.ozon_economics import OzonProductDetail, OzonProducts, OzonReportRequest
 from app.dto.ozon_history import OzonHistory, OzonHistoryQuery
@@ -49,6 +56,7 @@ from app.economics.ozon_calculator import calculate as calculate_scenario
 from app.economics.ozon_logistics_volume import calculate as calculate_logistics
 from app.economics.ozon_logistics_volume import tariff_options
 from app.economics.ozon_promotion_calculator import calculate as calculate_promotion
+from app.economics.ozon_roi_calculator import calculate_roi, calculate_target
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetConflict, OzonCabinetRepository
 from app.infrastructure.ozon_economics_repository import OzonEconomicsRepository
 from app.infrastructure.ozon_logistics_tariffs import CATALOG as LOGISTICS_TARIFFS
@@ -144,6 +152,32 @@ async def calculator_scenario(request: Request, payload: OzonCalculatorRequest) 
         return calculate_scenario(payload)
     except (ValueError, DecimalException) as error:
         raise HTTPException(422, WebErrorCode.INVALID_CALCULATOR_SCENARIO) from error
+
+
+@router.post("/api/unit-economics-1c/ozon/calculator/roi")
+async def calculator_roi(
+    request: Request, payload: OzonCalculatorRoiRequest, resources: AsyncResourcesDependency
+) -> OzonCalculatorRoiResult:
+    require_preview(request.state.user)
+    try:
+        return calculate_roi(payload, ozon_tariff_service(resources).calculate)
+    except (ValueError, DecimalException) as error:
+        raise HTTPException(
+            HTTPStatus.UNPROCESSABLE_ENTITY, WebErrorCode.INVALID_CALCULATOR_SCENARIO
+        ) from error
+
+
+@router.post("/api/unit-economics-1c/ozon/calculator/target")
+async def calculator_target(
+    request: Request, payload: OzonCalculatorTargetRequest, resources: AsyncResourcesDependency
+) -> OzonCalculatorPriceResult:
+    require_preview(request.state.user)
+    try:
+        return calculate_target(payload, ozon_tariff_service(resources).calculate)
+    except (ValueError, DecimalException) as error:
+        raise HTTPException(
+            HTTPStatus.UNPROCESSABLE_ENTITY, WebErrorCode.INVALID_CALCULATOR_SCENARIO
+        ) from error
 
 
 @router.get("/api/unit-economics-1c/ozon/tariffs")

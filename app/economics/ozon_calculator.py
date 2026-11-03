@@ -158,22 +158,33 @@ def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
         if clicks.amount is not None and orders.amount is not None and other_spend is not None
         else None
     )
-    total_drr = advertising(
-        values.turnover, values.buyout_percent, None, spend, OzonScenarioBasis.AMOUNT
-    ).percent
-    advertising_amount = (
-        values.advertising_amount
-        if values.advertising_manual
-        else advertising_per_unit(
-            values.advertising_week.spend,
-            Decimal(values.advertising_week.orders_count)
-            if values.advertising_week.orders_count is not None
-            else None,
-            values.buyout_percent,
-        )
-        if values.advertising_week is not None and values.advertising_week.complete
-        else None
+    total_drr = (
+        values.total_drr
+        if values.total_drr_manual
+        else advertising(
+            values.turnover, values.buyout_percent, None, spend, OzonScenarioBasis.AMOUNT
+        ).percent
     )
+    if values.total_drr_manual:
+        advertising_amount = (
+            rounded(values.seller_price * total_drr / OZON_SCENARIO.percent_factor)
+            if values.seller_price is not None and total_drr is not None
+            else None
+        )
+    elif values.advertising_manual:
+        advertising_amount = values.advertising_amount
+    else:
+        advertising_amount = (
+            advertising_per_unit(
+                values.advertising_week.spend,
+                Decimal(values.advertising_week.orders_count)
+                if values.advertising_week.orders_count is not None
+                else None,
+                values.buyout_percent,
+            )
+            if values.advertising_week is not None and values.advertising_week.complete
+            else None
+        )
     inputs = OzonMarginInputs.model_validate(
         {
             key: advertising_amount if key == "advertising_amount" else getattr(calculated, key)
@@ -197,8 +208,21 @@ def calculate(request: OzonCalculatorRequest) -> OzonCalculatorValues:
             changes["other_breakdown"] = None
         if edit.field == OzonScenarioField.ADVERTISING_AMOUNT:
             changes["advertising_manual"] = True
+            changes["total_drr_manual"] = False
+        elif edit.field == OzonScenarioField.TOTAL_DRR:
+            changes["total_drr_manual"] = True
+            changes["advertising_manual"] = False
         elif edit.field == OzonScenarioField.BUYOUT:
             changes["advertising_manual"] = False
+        if edit.field in (
+            OzonScenarioField.BUYOUT,
+            OzonScenarioField.CLICK_DRR,
+            OzonScenarioField.CLICK_SPEND,
+            OzonScenarioField.ORDER_DRR,
+            OzonScenarioField.ORDER_SPEND,
+            OzonScenarioField.OTHER_SPEND,
+        ):
+            changes["total_drr_manual"] = False
         match edit.field:
             case OzonScenarioField.CLICK_DRR | OzonScenarioField.CLICK_SPEND:
                 changes["click_basis"] = (

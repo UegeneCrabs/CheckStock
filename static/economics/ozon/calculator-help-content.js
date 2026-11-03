@@ -85,7 +85,7 @@ window.OzonCalculatorHelpContent = (() => {
     function calculator(session, key, title) {
         const v = session.values, p = session.product;
         const prefix = key.split('_')[0];
-        const modified = key === 'advertising_amount' ? Boolean(v.advertising_manual) : session.modified.has(key) || session.modified.has(prefix + '_percent') || session.modified.has(prefix + '_amount') || ['click', 'order'].includes(prefix) && (session.modified.has(prefix + '_drr') || session.modified.has(prefix + '_spend'));
+        const modified = key === 'total_drr' ? Boolean(v.total_drr_manual) : key === 'advertising_amount' ? Boolean(v.advertising_manual || v.total_drr_manual) : session.modified.has(key) || session.modified.has(prefix + '_percent') || session.modified.has(prefix + '_amount') || ['click', 'order'].includes(prefix) && (session.modified.has(prefix + '_drr') || session.modified.has(prefix + '_spend'));
         const d = { title, formula: '', calculation: '', source: '', dates: '', note: '' };
         const value = key === 'margin' || key === 'roi' ? v.result?.[key] : v[key];
         if (['acquiring', 'team', 'unallocated'].includes(prefix)) {
@@ -152,11 +152,17 @@ window.OzonCalculatorHelpContent = (() => {
                 : 'Цена с учётом акции − закупка − ФФ − комиссия Ozon − логистика − хранение − реклама − эквайринг − комиссия компании − прочее нераспределённое − НДС − УСН.';
             d.calculation = key === 'roi' ? rub(v.result?.margin) + ' / ' + rub(v.purchase) + ' × 100 = ' + pct(value)
                 : [v.seller_price, ...costs.map(field => v[field])].map(rub).join(' − ') + ' = ' + rub(value);
+            if (key === 'margin') {
+                d.formula += '\nДоля чистой прибыли = чистая прибыль на штуку / цена с учётом акции × 100.';
+                d.calculation += '\n' + rub(value) + ' / ' + rub(v.seller_price) + ' × 100 = ' + pct(v.result?.margin_percent);
+            }
             d.source = 'Серверный расчёт из текущих полей калькулятора. Ручные значения имеют приоритет. Источник каждого расхода показан в подсказке его поля.';
             d.dates = lines(priceDates(p, ['seller_price', 'black_price', 'green_price']), stamp('Загрузка Sheets', p.details?.source_synced_at), stamp('Настройки сохранены', session.expensesUpdatedAt), advertisingWeekDates(p),
                 period(p.logistics?.snapshot?.period.start, p.logistics?.snapshot?.period.end), stamp('Логистика', p.logistics?.snapshot?.observed_at), stamp('Хранение', p.storage?.snapshot?.observed_at));
             d.note = lines((v.result?.missing || []).length ? 'Не хватает: ' + v.result.missing.map(field => window.OzonEconomicsUI.marginLabels[field] || field).join(', ') + '.' : '',
                 !session.changed && p.current_economics?.calculation?.issues?.filter(field => !['orders_partial', 'advertising_partial'].includes(field)).map(field => window.OzonEconomicsUI.marginLabels[field] || field).join('. '));
+            if (key === 'roi') d.note = lines(d.note, 'Введите ROI, чтобы подобрать цену с текущими расходами и скидками. Сервер пересчитает связанные цены и тариф комиссии Ozon. Фактический ROI не ниже заданного; округление цены и смена тарифа комиссии могут дать превышение. Следующая правка расходов пересчитывает ROI обычным способом.');
+            else d.note = lines(d.note, 'Введите чистую прибыль в рублях или процентах, чтобы подобрать связанные цены с текущими расходами и скидками. Допустимы отрицательные значения. Подбор выполняется по последнему изменённому полю: сумма прибыли, процент прибыли или ROI. Фактический результат не ниже заданного; округление и смена тарифа комиссии могут дать превышение.');
         } else {
             const spend = '(' + rub(v.click_spend) + ' + ' + rub(v.order_spend) + ' + ' + rub(v.other_spend) + ')';
             if (key === 'total_drr') {
@@ -176,6 +182,13 @@ window.OzonCalculatorHelpContent = (() => {
             d.note = lines(d.note, 'Неизвестные расходы не равны нулю. Прочая реклама включает известную часть; её неполнота не блокирует итог.',
                 (v.other_breakdown || []).some(item => item.stale || item.state !== 'ready' || item.amount == null) && 'В составе прочей рекламы есть неполные или устаревшие данные.');
         }
+        if (v.total_drr_manual && ['total_drr', 'advertising_amount'].includes(key)) {
+            d.formula = 'Реклама на штуку = цена с учётом акции × общий ДРР с выкупом / 100.';
+            d.calculation = rub(v.seller_price) + ' × ' + n(v.total_drr) + ' / 100 = ' + rub(v.advertising_amount);
+            d.source = 'Общий ДРР задан вручную в открытой карточке. Выкуп уже учтён в ставке; повторно не применяется.';
+            d.dates = priceDates(p, ['seller_price']);
+            d.note = 'Ставка сохраняется при изменении цены и подборе ROI. Правка выкупа или составляющих дневной рекламы возвращает исходный расчёт; правка рекламы на штуку задаёт фиксированную сумму.';
+        } else if (key === 'total_drr') d.note = lines(d.note, 'Введите общий ДРР для локального расчёта рекламы на штуку, чистой прибыли и ROI. Ставка применяется к цене с учётом акции.');
         if (session.changed) d.note = lines(d.note, 'Показан текущий сценарий. Даты относятся к исходным данным; правки не сохраняются в Ozon.');
         if (session.settingsError) d.note = lines(d.note, session.settingsError);
         const status = session.error || (session.invalid.size ? 'Проверьте введённые значения.' : session.pending || session.pricePending || !session.initialized ? 'Пересчитываем…' : '');

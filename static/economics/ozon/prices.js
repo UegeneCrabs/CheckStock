@@ -195,7 +195,7 @@ window.OzonPricesUI = (() => {
         session.helpPending = true;
         session.helpError = '';
         bindHelp(root, session);
-        root.dispatchEvent(new CustomEvent('ozon-prices-pending', { detail: { productId: session.productId } }));
+        root.dispatchEvent(new CustomEvent('ozon-prices-pending', { detail: { productId: session.productId, edited: Boolean(session.edits.length) } }));
         window.clearTimeout(session.timer);
         if (session.controller) session.controller.abort();
         const sequence = ++session.sequence;
@@ -247,6 +247,21 @@ window.OzonPricesUI = (() => {
         }, 120);
     }
 
+    function applyCalculated(root, productId, values) {
+        const session = sessions.get(root);
+        if (!session || session.productId !== productId) return;
+        session.values = values;
+        session.modified = true;
+        session.helpPriceAnchor = 'seller_price';
+        session.helpPriceManual = 'seller_price';
+        root.querySelectorAll('[data-ozon-calculator-input]').forEach(input => {
+            input.value = displayed(values[input.dataset.ozonCalculatorInput]);
+        });
+        if (window.OzonCategoriesUI) window.OzonCategoriesUI.refresh(root, session);
+        bindHelp(root, session);
+        root.dispatchEvent(new CustomEvent('ozon-prices-changed', { detail: { productId, values, modified: true, source: 'calculator' } }));
+    }
+
     function snapshot(root) {
         const session = sessions.get(root);
         if (!session || !session.initialized || session.helpPending || session.helpError || session.invalid.size || session.edits.length) return null;
@@ -255,5 +270,5 @@ window.OzonPricesUI = (() => {
             tariff_id: session.tariffId || null, product_tariff_id: session.productTariffId || null };
     }
 
-    return { render, reset, clear, snapshot };
+    return { render, reset, clear, snapshot, applyCalculated };
 })();

@@ -533,6 +533,12 @@ class OzonScenarioBasis(StrEnum):
     AMOUNT = "amount"
 
 
+class OzonCalculatorTarget(StrEnum):
+    ROI = "roi"
+    MARGIN = "margin"
+    MARGIN_PERCENT = "margin_percent"
+
+
 class OzonScenarioField(StrEnum):
     OTHER_SPEND = "other_spend"
     ORDERS_COUNT = "orders_count"
@@ -548,6 +554,7 @@ class OzonScenarioField(StrEnum):
     CLICK_DRR = "click_drr"
     ORDER_SPEND = "order_spend"
     ORDER_DRR = "order_drr"
+    TOTAL_DRR = "total_drr"
     PURCHASE = "purchase"
     FULFILLMENT = "fulfillment"
     STORAGE = "storage_amount"
@@ -573,6 +580,8 @@ class OzonScenarioConfig:
     money_quantum: str = "0.01"
     percent_quantum: str = "0.00000001"
     max_edits: int = 100
+    target_max_price: int = 1_000_000_000
+    price_scale: int = 100
     signed_fields: tuple[OzonScenarioField, ...] = (
         OzonScenarioField.OTHER_SPEND,
         OzonScenarioField.LOGISTICS_AMOUNT,
@@ -582,6 +591,7 @@ class OzonScenarioConfig:
         OzonScenarioField.CLICK_DRR,
         OzonScenarioField.ORDER_SPEND,
         OzonScenarioField.ORDER_DRR,
+        OzonScenarioField.TOTAL_DRR,
     )
     bounded_percent_fields: tuple[OzonScenarioField, ...] = (
         OzonScenarioField.BUYOUT,

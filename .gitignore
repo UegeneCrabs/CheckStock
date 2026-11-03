@@ -40,3 +40,5 @@ legacy/
 *.patch
 
 .outputs
+/outputs/
+.pytest_cache/

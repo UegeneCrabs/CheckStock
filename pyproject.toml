@@ -45,6 +45,7 @@ files = [
     "app/infrastructure/ozon_storage_orm.py", "app/jobs/ozon_storage.py",
     "app/dto/ozon_newness.py", "app/ozon/newness.py", "app/infrastructure/ozon_newness_repository.py",
     "app/dto/ozon_calculator.py", "app/economics/ozon_calculator.py",
+    "app/economics/ozon_roi_calculator.py",
     "app/dto/ozon_margin.py", "app/ozon/margin_normalizer.py", "app/economics/ozon_margin.py",
     "app/dto/ozon_calendar.py", "app/economics/ozon_calendar.py",
     "app/application/ozon_calendar.py", "app/infrastructure/ozon_calendar_repository.py",

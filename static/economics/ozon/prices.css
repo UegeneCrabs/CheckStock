@@ -5,8 +5,16 @@
 .ozon-calculator-status[hidden] { display: none; }
 .ozon-scenario-note { order: 30; grid-column: 1 / -1; color: var(--ue-muted); font-size: 12px; line-height: 1.4; }
 .ozon-scenario-note.is-error { color: var(--ue-negative, #b42318); }
-.is-ozon-preview .ue1c-calculator-results { justify-content: flex-start; }
+.is-ozon-preview #ue1c-panel-economics > .ue1c-calculator:not(.ue1c-drawer-section) { overflow: clip; }
+.is-ozon-preview .ue1c-calculator-results { position: sticky; top: 64px; z-index: 5; align-self: start; justify-content: flex-start; }
 .is-ozon-preview .ue1c-calculator-results .ozon-scenario-note { margin: 0; font-size: 10px; }
+.is-ozon-preview .ozon-margin-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; white-space: normal; }
+.is-ozon-preview .ozon-margin-value > span { display: flex; align-items: center; gap: 5px; width: 100%; color: inherit; font: inherit; white-space: nowrap; }
+.ozon-margin-value small { display: flex; align-items: center; gap: 4px; max-width: 100%; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.is-ozon-preview .ozon-roi-field { display: flex; align-items: center; gap: 5px; }
+.is-ozon-preview .ozon-target-input { width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid var(--ue-line); border-radius: 6px; background: var(--ue-surface); color: inherit; font: inherit; }
+.is-ozon-preview .ozon-margin-value small .ozon-target-input { width: 70px; }
+.ozon-roi-field b, .ozon-margin-value > span b { font-size: 12px; }
 .is-ozon-preview .ozon-category-row { --expanded-order: 8; }
 .is-ozon-preview .ozon-category-note { order: 8; display: none; gap: 4px; padding: 6px 12px 10px; font-size: 10px; color: var(--ue-muted); line-height: 1.4; }
 .is-ozon-preview .ue1c-calculator-inputs.is-expanded .ozon-category-note:not([hidden]) { display: grid; }
@@ -15,6 +23,20 @@
 .ozon-advertising-breakdown > ul { grid-column: 1 / -1; font-size: 10px; line-height: 1.5; }
 .ozon-advertising-breakdown > summary { cursor: pointer; font-weight: 690; }
 .ozon-advertising-breakdown > ul { margin: 0; padding-left: 16px; }
+
+@media (max-width: 760px) {
+    .is-ozon-preview .ozon-margin-value > span .ozon-target-input { padding: 5px 3px; font-size: 11px; }
+    .is-ozon-preview .ue1c-calculator-results {
+        grid-row: 1;
+        border-top: 0;
+        border-bottom: 1px solid var(--ue-line);
+        background: var(--ue-surface);
+    }
+}
+
+@media (max-width: 430px) {
+    .is-ozon-preview .ue1c-calculator-results { top: 104px; }
+}
 
 .ozon-price-save-dialog {
     position: fixed;

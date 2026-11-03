@@ -19,6 +19,9 @@ def unit_margin(inputs: OzonMarginInputs) -> OzonMarginResult:
     purchase = money(inputs.purchase)
     return OzonMarginResult(
         margin=money(margin),
+        margin_percent=money(margin / price * OZON_SCENARIO.percent_factor)
+        if margin is not None and price is not None and price > 0
+        else None,
         roi=money(margin / purchase * OZON_SCENARIO.percent_factor)
         if margin is not None and purchase is not None and purchase > 0
         else None,
