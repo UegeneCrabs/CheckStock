@@ -66,8 +66,6 @@ def snapshot(
             prices.black_price.stale,
             prices.green_price.stale,
             commission.stale,
-            logistics.stale,
-            storage.stale,
             cabinet.buyout.stale,
         )
     ):
