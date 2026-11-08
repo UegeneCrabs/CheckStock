@@ -163,7 +163,6 @@
                 frequency.className = 'week-field';
                 frequency.innerHTML = '<span>Периодичность</span><select class="integration-select" name="schedule_kind"><option value="daily">Ежедневно</option><option value="weekly">Еженедельно</option></select>';
                 timing.querySelector('.week-time-fields').prepend(frequency);
-                timing.querySelector('.week-update-hint').textContent = 'Сначала обновляется номер недели, затем выполняются выгрузки. Фиксация — после их успешного завершения.';
                 const scheduleStatus = document.createElement('p');
                 scheduleStatus.className = 'week-next-run';
                 scheduleStatus.setAttribute('data-marketplace-schedule-status', '');
@@ -406,7 +405,7 @@
             for (const action of actions) {
                 const state = view.profile.states[action];
                 const schedule = query(action === 'number' ? '[data-week-schedule]' : `[data-week-${action}-schedule]`);
-                schedule.textContent = !view.next_runs[action] ? 'По расписанию выключено' : !view.background_enabled ? 'Фоновые задачи отключены. Доступен ручной запуск.' : action === 'freeze' && view.freeze_waiting ? 'Ожидает полного завершения включённых выгрузок.' : 'Ближайший запуск: ' + date(view.next_runs[action]);
+                schedule.textContent = !view.next_runs[action] ? 'По расписанию выключено' : !view.background_enabled ? 'Фоновые задачи отключены. Доступен ручной запуск.' : 'Ближайший запуск: ' + date(view.next_runs[action]);
                 if (actionsOnly) schedule.hidden = true;
                 const result = action === 'freeze' && preview ? preview : state.result;
                 if (actionsOnly || action === 'freeze') compactStatus(action, state, result);

@@ -89,7 +89,7 @@ def action_enabled(profile: WeekProfile, action: WeekAction | GoogleExportKind) 
     return action in profile.settings.enabled_actions
 
 
-def scheduled_actions(profile: WeekProfile) -> tuple[WeekAction | GoogleExportKind, ...]:
+def scheduled_actions() -> tuple[WeekAction | GoogleExportKind, ...]:
     exports = tuple(GoogleExportKind)
     return (
         WeekAction.NUMBER,
@@ -101,49 +101,39 @@ def scheduled_actions(profile: WeekProfile) -> tuple[WeekAction | GoogleExportKi
     )
 
 
-def pending(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> bool:
+def due(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> bool:
     state = action_state(profile, action)
     activation = state.activated_at or profile.saved_at
     if not action_enabled(profile, action) or not activation:
         return False
     slot = slot_at(profile.settings, now)
-    return slot > activation and (state.last_success_slot is None or state.last_success_slot < slot)
+    if action in GOOGLE_WEEK.number_dependent_actions and action_enabled(profile, WeekAction.NUMBER):
+        number_slot = action_state(profile, WeekAction.NUMBER).last_success_slot
+        if number_slot is None or number_slot < slot:
+            return False
+    return (
+        slot > activation
+        and (state.last_attempt_at is None or state.last_attempt_at < slot)
+        and (state.last_success_slot is None or state.last_success_slot < slot)
+    )
 
 
-def due(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> bool:
-    attempt = action_state(profile, action).last_attempt_at
-    return pending(profile, action, now) and (attempt is None or attempt < slot_at(profile.settings, now))
+def open_slot(profile: WeekProfile, now: datetime) -> datetime | None:
+    slot = slot_at(profile.settings, now)
+    if now - slot >= timedelta(seconds=GOOGLE_WEEK.schedule_window_seconds):
+        return None
+    if profile.last_scheduled_slot is not None and profile.last_scheduled_slot >= slot:
+        return None
+    return slot
 
 
 def next_run(profile: WeekProfile, action: WeekAction | GoogleExportKind, now: datetime) -> datetime | None:
     if not action_enabled(profile, action) or not profile.saved_at:
         return None
-    if (
-        due(profile, action, now)
-        and (action == WeekAction.NUMBER or not pending(profile, WeekAction.NUMBER, now))
-        and (action != WeekAction.FREEZE or freeze_ready(profile, now))
-    ):
+    if open_slot(profile, now) is not None and due(profile, action, now):
         return now
     days = 1 if profile.settings.schedule_kind == ScheduleKind.DAILY else GOOGLE_WEEK.days_per_week
     return slot_at(profile.settings, now) + timedelta(days=days)
-
-
-def freeze_ready(profile: WeekProfile, now: datetime) -> bool:
-    if pending(profile, WeekAction.NUMBER, now):
-        return False
-    for action in (WeekAction.SALES, WeekAction.STOCK, *GoogleExportKind):
-        if not action_enabled(profile, action):
-            continue
-        state = action_state(profile, action)
-        if (
-            state.last_error
-            or not state.result
-            or not state.result.complete
-            or not state.last_success_slot
-            or state.last_success_slot < slot_at(profile.settings, now)
-        ):
-            return False
-    return True
 
 
 def catalog_due(profile: WeekProfile, now: datetime) -> bool:
@@ -202,7 +192,6 @@ class GoogleWeeks:
             value=plans.current_week(now),
             next_runs={action: next_run(profile, action, now) for action in WeekAction},
             export_next_runs={kind: next_run(profile, kind, now) for kind in GoogleExportKind},
-            freeze_waiting=pending(profile, WeekAction.FREEZE, now) and not freeze_ready(profile, now),
             catalog_due=catalog_due(profile, now),
             background_enabled=app_settings.background_sync_enabled,
             busy=await async_locks.is_running(job_name(marketplace), self.resources.database),
@@ -341,6 +330,7 @@ class GoogleWeeks:
         now: datetime,
         *,
         preview: bool = False,
+        wait_for_lock: bool = False,
     ) -> WeekReport:
         if not profile.saved_at:
             raise WeekError(WeekIssue.NOT_SAVED)
@@ -353,19 +343,22 @@ class GoogleWeeks:
             async with async_locks.hold(
                 "google-week-document:" + document_id(profile.settings.spreadsheet_url),
                 self.resources.database,
+                wait=wait_for_lock,
             ):
                 if isinstance(action, GoogleExportKind):
-                    if profile.marketplace == Marketplace.OZON:
-                        from app.container import ozon_google_export_service
+                    async with async_locks.hold(
+                        JOBS.stock_sheet_export.name, self.resources.database, wait=wait_for_lock
+                    ):
+                        if profile.marketplace == Marketplace.OZON:
+                            from app.container import ozon_google_export_service
 
-                        async with async_locks.hold(JOBS.stock_sheet_export.name, self.resources.database):
                             report = await ozon_google_export_service(self.resources).run(
                                 profile, action, now
                             )
-                    else:
-                        report = await legacy_google_export.run(
-                            action, profile.settings.spreadsheet_url, now, profile.marketplace
-                        )
+                        else:
+                            report = await legacy_google_export.run(
+                                action, profile.settings.spreadsheet_url, now, profile.marketplace
+                            )
                 elif action == WeekAction.FREEZE:
                     report = await self._freeze(profile, now, preview=preview)
                 else:
@@ -632,20 +625,23 @@ class GoogleWeeks:
     async def scheduled(self, marketplace: Marketplace, now: datetime | None = None) -> WeekJobResult:
         now = now or datetime.now(TIME.moscow_timezone)
         profile = await self.repository.get(marketplace)
+        slot = open_slot(profile, now)
+        actions = scheduled_actions()
+        run_actions = slot is not None and any(due(profile, action, now) for action in actions)
+        if run_actions:
+            profile.last_scheduled_slot = slot
+            await self.repository.save(profile)
+
         errors = []
         if catalog_due(profile, now):
             try:
                 await self.refresh_catalog(profile, now)
             except WeekError as error:
                 errors.append(error.problem.code.value)
-        for action in scheduled_actions(profile):
-            if action != WeekAction.NUMBER and pending(profile, WeekAction.NUMBER, now):
-                break
-            if action == WeekAction.FREEZE and not freeze_ready(profile, now):
-                continue
+        for action in actions if run_actions else ():
             if due(profile, action, now):
                 try:
-                    report = await self.run(profile, action, now)
+                    report = await self.run(profile, action, now, wait_for_lock=True)
                     if not report.complete:
                         log_incomplete(report, action)
                         errors.append(f"{action.value}:{WeekIssue.MISSING_DATA.value}")
@@ -656,11 +652,7 @@ class GoogleWeeks:
     async def is_due(self, marketplace: Marketplace) -> bool:
         profile = await self.repository.get(marketplace)
         now = datetime.now(TIME.moscow_timezone)
-        if catalog_due(profile, now):
-            return True
-        if pending(profile, WeekAction.NUMBER, now):
-            return due(profile, WeekAction.NUMBER, now)
-        return any(
-            due(profile, action, now) and (action != WeekAction.FREEZE or freeze_ready(profile, now))
-            for action in scheduled_actions(profile)
+        return catalog_due(profile, now) or (
+            open_slot(profile, now) is not None
+            and any(due(profile, action, now) for action in scheduled_actions())
         )

@@ -317,6 +317,7 @@ class WeekProfile(WeekModel):
     marketplace: Marketplace
     settings: WeekSettings
     saved_at: datetime | None = None
+    last_scheduled_slot: datetime | None = None
     states: dict[WeekAction, WeekActionState] = Field(
         default_factory=lambda: {a: WeekActionState() for a in WeekAction}
     )
@@ -332,7 +333,7 @@ class WeekView(WeekModel):
     value: str
     next_runs: dict[WeekAction, datetime | None]
     export_next_runs: dict[GoogleExportKind, datetime | None] = Field(default_factory=dict)
-    freeze_waiting: bool
+    freeze_waiting: bool = False
     catalog_due: bool
     background_enabled: bool
     busy: bool = False

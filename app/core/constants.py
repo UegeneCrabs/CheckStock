@@ -1937,8 +1937,11 @@ class GoogleWeekConstants:
     sheet_epoch: str = "1899-12-30"
     fbs_export_statuses: frozenset[str] = frozenset({"awaiting_packaging", "awaiting_deliver", "delivering"})
     image_batch_size: int = 50
-    poll_seconds: int = 60
-    retry_seconds: int = 300
+    poll_seconds: int = 30
+    schedule_window_seconds: int = 60
+    number_dependent_actions: frozenset[WeekAction] = frozenset(
+        {WeekAction.SALES, WeekAction.STOCK, WeekAction.SEARCH}
+    )
     startup_seconds: int = 10
     timeout_seconds: int = 30
     read_timeout_seconds: int = 60

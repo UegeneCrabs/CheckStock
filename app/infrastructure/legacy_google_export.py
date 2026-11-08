@@ -1,10 +1,9 @@
 import asyncio
 from datetime import datetime
 
-from app.core.constants import JOBS, GoogleExportKind, Marketplace, WeekIssue
+from app.core.constants import GoogleExportKind, Marketplace, WeekIssue
 from app.dto.google_export import GoogleExportMarketplaceResult, GoogleExportRunReport
 from app.dto.google_week import WeekError, WeekProfile, WeekReport, document_id
-from app.jobs import locks
 from app.repositories import core
 
 
@@ -26,37 +25,36 @@ def export(
 ) -> WeekReport:
     from app.exports import project_sheet
 
-    with locks.hold(JOBS.stock_sheet_export.name):
-        if marketplace == Marketplace.OZON:
-            raise WeekError(WeekIssue.INVALID_SETTINGS)
-        target = project_sheet.get_settings().target(marketplace.value)
-        if document_id(target.spreadsheet_url) != document_id(url):
-            raise WeekError(WeekIssue.INVALID_SETTINGS)
-        sheet = {
-            GoogleExportKind.STOCKS: target.stock_sheet_name,
-            GoogleExportKind.FBS_ORDERS: target.orders_sheet_name,
-            GoogleExportKind.FBO_TRANSIT: target.fbo_sheet_name,
-        }[kind]
-        if not sheet.strip():
-            raise WeekError(WeekIssue.INVALID_SETTINGS)
-        try:
-            report = project_sheet.run_export(now, marketplace=marketplace.value, export_kind=kind.value)
-        except project_sheet.StockSheetExportError as error:
-            raise WeekError(WeekIssue.EXPORT, detail=str(error)) from error
-        result = GoogleExportRunReport(
-            marketplaces=tuple(
-                GoogleExportMarketplaceResult(
-                    marketplace=item["marketplace"],
-                    skipped=item.get("skipped", False),
-                    updated_cells=item.get("updated_cells", 0),
-                    warnings=tuple(item.get("warnings") or ()),
-                )
-                for item in report["marketplaces"]
-            ),
-            store_slugs=tuple(report["store_slugs"]),
-            last_success_at=report.get("last_success_at"),
-            warnings=tuple(report.get("warnings") or ()),
-        )
+    if marketplace == Marketplace.OZON:
+        raise WeekError(WeekIssue.INVALID_SETTINGS)
+    target = project_sheet.get_settings().target(marketplace.value)
+    if document_id(target.spreadsheet_url) != document_id(url):
+        raise WeekError(WeekIssue.INVALID_SETTINGS)
+    sheet = {
+        GoogleExportKind.STOCKS: target.stock_sheet_name,
+        GoogleExportKind.FBS_ORDERS: target.orders_sheet_name,
+        GoogleExportKind.FBO_TRANSIT: target.fbo_sheet_name,
+    }[kind]
+    if not sheet.strip():
+        raise WeekError(WeekIssue.INVALID_SETTINGS)
+    try:
+        report = project_sheet.run_export(now, marketplace=marketplace.value, export_kind=kind.value)
+    except project_sheet.StockSheetExportError as error:
+        raise WeekError(WeekIssue.EXPORT, detail=str(error)) from error
+    result = GoogleExportRunReport(
+        marketplaces=tuple(
+            GoogleExportMarketplaceResult(
+                marketplace=item["marketplace"],
+                skipped=item.get("skipped", False),
+                updated_cells=item.get("updated_cells", 0),
+                warnings=tuple(item.get("warnings") or ()),
+            )
+            for item in report["marketplaces"]
+        ),
+        store_slugs=tuple(report["store_slugs"]),
+        last_success_at=report.get("last_success_at"),
+        warnings=tuple(report.get("warnings") or ()),
+    )
     return WeekReport(
         marketplace=marketplace,
         spreadsheet_url=url,

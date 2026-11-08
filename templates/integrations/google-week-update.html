@@ -37,7 +37,7 @@
                     <input class="input-control" type="time" name="run_time" value="$run_time" required />
                 </label>
             </div>
-            <p class="week-update-hint">При совместном запуске сначала обновляется номер недели, затем выгружаются данные. После успешных выгрузок фиксируются прошлые недели.</p>
+            <p class="week-update-hint">Номер недели обновляется первым. При ошибке этого шага пропускаются недельные заказы, недельные остатки и проверка недель. Остальные отмеченные действия продолжаются, фиксация выполняется последней.</p>
         </section>
     </div>
     <div class="week-settings-footer">
@@ -186,4 +186,4 @@
 </form>
 </template>
 <script src="/static/integrations/google-week-report.js?v=20261031-product-photos"></script>
-<script src="/static/integrations/google-week-update.js?v=20261102-transit-freeze"></script>
+<script src="/static/integrations/google-week-update.js?v=20261109-week-schedule"></script>
