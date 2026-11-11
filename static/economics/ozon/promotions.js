@@ -301,8 +301,10 @@ window.OzonPromotionsUI = (() => {
         const calculator = window.OzonCalculatorUI?.snapshot(root);
         const prices = window.OzonPricesUI?.snapshot(root);
         if (!calculator || !prices || calculator.productId !== session.product.id || prices.productId !== session.product.id) return null;
-        const { productId, ...request } = prices;
-        return { values: calculator.values, prices: request };
+        return {
+            values: calculator.values,
+            prices: { values: prices.values, tariff_id: prices.tariff_id, product_tariff_id: prices.product_tariff_id },
+        };
     }
 
     function refresh(root, session, force = false) {
