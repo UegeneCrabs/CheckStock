@@ -39,6 +39,8 @@ CAMPAIGN_SCHEMES = {
 
 
 AVAILABLE_STOCK_TYPE = "AVAILABLE"
+FIT_STOCK_TYPE = "FIT"
+FREEZE_STOCK_TYPE = "FREEZE"
 
 _FRIENDLY_BY_STATUS = {
     400: "неверный запрос к Яндекс Маркету (400)",
@@ -499,3 +501,10 @@ def stock_by_type(stocks: list[dict]) -> dict[str, int]:
         except (TypeError, ValueError):
             continue
     return result
+
+
+def good_stock_quantity(stocks: list[dict]) -> int:
+    quantities = stock_by_type(stocks)
+    return quantities.get(
+        FIT_STOCK_TYPE, quantities.get(AVAILABLE_STOCK_TYPE, 0) + quantities.get(FREEZE_STOCK_TYPE, 0)
+    )

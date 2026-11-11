@@ -166,7 +166,7 @@ def sync_store(store_slug: str) -> int:
             if not article or article not in known_articles:
                 continue
 
-            quantity = ya_api.available_quantity(row["stocks"])
+            quantity = ya_api.good_stock_quantity(row["stocks"])
             if quantity <= 0:
                 continue
 
