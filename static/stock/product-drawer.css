@@ -1,0 +1,19 @@
+.stock-drawer-warehouse--yandex {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.stock-drawer-yandex-stock {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: 32px repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    align-items: end;
+    padding-top: 7px;
+    border-top: 1px solid var(--border);
+}
+
+.stock-drawer-yandex-stock > small {
+    color: #445064;
+    font-size: 0.625rem;
+    font-weight: 600;
+}

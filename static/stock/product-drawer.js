@@ -91,37 +91,59 @@
         }
     }
 
-    function renderWarehouses(items) {
+    function warehouseValue(label, value, highlighted) {
+        var container = document.createElement('span');
+        container.className = 'stock-drawer-warehouse-value';
+        if (highlighted) container.classList.add('stock-drawer-warehouse-value--fbs');
+        var caption = document.createElement('small');
+        caption.textContent = label;
+        var quantity = document.createElement('b');
+        quantity.textContent = value == null ? '—' : numberFormat.format(value);
+        container.append(caption, quantity);
+        return container;
+    }
+
+    function renderWarehouses(items, marketplace) {
         var list = drawerBackdrop.querySelector('[data-stock-drawer-warehouses]');
+        var isYandex = marketplace === 'YANDEX MARKET';
         list.innerHTML = '';
         items.forEach(function (item) {
             var row = document.createElement('div');
             row.className = 'stock-drawer-warehouse';
+            if (isYandex) row.classList.add('stock-drawer-warehouse--yandex');
 
             var identity = document.createElement('span');
             identity.className = 'stock-drawer-warehouse-name';
             var name = document.createElement('strong');
             name.textContent = item.name;
+            var stocks = item.yandex_stock || [];
+            var fulfillment = !isYandex || !stocks.length || item.available !== 0 ||
+                stocks.some(function (stock) { return stock.scheme === 'FBS'; });
             var caption = document.createElement('small');
-            caption.textContent = 'Фулфилмент';
+            caption.textContent = fulfillment ? 'Фулфилмент' : 'Склад Маркета';
             identity.appendChild(name);
             identity.appendChild(caption);
-
-            var available = document.createElement('span');
-            available.className = 'stock-drawer-warehouse-value';
-            available.innerHTML = window.CheckStockUI.render('stock/product-drawer/render-warehouses', {
-                content: numberFormat.format(item.available || 0),
-            });
-
-            var fbs = document.createElement('span');
-            fbs.className = 'stock-drawer-warehouse-value stock-drawer-warehouse-value--fbs';
-            fbs.innerHTML = window.CheckStockUI.render('stock/product-drawer/render-warehouses-2', {
-                content: numberFormat.format(item.fbs || 0),
-            });
-
             row.appendChild(identity);
-            row.appendChild(available);
-            row.appendChild(fbs);
+            if (fulfillment) {
+                row.appendChild(warehouseValue(isYandex ? 'Доступно на ФФ' : 'Доступно', item.available));
+            }
+            if (isYandex) {
+                stocks.forEach(function (stock) {
+                    var detail = document.createElement('div');
+                    detail.className = 'stock-drawer-yandex-stock';
+                    var scheme = document.createElement('small');
+                    scheme.textContent = stock.scheme;
+                    detail.append(
+                        scheme,
+                        warehouseValue('На складе', stock.on_hand, true),
+                        warehouseValue('Доступно для заказа', stock.available_for_order),
+                        warehouseValue('В резерве', stock.reserved),
+                    );
+                    row.appendChild(detail);
+                });
+            } else {
+                row.appendChild(warehouseValue('FBS', item.fbs, true));
+            }
             list.appendChild(row);
         });
         setDrawerText('[data-stock-drawer-warehouse-count]', items.length + ' складов');
@@ -180,7 +202,7 @@
             })
             .then(function (data) {
                 if (request !== drawerRequest) return;
-                renderWarehouses(data.warehouses || []);
+                renderWarehouses(data.warehouses || [], marketplace);
                 renderTransit(data.transit || []);
             })
             .catch(function () {
@@ -206,6 +228,12 @@
         setDrawerIdentifier('[data-stock-drawer-article]', 'Артикул', article, 'Арт. ' + (article || '—'));
         setDrawerIdentifier('[data-stock-drawer-barcode]', 'Баркод', barcode, 'Баркод ' + (barcode || '—'));
         setDrawerText('[data-stock-drawer-marketplace]', marketplace);
+        var isYandex = marketplace === 'YANDEX MARKET';
+        setDrawerText('[data-stock-drawer-fbs-label]', isYandex ? 'На складах FBS' : 'В продаже FBS');
+        setDrawerText('[data-stock-drawer-fbo-label]', isYandex ? 'На складах FBY' : 'В продаже FBO');
+        setDrawerText('[data-stock-drawer-warehouse-title]', isYandex ? 'Остатки по складам' : 'Остатки по фулфилментам');
+        var fbsNote = drawerBackdrop.querySelector('[data-stock-drawer-fbs-note]');
+        if (fbsNote) fbsNote.hidden = isYandex;
         setDrawerText(
             '[data-stock-drawer-total]',
             numberFormat.format(numberFromCell(row, '.col-row-total')),

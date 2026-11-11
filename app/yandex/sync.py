@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from app import db
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
+from app.dto.yandex_stock import YandexWarehouseQuantities
 from app.repositories.stock_snapshot import replace_snapshot
 from app.stock.fulfillment_names import fulfillment_lookup, normalize
 from app.yandex import api as ya_api
@@ -134,7 +135,7 @@ def sync_store(store_slug: str) -> int:
     now = _now()
 
     totals: dict[str, dict[str, int]] = {}
-    warehouse_totals: dict[str, dict[tuple[str, str], int]] = {}
+    warehouse_totals: dict[str, dict[tuple[str, str], YandexWarehouseQuantities]] = {}
     covered: set[str] = set()
     failed_schemes: set[str] = set()
     errors: list[str] = []
@@ -166,12 +167,13 @@ def sync_store(store_slug: str) -> int:
             if not article or article not in known_articles:
                 continue
 
-            quantity = ya_api.good_stock_quantity(row["stocks"])
-            if quantity <= 0:
+            stock = ya_api.warehouse_stock_quantities(row["stocks"])
+            if max(stock.on_hand, stock.available_for_order, stock.reserved) <= 0:
                 continue
 
-            totals[key][article] = totals[key].get(article, 0) + quantity
-            covered.add(article)
+            if stock.on_hand > 0:
+                totals[key][article] = totals[key].get(article, 0) + stock.on_hand
+                covered.add(article)
 
             warehouse_id = row["warehouse_id"]
             if key == ya_tokens.FBY_SCHEME_KEY:
@@ -183,7 +185,10 @@ def sync_store(store_slug: str) -> int:
                 )
 
             warehouse_key = (article, warehouse)
-            warehouse_totals[key][warehouse_key] = warehouse_totals[key].get(warehouse_key, 0) + quantity
+            previous = warehouse_totals[key].get(warehouse_key)
+            warehouse_totals[key][warehouse_key] = (
+                stock if previous is None else previous.combined_with(stock)
+            )
 
     for key, warehouse, message in disabled:
         logger.warning("%s", message)
@@ -192,7 +197,7 @@ def sync_store(store_slug: str) -> int:
             errors.append(message)
     complete = {key: values for key, values in totals.items() if key not in failed_schemes}
     warehouse_snapshot = {
-        key: [(article, warehouse, None, quantity) for (article, warehouse), quantity in quantities.items()]
+        key: [(article, warehouse, None, stock.on_hand) for (article, warehouse), stock in quantities.items()]
         for key, quantities in warehouse_totals.items()
         if key in complete
     }
@@ -203,6 +208,7 @@ def sync_store(store_slug: str) -> int:
         warehouse_snapshot,
         now,
         remove_variants=(ya_tokens.FBS_SCHEME_KEY,) if ya_tokens.FBS_SCHEME_KEY in complete else (),
+        yandex_quantities=warehouse_totals,
     )
     if errors:
         raise ya_api.YandexApiError(

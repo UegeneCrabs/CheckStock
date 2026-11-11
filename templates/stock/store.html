@@ -1,6 +1,7 @@
 <link rel="stylesheet" href="/static/stock/total.css?v=20260912" />
 <link rel="stylesheet" href="/static/stock/inbound-supplies.css?v=20261023" />
 <link rel="stylesheet" href="/static/stock/fbo-stock.css?v=20261023-selected-ff" />
+<link rel="stylesheet" href="/static/stock/product-drawer.css?v=20261111-yandex-stock" />
 
 <a class="back-link" href="/stock">&larr; Все магазины</a>
 
@@ -328,13 +329,13 @@
         <div class="stock-drawer-metrics">
             <article><span>Доступно ФФ</span><strong data-stock-drawer-available>0</strong></article>
             <article><span>В пути</span><strong data-stock-drawer-transit-total>0</strong></article>
-            <article><span>В продаже FBS</span><strong data-stock-drawer-fbs>0</strong></article>
-            <article><span>В продаже FBO</span><strong data-stock-drawer-fbo>0</strong></article>
+            <article><span data-stock-drawer-fbs-label>В продаже FBS</span><strong data-stock-drawer-fbs>0</strong></article>
+            <article><span data-stock-drawer-fbo-label>В продаже FBO</span><strong data-stock-drawer-fbo>0</strong></article>
         </div>
 
         <div class="stock-drawer-section-head">
             <div>
-                <h3>Остатки по фулфилментам</h3>
+                <h3 data-stock-drawer-warehouse-title>Остатки по фулфилментам</h3>
             </div>
             <span data-stock-drawer-warehouse-count></span>
         </div>
@@ -348,10 +349,10 @@
         <div class="stock-drawer-transit" data-stock-drawer-transit>
             <div class="stock-drawer-loading">Нет партий в пути</div>
         </div>
-        <p class="stock-drawer-note"
-            >«Доступно ФФ» — ручной остаток для распределения. FBS показывает товар, уже выставленный в
-            продажу с выбранного склада.</p
-        >
+        <p class="stock-drawer-note">
+            «Доступно ФФ» — ручной остаток для распределения.
+            <span data-stock-drawer-fbs-note>FBS показывает товар, уже выставленный в продажу с выбранного склада.</span>
+        </p>
 
         <button class="btn-primary stock-drawer-operation" type="button" data-stock-drawer-operation
             >Переместить остаток</button
@@ -370,6 +371,6 @@
 <script src="/static/stock/forms/transfer.js?v=20260924-f03"></script>
 <script src="/static/stock/forms/shipment.js?v=20261023-selected-ff"></script>
 
-<script src="/static/stock/product-drawer.js?v=20261014-ui"></script>
+<script src="/static/stock/product-drawer.js?v=20261111-yandex-stock"></script>
 <script src="/static/stock/store-total.js?v=20261014-ui"></script>
 <script src="/static/stock/transit.js?v=20261023-selected-ff"></script>

@@ -543,6 +543,8 @@ class MarketplaceWarehouseStockRecord(OrmBase):
     warehouse: Mapped[str] = mapped_column(String, nullable=False)
     cluster: Mapped[str | None] = mapped_column(String)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    available_for_order: Mapped[int | None] = mapped_column(Integer)
+    reserved: Mapped[int | None] = mapped_column(Integer)
     updated_at: Mapped[str | None] = mapped_column(String)
 
 

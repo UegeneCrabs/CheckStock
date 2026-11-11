@@ -279,10 +279,18 @@ class TransitQuantities(DtoModel):
     transit: dict[str, int]
 
 
+class ArticleYandexWarehouseStock(DtoModel):
+    scheme: Literal["FBS", "FBY"]
+    on_hand: int
+    available_for_order: int | None
+    reserved: int | None
+
+
 class ArticleWarehouse(DtoModel):
     name: str
     available: int
     fbs: int
+    yandex_stock: tuple[ArticleYandexWarehouseStock, ...] = ()
 
 
 class ArticleTransit(DtoModel):

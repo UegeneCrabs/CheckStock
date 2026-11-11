@@ -10,6 +10,7 @@ from app.dto.common import DtoModel
 from app.dto.stock_pages import (
     ArticleTransit,
     ArticleWarehouse,
+    ArticleYandexWarehouseStock,
     CatalogProduct,
     CostReportData,
     CostSale,
@@ -36,13 +37,66 @@ from app.dto.stock_pages import (
     WarehouseQuantity,
 )
 from app.infrastructure.async_read_models import AsyncReadModels
+from app.repositories.core import get_connection
 from app.stock import cost_report, supply_planning, total
 from app.stock.schemes import fbs_schemes_for, scheme_keys_for
 from app.yandex import sync as ya_sync
+from app.yandex.tokens import FBS_SCHEME_KEY, FBY_SCHEME_KEY
 
 
 def project[T: DtoModel](model: type[T], row: Mapping[str, object]) -> T:
     return model.model_validate({name: row[name] for name in model.model_fields if name in row})
+
+
+def _sum_if_known(first: int | None, second: int | None) -> int | None:
+    return first + second if first is not None and second is not None else None
+
+
+def _yandex_article_stock(store: str, article: str) -> dict[str, tuple[ArticleYandexWarehouseStock, ...]]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT scheme, warehouse, quantity, available_for_order, reserved
+            FROM mp_warehouse_stock AS ws
+            WHERE ws.store_slug=? AND ws.marketplace=? AND ws.article=?
+              AND (ws.scheme=? OR ws.scheme LIKE ?)
+              AND EXISTS (
+                  SELECT 1 FROM stock_items AS item
+                  WHERE item.store_slug=ws.store_slug AND item.marketplace=ws.marketplace
+                    AND item.article=ws.article AND item.is_service=0
+              )
+            ORDER BY warehouse, scheme
+            """,
+            (store, Marketplace.YANDEX_MARKET, article, FBY_SCHEME_KEY, FBS_SCHEME_KEY + "%"),
+        ).fetchall()
+    aliases = ya_sync.known_ff_by_campaign()
+    canonical_fbs = any(row["scheme"] == FBS_SCHEME_KEY for row in rows)
+    grouped: dict[str, dict[str, ArticleYandexWarehouseStock]] = {}
+    for row in rows:
+        if canonical_fbs and row["scheme"] not in (FBS_SCHEME_KEY, FBY_SCHEME_KEY):
+            continue
+        scheme = "FBY" if row["scheme"] == FBY_SCHEME_KEY else "FBS"
+        warehouse = str(row["warehouse"])
+        if scheme == "FBS":
+            warehouse = aliases.get(ya_sync._normalize_ff_name(warehouse), warehouse)
+        by_scheme = grouped.setdefault(warehouse, {})
+        stock = ArticleYandexWarehouseStock.model_validate(
+            {
+                "scheme": scheme,
+                "on_hand": row["quantity"],
+                "available_for_order": row["available_for_order"],
+                "reserved": row["reserved"],
+            }
+        )
+        if previous := by_scheme.get(scheme):
+            stock = ArticleYandexWarehouseStock(
+                scheme=scheme,
+                on_hand=stock.on_hand + previous.on_hand,
+                available_for_order=_sum_if_known(stock.available_for_order, previous.available_for_order),
+                reserved=_sum_if_known(stock.reserved, previous.reserved),
+            )
+        by_scheme[scheme] = stock
+    return {warehouse: tuple(stocks.values()) for warehouse, stocks in grouped.items()}
 
 
 class StockPageRepository(AsyncReadModels):
@@ -292,15 +346,18 @@ class StockPageRepository(AsyncReadModels):
     async def article(self, query: StockPageQuery, article: str) -> StockArticleDetail:
         def load() -> StockArticleDetail:
             fulfillments = db.get_fulfillments()
-            fbs_by_warehouse: dict[str, int] = {}
-            yandex_names = (
-                ya_sync.known_ff_by_campaign() if query.marketplace == Marketplace.YANDEX_MARKET else {}
-            )
-            for row in db.get_mp_fbs_warehouse_details(query.store, query.marketplace, article):
-                warehouse = str(row["warehouse"])
-                if yandex_names:
-                    warehouse = yandex_names.get(ya_sync._normalize_ff_name(warehouse), warehouse)
-                fbs_by_warehouse[warehouse] = fbs_by_warehouse.get(warehouse, 0) + int(row["quantity"] or 0)
+            yandex_stock: dict[str, tuple[ArticleYandexWarehouseStock, ...]] = {}
+            if query.marketplace == Marketplace.YANDEX_MARKET:
+                yandex_stock = _yandex_article_stock(query.store, article)
+                fbs_by_warehouse = {
+                    warehouse: sum(stock.on_hand for stock in stocks if stock.scheme == "FBS")
+                    for warehouse, stocks in yandex_stock.items()
+                }
+            else:
+                fbs_by_warehouse = {
+                    str(row["warehouse"]): int(row["quantity"] or 0)
+                    for row in db.get_mp_fbs_warehouse_details(query.store, query.marketplace, article)
+                }
             warehouses = [
                 ArticleWarehouse(
                     name=fulfillment,
@@ -310,11 +367,14 @@ class StockPageRepository(AsyncReadModels):
                         )
                     ),
                     fbs=fbs_by_warehouse.pop(fulfillment, 0),
+                    yandex_stock=yandex_stock.get(fulfillment, ()),
                 )
                 for fulfillment in fulfillments
             ]
             warehouses.extend(
-                ArticleWarehouse(name=warehouse, available=0, fbs=quantity)
+                ArticleWarehouse(
+                    name=warehouse, available=0, fbs=quantity, yandex_stock=yandex_stock.get(warehouse, ())
+                )
                 for warehouse, quantity in sorted(fbs_by_warehouse.items())
             )
             batches = db.get_ff_transit_batches(query.store, query.marketplace, active_only=True)

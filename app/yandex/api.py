@@ -11,6 +11,7 @@ from email.utils import parsedate_to_datetime
 from app.config import settings
 from app.core.barcodes import ordered_barcodes, preferred_barcode
 from app.core.logging_config import tagged_logger
+from app.dto.yandex_stock import YandexWarehouseQuantities
 
 logger = tagged_logger(__name__, "yandex", "api")
 
@@ -504,7 +505,15 @@ def stock_by_type(stocks: list[dict]) -> dict[str, int]:
 
 
 def good_stock_quantity(stocks: list[dict]) -> int:
+    return warehouse_stock_quantities(stocks).on_hand
+
+
+def warehouse_stock_quantities(stocks: list[dict]) -> YandexWarehouseQuantities:
     quantities = stock_by_type(stocks)
-    return quantities.get(
-        FIT_STOCK_TYPE, quantities.get(AVAILABLE_STOCK_TYPE, 0) + quantities.get(FREEZE_STOCK_TYPE, 0)
+    available = quantities.get(AVAILABLE_STOCK_TYPE, 0)
+    reserved = quantities.get(FREEZE_STOCK_TYPE, 0)
+    return YandexWarehouseQuantities(
+        on_hand=max(quantities.get(FIT_STOCK_TYPE, available + reserved), 0),
+        available_for_order=available,
+        reserved=reserved,
     )

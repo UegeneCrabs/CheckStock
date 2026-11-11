@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import inspect, select
 
+from app.core.constants import DatabaseDialect
 from app.infrastructure import daily_economics_orm as daily_economics_orm
 from app.infrastructure import economics_coverage_orm as economics_coverage_orm
 from app.infrastructure import ephemerides_orm as ephemerides_orm
@@ -38,6 +39,7 @@ def init_db() -> None:
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
+    _migrate_marketplace_warehouse_quantities(database)
     _migrate_wb_hourly_spp_percent(database)
     _migrate_wb_hourly_turnover(database)
     _index_wb_hourly_report(database)
@@ -86,6 +88,16 @@ def init_db() -> None:
         connection.commit()
 
     _sync_yandex_assortment(database)
+
+
+def _migrate_marketplace_warehouse_quantities(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        columns = connection.column_names("mp_warehouse_stock")
+        exists = "IF NOT EXISTS " if connection.dialect_name == DatabaseDialect.POSTGRESQL else ""
+        for column in ("available_for_order", "reserved"):
+            if column not in columns:
+                connection.execute(f"ALTER TABLE mp_warehouse_stock ADD COLUMN {exists}{column} INTEGER")
+        connection.commit()
 
 
 def _migrate_wb_hourly_spp_percent(database: Database) -> None:
