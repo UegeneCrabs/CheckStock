@@ -145,7 +145,7 @@ services:
       <<: *app-environment
       CHECKSTOCK_LOG_FILE: /app/data/logs/scheduler.log
     volumes: *app-volumes
-    command: ["python", "-m", "app.jobs.worker"]
+    command: ["python", "-m", "app.jobs.worker", "--job-mode", "${CHECKSTOCK_SCHEDULER_JOB_MODE:-all}"]
     healthcheck:
       test: ["CMD", "python", "-m", "app.jobs.worker", "--healthcheck"]
       interval: 30s
