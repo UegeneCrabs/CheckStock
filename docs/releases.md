@@ -157,3 +157,16 @@ docker compose --env-file .env -f deploy/docker-compose.yml exec -T db sh -c \
 удаляет изменения данных после даты дампа, поэтому его выполняют вручную после
 оценки последствий. Перед первым рабочим релизом проверьте эту процедуру на
 отдельной тестовой БД.
+
+## Синхронизация master со вторым репозиторием
+
+[Sync master to second GitHub repository](../.github/workflows/sync-master.yml)
+отправляет `master` из `UegeneCrabs/CheckStock` в `m7197147-crypto/CheckStock`
+при каждом обновлении ветки. Workflow отправляет одну ветку и допускает только
+обычное обновление вперёд по истории Git.
+
+Публичную часть отдельного SSH-ключа добавляют во втором репозитории в
+**Settings → Deploy keys** с флагом **Allow write access**. Приватная часть
+хранится в секрете `CHECKSTOCK_MASTER_MIRROR_KEY` основного репозитория. После
+добавления ключа первый запуск можно выполнить вручную в **Actions → Sync master
+to second GitHub repository → Run workflow**, выбрав ветку `master`.

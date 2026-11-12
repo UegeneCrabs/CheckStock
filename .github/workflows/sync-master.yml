@@ -1,0 +1,44 @@
+name: Sync master to second GitHub repository
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checkstock-master-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-master:
+    if: github.repository == 'UegeneCrabs/CheckStock' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Push master
+        shell: bash
+        env:
+          CHECKSTOCK_MASTER_MIRROR_KEY: ${{ secrets.CHECKSTOCK_MASTER_MIRROR_KEY }}
+        run: |
+          if [[ -z "$CHECKSTOCK_MASTER_MIRROR_KEY" ]]; then
+            echo '::error::Set the CHECKSTOCK_MASTER_MIRROR_KEY repository secret.'
+            exit 1
+          fi
+
+          umask 077
+          ssh_dir=$(mktemp -d)
+          trap 'rm -f -- "$ssh_dir/key" "$ssh_dir/known_hosts"; rmdir -- "$ssh_dir"' EXIT
+          printf '%s\n' "$CHECKSTOCK_MASTER_MIRROR_KEY" | tr -d '\r' > "$ssh_dir/key"
+          unset CHECKSTOCK_MASTER_MIRROR_KEY
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$ssh_dir/known_hosts"
+
+          export GIT_SSH_COMMAND="ssh -i '$ssh_dir/key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$ssh_dir/known_hosts'"
+          git push --no-follow-tags git@github.com:m7197147-crypto/CheckStock.git HEAD:refs/heads/master
