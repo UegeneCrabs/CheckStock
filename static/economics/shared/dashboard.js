@@ -643,8 +643,8 @@
             .join('');
     }
     function productState(product) {
-        var current = product.current_economics || {};
-        if (finite(current.roi, 0) < 0) return 'negative';
+        var period = product.economics_7d || {};
+        if (finite(period.margin, 0) < 0) return 'negative';
         var stockState = (product.stock && product.stock.state) || {};
         if (stockState.is_low) return 'low';
         if (stockState.is_risk) return 'risk';
@@ -1119,6 +1119,11 @@
             productsById[product.id] = product;
         });
     }
+    function supportsStateFilter(filter) {
+        return !placeholderMode || filter === 'all' ||
+            (filter === 'new' && config.yandexMetrics === true) ||
+            (filter === 'negative' && (config.yandexEconomics === true || config.ozonPreview === true));
+    }
     function setProductsLoading(loading) {
         state.productsLoading = loading;
         nodes.productsLoading.hidden = !loading;
@@ -1130,11 +1135,7 @@
         nodes.periodApply.disabled = loading || (placeholderMode && !config.periodSelection);
         nodes.pageSize.disabled = loading;
         Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (button) {
-            var supported =
-                button.dataset.stateFilter === 'all' ||
-                (config.yandexMetrics === true && button.dataset.stateFilter === 'new') ||
-                (config.yandexEconomics === true && button.dataset.stateFilter === 'negative');
-            button.disabled = loading || (placeholderMode && !supported);
+            button.disabled = loading || !supportsStateFilter(button.dataset.stateFilter);
         });
     }
     function productsRequestUrl(parameters) {
@@ -1159,8 +1160,6 @@
         var requestId = ++productsRequestId;
         var requestedMode = state.periodMode;
         state.productsRefreshing = true;
-        var scrollTop = nodes.tableWrap.scrollTop;
-        var scrollLeft = nodes.tableWrap.scrollLeft;
         if (!silent) {
             setProductsLoading(true);
             nodes.productsError.hidden = true;
@@ -1175,6 +1174,8 @@
             if (requestId !== productsRequestId) return false;
             if (!response.ok || !result.ok)
                 throw new Error(result.error || 'Не удалось загрузить данные ' + marketplaceLabel);
+            var scrollTop = nodes.tableWrap.scrollTop;
+            var scrollLeft = nodes.tableWrap.scrollLeft;
             replaceProducts(result.products, silent);
             state.periodDays = Math.max(1, Number(result.period_days) || state.periodDays);
             state.periodFrom = String(result.period_from || state.periodFrom);
@@ -1184,7 +1185,7 @@
             syncPeriodControls();
             renderTableHeader();
             if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
-                window.CheckStockTableFilter.refresh(nodes.table);
+                window.CheckStockTableFilter.refresh(nodes.table, { applyFilters: !silent });
             }
             if (!silent) {
                 state.page = 1;
@@ -3861,7 +3862,7 @@
         Array.prototype.forEach.call(
             root.querySelectorAll('[data-state-filter]:not([data-state-filter="all"])'),
             function (control) {
-                if (config.yandexMetrics === true && control.dataset.stateFilter === 'new') return;
+                if (supportsStateFilter(control.dataset.stateFilter)) return;
                 control.title = 'Фильтр будет доступен после подключения расчётов';
             },
         );

@@ -196,7 +196,7 @@ body:has(.content--unit-1c) {
 .ue1c-period-range {
     min-width: 0;
     display: grid;
-    grid-template-columns: minmax(112px, 1fr) 10px minmax(112px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr) auto;
     gap: 6px;
     align-items: center;
 }
@@ -2313,11 +2313,20 @@ body:has(.content--unit-1c) {
 }
 
 @media (max-width: 1300px) {
-    .ue1c-segments {
-        display: none;
-    }
     .ue1c-toolbar {
         grid-template-columns: minmax(220px, 1fr) 150px 112px minmax(320px, auto) auto auto;
+    }
+}
+
+@media (max-width: 1650px) {
+    :where(.ue1c-page) .ue1c-toolbar {
+        grid-template-columns: minmax(0, 1fr) minmax(125px, 150px) auto minmax(112px, max-content);
+    }
+    .ue1c-period-range {
+        grid-column: span 2;
+    }
+    #ue1c-calendar-link {
+        justify-self: start;
     }
 }
 
@@ -2370,6 +2379,9 @@ body:has(.content--unit-1c) {
     .ue1c-toolbar {
         grid-template-columns: 1fr 1fr;
     }
+    :where(.ue1c-page) .ue1c-toolbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .ue1c-search-field {
         grid-column: 1 / -1;
     }
@@ -2378,6 +2390,10 @@ body:has(.content--unit-1c) {
     }
     .ue1c-period-select .ue1c-select {
         grid-column: auto;
+    }
+    .ue1c-segments {
+        grid-column: 1 / -1;
+        justify-self: start;
     }
     .ue1c-period-range {
         grid-column: 1 / -1;

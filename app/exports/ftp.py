@@ -3,6 +3,8 @@ from __future__ import annotations
 import ftplib
 import json
 import re
+import socket
+import ssl
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -52,6 +54,19 @@ class FTPExportError(RuntimeError):
 
 class FTPExportBusyError(FTPExportError):
     pass
+
+
+class SessionResumingFTPS(ftplib.FTP_TLS):
+    def ntransfercmd(self, cmd: str, rest: int | str | None = None) -> tuple[socket.socket, int | None]:
+        connection, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
+        if not self._prot_p:
+            return connection, size
+        try:
+            session = self.sock.session if isinstance(self.sock, ssl.SSLSocket) else None
+            return self.context.wrap_socket(connection, server_hostname=self.host, session=session), size
+        except BaseException:
+            connection.close()
+            raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,7 +288,7 @@ def upload_to_ftp(platform: str, content: Mapping[str, object]) -> str:
     content_bytes = json.dumps(content, ensure_ascii=False).encode("utf-8")
 
     def store(passive: bool, *, use_tls: bool = False, protect_data: bool = True) -> None:
-        ftp_class = ftplib.FTP_TLS if use_tls else ftplib.FTP
+        ftp_class = SessionResumingFTPS if use_tls else ftplib.FTP
         ftp = ftp_class(target.host, timeout=settings.ftp_timeout_seconds)
         try:
             ftp.login(target.username, target.password)
