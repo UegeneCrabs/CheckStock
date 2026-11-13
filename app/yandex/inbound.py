@@ -82,10 +82,6 @@ def normalize(campaign: dict, row: dict, goods: list[dict], parent: dict | None 
                 defect_quantity=count(counters.get("defectCount"), "Яндекс defectCount", optional=True),
             )
         )
-    if stage == "completed" and any(
-        item.shortage_quantity or item.defect_quantity or item.surplus_quantity for item in items
-    ):
-        stage = "discrepancy"
     target = object_row(row.get("targetLocation") or {}, "склад назначения Яндекс Маркета")
     transit = object_row(
         row.get("transitLocation") or (parent or {}).get("transitLocation") or {}, "транзит Яндекс Маркета"
@@ -104,8 +100,18 @@ def normalize(campaign: dict, row: dict, goods: list[dict], parent: dict | None 
         stage=stage,
         status=status,
         status_label=label,
-        warehouse=str(target.get("name") or target.get("serviceId") or ""),
-        transit_warehouse=str(transit.get("name") or transit.get("serviceId") or ""),
+        warehouse=str(
+            target.get("name")
+            or (target.get("address") or {}).get("fullAddress")
+            or target.get("serviceId")
+            or ""
+        ),
+        transit_warehouse=str(
+            transit.get("name")
+            or (transit.get("address") or {}).get("fullAddress")
+            or transit.get("serviceId")
+            or ""
+        ),
         planned_at=str(target.get("requestedDate") or transit.get("requestedDate") or ""),
         updated_at=str(row.get("updatedAt") or ""),
         items=tuple(items),
@@ -116,6 +122,7 @@ def load(
     key: str, campaigns: list[dict], previous: tuple[InboundSupply, ...] = ()
 ) -> tuple[InboundSupply, ...]:
     result = []
+    known = {supply.key: supply for supply in previous}
     known_open = {supply.key for supply in previous if supply.stage not in TERMINAL_STAGES}
     for campaign in campaigns:
         if campaign.get("scheme") not in {"fby", "fbo"}:
@@ -195,7 +202,18 @@ def load(
                     )
                 continue
             supply_key = f"{campaign['id']}:{internal_id}"
-            stage = STATES.get(str(row.get("status")), ("unknown", ""))[0]
+            status = str(row.get("status"))
+            stage = STATES.get(status, ("unknown", ""))[0]
+            old = known.get(supply_key)
+            if (
+                stage in TERMINAL_STAGES
+                and old
+                and old.status == status
+                and old.direction
+                and row.get("updatedAt")
+                and old.updated_at == row.get("updatedAt")
+            ):
+                continue
             parent = row.get("parentLink") or {}
             parent_id = str((parent.get("id") or {}).get("id") or "")
             parent_was_open = f"{campaign['id']}:{parent_id}" in known_open

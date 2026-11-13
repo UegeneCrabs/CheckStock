@@ -52,6 +52,12 @@ window.OzonLogisticsUI = (() => {
         }
         session.source = product.logistics || {};
         session.snapshot = session.source.snapshot || null;
+        const estimateSource = product.new_product_costs?.logistics ?? null;
+        if (Boolean(session.estimateSource) !== Boolean(estimateSource)) {
+            session.result = null;
+            session.changed = {};
+        }
+        session.estimateSource = estimateSource;
         const snapshot = session.snapshot;
         const old = inputs.querySelector('[data-ozon-logistics]');
         if (old) old.remove();
@@ -77,10 +83,12 @@ window.OzonLogisticsUI = (() => {
         });
         const model = element('div', 'ue1c-calculator-row');
         model.dataset.ozonLogisticsReference = 'modeled';
+        model.hidden = Boolean(session.estimateSource);
         model.append(element('span', '', 'Оценка по формуле в дневном снимке'), element('strong', '', amount(snapshot && snapshot.modeled_per_unit) + ' ₽'));
         content.append(model);
         const actual = element('div', 'ue1c-calculator-row');
         actual.dataset.ozonLogisticsReference = 'actual';
+        actual.hidden = Boolean(session.estimateSource);
         actual.append(element('span', '', 'Исходные начисления на выкуп'), element('strong', '', amount(snapshot && snapshot.actual_per_unit) + ' ₽'));
         content.append(actual);
         const note = element('p', 'ym-logistics-note');
@@ -90,7 +98,7 @@ window.OzonLogisticsUI = (() => {
         inputs.append(block);
         session.block = block;
         updateNote(session);
-        if (Object.keys(session.changed).length) queue(root, session);
+        if (Object.keys(session.changed).length && !session.estimateSource) queue(root, session);
     }
 
     function input(root, session, key, label, unit) {
@@ -113,7 +121,7 @@ window.OzonLogisticsUI = (() => {
         input.oninput = () => {
             if (input.value === '' && !input.validity.badInput) {
                 delete session.changed[key];
-                input.value = format(original(session, key));
+                if (!session.estimateSource) input.value = format(original(session, key));
             }
             else session.changed[key] = input.value;
             if (key !== 'total') delete session.changed.total;
@@ -124,6 +132,10 @@ window.OzonLogisticsUI = (() => {
     }
 
     function original(session, key) {
+        if (session.estimateSource) {
+            if (key === 'volume_l') return session.estimateSource.volume_l;
+            return key === 'total' ? session.result?.total : session.result?.inputs?.[key];
+        }
         if (!session.snapshot) return key === 'markup' ? 0 : null;
         if (key === 'volume_l') return Number(session.snapshot.volume_l) > 0 ? session.snapshot.volume_l : null;
         return key === 'total' ? session.snapshot.actual_per_unit : session.snapshot.inputs[key];
@@ -133,13 +145,15 @@ window.OzonLogisticsUI = (() => {
         session.helpMessage = message || '';
         const snapshot = session.snapshot;
         const notes = [];
-        if (session.source.error) notes.push('Ошибка последнего обновления.');
-        if (snapshot && snapshot.state === 'insufficient') notes.push('Нет оставленных покупателями товаров для распределения расходов.');
+        if (session.estimateSource) notes.push('Тарифная оценка для новинки.');
+        else if (snapshot && snapshot.state === 'insufficient') notes.push('Нет оставленных покупателями товаров для распределения расходов.');
         if (message) notes.push(message);
         const note = session.block.querySelector('[data-ozon-logistics-note]');
         note.textContent = notes.join(' ');
         note.hidden = !note.textContent;
-        session.block.classList.toggle('is-incomplete', !snapshot || snapshot.state !== 'available' || session.source.stale || Boolean(session.source.error) || Boolean(message));
+        session.block.classList.toggle('is-incomplete', session.estimateSource
+            ? session.result?.total == null
+            : !snapshot || snapshot.state !== 'available' || session.source.stale || Boolean(session.source.error) || Boolean(message));
         session.block.querySelectorAll('[data-ozon-logistics-input], [data-ozon-logistics-reference]').forEach(input => {
             const key = input.dataset.ozonLogisticsInput || input.dataset.ozonLogisticsReference;
             const row = input.closest('label, summary, [data-ozon-logistics-reference]');
@@ -165,6 +179,15 @@ window.OzonLogisticsUI = (() => {
     }
 
     function queue(root, session) {
+        if (session.estimateSource) {
+            const invalid = [...session.block.querySelectorAll('[data-ozon-logistics-input]')]
+                .some(input => !input.checkValidity());
+            root.dispatchEvent(new CustomEvent('ozon-logistics-changed', {
+                detail: { productId: session.productId, overrides: invalid ? undefined : { ...session.changed }, invalid },
+            }));
+            if (invalid) updateNote(session, 'Проверьте суммы и процент выкупа.');
+            return;
+        }
         const publish = total => root.dispatchEvent(new CustomEvent('ozon-logistics-changed', {
             detail: { productId: session.productId, total },
         }));
@@ -220,5 +243,28 @@ window.OzonLogisticsUI = (() => {
         }, 150);
     }
 
-    return { render, reset, clear };
+    function paintEstimate(root, productId, result, pending, error) {
+        const session = sessions.get(root);
+        if (!session?.estimateSource || session.productId !== productId) return;
+        session.result = pending || error ? null : result;
+        session.block.querySelectorAll('[data-ozon-logistics-input]').forEach(input => {
+            const key = input.dataset.ozonLogisticsInput;
+            if (key !== 'volume_l' && !Object.hasOwn(session.changed, key)) {
+                input.value = inputValue(original(session, key));
+            }
+        });
+        const source = session.estimateSource;
+        const notes = [];
+        if (error) notes.push(error);
+        else if (pending) notes.push('Пересчитываем…');
+        else if (!source.volume_l) notes.push('Нет объёма упаковки.');
+        else if (result?.up_to_price_limit != null && result.upper_l == null) notes.push('Объём вне таблицы тарифов.');
+        else if (result?.up_to_price_limit == null) notes.push('Нужна цена продавца.');
+        if (!pending && !error && !source.locality.local && !source.locality.nonlocal_count) notes.push('Нет отправлений FBO с известным маршрутом.');
+        if (!pending && !error && (source.locality.local || source.locality.nonlocal_count) && (source.locality.covered_days < 30 || source.locality.unknown > 0)) notes.push('Доли рассчитаны по доступным отправлениям FBO.');
+        if (!pending && !error && result?.total == null && result?.inputs.forward != null && !(Number(result.inputs.buyout_percent) > 0)) notes.push('Для расчёта на один выкуп нужен выкуп больше 0%.');
+        updateNote(session, notes.join(' '));
+    }
+
+    return { render, reset, clear, paintEstimate };
 })();

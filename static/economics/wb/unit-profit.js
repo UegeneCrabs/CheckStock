@@ -380,16 +380,6 @@
         if (item < 0) return ' metric--negative';
         return '';
     }
-    function calculationMessages(row) {
-        return (row.messages || []).join('\n') || 'Нет полного набора параметров за ' + (row.margin_missing_days || []).map(dayLabel).join(', ');
-    }
-    function calculationNote(row, raw) {
-        var label = raw === null || raw === undefined ? 'Недостаточно данных' : 'Неполный расчёт';
-        return '<small class="ue1cr-calculation-note" title="' + escapeHtml(calculationMessages(row)) + '">' + label + '</small>';
-    }
-    function marginCoverageTitle(row) {
-        return row.margin_complete === false ? ' title="' + escapeHtml(calculationMessages(row)) + '"' : '';
-    }
     function summary(kind) {
         var count = state[kind].size;
         var labels = summaryLabels[kind];
@@ -479,18 +469,15 @@
         return state.dailyDates
             .map(function (day, dayIndex) {
                 var item = dailyCalculation(row, day);
-                var incomplete = item && (item.available === false || item.complete === false);
-                var title = incomplete ? ' title="' + escapeHtml(calculationMessages(item)) + '"' : '';
                 return dailyColumns
                     .map(function (column) {
                         var raw = item ? item[column.key] : null;
                         var classes = 'num ue1cr-daily-cell ue1cr-daily-day-' + (dayIndex % 2);
                         if (column.tone) classes += tone(raw);
-                        if (incomplete && (raw === null || ['net_profit', 'net_revenue', 'day_profit'].indexOf(column.key) !== -1)) classes += ' ue1cr-daily-cell--incomplete';
                         return window.CheckStockUI.render('economics/wb/unit-profit/daily-cells-html', {
                             classes: classes,
-                            title: title,
-                            content: dailyValue(item, column) + (incomplete && ['net_profit', 'day_profit'].indexOf(column.key) !== -1 ? calculationNote(item, raw) : ''),
+                            title: '',
+                            content: dailyValue(item, column),
                         });
                     })
                     .join('');
@@ -636,11 +623,6 @@
         else content = escapeHtml(raw === null || raw === undefined || raw === '' ? '—' : raw);
         var classes = column.format === 'text' ? '' : 'num';
         if (column.tone) classes += tone(raw);
-        if (['margin', 'roi'].indexOf(column.key) !== -1 && (row.margin_complete === false || raw === null)) {
-            classes += ' ue1cr-margin-cell--partial';
-            content += calculationNote(row, raw);
-        }
-        var title = column.coverage ? marginCoverageTitle(row) : '';
         var parsed = Number(raw);
         var filterValue =
             Number.isFinite(parsed) && column.format !== 'text'
@@ -649,7 +631,7 @@
         return window.CheckStockUI.render('economics/wb/unit-profit/report-cell-html-2', {
             classes: classes,
             filterValue: filterValue,
-            title: title,
+            title: '',
             content: content,
         });
     }
@@ -714,13 +696,6 @@
         setHeaderTotal('margin', value(total.margin), total.margin);
         setHeaderTotal('purchase_value', rub(total.purchase_value));
         setHeaderTotal('roi', value(total.roi, '%'), total.roi);
-        ['margin', 'roi'].forEach(function (key) {
-            var node = root.querySelector('[data-report-total="' + key + '"]');
-            if (node && (total.margin_complete === false || total[key] === null)) {
-                node.textContent += ' · ' + (total[key] === null ? 'Недостаточно данных' : 'Неполный расчёт');
-                node.title = calculationMessages(total);
-            }
-        });
     }
     function numeric(item) {
         var parsed = Number(item);
@@ -1135,10 +1110,6 @@
             setFilterOptions('manager', result.filters.managers);
             setFilterOptions('article', result.filters.articles);
             renderRows();
-            if (result.totals && result.totals.margin_complete === false) {
-                nodes.marginCoverageNote.textContent = (result.totals.margin === null ? 'Недостаточно данных. ' : 'Неполный расчёт. ') + calculationMessages(result.totals).replace(/\n/g, '; ');
-                nodes.marginCoverageNote.hidden = false;
-            }
             if (result.manager_scope && result.manager_scope.restricted && !result.manager_scope.matched) {
                 nodes.scopeNote.textContent =
                     'В данных 1С не найден менеджер, соответствующий вашему пользователю.';

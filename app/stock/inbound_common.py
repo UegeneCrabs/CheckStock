@@ -1,9 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
 from app.application.inbound_supplies import InboundSourceError
+from app.core.constants import FBO_STOCK
 
 MAX_PAGES = 1000
-HISTORY_DAYS = 90
+HISTORY_DAYS = FBO_STOCK.history_days
 
 
 def object_row(value: object, context: str) -> dict:

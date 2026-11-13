@@ -7,6 +7,9 @@
     var list = panel.querySelector('[data-stock-transit-list]');
     var status = panel.querySelector('[data-stock-transit-status]');
     var refreshButton = panel.querySelector('[data-stock-transit-refresh]');
+    var kindButtons = panel.querySelectorAll('[data-stock-transit-kind]');
+    var fboControls = panel.querySelectorAll('[data-stock-transit-fbo-only]');
+    var ffControls = panel.querySelectorAll('[data-stock-transit-ff-only]');
     var viewButtons = panel.querySelectorAll('[data-stock-transit-view]');
     var filters = panel.querySelector('[data-stock-transit-filters]');
     var shortageFilter = panel.querySelector('[name="shortage_only"]');
@@ -25,17 +28,21 @@
     var pathParts = window.location.pathname.split('/').filter(Boolean);
     var storeSlug = pathParts[0] === 'stock' ? pathParts[1] : '';
     var requestNumber = 0;
+    var loading = false;
+    var supplyRefreshPending = false;
     var currentView = 'active';
+    var currentKind = 'fbo_shipment';
+    var filtersByKind = new Map();
     var supplyExpansion = new Map();
     var supplyTableFilters = new Map();
     var reopenContext = null;
     var reopenBusy = false;
     var numberFormat = new Intl.NumberFormat('ru-RU');
-    var wbSupplyStatuses = new Set(['2', '3', '4', '6']);
     var fboErrors = {
         fbo_invalid_fulfillment: 'ФФ не найден. Обновите список и выберите ФФ заново.',
         fbo_fulfillment_required: 'Выберите ФФ и дождитесь проверки остатков.',
         fbo_fulfillment_locked: 'Поставка уже проведена. Изменить ФФ списания нельзя.',
+        fbo_fulfillment_status: 'На текущем этапе выбор ФФ недоступен. Обновите список поставок.',
         fbo_invalid_request: 'Не удалось определить запрос. Обновите страницу и повторите.',
         fbo_request_conflict: 'Данные изменились во время операции. Обновите движения и повторите.',
         fbo_supply_missing: 'Поставка не найдена в текущем снимке.',
@@ -505,10 +512,11 @@
             return refresh().then(function () {
                 var issue = data.movement.issue;
                 var shortages = data.movement.shortages || [];
-                if (shortages.length) message('Остатков на выбранном ФФ не хватает. Подробности — внутри поставки.', true);
-                else if (action === 'select_fulfillment') message(data.movement.fulfillment ?
-                    'ФФ выбран. ' + (data.movement.can_post ? 'Остатков хватает, поставку можно провести.' :
-                        'Проведение пока недоступно: проверьте сообщение внутри поставки.') : 'Выбор ФФ сброшен.', false);
+                if (shortages.length && (action !== 'select_fulfillment' || !data.movement.fulfillment)) {
+                    message('Остатков на выбранном ФФ не хватает. Подробности — внутри поставки.', true);
+                } else if (action === 'select_fulfillment') message(data.movement.fulfillment ?
+                    (data.movement.can_post ? 'ФФ выбран. Остатков хватает, поставку можно провести.' :
+                        'ФФ сохранён.') : 'Выбор ФФ сброшен.', false);
                 else message(issue ? 'Поставка не проведена. Проверьте сообщение внутри.' :
                     'Движение поставки обновлено.', Boolean(issue));
             });
@@ -647,9 +655,9 @@
             row.appendChild(el('td', 'stock-fbo-code', Array.from(item.barcodes).join(', ') || '—'));
             row.appendChild(el('td', 'stock-fbo-name', item.name || '—'));
             var sources = el('td', 'stock-fbo-sources');
-            var allocated = 0;
+            var remaining = 0;
             item.allocations.forEach(function (part) {
-                allocated += part.quantity;
+                remaining += part.remaining_quantity;
                 var source = el('span', 'stock-fbo-source');
                 source.appendChild(el('span', '', part.fulfillment));
                 source.appendChild(el('b', '', numberFormat.format(part.quantity)));
@@ -660,11 +668,12 @@
             row.appendChild(el('td', 'inbound-num', numberFormat.format(item.quantity)));
             row.appendChild(el('td', 'inbound-num', item.accepted == null ? '—' : numberFormat.format(item.accepted)));
             row.appendChild(el('td', 'inbound-num stock-fbo-in-transit',
-                numberFormat.format(movement.state === 'active' ? allocated : 0)));
+                numberFormat.format(remaining)));
             var availability = el('td', 'inbound-num stock-fbo-shortage', missing == null ? '—' : numberFormat.format(missing));
             availability.title = shortage ? 'Нужно: ' + numberFormat.format(shortage.required) +
                 ', доступно с учётом уже списанного: ' + numberFormat.format(shortage.available) :
-                missing == null ? 'Выберите ФФ для проверки остатков.' : 'Нехватки нет';
+                missing == null ? (movement.fulfillment ? 'Состав поставки пока не подтверждён.' :
+                    'Выберите ФФ для проверки остатков.') : 'Нехватки нет';
             row.appendChild(availability);
             tbody.appendChild(row);
         });
@@ -680,7 +689,7 @@
         body.appendChild(scroll);
         if (window.CheckStockTableFilter) window.CheckStockTableFilter.refresh(table);
         body.appendChild(el('p', 'inbound-card-note stock-fbo-table-hint',
-            'Нехватка проверяется только на выбранном ФФ и площадке с учётом уже списанного для этой поставки. До выбора ФФ — прочерк. 0 — нехватки нет. В пути — проведённое количество до статуса «Принято».'));
+            '«В пути» показывает списанное с ФФ количество за вычетом принятого площадкой.'));
         if (movement.issue) body.appendChild(renderSupplyIssue(movement, legacy));
         return body;
     }
@@ -700,10 +709,11 @@
         title.appendChild(el('small', '', (mpLabel[marketplace()] || marketplace()) + ' · FBO · Позиций: ' + rows.length));
         head.appendChild(title);
         var route = el('div', 'inbound-card-route');
-        route.appendChild(el('span', '', supply.warehouse || 'Склад не указан'));
+        route.appendChild(el('span', '', supply.direction || 'Направление не указано'));
         if (supply.transit_warehouse) route.appendChild(el('small', '', 'Через: ' + supply.transit_warehouse));
-        if (supply.planned_at) route.appendChild(el('small', '', 'План: ' + formatDate(supply.planned_at)));
+        if (supply.planned_at) route.appendChild(el('small', '', 'План: ' + formatDate(supply.supply_date)));
         else if (supply.created_at) route.appendChild(el('small', '', 'Создана: ' + formatDate(supply.created_at)));
+        else if (supply.updated_at) route.appendChild(el('small', '', 'Обновлена: ' + formatDate(supply.updated_at)));
         head.appendChild(route);
         var state = el('div');
         var stage = supply.unavailable ? 'unknown' : supply.stage;
@@ -721,7 +731,7 @@
         var allocated = movement.allocations.reduce(function (sum, row) { return sum + row.quantity; }, 0);
         summary.appendChild(el('small', '', 'Списано с ФФ: ' + numberFormat.format(allocated)));
         summary.appendChild(el('span', 'stock-fbo-in-transit',
-            'В пути: ' + numberFormat.format(movement.state === 'active' ? allocated : 0)));
+            'В пути: ' + numberFormat.format(movement.remaining_quantity || 0)));
         head.appendChild(summary);
         var toggle = el('span', 'stock-fbo-toggle');
         toggle.appendChild(el('span', 'stock-fbo-show', 'Показать товары'));
@@ -838,35 +848,38 @@
         select.value = selected;
     }
 
-    function displayedSupplies(fbo) {
-        return (fbo.movements || []).filter(function (movement) {
-            return marketplace() !== 'WB' || wbSupplyStatuses.has(movement.supply.status);
-        });
-    }
-
     function compareSupplies(a, b) {
+        if (currentView === 'history') {
+            return filterDate(supplyDate(b.supply)).localeCompare(filterDate(supplyDate(a.supply))) ||
+                a.supply.key.localeCompare(b.supply.key);
+        }
         var processed = Number(Boolean(a.processed)) - Number(Boolean(b.processed));
         if (processed) return processed;
         var today = Date.parse(filterDate(new Date().toISOString()));
-        var first = filterDate(a.supply.planned_at);
-        var second = filterDate(b.supply.planned_at);
+        var first = filterDate(supplyDate(a.supply));
+        var second = filterDate(supplyDate(b.supply));
         var distanceA = first ? Math.abs(Date.parse(first) - today) : Infinity;
         var distanceB = second ? Math.abs(Date.parse(second) - today) : Infinity;
         return distanceA - distanceB || first.localeCompare(second) || a.supply.key.localeCompare(b.supply.key);
     }
 
+    function supplyDate(supply) {
+        return supply.supply_date;
+    }
+
     function filterOptions(batches, fbo) {
         var destinations = new Map();
         var states = new Map();
-        displayedSupplies(fbo).forEach(function (movement) {
+        (fbo.movements || []).forEach(function (movement) {
             var supply = movement.supply;
-            if (supply.warehouse) destinations.set(supply.warehouse, supply.warehouse);
+            if (supply.direction) destinations.set(supply.direction, supply.direction);
             states.set('supply:' + supply.status, supply.status_label || supply.status);
         });
         var linked = new Set(fbo.linked_batch_ids || []);
         batches.filter(function (batch) { return !linked.has(batch.id); }).forEach(function (batch) {
             if (batch.to_fulfillment) destinations.set(batch.to_fulfillment, batch.to_fulfillment);
-            states.set('batch:' + batch.status, 'Перемещение · ' + statusLabel(batch.status));
+            var label = currentKind === 'fbo_shipment' ? 'Ручная отгрузка · ' : '';
+            states.set('batch:' + batch.status, label + statusLabel(batch.status));
         });
         fillFilter('destination', destinations, 'Все направления');
         fillFilter('status', states, 'Все статусы');
@@ -876,24 +889,28 @@
         if (currentData) render(currentData.batches, currentData.fbo);
     }
 
-    function render(batches, fbo) {
+    function rememberExpansion() {
         list.querySelectorAll('[data-fbo-supply-key]').forEach(function (details) {
             supplyExpansion.set(details.getAttribute('data-fbo-supply-key'), details.open);
         });
+    }
+
+    function render(batches, fbo) {
+        rememberExpansion();
         list.innerHTML = '';
         var linked = new Set(fbo.linked_batch_ids || []);
         batches = batches.filter(function (batch) { return !linked.has(batch.id); });
-        var supplies = displayedSupplies(fbo).filter(function (movement) {
-            var closed = !movement.issue && ['accepted', 'historical', 'cancelled'].includes(movement.state);
+        var supplies = (fbo.movements || []).filter(function (movement) {
+            var closed = movement.supply.archived || !movement.supply.listed_status;
             return currentView === 'history' ? closed : !closed;
         }).sort(compareSupplies);
         var total = supplies.length + batches.length;
-        var onlyShortages = shortageFilter && shortageFilter.checked;
+        var onlyShortages = currentKind === 'fbo_shipment' && shortageFilter.checked;
         supplies = supplies.filter(function (movement) {
             var supply = movement.supply;
             return (!onlyShortages || (movement.shortages || []).some(function (item) { return item.missing > 0; })) &&
-                matchesFilters(supply.planned_at || supply.created_at,
-                [supply.number, supply.supply_id, supply.order_id], supply.warehouse, 'supply:' + supply.status);
+                matchesFilters(supplyDate(supply),
+                [supply.number, supply.supply_id, supply.order_id], supply.direction, 'supply:' + supply.status);
         });
         batches = batches.filter(function (batch) {
             return !onlyShortages && matchesFilters(batch.sent_at, [batch.id], batch.to_fulfillment, 'batch:' + batch.status);
@@ -904,13 +921,14 @@
         expansionButtons.forEach(function (button) { button.disabled = !supplies.length; });
         supplies.forEach(function (movement) { list.appendChild(renderSupply(movement, fbo.legacy || [])); });
         if (!batches.length && !supplies.length) {
+            var empty = currentKind === 'fbo_shipment'
+                ? (currentView === 'history' ? 'История поставок на FBO пуста' : 'Нет поставок на FBO в пути')
+                : (currentView === 'history' ? 'История перемещений между ФФ пуста' : 'Нет перемещений между ФФ в пути');
             list.appendChild(
                 el(
                     'div',
                     'stock-transit-empty',
-                    total ? 'По выбранным фильтрам поставок и перемещений нет' : currentView === 'history'
-                        ? 'Завершённых движений пока нет'
-                        : 'Активных партий в пути нет',
+                    total ? 'По выбранным фильтрам ничего не найдено' : empty,
                 ),
             );
             return;
@@ -923,19 +941,20 @@
     function refresh() {
         if (!storeSlug) return Promise.resolve();
         var currentRequest = ++requestNumber;
+        var mp = encodeURIComponent(marketplace());
+        loading = true;
         currentData = null;
+        rememberExpansion();
+        list.replaceChildren();
         if (filterCount) filterCount.textContent = '';
         expansionButtons.forEach(function (button) { button.disabled = true; });
         if (refreshButton) refreshButton.disabled = true;
         message(currentView === 'history' ? 'Загружаем историю...' : 'Загружаем партии...', false);
-        return Promise.all([request(
-            '/stock/' +
-                storeSlug +
-                '/transfers/in-transit?mp=' +
-                encodeURIComponent(marketplace()) +
-                '&view=' +
-                encodeURIComponent(currentView),
-        ), request('/stock/' + storeSlug + '/fbo-stock?mp=' + encodeURIComponent(marketplace()))])
+        return Promise.all([
+            request('/stock/' + storeSlug + '/transfers/in-transit?mp=' + mp +
+                '&view=' + encodeURIComponent(currentView) + '&kind=' + encodeURIComponent(currentKind)),
+            currentKind === 'fbo_shipment' ? request('/stock/' + storeSlug + '/fbo-stock?mp=' + mp) : {},
+        ])
             .then(function (data) {
                 if (currentRequest !== requestNumber) return;
                 currentData = { batches: data[0].batches || [], fbo: data[1] };
@@ -956,10 +975,86 @@
                 message('Ошибка: ' + error.message, true);
             })
             .finally(function () {
-                if (currentRequest === requestNumber && refreshButton) refreshButton.disabled = false;
+                if (currentRequest !== requestNumber) return;
+                loading = false;
+                if (refreshButton) refreshButton.disabled = currentKind === 'fbo_shipment' && supplyRefreshPending;
             });
     }
 
+    async function syncSupplies() {
+        if (supplyRefreshPending) return;
+        supplyRefreshPending = true;
+        refreshButton.disabled = true;
+        var mp = marketplace();
+        var attempt = currentData && currentData.fbo.supply_last_attempt;
+        message('Обновляем поставки с площадки…', false);
+        try {
+            var response = await fetch('/stock/inbound/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ store: storeSlug, marketplace: mp }),
+            });
+            if (!response.ok && response.status !== 409) throw new Error('Не удалось запустить обновление поставок.');
+            var path = '/stock/' + storeSlug + '/fbo-stock?mp=' + encodeURIComponent(mp);
+            var deadline = Date.now() + 120000;
+            var startDeadline = Date.now() + 8000;
+            do {
+                await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+                if (marketplace() !== mp) return;
+                var report = await request(path);
+                if (!report.supply_refreshing && (report.supply_last_attempt !== attempt || Date.now() >= startDeadline)) break;
+            } while (Date.now() < deadline);
+            reloadStocks();
+            if (currentKind === 'fbo_shipment') {
+                await refresh();
+                if (currentKind === 'fbo_shipment' && report.supply_refreshing) {
+                    message('Площадка ещё обновляет поставки. Проверьте список позже.', false);
+                }
+            }
+        } catch (error) {
+            if (currentKind === 'fbo_shipment') message(error.message, true);
+        } finally {
+            supplyRefreshPending = false;
+            if (currentKind === 'fbo_shipment') refreshButton.disabled = loading;
+        }
+    }
+
+    function selectKind(kind) {
+        if (kind === currentKind) return;
+        var fields = Array.from(filters.elements).filter(function (field) { return field.name; });
+        var previous = new Map();
+        fields.forEach(function (field) {
+            var value = field.value;
+            if (field.type === 'checkbox') value = field.checked;
+            else if (field.tagName === 'SELECT') value = field.value ? field.selectedOptions[0].cloneNode(true) : null;
+            previous.set(field.name, value);
+        });
+        filtersByKind.set(currentKind, previous);
+        var saved = filtersByKind.get(kind);
+        fields.forEach(function (field) {
+            var value = saved && saved.get(field.name);
+            if (field.type === 'checkbox') field.checked = Boolean(value);
+            else if (field.tagName === 'SELECT') {
+                field.replaceChildren(field.options[0]);
+                if (value) field.appendChild(value);
+                field.value = value ? value.value : '';
+            } else field.value = value || '';
+        });
+        currentKind = kind;
+        kindButtons.forEach(function (button) {
+            var selected = button.dataset.stockTransitKind === kind;
+            button.classList.toggle('is-active', selected);
+            button.setAttribute('aria-pressed', String(selected));
+        });
+        var isFbo = kind === 'fbo_shipment';
+        fboControls.forEach(function (control) { control.hidden = !isFbo; });
+        ffControls.forEach(function (control) { control.hidden = isFbo; });
+        refresh();
+    }
+
+    kindButtons.forEach(function (button) {
+        button.addEventListener('click', function () { selectKind(button.dataset.stockTransitKind); });
+    });
     expansionButtons.forEach(function (button) {
         button.addEventListener('click', function () {
             var open = button.getAttribute('data-stock-transit-expand') === 'true';
@@ -1015,7 +1110,10 @@
             if (trigger && trigger.isConnected) trigger.focus();
         });
     }
-    if (refreshButton) refreshButton.addEventListener('click', refresh);
+    if (refreshButton) refreshButton.addEventListener('click', function () {
+        if (currentKind === 'fbo_shipment') syncSupplies();
+        else refresh();
+    });
     window.stockTransit = { refresh: refresh };
     refresh();
 })();

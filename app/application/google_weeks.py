@@ -17,6 +17,7 @@ from app.core.constants import (
     WeekAction,
     WeekIssue,
 )
+from app.core.export_journal import diagnostic
 from app.core.stores import PROJECT_STORE_ALIASES
 from app.dto.google_week import (
     CellWrite,
@@ -376,6 +377,12 @@ class GoogleWeeks:
                     detail=type(error).__name__,
                 )
             )
+            diagnostic(
+                "google_week_action_failed",
+                marketplace=profile.marketplace,
+                action=action,
+                detail=failure.problem.model_dump(exclude_none=True),
+            )
             if not preview:
                 state.last_error = failure.problem
                 state.last_success_slot = None
@@ -383,6 +390,28 @@ class GoogleWeeks:
             if isinstance(error, asyncio.CancelledError):
                 raise
             raise failure from error
+        skipped_sheets = [sheet for sheet in report.sheets if sheet.issue or sheet.skipped_cells]
+        if (
+            report.warnings
+            or report.issues
+            or report.missing_data
+            or report.zero_filled
+            or skipped_sheets
+            or not report.complete
+        ):
+            diagnostic(
+                "google_week_action_diagnostics",
+                marketplace=profile.marketplace,
+                action=action,
+                sheet=report.sheet_name,
+                week=report.week,
+                detail={
+                    **report.model_dump(
+                        include={"warnings", "issues", "missing_data", "zero_filled", "complete"}
+                    ),
+                    "sheets": [sheet.model_dump() for sheet in skipped_sheets],
+                },
+            )
         if not preview:
             state.result, state.last_error = report, None
             state.last_success_slot = slot_at(profile.settings, now) if report.complete else None

@@ -2,8 +2,28 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from app.application.ports import LogisticsUnitOfWork
-from app.dto.ozon_logistics import LogisticsEvidence, LogisticsPeriod, LogisticsSyncResult, moscow_day
+from app.dto.ozon_logistics import (
+    LogisticsDimensions,
+    LogisticsEvidence,
+    LogisticsPeriod,
+    LogisticsSyncResult,
+    moscow_day,
+)
+from app.dto.ozon_new_product_costs import OzonNewProductCosts
 from app.ozon.logistics_normalizer import normalize
+
+
+async def with_new_product_volume(
+    costs: OzonNewProductCosts,
+    article: str,
+    read_dimensions: Callable[[tuple[str, ...]], Awaitable[tuple[LogisticsDimensions, ...]]],
+) -> OzonNewProductCosts:
+    logistics = costs.logistics
+    if logistics is None or logistics.volume_l is not None:
+        return costs
+    dimensions = await read_dimensions((article,))
+    volume = next((item.volume() for item in dimensions if item.offer_id == article), None)
+    return costs.model_copy(update={"logistics": logistics.model_copy(update={"volume_l": volume})})
 
 
 class OzonLogisticsService:

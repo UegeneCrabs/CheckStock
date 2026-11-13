@@ -186,10 +186,10 @@ class OzonPosting(OzonPostingDates):
         key = self.posting_number or self.order_number or self.order_id
         if not key.strip() or (scheme == OrderScheme.FBS and not self.posting_number.strip()):
             raise OzonPayloadError(path + ".posting_number", "missing posting identifier")
-        ordered = self.created_at or self.in_process_at or self.shipment_date
+        ordered = self.in_process_at
         if ordered is None:
-            raise OzonPayloadError(path + ".created_at", "missing order date")
-        updated = self.updated_at or self.status_updated_at or ordered
+            raise OzonPayloadError(path + ".in_process_at", "missing processing date")
+        updated = self.updated_at or self.status_updated_at or self.created_at or ordered
         sold = (
             self.delivering_date
             or (self.analytics_data.delivery_date_end if self.analytics_data else None)

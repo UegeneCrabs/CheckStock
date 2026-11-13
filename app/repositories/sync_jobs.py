@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 
+from app.core.export_journal import diagnostic
 from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.core import WRITE_LOCK, get_connection
 
@@ -94,6 +95,8 @@ def record_finished(
             """,
             (status, finished_at, duration_ms, error, run_id),
         )
+    if error is not None:
+        diagnostic("sync_job_failed", job=name, run_id=run_id, duration_ms=duration_ms, detail=error)
 
 
 def record_next_run(

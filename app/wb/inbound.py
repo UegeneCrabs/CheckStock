@@ -1,4 +1,5 @@
 from app.application.inbound_supplies import InboundSourceError
+from app.core.constants import FBO_STOCK
 from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSupply
 from app.stock.inbound_common import MAX_PAGES, count, identifier, object_row, recent, rows
 from app.wb import api
@@ -23,7 +24,10 @@ def list_supplies(token: str) -> list[dict]:
                 f"{api.SUPPLIES_BASE}/api/v1/supplies",
                 token,
                 params={"limit": 1000, "offset": page * 1000},
-                json_body={"dates": [], "statusIDs": [1, 2, 3, 4, 5, 6]},
+                json_body={
+                    "dates": [],
+                    "statusIDs": sorted(map(int, FBO_STOCK.wb_active | {FBO_STOCK.wb_accepted})),
+                },
             ),
             "поставки WB",
         )
@@ -80,6 +84,7 @@ def normalize(summary: dict, detail: dict, goods: list[dict]) -> InboundSupply:
             article=str(row.get("nmID") or row.get("vendorCode") or ""),
             sku=str(row.get("nmID") or ""),
             vendor_code=str(row.get("vendorCode") or ""),
+            variant=str(row.get("techSize") or ""),
             barcode=identifier(row.get("barcode"), "баркод WB"),
             quantity=count(row.get("quantity"), "WB quantity"),
             accepted_quantity=count(row.get("acceptedQuantity"), "WB acceptedQuantity", optional=True),
@@ -99,14 +104,7 @@ def normalize(summary: dict, detail: dict, goods: list[dict]) -> InboundSupply:
         stage = "transit"
     note = ""
     if status == 5:
-        if any(item.shortage_quantity or 0 for item in items):
-            stage = "discrepancy"
-        elif items and all(
-            item.ready_quantity is not None and item.ready_quantity >= item.quantity for item in items
-        ):
-            stage = "completed"
-        else:
-            stage = "placement"
+        stage = "completed"
         note = "После приёмки в СЦ товары могут ещё перемещаться на склад хранения. Готовность к продаже — по данным поставки WB."
     supply_id = identifier(data.get("supplyID") or data.get("preorderID"), "поставка WB")
     return InboundSupply(
@@ -117,8 +115,14 @@ def normalize(summary: dict, detail: dict, goods: list[dict]) -> InboundSupply:
         status=str(status),
         status_label=STATUS_LABELS.get(status, f"Статус {status}"),
         stage=stage,
-        warehouse=str(data.get("actualWarehouseName") or data.get("warehouseName") or ""),
-        transit_warehouse=str(data.get("transitWarehouseName") or ""),
+        warehouse=str(
+            data.get("warehouseName")
+            or data.get("warehouseID")
+            or data.get("actualWarehouseName")
+            or data.get("actualWarehouseID")
+            or ""
+        ),
+        transit_warehouse=str(data.get("transitWarehouseName") or data.get("transitWarehouseID") or ""),
         planned_at=str(data.get("supplyDate") or ""),
         created_at=str(data.get("createDate") or ""),
         updated_at=str(data.get("updatedDate") or ""),
@@ -132,7 +136,7 @@ def load(token: str, previous: tuple[InboundSupply, ...] = ()) -> tuple[InboundS
     known = {supply.key: supply for supply in previous}
     listed = {supply_key(row) for row in summaries}
     for supply in previous:
-        if supply.key not in listed and supply.stage not in TERMINAL_STAGES:
+        if supply.key not in listed and supply.listed_status and supply.stage not in TERMINAL_STAGES:
             summaries.append(
                 {
                     "supplyID": supply.supply_id
@@ -145,10 +149,19 @@ def load(token: str, previous: tuple[InboundSupply, ...] = ()) -> tuple[InboundS
     for row in summaries:
         key = supply_key(row)
         old = known.get(key)
-        if row.get("statusID") == 5 and not recent(
-            row.get("updatedDate") or row.get("factDate") or row.get("createDate")
-        ):
-            if old is None or old.stage in TERMINAL_STAGES:
+        if str(row.get("statusID")) == FBO_STOCK.wb_accepted:
+            updated = str(row.get("updatedDate") or "")
+            if (
+                old
+                and old.stage in TERMINAL_STAGES
+                and old.warehouse
+                and updated
+                and updated == old.updated_at
+            ):
+                continue
+            if (old is None or old.stage in TERMINAL_STAGES) and not recent(
+                updated or row.get("factDate") or row.get("createDate")
+            ):
                 continue
         preorder = not bool(row.get("supplyID"))
         supply_id = identifier(row.get("supplyID") or row.get("preorderID"), "поставка WB")
@@ -162,6 +175,10 @@ def load(token: str, previous: tuple[InboundSupply, ...] = ()) -> tuple[InboundS
                 ),
                 "детали поставки WB",
             )
+            if str(detail.get("statusID") or row.get("statusID")) not in FBO_STOCK.wb_active | {
+                FBO_STOCK.wb_accepted
+            }:
+                continue
             result.append(normalize(row, detail, get_goods(token, supply_id, preorder)))
         except api.WBApiError as error:
             # WB returns 400, not 404, for explicitly deleted drafts.
@@ -177,7 +194,7 @@ def load(token: str, previous: tuple[InboundSupply, ...] = ()) -> tuple[InboundS
                     old.model_copy(
                         update={
                             "stage": "cancelled",
-                            "status": "deleted",
+                            "status": FBO_STOCK.wb_deleted,
                             "status_label": "Удалена",
                             "unavailable": False,
                             "warning": "",

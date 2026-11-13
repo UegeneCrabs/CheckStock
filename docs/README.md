@@ -21,6 +21,7 @@
 - [Выпуск версии и развёртывание на сервере](releases.md)
 - [Ежедневные резервные копии БД в Google Диск](database-backups.md)
 - [Локальный просмотр логов: Grafana, Loki и Alloy](local-observability.md)
+- [Скачивание журнала ошибок выгрузок по датам](local-observability.md#скачать-журнал-ошибок-выгрузок)
 - [Серверный Compose для Grafana, Loki и Alloy](server-observability.md)
 - [Скилл агента для логирования приложения](../.agents/skills/checkstock-logging/SKILL.md)
 - [Скилл агента для выпуска и диагностики деплоя](../.agents/skills/checkstock-deploy/SKILL.md)
@@ -34,6 +35,7 @@
 - [Поставки FBO: выбор одного ФФ, проверка остатков и ручное проведение](fbo-stock-movements.md)
 - [Табло поставок и серверная отметка «Поставлена на сток»](supply-arrivals.md)
 - [Общая Google-выгрузка проектов](project-sheet-export.md)
+- [Локальная тестовая выгрузка остатков, заказов и возвратов](project-sheet-export.md#тестовая-выгрузка-остатки)
 - [Проверка периода заказов перед FBS-выгрузкой](f09-fbs-export.md)
 - [Три самостоятельных блока WB, Ozon и Яндекс Маркета: действия, расписания, итоги и подробности по товарам](google-week-update.md)
 

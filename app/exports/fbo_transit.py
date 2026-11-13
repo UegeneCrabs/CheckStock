@@ -108,15 +108,19 @@ def _ozon(store: str) -> TransitSnapshot:
     return result
 
 
-def _yandex(store: str) -> TransitSnapshot:
-    key = yandex_tokens.get_api_key(store)
-    campaigns = yandex_api.get_campaigns(key)
-    business_id = resolve_business_id(store, key, campaigns=campaigns)
+def yandex_fby_campaign_ids(campaigns: list[dict], business_id: int) -> list[int]:
     own = [yandex_api.normalize_campaign(row) for row in campaigns]
     own = [row for row in own if row["business_id"] == business_id]
     if not own:
         raise ValueError("Яндекс не подтвердил доступ к магазинам кабинета")
-    campaign_ids = sorted({int(row["campaign_id"]) for row in own if row["scheme"] == "fby"})
+    return sorted({int(row["campaign_id"]) for row in own if row["scheme"] == "fby"})
+
+
+def _yandex(store: str) -> TransitSnapshot:
+    key = yandex_tokens.get_api_key(store)
+    campaigns = yandex_api.get_campaigns(key)
+    business_id = resolve_business_id(store, key, campaigns=campaigns)
+    campaign_ids = yandex_fby_campaign_ids(campaigns, business_id)
     result = TransitSnapshot()
     if not campaign_ids:
         return result
@@ -148,6 +152,12 @@ def _yandex(store: str) -> TransitSnapshot:
                 if count > _quantity(item["count"]):
                     raise ValueError("Яндекс вернул противоречивое количество единиц заказа")
             result.to_customer[article] += count
+    result.from_customer.update(yandex_customer_returns(key, campaign_ids))
+    return result
+
+
+def yandex_customer_returns(key: str, campaign_ids: list[int]) -> dict[str, int]:
+    quantities: dict[str, int] = defaultdict(int)
     for campaign_id in campaign_ids:
         for row in yandex_api.get_fby_customer_returns(key, campaign_id):
             if row.get("fastReturn") or row.get("shipmentStatus") not in {"RECEIVED", "IN_TRANSIT"}:
@@ -179,8 +189,8 @@ def _yandex(store: str) -> TransitSnapshot:
                     ):
                         raise ValueError("Яндекс вернул неизвестный статус позиции возврата")
                     count = sum(unit.get("status") in {"RECEIVED", "IN_TRANSIT"} for unit in instances)
-                result.from_customer[article] += count
-    return result
+                quantities[article] += count
+    return quantities
 
 
 def load(marketplace: str) -> dict[str, TransitSnapshot]:

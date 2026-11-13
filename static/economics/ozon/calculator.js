@@ -133,6 +133,7 @@ window.OzonCalculatorUI = (() => {
             wallet_price: price('green_price'),
             commission_amount: (product.commission || {}).amount ?? null,
             logistics_amount: display(((product.logistics || {}).snapshot || {}).actual_per_unit) || null,
+            new_product_costs: product.new_product_costs ?? null,
             orders_count: data.orders_count ?? null, other_spend: data.other_spend ?? null,
             other_breakdown: data.other_breakdown ?? null,
             turnover: data.turnover ?? null, buyout_percent: data.buyout_percent ?? null,
@@ -216,7 +217,18 @@ window.OzonCalculatorUI = (() => {
             };
             session.logisticsChanged = event => {
                 if (event.detail.productId !== session.productId) return;
-                edit(session, 'logistics_amount', display(event.detail.total) || null);
+                if (event.detail.invalid) {
+                    session.invalid.add('new_logistics');
+                    queue(root, session);
+                    return;
+                }
+                session.invalid.delete('new_logistics');
+                if (event.detail.overrides !== undefined) {
+                    session.values.new_logistics_overrides = event.detail.overrides;
+                } else {
+                    if (session.values.new_product_costs?.logistics) return;
+                    edit(session, 'logistics_amount', display(event.detail.total) || null);
+                }
                 session.changed = true;
                 queue(root, session);
             };
@@ -331,8 +343,21 @@ window.OzonCalculatorUI = (() => {
             note.setAttribute('role', 'status');
             container.append(note);
         }
-        paint(root, session);
-        if (!session.initialized || session.edits.length) queue(root, session);
+        const costs = product.new_product_costs ?? null;
+        const costsChanged = JSON.stringify(costs) !== JSON.stringify(session.values.new_product_costs);
+        if (costsChanged) {
+            session.values.new_product_costs = costs;
+            if (!costs?.logistics) {
+                session.invalid.delete('new_logistics');
+                session.values.new_logistics_overrides = null;
+                session.values.logistics_amount = source(product).logistics_amount;
+            }
+            if (!costs?.storage && !session.modified.has('storage_amount')) {
+                session.values.storage_amount = source(product).storage_amount;
+            }
+        }
+        if (!session.initialized || session.edits.length || costsChanged) queue(root, session);
+        else paint(root, session);
     }
 
     function paint(root, session) {
@@ -340,7 +365,12 @@ window.OzonCalculatorUI = (() => {
             const key = input.dataset.ozonScenarioInput;
             const unavailable = (input.readOnly || key === 'total_drr') && (session.pending || session.pricePending || !session.initialized || session.error || session.invalid.size);
             input.value = Object.hasOwn(session.draft, key) ? session.draft[key] : unavailable ? '' : display(session.values[key]);
-            window.OzonCalculatorHelp.bind(input.closest('.ue1c-calculator-row'), () =>
+            const row = input.closest('.ue1c-calculator-row');
+            if (key === 'storage_amount') {
+                row.firstElementChild.textContent = session.values.new_product_costs?.storage && !session.values.storage_manual
+                    ? 'Хранение, руб (оценка)' : 'Хранение, руб';
+            }
+            window.OzonCalculatorHelp.bind(row, () =>
                 window.OzonCalculatorHelpContent.calculator(session, key, input.getAttribute('aria-label')));
         });
         const breakdown = root.querySelector('[data-ozon-other-breakdown] ul');
@@ -357,6 +387,9 @@ window.OzonCalculatorUI = (() => {
         note.hidden = !note.textContent;
         note.classList.toggle('is-error', Boolean(session.error || session.settingsError));
         paintResult(root, session);
+        window.OzonLogisticsUI?.paintEstimate(
+            root, session.productId, session.values.new_logistics_estimate, waiting, session.error,
+        );
         window.OzonCalculatorHelp.refresh();
         root.dispatchEvent(new CustomEvent('ozon-calculator-changed', { detail: { productId: session.productId } }));
     }

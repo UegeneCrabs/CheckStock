@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app import db
 from app.access.authentication import is_active_user
+from app.config import settings as app_settings
 from app.core.constants import JOBS, GoogleExportKind, Marketplace, WebErrorCode
 from app.core.domain import MOSCOW_TIMEZONE
 from app.dto.google_export import (
@@ -219,7 +220,11 @@ async def google_export_data(request: Request) -> GoogleExportView:
         lambda: GoogleExportSettings.model_validate(project_sheet_export.get_settings())
     )
     email = await run_in_threadpool(google_service_account_email)
-    return GoogleExportView(settings=settings, service_account_email=email)
+    return GoogleExportView(
+        settings=settings,
+        service_account_email=email,
+        stock_test_enabled=app_settings.google_stock_test_enabled,
+    )
 
 
 @router.get("/ui/integrations/google-export", response_class=HTMLResponse)

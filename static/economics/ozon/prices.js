@@ -17,7 +17,7 @@ window.OzonPricesUI = (() => {
         hour: '2-digit', minute: '2-digit',
     });
     const states = {
-        missing: 'Нет данных', conflict: 'Расхождение между акциями', error: 'Ошибка обновления',
+        missing: 'Нет данных', conflict: 'Расхождение между акциями', error: 'Сохранённые данные',
     };
 
     function element(tag, className, text) {
@@ -177,7 +177,6 @@ window.OzonPricesUI = (() => {
                 : 'Цена с учётом акции × комиссия Ozon FBO / 100.'];
             if (source.received_at) notes.push('Получено из API: ' + dates.format(new Date(source.received_at)) + ' МСК.');
             if (source.state === 'missing') notes.push('Комиссия из API ещё не загружена.');
-            if (source.state === 'error') notes.push('Ошибка обновления. Показана последняя известная ставка.');
             if (source.stale) notes.push('Ставка из предыдущей выгрузки.');
             notes.push('Правки действуют только в открытой карточке.');
             row.title = notes.join('\n');

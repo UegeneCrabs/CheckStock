@@ -7,6 +7,7 @@ from app.access.economics_preview import can_preview
 from app.access.resources import accessible_marketplaces, accessible_stores
 from app.config import settings
 from app.core.constants import INBOUND_SCHEDULE, WebErrorCode
+from app.core.export_journal import diagnostic
 from app.core.stores import STORES
 from app.dto.identity import SectionName
 from app.dto.ui import UiContext, UiStore, UiUser
@@ -23,6 +24,16 @@ async def context(request: Request, resources: AsyncResourcesDependency) -> UiCo
     if not is_active_user(user):
         raise HTTPException(403, WebErrorCode.FORBIDDEN)
     stores = accessible_stores(user)
+    for alert in await IntegrationRepository(resources.database).alerts(stores):
+        diagnostic(
+            "source_health",
+            marketplace=alert.marketplace,
+            store=alert.store_slug,
+            scope=alert.scope,
+            checked_at=alert.checked_at,
+            expires_at=alert.expires_at,
+            detail=alert.error or alert.code.value,
+        )
     return UiContext(
         user=UiUser.model_validate(user),
         stores=tuple(
@@ -30,11 +41,10 @@ async def context(request: Request, resources: AsyncResourcesDependency) -> UiCo
             for slug in stores
         ),
         sections=tuple(section for section in SectionName if section != SectionName.STOCK_RANDOMIZER),
-        inbound_interval_seconds=INBOUND_SCHEDULE.interval_seconds,
+        inbound_interval_seconds=settings.inbound_sync_interval_seconds,
         inbound_schedule=INBOUND_SCHEDULE.description,
         warehouse_display_limit=settings.warehouse_display_limit,
         economics_preview=can_preview(user),
-        alerts=await IntegrationRepository(resources.database).alerts(stores),
     )
 
 

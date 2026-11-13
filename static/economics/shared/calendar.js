@@ -21,7 +21,6 @@
         }
         return body;
     }
-    const parameterLabel = key => (data.fields.find(f => f.key === key) || {}).label || config.messages?.[key] || (key === 'snapshot' ? 'нет дневного снимка' : key);
     function params() { return new URLSearchParams({store:el('store').value, day:el('day').value}); }
     async function load() {
         const request = ++sequence;
@@ -39,11 +38,8 @@
             data.fields = config.fields || data.fields;
             el('day').min = data.first_day || config.today;
             el('status').textContent = data.preliminary ? 'Сегодня · предварительные значения' : 'Сохранённые значения за день';
-            el('note').textContent = (data.first_day ? 'История с ' + data.first_day + '. ' : 'Дневных снимков пока нет. ') + 'Нажмите на ячейку: источник, время и история. Красным отмечено отсутствие; 0 — сохранённый ноль. Полнота не означает проверку человеком.';
-            el('summary').textContent = 'Полный расчёт маржинальности: ' + data.complete + ' из ' + data.total + ' товаров. Прибыль за ' + data.day + ': ' + (data.day_profit == null ? 'Недостаточно данных' : display(data.day_profit) + ' ₽' + (data.profit_complete ? '' : ' · Неполный расчёт')) + '.';
-            el('summary').classList.toggle('uec-error', !data.profit_complete);
-            el('incomplete').hidden = data.profit_complete || !data.profit_missing.length;
-            el('incomplete').querySelector('ul').innerHTML = data.profit_missing.map(p=>'<li>'+escape(p.article)+': '+escape(p.parameters.map(parameterLabel).join(', '))+(p.unavailable?' · не вошёл в итог: недостаточно данных':'')+'</li>').join('');
+            el('note').textContent = (data.first_day ? 'История с ' + data.first_day + '. ' : 'Дневных снимков пока нет. ') + 'Нажмите на ячейку: источник, время и история.';
+            el('summary').textContent = 'Прибыль за ' + data.day + ': ' + (data.day_profit == null ? '—' : display(data.day_profit) + ' ₽');
             const cols = [...computed.slice(0,2), ...data.fields, computed[2]];
             el('head').innerHTML = '<tr><th>Товар<small>Фото · название · артикул · баркод</small></th>' + cols.map(f => '<th>' + escape(f.label) + '<small>' + escape(f.unit) + '</small></th>').join('') + '</tr>';
             el('rows').innerHTML = data.rows.map((row, index) => {
@@ -55,9 +51,8 @@
                     const isComputed = computed.some(c => c.key === f.key);
                     const v = (isComputed ? row.result : row.values)[f.key];
                     const corrected = row.corrected.includes(f.key);
-                    const partial = isComputed && (f.key === 'day_profit' ? (row.result.daily_missing || []).length : (row.result.missing || []).length);
-                    const text = v == null && isComputed ? 'Недостаточно данных' : display(v);
-                    return '<td><button class="uec-cell' + (v == null || partial ? ' is-missing' : '') + (corrected ? ' is-corrected' : '') + (v < 0 ? ' uec-negative' : '') + '" data-row="' + index + '" data-field="' + f.key + '" aria-label="' + escape(f.label + ': ' + text) + '">' + escape(text) + (partial && v != null ? '<small class="uec-partial">Неполный расчёт</small>' : '') + (corrected ? '<small>Корректировка</small>' : '') + '</button></td>';
+                    const text = v == null ? '—' : display(v);
+                    return '<td><button class="uec-cell' + (corrected ? ' is-corrected' : '') + (v < 0 ? ' uec-negative' : '') + '" data-row="' + index + '" data-field="' + f.key + '" aria-label="' + escape(f.label + ': ' + text) + '">' + escape(text) + (corrected ? '<small>Корректировка</small>' : '') + '</button></td>';
                 }).join('') + '</tr>';
             }).join('');
             if (!data.rows.length) el('rows').innerHTML = '<tr><td colspan="' + (cols.length+1) + '" style="padding:28px">Товары не найдены в пределах ваших прав и фильтра.</td></tr>';
@@ -88,12 +83,6 @@
             const actual = (isInput ? saved.values : saved.result)[field];
             el('cell-content').innerHTML = '<dl><dt>Действующее значение</dt><dd><strong>' + escape(display(actual)) + '</strong></dd><dt>Источник</dt><dd>' + escape(origin) + '</dd><dt>Снимок сохранён</dt><dd>' + escape(dateTime(saved.source.captured_at)) + '</dd><dt>Получено от источника</dt><dd>' + escape(dateTime((saved.source_times||{})[field])) + '</dd>' + (isInput ? '<dt>Первоначальное значение</dt><dd>' + escape(display(saved.original.values[field])) + '</dd><dt>Последнее значение источника</dt><dd>' + escape(display(saved.source.values[field])) + '</dd>' : '') + '<dt>Версия расчёта</dt><dd>' + escape(saved.version || 'Исходная') + '</dd></dl>';
             if (saved.source.basis === 'legacy') el('cell-content').innerHTML += '<p class="uec-note">Ранее сохранённый снимок. Дата сохранения указана выше; исходный сбор за эту дату не подтверждается автоматически.</p>';
-            if (actual == null && ['retail_price','customer_price'].includes(field) && saved.values.price_missing_reason) el('cell-content').innerHTML += '<p class="uec-error">' + escape(saved.values.price_missing_reason) + '</p>';
-            const missing = field === 'day_profit' ? saved.result.daily_missing || [] : saved.result.missing || [];
-            if (actual == null || !isInput && missing.length) {
-                const noBuyouts = !isInput && field !== 'day_profit' && saved.result.no_expected_buyouts && config.messages?.no_expected_buyouts;
-                el('cell-content').innerHTML += '<p class="uec-error">' + escape(noBuyouts || (field === 'roi' && (saved.values.purchase_price === 0 || saved.values.purchase === 0) ? 'ROI не определён при нулевой закупке.' : missing.length ? (actual == null ? 'Недостаточно данных. ' : 'Неполный расчёт. ') + 'Не учтены / неизвестны за ' + data.day + ': ' + [...new Set(missing)].map(parameterLabel).join(', ') : 'Источник не сохранил значение.')) + '</p>';
-            }
             const events = (saved.events || []).filter(e => !isInput || e.kind === 'source' || e.field === field);
             el('cell-content').innerHTML += '<h3>История значения</h3><ol class="uec-history"><li>Первый снимок: ' + escape(dateTime(saved.original.captured_at)) + '</li>' + events.map(e => '<li>' + escape(dateTime(e.at)) + ' · ' + escape(config.actors?.[e.actor] || e.actor) + ' · ' + escape(e.kind === 'source' ? 'Получены данные источника' : e.kind === 'undo' ? 'Отмена корректировки' : 'Корректировка') + (isInput ? ': ' + escape(display(e.kind === 'source' ? (e.before || {})[field] : e.before)) + ' → ' + escape(display(e.kind === 'source' ? (e.after || {})[field] : e.after)) : '') + (e.reason ? '<br>' + escape(e.reason) : '') + '</li>').join('') + '</ol>';
             el('edit').hidden = !(isInput && meta.editable && data.can_edit);

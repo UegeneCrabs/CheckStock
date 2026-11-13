@@ -29,12 +29,11 @@
     async function overview(context) {
         const data = await ui.request('/stock/data');
         const cards = data.stores.map(store => {
-            const problems = context.alerts.filter(alert => alert.store_slug === store.store_slug);
             const title = name(context, store.store_slug);
-            const status = problems.length ? `Проблем с доступом: ${problems.length}` : store.marketplaces.length ? 'Данные доступны' : 'Ожидает синхронизации';
-            return `<a class="store-card stock-store-card" href="/stock/${e(store.store_slug)}" data-store-color="${e(store.store_slug)}"><span class="stock-store-head"><span class="store-avatar">${e(title.slice(0, 2).toUpperCase())}</span><span aria-hidden="true">›</span></span><strong class="store-name">${e(title)}</strong><span class="store-card-status${problems.length ? ' store-card-status--warning' : ''}"><i aria-hidden="true"></i>${e(status)}</span><span class="store-card-metrics"><span><small>Остаток</small><b>${n(store.total_stock)}</b></span><span><small>Товаров</small><b>${n(store.sku_count)}</b></span></span><span class="store-marketplaces">${store.marketplaces.map(mp => `<span>${e(marketNames[mp] || mp)}</span>`).join('') || '<span class="is-muted">Нет данных</span>'}</span></a>`;
+            const status = store.marketplaces.length ? 'Данные доступны' : 'Ожидает синхронизации';
+            return `<a class="store-card stock-store-card" href="/stock/${e(store.store_slug)}" data-store-color="${e(store.store_slug)}"><span class="stock-store-head"><span class="store-avatar">${e(title.slice(0, 2).toUpperCase())}</span><span aria-hidden="true">›</span></span><strong class="store-name">${e(title)}</strong><span class="store-card-status"><i aria-hidden="true"></i>${e(status)}</span><span class="store-card-metrics"><span><small>Остаток</small><b>${n(store.total_stock)}</b></span><span><small>Товаров</small><b>${n(store.sku_count)}</b></span></span><span class="store-marketplaces">${store.marketplaces.map(mp => `<span>${e(marketNames[mp] || mp)}</span>`).join('') || '<span class="is-muted">Нет данных</span>'}</span></a>`;
         }).join('');
-        return { title: 'CheckStock — Остатки', section: 'stock', values: { last_sync: e(ui.date(data.last_sync)), store_cards: cards, sync_products_button: '<button class="btn-primary btn-sync" type="button" id="sync-products-btn" aria-describedby="sync-products-status">Обновить остатки</button>', stock_summary: `<div class="stock-summary" role="list">${metric('Магазинов', data.stores.length)}${metric('Общий остаток', n(data.total_stock))}${metric('Товаров в каталогах', n(data.total_sku))}${metric('Подключений к площадкам', n(data.total_connections))}${metric('Состояние данных', context.alerts.length || 'В норме')}</div>` } };
+        return { title: 'CheckStock — Остатки', section: 'stock', values: { last_sync: e(ui.date(data.last_sync)), store_cards: cards, sync_products_button: '<button class="btn-primary btn-sync" type="button" id="sync-products-btn" aria-describedby="sync-products-status">Обновить остатки</button>', stock_summary: `<div class="stock-summary" role="list">${metric('Магазинов', data.stores.length)}${metric('Общий остаток', n(data.total_stock))}${metric('Товаров в каталогах', n(data.total_sku))}${metric('Подключений к площадкам', n(data.total_connections))}</div>` } };
     }
 
     async function stock(context, url) {
@@ -51,7 +50,6 @@
             total_download_button: `<a class="btn-secondary stock-total-download" href="${link('/stock/total.xlsx', { store: store.slug })}" download>Скачать XLSX</a>`,
             mp_source_options: store.marketplaces.map(mp => option(mp, mp + ' — не распределено', 'WB')).join(''),
             mp_target_options: markets(context).map(mp => option(mp, mp + ' — не распределено', 'WB')).join(''),
-            access_problems: e(JSON.stringify(context.alerts.filter(alert => alert.store_slug === store.slug && ['credentials_missing', 'access_denied'].includes(alert.code)).map(alert => ({ kind: 'invalid', title: marketNames[alert.marketplace] || alert.marketplace, status: alert.code === 'credentials_missing' ? 'API-ключ не заполнен или недействителен.' : 'Проверьте права API-ключа для раздела ' + alert.scope, detail: 'Обновите ключ и повторите выгрузку. До исправления показываем ранее загруженные данные.' })))),
             stock_head: '<tr>' + headers + '</tr>', scheme_list: e(data.schemes.join(',')), scheme_count: data.schemes.length,
             stock_rows: rows || empty(5 + data.schemes.length, 'Пока нет остатков по этому магазину')
         } };

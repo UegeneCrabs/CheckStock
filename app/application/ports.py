@@ -83,6 +83,7 @@ if TYPE_CHECKING:
     from app.infrastructure.database import DatabaseConnection
 
 
+from app.dto.google_stock_report import StockTestSchedule, StockTestScheduleState
 from app.dto.identity import (
     AccessDecision,
     ActivityCommand,
@@ -465,6 +466,11 @@ class BackupDestination(Protocol):
     async def upload(
         self, upload: BackupUpload, save: Callable[[BackupUpload], Awaitable[None]]
     ) -> DriveBackupFile: ...
+
+
+class StockTestScheduleStore(Protocol):
+    async def get(self) -> StockTestScheduleState: ...
+    async def save(self, schedule: StockTestSchedule, now: datetime) -> None: ...
 
 
 class YandexAnalyticsUnitOfWork(Protocol):

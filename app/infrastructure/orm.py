@@ -253,6 +253,14 @@ class SyncJobSettingRecord(OrmBase):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class GoogleStockTestScheduleRecord(OrmBase):
+    __tablename__ = "google_stock_test_schedule"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    activated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class UsedSourceRecord(OrmBase):
     __tablename__ = "used_sources"
     __table_args__ = (UniqueConstraint("store_slug", "kind", "fingerprint"),)

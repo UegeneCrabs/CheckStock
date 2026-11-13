@@ -1,7 +1,14 @@
+from datetime import date
+
 from pydantic import Field, SecretStr
 
 from app.core.constants import WEB, CredentialMarketplace, JobScope, ScheduleKind, WebErrorCode
 from app.dto.common import DtoModel
+
+
+class ExportLogCalendar(DtoModel):
+    today: date
+    oldest: date
 
 
 class CredentialUpdate(DtoModel):

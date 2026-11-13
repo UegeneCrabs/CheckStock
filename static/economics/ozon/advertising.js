@@ -179,7 +179,6 @@ window.OzonAdvertisingUI = (() => {
             buyout.retained == null ? '' : 'Выкуплено без возвратов: ' + buyout.retained + '; отменено: ' + buyout.cancelled + '; возвращено: ' + buyout.returned + '.',
             buyout.default_applied ? 'Применён выкуп по умолчанию: ' + percent(buyout.percent) + '. Фактический: ' + percent(buyout.actual_percent) + '.' : '',
             buyout.stale ? 'Сохранённые данные устарели. Ожидается обновление.' : '',
-            buyout.error ? 'Последнее обновление не удалось.' : '',
             stamp(buyout.observed_at)].filter(Boolean).join('\n');
         const fields = [
             { key: 'buyoutPercent', label: 'Процент выкупа', unit: '%', value: data.buyout_percent, details: buyoutDetails,

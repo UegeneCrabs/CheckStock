@@ -9,6 +9,7 @@ from app.core.constants import (
     Marketplace,
     OzonDataIssueCode,
     OzonPriceField,
+    OzonStorageState,
 )
 from app.dto.inbound_supplies import InboundSnapshot
 from app.dto.ozon_advertising import AdvertisingPeriod, StoreAdvertisingBreakdown
@@ -21,11 +22,16 @@ from app.dto.ozon_economics import (
     OzonProductsQuery,
     OzonTurnoverData,
 )
-from app.dto.ozon_logistics import LogisticsData
+from app.dto.ozon_logistics import LogisticsData, LogisticsPeriod
 from app.dto.ozon_margin import OzonMarginSource
+from app.dto.ozon_new_product_costs import (
+    OzonNewLogisticsSource,
+    OzonNewProductCosts,
+    OzonNewStorageEstimate,
+)
 from app.dto.ozon_newness import OzonNewness
 from app.dto.ozon_prices import PriceValue
-from app.dto.ozon_storage import StorageData
+from app.dto.ozon_storage import StorageData, StorageSnapshot
 from app.dto.stock_pages import StockTarget
 from app.economics import ozon, ozon_commissions, ozon_margin
 from app.economics.wb.calculations import calculate_stock_coverage_days
@@ -33,6 +39,7 @@ from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepo
 from app.infrastructure.async_commissions_repository import AsyncCommissionsRepository
 from app.infrastructure.async_database import AsyncDatabase
 from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
+from app.infrastructure.async_orders_repository import AsyncOrdersRepository
 from app.infrastructure.async_prices_repository import AsyncPricesRepository
 from app.infrastructure.async_read_models import AsyncReadModels
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
@@ -121,6 +128,34 @@ def base_products(
 class OzonEconomicsRepository:
     def __init__(self, database: AsyncDatabase):
         self.database = database
+
+    async def new_product_costs(
+        self, product: OzonProduct, today: date, storage: tuple[StorageSnapshot, ...]
+    ) -> OzonNewProductCosts | None:
+        if product.is_new is not True:
+            return None
+        logistics = product.logistics.snapshot
+        logistics_source = None
+        if logistics is None or logistics.actual_per_unit is None:
+            volume = logistics.volume_l if logistics else None
+            logistics_source = OzonNewLogisticsSource(
+                volume_l=volume if volume and volume > 0 else None,
+                locality=await AsyncOrdersRepository(self.database).fbo_locality(
+                    product.store_slug, LogisticsPeriod.for_day(today)
+                ),
+            )
+        storage_source = None
+        if product.storage.snapshot is None or product.storage.snapshot.per_unit is None:
+            retained = sum(item.retained_units for item in storage)
+            if storage and retained > 0 and all(item.state != OzonStorageState.PARTIAL for item in storage):
+                storage_source = OzonNewStorageEstimate(
+                    period=storage[0].period,
+                    expenses=sum((item.expenses for item in storage), Decimal(0)),
+                    retained_units=retained,
+                )
+        if logistics_source is None and storage_source is None:
+            return None
+        return OzonNewProductCosts(logistics=logistics_source, storage=storage_source)
 
     async def products(self, query: OzonProductsQuery, last_complete_day: date, custom: bool) -> OzonProducts:
         today = datetime.now(TIME.moscow_timezone).date()
@@ -469,4 +504,11 @@ class OzonEconomicsRepository:
                     }
                 )
             )
+        if query.article and len(enriched) == 1:
+            product = enriched[0]
+            store_storage = next(
+                (store.products for store in storage_stores if store.store_slug == product.store_slug), ()
+            )
+            estimates = await self.new_product_costs(product, today, store_storage)
+            enriched[0] = product.model_copy(update={"new_product_costs": estimates})
         return result.model_copy(update={"products": tuple(enriched), "advertising_unallocated": unallocated})

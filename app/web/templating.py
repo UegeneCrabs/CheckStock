@@ -2,7 +2,6 @@ import html
 import re
 from string import Template
 
-from app import db
 from app.access.authentication import is_active_user
 from app.access.sections import (
     ANALYTICS_SECTIONS,
@@ -15,12 +14,7 @@ from app.access.sections import (
     section_path,
 )
 from app.config import settings
-from app.core import health
-from app.core.formatting import format_dt
-from app.core.stores import STORES
 from app.dto.identity import SectionName
-from app.wb import token_watch
-from app.web.access import accessible_store_slugs
 from app.web.client_templates import render_client_templates
 
 
@@ -70,102 +64,12 @@ def render_access_denied_page(
     return render_page("CheckStock — Нет доступа", "access_denied", content, user)
 
 
-def _token_alerts(user: dict | None = None) -> list[dict[str, str]]:
-    allowed_names = {STORES[slug]["name"] for slug in accessible_store_slugs(user)}
-    warnings = [
-        warning
-        for warning in token_watch.get_warnings()
-        if not allowed_names or warning.get("store") in allowed_names
-    ]
-    alerts: list[dict[str, str]] = []
-    for w in warnings:
-        when = format_dt(w["expires_at"])
-        if w["expired"]:
-            message = f"{w['store']} — ключ уже недействителен (истёк {when})"
-        else:
-            days = w["days_left"]
-            tail = "сегодня" if days <= 0 else f"через {days} дн."
-            message = f"{w['store']} — ключ истекает {tail} ({when})"
-        alerts.append(
-            {
-                "title": "Скоро закончится срок действия ключа WB",
-                "text": message,
-            }
-        )
-    return alerts
-
-
-def _advertising_alerts(user: dict | None = None) -> list[dict[str, str]]:
-    store_slugs = accessible_store_slugs(user)
-    try:
-        states = db.list_unit_economics_1c_advertising_sync_states(store_slugs)
-    except Exception:
-        return []
-    alerts: list[dict[str, str]] = []
-    for state in states:
-        if state.get("status") != "error":
-            continue
-        store_slug = str(state.get("store_slug") or "")
-        store_name = STORES[store_slug]["name"] if store_slug in STORES else store_slug.upper()
-        message = str(state.get("error") or "ошибка синхронизации")
-        if not health.requires_team_action(message):
-            continue
-        alerts.append(
-            {
-                "title": f"Кабинет {store_name}: проверьте права API-ключа WB",
-                "text": (
-                    "Реклама не обновляется. Добавьте ключу доступ к разделу «Продвижение» "
-                    "или замените ключ, затем повторите выгрузку."
-                ),
-            }
-        )
-    return alerts
-
-
-def _render_alerts(alerts: list[dict[str, str]]) -> str:
-    normalized = [alert for alert in alerts if alert.get("title") or alert.get("text")]
-    if not normalized:
-        return ""
-    dots = "".join(
-        f'<i class="system-alert-dot{" is-active" if index == 0 else ""}"></i>'
-        for index in range(len(normalized))
-    )
-    items = "".join(
-        (
-            f'<article class="system-alert-item" data-system-alert-item{" hidden" if index else ""}>'
-            f"<strong>{html.escape(str(alert.get('title') or ''))}</strong>"
-            f"<span>{html.escape(str(alert.get('text') or ''))}</span>"
-            "</article>"
-        )
-        for index, alert in enumerate(normalized)
-    )
-    return (
-        '<section class="token-banner system-alerts" data-system-alerts role="status" aria-live="polite">'
-        f'<span class="system-alert-dots" aria-hidden="true">{dots}</span>'
-        '<span class="token-banner-icon" aria-hidden="true">!</span>'
-        f'<div class="system-alert-items">{items}</div>'
-        "</section>"
-    )
-
-
-def render_token_banner(user: dict | None = None) -> str:
-    return _render_alerts(_token_alerts(user))
-
-
-def render_system_alerts(
-    user: dict | None = None,
-    extra_alerts: list[dict[str, str]] | None = None,
-) -> str:
-    return _render_alerts([*_token_alerts(user), *_advertising_alerts(user), *(extra_alerts or [])])
-
-
 def render_page(
     title: str,
     active: str,
     content: str,
     user: dict | None = None,
     content_class: str = "",
-    alerts: list[dict[str, str]] | None = None,
 ) -> str:
     stylesheet = re.compile(r'<link\b(?=[^>]*\brel=["\']stylesheet["\'])[^>]*>', re.IGNORECASE)
     page_styles = "\n".join(dict.fromkeys(stylesheet.findall(content)))
@@ -264,15 +168,6 @@ def render_page(
         marketplace_badge=marketplace_badge,
         analytics_hidden=hidden(any(visible[item] for item in ANALYTICS_SECTIONS)),
         analytics_active="active" if active in {item.value for item in ANALYTICS_SECTIONS} else "",
-        yandex_analyzer_active="active" if active == "yandex_analyzer" else "",
-        yandex_ephemerides_active="active" if active == "yandex_ephemerides" else "",
-        yandex_sales_api_active="active" if active == "yandex_sales_api" else "",
-        ephemerides_hidden=hidden(visible[SectionName.EPHEMERIDES]),
-        ephemerides_active="active" if active == "ephemerides" else "",
-        analyzer_hidden=hidden(visible[SectionName.ANALYZER]),
-        analyzer_active="active" if active == "analyzer" else "",
-        sales_api_hidden=hidden(visible[SectionName.ANALYTICS_SALES_API]),
-        sales_api_active="active" if active == "analytics_sales_api" else "",
         stock_open="",
         stock_expanded="false",
         stock_group_hidden=hidden(any(visible[item] for item in STOCK_SECTIONS)),
@@ -333,7 +228,7 @@ def render_page(
         title=title,
         header=header,
         content_class=html.escape(content_class),
-        content=render_system_alerts(user, alerts) + content,
+        content=content,
         section=(
             SECTION_PARENTS.get(current_section, current_section).value
             if current_section is not None and not active.startswith("admin")

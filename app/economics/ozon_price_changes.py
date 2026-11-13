@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.core.constants import (
     OZON_PRICE_CHANGES,
@@ -12,17 +13,50 @@ from app.dto.ozon_price_calculator import OzonPriceCalculation, OzonPriceCalcula
 from app.dto.ozon_price_changes import (
     OzonPriceChangeEvidence,
     OzonPriceChangeImpact,
+    OzonPriceChangeOperation,
     OzonPriceChangePlan,
     OzonPriceChangeRequest,
 )
-from app.dto.ozon_prices import PriceIdentity, PriceObservation, PriceValues, WebsiteEvidence
+from app.dto.ozon_prices import PriceIdentity, PriceObservation, PriceValues, SellerPriceItem, WebsiteEvidence
 from app.dto.ozon_promotions import OzonPromotionItem
 from app.economics.ozon_price_calculator import calculate
 from app.ozon.price_normalizer import seller_observation, website_observation
 
 
+def ruble_price(value: Decimal) -> Decimal:
+    return value.quantize(OZON_PRICE_CHANGES.ruble_quantum, rounding=ROUND_HALF_UP)
+
+
+def confirmed_price(operation: OzonPriceChangeOperation, observed: SellerPriceItem) -> bool:
+    prepared, original = operation.plan, operation.evidence
+    if (
+        prepared is None
+        or original is None
+        or observed.product_id != original.identity.id
+        or observed.offer_id != original.identity.offer_id
+        or observed.price.currency_code != prepared.currency
+    ):
+        return False
+    if observed.price.price == prepared.price:
+        return True
+    result = operation.receipt.result if operation.receipt else ()
+    return (
+        prepared.currency == OZON_PRICE_CHANGES.currency
+        and len(result) == 1
+        and result[0].updated
+        and not result[0].errors
+        and result[0].product_id == observed.product_id
+        and result[0].offer_id == observed.offer_id
+        and observed.price.price != prepared.previous_price
+        and observed.price.price == ruble_price(prepared.price)
+    )
+
+
 def observations(evidence: OzonPriceChangeEvidence) -> tuple[PriceObservation, ...]:
     now = evidence.received_at
+    seller = seller_observation(evidence.prices, now)
+    if not evidence.promotions.complete:
+        return (seller,)
     websites = tuple(
         WebsiteEvidence(
             product_id=evidence.identity.id,
@@ -40,7 +74,7 @@ def observations(evidence: OzonPriceChangeEvidence) -> tuple[PriceObservation, .
         if scheme.value.upper() in item.product.website_prices.prices_by_schema
     )
     return (
-        seller_observation(evidence.prices, now),
+        seller,
         website_observation(
             PriceIdentity(product_id=evidence.identity.id, offer_id=evidence.identity.offer_id), websites, now
         ),
@@ -103,8 +137,22 @@ def plan(request: OzonPriceChangeRequest, evidence: OzonPriceChangeEvidence) -> 
             ),
         )
     )
-    if prediction.base_price is None or prediction.base_price <= 0:
+    if prediction.base_price is None:
         return None
+    price = (
+        ruble_price(prediction.base_price)
+        if prices.currency_code == OZON_PRICE_CHANGES.currency
+        else prediction.base_price
+    )
+    if price <= 0:
+        return None
+    if price != prediction.base_price:
+        prediction = calculate(
+            OzonPriceCalculationRequest(
+                values=prediction,
+                edits=(OzonPriceEdit(field=OzonPriceCalculatorField.BASE, value=price),),
+            )
+        )
     impacts: list[OzonPriceChangeImpact] = []
     for item in evidence.promotions.items:
         limits = (
@@ -121,13 +169,13 @@ def plan(request: OzonPriceChangeRequest, evidence: OzonPriceChangeEvidence) -> 
                 action_id=item.action.id,
                 title=item.action.title,
                 current_status=item.status,
-                expected_participation=prediction.base_price <= min(limits)
+                expected_participation=price <= min(limits)
                 if limits and item.action.is_voucher_action is False
                 else None,
             )
         )
     return OzonPriceChangePlan(
-        price=prediction.base_price,
+        price=price,
         previous_price=prices.price,
         old_price=prices.old_price,
         min_price=prices.min_price,

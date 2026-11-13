@@ -1,7 +1,13 @@
 from collections.abc import Callable
 from decimal import Decimal
 
-from app.core.constants import OZON_SCENARIO, OZON_TARIFFS, OzonCalculatorTarget, OzonPriceCalculatorField
+from app.core.constants import (
+    OZON_LOGISTICS,
+    OZON_SCENARIO,
+    OZON_TARIFFS,
+    OzonCalculatorTarget,
+    OzonPriceCalculatorField,
+)
 from app.dto.ozon_calculator import (
     OzonCalculatorPriceResult,
     OzonCalculatorRoiRequest,
@@ -86,11 +92,11 @@ def calculate_target(
 
     start = 1
     fallback: OzonCalculatorPriceResult | None = None
-    for end in (
-        OZON_TARIFFS.first_price_limit * OZON_SCENARIO.price_scale,
-        OZON_TARIFFS.second_price_limit * OZON_SCENARIO.price_scale,
-        OZON_SCENARIO.target_max_price * OZON_SCENARIO.price_scale,
-    ):
+    limits = {OZON_TARIFFS.first_price_limit, OZON_TARIFFS.second_price_limit, OZON_SCENARIO.target_max_price}
+    if values.new_product_costs and values.new_product_costs.logistics:
+        limits.add(OZON_LOGISTICS.tariff_price_limit)
+    for limit in sorted(limits):
+        end = limit * OZON_SCENARIO.price_scale
         try:
             ceiling = at(end)
         except ValueError:

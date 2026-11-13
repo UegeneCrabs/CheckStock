@@ -2,6 +2,7 @@ import hashlib
 
 from app.core.domain import DEFAULT_MARKETPLACE
 from app.core.errors import StockValidationError
+from app.core.export_journal import diagnostic
 from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.catalog import attach_barcodes, get_catalog_items
 from app.repositories.core import get_connection
@@ -119,6 +120,15 @@ def record_sync_health(
     )
     conn.commit()
     conn.close()
+    if not ok:
+        diagnostic(
+            "source_health",
+            marketplace=marketplace,
+            store=store_slug,
+            scope=scope,
+            checked_at=checked_at,
+            detail=error or "source_unavailable",
+        )
 
 
 def get_sync_health(store_slug: str) -> list[dict]:

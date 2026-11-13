@@ -142,10 +142,19 @@ window.OzonCalculatorHelpContent = (() => {
                 week?.complete && 'Подтверждённый нулевой расход за неделю даёт 0 ₽ даже при нулевом количестве ожидаемых выкупов.');
         } else if (key === 'storage_amount') {
             const source = p.storage || {}, s = source.snapshot;
-            d.formula = 'Расходы хранения / (продажи FBO − возвраты FBO).';
-            d.calculation = modified ? 'Задано на одну штуку: ' + rub(value) : rub(s?.expenses) + ' / (' + n(s?.sold_units) + ' − ' + n(s?.returned_units) + ') = ' + rub(value);
-            d.source = lines('Ozon: отчёт размещения /v1/report/placement/by-products/create; продажи и возвраты из /v1/finance/accrual/by-day.', state(source), state(s), s?.state === 'insufficient' && 'Нет положительного количества выкупленных единиц.');
-            d.dates = lines(period(s?.period.start, s?.period.end), '30 завершённых дней без сегодня.', stamp('Снимок хранения', s?.observed_at));
+            const estimate = v.new_product_costs?.storage;
+            if (estimate) {
+                d.formula = 'Расходы на хранение магазина / (продажи FBO − возвраты FBO магазина).';
+                d.calculation = rub(estimate.expenses) + ' / ' + n(estimate.retained_units) + ' = ' + rub(value);
+                d.source = 'Оценка хранения новинки по полному снимку размещения её магазина.';
+                d.dates = period(estimate.period.start, estimate.period.end);
+            } else {
+                d.formula = 'Расходы хранения / (продажи FBO − возвраты FBO).';
+                d.calculation = rub(s?.expenses) + ' / (' + n(s?.sold_units) + ' − ' + n(s?.returned_units) + ') = ' + rub(value);
+                d.source = lines('Ozon: отчёт размещения /v1/report/placement/by-products/create; продажи и возвраты из /v1/finance/accrual/by-day.', state(source), state(s), s?.state === 'insufficient' && 'Нет положительного количества выкупленных единиц.');
+                d.dates = lines(period(s?.period.start, s?.period.end), '30 завершённых дней без сегодня.', stamp('Снимок хранения', s?.observed_at));
+            }
+            if (modified && (!estimate || v.storage_manual)) d.calculation = 'Задано на одну штуку: ' + rub(value);
         } else if (key === 'margin' || key === 'roi') {
             const costs = ['purchase', 'fulfillment', 'commission_amount', 'logistics_amount', 'storage_amount', 'advertising_amount', 'acquiring_amount', 'team_amount', 'unallocated_amount', 'vat_amount', 'usn_amount'];
             d.formula = key === 'roi' ? 'ROI = чистая прибыль на штуку / закупочная стоимость × 100.'
@@ -251,6 +260,9 @@ window.OzonCalculatorHelpContent = (() => {
     }
 
     function logistics(session, key, title) {
+        if (session.estimateSource && !['actual', 'modeled'].includes(key)) {
+            return estimatedLogistics(session, key, title);
+        }
         const s = session.snapshot, c = session.changed;
         const manual = Object.hasOwn(c, key);
         const inputs = session.result?.inputs || s?.inputs || {};
@@ -296,6 +308,36 @@ window.OzonCalculatorHelpContent = (() => {
         const reference = ['actual', 'modeled', 'volume_l'].includes(key);
         return finish(d, value,
             !reference && session.helpMessage && !session.result && Object.keys(c).length ? session.helpMessage : '', manual);
+    }
+
+    function estimatedLogistics(session, key, title) {
+        const source = session.estimateSource;
+        const result = session.result;
+        const locality = source.locality;
+        const known = locality.local + locality.nonlocal_count;
+        const share = known ? locality.local / known : null;
+        const value = key === 'volume_l' ? source.volume_l : key === 'total' ? result?.total : result?.inputs[key];
+        const manual = Object.hasOwn(session.changed, key);
+        const formulas = {
+            volume_l: 'Объём упаковки из габаритов товара в Ozon.',
+            forward: 'Локальный тариф × доля локальных отправлений + нелокальный тариф × доля нелокальных.',
+            reverse: 'Для обратной перевозки применяется тот же тариф.',
+            handling: '15 ₽ за обработку возврата в ПВЗ. В расчёте на выкуп начисляется с долей возвратов и невыкупов.',
+            last_mile: 'Оценка 25 ₽ за доставку до места выдачи на один выкуп.',
+            buyout_percent: 'Эффективный выкуп в калькуляторе, пока у новинки нет собственной базы.',
+            total: '(Туда + наценка) / доля выкупа + (обратно + обработка) × (1 − доля выкупа) / доля выкупа + до места выдачи + прочие.',
+        };
+        const calculation = key === 'forward' && !manual && share !== null && result?.local_tariff != null
+            ? rub(result.local_tariff) + ' × ' + pct(share * 100) + ' + ' + rub(result.nonlocal_tariff) + ' × ' + pct((1 - share) * 100) + ' = ' + rub(value)
+            : key === 'volume_l' ? n(value) + ' л' : key === 'buyout_percent' ? pct(value) : rub(value);
+        return finish({
+            title, formula: formulas[key] || '', calculation,
+            source: 'Тарифы из ТЗ. Доли по отправлениям FBO магазина с известным маршрутом.',
+            dates: period(locality.period.start, locality.period.end),
+            note: lines(result?.upper_l != null && 'Верхняя граница объёма: ' + n(result.upper_l) + ' л. Цена продавца ' + (result.up_to_price_limit ? 'до ' + rub(result.price_limit) + ' включительно.' : 'выше ' + rub(result.price_limit) + '.'),
+                locality.covered_days < 30 && 'Подтверждены ' + locality.covered_days + ' из 30 дней.',
+                locality.unknown > 0 && 'Отправлений без известного маршрута: ' + locality.unknown + '.'),
+        }, value, value == null ? session.helpMessage : '', manual);
     }
 
     return { calculator, prices, category, logistics };

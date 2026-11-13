@@ -15,7 +15,7 @@ from app.application.stock_requests import (
     StockRequestResult,
     execute_stock_request,
 )
-from app.core.constants import FboStockErrorCode
+from app.core.constants import FboStockErrorCode, StockTransitKind
 from app.core.errors import StockValidationError
 from app.core.formatting import format_dt
 from app.core.logging_config import tagged_logger
@@ -602,6 +602,7 @@ async def list_in_transit_transfers(
     slug: str,
     mp: str = "",
     view: str = "active",
+    kind: StockTransitKind | None = None,
 ):
     store_slug = slug.lower()
     if store_slug not in STORES:
@@ -623,6 +624,7 @@ async def list_in_transit_transfers(
             can_edit=is_active_user(request.state.user),
         ),
         "active" if view == "active" else "history",
+        kind,
     )
 
 

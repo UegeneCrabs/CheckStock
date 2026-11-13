@@ -4,21 +4,25 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 
 from app.access.economics_preview import require_preview
 from app.access.resources import accessible_stores
+from app.application.ozon_logistics import with_new_product_volume
 from app.application.ozon_promotion_entry import OzonPromotionEntryService
 from app.container import (
     ozon_cabinet_service,
     ozon_history_service,
+    ozon_logistics_client,
     ozon_promotion_entry_service,
     ozon_promotions_service,
     ozon_related_service,
     ozon_tariff_service,
 )
 from app.core.constants import OZON_PROMOTIONS, TIME, HTTPStatus, Marketplace, WebErrorCode
+from app.core.export_journal import diagnostic
 from app.dto.ozon_cabinet import OzonCabinetRecord, OzonCabinets, OzonCabinetUpdate
 from app.dto.ozon_calculator import (
     OzonCalculatorPriceResult,
@@ -29,7 +33,7 @@ from app.dto.ozon_calculator import (
     OzonCalculatorValues,
 )
 from app.dto.ozon_commissions import OzonCommissionCalculation, OzonCommissionRequest
-from app.dto.ozon_economics import OzonProductDetail, OzonProducts, OzonReportRequest
+from app.dto.ozon_economics import OzonProduct, OzonProductDetail, OzonProducts, OzonReportRequest
 from app.dto.ozon_history import OzonHistory, OzonHistoryQuery
 from app.dto.ozon_logistics import LogisticsCalculation, LogisticsScenario
 from app.dto.ozon_logistics_volume import LogisticsTariffOptions
@@ -344,11 +348,34 @@ async def products(
         datetime.now(TIME.moscow_timezone).date() - timedelta(days=1),
         bool(query.date_from),
     )
+    await run_in_threadpool(_journal_product_issues, result.products)
     if query.article:
         if not result.products:
             raise HTTPException(404, WebErrorCode.NOT_FOUND)
-        return OzonProductDetail(product=result.products[0])
+        product = result.products[0]
+        costs = product.new_product_costs
+        if costs is not None and costs.logistics is not None and costs.logistics.volume_l is None:
+            try:
+                costs = await with_new_product_volume(
+                    costs, product.article, ozon_logistics_client(resources, product.store_slug).dimensions
+                )
+            except (OzonApiError, OzonCredentialsNotFoundError, ValueError):
+                pass
+            product = product.model_copy(update={"new_product_costs": costs})
+        return OzonProductDetail(product=product)
     return result
+
+
+def _journal_product_issues(products: tuple[OzonProduct, ...]) -> None:
+    for product in products:
+        if product.data_issues:
+            diagnostic(
+                "product_data_incomplete",
+                marketplace=Marketplace.OZON,
+                store=product.store_slug,
+                article=product.article,
+                detail=[issue.model_dump(exclude_none=True) for issue in product.data_issues],
+            )
 
 
 @router.get("/sales/unit-economics-1c/ozon", response_model=None)

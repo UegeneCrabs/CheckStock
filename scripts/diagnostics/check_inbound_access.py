@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.core.stores import STORES
+from app.dto.ozon_inbound import SupplyActs, SupplyGood, SupplyOrder
 from app.ozon import api as ozon
 from app.ozon import inbound as ozon_inbound
 from app.ozon import tokens as ozon_tokens
@@ -89,10 +90,16 @@ def check(target):
                     )
                     result["items_ok"] = isinstance(data.get("items"), list)
                     result["has_next_present"] = "has_next" in data
+                    sample = next(order for order in detail["orders"] if supplies[0] in order["supplies"])
+                    normalized_order = SupplyOrder.model_validate(sample)
                     result["normalized_stage"] = ozon_inbound.normalize(
-                        detail["orders"][0],
-                        supplies[0],
-                        data["items"],
+                        normalized_order,
+                        next(
+                            supply
+                            for supply in normalized_order.supplies
+                            if supply.supply_id == str(supplies[0]["supply_id"])
+                        ),
+                        tuple(SupplyGood.model_validate(item) for item in data["items"]),
                         None,
                     ).stage
                     finished = ozon.request(
@@ -126,7 +133,9 @@ def check(target):
                                         "supply_id": int(closed["orders"][0]["supplies"][0]["supply_id"]),
                                     },
                                 )
-                                quantities, _, warning = ozon_inbound.act_quantities(acts)
+                                quantities, _, warning = ozon_inbound.act_quantities(
+                                    SupplyActs.model_validate(acts)
+                                )
                                 result["acts"] = (
                                     "ambiguous" if warning else "ok" if quantities else "not_published"
                                 )

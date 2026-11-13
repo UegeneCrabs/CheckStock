@@ -23,7 +23,7 @@ window.OzonPriceSaveUI = (() => {
         unavailable: 'Не удалось получить данные Ozon.', expired: 'Подготовьте новое подтверждение.',
         changed: 'Текущая цена или условия отличаются от показанных при подтверждении.',
         rejected: 'Изменение не принято Ozon.', write_uncertain: 'Повторная отправка заблокирована. Проверяем фактическую цену.',
-        verify_failed: 'Не удалось подтвердить цену и обновить данные. Доступна проверка без повторной отправки.',
+        verify_failed: 'Ozon пока не подтвердил новую цену. Можно проверить результат без повторной отправки.',
         interrupted: 'Операция прервалась до отправки. Подготовьте новое подтверждение.',
     };
     const labels = { base_price: 'Предельная цена без акций', seller_price: 'Цена с учётом акции', black_price: 'Цена с СПП', green_price: 'Цена с Кошельком' };
@@ -235,7 +235,10 @@ window.OzonPriceSaveUI = (() => {
         }
         if (operation.plan) {
             const plan = operation.plan;
-            body.append(node('strong', labels[operation.target_field] + ': ' + money(operation.target_price, plan.currency), 'ue1c-price-confirm-target'));
+            const heading = operation.sent_at ? 'Отправленная предельная цена' : 'Предельная цена к отправке';
+            body.append(node('strong', heading + ': ' + money(plan.price, plan.currency), 'ue1c-price-confirm-target'));
+            if (operation.target_field !== 'base_price' || Number(operation.target_price) !== Number(plan.price))
+                body.append(node('p', 'Цель · ' + labels[operation.target_field] + ': ' + money(operation.target_price, plan.currency), 'ozon-price-save-note'));
             const grid = node('div', undefined, 'ue1c-price-confirm-grid');
             grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', 'Текущие и новые цены Ozon');
             comparisonRow(grid, labels.base_price, plan.previous_price, plan.price, plan.currency);
@@ -260,7 +263,11 @@ window.OzonPriceSaveUI = (() => {
         }
         if (operation.observed) body.append(node('p', 'Проверено в Ozon: ' + money(operation.observed.prices.price.price, operation.observed.prices.price.currency_code), 'ozon-price-save-note'));
         if (operation.issue) {
-            const warning = node('p', issues[operation.issue] || operation.issue, 'ue1c-price-confirm-warning');
+            const min = operation.plan?.min_price;
+            const message = operation.issue === 'min_price' && min != null
+                ? 'Минимальная цена в Ozon — ' + money(min, operation.plan.currency) + '. Укажите цену от этой суммы или измените минимум в Ozon.'
+                : issues[operation.issue] || operation.issue;
+            const warning = node('p', message, 'ue1c-price-confirm-warning');
             warning.setAttribute('role', 'alert'); body.append(warning);
         }
         operation.errors.forEach(error => body.append(node('p', error.code + (error.message ? ': ' + error.message : ''), 'ue1c-price-confirm-warning')));

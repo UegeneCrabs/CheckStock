@@ -1,3 +1,25 @@
+.stock-transit-head {
+    flex-wrap: wrap;
+}
+
+.stock-transit-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.stock-transit-kinds .stock-transit-tab {
+    min-height: 40px;
+    border: 1px solid var(--border);
+    font-size: 0.8125rem;
+}
+
+.stock-transit-kinds .stock-transit-tab.is-active {
+    border-color: #3155c8;
+    background: #3155c8;
+    color: #fff;
+}
+
 .stock-transit-filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -79,6 +101,11 @@
 .stock-transit-expansion button {
     width: auto;
     margin: 0;
+}
+
+.stock-transit-panel [data-stock-transit-fbo-only][hidden],
+.stock-transit-panel [data-stock-transit-ff-only][hidden] {
+    display: none;
 }
 
 .stock-fbo-card {

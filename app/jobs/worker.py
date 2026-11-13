@@ -13,6 +13,7 @@ from app.config import settings
 from app.core.constants import JOBS, SCHEDULER
 from app.core.logging_config import configure_logging, tagged_logger
 from app.infrastructure.async_resources import AsyncResources
+from app.infrastructure.google_stock_test_repository import GoogleStockTestRepository
 from app.jobs import database_backup
 from app.jobs.background import _initialize_application, scheduled_jobs
 from app.jobs.scheduling import ScheduledJob, run_background_job, wait_for_stop
@@ -108,6 +109,10 @@ async def _run_jobs(
     stop: asyncio.Event, path: Path, resources: AsyncResources, mode: JobMode = JobMode.ALL
 ) -> None:
     jobs = _jobs_for_mode(mode)
+    if settings.google_stock_test_seed_schedule and any(
+        job.name == JOBS.google_stock_test.name for job in jobs
+    ):
+        await GoogleStockTestRepository(resources.database).seed_server_schedule(datetime.now(UTC))
     tasks = [
         asyncio.create_task(run_background_job(job, stop, resources), name=f"checkstock:{job.name}")
         for job in jobs

@@ -107,6 +107,16 @@ async def filters(request: Request):
 @router.get(API + "/summary")
 async def summary(request: Request, container: ContainerDependency):
     result = await read_report(request, container)
+    from app.core.export_journal import diagnostic
+
+    for source in result["status"]:
+        diagnostic(
+            "finance_source_failed",
+            marketplace="YANDEX MARKET",
+            store=source.get("store_slug"),
+            source=source.get("source"),
+            detail=source.get("errors"),
+        )
     result.pop("_events")
     return result
 

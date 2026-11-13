@@ -2,21 +2,6 @@ window.IntegrationPage = (() => {
     'use strict';
     const ui = window.CheckStockUI;
     const backupJobName = 'database_backup_google_drive';
-    const backupErrors = {
-        backup_configuration: 'Не задана папка резервных копий.',
-        backup_source_unavailable: 'Исходная база данных недоступна.',
-        backup_dump_failed: 'Не удалось создать или проверить копию базы данных.',
-        backup_credentials: 'Не удалось авторизоваться сервисным аккаунтом Google.',
-        backup_google_error: 'Ошибка Google Диска. Локальная копия сохранена для повторной отправки.',
-        backup_folder_unavailable: 'Нет доступа к папке общего Google Диска или прав добавления файлов.',
-        backup_checksum_mismatch: 'Размер или контрольная сумма копии не совпали. Локальный архив сохранён.',
-        backup_upload_interrupted: 'Загрузка прервана. Локальный архив сохранён для повтора.',
-    };
-
-    function errorMessage(value) {
-        const parts = String(value || '').split(': HTTP ');
-        return backupErrors[parts[0]] ? backupErrors[parts[0]] + (parts[1] ? ' HTTP ' + parts[1] : '') : value;
-    }
     const labels = { wb: 'Wildberries', ozon: 'Ozon', yandex: 'Яндекс Маркет', WB: 'Wildberries', OZON: 'Ozon', 'YANDEX MARKET': 'Яндекс Маркет' };
     const groups = [
         { key: 'general', title: 'Общее', description: 'Все площадки, 1С и Google Таблицы', mark: 'ВСЕ' },
@@ -76,11 +61,10 @@ window.IntegrationPage = (() => {
 
     function applyCredential(form, status) {
         const badge = form.querySelector('[data-key-status]');
-        badge.textContent = status.error_code ? 'Ошибка подключения' : status.configured ? 'Подключён' : 'Ключ не задан';
+        badge.textContent = status.configured ? 'Подключён' : 'Ключ не задан';
         badge.className = 'integration-key-status ' + (status.configured ? 'is-connected' : 'is-empty');
         form.querySelector('[data-delete-key]').disabled = !status.configured;
-        form.querySelector('.integration-key-detail').textContent = status.error_code ? ui.errorText(status) :
-            status.client_id_suffix ? 'Client ID: ••••' + status.client_id_suffix :
+        form.querySelector('.integration-key-detail').textContent = status.client_id_suffix ? 'Client ID: ••••' + status.client_id_suffix :
             status.expires_at ? 'Действует до ' + ui.date(status.expires_at) : 'API-ключ не показывается после сохранения';
     }
 
@@ -153,5 +137,5 @@ window.IntegrationPage = (() => {
         window.CheckStockPage.colors();
         return catalog;
     }
-    return { load, summary, applyCredential, errorMessage };
+    return { load, summary, applyCredential };
 })();

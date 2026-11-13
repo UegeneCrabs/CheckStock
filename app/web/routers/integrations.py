@@ -14,6 +14,7 @@ from app.application.integration_views import IntegrationViews
 from app.config import settings
 from app.core.constants import JOBS, CredentialMarketplace, WebErrorCode
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.export_journal import diagnostic
 from app.core.formatting import format_dt
 from app.core.stores import STORES
 from app.dto.database_backup import BackupConfiguration
@@ -109,7 +110,9 @@ async def database_backup_configuration(request: Request) -> BackupConfiguration
     _require_active_account(request)
     return BackupConfiguration(
         folder_id=settings.database_backup.folder_id,
-        configured=bool(settings.database_backup.folder_id and settings.google_service_account_path.is_file()),
+        configured=bool(
+            settings.database_backup.folder_id and settings.google_service_account_path.is_file()
+        ),
         database="postgresql" if settings.database_url else "sqlite",
     )
 
@@ -159,7 +162,9 @@ async def run_sync_job(request: Request, job_name: str):
             run_id = await queue_async_tracked(database_backup.job(), resources)
         except SyncJobBusyError:
             return _failure(WebErrorCode.JOB_BUSY, 409)
-        await resources.jobs.log_action(request.state.user.id, request.state.user.full_name, definition.title, datetime.now(UTC))
+        await resources.jobs.log_action(
+            request.state.user.id, request.state.user.full_name, definition.title, datetime.now(UTC)
+        )
         return JSONResponse({"ok": True, "run_id": run_id}, status_code=202)
     if ozon_jobs.owns(job_name):
         result = await ozon_jobs.launch(request, job_name, get_async_resources(request))
@@ -182,6 +187,7 @@ async def run_sync_job(request: Request, job_name: str):
     except SyncJobBusyError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=409)
     except Exception as error:
+        diagnostic("manual_export_launch_failed", job=job_name, detail=f"{type(error).__name__}: {error}")
         return JSONResponse({"ok": False, "error": str(error)}, status_code=502)
     actor = request.state.user
     await run_in_threadpool(

@@ -171,11 +171,9 @@
         const date = dates.length > 1 ? `${dateLabel(dates[0])}<br>${dateLabel(dates.at(-1))}` : dateLabel(dates[0]);
         const weeks = unique(items.map((row) => weekKey(row.arrival)));
         const week = weeks.map((key) => key === 'undated' ? 'Без даты' : key.split('-')[1]).join(', ');
-        const errors = items.flatMap((row) => row.warnings || []);
         const toggle = group ? `<button class="arrivals-group-toggle" type="button" data-arrivals-expand="${esc(group)}" aria-expanded="${expanded.has(group)}" aria-label="${expanded.has(group) ? 'Свернуть' : 'Раскрыть'} группу ${esc(group)}">${expanded.has(group) ? '−' : '+'}</button>` : '';
         const order = group ? `${toggle}${esc(group)}<span class="arrivals-muted">Заказов: ${items.length}</span>` : esc(first.order);
-        const warning = errors.length ? `<span class="arrivals-muted" title="${esc(unique(errors).join('; '))}">⚠ Проверьте данные</span>` : '';
-        return `<td title="${esc(weeks.map(weekLabel).join('; '))}">${esc(week)}</td><td>${join('project')}</td><td>${order}${warning}</td>
+        return `<td title="${esc(weeks.map(weekLabel).join('; '))}">${esc(week)}</td><td>${join('project')}</td><td>${order}</td>
             <td>${group ? '<span class="arrivals-muted">Внутри группы</span>' : fileLink(first)}</td><td>${join('category')}</td><td>${join('warehouse')}</td>
             <td><span class="arrivals-status">${join('status')}</span>${items.some(delayed) ? '<span class="arrivals-delay">ОПАЗДЫВАЕТ</span>' : ''}</td>
             <td>${date}${dates.length < items.length && items.some((row) => !row.arrival) ? '<span class="arrivals-muted">Есть заказы без даты</span>' : ''}</td>
@@ -229,9 +227,7 @@
         q('[data-arrivals-refresh]').textContent = running ? 'Обновление…' : 'Обновить данные';
         const stamp = snapshot.last_success ? new Date(snapshot.last_success).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
         q('[data-arrivals-updated]').textContent = stamp ? `Обновлено ${stamp} МСК${running ? ' · загружаем свежие данные…' : ''}` : running ? 'Загружаем данные из Google Таблицы…' : 'Ожидаем первую загрузку';
-        const text = snapshot.error ? `${snapshot.error}${stamp ? ' Показана последняя успешная загрузка.' : ''}`
-            : snapshot.stale && stamp ? 'Данные давно не обновлялись. Показана последняя успешная загрузка.' : '';
-        notice(stockError || text);
+        notice(stockError);
         if (snapshot.source_url && /^https:\/\/docs\.google\.com\//.test(snapshot.source_url)) {
             q('[data-arrivals-source]').href = snapshot.source_url;
             q('[data-arrivals-source]').hidden = false;
@@ -273,7 +269,7 @@
             showState();
             render();
         } catch (error) {
-            notice(error.name === 'TimeoutError' ? 'Сервер не ответил вовремя. Повторяем загрузку.' : error.message);
+            notice(stockError);
             pendingRefresh = false;
             q('[data-arrivals-refresh]').disabled = false;
             q('[data-arrivals-refresh]').textContent = 'Повторить обновление';
@@ -329,7 +325,7 @@
         q('[data-arrivals-refresh]').disabled = true;
         q('[data-arrivals-refresh]').textContent = 'Обновление…';
         try { await request('/supply-schedule/sync', { method: 'POST' }); await load(); }
-        catch (error) { notice(error.message); pendingRefresh = false; q('[data-arrivals-refresh]').disabled = false; q('[data-arrivals-refresh]').textContent = 'Повторить обновление'; }
+        catch (_) { notice(stockError); pendingRefresh = false; q('[data-arrivals-refresh]').disabled = false; q('[data-arrivals-refresh]').textContent = 'Повторить обновление'; }
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
     load();

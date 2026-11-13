@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.config import Settings, settings
+from app.core.export_journal import DailyExportJournal
 from app.integrations.bitrix import bitrix_handler_from_env
 
 request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
@@ -76,6 +77,11 @@ class RequestContextFilter(logging.Filter):
         return True
 
 
+class ApplicationOutputFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not getattr(record, "journal_only", False)
+
+
 def event_time(record: logging.LogRecord) -> str:
     return datetime.fromtimestamp(record.created, MOSCOW).isoformat(timespec="milliseconds")
 
@@ -111,7 +117,9 @@ class CompactFormatter(logging.Formatter):
 
 class TagCatalogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        return json.dumps({"timestamp": event_time(record), "tag": record.catalog_tag}, ensure_ascii=False)
+        return json.dumps(
+            {"timestamp": event_time(record), "tag": vars(record)["catalog_tag"]}, ensure_ascii=False
+        )
 
 
 class TagCatalogHandler(logging.FileHandler):
@@ -150,7 +158,14 @@ def configure_logging(app_settings: Settings = settings) -> None:
     bitrix_handler = bitrix_handler_from_env()
     if bitrix_handler is not None:
         root.addHandler(bitrix_handler)
-    root.setLevel(level)
+    for output in root.handlers:
+        output.addFilter(ApplicationOutputFilter())
+        output.setLevel(max(output.level, level))
+    journal = DailyExportJournal(app_settings.export_error_log_directory)
+    journal.addFilter(RequestContextFilter())
+    journal.setFormatter(CompactFormatter(use_colors=False))
+    root.addHandler(journal)
+    root.setLevel(min(level, logging.WARNING))
     logging.captureWarnings(True)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)

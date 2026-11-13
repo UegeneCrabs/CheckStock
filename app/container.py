@@ -1,6 +1,8 @@
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -9,6 +11,8 @@ from app.access.security import Pbkdf2PasswordService
 from app.application.database_backup import DatabaseBackupService
 from app.application.fbo_stock import FboStockService
 from app.application.finance import FinanceService
+from app.application.google_stock_test import GoogleStockTestExport
+from app.application.google_test_order_report import GoogleTestOrderReport
 from app.application.identity import IdentityService
 from app.application.ozon_analytics import OzonAnalyticsService
 from app.application.ozon_cabinet import OzonCabinetService
@@ -33,8 +37,21 @@ from app.application.wb_product_rating import WbProductRatingService
 from app.application.wb_standard_costs import WbStandardCostsService
 from app.application.yandex_analytics import YandexAnalyticsService
 from app.config import settings
-from app.core.constants import OZON_PRICES, OZON_PROMOTIONS, TIME, OzonPriceSource, OzonPromotionStatus
+from app.core.constants import (
+    OZON_PRICES,
+    OZON_PROMOTIONS,
+    TIME,
+    Marketplace,
+    OzonPriceSource,
+    OzonPromotionStatus,
+)
 from app.core.domain import MOSCOW_TIMEZONE
+from app.dto.google_stock_report import (
+    StockTable,
+    StockTestAccountOrders,
+    StockTestCatalog,
+    StockTestOrderPeriod,
+)
 from app.dto.orders import OrderPeriod
 from app.dto.ozon_buyout import OzonBuyoutEvidence
 from app.dto.ozon_economics import OzonProductsQuery
@@ -47,13 +64,17 @@ from app.dto.ozon_tariffs import OzonCategorySelection, OzonProductCategorySelec
 from app.dto.wb_hourly_prices import WbSellerPrice, WbStorefrontResult
 from app.economics.ozon_commissions import snapshot as commission_snapshot
 from app.economics.wb.prices import calculate_wallet_price
+from app.exports.project_sheet import stock_table
 from app.infrastructure.async_database import AsyncDatabase
 from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
+from app.infrastructure.async_read_models import AsyncReadModels
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.database import database_for_path
 from app.infrastructure.fbo_stock_repository import FboStockRepository
 from app.infrastructure.finance_repository import FinanceRepository
+from app.infrastructure.google_stock_test_repository import GoogleStockTestRepository
+from app.infrastructure.google_test_order_catalog import order_catalog
 from app.infrastructure.health import DatabaseHealthService
 from app.infrastructure.identity_repository import SqlAlchemyIdentityUnitOfWork
 from app.infrastructure.ozon_analytics_repository import OzonAnalyticsRepository
@@ -78,6 +99,8 @@ from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_ca
 from app.infrastructure.wb_product_rating_repository import SqlAlchemyWbRatingWriter
 from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
 from app.infrastructure.yandex_analytics_repository import YandexAnalyticsRepository
+from app.integrations.google_test_orders import LEGACY_ORDER_SOURCES, ozon_account
+from app.integrations.google_week_client import GoogleWeekClient
 from app.jobs.async_locks import hold
 from app.jobs.locks import SyncJobBusyError
 from app.orders.ozon_async import sync_configured_store
@@ -210,15 +233,19 @@ def supply_arrival_stock_service(resources: "AsyncResources") -> SupplyArrivalSt
     )
 
 
+def ozon_logistics_client(resources: "AsyncResources", store: str) -> AsyncLogisticsClient:
+    return AsyncLogisticsClient(
+        resources.http,
+        get_order_credentials(store),
+        request_attempts=settings.ozon_logistics_request_attempts,
+    )
+
+
 def ozon_logistics_service(resources: "AsyncResources", store: str) -> OzonLogisticsService:
     return OzonLogisticsService(
         store,
         AsyncLogisticsRepository(resources.database),
-        AsyncLogisticsClient(
-            resources.http,
-            get_order_credentials(store),
-            request_attempts=settings.ozon_logistics_request_attempts,
-        ).evidence,
+        ozon_logistics_client(resources, store).evidence,
         lambda: datetime.now(UTC),
     )
 
@@ -355,6 +382,30 @@ def ozon_tariff_service(resources: "AsyncResources", store: str = "") -> OzonTar
 
 def ozon_google_export_service(resources: "AsyncResources") -> OzonGoogleExport:
     return OzonGoogleExport(resources, OzonAnalyticsRepository(resources.database))
+
+
+def google_stock_test_service(resources: "AsyncResources") -> GoogleStockTestExport:
+    read_models = AsyncReadModels(resources.database)
+
+    async def read_table(marketplace: Marketplace, now: datetime) -> StockTable:
+        return await read_models.read(partial(stock_table, marketplace, now))
+
+    async def read_catalog(marketplace: Marketplace) -> StockTestCatalog:
+        return await read_models.read(partial(order_catalog, marketplace))
+
+    async def read_account(
+        marketplace: Marketplace, store: str, period: StockTestOrderPeriod
+    ) -> StockTestAccountOrders:
+        if marketplace == Marketplace.OZON:
+            return await ozon_account(resources.http, store, period)
+        return await asyncio.to_thread(LEGACY_ORDER_SOURCES[marketplace], store, period)
+
+    return GoogleStockTestExport(
+        GoogleStockTestRepository(resources.database),
+        read_table,
+        GoogleWeekClient(resources.http),
+        GoogleTestOrderReport(read_catalog, read_account),
+    )
 
 
 def database_backup_service(resources: "AsyncResources") -> DatabaseBackupService:

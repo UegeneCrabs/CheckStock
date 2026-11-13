@@ -33,22 +33,17 @@
     function renderEndpoint(label, entry) {
         if (!entry) return badge(label, 'muted', '—');
         if (entry.ok) return badge(label, 'ok', String(entry.count));
-        return badge(label, 'error', entry.error || 'ошибка');
+        return '';
     }
 
     function mpBlock(title, hasToken, body) {
-        if (!hasToken) {
-            return window.CheckStockUI.render('stock/index/mp-block', {
-                title: title,
-                content: badge('нет токена', 'muted', ''),
-            });
-        }
+        if (!hasToken || !body) return '';
         return window.CheckStockUI.render('stock/index/mp-block-2', { title: title, body: body });
     }
 
     function catalogBadge(cat) {
         if (!cat) return badge('товаров', 'muted', '—');
-        if (cat && cat.ok === false) return badge('каталог', 'error', cat.error);
+        if (cat.ok === false) return '';
 
         var changes = [];
         if (cat.added) changes.push('+' + cat.added);
@@ -97,16 +92,6 @@
                 });
             })
             .join('');
-    }
-
-    function reportHasErrors(report) {
-        var fields = ['wb_catalog', 'fbs', 'fbo', 'ozon_catalog', 'ozon', 'yandex_catalog', 'yandex'];
-        return Object.keys(report || {}).some(function (slug) {
-            var entry = report[slug] || {};
-            return fields.some(function (field) {
-                return entry[field] && entry[field].ok === false;
-            });
-        });
     }
 
     function responseData(response) {
@@ -159,16 +144,14 @@
                 if (!data.report || typeof data.report !== 'object') {
                     throw new Error('Сервер не вернул отчёт о синхронизации');
                 }
-                status.textContent = reportHasErrors(data.report)
-                    ? 'Синхронизация завершена с ошибками'
-                    : 'Товары и остатки обновлены';
+                status.textContent = 'Обновление завершено';
                 renderResults(data.report);
                 if (data.last_sync && lastSync) {
                     lastSync.textContent = data.last_sync;
                 }
             })
-            .catch(function (err) {
-                status.textContent = 'Ошибка синхронизации: ' + (err.message || String(err));
+            .catch(function () {
+                status.textContent = '';
             })
             .finally(function () {
                 setBusy(false);

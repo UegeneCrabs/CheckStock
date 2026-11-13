@@ -11,6 +11,7 @@ from app.core.constants import (
     JobStatus,
     JobTrigger,
 )
+from app.core.export_journal import diagnostic
 from app.dto.jobs import JobSchedule, SyncJobSetting
 from app.infrastructure.async_database import AsyncDatabase, table_for, upsert
 from app.infrastructure.orm import (
@@ -242,6 +243,17 @@ class AsyncJobRepository:
                     raise RuntimeError(f"Scheduled run ownership changed: {name}/{run_id}")
                 await self._next_run(connection, name, next_run_at.isoformat(), finished_at.isoformat())
             await self._finished(connection, name, run_id, finished_at, duration_ms, error)
+        if error is not None:
+            diagnostic(
+                "sync_job_failed",
+                job=name,
+                run_id=run_id,
+                duration_ms=duration_ms,
+                trigger=JobTrigger.SCHEDULED if next_run_at is not None else JobTrigger.MANUAL,
+                attempt_number=attempt_number,
+                next_run_at=next_run_at,
+                detail=error,
+            )
 
     async def defer(self, name: str, planned: datetime, now: datetime) -> None:
         async with self.database.transaction(write=True) as connection:

@@ -3,13 +3,130 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_, select, tuple_, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.application.inbound_supplies import Target
+from app.core.constants import INBOUND_SCHEDULE, DatabaseDialect
 from app.dto.inbound_supplies import InboundSnapshot, InboundSupply
+from app.infrastructure.async_database import AsyncDatabase, table_for
 from app.infrastructure.orm import InboundSupplySnapshotRecord as SnapshotRecord
 from app.infrastructure.orm import StockItemRecord
+
+
+class AsyncSqlAlchemyInboundRepository:
+    def __init__(self, database: AsyncDatabase) -> None:
+        self.database = database
+
+    async def previous(self, target: Target) -> tuple[InboundSupply, ...]:
+        table = table_for(SnapshotRecord)
+        async with self.database.transaction() as connection:
+            payload = await connection.scalar(
+                select(table.c.payload_json).where(
+                    table.c.store_slug == target[0], table.c.marketplace == target[1]
+                )
+            )
+        return tuple(InboundSupply.model_validate(row) for row in json.loads(payload or "[]"))
+
+    async def claim(self, target: Target, token: str, now: datetime, *, recover: bool) -> bool:
+        table = table_for(SnapshotRecord)
+        async with self.database.transaction(write=True) as connection:
+            insert = pg_insert if self.database.dialect == DatabaseDialect.POSTGRESQL else sqlite_insert
+            await connection.execute(
+                insert(table)
+                .values(store_slug=target[0], marketplace=target[1])
+                .on_conflict_do_nothing(index_elements=("store_slug", "marketplace"))
+            )
+            eligible = or_(table.c.run_token.is_(None), table.c.lease_until < now.isoformat())
+            cooldown = or_(
+                table.c.last_attempt.is_(None),
+                table.c.last_attempt
+                < (now - timedelta(seconds=INBOUND_SCHEDULE.claim_cooldown_seconds)).isoformat(),
+            )
+            condition = (
+                (eligible & cooldown)
+                if not recover
+                else (table.c.run_token.is_not(None) | (eligible & cooldown))
+            )
+            claimed = await connection.scalar(
+                update(table)
+                .where(table.c.store_slug == target[0], table.c.marketplace == target[1], condition)
+                .values(
+                    run_token=token,
+                    lease_until=(now + timedelta(hours=INBOUND_SCHEDULE.lease_hours)).isoformat(),
+                    last_attempt=now.isoformat(),
+                    status="running",
+                )
+                .returning(table.c.run_token)
+            )
+        return claimed == token
+
+    async def finish(
+        self,
+        target: Target,
+        token: str,
+        now: datetime,
+        *,
+        supplies: tuple[InboundSupply, ...] | None = None,
+        status: str = "ok",
+        error: str = "",
+    ) -> bool:
+        table = table_for(SnapshotRecord)
+        values: dict[str, str | None] = {
+            "status": status,
+            "error": error,
+            "last_finished": now.isoformat(),
+            "run_token": None,
+            "lease_until": None,
+        }
+        if supplies is not None:
+            values["payload_json"] = json.dumps(
+                [s.model_dump(mode="json", exclude_computed_fields=True) for s in supplies],
+                ensure_ascii=False,
+            )
+            values["last_success"] = now.isoformat()
+        async with self.database.transaction(write=True) as connection:
+            saved = await connection.scalar(
+                update(table)
+                .where(
+                    table.c.store_slug == target[0],
+                    table.c.marketplace == target[1],
+                    table.c.run_token == token,
+                )
+                .values(**values)
+                .returning(table.c.store_slug)
+            )
+        return saved is not None
+
+    async def enrich(self, target: Target, supplies: tuple[InboundSupply, ...]) -> tuple[InboundSupply, ...]:
+        table = table_for(StockItemRecord)
+        async with self.database.transaction() as connection:
+            rows = await connection.execute(
+                select(table.c.article, table.c.name, table.c.barcode).where(
+                    table.c.store_slug == target[0], table.c.marketplace == target[1]
+                )
+            )
+            catalog = {row.article: (row.name, row.barcode) for row in rows}
+        return tuple(
+            supply.model_copy(
+                update={
+                    "items": tuple(
+                        item.model_copy(
+                            update={
+                                "name": item.name or catalog[item.article][0],
+                                "barcode": item.barcode or catalog[item.article][1],
+                            }
+                        )
+                        if item.article in catalog
+                        else item
+                        for item in supply.items
+                    )
+                }
+            )
+            for supply in supplies
+        )
 
 
 class SqlAlchemyInboundRepository:

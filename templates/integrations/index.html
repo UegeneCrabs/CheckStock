@@ -18,6 +18,19 @@
     <a href="?tab=cabinets" data-integration-view="cabinets">Параметры кабинетов</a>
 </nav>
 
+<section class="panel integration-section" id="export-log" aria-labelledby="export-log-title">
+    <div class="integration-section-head">
+        <div>
+            <h2 id="export-log-title">Журнал ошибок выгрузок</h2>
+            <p>Записи сайта и планировщика за выбранный день. Время по Москве.</p>
+        </div>
+    </div>
+    <form class="integration-toolbar" method="get" action="/api/admin/integrations/export-log/download" data-export-log-form>
+        <label class="integration-status-filter"><span>Дата</span><input class="input-control" type="date" name="day" required /></label>
+        <button class="btn-secondary" type="submit">Скачать Excel</button>
+    </form>
+</section>
+
 <section class="panel integration-section" id="integration-sync" data-integration-view-panel="sync">
     <div class="integration-section-head">
         <div
@@ -40,7 +53,6 @@
             <select class="integration-select" data-sync-filter>
                 <option value="all">Все статусы</option
                 ><option value="running">Выполняются</option>
-                <option value="error">С ошибкой</option
                 ><option value="success">Успешные</option>
                 <option value="empty">Ещё не запускались</option>
             </select></label
@@ -79,6 +91,49 @@
             ><p>Обновление номера недели и выгрузка всех проектов по площадкам.</p></div
         ></div
     >
+    <section class="panel integration-section" id="google-stock-test" data-stock-test-enabled="$google_stock_test_enabled" aria-labelledby="google-stock-test-title" hidden>
+        <div class="integration-section-head">
+            <div>
+                <h2 id="google-stock-test-title">Выгрузка в Google Таблицу — тест</h2>
+                <p>Остатки, возвраты от клиента и заказы за вычетом отмен по WB, Ozon и Яндекс Маркету.</p>
+                <p>Период заказов — с понедельника 00:00 до пятницы 15:00 МСК.</p>
+                <p><a data-stock-test-link target="_blank" rel="noopener noreferrer">Открыть тестовую таблицу</a><span data-stock-test-sheets></span></p>
+                <p data-stock-test-account hidden>Сервисный аккаунт Google <code></code></p>
+            </div>
+        </div>
+        <form data-stock-test-form hidden>
+            <div class="week-timing">
+                <div class="week-number-fields">
+                    <label class="week-field"><span>Периодичность</span>
+                        <select class="integration-select" name="schedule_kind">
+                            <option value="weekly">Раз в неделю</option>
+                            <option value="daily">Каждый день</option>
+                        </select>
+                    </label>
+                    <label class="week-field" data-stock-test-weekday><span>День недели</span>
+                        <select class="integration-select" name="weekday">
+                            <option value="0">Понедельник</option><option value="1">Вторник</option>
+                            <option value="2">Среда</option><option value="3">Четверг</option>
+                            <option value="4">Пятница</option><option value="5">Суббота</option>
+                            <option value="6">Воскресенье</option>
+                        </select>
+                    </label>
+                    <label class="week-field"><span>Время (МСК)</span><input class="input-control" type="time" name="run_time" required /></label>
+                </div>
+                <label class="week-update-switch">
+                    <input type="checkbox" name="enabled" />
+                    <span class="week-switch-track" aria-hidden="true"></span><span>Выгружать по расписанию</span>
+                </label>
+                <p class="week-next-run" data-stock-test-next></p>
+                <div class="week-check-actions">
+                    <button class="btn-primary" type="submit">Сохранить расписание</button>
+                    <button class="btn-secondary" type="button" data-stock-test-run>Выгрузить сейчас</button>
+                </div>
+            </div>
+        </form>
+        <p class="week-update-hint" data-stock-test-feedback role="status"></p>
+        <p class="week-action-status" data-stock-test-status role="status"></p>
+    </section>
     <div class="integration-export-marketplaces integration-google-marketplaces">
         <section class="panel integration-section" aria-labelledby="google-wb-title">
             <h2 class="panel-title" id="google-wb-title">WB</h2>
@@ -162,10 +217,6 @@
         <div class="integration-history-summary" data-history-summary hidden>
             <span>Показано <strong data-history-count>0</strong></span>
             <span class="is-success">Успешно <strong data-history-success>0</strong></span>
-            <span class="is-error">С ошибкой <strong data-history-error>0</strong></span>
-            <span class="is-interrupted" data-history-interrupted-summary hidden
-                >Прервано <strong data-history-interrupted>0</strong></span
-            >
         </div>
         <p class="integration-history-message" data-history-message role="status" aria-live="polite"></p>
         <div class="integration-history-table-wrap" data-history-table hidden>
@@ -188,5 +239,7 @@
 
 
 
-<script src="/static/integrations/render.js?v=20261030-backup"></script>
-<script src="/static/integrations/index.js?v=20261030-backup"></script>
+<script src="/static/integrations/render.js?v=20261113-export-log"></script>
+<script src="/static/integrations/index.js?v=20261113-export-log"></script>
+<script src="/static/integrations/google-stock-test.js?v=20261113-export-log"></script>
+<script src="/static/integrations/export-log.js?v=20261113"></script>

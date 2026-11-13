@@ -34,7 +34,9 @@ async def record_failure(batch: OrderSaveBatch, resources: AsyncResources) -> St
     errors = batch.errors
     try:
         states = {(item.scheme, item.day): item for item in await resources.orders.days((batch.store_slug,))}
-        affected = {(item.scheme, item.day) for item in await resources.orders.pending(batch.store_slug)}
+        affected = {
+            (item.scheme, item.filter_day) for item in await resources.orders.pending(batch.store_slug)
+        }
         day = batch.period.start
         while day < batch.period.end:
             for scheme in OZON_ORDERS.schemes:
@@ -128,19 +130,13 @@ async def sync_store(
             scheme: OrderScheme, window: OrderPeriod, targets: tuple[OzonPendingPosting, ...] = ()
         ) -> None:
             nonlocal catalog
-            filter_days = tuple(item.filter_day or item.day for item in targets)
-            requested = (
-                OrderPeriod(start=min(filter_days), end=max(filter_days) + timedelta(days=1))
-                if targets and scheme == OrderScheme.FBO
-                else window
-            )
             since = (
-                datetime.combine(requested.start, time.min, tzinfo=TIME.moscow_timezone)
+                datetime.combine(window.start, time.min, tzinfo=TIME.moscow_timezone)
                 .astimezone(UTC)
                 .isoformat()
             )
             to = (
-                datetime.combine(requested.end, time.min, tzinfo=TIME.moscow_timezone).astimezone(UTC)
+                datetime.combine(window.end, time.min, tzinfo=TIME.moscow_timezone).astimezone(UTC)
                 - timedelta(microseconds=1)
             ).isoformat()
             current = states.get(
@@ -194,15 +190,10 @@ async def sync_store(
                     for index, posting in enumerate(postings)
                 )
                 new_lines = ozon.normalize_postings(store, prepared, scheme)
-                if targets and any(
-                    not window.start.isoformat() <= line.ordered_at[:10] < window.end.isoformat()
-                    for line in new_lines
-                ):
-                    raise ValueError("Order date outside requested period")
-                if not targets and any(
-                    not requested.start
+                if any(
+                    not window.start
                     <= posting.filter_day(scheme, date.fromisoformat(item.ordered_at[:10]))
-                    < requested.end
+                    < window.end
                     for posting, item in zip(postings, prepared, strict=True)
                 ):
                     raise ValueError("Posting filter date outside requested period")
@@ -262,28 +253,26 @@ async def sync_store(
             cursor += timedelta(days=1)
         grouped: dict[tuple[OrderScheme, date], list[OzonPendingPosting]] = defaultdict(list)
         for posting in pending:
-            state = states.get((posting.scheme, posting.day))
-            crosses_day = posting.scheme == OrderScheme.FBO and posting.filter_day not in (None, posting.day)
-            requires_refresh = (posting.scheme, posting.day) in loaded and crosses_day
+            key = posting.scheme, posting.filter_day
+            state = states.get(key)
             if (
                 state
                 and state.ok
-                and not requires_refresh
                 and state.attempted_at.replace(minute=0, second=0, microsecond=0)
                 == attempted_at.replace(minute=0, second=0, microsecond=0)
             ):
                 continue
-            if (posting.scheme, posting.day) not in loaded or requires_refresh:
-                grouped[posting.scheme, posting.day].append(posting)
-        for targets in grouped.values():
+            if key not in loaded:
+                grouped[key].append(posting)
+        for key, targets in grouped.items():
+            scheme, day = key
             for offset in range(0, len(targets), OZON_ORDERS.pending_batch_size):
                 batch = tuple(targets[offset : offset + OZON_ORDERS.pending_batch_size])
                 await refresh(
-                    batch[0].scheme,
-                    OrderPeriod(start=batch[0].day, end=batch[0].day + timedelta(days=1)),
+                    scheme,
+                    OrderPeriod(start=day, end=day + timedelta(days=1)),
                     batch,
                 )
-            key = targets[0].scheme, targets[0].day
             day_errors = tuple(
                 issue.description
                 for issue in errors

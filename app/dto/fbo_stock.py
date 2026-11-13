@@ -18,6 +18,8 @@ class FboBalance(DtoModel):
 
 class FboAllocation(FboBalance):
     quantity: int = Field(ge=0)
+    received_quantity: int = Field(default=0, ge=0)
+    remaining_quantity: int = Field(default=0, ge=0)
     barcode: str = ""
     name: str = ""
     purchase_price: float | None = None
@@ -46,6 +48,8 @@ class FboMovement(DtoModel):
     can_post: bool = False
     can_select_fulfillment: bool = False
     processed: bool = False
+
+    remaining_quantity: int = Field(default=0, ge=0)
 
 
 class FboLegacyBatch(DtoModel):
@@ -91,6 +95,8 @@ class FboStockReport(DtoModel):
     legacy: tuple[FboLegacyBatch, ...]
     linked_batch_ids: tuple[int, ...]
     fulfillments: tuple[str, ...] = ()
+    supply_refreshing: bool = False
+    supply_last_attempt: str | None = None
 
 
 class FboStockError(Exception):

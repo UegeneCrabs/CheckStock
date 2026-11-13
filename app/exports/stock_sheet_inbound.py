@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.core.constants import INBOUND_SCHEDULE
 from app.core.domain import MOSCOW_TIMEZONE
-from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSnapshot, InboundSupply
+from app.dto.inbound_supplies import TERMINAL_STAGES, InboundItem, InboundSnapshot
 from app.repositories.stock_transit import get_ff_transit_totals
 from app.stock import inbound_supplies
 
@@ -35,28 +35,11 @@ def _key(value: object) -> str:
     return str(value or "").strip().casefold()
 
 
-def _remaining_for_export(marketplace: str, supply: InboundSupply, item: InboundItem) -> int | None:
-    """Receipt is finished: shortage is not stock in transit. A dispute on another item must not hide this item's confirmed placement balance. Accepted by WB is not necessarily ready for sale in the FBO stock."""
-    if supply.unavailable or supply.stage == "unknown":
-        return None
-    if marketplace == "WB":
-        if supply.status == "5":
-            if item.accepted_quantity is None or item.ready_quantity is None:
-                return None
-            return max(item.accepted_quantity - item.ready_quantity, 0)
-        if supply.stage == "acceptance":
-            if item.ready_quantity is None:
-                return None
-            return max(item.quantity - item.ready_quantity, 0)
-    return supply.model_copy(update={"items": (item,)}).remaining_quantity
-
-
 def summarize(
     snapshot: InboundSnapshot,
     catalog: list[dict],
     now: datetime | None = None,
     *,
-    include_yandex_approved: bool = False,
     allow_saved_snapshot: bool = False,
 ) -> InboundExport:
     products = {str(row["article"]).strip(): dict(row) for row in catalog if row.get("article")}
@@ -111,28 +94,14 @@ def summarize(
     quantities: dict[str, int | None] = dict.fromkeys(products, 0)
     confirmed_quantities: dict[str, int] = defaultdict(int)
     for supply in snapshot.supplies:
-        wb_accepted = snapshot.marketplace == "WB" and supply.status == "5"
-        receipt_finished = (snapshot.marketplace, supply.status) in {
-            ("OZON", "COMPLETED"),
-            ("YANDEX MARKET", "FINISHED"),
-        }
-        if not supply.unavailable and (
-            (supply.stage in TERMINAL_STAGES and not wb_accepted)
-            or (
-                supply.stage == "planned"
-                and not (
-                    include_yandex_approved
-                    and snapshot.marketplace == "YANDEX MARKET"
-                    and supply.status == "ACCEPTED_BY_WAREHOUSE_SYSTEM"
-                )
-            )
-            or receipt_finished
-        ):
+        if not supply.listed_status or supply.stage in TERMINAL_STAGES:
             continue
-        if not supply.items:
+        if not supply.composition_confirmed and supply.stage == "planned" and not supply.items:
+            continue
+        if not supply.composition_confirmed or (supply.unavailable and not supply.items):
             available = False
         for item in supply.items:
-            remaining = _remaining_for_export(snapshot.marketplace, supply, item)
+            remaining = supply.remaining_for(item)
             if remaining == 0:
                 continue
             articles = articles_for(item)
@@ -179,7 +148,6 @@ def load(
     catalog: list[dict],
     *,
     now: datetime | None = None,
-    include_yandex_approved: bool = False,
     allow_saved_snapshot: bool = False,
 ) -> InboundExport:
     snapshot = inbound_supplies.build_service().report(((store_slug, marketplace),))[0]
@@ -187,6 +155,5 @@ def load(
         snapshot,
         catalog,
         now,
-        include_yandex_approved=include_yandex_approved,
         allow_saved_snapshot=allow_saved_snapshot,
     )

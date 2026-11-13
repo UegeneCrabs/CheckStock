@@ -318,7 +318,6 @@
     });
 
     var pendingSubmissions = {};
-    var launchErrors = {};
     var stateGeneration = 0;
     var polling = false;
     function runMessage(job, text, isError) {
@@ -335,15 +334,14 @@
         var labels = {
             running: ['Выполняется', 'is-running'],
             success: ['Успешно', 'is-success'],
-            error: ['Ошибка', 'is-error'],
-            interrupted: ['Прервано', 'is-error'],
         };
-        var label = labels[state.status] || ['Ещё не запускалась', 'is-empty'];
+        var label = labels[state.status] || (state.last_success_at
+            ? ['Последняя успешная', 'is-success'] : ['Нет результата', 'is-empty']);
         var badge = row.querySelector('.sync-status');
         badge.textContent = label[0];
         badge.className = 'sync-status ' + label[1];
         row.querySelector('[data-sync-last-run]').textContent = runDate(
-            state.last_finished_at || state.last_started_at,
+            state.running ? state.last_started_at : state.last_success_at,
         );
         row.querySelector('[data-sync-trigger]').textContent =
             state.last_trigger === 'manual'
@@ -366,13 +364,7 @@
                   : 'Выгрузить вручную';
         }
         if (state.cooldown_until) {
-            delete launchErrors[state.name];
             runMessage(state.name, 'Пауза до ' + runDate(state.cooldown_until), false);
-            return;
-        }
-        if (state.running) delete launchErrors[state.name];
-        if (launchErrors[state.name]) {
-            runMessage(state.name, launchErrors[state.name], true);
             return;
         }
         runMessage(state.name, '', false);
@@ -390,15 +382,7 @@
                     filterJobs();
                 }
             })
-            .catch(function () {
-                document.querySelectorAll('[data-sync-run]:disabled').forEach(function (button) {
-                    runMessage(
-                        button.dataset.syncRun,
-                        'Не удалось получить статус. Повторяем проверку…',
-                        true,
-                    );
-                });
-            })
+            .catch(function () {})
             .finally(function () {
                 polling = false;
             });
@@ -408,7 +392,6 @@
             var job = button.getAttribute('data-sync-run');
             stateGeneration += 1;
             pendingSubmissions[job] = true;
-            delete launchErrors[job];
             button.disabled = true;
             button.textContent = 'Запускаем…';
             runMessage(job, 'Запускаем выгрузку…', false);
@@ -422,15 +405,12 @@
                 })
                 .catch(function (error) {
                     if (error.cooldown) {
-                        delete launchErrors[job];
                         runMessage(job, error.message, false);
                         button.disabled = true;
                         button.textContent = 'Пауза';
                         return;
                     }
-                    launchErrors[job] =
-                        error.message || 'Не удалось запустить выгрузку. Попробуйте ещё раз.';
-                    runMessage(job, launchErrors[job], true);
+                    runMessage(job, '', false);
                     button.disabled = false;
                     button.textContent = 'Выгрузить вручную';
                 })
@@ -458,8 +438,6 @@
     var statusLabels = {
         running: ['Выполняется', 'is-running'],
         success: ['Успешно', 'is-success'],
-        error: ['Ошибка', 'is-error'],
-        interrupted: ['Прервано', 'is-interrupted'],
     };
 
     function runDate(value) {
@@ -497,22 +475,8 @@
         return node;
     }
 
-    function runError(run) {
-        if (run.error_details && run.error_details.length) {
-            return run.error_details.map(function (detail) {
-                var message = detail.code === 'ozon_review_subscription_required'
-                    ? 'Отзывы недоступны на текущей подписке Ozon (403). Проверьте подписку с доступом к API отзывов в кабинете Ozon.'
-                    : window.IntegrationPage.errorMessage(detail.message);
-                return (detail.target ? detail.target + ': ' : '') + message;
-            }).join('\n');
-        }
-        if (run.error) return window.IntegrationPage.errorMessage(run.error);
-        if (run.error_code === 'interrupted')
-            return 'Запуск больше не выполняется, но результат не был сохранён. Возможно, приложение перезапустили или процесс остановился. Точное время завершения неизвестно.';
-        return 'Текст ошибки для этого запуска не сохранился.';
-    }
-
     function renderHistory(runs) {
+        runs = runs.filter(run => run.status === 'success' || run.status === 'running');
         historyRows.replaceChildren();
         historySummary.hidden = !runs.length;
         if (!runs.length) {
@@ -524,15 +488,7 @@
         historyDialog.querySelector('[data-history-success]').textContent = runs.filter(function (run) {
             return run.status === 'success';
         }).length;
-        historyDialog.querySelector('[data-history-error]').textContent = runs.filter(function (run) {
-            return run.status === 'error';
-        }).length;
-        var interruptedCount = runs.filter(function (run) {
-            return run.status === 'interrupted';
-        }).length;
-        historyDialog.querySelector('[data-history-interrupted]').textContent = interruptedCount;
-        historyDialog.querySelector('[data-history-interrupted-summary]').hidden = interruptedCount === 0;
-        runs.forEach(function (run, index) {
+        runs.forEach(function (run) {
             var row = document.createElement('tr');
             var dateCell = document.createElement('td');
             dateCell.dataset.label = 'Начало';
@@ -568,33 +524,7 @@
                 cell(run.status === 'running' ? 'В процессе' : runDuration(run.duration_ms), 'Длительность'),
             );
             historyRows.appendChild(row);
-            if (run.status === 'error' || run.status === 'interrupted') {
-                var detailRow = document.createElement('tr');
-                detailRow.className = 'integration-history-detail-row';
-                detailRow.hidden = true;
-                detailRow.id = 'integration-history-detail-' + index;
-                var detailCell = document.createElement('td');
-                detailCell.colSpan = 4;
-                var detail = document.createElement('pre');
-                detail.className = 'integration-history-error-detail';
-                detail.textContent = runError(run);
-                detailCell.appendChild(detail);
-                detailRow.appendChild(detailCell);
-                var toggle = document.createElement('button');
-                toggle.type = 'button';
-                toggle.className = 'integration-history-error-toggle';
-                var showLabel = run.status === 'interrupted' ? 'Почему прервано' : 'Показать ошибку';
-                toggle.textContent = showLabel;
-                toggle.setAttribute('aria-expanded', 'false');
-                toggle.setAttribute('aria-controls', detailRow.id);
-                toggle.addEventListener('click', function () {
-                    detailRow.hidden = !detailRow.hidden;
-                    toggle.setAttribute('aria-expanded', String(!detailRow.hidden));
-                    toggle.textContent = detailRow.hidden ? showLabel : 'Скрыть подробности';
-                });
-                statusCell.appendChild(toggle);
-                historyRows.appendChild(detailRow);
-            }
+
         });
         historyMessage.textContent = '';
         historyTable.hidden = false;

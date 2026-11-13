@@ -27,6 +27,17 @@ logger = tagged_logger(__name__, "ozon", "async_logistics")
 
 
 class AsyncLogisticsClient(AsyncSellerApi):
+    async def dimensions(self, articles: tuple[str, ...]) -> tuple[LogisticsDimensions, ...]:
+        page = AttributesPage.model_validate(
+            (
+                await self._response(
+                    OZON_LOGISTICS.attributes_path,
+                    AttributesRequest(filter=AttributesFilter(offer_id=articles)),
+                )
+            ).json()
+        )
+        return page.result
+
     async def returns(self, numbers: tuple[str, ...], filters: ReturnsFilter) -> tuple[LogisticsReturn, ...]:
         returns: list[LogisticsReturn] = []
         seen: set[int] = set()
@@ -93,16 +104,8 @@ class AsyncLogisticsClient(AsyncSellerApi):
         )
         try:
             for offset in range(0, len(requested_articles), OZON_LOGISTICS.attributes_batch_size):
-                batch_articles = requested_articles[offset : offset + OZON_LOGISTICS.attributes_batch_size]
-                page_dimensions = AttributesPage.model_validate(
-                    (
-                        await self._response(
-                            OZON_LOGISTICS.attributes_path,
-                            AttributesRequest(filter=AttributesFilter(offer_id=batch_articles)),
-                        )
-                    ).json()
-                )
-                dimensions.extend(page_dimensions.result)
+                batch = requested_articles[offset : offset + OZON_LOGISTICS.attributes_batch_size]
+                dimensions.extend(await self.dimensions(batch))
         except Exception as error:
             logger.warning("ozon_logistics_dimensions_failed error=%s", type(error).__name__)
             dimensions_available = False

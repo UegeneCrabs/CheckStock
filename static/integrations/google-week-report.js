@@ -1,58 +1,26 @@
 (() => {
     'use strict';
     const e = window.CheckStockUI.escapeHtml;
-    const statuses = { updated: 'Обновлён', unchanged: 'Без изменений', skipped: 'Пропущен', unknown: 'Есть замечания' };
+    const statuses = { updated: 'Обновлён', unchanged: 'Без изменений' };
 
     function products(report) {
-        const rows = new Map();
-        const get = item => {
-            if (!rows.has(item.row)) rows.set(item.row, { row: item.row, article: item.article, project: item.project, checked: null, written: null, unchanged: null, problems: new Map(), hardIssue: false, future: new Set() });
-            return rows.get(item.row);
-        };
-        for (const item of report.products || []) {
-            Object.assign(get(item), { checked: item.checked_cells, written: item.written_cells, unchanged: item.unchanged_cells });
-        }
-        for (const [items, kind] of [[report.issues, 'issue'], [report.missing_data, 'future'], [report.zero_filled, 'incomplete']]) {
-            for (const item of items || []) {
-                const product = get(item);
-                product.hardIssue ||= kind === 'issue';
-                if (kind === 'future') product.future.add(item.week || item.cell);
-                const key = item.reason || (kind === 'future' ? 'future' : 'missing_data');
-                if (!product.problems.has(key)) product.problems.set(key, { reason: key, entries: new Map() });
-                const problem = product.problems.get(key);
-                const entryKey = JSON.stringify([item.week || '', item.cell || '']);
-                if (!problem.entries.has(entryKey)) problem.entries.set(entryKey, { week: item.week || '', cell: item.cell || '', days: new Set() });
-                for (const day of item.missing_days || []) problem.entries.get(entryKey).days.add(day);
-            }
-        }
-        for (const product of rows.values()) {
-            product.status = product.checked === null
-                ? product.hardIssue || product.future.size >= Math.max(1, (report.periods || []).length) ? 'skipped' : 'unknown'
-                : !product.checked ? 'skipped' : product.written ? 'updated' : 'unchanged';
-        }
-        return Array.from(rows.values());
-    }
-
-    function totals(report, rows) {
-        const exact = Array.isArray(report.products);
-        const updated = exact ? rows.filter(row => row.status === 'updated').length : report.written_cells === 0 ? 0 : null;
-        const skipped = rows.filter(row => row.status === 'skipped').length;
-        const unprocessed = rows.filter(row => row.status === 'skipped' && (row.problems.has('source') || row.future.size)).length;
-        const unchanged = exact ? rows.filter(row => row.status === 'unchanged').length
-            : report.written_cells === 0 && report.checked_cells > 0 ? Math.max(0, report.matched_products - unprocessed) : null;
-        const incomplete = rows.filter(row => row.problems.has('missing_data') || row.problems.has('future')).length;
-        return { updated, skipped, unchanged, incomplete };
+        return (report.products || []).filter(item => item.checked_cells).map(item => ({
+            row: item.row, article: item.article, project: item.project,
+            written: item.written_cells, unchanged: item.unchanged_cells,
+            status: item.written_cells ? 'updated' : 'unchanged',
+        }));
     }
 
     function summaryHtml(report, action, previous = false) {
         if (!report) return '<p class="week-update-hint">Выгрузка ещё не запускалась.</p>';
-        const counts = totals(report, products(report));
+        const rows = products(report);
+        const counts = { updated: rows.filter(row => row.written).length, unchanged: rows.filter(row => !row.written).length };
         const metric = (label, value, filter, tone) => {
             const unavailable = value === null || value === 0 || !Array.isArray(report.products) && filter === 'unchanged';
             return `<button class="week-product-metric" type="button" data-week-products="${e(action)}" data-week-product-filter="${filter}" data-tone="${tone}"${unavailable ? ' disabled' : ''}><strong>${value ?? '—'}</strong><span>${label}</span></button>`;
         };
         const when = report.processed_at ? new Date(report.processed_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК' : '';
-        return `<div class="week-product-summary">${previous ? `<p class="week-previous-result">Предыдущий результат${when ? ' · ' + e(when) : ''}</p>` : ''}<div class="week-product-metrics" aria-label="Результат по товарам">${metric('Обновлено', counts.updated, 'updated', 'success')}${metric('Пропущено', counts.skipped, 'skipped', 'warning')}${metric('Без изменений', counts.unchanged, 'unchanged', 'neutral')}</div><div class="week-product-footer">${counts.incomplete ? `<button class="week-product-warning" type="button" data-week-products="${e(action)}" data-week-product-filter="incomplete">Неполные данные: ${counts.incomplete} товаров</button>` : ''}<button class="btn-secondary" type="button" data-week-products="${e(action)}">Подробнее по товарам</button></div></div>`;
+        return `<div class="week-product-summary">${previous ? `<p class="week-previous-result">Предыдущий результат${when ? ' · ' + e(when) : ''}</p>` : ''}<div class="week-product-metrics" aria-label="Результат по товарам">${metric('Обновлено', counts.updated, 'updated', 'success')}${metric('Без изменений', counts.unchanged, 'unchanged', 'neutral')}</div><div class="week-product-footer"><button class="btn-secondary" type="button" data-week-products="${e(action)}">Подробнее по товарам</button></div></div>`;
     }
 
     function show(report, title, reason, initialFilter = 'all', marketplace = report?.marketplace || 'WB') {
@@ -60,13 +28,13 @@
         const previous = document.querySelector('[data-week-products-dialog]');
         if (previous) { previous.close(); previous.remove(); }
         const rows = products(report);
-        const priority = { skipped: 0, unknown: 1, updated: 2, unchanged: 3 };
+        const priority = { updated: 0, unchanged: 1 };
         rows.sort((a, b) => priority[a.status] - priority[b.status] || a.row - b.row);
         const dialog = document.createElement('dialog');
         dialog.className = 'week-products-dialog';
         dialog.dataset.weekProductsDialog = '';
         dialog.setAttribute('aria-labelledby', 'week-products-title');
-        dialog.innerHTML = `<div class="week-products-head"><h2 id="week-products-title">${e(title)}</h2><button class="btn-secondary" type="button" data-products-close aria-label="Закрыть подробности">Закрыть</button></div>${Array.isArray(report.products) ? '' : '<p class="week-update-hint">Показаны товары с замечаниями. Полный список и точное число обновлённых товаров появятся после следующей выгрузки.</p>'}<div class="week-products-filters"><label class="week-field"><span>Артикул или проект</span><input class="input-control" type="search" data-products-search placeholder="Найти товар…" /></label><label class="week-field"><span>Результат</span><select class="integration-select" data-products-filter><option value="all">Все товары</option><option value="skipped">Пропущенные</option><option value="updated">Обновлённые</option><option value="unchanged">Без изменений</option><option value="incomplete">С неполными данными</option></select></label></div><div class="week-products-table"><table><thead><tr><th scope="col">Товар</th><th scope="col">Результат</th><th scope="col">Подробности</th></tr></thead><tbody data-products-rows></tbody></table></div><p data-products-empty hidden>Товары не найдены.</p><div class="week-products-pages"><button class="btn-secondary" type="button" data-products-prev>Назад</button><span data-products-count role="status" aria-live="polite"></span><button class="btn-secondary" type="button" data-products-next>Далее</button></div>`;
+        dialog.innerHTML = `<div class="week-products-head"><h2 id="week-products-title">${e(title)}</h2><button class="btn-secondary" type="button" data-products-close aria-label="Закрыть подробности">Закрыть</button></div><div class="week-products-filters"><label class="week-field"><span>Артикул или проект</span><input class="input-control" type="search" data-products-search placeholder="Найти товар…" /></label><label class="week-field"><span>Результат</span><select class="integration-select" data-products-filter><option value="all">Все товары</option><option value="updated">Обновлённые</option><option value="unchanged">Без изменений</option></select></label></div><div class="week-products-table"><table><thead><tr><th scope="col">Товар</th><th scope="col">Результат</th><th scope="col">Подробности</th></tr></thead><tbody data-products-rows></tbody></table></div><p data-products-empty hidden>Товары не найдены.</p><div class="week-products-pages"><button class="btn-secondary" type="button" data-products-prev>Назад</button><span data-products-count role="status" aria-live="polite"></span><button class="btn-secondary" type="button" data-products-next>Далее</button></div>`;
         const query = selector => dialog.querySelector(selector);
         const pageSize = 50;
         const imageCache = new Map();
@@ -141,23 +109,13 @@
             }
         }
         function details(product) {
-            const values = product.checked === null ? '' : `<p>Ячеек обновлено: ${product.written}; без изменений: ${product.unchanged}.</p>`;
-            const problems = Array.from(product.problems.values(), problem => {
-                const entries = Array.from(problem.entries.values(), entry => {
-                    const location = [e(entry.week), entry.cell ? cellLink(entry.cell) : ''].filter(Boolean).join(' · ');
-                    const days = entry.days.size ? 'Нет данных за: ' + e(Array.from(entry.days).sort().join(', ')) : '';
-                    return location || days ? '<p>' + [location, days].filter(Boolean).join('<br>') + '</p>' : '';
-                }).join('');
-                return `<details><summary>${e(reason(problem.reason))}</summary>${entries}</details>`;
-            }).join('');
-            return values + problems;
+            return '<p>Ячеек обновлено: ' + product.written + '; без изменений: ' + product.unchanged + '.</p>';
         }
         function render() {
             const search = query('[data-products-search]').value.trim().toLocaleLowerCase('ru');
             const filter = query('[data-products-filter]').value;
             const filtered = rows.filter(product => {
-                const matches = filter === 'all' || (filter === 'incomplete'
-                    ? product.problems.has('missing_data') || product.problems.has('future') : product.status === filter);
+                const matches = filter === 'all' || product.status === filter;
                 return matches && `${product.article} ${product.project}`.toLocaleLowerCase('ru').includes(search);
             });
             const lastPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1);

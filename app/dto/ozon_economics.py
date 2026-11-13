@@ -18,6 +18,7 @@ from app.dto.ozon_calculator import OzonCalculatorAdvertisingWeek
 from app.dto.ozon_commissions import OzonCommissionData
 from app.dto.ozon_logistics import LogisticsData
 from app.dto.ozon_margin import OzonMarginDay
+from app.dto.ozon_new_product_costs import OzonNewProductCosts
 from app.dto.ozon_newness import OzonNewness
 from app.dto.ozon_prices import PriceValues
 from app.dto.ozon_storage import StorageData
@@ -235,6 +236,7 @@ class OzonProduct(DtoModel):
     details: OzonSourceDetails
     history: None = None
     calculator: OzonCalculatorMetrics | None = None
+    new_product_costs: OzonNewProductCosts | None = None
     data_issues: tuple[OzonDataIssue, ...]
 
 

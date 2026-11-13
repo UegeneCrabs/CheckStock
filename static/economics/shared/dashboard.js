@@ -389,47 +389,8 @@
         var parts = String(value || '').split('-');
         return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : String(value || '');
     }
-    function calculationNote(value, messages) {
-        messages = messages || [];
-        if (!messages.length && value !== null && value !== undefined) return '';
-        var label = value === null || value === undefined ? 'Недостаточно данных' : 'Неполный расчёт';
-        return '<small class="ue1c-calculation-note" title="' + escapeHtml(messages.join('\n')) + '">' + label + '</small>';
-    }
-    function coverageTitle(label, coverage) {
-        if (coverage && coverage.messages && coverage.messages.length) return label + ': ' + coverage.messages.join('\n');
-        if (!coverage || !Array.isArray(coverage.dates) || !coverage.dates.length) {
-            return label + ': данных для расчёта нет';
-        }
-        return (
-            label +
-            ': данные за ' +
-            coverage.dates.map(coverageDate).join(', ') +
-            ' (' +
-            integer.format(finite(coverage.days, coverage.dates.length)) +
-            ' из ' +
-            integer.format(finite(coverage.expected_days, state.periodDays)) +
-            ' дней)' +
-            (coverage.missing_dates && coverage.missing_dates.length
-                ? '. Нет данных за ' + coverage.missing_dates.map(coverageDate).join(', ')
-                : '')
-        );
-    }
-    function isPartialCoverage(coverage) {
-        return Boolean(coverage && finite(coverage.days, 0) > 0 && coverage.complete !== true);
-    }
-    function coverageCellClass(coverage) {
-        return isPartialCoverage(coverage) ? ' ue1c-partial-cell' : '';
-    }
     function coverageValue(label, value, formatter, coverage, suffix) {
-        if (value === null || value === undefined || value === '') return (label === 'Маржа' || label === 'ROI') ? calculationNote(null, (coverage || {}).messages || [coverageTitle(label, coverage)]) : '—';
-        var partial = isPartialCoverage(coverage);
-        return window.CheckStockUI.render('economics/shared/dashboard/coverage-value-2', {
-            content: partial ? ' is-partial' : '',
-            content_2: coverageTitle(label, coverage),
-            value: formatter.format(value),
-            content_3: suffix || '',
-            content_4: partial ? ((label === 'Маржа' || label === 'ROI') ? calculationNote(value, coverage.messages || [coverageTitle(label, coverage)]) : window.CheckStockUI.render('economics/shared/dashboard/coverage-value')) : '',
-        });
+        return nullable(value, formatter, suffix || '');
     }
     function moneyOrNull(value) {
         var parsed = finite(value, null);
@@ -591,20 +552,9 @@
                 var value = column.index === 0 ? 'Итого · ' + items.length : nullable(total.value,
                     total.unit === 'money' ? money : decimal, total.unit === 'percent' ? '%' : '');
                 if (total.lowerBound && total.value != null) value = '≥ ' + value;
-                if (!config.ozonPreview && total.problemCount > 0) {
-                    value += '<small class="ue1c-calculation-note">Проблемных: ' + integer.format(total.problemCount) + '</small>';
-                } else if (!config.ozonPreview && items.length && [2, 3, 5, 6].indexOf(column.index) !== -1 && total.value == null) {
-                    value += calculationNote(total.value, total.messages && total.messages.length ? total.messages : [total.title]);
-                }
-                if (!config.ozonPreview && total.missingPurchaseCount > 0) {
-                    value += '<small class="ue1c-calculation-note">Без закупа: ' + integer.format(total.missingPurchaseCount) + '</small>';
-                }
                 return window.CheckStockUI.render('economics/shared/dashboard/total-cell', {
-                    index: column.index, value: value, key: group.key,
-                    state: total.partial ? ' ue1c-partial-cell' : '',
-                    title: (total.title || 'Показатель не суммируется.') +
-                        (total.partial ? '\nЧасть данных отсутствует: итог по доступным значениям.' : '') +
-                        '\nВсе товары по текущим фильтрам, включая другие страницы.',
+                    index: column.index, value: value, key: group.key, state: '',
+                    title: 'Все товары по текущим фильтрам, включая другие страницы.',
                 });
             }).join('');
         }).join('');
@@ -755,7 +705,6 @@
         var tag = tagData(product);
         var rowClasses = [];
         if (state.selected === product.id) rowClasses.push('is-selected');
-        if (product.data_errors && product.data_errors.length) rowClasses.push('has-data-errors');
         var status = tag.status ? String(tag.status).toLowerCase() : 'unknown';
         var drr = finite(product.advertising.drr, null);
         var drrClass = drr !== null && drr >= 18 ? ' is-high' : drr !== null && drr >= 12 ? ' is-medium' : '';
@@ -854,7 +803,7 @@
             store_name: product.store_name,
             rating: nullText(product.rating),
             reviews_count: nullText(product.reviews_count),
-            product: dataErrorsHtml(product),
+            product: '',
         });
         cells.comments = window.CheckStockUI.render('economics/shared/dashboard/render-product-2', {
             id: product.id,
@@ -882,45 +831,38 @@
                       }),
         });
         var currentSpp = calculateSppPercent(product);
-        var currentIssues = current.issues || {};
-        var marginIssues = currentIssues.margin || [];
-        var roiIssues = currentIssues.roi || [];
         cells.current = window.CheckStockUI.render('economics/shared/dashboard/render-product-6', {
             turnoverCell: config.ozonPreview === true ? window.CheckStockUI.render(
                 'economics/shared/dashboard/current-turnover-cell', {
-                    state: coverageCellClass(current.turnover_coverage),
+                    state: '',
                     value: coverageValue('ТО за сегодня после отмен · ' + coverageDate(current.period_to) + ' · МСК',
                         current.turnover, money, current.turnover_coverage),
                 }) : '',
             currentStart: config.ozonPreview === true ? '' : ' ue1c-group-start',
-            marginState: marginIssues.length ? ' ue1c-partial-cell' : '',
-            currentTitle: currentTitle + (marginIssues.length
-                ? '\n' + (current.margin === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + marginIssues.join('\n• ')
-                : noOrdersWithAds ? '' : '\nЧистая прибыль на одну выкупленную штуку.'),
-            content: nullable(current.margin, money) + calculationNote(current.margin, marginIssues),
+            marginState: '',
+            currentTitle: 'Чистая прибыль на одну выкупленную штуку.',
+            content: nullable(current.margin, money),
             roi: negativeValueClass(current.roi),
-            roiState: roiIssues.length ? ' ue1c-partial-cell' : '',
-            currentTitle_2: currentTitle + (roiIssues.length
-                ? '\n' + (current.roi === null ? 'Недостаточно данных' : 'Неполный расчёт') + ':\n• ' + roiIssues.join('\n• ')
-                : '\nROI = маржа на 1 штуку ÷ закупочная цена × 100%.'),
-            content_2: nullable(current.roi, decimal, '%') + calculationNote(current.roi, roiIssues),
+            roiState: '',
+            currentTitle_2: 'ROI = маржа на 1 штуку ÷ закупочная цена × 100%.',
+            content_2: nullable(current.roi, decimal, '%'),
             discountCell: config.yandexMetrics === true || config.ozonPreview === true ? '' : window.CheckStockUI.render(
                 'economics/shared/dashboard/current-discount-cell', { value: nullable(currentSpp, decimal, '%') }),
         });
         cells.actual = window.CheckStockUI.render('economics/shared/dashboard/render-product-7', {
-            turnoverCoverage: coverageCellClass(turnoverCoverage),
+            turnoverCoverage: '',
             content: coverageValue('ТО после отмен', economics.turnover, money, turnoverCoverage),
-            marginCoverage: coverageCellClass(marginCoverage),
+            marginCoverage: '',
             content_2: coverageValue('Маржа', economics.margin, money, marginCoverage),
-            roiCoverage: coverageCellClass(roiCoverage),
+            roiCoverage: '',
             roi: negativeValueClass(economics.roi),
             content_3: coverageValue('ROI', economics.roi, decimal, roiCoverage, '%'),
         });
         cells.advertising = window.CheckStockUI.render('economics/shared/dashboard/render-product-8', {
-            drrCoverage: coverageCellClass(product.advertising.drr_coverage),
-            adCoverage: coverageCellClass(product.advertising.coverage),
+            drrCoverage: '',
+            adCoverage: '',
             drrClass: drrClass,
-            advertisingTitle: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.drrTooltip(product) : advertisingTitle + '\n' + coverageTitle('ДРР: совпадающие дни заказов и рекламы', product.advertising.drr_coverage),
+            advertisingTitle: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.drrTooltip(product) : advertisingTitle,
             content: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.drrContent(product) : drr === null ? '—' : coverageValue('ДРР', drr, decimal,
                 product.advertising.drr_coverage, '%'),
             advertisingTitle_2: config.ozonPreview && window.OzonAdvertisingUI ? window.OzonAdvertisingUI.spendTooltip(product) : advertisingTitle,
@@ -947,7 +889,7 @@
             content_3: nullable(product.stock.fbo, integer),
             content_4: nullable(product.stock.fulfillment, integer),
             stockTitle: stockTitle,
-            stockCoverage: coverageCellClass(stock.coverage),
+            stockCoverage: '',
             content_5: coverageValue('Запас в днях · ' + stockTitle, stock.days, integer, stock.coverage),
         });
         cells.stock += window.CheckStockUI.render(
@@ -1108,6 +1050,9 @@
             var previous = preserveDetails ? previousProducts[product.id] : null;
             if (!previous || !previous._detailLoaded) return product;
             var mergedPrice = Object.assign({}, previous.price || {}, product.price || {});
+            if (config.ozonPreview && product.is_new === true && previous.new_product_costs) {
+                product.new_product_costs = previous.new_product_costs;
+            }
             Object.assign(previous, product);
             previous.price = mergedPrice;
             return previous;
@@ -2498,7 +2443,7 @@
             {
                 label: item.label,
                 label_2: definition.label,
-                content: definition.formatter.format(value) + definition.suffix + (seriesKey === 'margin' && item.margin_complete === false ? ' · Неполный расчёт. ' + (item.messages || []).join(' ') : '') + (seriesKey === 'price' && item.price_with_spp_estimated ? ' · расчётная' : '') + chartDataNote(item, seriesKey),
+                content: definition.formatter.format(value) + definition.suffix + (seriesKey === 'price' && item.price_with_spp_estimated ? ' · расчётная' : ''),
             },
         );
         nodes.chartSeriesTooltip.style.left =
@@ -2519,9 +2464,6 @@
         var marker = nodes.chart.querySelector('[data-chart-series-marker]');
         if (marker) marker.setAttribute('class', 'ue1c-chart-hover-point');
     }
-    function chartDataNote(item, field) {
-        return config.ozonPreview && window.OzonHistoryUI ? window.OzonHistoryUI.note(item, field) : '';
-    }
     function showChartTooltip(index, xFunction, history, previousHistory) {
         var item = history[index];
         if (!item) return;
@@ -2538,15 +2480,15 @@
             {
                 label: item.label,
                 content: config.yandexEconomics || config.ozonPreview ? 'Заказы' : 'Заказы воронки',
-                content_2: nullable(item.orders_count, decimal, ' шт.') + chartDataNote(item, 'orders'),
-                content_3: nullable(item.advertising_rub, preciseMoney) + chartDataNote(item, 'ads'),
-                content_4: nullable(item.drr_percent, decimal, '%') + chartDataNote(item, 'drr'),
-                content_5: nullable(item.margin_rub, preciseMoney) + calculationNote(item.margin_rub, item.messages) + chartDataNote(item, 'margin'),
-                content_6: nullable(item.stock_units, integer, ' шт.') + chartDataNote(item, 'stock'),
-                price: nullable(item.price_with_spp_rub, preciseMoney) + (item.price_with_spp_rub != null && item.price_with_spp_estimated ? ' · расчётная' : '') + chartDataNote(item, 'price'),
+                content_2: nullable(item.orders_count, decimal, ' шт.'),
+                content_3: nullable(item.advertising_rub, preciseMoney),
+                content_4: nullable(item.drr_percent, decimal, '%'),
+                content_5: nullable(item.margin_rub, preciseMoney),
+                content_6: nullable(item.stock_units, integer, ' шт.'),
+                price: nullable(item.price_with_spp_rub, preciseMoney) + (item.price_with_spp_rub != null && item.price_with_spp_estimated ? ' · расчётная' : ''),
                 content_7: previous
                     ? window.CheckStockUI.render('economics/shared/dashboard/show-chart-tooltip', {
-                          content: nullable(previous.orders_count, decimal, ' шт.') + chartDataNote(previous, 'orders'),
+                          content: nullable(previous.orders_count, decimal, ' шт.'),
                       })
                     : '',
             },
@@ -2597,23 +2539,6 @@
                 },
                 { once: true },
             );
-    }
-    function dataErrorsHtml(product, expanded) {
-        var errors = product.data_errors || [];
-        if (!errors.length) return '';
-        var message = errors.join('; ');
-        return window.CheckStockUI.render('economics/shared/dashboard/data-errors-html-2', {
-            content: expanded ? ' open' : '',
-            message: message,
-            length: errors.length,
-            content_2: errors
-                .map(function (error) {
-                    return window.CheckStockUI.render('economics/shared/dashboard/data-errors-html', {
-                        error: error,
-                    });
-                })
-                .join(''),
-        });
     }
     function renderMarketplaceHistory(product, rows, message, days) {
         product.history = rows;
@@ -2900,7 +2825,7 @@
             ' · ' +
             escapeHtml(nullText(product.reviews_count)) +
             ' отзывов' +
-            dataErrorsHtml(product, true);
+            '';
         if (placeholderMode) {
             renderPlaceholderDetail(product);
             setDetailTab(tabName);
@@ -2929,7 +2854,7 @@
         });
     }
     async function fetchProductDetail(product) {
-        if (placeholderMode) return product;
+        if (placeholderMode && !config.ozonPreview) return product;
         var query = new URLSearchParams({ store: product.store_slug, article: product.article });
         var response = await window.fetch(productsRequestUrl(query), {
             headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
@@ -2938,7 +2863,10 @@
         if (!response.ok || !result.ok || !result.product) {
             throw new Error(result.error || 'Не удалось загрузить карточку товара');
         }
-        Object.assign(product, result.product);
+        var detail = config.ozonPreview && window.OzonEconomicsUI
+            ? window.OzonEconomicsUI.product(result.product)
+            : result.product;
+        Object.assign(product, detail);
         product._detailLoaded = true;
         productsById[product.id] = product;
         return product;

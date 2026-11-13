@@ -1,9 +1,15 @@
 from dataclasses import dataclass
 from datetime import date, timedelta, timezone
+from decimal import Decimal
 from enum import IntEnum, StrEnum
 from http import HTTPMethod as HTTPMethod
 from http import HTTPStatus as HTTPStatus
-from typing import Final, Literal
+from typing import Final, Literal, NamedTuple
+
+
+class StockTransitKind(StrEnum):
+    FF_TRANSFER = "ff_transfer"
+    FBO_SHIPMENT = "fbo_shipment"
 
 
 class FboStockState(StrEnum):
@@ -33,6 +39,7 @@ class FboStockErrorCode(StrEnum):
     INVALID_FULFILLMENT = "fbo_invalid_fulfillment"
     FULFILLMENT_REQUIRED = "fbo_fulfillment_required"
     FULFILLMENT_LOCKED = "fbo_fulfillment_locked"
+    FULFILLMENT_STATUS = "fbo_fulfillment_status"
     INVALID_REQUEST = "fbo_invalid_request"
     CONFLICT = "fbo_request_conflict"
     MISSING = "fbo_supply_missing"
@@ -45,19 +52,26 @@ class FboStockErrorCode(StrEnum):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class FboStockConfig:
     wb_active: frozenset[str] = frozenset({"2", "3", "4", "6"})
+    ozon_data_filling: str = "DATA_FILLING"
     ozon_active: frozenset[str] = frozenset(
         {
+            ozon_data_filling,
             "READY_TO_SUPPLY",
             "ACCEPTED_AT_SUPPLY_WAREHOUSE",
             "IN_TRANSIT",
             "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
             "REPORTS_CONFIRMATION_AWAITING",
             "REPORT_REJECTED",
+            "OVERDUE",
         }
     )
     yandex_active: frozenset[str] = frozenset(
         {
+            "CREATED",
+            "VALIDATED",
+            "PUBLISHED",
             "ACCEPTED_BY_WAREHOUSE_SYSTEM",
+            "NEED_PREPARATION",
             "REGISTERED_IN_ELECTRONIC_QUEUE",
             "ARRIVED_TO_SERVICE",
             "ARRIVED_TO_XDOC_SERVICE",
@@ -67,9 +81,13 @@ class FboStockConfig:
         }
     )
     wb_accepted: str = "5"
+    wb_deleted: str = "deleted"
     ozon_accepted: str = "COMPLETED"
     yandex_accepted: str = "FINISHED"
-    batch_kind: str = "fbo_shipment"
+    ozon_returned: frozenset[str] = frozenset({"CANCELLED", "REJECTED_AT_SUPPLY_WAREHOUSE"})
+    yandex_returned: frozenset[str] = frozenset({"CANCELLED"})
+    history_days: int = 90
+    batch_kind: str = StockTransitKind.FBO_SHIPMENT.value
     batch_active: str = "in_transit"
     batch_partial: str = "partial"
     batch_accepted: str = "received"
@@ -86,6 +104,26 @@ class FboStockConfig:
 
 
 FBO_STOCK: Final = FboStockConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonInboundConfig:
+    list_path: str = "/v3/supply-order/list"
+    details_path: str = "/v3/supply-order/get"
+    bundle_path: str = "/v1/supply-order/bundle"
+    acts_path: str = "/v1/supply-order/act/product/get"
+    clusters_path: str = "/v1/cluster/list"
+    cluster_type: str = "CLUSTER_TYPE_OZON"
+    page_size: int = 100
+    details_batch_size: int = 50
+    acceptance_act: str = "ACCEPTANCE"
+    act_minimum_spacing_seconds: float = 2
+    act_states: frozenset[str] = frozenset(
+        {"ACCEPTANCE_AT_STORAGE_WAREHOUSE", "REPORTS_CONFIRMATION_AWAITING", "REPORT_REJECTED", "COMPLETED"}
+    )
+
+
+OZON_INBOUND: Final = OzonInboundConfig()
 
 
 class LocalService(StrEnum):
@@ -146,6 +184,17 @@ class WbAnalyzerConstants:
 
 
 WB_ANALYZER: Final = WbAnalyzerConstants()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WbOrderFeedConstants:
+    path: str = "/api/analytics/v1/order-feed"
+    page_size: int = 10_000
+    cancelled_status: str = "cancel"
+    statuses: frozenset[str] = frozenset({"created", "buyout", "cancel", "return", "returnDefective"})
+
+
+WB_ORDER_FEED: Final = WbOrderFeedConstants()
 
 
 class SupplyStockAction(StrEnum):
@@ -456,6 +505,186 @@ class OzonLogisticsConfig:
 
 
 OZON_LOGISTICS: Final = OzonLogisticsConfig()
+
+
+class OzonAverageLogisticsBand(NamedTuple):
+    upper_l: Decimal
+    local_up_to_300: Decimal
+    nonlocal_up_to_300: Decimal
+    local_over_300: Decimal
+    nonlocal_over_300: Decimal
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OzonNewProductLogisticsConfig:
+    return_handling: Decimal = Decimal(15)
+    last_mile_estimate: Decimal = Decimal(25)
+    bands: tuple[OzonAverageLogisticsBand, ...] = (
+        OzonAverageLogisticsBand(
+            Decimal("0.2"), Decimal("17.08"), Decimal("20.15760112"), Decimal("68.16"), Decimal("78.73221757")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("0.4"), Decimal("18.56"), Decimal("22.26220363"), Decimal("74.96"), Decimal("88.0404463")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("0.6"), Decimal("19.4"), Decimal("23.79358438"), Decimal("78.28"), Decimal("94.67364017")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("0.8"), Decimal("19.84"), Decimal("25.53974895"), Decimal("78.28"), Decimal("94.78940028")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("1"), Decimal("20.52"), Decimal("27.81868898"), Decimal("78.28"), Decimal("97.9944212")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("1.25"),
+            Decimal("22.52"),
+            Decimal("30.78382148"),
+            Decimal("80.88"),
+            Decimal("106.3430962"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("1.5"), Decimal("23.48"), Decimal("33.84518828"), Decimal("84.48"), Decimal("116.0460251")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("1.75"), Decimal("24.2"), Decimal("36.44351464"), Decimal("84.48"), Decimal("116.0864714")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("2"), Decimal("24.8"), Decimal("39.19246862"), Decimal("84.48"), Decimal("116.0864714")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("3"), Decimal("27.8"), Decimal("46.53277545"), Decimal("84.48"), Decimal("120.9121339")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("4"), Decimal("30.32"), Decimal("57.05160391"), Decimal("87.92"), Decimal("145.7126918")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("5"), Decimal("33.44"), Decimal("68.68898187"), Decimal("98.68"), Decimal("175.6541144")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("6"), Decimal("36.64"), Decimal("80.72803347"), Decimal("98.68"), Decimal("177.0543933")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("7"), Decimal("53.6"), Decimal("107.2803347"), Decimal("110.04"), Decimal("192.6527197")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("8"), Decimal("58.68"), Decimal("121.1938633"), Decimal("110.12"), Decimal("198.6122734")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("9"), Decimal("64.48"), Decimal("136.9149233"), Decimal("110.92"), Decimal("206.3026499")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("10"), Decimal("66.08"), Decimal("147.0767085"), Decimal("110.92"), Decimal("208.6624826")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("11"), Decimal("75.56"), Decimal("163.7154812"), Decimal("113"), Decimal("215.5606695")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("12"), Decimal("77.96"), Decimal("176.4658298"), Decimal("113"), Decimal("215.7405858")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("13"), Decimal("84.32"), Decimal("192.6499303"), Decimal("113"), Decimal("222.5299861")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("14"), Decimal("88.48"), Decimal("204.0111576"), Decimal("117.36"), Decimal("235.2301255")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("15"), Decimal("94.2"), Decimal("220.8619247"), Decimal("124.16"), Decimal("254.4504881")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("17"),
+            Decimal("103.32"),
+            Decimal("238.7419805"),
+            Decimal("132.76"),
+            Decimal("276.4588563"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("20"), Decimal("110.44"), Decimal("268.5355649"), Decimal("145"), Decimal("308.9846583")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("25"), Decimal("117"), Decimal("311.8019526"), Decimal("159.52"), Decimal("359.9623431")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("30"), Decimal("133.4"), Decimal("364.6875872"), Decimal("181.08"), Decimal("416.3174157")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("35"),
+            Decimal("144.64"),
+            Decimal("412.6389281"),
+            Decimal("198.76"),
+            Decimal("465.6298422"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("40"),
+            Decimal("159.84"),
+            Decimal("454.2313218"),
+            Decimal("220.68"),
+            Decimal("516.8583942"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("45"), Decimal("166.92"), Decimal("495.1656891"), Decimal("236.2"), Decimal("563.3928036")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("50"),
+            Decimal("180.56"),
+            Decimal("540.3898051"),
+            Decimal("260.32"),
+            Decimal("606.6259781"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("60"),
+            Decimal("210.36"),
+            Decimal("588.4321767"),
+            Decimal("277.12"),
+            Decimal("641.2666667"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("70"),
+            Decimal("228.04"),
+            Decimal("636.0645724"),
+            Decimal("317.88"),
+            Decimal("681.0718447"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("80"), Decimal("254.64"), Decimal("663.245509"), Decimal("352.28"), Decimal("691.8581907")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("90"),
+            Decimal("291.44"),
+            Decimal("694.3693046"),
+            Decimal("401.48"),
+            Decimal("758.8666667"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("100"),
+            Decimal("312.96"),
+            Decimal("709.0448179"),
+            Decimal("449.72"),
+            Decimal("751.1340996"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("125"), Decimal("369.8"), Decimal("729.9885932"), Decimal("518"), Decimal("755.6647059")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("150"),
+            Decimal("413.08"),
+            Decimal("751.6208791"),
+            Decimal("605.84"),
+            Decimal("774.2169811"),
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("175"), Decimal("507.28"), Decimal("798.808"), Decimal("694.88"), Decimal("829.9866667")
+        ),
+        OzonAverageLogisticsBand(
+            Decimal("200"),
+            Decimal("561.64"),
+            Decimal("811.0588235"),
+            Decimal("797.04"),
+            Decimal("880.8958333"),
+        ),
+    )
+
+
+OZON_NEW_PRODUCT_LOGISTICS: Final = OzonNewProductLogisticsConfig()
 
 
 class OzonStorageState(StrEnum):
@@ -771,6 +1000,7 @@ class OzonPriceChangesConfig:
     write_attempts: int = 1
     reason_max_length: int = 1000
     currency: str = "RUB"
+    ruble_quantum: Decimal = Decimal("1")
 
 
 OZON_PRICE_CHANGES: Final = OzonPriceChangesConfig()
@@ -1205,14 +1435,11 @@ SCHEDULE_TEXTS: Final = ScheduleTexts()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class InboundScheduleConstants:
-    daily_hour: int = 10
-    extra_weekday: int = 0
-    extra_hour: int = 5
-    days_per_week: int = 7
-    interval_seconds: int = 86_400
+    claim_cooldown_seconds: int = 60
+    lease_hours: int = 2
     stale_after_seconds: int = 93_600
     alignment_tolerance_seconds: int = 1
-    description: str = "Ежедневно в 10:00 МСК; дополнительно в понедельник в 05:00 МСК"
+    description: str = "Регулярно, по умолчанию каждые 30 минут"
 
 
 INBOUND_SCHEDULE: Final = InboundScheduleConstants()
@@ -1443,6 +1670,14 @@ class JobCatalog:
         scope=JobScope.GLOBAL,
         marketplaces=(),
         manual_run=True,
+    )
+    google_stock_test: SyncJobMetadata = SyncJobMetadata(
+        name="google_stock_test_export",
+        title="Выгрузка в Google Таблицу — тест",
+        description="Публикует остатки, возвраты от клиента и заказы за вычетом отмен в тестовую таблицу.",
+        schedule=None,
+        scope=JobScope.GLOBAL,
+        marketplaces=(),
     )
     wb_standard_costs: SyncJobMetadata = SyncJobMetadata(
         name="wb_standard_costs_sync",
@@ -1999,6 +2234,41 @@ class GoogleWeekConstants:
 GOOGLE_WEEK: Final = GoogleWeekConstants()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StockTestTarget:
+    marketplace: Marketplace
+    sheet_id: int
+    sheet_name: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GoogleStockTestConstants:
+    spreadsheet_id: str = "1JpcVcDoS3AQSYwS6U7JnVTEKfEJkQ6Ox-ddDlWJI284"
+    default_weekday: int = 4
+    default_time: str = "15:00"
+    server_run_time: str = "16:00"
+    targets: tuple[StockTestTarget, ...] = (
+        StockTestTarget(marketplace=Marketplace.WB, sheet_id=0, sheet_name="WB сток"),
+        StockTestTarget(marketplace=Marketplace.OZON, sheet_id=1680588012, sheet_name="OZON сток"),
+        StockTestTarget(marketplace=Marketplace.YANDEX_MARKET, sheet_id=792005970, sheet_name="ЯМ сток"),
+    )
+    order_targets: tuple[StockTestTarget, ...] = (
+        StockTestTarget(marketplace=Marketplace.WB, sheet_id=1849798389, sheet_name="WB заказы"),
+        StockTestTarget(marketplace=Marketplace.OZON, sheet_id=481027231, sheet_name="OZON заказы"),
+        StockTestTarget(marketplace=Marketplace.YANDEX_MARKET, sheet_id=428806385, sheet_name="ЯМ заказы"),
+    )
+    orders_header: str = "ЗАКАЗЫ − ОТМЕНЫ"
+    returns_header: str = "ОТ КЛИЕНТА"
+    period_label: str = "Период заказов (МСК)"
+
+    @property
+    def spreadsheet_url(self) -> str:
+        return f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}/edit"
+
+
+GOOGLE_STOCK_TEST: Final = GoogleStockTestConstants()
+
+
 class CredentialMarketplace(StrEnum):
     WB = "wb"
     OZON = "ozon"
@@ -2320,9 +2590,7 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.stock.name, interval_setting="auto_sync_interval_seconds"),
     JobScheduleRule(
         name=JOBS.inbound_supplies.name,
-        kind=ScheduleKind.DAILY,
-        hours=(INBOUND_SCHEDULE.daily_hour,),
-        weekly_hours=((INBOUND_SCHEDULE.extra_weekday, INBOUND_SCHEDULE.extra_hour),),
+        interval_setting="inbound_sync_interval_seconds",
     ),
     JobScheduleRule(name=JOBS.supply_arrivals.name, interval_setting="supply_arrivals_sync_interval_seconds"),
     JobScheduleRule(name=JOBS.wb_advertising.name, interval_setting="wb_advertising_sync_interval_seconds"),

@@ -187,6 +187,17 @@ class Settings(BaseModel):
     wb_standard_costs: WbStandardCostsSettings = Field(default_factory=WbStandardCostsSettings)
     ozon_api_limits: OzonApiLimitsSettings = Field(default_factory=OzonApiLimitsSettings)
     database_backup: DatabaseBackupSettings = Field(default_factory=DatabaseBackupSettings)
+    google_stock_test_enabled: bool = Field(
+        default_factory=lambda: _env_bool("CHECKSTOCK_GOOGLE_STOCK_TEST_ENABLED", False)
+    )
+    google_stock_test_seed_schedule: bool = Field(
+        default_factory=lambda: _env_bool("CHECKSTOCK_GOOGLE_STOCK_TEST_SEED_SCHEDULE", False)
+    )
+
+    @property
+    def export_error_log_directory(self) -> Path:
+        parent = self.log_file.parent if self.log_file else self.database_path.parent
+        return parent / "export-errors"
 
     base_dir: Path
     database_path: Path

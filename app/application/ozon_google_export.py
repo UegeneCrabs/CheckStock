@@ -1,7 +1,8 @@
 import asyncio
 from datetime import UTC, datetime, time, timedelta
+from functools import partial
 
-from pydantic import Field, JsonValue
+from pydantic import Field
 
 from app.application.ports import OzonTransitSnapshotStore
 from app.core.constants import (
@@ -13,7 +14,6 @@ from app.core.constants import (
     OrderScheme,
     WeekIssue,
 )
-from app.core.stores import STORES
 from app.dto.common import DtoModel
 from app.dto.google_week import (
     GoogleSheet,
@@ -26,21 +26,16 @@ from app.dto.google_week import (
     document_id,
 )
 from app.exports import project_sheet
-from app.exports import stock_sheet as legacy
 from app.exports.project_scope import stores_for_marketplace
+from app.exports.stock_sheet import EXPORT_TIMESTAMP_LABEL
 from app.infrastructure.async_http import store_context
 from app.infrastructure.async_read_models import AsyncReadModels
 from app.infrastructure.async_resources import AsyncResources
 from app.integrations import google_week_plans as plans
+from app.integrations.google_stock_report import export_timestamp, stock_report_requests
 from app.integrations.google_week_client import GoogleWeekClient
 from app.ozon import tokens
 from app.ozon.async_api import AsyncSellerApi
-
-
-class StockTable(DtoModel):
-    headers: tuple[str, ...]
-    rows: tuple[tuple[JsonValue, ...], ...]
-    warnings: tuple[str, ...]
 
 
 class AccountQuantities(DtoModel):
@@ -49,41 +44,6 @@ class AccountQuantities(DtoModel):
     from_customer: dict[str, int] = Field(default_factory=dict)
     error: WeekProblem | None = None
     observed_at: datetime | None = None
-
-
-def stock_table() -> StockTable:
-    snapshots = project_sheet._stock_snapshot(Marketplace.OZON.value)
-    metrics = sorted(
-        {
-            metric
-            for snapshot in snapshots
-            for metric in snapshot.values_by_metric
-            if metric.startswith(legacy.FF_STOCK_METRIC_PREFIX)
-        },
-        key=str.casefold,
-    )
-    headers = (
-        *project_sheet.EXPORT_HEADERS,
-        *(
-            legacy.FF_STOCK_HEADER_PREFIX + metric.removeprefix(legacy.FF_STOCK_METRIC_PREFIX)
-            for metric in metrics
-        ),
-    )
-    rows = []
-    for snapshot in snapshots:
-        catalog = [item for item in snapshot.catalog if str(item.get("article") or "").strip()]
-        values = legacy._stock_export_rows(catalog, snapshot.values_by_metric, metrics)
-        project = STORES[snapshot.store_slug].name
-        for item, values_row in zip(catalog, values, strict=True):
-            barcode = str(item.get("barcode") or "").strip().removeprefix("'").strip()
-            rows.append((f"{project} {barcode}", project, *values_row))
-    return StockTable.model_validate(
-        {
-            "headers": headers,
-            "rows": rows,
-            "warnings": tuple(warning for snapshot in snapshots for warning in snapshot.warnings),
-        }
-    )
 
 
 def matrix(sheet: GoogleSheet) -> list[list[object]]:
@@ -153,9 +113,14 @@ class OzonGoogleExport:
             quantities: dict[str, int] = {}
             identities: set[tuple[str, str]] = set()
             for posting in postings:
-                created = posting.created_at or posting.in_process_at
-                if created is None or not start <= created.astimezone(TIME.moscow_timezone).date() < end:
+                accepted = posting.in_process_at
+                if accepted is None:
                     raise WeekError(WeekIssue.SOURCE)
+                day = accepted.astimezone(TIME.moscow_timezone).date()
+                if not start <= posting.filter_day(OrderScheme.FBS, day) < end:
+                    raise WeekError(WeekIssue.SOURCE)
+                if not start <= day < end:
+                    continue
                 if not posting.products:
                     raise WeekError(WeekIssue.SOURCE)
                 for product in posting.products:
@@ -200,55 +165,6 @@ class OzonGoogleExport:
                 )
         return accounts
 
-    def _timestamp(
-        self, sheet: GoogleSheet, now: datetime, headers: tuple[str, ...] | None = None
-    ) -> list[dict[str, object]]:
-        serial = (
-            now.astimezone(TIME.moscow_timezone).replace(tzinfo=None)
-            - datetime.fromisoformat(GOOGLE_WEEK.sheet_epoch)
-        ).total_seconds() / TIME.seconds_per_day
-        cells: list[dict[str, object]] = [
-            {"userEnteredValue": {"stringValue": legacy.EXPORT_TIMESTAMP_LABEL}},
-            {"userEnteredValue": {"numberValue": serial}},
-        ]
-        if headers is not None:
-            total = headers.index("ТОТАЛ")
-            cells.extend({} for _ in range(total - len(cells)))
-            cells.extend(
-                {
-                    "userEnteredValue": {
-                        "formulaValue": f"=SUM({legacy._column_letter(column)}3:{legacy._column_letter(column)})"
-                    }
-                }
-                for column in range(total, len(headers))
-            )
-        return [
-            {
-                "updateCells": {
-                    "start": {"sheetId": sheet.properties.sheetId, "rowIndex": 0, "columnIndex": 0},
-                    "rows": [{"values": cells}],
-                    "fields": "userEnteredValue",
-                }
-            },
-            {
-                "repeatCell": {
-                    "range": {
-                        "sheetId": sheet.properties.sheetId,
-                        "startRowIndex": 0,
-                        "endRowIndex": 1,
-                        "startColumnIndex": 1,
-                        "endColumnIndex": 2,
-                    },
-                    "cell": {
-                        "userEnteredFormat": {
-                            "numberFormat": {"type": "DATE_TIME", "pattern": legacy.EXPORT_TIMESTAMP_FORMAT}
-                        }
-                    },
-                    "fields": "userEnteredFormat.numberFormat",
-                }
-            },
-        ]
-
     async def run(self, profile: WeekProfile, kind: GoogleExportKind, now: datetime) -> WeekReport:
         settings = profile.settings
         destination = settings.export_target
@@ -261,7 +177,9 @@ class OzonGoogleExport:
             raise WeekError(WeekIssue.INVALID_SETTINGS)
         doc_id = document_id(settings.spreadsheet_url)
         table = (
-            await AsyncReadModels(self.resources.database).read(stock_table)
+            await AsyncReadModels(self.resources.database).read(
+                partial(project_sheet.stock_table, Marketplace.OZON)
+            )
             if kind == GoogleExportKind.STOCKS
             else None
         )
@@ -287,71 +205,9 @@ class OzonGoogleExport:
             ],
         )
         if table is not None:
-            columns = max(
-                sheet.properties.gridProperties.columnCount,
-                len(table.headers),
-                GOOGLE_WEEK.export_clear_columns,
-            )
-            rows = max(sheet.properties.gridProperties.rowCount, len(table.rows) + 2)
-            requests: list[dict[str, object]] = [
-                {
-                    "updateSheetProperties": {
-                        "properties": {
-                            "sheetId": sheet.properties.sheetId,
-                            "gridProperties": {"columnCount": columns, "rowCount": rows},
-                        },
-                        "fields": "gridProperties.columnCount,gridProperties.rowCount",
-                    }
-                }
-            ]
-            requests.extend(
-                {"unmergeCells": {"range": region.model_dump(exclude_none=True)}} for region in sheet.merges
-            )
-            requests.append(
-                {
-                    "updateCells": {
-                        "range": {
-                            "sheetId": sheet.properties.sheetId,
-                            "startRowIndex": 0,
-                            "endRowIndex": rows,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": columns,
-                        },
-                        "fields": "userEnteredValue",
-                    }
-                }
-            )
-            values = (table.headers, *table.rows)
-            for offset in range(0, len(values), GOOGLE_WEEK.export_batch_rows):
-                batch = values[offset : offset + GOOGLE_WEEK.export_batch_rows]
-                requests.append(
-                    {
-                        "updateCells": {
-                            "start": {
-                                "sheetId": sheet.properties.sheetId,
-                                "rowIndex": offset + 1,
-                                "columnIndex": 0,
-                            },
-                            "rows": [
-                                {
-                                    "values": [
-                                        {
-                                            "userEnteredValue": {"numberValue": value}
-                                            if isinstance(value, (int, float))
-                                            else {"stringValue": str(value)}
-                                        }
-                                        for value in row
-                                    ]
-                                }
-                                for row in batch
-                            ],
-                            "fields": "userEnteredValue",
-                        }
-                    }
-                )
-            requests.extend(self._timestamp(sheet, now, table.headers))
+            requests = stock_report_requests(sheet, table, now)
             await self.google.batch_update(doc_id, requests)
-            report.written_cells = len(values) * len(table.headers) + len(table.headers)
+            report.written_cells = (len(table.rows) + 2) * len(table.headers)
             report.warnings = list(table.warnings)
             return report
         grid = plans.cells(sheet)
@@ -364,7 +220,7 @@ class OzonGoogleExport:
             and b1.userEnteredValue.formulaValue is None
         )
         timestamp = (
-            plans.display(a1) == legacy.EXPORT_TIMESTAMP_LABEL
+            plans.display(a1) == EXPORT_TIMESTAMP_LABEL
             and b1.userEnteredValue.formulaValue is None
             and (
                 not plans.display(b1)
@@ -413,7 +269,7 @@ class OzonGoogleExport:
             await self.google.request(
                 "POST", f"{doc_id}/values:batchUpdate", body={"valueInputOption": "RAW", "data": updates}
             )
-        await self.google.batch_update(doc_id, self._timestamp(sheet, now))
+        await self.google.batch_update(doc_id, export_timestamp(sheet, now))
         report.written_cells = sum(plan.row_count for plan in prepared)
         report.warnings = list(dict.fromkeys(warning for plan in prepared for warning in plan.warnings))
         return report

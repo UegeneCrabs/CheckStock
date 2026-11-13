@@ -23,19 +23,8 @@
         running: 'Обновляется',
         ok: 'Обновлено',
         partial: 'Есть замечания',
-        error: 'Ошибка обновления',
         not_configured: 'Не подключено',
     };
-    const stageOrder = [
-        'planned',
-        'transit',
-        'acceptance',
-        'placement',
-        'discrepancy',
-        'unknown',
-        'completed',
-        'cancelled',
-    ];
     const escape = window.CheckStockUI.escapeHtml;
     const number = (value) => (value == null ? '—' : Number(value).toLocaleString('ru-RU'));
     const date = (value) => {
@@ -73,7 +62,8 @@
         [
             supply.number,
             supply.supply_id,
-            supply.warehouse,
+            supply.direction,
+            supply.transit_warehouse,
             supply.campaign_name,
             ...supply.items.flatMap((item) => [
                 item.article,
@@ -88,57 +78,27 @@
                 .includes(term),
         );
 
-    function connectionIssue(target) {
-        if (target.error) return target.error;
-        if (target.status !== 'partial') return '';
-        const affected = target.supplies.filter((supply) => supply.warning || supply.unavailable);
-        const reasons = Array.from(
-            new Set(
-                affected.map(
-                    (supply) =>
-                        supply.warning ||
-                        'Поставка отсутствует в последнем ответе площадки. Показаны последние полученные данные.',
-                ),
-            ),
-        );
-        return affected.length ? `Поставок с замечаниями: ${affected.length}. ${reasons.join(' ')}` : '';
-    }
-
     function connectionCards() {
-        const trouble = targets.filter(
-            (target) =>
-                target.status === 'error' ||
-                target.status === 'partial' ||
-                (target.stale && target.last_success),
-        );
-        const running = targets.filter((target) => target.status === 'running').length;
-        el('connection-summary').textContent =
-            `Подключения: ${targets.length}${running ? ` · обновляется ${running}` : ''}${trouble.length ? ` · требуют внимания ${trouble.length}` : ''}`;
+        const running = targets.filter(target => target.status === 'running').length;
+        el('connection-summary').textContent = 'Подключения: ' + targets.length + (running ? ' · обновляется ' + running : '');
         el('targets').innerHTML = targets
             .map((target) =>
                 window.CheckStockUI.render('stock/inbound-supplies/connection-cards-2', {
-                    content:
-                        target.status === 'ok' && !target.stale
-                            ? 'is-ok'
-                            : trouble.includes(target)
-                              ? 'is-error'
-                              : '',
+                    content: target.last_success ? 'is-ok' : '',
                     store_name: target.store_name,
                     marketplace_name: target.marketplace_name,
-                    content_2: statuses[target.status] || target.status,
-                    content_3: target.stale && target.last_success ? ' · данные устарели' : '',
+                    content_2: target.status === 'running' ? statuses.running : target.last_success ? statuses.ok : 'Нет данных',
+                    content_3: '',
                     last_success: date(target.last_success),
-                    content_4: connectionIssue(target)
-                        ? window.CheckStockUI.render('stock/inbound-supplies/connection-cards', {
-                              error: connectionIssue(target),
-                          })
-                        : '',
+                    content_4: '',
                 }),
             )
             .join('');
     }
 
     function stageCards(rows) {
+        el('stages').hidden = el('history').checked;
+        if (el('history').checked) return;
         const categories = [
             ['', 'Все незавершённые'],
             ['planned', labels.planned],
@@ -178,28 +138,10 @@
             .join('');
     }
 
-    function itemRemaining(supply, item) {
-        if (supply.unavailable || ['unknown', 'discrepancy'].includes(supply.stage)) return null;
-        if (['completed', 'cancelled'].includes(supply.stage)) return 0;
-        if (supply.stage === 'planned') return item.quantity;
-        if (supply.stage === 'transit') return Math.max(item.quantity - (item.ready_quantity || 0), 0);
-        if (supply.stage === 'placement')
-            return item.ready_quantity == null ? null : Math.max(item.quantity - item.ready_quantity, 0);
-        if (item.accepted_quantity == null) return null;
-        return Math.max(item.quantity - item.accepted_quantity, 0);
-    }
-
     function cardBody(target, supply) {
         const wb = target.marketplace === 'WB';
-        const warning =
-            supply.warning ||
-            (target.stale || ['error', 'not_configured'].includes(target.status)
-                ? 'Показаны последние полученные данные. Проверьте состояние подключения.'
-                : '');
         return window.CheckStockUI.render('stock/inbound-supplies/card-body-8', {
-            content: warning
-                ? window.CheckStockUI.render('stock/inbound-supplies/card-body', { warning: warning })
-                : '',
+            content: '',
             content_2: supply.note
                 ? window.CheckStockUI.render('stock/inbound-supplies/card-body-2', {
                       note: supply.note,
@@ -211,7 +153,7 @@
             content_4: wb ? window.CheckStockUI.render('stock/inbound-supplies/card-body-3') : '',
             content_5:
                 supply.items
-                    .map((item) =>
+                    .map((item, index) =>
                         window.CheckStockUI.render('stock/inbound-supplies/card-body-6', {
                             content: item.article || item.sku || '—',
                             content_2: item.vendor_code
@@ -228,7 +170,7 @@
                                       ready_quantity: number(item.ready_quantity),
                                   })
                                 : '',
-                            content_6: number(itemRemaining(supply, item)),
+                            content_6: number(supply.item_remaining_quantities[index]),
                             shortage_quantity: number(item.shortage_quantity),
                             surplus_quantity: number(item.surplus_quantity),
                             defect_quantity: number(item.defect_quantity),
@@ -242,8 +184,6 @@
     function card({ target, supply }) {
         const key = cardKey(target, supply);
         const isOpen = openCards.has(key);
-        const stale =
-            supply.unavailable || target.stale || ['error', 'not_configured'].includes(target.status);
         return window.CheckStockUI.render('stock/inbound-supplies/card-2', {
             key: key,
             content: isOpen ? ' open' : '',
@@ -254,18 +194,18 @@
                 supply.order_id && supply.supply_id !== supply.order_id
                     ? ` · поставка ${escape(supply.supply_id)}`
                     : '',
-            content_4: supply.warehouse || 'Склад не указан',
+            content_4: supply.direction || 'Направление не указано',
             content_5: supply.transit_warehouse
                 ? window.CheckStockUI.render('stock/inbound-supplies/card', {
                       transit_warehouse: supply.transit_warehouse,
                   })
                 : '',
-            planned_at: date(supply.planned_at),
+            planned_at: date(supply.supply_date),
             content_6: supply.unavailable ? 'unknown' : supply.stage,
-            content_7: supply.unavailable ? 'Требует проверки' : labels[supply.stage],
+            content_7: labels[supply.stage],
             status_label: supply.status_label,
-            content_8: stale ? ' · старые данные' : '',
-            content_9: supply.warning ? ' · есть замечание' : '',
+            content_8: '',
+            content_9: '',
             quantity: number(supply.quantity),
             accepted_quantity: number(supply.accepted_quantity),
             remaining_quantity: number(supply.remaining_quantity),
@@ -275,22 +215,17 @@
 
     function render() {
         const term = el('search').value.trim().toLocaleLowerCase('ru');
-        const rows = allSupplies().filter(({ supply }) => matches(supply, term));
+        const rows = allSupplies().filter(({ supply }) =>
+            supply.listed_status && supply.archived === el('history').checked && matches(supply, term),
+        );
         stageCards(rows);
         const visible = rows
             .filter(({ supply }) => {
-                if (!el('history').checked && ['completed', 'cancelled'].includes(supply.stage)) return false;
                 if (stage === 'discrepancy')
                     return ['discrepancy', 'unknown'].includes(supply.stage) || supply.unavailable;
                 return !stage || (supply.stage === stage && !supply.unavailable);
             })
-            .sort(
-                (a, b) =>
-                    stageOrder.indexOf(a.supply.stage) - stageOrder.indexOf(b.supply.stage) ||
-                    (b.supply.planned_at || b.supply.updated_at).localeCompare(
-                        a.supply.planned_at || a.supply.updated_at,
-                    ),
-            );
+            .sort((a, b) => supplyTime(b.supply) - supplyTime(a.supply) || a.supply.key.localeCompare(b.supply.key));
         el('count').textContent = `Поставок: ${number(visible.length)}`;
         const loaded = targets.some((target) => target.last_success);
         el('list').innerHTML =
@@ -298,10 +233,14 @@
             window.CheckStockUI.render('stock/inbound-supplies/render', {
                 content: loaded ? 'По выбранным условиям поставок нет.' : 'Данные поставок ещё не получены.',
                 content_2: loaded
-                    ? 'Измените фильтры или включите завершённые поставки.'
+                    ? 'Измените фильтры или переключитесь между текущими поставками и хабом.'
                     : 'Обновите поставки или дождитесь автоматической загрузки. Состояние каждого магазина показано выше.',
             });
         el('more').hidden = visible.length <= visibleCount;
+    }
+
+    function supplyTime(supply) {
+        return Date.parse(supply.supply_date) || 0;
     }
 
     function setMarketplaceOptions() {
@@ -342,23 +281,9 @@
             connectionCards();
             render();
             const running = targets.filter((target) => target.status === 'running').length;
-            const issues = targets.filter(
-                (target) =>
-                    target.status === 'error' ||
-                    target.status === 'partial' ||
-                    (target.stale && target.last_success),
-            ).length;
-            notice(
-                running
-                    ? `Обновление выполняется для ${running} подключений. Данные появятся автоматически.`
-                    : issues
-                      ? `У ${issues} подключений есть замечания. Подробности — в состоянии подключений.`
-                      : 'Данные обновляются автоматически. Даты показаны по московскому времени.',
-                Boolean(issues),
-            );
-        } catch (error) {
-            if (sequence === requestSequence)
-                notice(error.message || 'Не удалось связаться с сервером', true);
+            notice(running ? 'Обновляются подключения: ' + running : 'Даты показаны по московскому времени.');
+        } catch (_) {
+            if (sequence === requestSequence) notice('');
         } finally {
             if (sequence === requestSequence) {
                 loading = false;
@@ -388,8 +313,8 @@
                 throw new Error(data.detail || data.error || 'Не удалось запустить обновление');
             await load();
             if (!data.started) notice('Обновление уже выполняется или запускалось менее минуты назад.');
-        } catch (error) {
-            notice(error.message, true);
+        } catch (_) {
+            notice('');
         } finally {
             refreshing = false;
             el('refresh').disabled = false;
@@ -422,7 +347,6 @@
         const button = event.target.closest('[data-stage]');
         if (!button) return;
         stage = button.dataset.stage;
-        el('history').checked = false;
         visibleCount = 40;
         render();
     });

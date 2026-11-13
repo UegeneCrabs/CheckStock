@@ -129,7 +129,7 @@
         if(c.type==='photo') return /^https?:\/\//i.test(row.image||'')?`<img class="e-photo" src="${escape(row.image)}" alt="" loading="lazy">`:'—';
         if(c.type==='text') return `<span class="e-text" ${c.key==='article'?`data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул"`:''}>${escape(val||'—')}</span>`;
         const partial=incomplete(row,c);
-        let title=partial?'Неполные данные':'';
+        let title='';
         if(c.period==='dayTurnover') title=`Сумма заказов за сегодня (${data.today}, Москва), без вычета отмен. По умолчанию товары ранжируются по этому показателю.`;
         if(c.period&&c.key==='turnover') title='Цель недели, шт × Цена поставщика, ₽. Если цель или цена неизвестны, ТО не рассчитан.';
         if(c.period&&['price','wallet','spp'].includes(c.key)) title=`Последняя сохранённая цена внутри недели: ${row[c.period].priceDay||'нет данных'}`;
@@ -166,7 +166,7 @@
         if(!data)return;
         const turnoverRows=filtered.map(row=>({...row,...row.dayTurnover}));
         const stores=summaryCollapsed&&turnoverRows.length?[{project:'Все магазины',...A.turnoverTotals(turnoverRows)}]:A.storeTurnover(turnoverRows);
-        $('summary').innerHTML=stores.map(store=>`<tr class="${summaryCollapsed?'e-summary-total':''}"><td>${escape(store.project)}</td>${['plan','fact','forecast','difference','deviation'].map(key=>`<td title="${store.partial[key]?'Неполные данные':''}">${number(store[key],key==='deviation')}</td>`).join('')}</tr>`).join('')||'<tr><td colspan="6">Нет товаров</td></tr>';
+        $('summary').innerHTML=stores.map(store=>`<tr class="${summaryCollapsed?'e-summary-total':''}"><td>${escape(store.project)}</td>${['plan','fact','forecast','difference','deviation'].map(key=>`<td>${number(store[key],key==='deviation')}</td>`).join('')}</tr>`).join('')||'<tr><td colspan="6">Нет товаров</td></tr>';
     }
     function render() {
         if(!data) return;

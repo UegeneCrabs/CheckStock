@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
@@ -18,6 +17,7 @@ from app.core.constants import (
     OzonPriceChangeIssue,
     OzonPriceChangeState,
 )
+from app.core.logging_config import log_tags, tagged_logger
 from app.dto.ozon_price_changes import (
     OzonPriceChangeBusyError,
     OzonPriceChangeEvidence,
@@ -29,10 +29,11 @@ from app.dto.ozon_price_changes import (
     OzonPriceChangeView,
 )
 from app.dto.ozon_prices import PriceValues
-from app.economics.ozon_price_changes import changed, issue, plan
+from app.dto.ozon_promotions import OzonPromotions
+from app.economics.ozon_price_changes import changed, confirmed_price, issue, plan, ruble_price
 from app.ozon.api import OzonApiError
 
-logger = logging.getLogger(__name__)
+logger = tagged_logger(__name__, "ozon", "price_change")
 
 
 class OzonPriceChangeService:
@@ -51,17 +52,20 @@ class OzonPriceChangeService:
     async def evidence(self, article: str) -> OzonPriceChangeEvidence:
         async with asyncio.timeout(settings.ozon_promotions_timeout_seconds):
             identity = await self.client.identity(article)
-            promotions = await self.promotions.promotions(article, fresh=True)
             prices = await self.client.price(article, identity.id)
-            if (
-                prices.product_id != identity.id
-                or prices.offer_id != article
-                or promotions.product_id != identity.id
-            ):
-                raise ValueError("Unexpected price identity")
-            return OzonPriceChangeEvidence(
-                identity=identity, prices=prices, promotions=promotions, received_at=self.clock()
-            )
+        if identity.offer_id != article or prices.product_id != identity.id or prices.offer_id != article:
+            raise ValueError("Unexpected price identity")
+        try:
+            async with asyncio.timeout(settings.ozon_promotions_timeout_seconds):
+                promotions = await self.promotions.for_product(article, identity.id)
+        except TimeoutError:
+            promotions = self._unchecked_promotions(identity.id)
+        return OzonPriceChangeEvidence(
+            identity=identity, prices=prices, promotions=promotions, received_at=self.clock()
+        )
+
+    def _unchecked_promotions(self, product_id: int) -> OzonPromotions:
+        return OzonPromotions(product_id=product_id, items=(), complete=False, checked_at=self.clock())
 
     @staticmethod
     def view(operation: OzonPriceChangeOperation) -> OzonPriceChangeView:
@@ -119,6 +123,7 @@ class OzonPriceChangeService:
             updated_at=now,
             expires_at=now + timedelta(seconds=settings.ozon_price_change_preview_seconds),
         )
+        evidence = None
         try:
             evidence = await self.evidence(request.article)
             prepared = plan(request, evidence)
@@ -143,7 +148,25 @@ class OzonPriceChangeService:
             DecimalException,
             httpx.TransportError,
         ) as error:
-            operation = operation.model_copy(update={"issue": self.read_issue(error)})
+            logger.warning(
+                "ozon_price_change_preview_failed operation=%s store=%s article=%s stage=%s error=%s status=%s",
+                operation.id,
+                request.store,
+                request.article,
+                "seller_api" if evidence is None else "calculation",
+                type(error).__name__,
+                error.status if isinstance(error, OzonApiError) else None,
+                extra=log_tags(request.store),
+            )
+            operation = operation.model_copy(
+                update={
+                    "evidence": evidence,
+                    "issue": self.read_issue(error)
+                    if evidence is None
+                    else OzonPriceChangeIssue.PRICE_UNAVAILABLE,
+                    "updated_at": self.clock(),
+                }
+            )
         await self.repository.create(operation)
         return self.view(operation)
 
@@ -219,6 +242,11 @@ class OzonPriceChangeService:
                     prepared = operation.plan
                     if prepared is None:
                         raise ValueError("Missing price plan")
+                    if prepared.price != ruble_price(prepared.price):
+                        await self.finish(
+                            operation, OzonPriceChangeState.CHANGED, OzonPriceChangeIssue.CHANGED
+                        )
+                        return
                     operation = operation.model_copy(update={"sent_at": self.clock()})
                     operation = await self.finish(operation, OzonPriceChangeState.SENDING)
                     receipt = await self.client.update(
@@ -299,22 +327,54 @@ class OzonPriceChangeService:
             raise
 
     async def verify(self, operation: OzonPriceChangeOperation) -> OzonPriceChangeOperation:
+        original = operation.evidence
         try:
-            observed = await self.evidence(operation.request.article)
-            operation = operation.model_copy(update={"observed": observed})
-            if (
-                operation.plan
-                and observed.promotions.complete
-                and observed.prices.price.price == operation.plan.price
-                and observed.prices.price.currency_code == operation.plan.currency
-            ):
-                operation = operation.model_copy(update={"refreshed": await self.refresh(observed)})
-                return await self.finish(operation, OzonPriceChangeState.SUCCEEDED)
+            if original is not None:
+                async with asyncio.timeout(settings.ozon_promotions_timeout_seconds):
+                    prices = await self.client.price(operation.request.article, original.identity.id)
+                observed = OzonPriceChangeEvidence(
+                    identity=original.identity,
+                    prices=prices,
+                    promotions=self._unchecked_promotions(original.identity.id),
+                    received_at=self.clock(),
+                )
+                operation = operation.model_copy(update={"observed": observed})
+                if confirmed_price(operation, prices):
+                    return await self._verified(operation, observed)
         except Exception:
             logger.exception("ozon_price_change_verify_failed operation=%s", operation.id)
         return await self.finish(
             operation, OzonPriceChangeState.UNCERTAIN, OzonPriceChangeIssue.VERIFY_FAILED
         )
+
+    async def _verified(
+        self, operation: OzonPriceChangeOperation, observed: OzonPriceChangeEvidence
+    ) -> OzonPriceChangeOperation:
+        article, store = operation.request.article, operation.request.store
+        try:
+            async with asyncio.timeout(settings.ozon_promotions_timeout_seconds):
+                promotions = await self.promotions.for_product(article, observed.identity.id)
+            observed = observed.model_copy(update={"promotions": promotions})
+        except Exception:
+            logger.exception(
+                "ozon_price_change_promotions_refresh_failed operation=%s store=%s article=%s",
+                operation.id,
+                store,
+                article,
+                extra=log_tags(store),
+            )
+        operation = operation.model_copy(update={"observed": observed})
+        try:
+            operation = operation.model_copy(update={"refreshed": await self.refresh(observed)})
+        except Exception:
+            logger.exception(
+                "ozon_price_change_local_refresh_failed operation=%s store=%s article=%s",
+                operation.id,
+                store,
+                article,
+                extra=log_tags(store),
+            )
+        return await self.finish(operation, OzonPriceChangeState.SUCCEEDED)
 
     async def check(self, operation: OzonPriceChangeOperation) -> OzonPriceChangeView:
         if operation.state not in OZON_PRICE_CHANGE_PENDING:

@@ -193,9 +193,7 @@ def _fbs_snapshot_lines(store_slug: str, marketplace: str, orders: list[dict]) -
             raise ValueError("Некорректный заказ")
         order_id = order.get("orderId") or order.get("id") if yandex else order.get("posting_number")
         created = (
-            (order.get("creationDate") or order.get("createdAt"))
-            if yandex
-            else (order.get("created_at") or order.get("in_process_at"))
+            (order.get("creationDate") or order.get("createdAt")) if yandex else order.get("in_process_at")
         )
         if not order_id or not str(order.get("status") or "").strip() or not created:
             raise ValueError("В заказе отсутствуют обязательные поля")

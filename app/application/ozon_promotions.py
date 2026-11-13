@@ -63,6 +63,14 @@ class OzonPromotionsService:
         catalog = await self.catalog_reader()
         if article not in {item.article for item in catalog.items}:
             raise LookupError("Product not found")
+        return await self._promotions(article, fresh=fresh)
+
+    async def for_product(self, article: str, product_id: int) -> OzonPromotions:
+        return await self._promotions(article, fresh=True, product_id=product_id)
+
+    async def _promotions(
+        self, article: str, *, fresh: bool, product_id: int | None = None
+    ) -> OzonPromotions:
         key = (self.scope, article)
         async with self.cache.locks.setdefault(self.scope, asyncio.Lock()):
             cached = self.cache.items.get(key)
@@ -71,7 +79,8 @@ class OzonPromotionsService:
                 return cached.response
             deadline = asyncio.get_running_loop().time() + settings.ozon_promotions_timeout_seconds
             async with asyncio.timeout_at(deadline):
-                product_id = await self.client.product_id(article)
+                if product_id is None:
+                    product_id = await self.client.product_id(article)
                 actions = await self.client.actions()
             items: list[OzonPromotionItem] = []
             completed = 0

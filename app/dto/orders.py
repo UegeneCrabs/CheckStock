@@ -163,10 +163,15 @@ class OzonOrderDayState(DtoModel):
 
 class OzonPendingPosting(DtoModel):
     scheme: OrderScheme
-    day: date
+    filter_day: date
     posting_number: str
     order_number: str
-    filter_day: date | None = None
+
+
+class OzonOrderDateRepair(DtoModel):
+    changed: int
+    moved_to_another_day: int
+    missing_processing_date: int
 
 
 class OrderSaveBatch(DtoModel):

@@ -1,6 +1,6 @@
 <link rel="stylesheet" href="/static/stock/total.css?v=20260912" />
 <link rel="stylesheet" href="/static/stock/inbound-supplies.css?v=20261023" />
-<link rel="stylesheet" href="/static/stock/fbo-stock.css?v=20261023-selected-ff" />
+<link rel="stylesheet" href="/static/stock/fbo-stock.css?v=20261113-movement-types" />
 <link rel="stylesheet" href="/static/stock/product-drawer.css?v=20261111-yandex-stock" />
 
 <a class="back-link" href="/stock">&larr; Все магазины</a>
@@ -14,9 +14,9 @@
     >
 </section>
 
-<div id="access-problems" data-problems="$access_problems" data-can-edit="$can_edit_stock" hidden></div>
 
 <div class="store-layout" id="store-layout" data-store="$slug" data-marketplace="$marketplace" data-mutation-user="$mutation_user_id">
+    <div id="stock-edit-access" data-can-edit="$can_edit_stock" hidden></div>
     <section class="panel stock-table-panel" data-stock-marketplace-view>
         <div class="stock-table-header">
             <div>
@@ -191,15 +191,17 @@
         </div>
         <section class="panel stock-operation-card stock-transit-panel" data-stock-transit-panel>
             <div class="stock-transit-head">
-                <div>
-                    <h3 class="panel-title">Перемещения и отгрузки на FBO</h3>
-                    <p class="stock-operation-summary"
-                        >Активные партии и полная история их отправки, приёмки и отмены.</p
+                <div class="stock-transit-kinds" role="group" aria-label="Тип движения">
+                    <button class="stock-transit-tab is-active" type="button" aria-pressed="true"
+                        data-stock-transit-kind="fbo_shipment">На склады FBO</button
+                    >
+                    <button class="stock-transit-tab" type="button" aria-pressed="false"
+                        data-stock-transit-kind="ff_transfer">Между ФФ</button
                     >
                 </div>
                 <button class="btn-link" type="button" data-stock-transit-refresh>Обновить</button>
             </div>
-            <div class="stock-transit-tabs" role="tablist" aria-label="Перемещения и отгрузки на FBO">
+            <div class="stock-transit-tabs" role="tablist" aria-label="Состояние движения">
                 <button
                     class="stock-transit-tab is-active"
                     type="button"
@@ -214,22 +216,23 @@
                     role="tab"
                     aria-selected="false"
                     data-stock-transit-view="history"
-                    >История</button
+                    >Хаб / история</button
                 >
             </div>
-            <form class="stock-transit-filters" data-stock-transit-filters aria-label="Фильтры поставок">
+            <form class="stock-transit-filters" data-stock-transit-filters aria-label="Фильтры движений">
                 <label><span>Дата от</span><input class="select-control" type="date" name="date_from" /></label>
                 <label><span>Дата до</span><input class="select-control" type="date" name="date_to" /></label>
                 <label><span>Номер отправления</span><input class="select-control" type="search" name="number" placeholder="Номер или часть номера" /></label>
                 <label><span>Куда едет</span><select name="destination"><option value="">Все направления</option></select></label>
-                <label><span>Статус поставки</span><select name="status"><option value="">Все статусы</option></select></label>
-                <label class="stock-transit-shortage-filter"><input type="checkbox" name="shortage_only" /><span>Только с нехваткой</span></label>
+                <label><span>Статус</span><select name="status"><option value="">Все статусы</option></select></label>
+                <label class="stock-transit-shortage-filter" data-stock-transit-fbo-only><input type="checkbox" name="shortage_only" /><span>Только с нехваткой</span></label>
                 <button class="btn-link" type="reset">Сбросить фильтры</button>
             </form>
-            <p class="stock-transit-filter-hint">Дата поставки — плановая, если она не указана — дата создания. Для перемещений — дата отправки. Время московское.</p>
+            <p class="stock-transit-filter-hint" data-stock-transit-fbo-only>Дата поставки — плановая, затем дата создания или обновления. Для ручных отгрузок — дата отправки. Время московское.</p>
+            <p class="stock-transit-filter-hint" data-stock-transit-ff-only hidden>Для перемещений используется дата отправки по московскому времени.</p>
             <div class="stock-transit-list-toolbar">
                 <p class="stock-transit-count" data-stock-transit-count role="status" aria-live="polite"></p>
-                <div class="stock-transit-expansion" role="group" aria-label="Раскрытие поставок">
+                <div class="stock-transit-expansion" role="group" aria-label="Раскрытие поставок" data-stock-transit-fbo-only>
                     <button class="btn-secondary" type="button" data-stock-transit-expand="true" disabled>Развернуть все</button>
                     <button class="btn-secondary" type="button" data-stock-transit-expand="false" disabled>Свернуть все</button>
                 </div>
@@ -367,10 +370,10 @@
 <script src="/static/stock/mutation-request.js?v=20261009-fbs-recovery"></script>
 <script src="/static/stock/store.js?v=20260912"></script>
 <script src="/static/stock/forms/upload.js?v=20260924-f03"></script>
-<script src="/static/stock/store-access.js?v=20260912"></script>
 <script src="/static/stock/forms/transfer.js?v=20260924-f03"></script>
 <script src="/static/stock/forms/shipment.js?v=20261023-selected-ff"></script>
+<script src="/static/stock/store-access.js?v=20261113-export-log"></script>
 
 <script src="/static/stock/product-drawer.js?v=20261111-yandex-stock"></script>
 <script src="/static/stock/store-total.js?v=20261014-ui"></script>
-<script src="/static/stock/transit.js?v=20261023-selected-ff"></script>
+<script src="/static/stock/transit.js?v=20261113-fulfillment-drafts"></script>

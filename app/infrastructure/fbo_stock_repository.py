@@ -85,6 +85,14 @@ class FboStockRepository:
                     LINKS.c.marketplace == target.marketplace,
                 )
             )
+            sync = (
+                await connection.execute(
+                    select(SNAPSHOTS.c.last_attempt, SNAPSHOTS.c.status).where(
+                        SNAPSHOTS.c.store_slug == target.store_slug,
+                        SNAPSHOTS.c.marketplace == target.marketplace,
+                    )
+                )
+            ).one_or_none()
             return FboStockReport(
                 movements=tuple(
                     movement_availability(target, movement, evidence) for movement in evidence.movements
@@ -92,6 +100,8 @@ class FboStockRepository:
                 legacy=evidence.legacy,
                 linked_batch_ids=tuple(linked),
                 fulfillments=evidence.fulfillments,
+                supply_refreshing=bool(sync and sync.status == "running"),
+                supply_last_attempt=sync.last_attempt if sync else None,
             )
 
 
@@ -161,6 +171,7 @@ class FboStockUnitOfWork:
                 BATCHES.c.sent_at,
                 ITEMS.c.from_article,
                 ITEMS.c.sent_quantity,
+                ITEMS.c.received_quantity,
                 ITEMS.c.cancelled_quantity,
                 ITEMS.c.barcode,
                 ITEMS.c.name,
@@ -194,6 +205,7 @@ class FboStockUnitOfWork:
                         article=row["from_article"],
                         fulfillment=row["from_fulfillment"],
                         quantity=quantity,
+                        received_quantity=min(int(row["received_quantity"]), quantity),
                         barcode=row["barcode"] or "",
                         name=row["name"] or "",
                         purchase_price=row["purchase_price"],
@@ -352,7 +364,7 @@ class FboStockUnitOfWork:
                 source_name=movement.supply.supply_id,
                 from_fulfillment=allocation.fulfillment,
                 from_marketplace=self.target.marketplace,
-                to_fulfillment=movement.supply.warehouse,
+                to_fulfillment=movement.supply.direction,
                 to_marketplace=self.target.marketplace,
                 user_id=actor.id,
                 user_name=actor.name,
@@ -447,7 +459,7 @@ class FboStockUnitOfWork:
                         kind=FBO_STOCK.batch_kind,
                         from_fulfillment=fulfillment,
                         from_marketplace=target.marketplace,
-                        to_fulfillment=movement.supply.warehouse,
+                        to_fulfillment=movement.supply.direction,
                         to_marketplace=target.marketplace,
                         status=FBO_STOCK.batch_active,
                         note="",
@@ -474,8 +486,10 @@ class FboStockUnitOfWork:
             active_rows = [row for row in new.values() if row.fulfillment == fulfillment]
             accepted = movement.state == FboStockState.ACCEPTED
             status = FBO_STOCK.batch_accepted if accepted else FBO_STOCK.batch_active
-            if not active_rows:
+            if movement.state == FboStockState.CANCELLED or not active_rows:
                 status = FBO_STOCK.batch_cancelled
+            elif not accepted and any(row.received_quantity for row in active_rows):
+                status = FBO_STOCK.batch_partial
             for identity in sorted(old.keys() | new.keys()):
                 if identity[0] != fulfillment:
                     continue
@@ -495,9 +509,13 @@ class FboStockUnitOfWork:
                         FBO_STOCK.dispatch_operation if delta > 0 else FBO_STOCK.return_operation,
                     )
                 old_received = (
-                    before.quantity if previous and previous.state == FboStockState.ACCEPTED and before else 0
+                    before.quantity
+                    if previous and previous.state == FboStockState.ACCEPTED and before
+                    else before.received_quantity
+                    if before
+                    else 0
                 )
-                received = after.quantity if accepted and after else 0
+                received = (after.quantity if accepted else after.received_quantity) if after else 0
                 if received != old_received:
                     await self._operation(
                         movement,
@@ -530,10 +548,19 @@ class FboStockUnitOfWork:
                 ids = by_article[article]
                 values = {
                     "sent_quantity": quantity,
-                    "received_quantity": quantity if accepted else 0,
+                    "received_quantity": (quantity if accepted else allocation.received_quantity)
+                    if allocation
+                    else 0,
                     "cancelled_quantity": 0,
                 }
                 if ids:
+                    if movement.state == FboStockState.CANCELLED:
+                        if previous and previous.state == FboStockState.CANCELLED:
+                            continue
+                        before = old.get((fulfillment, article))
+                        if before is not None:
+                            values["sent_quantity"] = before.quantity
+                            values["cancelled_quantity"] = before.quantity - quantity
                     await self.connection.execute(update(ITEMS).where(ITEMS.c.id == ids[0]).values(**values))
                     if len(ids) > 1:
                         await self.connection.execute(
@@ -562,7 +589,7 @@ class FboStockUnitOfWork:
                 .where(BATCHES.c.id.in_(batch_ids))
                 .values(
                     status=status,
-                    to_fulfillment=movement.supply.warehouse,
+                    to_fulfillment=movement.supply.direction,
                     last_received_at=movement.updated_at if accepted else None,
                     last_received_by_name=FBO_STOCK.source if accepted else None,
                 )

@@ -71,7 +71,7 @@
         if (column.metric === 'carts') return 'Все добавления товара в корзину за день, включая органические. Показатель карточки WB общий для её размеров; в итогах учитывается один раз.';
         if (column.key === 'stock') return `Последний сохранённый остаток: ${config.labels.fbo} + FBS. Если часть источников отсутствует, показана известная часть.`;
         if (column.key === 'currentRoi') return 'Текущий ROI из юнит-экономики WB: тот же расчёт за сегодня, с актуальными сохранёнными ценами, расходами и настройками.';
-        if (column.key === 'roi') return 'ROI по дневным расчётам юнит-экономики за выбранную неделю. Неполные данные отмечены в карточке.';
+        if (column.key === 'roi') return 'ROI по дневным расчётам юнит-экономики за выбранную неделю.';
         if (['drr', 'yesterdayDrr'].includes(column.key)) return 'Расход рекламы / ожидаемый выкупленный оборот × 100%, как в юнит-экономике WB. Только дни с известными исходными значениями.';
         if (column.key === 'previousPrice') return 'Сумма заказов / количество заказов за ' + shortDate(payload.previous_from) + '–' + shortDate(payload.previous_to) + '.';
         if (column.key === 'coeff') return 'Коэффициент D для текущего часа по Москве из параметров кабинета WB. С 00:00 до 07:59 используется D = 1.';
@@ -167,7 +167,7 @@
         $('summary-arrow').textContent = summaryCollapsed ? '▾' : '▴';
         if (!payload) return;
         const stores = summaryCollapsed && filtered.length ? [{project: 'Все магазины', ...M.turnoverTotals(filtered)}] : M.storeTurnover(filtered);
-        $('store-summary').innerHTML = stores.map(store => `<tr class="${summaryCollapsed ? 'summary-total' : ''}"><th scope="row">${esc(store.project)}</th>${['plan', 'fact', 'forecast', 'deviation', 'difference'].map(key => `<td class="${['difference', 'deviation'].includes(key) ? store[key] < 0 ? 'turnover-change below' : store[key] > 0 ? 'turnover-change above' : '' : ''}" title="${store.partial[key] ? 'Неполные данные: учтены только известные значения' : ''}">${['difference', 'deviation'].includes(key) && store[key] > 0 ? '+' : ''}${key === 'deviation' ? pct(store[key]) : num(store[key], 2)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">Нет товаров по выбранным фильтрам</td></tr>';
+        $('store-summary').innerHTML = stores.map(store => `<tr class="${summaryCollapsed ? 'summary-total' : ''}"><th scope="row">${esc(store.project)}</th>${['plan', 'fact', 'forecast', 'deviation', 'difference'].map(key => `<td class="${['difference', 'deviation'].includes(key) ? store[key] < 0 ? 'turnover-change below' : store[key] > 0 ? 'turnover-change above' : '' : ''}">${['difference', 'deviation'].includes(key) && store[key] > 0 ? '+' : ''}${key === 'deviation' ? pct(store[key]) : num(store[key], 2)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">Нет товаров по выбранным фильтрам</td></tr>';
     }
     function renderPage() {
         if (!payload) return;

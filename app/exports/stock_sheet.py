@@ -866,8 +866,8 @@ def _stock_export_rows(
     catalog: list[dict],
     values_by_metric: dict[str, dict[str, int | None]],
     ff_metrics: list[str],
-) -> list[list[object]]:
-    data_rows: list[list[object]] = []
+) -> list[list[str | int]]:
+    data_rows: list[list[str | int]] = []
     for item in catalog:
         article = str(item.get("article") or "").strip()
         if not article:

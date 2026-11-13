@@ -9,6 +9,7 @@ from app.core.constants import (
     FboStockErrorCode,
     FboStockIssue,
     FboStockState,
+    Marketplace,
 )
 from app.dto.fbo_stock import (
     FboActor,
@@ -24,10 +25,15 @@ from app.dto.fbo_stock import (
 from app.dto.inbound_supplies import InboundSupply
 from app.stock.fbo_availability import (
     allocations_match,
+    can_select_fulfillment,
+    has_confirmed_items,
     is_accepted,
     is_active,
+    is_automatic_return,
     movement_availability,
+    requested_quantities,
     supply_shortages,
+    with_accepted_quantities,
 )
 
 
@@ -36,9 +42,7 @@ def allocate_supply(
     balances: tuple[FboBalance, ...],
     previous: FboMovement,
 ) -> FboMovement:
-    requested: dict[str, int] = defaultdict(int)
-    for item in supply.items:
-        requested[item.article] += item.quantity
+    requested = requested_quantities(supply, previous.allocations)
     fulfillment = previous.fulfillment
     if not fulfillment:
         raise FboStockError(FboStockErrorCode.FULFILLMENT_REQUIRED)
@@ -57,13 +61,15 @@ def allocate_supply(
             }
         )
     items = {item.article: item for item in supply.items}
+    earlier = {row.article: row for row in previous.allocations}
     allocations = tuple(
         FboAllocation(
             article=article,
             fulfillment=fulfillment,
             quantity=quantity,
-            name=items[article].name,
-            barcode=items[article].barcode,
+            name=items[article].name if article in items else earlier[article].name,
+            barcode=items[article].barcode if article in items else earlier[article].barcode,
+            received_quantity=earlier[article].received_quantity if article in earlier else 0,
         )
         for article, quantity in sorted(requested.items())
         if quantity
@@ -75,6 +81,22 @@ def allocate_supply(
             "shortages": (),
             "manual_required": False,
             "issue": FboStockIssue.NONE,
+        }
+    )
+
+
+def close_cancelled(movement: FboMovement) -> FboMovement:
+    received = with_accepted_quantities(movement, preserve_confirmed=True)
+    return received.model_copy(
+        update={
+            "allocations": tuple(
+                row.model_copy(update={"quantity": row.received_quantity})
+                for row in received.allocations
+                if row.received_quantity
+            ),
+            "state": FboStockState.CANCELLED,
+            "issue": FboStockIssue.NONE,
+            "manual_required": False,
         }
     )
 
@@ -137,12 +159,20 @@ class FboStockService:
         if not evidence.confirmed or supply.unavailable or supply.stage == FBO_STOCK.stage_unknown:
             return current.model_copy(update={"issue": FboStockIssue.UNCONFIRMED})
         if supply.stage == FBO_STOCK.stage_cancelled:
+            if is_automatic_return(target, supply):
+                if old.state == FboStockState.CANCELLED:
+                    return current.model_copy(update={"issue": FboStockIssue.NONE, "manual_required": False})
+                if old.state in {FboStockState.ACCEPTED, FboStockState.HISTORICAL}:
+                    return current.model_copy(update={"issue": FboStockIssue.UNCONFIRMED})
+                return close_cancelled(current)
             return current.model_copy(
                 update={
                     "issue": FboStockIssue.CANCELLED if old.allocations else FboStockIssue.NONE,
                     "state": old.state if old.allocations else FboStockState.CANCELLED,
                 }
             )
+        if old.state == FboStockState.CANCELLED and old.posted_at:
+            return current.model_copy(update={"issue": FboStockIssue.UNCONFIRMED})
         accepted = is_accepted(target, supply)
         if accepted and not old.posted_at and not old.allocations:
             return current.model_copy(update={"state": FboStockState.HISTORICAL})
@@ -152,6 +182,7 @@ class FboStockService:
                     "issue": FboStockIssue.UNCONFIRMED if old.allocations else FboStockIssue.NONE,
                 }
             )
+        current = with_accepted_quantities(current)
         articles = {item.article for item in supply.items if item.quantity}
         overlaps = any(
             articles.intersection(item.article for item in batch.items) for batch in evidence.legacy
@@ -161,19 +192,29 @@ class FboStockService:
         )
         if not old.posted_at and (overlaps or parent_held):
             return current.model_copy(update={"issue": FboStockIssue.LEGACY, "manual_required": True})
-        if not force:
+        adjust = (
+            not force
+            and not accepted
+            and bool(old.posted_at and current.fulfillment)
+            and supply.composition_confirmed
+            and all(item.article for item in supply.items if item.quantity)
+            and not allocations_match(current)
+        )
+        if not force and not adjust:
             changed = bool(old.posted_at) and not allocations_match(current)
             return current.model_copy(
                 update={
                     "state": (FboStockState.ACCEPTED if accepted else FboStockState.ACTIVE)
                     if old.posted_at
                     else FboStockState.PENDING,
-                    "manual_required": changed,
+                    "manual_required": changed and not accepted,
                     "issue": FboStockIssue.SHORTAGE if current.shortages else FboStockIssue.NONE,
                 }
             )
-        planned = allocate_supply(supply, evidence.balances, current)
+        planned = with_accepted_quantities(allocate_supply(supply, evidence.balances, current))
         if planned.issue == FboStockIssue.SHORTAGE:
+            if target.marketplace == Marketplace.OZON:
+                planned = planned.model_copy(update={"fulfillment": current.fulfillment})
             if accepted and old.posted_at:
                 planned = planned.model_copy(update={"state": FboStockState.ACCEPTED})
             return planned
@@ -196,25 +237,22 @@ class FboStockService:
                 (row for row in evidence.movements if row.supply.key == command.change.supply_key), None
             )
             supply = next((row for row in evidence.supplies if row.key == command.change.supply_key), None)
+            action = command.change.action
             if old is None or supply is None:
                 raise FboStockError(FboStockErrorCode.MISSING)
-            if not evidence.confirmed and command.change.action != FboStockAction.SELECT_FULFILLMENT:
+            if not evidence.confirmed and action != FboStockAction.SELECT_FULFILLMENT:
                 raise FboStockError(FboStockErrorCode.UNCONFIRMED)
             old = movement_availability(command.target, old, evidence)
             actor = FboActor(id=command.user_id, name=command.user_name)
             adopt: tuple[int, ...] = ()
-            if command.change.action == FboStockAction.SELECT_FULFILLMENT:
+            if action == FboStockAction.SELECT_FULFILLMENT:
                 if old.posted_at or old.allocations:
                     raise FboStockError(FboStockErrorCode.FULFILLMENT_LOCKED)
-                if not is_active(command.target, supply):
-                    raise FboStockError(FboStockErrorCode.UNCONFIRMED)
+                if not can_select_fulfillment(command.target, old.model_copy(update={"supply": supply})):
+                    raise FboStockError(FboStockErrorCode.FULFILLMENT_STATUS)
                 fulfillment = command.change.fulfillment
                 if fulfillment and fulfillment not in evidence.fulfillments:
                     raise FboStockError(FboStockErrorCode.INVALID_FULFILLMENT)
-                if fulfillment and (
-                    not supply.quantity or any(not item.article for item in supply.items if item.quantity)
-                ):
-                    raise FboStockError(FboStockErrorCode.UNCONFIRMED)
                 candidate = old.model_copy(
                     update={
                         "supply": supply,
@@ -225,9 +263,12 @@ class FboStockService:
                     }
                 )
                 movement = self._plan(command.target, supply, candidate, evidence)
-                if movement.shortages:
+                if (
+                    movement.issue == FboStockIssue.SHORTAGE
+                    and command.target.marketplace != Marketplace.OZON
+                ):
                     movement = movement.model_copy(update={"fulfillment": ""})
-            elif command.change.action == FboStockAction.LINK:
+            elif action == FboStockAction.LINK:
                 chosen = tuple(row for row in evidence.legacy if row.id in command.change.batch_ids)
                 expected: dict[str, int] = defaultdict(int)
                 actual: dict[str, int] = defaultdict(int)
@@ -253,6 +294,8 @@ class FboStockService:
                         combined[identity] = allocation.model_copy(
                             update={
                                 "quantity": allocation.quantity + (former.quantity if former else 0),
+                                "received_quantity": allocation.received_quantity
+                                + (former.received_quantity if former else 0),
                             }
                         )
                 sources = {allocation.fulfillment for allocation in combined.values()}
@@ -269,32 +312,25 @@ class FboStockService:
                 )
                 adopt = command.change.batch_ids
                 movement = self._plan(command.target, supply, old, evidence)
-            elif command.change.action == FboStockAction.RETURN:
-                if supply.stage != FBO_STOCK.stage_cancelled or supply.unavailable:
+            elif action == FboStockAction.RETURN:
+                if (
+                    supply.stage != FBO_STOCK.stage_cancelled
+                    or supply.unavailable
+                    or is_automatic_return(command.target, supply)
+                    or not old.allocations
+                ):
                     raise FboStockError(FboStockErrorCode.INVALID_RETURN)
-                movement = old.model_copy(
-                    update={
-                        "supply": supply,
-                        "allocations": (),
-                        "state": FboStockState.CANCELLED,
-                        "issue": FboStockIssue.NONE,
-                        "manual_required": False,
-                        "shortages": (),
-                        "fulfillment": "",
-                        "checked_fulfillment": "",
-                        "updated_at": datetime.now(UTC).isoformat(),
-                    }
+                movement = close_cancelled(
+                    old.model_copy(update={"supply": supply, "updated_at": datetime.now(UTC).isoformat()})
                 )
             else:
                 if not old.fulfillment or command.change.fulfillment != old.fulfillment:
                     raise FboStockError(FboStockErrorCode.FULFILLMENT_REQUIRED)
                 if old.fulfillment not in evidence.fulfillments:
                     raise FboStockError(FboStockErrorCode.INVALID_FULFILLMENT)
-                if not supply.quantity or any(not item.article for item in supply.items if item.quantity):
+                if not has_confirmed_items(supply):
                     raise FboStockError(FboStockErrorCode.UNCONFIRMED)
-                if supply.unavailable or not (
-                    is_active(command.target, supply) or is_accepted(command.target, supply)
-                ):
+                if supply.unavailable or not is_active(command.target, supply):
                     raise FboStockError(FboStockErrorCode.UNCONFIRMED)
                 movement = self._plan(command.target, supply, old, evidence, force=True)
             if not old.posted_by and movement.posted_at:

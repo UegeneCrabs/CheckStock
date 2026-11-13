@@ -50,10 +50,10 @@
     return body;
   }
   function metric(key, value, day = '') {
-    const title = value.reasons.length ? value.reasons.slice(0, 15).join('\n') : value.label;
-    const inside = `${fmt(value.value)}${key === 'margin_percent' && value.value != null ? '%' : ''}${!value.complete ? `<small>известно ${fmt(value.known_value)}</small>` : ''}`;
+    const title = value.label;
+    const inside = `${fmt(value.value)}${key === 'margin_percent' && value.value != null ? '%' : ''}`;
     if (key === 'margin_percent') return `<span class="finance-value" title="${esc(title)}">${inside}</span>`;
-    return `<button type="button" class="finance-value ${!value.complete ? 'is-partial' : ''}" data-metric="${esc(key)}" data-day="${esc(day)}" title="${esc(title)}">${inside}</button>`;
+    return `<button type="button" class="finance-value " data-metric="${esc(key)}" data-day="${esc(day)}" title="${esc(title)}">${inside}</button>`;
   }
   function metricRow(key, value, label = value.label, help = value.label) {
     const total = key === 'profit' ? ' finance-row--total finance-row--total-start' : key === 'margin_percent' ? ' finance-row--total' : '';
@@ -63,17 +63,15 @@
     $('finance-report').hidden = false;
     $('finance-period').textContent = `${formatDay(data.date_from)} — ${formatDay(data.date_to)}`;
     $('finance-version').textContent = `Магазинов: ${data.stores.length}`;
-    const missing = Object.values(data.metrics).some(m => !m.complete && m !== data.metrics.margin_percent);
     const stamps = data.status.map(s => s.last_success).filter(Boolean).sort();
     const state = $('finance-state');
-    state.classList.toggle('finance-warning', missing || data.stale);
-    state.textContent = [data.empty_scope ? 'Нет доступных магазинов.' : missing ? 'Неполные данные: прочерк означает, что полный итог пока неизвестен.' : 'Все обязательные источники загружены.', data.preliminary ? 'Текущий месяц предварительный.' : '', data.stale ? 'Последнее обновление завершилось ошибкой. Показана последняя опубликованная версия.' : '', stamps.length ? `Последняя успешная загрузка: ${new Date(stamps.at(-1)).toLocaleString('ru-RU')}.` : 'Успешных загрузок ещё нет.'].filter(Boolean).join(' ');
+    state.textContent = [data.empty_scope ? 'Нет доступных магазинов.' : '', data.preliminary ? 'Текущий месяц предварительный.' : '', stamps.length ? `Последняя успешная загрузка: ${new Date(stamps.at(-1)).toLocaleString('ru-RU')}.` : 'Успешных загрузок ещё нет.'].filter(Boolean).join(' ');
     if (data.status.some(s=>s.running)) state.textContent += ' Идёт обновление; пока показан опубликованный результат.';
     $('finance-main-rows').innerHTML = primaryRows.filter(([key]) => data.metrics[key]).map(([key,label,help]) => metricRow(key,data.metrics[key],label,help)).join('');
     const primaryKeys = new Set(primaryRows.map(([key]) => key));
     $('finance-metrics').innerHTML = Object.entries(data.metrics).filter(([key]) => !primaryKeys.has(key)).map(([key,value]) => metricRow(key,value)).join('');
     $('finance-daily').querySelector('tbody').innerHTML = data.daily.map(row => `<tr><td>${esc(row.day)}</td>${['seller_turnover','expenses','net_cost','profit','buyout_count'].map(key => `<td>${metric(key,row.metrics[key],row.day)}</td>`).join('')}</tr>`).join('');
-    $('finance-sources').innerHTML = data.status.map(s => `<div class="finance-source"><strong>${esc(s.store_slug)} · ${esc(s.business_id)} · ${esc(labels[s.source] || s.source)}</strong><p>Последнее обновление: ${s.last_success ? esc(new Date(s.last_success).toLocaleString('ru-RU')) : 'не загружено'}</p>${s.errors.map(e => `<p class="finance-error">${esc(e.month)}: ${esc(e.message)}</p>`).join('')}${s.coverage.map(c => `<p>${esc(c.from)} — ${esc(c.to)} ${c.issues.map(esc).join('; ')}</p>`).join('')}</div>`).join('') || 'Нет настроенных финансовых подключений для периода.';
+    $('finance-sources').innerHTML = data.status.map(s => `<div class="finance-source"><strong>${esc(s.store_slug)} · ${esc(s.business_id)} · ${esc(labels[s.source] || s.source)}</strong><p>Последнее обновление: ${s.last_success ? esc(new Date(s.last_success).toLocaleString('ru-RU')) : 'не загружено'}</p>${s.coverage.map(c => `<p>${esc(c.from)} — ${esc(c.to)} ${c.issues.map(esc).join('; ')}</p>`).join('')}</div>`).join('') || 'Нет настроенных финансовых подключений для периода.';
   }
   async function load() {
     const own = ++sequence;
@@ -200,8 +198,6 @@
     selection = {metric:button.dataset.metric, day:button.dataset.day, page:1};
     const value=selection.day?summary.daily.find(d=>d.day===selection.day).metrics[selection.metric]:summary.metrics[selection.metric];
     $('finance-detail-title').textContent = value.label + (selection.day ? ` · ${selection.day}` : '');
-    $('finance-detail-quality').hidden=!value.reasons.length;
-    $('finance-detail-reasons').innerHTML=value.reasons.map(reason=>`<li>${esc(reason)}</li>`).join('');
     $('finance-detail-filters').reset(); dialog.showModal(); loadDetails();
   });
   $('finance-detail-close').addEventListener('click', () => dialog.close());

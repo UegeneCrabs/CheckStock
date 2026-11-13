@@ -13,7 +13,9 @@ from app.core.constants import (
 )
 from app.dto.common import DtoModel
 from app.dto.ozon_advertising import AdvertisingDailyExpense, AdvertisingPeriod
+from app.dto.ozon_logistics import LogisticsScenario
 from app.dto.ozon_margin import OzonMarginResult
+from app.dto.ozon_new_product_costs import OzonNewLogisticsEstimate, OzonNewProductCosts
 from app.dto.ozon_price_calculator import OzonPriceCalculation, OzonPriceCalculationRequest
 
 ScenarioSignedNumber = Annotated[
@@ -54,6 +56,9 @@ class OzonCalculatorValues(DtoModel):
     orders_count: ScenarioNumber | None = None
     commission_amount: ScenarioNumber | None = None
     logistics_amount: ScenarioSignedNumber | None = None
+    new_product_costs: OzonNewProductCosts | None = None
+    new_logistics_overrides: LogisticsScenario | None = None
+    new_logistics_estimate: OzonNewLogisticsEstimate | None = None
     advertising_amount: ScenarioSignedNumber | None = None
     advertising_manual: bool = False
     result: OzonMarginResult = OzonMarginResult()
@@ -71,6 +76,7 @@ class OzonCalculatorValues(DtoModel):
     purchase: ScenarioNumber | None = None
     fulfillment: ScenarioNumber | None = None
     storage_amount: ScenarioSignedNumber | None = None
+    storage_manual: bool = False
     acquiring_percent: ScenarioPercent | None = None
     acquiring_amount: ScenarioNumber | None = None
     team_percent: ScenarioPercent | None = None

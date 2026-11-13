@@ -198,6 +198,10 @@ echo 'Applying audited Sokoloff tax correction through 2026-11-03: VAT 0%, USN 8
   --operation sokoloff-taxes-20261103 \
   --reason 'User-confirmed Sokoloff history correction: VAT 0%, USN 8%.' \
   --apply --backup-directory /app/data/backups/database/ozon-tax-history </dev/null
+deploy_stage='Ozon order processing dates'
+echo 'Aligning saved Ozon order dates with their processing timestamps'
+"${compose[@]}" run --rm --no-deps -T --entrypoint python app \
+  -m scripts.ops.repair_ozon_order_dates --apply </dev/null
 
 deploy_stage='container update'
 echo 'Updating application and observability containers'

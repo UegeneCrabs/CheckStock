@@ -184,7 +184,7 @@
         return {partial: qualities.some(item => item.partial), stale: qualities.some(item => item.stale), reasons: [...new Set(qualities.flatMap(item => item.reasons || []))]};
     }
     function qualityLabel(quality) {
-        return [quality.partial ? 'неполные данные' : '', quality.stale ? 'сохранённые данные' : ''].filter(Boolean).join(' · ');
+        return [quality.stale ? 'сохранённые данные' : ''].filter(Boolean).join(' · ');
     }
     function qualityHelp(quality) {
         return [...new Set([qualityLabel(quality), ...(quality.reasons || []).map(reasonMessage)].filter(Boolean))].join('. ');

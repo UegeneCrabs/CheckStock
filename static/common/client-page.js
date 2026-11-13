@@ -2,7 +2,7 @@ window.CheckStockPage = (() => {
     'use strict';
     const handlers = [];
     const ui = window.CheckStockUI;
-    const commonScripts = ['identifier-copy', 'modal', 'collapse', 'select', 'table-filter', 'system-alerts', 'navigation'];
+    const commonScripts = ['identifier-copy', 'modal', 'collapse', 'select', 'table-filter', 'navigation'];
     const storeColors = { rimili: '#E63946', tris: '#2A9D8F', rockkiddo: '#E9C46A', trusthome: '#8338EC', sokoloff: '#3A86FF', gogol: '#06D6A0', toyka: '#FF6D00' };
 
     function register(matches, prepare) { handlers.push({ matches, prepare }); }
@@ -87,22 +87,10 @@ window.CheckStockPage = (() => {
                 await script(source);
             }
             colors();
-            const alerts = page.alertMarketplace
-                ? context.alerts.filter(alert => alert.marketplace === page.alertMarketplace)
-                : context.alerts;
-            if (page.showAlerts !== false && alerts.length) {
-                const banner = document.createElement('section');
-                banner.className = 'token-banner system-alerts'; banner.dataset.systemAlerts = '';
-                banner.setAttribute('role', 'status'); banner.setAttribute('aria-live', 'polite');
-                banner.innerHTML = '<span class="system-alert-dots" aria-hidden="true">' + alerts.map((_, index) => '<i class="system-alert-dot' + (index ? '' : ' is-active') + '"></i>').join('') + '</span><span class="token-banner-icon" aria-hidden="true">!</span><div class="system-alert-items">' + alerts.map((alert, index) => {
-                    const store = context.stores.find(store => store.slug === alert.store_slug)?.name || alert.store_slug;
-                    const title = store + ' · ' + alert.marketplace;
-                    const message = alert.code === 'token_expiring' ? 'Срок действия ключа: ' + ui.date(alert.expires_at) : alert.code === 'credentials_missing' ? 'Проверьте API-ключ в настройках интеграции' : alert.code === 'access_denied' ? 'Проверьте права API-ключа: ' + alert.scope : 'Ошибка обновления: ' + alert.scope;
-                    return '<article class="system-alert-item" data-system-alert-item' + (index ? ' hidden' : '') + '><strong>' + ui.escapeHtml(title) + '</strong><span>' + ui.escapeHtml(message) + '</span></article>';
-                }).join('') + '</div>';
-                document.querySelector('main').prepend(banner);
+            for (const name of commonScripts.filter(name => name !== 'modal')) {
+                const version = name === 'navigation' ? '20261113-analytics-menu' : '20261014';
+                await script('/static/common/' + name + '.js?v=' + version);
             }
-            for (const name of commonScripts.filter(name => name !== 'modal')) await script('/static/common/' + name + '.js?v=20261014');
             if (page.ready) await page.ready(root);
             loading.remove();
         } catch (error) {

@@ -1,6 +1,6 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core import health as health_service
 from app.core.constants import OZON_ADVERTISING, OZON_API, Marketplace, UiAlertCode, UiAlertScope
@@ -20,6 +20,20 @@ from app.wb.token_watch import WARN_DAYS
 class IntegrationRepository:
     def __init__(self, database: AsyncDatabase):
         self.database = database
+
+    async def failed_runs_on(self, day: date) -> tuple[JobRun, ...]:
+        stamp = func.coalesce(RUNS.c.finished_at, RUNS.c.started_at)
+        async with self.database.transaction() as connection:
+            result = await connection.execute(
+                select(RUNS)
+                .where(
+                    RUNS.c.status == "error",
+                    stamp >= (day - timedelta(days=1)).isoformat(),
+                    stamp < (day + timedelta(days=1)).isoformat(),
+                )
+                .order_by(stamp)
+            )
+            return tuple(JobRun.model_validate(row) for row in result.mappings())
 
     async def alerts(self, store_slugs: tuple[str, ...]) -> tuple[UiAlert, ...]:
         health = table_for(SyncHealthRecord)

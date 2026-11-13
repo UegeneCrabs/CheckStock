@@ -5,7 +5,7 @@ from typing import Literal
 from app import db
 from app.config import settings
 from app.core import health
-from app.core.constants import FBO_STOCK, WEB, Marketplace
+from app.core.constants import FBO_STOCK, WEB, Marketplace, StockTransitKind
 from app.dto.common import DtoModel
 from app.dto.stock_pages import (
     ArticleTransit,
@@ -100,7 +100,9 @@ def _yandex_article_stock(store: str, article: str) -> dict[str, tuple[ArticleYa
 
 
 class StockPageRepository(AsyncReadModels):
-    async def movements(self, query: StockPageQuery, view: Literal["active", "history"]) -> TransitReportData:
+    async def movements(
+        self, query: StockPageQuery, view: Literal["active", "history"], kind: StockTransitKind | None = None
+    ) -> TransitReportData:
         def load() -> TransitReportData:
             batches = tuple(
                 TransitBatchData.model_validate(row)
@@ -109,6 +111,7 @@ class StockPageRepository(AsyncReadModels):
                     query.marketplace,
                     active_only=view == "active",
                     closed_only=view == "history",
+                    kind=kind,
                 )
             )
             return TransitReportData(

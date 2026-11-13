@@ -12,8 +12,8 @@ from app import db
 from app.access import economics_preview
 from app.access.authentication import is_active_user
 from app.access.resources import accessible_stores, has_store_marketplace
-from app.core import health
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.export_journal import diagnostic, product_diagnostics
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
 from app.dto.identity import coerce_user
@@ -39,7 +39,6 @@ from app.economics.wb.catalogue import (
     _price_value,
     _report_historical_economics,
     _unit_economics_1c_mock_product,
-    _unit_economics_1c_price_warnings,
     _unit_economics_1c_product_summary,
     load_wb_calculator_products,
 )
@@ -159,6 +158,14 @@ async def sales_unit_economics_1c(request: Request):
                 }
             )
         products, price_warnings = await run_in_threadpool(load_products)
+        await run_in_threadpool(product_diagnostics, "WB", products)
+        for warning in price_warnings:
+            diagnostic(
+                "price_source",
+                marketplace="WB",
+                store=warning.get("store_name"),
+                detail=warning.get("message"),
+            )
         if detail_article:
             if not products:
                 return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)
@@ -176,21 +183,6 @@ async def sales_unit_economics_1c(request: Request):
             }
         )
 
-    price_warnings = await run_in_threadpool(
-        _unit_economics_1c_price_warnings,
-        accessible_store_slugs,
-    )
-    price_alerts = [
-        {
-            "title": f"Кабинет {warning['store_name']}: проверьте права API-ключа WB",
-            "text": (
-                "Цены не обновляются. Добавьте ключу доступ к разделу «Цены и скидки» "
-                "или замените ключ, затем повторите выгрузку."
-            ),
-        }
-        for warning in price_warnings
-        if health.requires_team_action(warning["message"])
-    ]
     unit_config = {
         "userKey": str(request.state.user["id"]),
         "stores": [
@@ -229,7 +221,6 @@ async def sales_unit_economics_1c(request: Request):
         content,
         request.state.user,
         content_class="content--unit-1c",
-        alerts=price_alerts,
     )
 
 
@@ -1295,7 +1286,17 @@ async def _unit_economics_1c_unit_profit_report_data(
 
 @router.get("/api/unit-economics-1c/reports/unit-profit")
 async def unit_economics_1c_unit_profit_report_data(request: Request):
-    return await _unit_economics_1c_unit_profit_report_data(request)
+    report = await _unit_economics_1c_unit_profit_report_data(request)
+    if isinstance(report, dict):
+        for row in report.get("rows", ()):
+            if row.get("margin_complete") is False:
+                diagnostic(
+                    "wb_profit_incomplete",
+                    store=row.get("store_slug"),
+                    article=row.get("article"),
+                    detail=row.get("messages") or row.get("margin_missing_days"),
+                )
+    return report
 
 
 @router.get("/sales/unit-economics-1c/reports/unit-profit.xlsx")
@@ -1569,6 +1570,7 @@ async def sales_unit_economics_1c_yandex(request: Request):
             )
 
         products = await run_in_threadpool(load_products)
+        await run_in_threadpool(product_diagnostics, unit_economics_yandex.MARKETPLACE, products)
         if detail_article:
             if not products:
                 return JSONResponse({"ok": False, "error": "Товар не найден"}, status_code=404)

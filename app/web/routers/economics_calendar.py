@@ -12,6 +12,7 @@ from app.access.authentication import is_active_user
 from app.access.economics_preview import require_preview
 from app.access.resources import accessible_stores, has_store_marketplace
 from app.core.domain import MOSCOW_TIMEZONE
+from app.core.export_journal import diagnostic
 from app.core.stores import STORES
 from app.dto.identity import SectionName, coerce_user
 from app.economics.daily_calculation import fields
@@ -158,6 +159,15 @@ def listing(request, store, day, query, page_number, page_size):
         for p, r in zip(catalog, results, strict=True)
         if r.get("day_profit") is None or r.get("daily_missing")
     ]
+    for item in missing:
+        diagnostic(
+            "daily_economics_incomplete",
+            marketplace=marketplace,
+            store=store,
+            article=item["article"],
+            day=day,
+            detail=item["parameters"] or "unavailable",
+        )
     offset = (page_number - 1) * page_size
     rows = []
     for p in catalog[offset : offset + page_size]:

@@ -17,6 +17,6 @@
         }
         const values = { service_account_email: e(data.service_account_email), week_update: await week.text() };
         const google = (await templateResponse.text()).replace(/\$([a-zA-Z_]\w*)/g, (_, key) => values[key]);
-        return { title: 'CheckStock — Интеграции и выгрузки', section: 'admin_integrations', contentClass: 'content--integrations', values: { google_export: google, cabinet_settings: await cabinets.text(), ozon_cabinet_settings: ozonSettings } };
+        return { title: 'CheckStock — Интеграции и выгрузки', section: 'admin_integrations', contentClass: 'content--integrations', values: { google_export: google, google_stock_test_enabled: String(data.stock_test_enabled === true), cabinet_settings: await cabinets.text(), ozon_cabinet_settings: ozonSettings } };
     });
 })();

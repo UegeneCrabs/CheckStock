@@ -29,6 +29,7 @@ class GoogleExportSettings(DtoModel):
 
 
 class GoogleExportView(DtoModel):
+    stock_test_enabled: bool = False
     ok: bool = True
     settings: GoogleExportSettings
     service_account_email: str

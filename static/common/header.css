@@ -289,6 +289,64 @@ html.sidebar-collapsed .app-header .nav-group.is-open .nav-submenu {
     background: rgba(105, 132, 255, 0.18);
 }
 
+.app-header .nav-branch {
+    position: relative;
+}
+
+.app-header .nav-branch-trigger {
+    width: 100%;
+    justify-content: space-between;
+    background: transparent;
+    font-family: inherit;
+    font-weight: 650;
+    text-align: left;
+    cursor: pointer;
+}
+
+.app-header .nav-branch-trigger[aria-expanded="true"] {
+    color: #fff;
+    background: rgba(105, 132, 255, 0.18);
+}
+
+.app-header .nav-branch-trigger .nav-chevron {
+    width: 14px;
+    height: 14px;
+    transform: none;
+}
+
+.app-header .nav-branch-links {
+    display: grid;
+    gap: 2px;
+    margin-left: 10px;
+    padding-left: 5px;
+    border-left: 1px solid rgba(187, 203, 230, 0.18);
+}
+
+.app-header .nav-branch-links[hidden] {
+    display: none;
+}
+
+@media (min-width: 560px) and (hover: hover) and (pointer: fine) {
+    .app-header .nav-group.is-open .nav-analytics-submenu,
+    html.sidebar-collapsed .app-header .nav-group.is-open .nav-analytics-submenu {
+        overflow: visible;
+    }
+
+    .app-header .nav-branch-links {
+        position: absolute;
+        z-index: 1;
+        top: -1px;
+        left: 100%;
+        min-width: 176px;
+        margin: 0;
+        padding: 5px;
+        border: 1px solid rgba(187, 203, 230, 0.18);
+        border-radius: 9px;
+        background: #111f36;
+        box-shadow: 0 12px 26px rgba(4, 12, 26, 0.28);
+    }
+}
+
 .app-header #nav-reports-submenu .marketplace-report-wb {
     color: #fff;
     background: #7d168f;

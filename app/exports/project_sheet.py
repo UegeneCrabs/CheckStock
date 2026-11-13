@@ -9,6 +9,7 @@ from app.core.constants import Marketplace
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import PROJECT_STORE_ALIASES, STORES
+from app.dto.google_stock_report import StockTable
 from app.exports import fbo_transit
 from app.exports import stock_sheet as legacy
 from app.exports.project_scope import stores_for_marketplace
@@ -188,6 +189,26 @@ def _write_marketplace(
     snapshots: list[ProjectStockSnapshot],
 ) -> dict:
     sheet_name = settings.target(marketplace).stock_sheet_name.strip()
+    table = _stock_table(snapshots)
+    report = legacy._write_stock_rows(
+        service,
+        spreadsheet_id,
+        marketplace,
+        [sheet_name],
+        list(table.headers),
+        [list(row) for row in table.rows],
+        replace_sheet=True,
+    )
+    report["store_slugs"] = tuple(snapshot.store_slug for snapshot in snapshots)
+    report["warnings"] = list(table.warnings)
+    return report
+
+
+def stock_table(marketplace: Marketplace, now: datetime | None = None) -> StockTable:
+    return _stock_table(_stock_snapshot(marketplace.value, now=now))
+
+
+def _stock_table(snapshots: list[ProjectStockSnapshot]) -> StockTable:
     ff_metrics = sorted(
         {
             metric
@@ -197,28 +218,26 @@ def _write_marketplace(
         },
         key=str.casefold,
     )
-    headers = [
+    headers = (
         *EXPORT_HEADERS,
         *(
             f"{legacy.FF_STOCK_HEADER_PREFIX}{metric.removeprefix(legacy.FF_STOCK_METRIC_PREFIX)}"
             for metric in ff_metrics
         ),
-    ]
+    )
     rows = []
     for snapshot in snapshots:
         project = STORES[snapshot.store_slug].name
         catalog = [item for item in snapshot.catalog if str(item.get("article") or "").strip()]
         stock_rows = legacy._stock_export_rows(catalog, snapshot.values_by_metric, ff_metrics)
         for item, row in zip(catalog, stock_rows, strict=True):
-            # Use the source text so leading zeroes are retained in the key.
             barcode = str(item.get("barcode") or "").strip().removeprefix("'").strip()
-            rows.append([f"{project} {barcode}", project, *row])
-    report = legacy._write_stock_rows(
-        service, spreadsheet_id, marketplace, [sheet_name], headers, rows, replace_sheet=True
+            rows.append((f"{project} {barcode}", project, *row))
+    return StockTable(
+        headers=headers,
+        rows=tuple(rows),
+        warnings=tuple(warning for snapshot in snapshots for warning in snapshot.warnings),
     )
-    report["store_slugs"] = tuple(snapshot.store_slug for snapshot in snapshots)
-    report["warnings"] = [warning for snapshot in snapshots for warning in snapshot.warnings]
-    return report
 
 
 def _order_column_index(value: str) -> int:

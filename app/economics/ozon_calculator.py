@@ -4,6 +4,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from app.core.constants import OZON_SCENARIO, OzonScenarioBasis, OzonScenarioField
 from app.dto.ozon_calculator import OzonCalculatorRequest, OzonCalculatorValues
 from app.dto.ozon_margin import OzonMarginInputs
+from app.economics.ozon_new_product_costs import estimate_logistics
 from app.ozon.drr import advertising_drr, expected_turnover
 from app.ozon.margin_normalizer import advertising_per_unit, unit_margin
 
@@ -64,6 +65,15 @@ def advertising(
 
 
 def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
+    new_costs = values.new_product_costs
+    logistics = (
+        estimate_logistics(
+            new_costs.logistics, values.seller_price, values.buyout_percent, values.new_logistics_overrides
+        )
+        if new_costs is not None and new_costs.logistics is not None
+        else None
+    )
+    storage = new_costs.storage if new_costs is not None else None
     other_breakdown = (
         tuple(
             item.model_copy(
@@ -151,6 +161,13 @@ def recalculate(values: OzonCalculatorValues) -> OzonCalculatorValues:
             "other_spend": other_spend,
             "other_drr": other_drr,
             "other_breakdown": other_breakdown,
+            "new_logistics_estimate": logistics,
+            "logistics_amount": rounded(logistics.total)
+            if logistics is not None
+            else values.logistics_amount,
+            "storage_amount": rounded(storage.per_unit)
+            if storage is not None and not values.storage_manual
+            else values.storage_amount,
         }
     )
     spend = (
@@ -206,6 +223,8 @@ def calculate(request: OzonCalculatorRequest) -> OzonCalculatorValues:
         changes: dict[str, object] = {edit.field.value: edit.value}
         if edit.field == OzonScenarioField.OTHER_SPEND:
             changes["other_breakdown"] = None
+        if edit.field == OzonScenarioField.STORAGE and values.new_product_costs is not None:
+            changes["storage_manual"] = edit.value is not None
         if edit.field == OzonScenarioField.ADVERTISING_AMOUNT:
             changes["advertising_manual"] = True
             changes["total_drr_manual"] = False

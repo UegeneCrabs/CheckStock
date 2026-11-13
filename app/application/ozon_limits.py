@@ -12,6 +12,7 @@ from app.core.constants import (
     OZON_ANALYTICS,
     OZON_API,
     OZON_API_LIMITS,
+    OZON_INBOUND,
     OZON_LOGISTICS,
     OZON_STOCK_ANALYTICS,
     AdvertisingError,
@@ -74,6 +75,8 @@ class OzonLimitsService:
                 if target.path == OZON_STOCK_ANALYTICS.path
                 else settings.ozon_logistics_request_interval_seconds
                 if target.path == OZON_LOGISTICS.accrual_path
+                else max(spacing, OZON_INBOUND.act_minimum_spacing_seconds)
+                if target.path == OZON_INBOUND.acts_path
                 else spacing,
                 policy=OzonRatePolicy.RETRY_AFTER,
             ),

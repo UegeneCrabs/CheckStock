@@ -3,6 +3,7 @@ from app.core.constants import (
     OrderScheme,
 )
 from app.dto.orders import OzonOrderPosting, OzonOrderProduct
+from app.dto.ozon_orders import OzonPayloadError, OzonPostingDates
 from app.orders.normalizers.common import compact_json, integer, number, timestamp
 
 
@@ -15,10 +16,13 @@ def _prepare(posting: dict, posting_index: int) -> OzonOrderPosting:
     )
     status = str(posting.get("status") or "").lower()
     cancellation = posting.get("cancellation") or {}
-    ordered = timestamp(
-        posting.get("created_at") or posting.get("in_process_at") or posting.get("shipment_date")
+    dates = OzonPostingDates.model_validate(posting)
+    if dates.in_process_at is None:
+        raise OzonPayloadError(f"postings.{posting_index}.in_process_at", "missing processing date")
+    ordered = timestamp(dates.in_process_at)
+    updated = timestamp(
+        posting.get("updated_at") or posting.get("status_updated_at") or dates.created_at or ordered
     )
-    updated = timestamp(posting.get("updated_at") or posting.get("status_updated_at") or ordered)
     analytics = posting.get("analytics_data") or {}
     sold = (
         posting.get("delivering_date")

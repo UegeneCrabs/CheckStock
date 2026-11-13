@@ -1,3 +1,4 @@
+from app.core.constants import StockTransitKind
 from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.core import get_connection
 
@@ -98,6 +99,7 @@ def get_ff_transit_batches(
     *,
     active_only: bool = True,
     closed_only: bool = False,
+    kind: StockTransitKind | None = None,
     limit: int = 200,
 ) -> list[dict]:
     where = ["store_slug = ?"]
@@ -105,6 +107,9 @@ def get_ff_transit_batches(
     if marketplace:
         where.append("(from_marketplace = ? OR to_marketplace = ?)")
         params.extend((marketplace, marketplace))
+    if kind is not None:
+        where.append("kind = ?")
+        params.append(kind.value)
     if active_only:
         where.append("status IN ('in_transit', 'partial')")
     elif closed_only:

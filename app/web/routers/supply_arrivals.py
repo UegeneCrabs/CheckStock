@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.access.authentication import is_active_user, require_active_user
 from app.config import settings
 from app.container import supply_arrival_stock_service
+from app.core.export_journal import diagnostic
 from app.dto.supply_arrivals import (
     SupplyArrivalId,
     SupplyArrivalMissingError,
@@ -49,6 +50,9 @@ async def arrivals_data(request: Request, resources: AsyncResourcesDependency):
     report = await supply_arrival_stock_service(resources).report(
         SupplyArrivalsReport.model_validate(result), user
     )
+    diagnostic("supply_arrivals_failed", sheet=report.sheet_title, detail=report.error)
+    for row in report.rows:
+        diagnostic("supply_arrival_incomplete", store=row.store_slug, row=row.row, detail=row.warnings)
     return JSONResponse(report.model_dump(mode="json"), headers={"Cache-Control": "no-store"})
 
 

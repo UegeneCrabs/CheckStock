@@ -39,49 +39,13 @@
         (problem.cell ? ' Ячейка: ' + problem.cell + '.' : '') + (problem.status ? ' HTTP ' + problem.status + '.' : '');
     const reason = value => errors[value] || value;
 
-    function freezeOutcome(result) {
-        const issues = (result.sheets || []).filter(sheet => sheet.issue);
-        const skipped = (result.sheets || []).filter(sheet => sheet.skipped_cells?.length);
-        const skippedCount = skipped.reduce((total, sheet) => total + sheet.skipped_cells.length, 0);
-        const incomplete = !result.complete || issues.length > 0;
-        const written = result.written_cells || 0;
-        if (result.dry_run) return {
-            tone: incomplete ? 'error' : skippedCount ? 'warning' : 'success',
-            text: incomplete ? 'Проверка не пройдена' : skippedCount ? 'Проверка пройдена с пропусками' : 'Проверка пройдена',
-            message: `Формул для фиксации: ${result.total_formulas || 0}. Проверка не изменяет таблицу.`,
-            issues,
-            skipped, skippedCount,
-        };
-        if (incomplete) return {
-            tone: written ? 'warning' : 'error',
-            text: written ? 'Выполнено частично' : 'Фиксация не выполнена',
-            message: written ? `Зафиксировано формул: ${written}. Остальные листы не обработаны.` : 'Зафиксировано формул: 0. Ни одна формула не заменена значением.',
-            issues,
-            skipped, skippedCount,
-        };
-        return {
-            tone: skippedCount ? 'warning' : written ? 'success' : 'idle',
-            text: written ? skippedCount ? 'Зафиксировано с пропусками' : 'Зафиксировано' : skippedCount ? 'Нет изменений; есть пропуски' : 'Изменения не требуются',
-            message: written ? `Зафиксировано формул: ${written}.` : 'В прошлых неделях нет формул для фиксации.',
-            issues,
-            skipped, skippedCount,
-        };
-    }
-
-    function renderStatus(node, state = {}, result = null, { pending = false, requestError = '', action = '' } = {}) {
-        const failure = pending ? '' : requestError || (result?.dry_run ? '' : errorText(state.last_error));
-        const freeze = action === 'freeze' && result && !pending && !failure ? freezeOutcome(result) : null;
-        const tone = pending ? 'idle' : failure ? 'error' : freeze ? freeze.tone : !result ? 'idle' : result.complete ? 'success' : 'warning';
-        const text = pending ? 'Не сохранено' : failure ? 'Ошибка запуска' : freeze ? freeze.text : !result ? 'Ещё не запускалось' : result.dry_run ? result.complete ? 'Проверка пройдена' : 'Проверка: есть замечания' : result.complete ? 'Завершено' : 'Есть замечания';
-        const when = pending ? null : failure ? state.last_error ? state.last_attempt_at : null : result && (result.processed_at || state.last_success_at);
-        const message = pending ? 'Сохраните настройки площадки перед выгрузкой.' : failure || freeze?.message;
-        const issues = freeze ? freeze.issues.map(sheet => `<span class="week-status-message">${e(sheet.sheet_name || 'Лист #' + sheet.sheet_id)}: ${e(reason(sheet.issue))}</span>`).join('') : '';
-        const skippedOpen = Boolean(node.querySelector('[data-freeze-skipped]')?.open);
-        const skipped = freeze?.skippedCount ? `<details data-freeze-skipped${skippedOpen ? ' open' : ''}><summary>Пропущено ячеек: ${freeze.skippedCount}</summary>${freeze.skipped.map(sheet => `<p>${e(sheet.sheet_name || 'Лист #' + sheet.sheet_id)}: ${sheet.skipped_cells.length}</p><ul>${sheet.skipped_cells.slice(0, skippedPreviewLimit).map(cell => `<li>${e(cell.cell)}: ${e(reason(cell.reason))}</li>`).join('')}</ul>${sheet.skipped_cells.length > skippedPreviewLimit ? `<p>Показаны первые ${skippedPreviewLimit} ячеек этого листа.</p>` : ''}`).join('')}<button type="button" class="btn-secondary" data-freeze-download>Скачать полный список пропусков</button></details>` : '';
-        const html = `<span class="week-status-line"><span class="week-result-badge">${text}</span>${when ? `<time>${e(date(when))}</time>` : ''}</span>${message ? `<span class="week-status-message">${e(message)}</span>` : ''}${issues}${skipped}`;
-        node.dataset.outcome = tone;
-        node.classList.toggle('export-status--error', tone === 'error');
-        if (node.innerHTML !== html) node.innerHTML = html;
+    function renderStatus(node, state = {}, result = null, { pending = false } = {}) {
+        const when = pending ? null : result?.processed_at || state.last_success_at;
+        const text = pending ? 'Сохраните настройки площадки перед выгрузкой.'
+            : when ? (result?.dry_run ? 'Предварительная проверка · ' : 'Последний результат · ') + date(when)
+            : 'Результата пока нет';
+        node.dataset.outcome = when ? 'success' : 'idle';
+        node.textContent = text;
     }
 
     async function request(url, options = {}) {
@@ -101,12 +65,10 @@
     function reportHtml(report, action) {
         if (!report) return '<p class="week-update-hint">Действие ещё не выполнялось для этих настроек.</p>';
         const cellLink = cell => cell ? `<a href="${e(report.spreadsheet_url + '#gid=' + report.sheet_id + '&range=' + encodeURIComponent(cell))}" target="_blank" rel="noopener noreferrer">${e(cell)}</a>` : '';
-        const issueList = (title, values) => values.length ? `<details><summary>${title}: ${values.length}</summary><ul>${values.map(item => `<li>Строка ${item.row}, ${e(item.article)} · ${e(item.project)} ${cellLink(item.cell)} — ${e(reason(item.reason || 'missing_data'))}${item.missing_days.length ? ' Даты: ' + e(item.missing_days.join(', ')) : ''}</li>`).join('')}</ul></details>` : '';
-        if (action === 'search') return report.sources.map(source => `<details open><summary>${cellLink(source.cell)} · ${e(source.value)} · совпадений: ${source.matches.length}</summary>${source.issue ? `<p>${e(reason(source.issue))}</p>` : ''}${source.matches.map(match => `<p>${cellLink(match.range)} · строка ${match.row}<br>${match.headers.map(header => `${cellLink(header.cell)}: ${e(header.value)}`).join('; ')}<br>${['ARTICLE', 'Проект'].map(name => `${name}: ${(match.columns[name] || []).map(item => cellLink(item.cell)).join(', ') || 'не найден'}`).join(' · ')}${match.stop ? '<br>Остановка: ' + cellLink(match.stop.cell) + ' — ' + e(match.stop.value || 'пусто') : ''}</p>`).join('')}</details>`).join('');
-        if (action === 'freeze') return `${report.dry_run ? '<p>Предварительная проверка. Таблица не изменена.</p>' : ''}<p>Неделя: ${e(report.week)} · Формул: ${report.total_formulas} · Зафиксировано: ${report.written_cells}</p>${report.sheets.map(sheet => `<p><strong>${e(sheet.sheet_name || 'Лист #' + sheet.sheet_id)}</strong><br>${e(sheet.ranges.join(', '))}<br>${sheet.issue ? e(reason(sheet.issue)) : 'Формул: ' + sheet.formula_count + ', зафиксировано: ' + sheet.written_cells}</p>`).join('')}${report.backup ? '<p>Резервная копия: ' + e(report.backup) + '</p>' : ''}`;
+        if (action === 'search') return report.sources.map(source => `<details open><summary>${cellLink(source.cell)} · ${e(source.value)} · совпадений: ${source.matches.length}</summary>${source.matches.map(match => `<p>${cellLink(match.range)} · строка ${match.row}<br>${match.headers.map(header => `${cellLink(header.cell)}: ${e(header.value)}`).join('; ')}<br>${['ARTICLE', 'Проект'].map(name => `${name}: ${(match.columns[name] || []).map(item => cellLink(item.cell)).join(', ') || 'не найден'}`).join(' · ')}${match.stop ? '<br>Остановка: ' + cellLink(match.stop.cell) + ' — ' + e(match.stop.value || 'пусто') : ''}</p>`).join('')}</details>`).join('');
+        if (action === 'freeze') return `${report.dry_run ? '<p>Предварительная проверка. Таблица не изменена.</p>' : ''}<p>Неделя: ${e(report.week)} · Формул: ${report.total_formulas} · Зафиксировано: ${report.written_cells}</p>${report.sheets.filter(sheet => !sheet.issue).map(sheet => `<p><strong>${e(sheet.sheet_name || 'Лист #' + sheet.sheet_id)}</strong><br>${e(sheet.ranges.join(', '))}<br>${sheet.issue ? e(reason(sheet.issue)) : 'Формул: ' + sheet.formula_count + ', зафиксировано: ' + sheet.written_cells}</p>`).join('')}${report.backup ? '<p>Резервная копия: ' + e(report.backup) + '</p>' : ''}`;
         return `<p>Сопоставлено товаров: ${report.matched_products}. Проверено ячеек: ${report.checked_cells}; записано: ${report.written_cells}; из них нулей: ${report.zeroed_cells}; уже актуальны: ${report.unchanged_cells}.</p>
             <p>${report.periods.map(period => `${cellLink(period.cell)}: ${e(period.value)} (${e(period.date_from)} — ${e(period.date_to)})`).join('<br>')}</p>
-            ${issueList('Пропущенные товары', report.issues)}${issueList('Незавершённые недели', report.missing_data)}${issueList('Неполные данные', report.zero_filled)}
             ${report.snapshot_times.length ? '<details><summary>Время снимков</summary><ul>' + report.snapshot_times.map(item => `<li>${e(item.store_slug)} · ${e(item.day)}: ${e(date(item.captured_at))}</li>`).join('') + '</ul></details>' : ''}
             ${report.backup ? '<p>Резервная копия: ' + e(report.backup) + '</p>' : ''}`;
     }
@@ -355,12 +317,9 @@
                 const node = query(`[data-export-result="${kind}"]`);
                 const state = view.profile.export_states?.[kind] || {};
                 const result = state.result;
-                const warnings = result?.warnings || [];
-                const open = Boolean(node.querySelector('details[open]'));
                 if (pending) delete node.dataset.requestError;
                 const failed = Boolean(state.last_error || node.dataset.requestError);
-                renderStatus(node, state, warnings.length && result ? { ...result, complete: false } : result,
-                    { pending, requestError: node.dataset.requestError || '' });
+                renderStatus(node, state, result, { pending });
                 if (!pending && result) {
                     const summary = document.createElement('span');
                     summary.className = failed ? 'week-previous-result' : 'week-status-message';
@@ -374,20 +333,7 @@
                         node.append(source);
                     }
                 }
-                if (!pending && warnings.length) {
-                    const details = document.createElement('details');
-                    details.open = open;
-                    const heading = document.createElement('summary');
-                    heading.textContent = (failed ? 'Предупреждения предыдущей выгрузки: ' : 'Предупреждения: ') + warnings.length;
-                    const list = document.createElement('ul');
-                    for (const warning of warnings) {
-                        const item = document.createElement('li');
-                        item.textContent = warning;
-                        list.append(item);
-                    }
-                    details.append(heading, list);
-                    node.append(details);
-                }
+
             }
         }
 
@@ -410,18 +356,16 @@
                 const result = action === 'freeze' && preview ? preview : state.result;
                 if (actionsOnly || action === 'freeze') compactStatus(action, state, result);
                 else {
-                    statusNodes[action].textContent = (result ? (result.dry_run ? 'Предварительная проверка: ' : 'Последний результат: ') + date(result.processed_at || state.last_success_at) + (result.value ? ' — ' + result.value : '') + (result.complete ? '' : '. Выполнено с замечаниями.') : 'Действие ещё не запускалось.') + (state.last_error ? ' ' + errorText(state.last_error) : '');
-                    statusNodes[action].classList.toggle('export-status--error', Boolean(state.last_error || result && !result.complete));
+                    statusNodes[action].textContent = (result ? (result.dry_run ? 'Предварительная проверка: ' : 'Последний результат: ') + date(result.processed_at || state.last_success_at) + (result.value ? ' — ' + result.value : '') + (result.complete ? '' : '') : 'Действие ещё не запускалось.');
                 }
                 if (action !== 'number') replaceResult(action,
                     actionsOnly && (action === 'sales' || action === 'stock')
-                        ? window.CheckStockWeekReport.summaryHtml(result, action, Boolean(state.last_error)) : reportHtml(result, action));
+                        ? window.CheckStockWeekReport.summaryHtml(result, action, false) : reportHtml(result, action));
                 if (actionsOnly && (action === 'sales' || action === 'stock')) query(`[data-week-${action}-report]`).hidden = !result;
             }
             const catalog = view.profile.catalog;
             const catalogStatus = query('[data-freeze-catalog-status]');
-            catalogStatus.textContent = catalog.last_error ? errorText(catalog.last_error) : 'Список: ' + (date(catalog.updated_at) || 'ещё не обновлялся');
-            catalogStatus.classList.toggle('export-status--error', Boolean(catalog.last_error));
+            catalogStatus.textContent = 'Список: ' + (date(catalog.updated_at) || 'ещё не обновлялся');
             renderSheets();
             controls();
         }
@@ -447,10 +391,8 @@
                     const next = await request(api);
                     group.cards.forEach(card => card.apply(next));
                 } catch (_) { }
-                statusNode.textContent = error.message;
-                statusNode.dataset.requestError = error.message;
-                statusNode.classList.add('export-status--error');
-                if (actionsOnly && statusNode.classList.contains('week-action-status')) statusNode.dataset.outcome = 'error';
+                if (options.method === 'PUT') statusNode.textContent = error.message;
+                else if (statusNode.textContent === 'Выполняю…') statusNode.textContent = '';
                 return false;
             } finally {
                 group.busy = false;
@@ -584,6 +526,6 @@
             }
         }
     }).catch(error => {
-        document.querySelectorAll('[data-week-actions]').forEach(target => { target.textContent = error.message; });
+        document.querySelectorAll('[data-week-actions]').forEach(target => { target.textContent = ''; });
     });
 })();

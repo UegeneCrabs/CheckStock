@@ -178,7 +178,7 @@ def load_products(
     for slug in store_slugs:
         active = read(yandex_assortment.active_articles, slug)
         catalog = [row for row in read(db.get_catalog_items, slug, MARKETPLACE) if row["article"] in active]
-        inbound = stock_sheet_inbound.load(slug, MARKETPLACE, catalog, include_yandex_approved=True)
+        inbound = stock_sheet_inbound.load(slug, MARKETPLACE, catalog)
         archived = yandex_assortment.archived_articles(slug)
         catalog = [row for row in inbound.catalog if row["article"] not in archived]
         group_ids = read(yandex_economics.catalog_group_ids, slug)
@@ -290,9 +290,7 @@ def load_products(
             ff = max(int(source_stock.get("ff_available") or 0), 0)
             total = fbs + fbo + ff
             rows = by_article[sku]
-            stock_orders = sum(
-                net_count(row) for row in rows if row["day"] >= stock_start.isoformat()
-            )
+            stock_orders = sum(net_count(row) for row in rows if row["day"] >= stock_start.isoformat())
             inbound_quantity = inbound.quantities.get(sku)
             inbound_partial = inbound_quantity is None
             if inbound_partial:
@@ -335,9 +333,7 @@ def load_products(
             if not include_inactive and not article and not has_activity(stock, order_amount - cancel_amount):
                 continue
             drr_amount = round(
-                sum(
-                    net_amount(row) for row in closed_rows if row["day"] in matching_days
-                ),
+                sum(net_amount(row) for row in closed_rows if row["day"] in matching_days),
                 2,
             )
             raw_buyout = (buyouts.get(sku) or {}).get("buyout_percent", 0.0) if buyout_available else None
@@ -376,9 +372,7 @@ def load_products(
                         "clicks": clicks,
                         "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
                         "cpc": round(spend / clicks, 2) if clicks else 0.0,
-                        "drr": drr_percent(
-                            drr_spend[sku], drr_amount * buyout_percent / 100
-                        )
+                        "drr": drr_percent(drr_spend[sku], drr_amount * buyout_percent / 100)
                         if drr_coverage["days"]
                         else None,
                     }
