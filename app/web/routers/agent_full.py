@@ -22,7 +22,7 @@ from app.agents.marketplaces import supports
 from app.agents.ozon_reports import SPECS as OZON_SPECS
 from app.agents.rating_reports import SPECS as RATING_SPECS
 from app.agents.wb_margin_diagnostics import margin_diagnostics
-from app.core.constants import AGENT_WB_RATING
+from app.core.constants import AGENT_WB_RATING, AGENT_YANDEX_PRICE_HISTORY
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
@@ -161,7 +161,7 @@ SPECS = {
         "date_from date_to article manager",
         "Read latest prices, or recorded price snapshots for explicit dates. Never changes prices.",
     ),
-    "yandex-price-history": (
+    AGENT_YANDEX_PRICE_HISTORY: (
         S.UNIT_ECONOMICS_WB,
         True,
         "date_from date_to article manager",
@@ -195,7 +195,7 @@ PERIOD_REPORTS.update(
     {"spp-hourly", "spp-daily", "ozon-advertising-breakdown", "ozon-profit-details", "ozon-sales"}
 )
 PERIOD_REPORTS.update(RATING_SPECS)
-PERIOD_REPORTS.add("yandex-price-history")
+PERIOD_REPORTS.add(AGENT_YANDEX_PRICE_HISTORY)
 ECONOMIC = {
     name
     for name, spec in SPECS.items()

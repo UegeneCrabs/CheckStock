@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 from app.agents import reports
+from app.core.constants import AGENT_YANDEX_PRICE_HISTORY
 from app.dto.identity import SectionName as S
 from app.economics.yandex import calculations, target_prices
 from app.economics.yandex import reports as ym
@@ -22,7 +23,7 @@ ECONOMIC = {
     "profit-calculator",
     "costs",
     "prices",
-    "yandex-price-history",
+    AGENT_YANDEX_PRICE_HISTORY,
     "stock-value",
     "profit",
     "target-prices",
@@ -168,7 +169,7 @@ def load(name, query, user):
                         else None
                     ),
                 )
-    elif name == "yandex-price-history":
+    elif name == AGENT_YANDEX_PRICE_HISTORY:
         from app.agents.yandex_price_history import history
 
         rows = [asdict(row) for row in history(query.store, query.date_from, query.date_to, names)]
@@ -235,7 +236,7 @@ async def execute(name, query, user, *, paginate=True):
         page_query = page_query.model_copy(
             update={
                 "sort_by": "day"
-                if name in {"economics-history", "yandex-price-history"}
+                if name in {"economics-history", AGENT_YANDEX_PRICE_HISTORY}
                 or (name == "advertising" and query.group_by == "day")
                 else "article"
             }
@@ -246,7 +247,7 @@ async def execute(name, query, user, *, paginate=True):
         "Источник — сохранённые данные и расчёты Яндекс Маркета на сайте. Запрос не запускает синхронизацию.",
         "null означает отсутствие данных. Проверяйте полноту расчёта и даты источников; заказы не равны выкупам.",
     ]
-    if name == "yandex-price-history":
+    if name == AGENT_YANDEX_PRICE_HISTORY:
         warnings.append(
             "Время сохранения снимка не подтверждает время наблюдения каждой цены: значения могут быть более ранними или расчётными. Снимки не являются средними или гарантированными ценами на конец дня. Пустая дата означает отсутствие снимка. Сегодняшний день неполный."
         )

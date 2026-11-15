@@ -2791,3 +2791,5 @@ class AgentWbRatingConfig:
 
 
 AGENT_WB_RATING: Final = AgentWbRatingConfig()
+
+AGENT_YANDEX_PRICE_HISTORY: Final = "yandex-price-history"
