@@ -58,6 +58,11 @@ def enrich(name, fields):
     for entry in re.split(r"\|(?=[\w.\[\]]+:)", EXTRA_FIELDS.get(name, "")):
         if entry:
             add(*entry.split(":", 2))
+    if name == "profit":
+        add("margin_diagnostics", "WB: неизвестные параметры расчёта по датам", "array")
+        add("margin_diagnostics[].day", "Дата неполного расчёта WB", "date")
+        add("margin_diagnostics[].parameter", "Код недостающего параметра", "str")
+        add("margin_diagnostics[].description", "Пояснение к недостающему параметру", "str")
     if name == "advertising-campaigns":
         fields[:] = [f for f in fields if f["name"] != "cpc_rub"]  # not returned by this method
     if name == "standard-costs":

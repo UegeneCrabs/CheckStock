@@ -5,6 +5,8 @@ def supports(name: str, marketplace: str) -> bool:
     from app.agents.yandex_reports import SUPPORTED
     from app.web.routers.agent_full import SPECS
 
+    if name == "yandex-price-history":
+        return marketplace == "YANDEX MARKET"
     if marketplace == AGENT_OZON.marketplace:
         return name in AGENT_OZON.supported
     if name in AGENT_OZON.exclusive:

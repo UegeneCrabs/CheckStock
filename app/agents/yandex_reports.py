@@ -1,5 +1,7 @@
 """Employee read models backed exclusively by the site's Yandex sources."""
 
+from dataclasses import asdict
+
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 
@@ -20,6 +22,7 @@ ECONOMIC = {
     "profit-calculator",
     "costs",
     "prices",
+    "yandex-price-history",
     "stock-value",
     "profit",
     "target-prices",
@@ -165,6 +168,11 @@ def load(name, query, user):
                         else None
                     ),
                 )
+    elif name == "yandex-price-history":
+        from app.agents.yandex_price_history import history
+
+        rows = [asdict(row) for row in history(query.store, query.date_from, query.date_to, names)]
+        context.update(basis="saved_daily_economics_snapshots", coverage="unknown")
     elif name == "prices":
         saved = yandex_storefront.get_prices(query.store)
         rows = [
@@ -227,17 +235,23 @@ async def execute(name, query, user, *, paginate=True):
         page_query = page_query.model_copy(
             update={
                 "sort_by": "day"
-                if name == "economics-history" or (name == "advertising" and query.group_by == "day")
+                if name in {"economics-history", "yandex-price-history"}
+                or (name == "advertising" and query.group_by == "day")
                 else "article"
             }
         )
     scalar_fields = {k for row in rows for k, value in row.items() if not isinstance(value, (dict, list))}
     payload = reports.page(rows, page_query, sort_fields=scalar_fields)
+    warnings = [
+        "Источник — сохранённые данные и расчёты Яндекс Маркета на сайте. Запрос не запускает синхронизацию.",
+        "null означает отсутствие данных. Проверяйте полноту расчёта и даты источников; заказы не равны выкупам.",
+    ]
+    if name == "yandex-price-history":
+        warnings.append(
+            "Время сохранения снимка не подтверждает время наблюдения каждой цены: значения могут быть более ранними или расчётными. Снимки не являются средними или гарантированными ценами на конец дня. Пустая дата означает отсутствие снимка. Сегодняшний день неполный."
+        )
     return reports.envelope(
         query,
         {**payload, "context": context},
-        [
-            "Источник — сохранённые данные и расчёты Яндекс Маркета на сайте. Запрос не запускает синхронизацию.",
-            "null означает отсутствие данных. Проверяйте полноту расчёта и даты источников; заказы не равны выкупам.",
-        ],
+        warnings,
     )
