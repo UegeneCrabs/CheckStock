@@ -53,6 +53,7 @@ class FboStockErrorCode(StrEnum):
 class FboStockConfig:
     wb_active: frozenset[str] = frozenset({"2", "3", "4", "6"})
     ozon_data_filling: str = "DATA_FILLING"
+    ozon_reports_confirmation: str = "REPORTS_CONFIRMATION_AWAITING"
     ozon_active: frozenset[str] = frozenset(
         {
             ozon_data_filling,
@@ -60,7 +61,7 @@ class FboStockConfig:
             "ACCEPTED_AT_SUPPLY_WAREHOUSE",
             "IN_TRANSIT",
             "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
-            "REPORTS_CONFIRMATION_AWAITING",
+            ozon_reports_confirmation,
             "REPORT_REJECTED",
             "OVERDUE",
         }
@@ -119,7 +120,12 @@ class OzonInboundConfig:
     acceptance_act: str = "ACCEPTANCE"
     act_minimum_spacing_seconds: float = 2
     act_states: frozenset[str] = frozenset(
-        {"ACCEPTANCE_AT_STORAGE_WAREHOUSE", "REPORTS_CONFIRMATION_AWAITING", "REPORT_REJECTED", "COMPLETED"}
+        {
+            "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
+            FBO_STOCK.ozon_reports_confirmation,
+            "REPORT_REJECTED",
+            "COMPLETED",
+        }
     )
 
 

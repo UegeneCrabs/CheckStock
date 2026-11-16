@@ -52,22 +52,24 @@ def has_confirmed_items(supply: InboundSupply) -> bool:
 
 
 def is_accepted(target: FboTarget, supply: InboundSupply) -> bool:
+    if target.marketplace == Marketplace.OZON:
+        return supply.status in (FBO_STOCK.ozon_accepted, FBO_STOCK.ozon_reports_confirmation)
     return (
         supply.status
         == {
             "WB": FBO_STOCK.wb_accepted,
-            "OZON": FBO_STOCK.ozon_accepted,
             "YANDEX MARKET": FBO_STOCK.yandex_accepted,
         }[target.marketplace]
     )
 
 
 def is_active(target: FboTarget, supply: InboundSupply) -> bool:
+    if target.marketplace == Marketplace.OZON:
+        return supply.status in FBO_STOCK.ozon_active and not is_accepted(target, supply)
     return (
         supply.status
         in {
             "WB": FBO_STOCK.wb_active,
-            "OZON": FBO_STOCK.ozon_active,
             "YANDEX MARKET": FBO_STOCK.yandex_active,
         }[target.marketplace]
     )

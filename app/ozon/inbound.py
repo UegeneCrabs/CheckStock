@@ -33,7 +33,7 @@ STATES: Final[Mapping[str, tuple[InboundStage, str]]] = {
     "ACCEPTED_AT_SUPPLY_WAREHOUSE": ("transit", "Принята в пункте отгрузки"),
     "IN_TRANSIT": ("transit", "В пути"),
     "ACCEPTANCE_AT_STORAGE_WAREHOUSE": ("acceptance", "Приёмка на складе"),
-    "REPORTS_CONFIRMATION_AWAITING": ("acceptance", "Согласование актов"),
+    FBO_STOCK.ozon_reports_confirmation: ("acceptance", "Согласование актов"),
     "REPORT_REJECTED": ("discrepancy", "Спор по актам"),
     "COMPLETED": ("completed", "Завершена"),
     "REJECTED_AT_SUPPLY_WAREHOUSE": ("cancelled", "Отказано в приёмке"),
