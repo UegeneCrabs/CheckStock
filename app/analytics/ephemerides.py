@@ -7,6 +7,7 @@ from app import db
 from app.analytics import analyzer
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
+from app.exports import stock_sheet_inbound
 from app.repositories import ephemerides as repository
 
 
@@ -98,12 +99,17 @@ def load(stores, week, user, *, today=None):
     references = analyzer.daily_index(references)
     coverage = sources.coverage
     stock_snapshot = repository.weekly_stock(stores, week.isoformat())
+    inbound = {
+        store: stock_sheet_inbound.load(store, "WB", sources.products[store]).quantities for store in stores
+    }
     weekly_metrics = [
         analyzer.calculations.load_product_metrics(
             stores,
-            period_days=(min(today, start + timedelta(days=6)) - start).days + 1,
-            today=min(today, start + timedelta(days=6)),
+            period_days=(last - start).days + 1,
+            today=last,
         )
+        if (last := min(today - timedelta(days=1), start + timedelta(days=6))) >= start
+        else {}
         for start in (previous, week)
     ]
     for row in rows:
@@ -116,6 +122,7 @@ def load(stores, week, user, *, today=None):
         row["stockUpdated"] = frozen.get("captured_at")
         row["transitUpdated"] = frozen.get("captured_at")
         row["stockWeek"] = week.isoformat()
+        row["inboundFbo"] = inbound[key[0]].get(key[1])
         stock = [row["fbs"], row["fbo"], row["ff"], row["fromCustomer"]]
         row["stock"] = analyzer.total(stock)
         row["stockPartial"] = any(value is None for value in stock)
@@ -142,7 +149,8 @@ def load(stores, week, user, *, today=None):
             retail, customer = price.get("retail_price"), price.get("customer_price_with_spp")
             metrics = weekly_metrics[idx].get(nm_key)
             completed = start + timedelta(days=6) < today
-            known_days = set(days) & coverage[key[0]]["orders"]
+            fact_days = {day for day in days if day < today.isoformat()}
+            known_days = fact_days & coverage[key[0]]["orders"]
             fact = (
                 metrics["net_orders_count" if completed else "orders_count"]
                 if metrics
@@ -150,7 +158,7 @@ def load(stores, week, user, *, today=None):
                 if known_days
                 else None
             )
-            if len(known_days) < len(days):
+            if known_days != fact_days:
                 fact = (
                     sum(
                         int(item.get("orders_count") or 0)

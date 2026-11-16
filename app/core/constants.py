@@ -2454,6 +2454,9 @@ class WebConstants:
     client_id_max_length: int = 1_024
     client_id_suffix_length: int = 4
     target_max_length: int = 100
+    product_comment_max_length: int = 480
+    product_comment_article_max_length: int = 500
+    product_comment_import_limit: int = 100
     history_retention_days: int = 30
     history_default_limit: int = 50
     history_max_limit: int = 200

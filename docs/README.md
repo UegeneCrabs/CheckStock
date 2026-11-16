@@ -78,6 +78,7 @@
 - [Нулевые и неизвестные остатки Ozon в экономике](f05-economics-completeness.md#ozon)
 - [Дневной календарь параметров WB, Ozon и ЯМ](daily-economics-calendar.md)
 - [Юнит-экономика Яндекс Маркета](unit-economics-yandex.md)
+- [Общие комментарии в юнит-экономике WB, Яндекс Маркета и Ozon](unit-economics-comments.md)
 - [Настройки калькулятора Яндекс Маркета](yandex-calculator-settings.md)
 - [Категории и комиссии Яндекс Маркета](yandex-category-commissions.md)
 - [Доступы к кабинетам Яндекс Маркета](yandex-access.md)

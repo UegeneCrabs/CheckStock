@@ -1,5 +1,43 @@
 .is-ozon-preview .ue1c-calculator-inputs .ue1c-calculator-row[hidden] { display: none; }
 .is-ozon-preview .ue1c-placeholder-chart[hidden] { display: none; }
+.is-ozon-preview .ue1c-overlay,
+.is-ozon-preview .ue1c-drawer:not(.is-open),
+.is-ozon-preview .ue1c-drawer-head button[hidden],
+.is-ozon-preview .ue1c-detail-loading i[hidden] { display: none; }
+.is-ozon-preview .ue1c-drawer-head { grid-template-columns: 52px minmax(0, 1fr); }
+.is-ozon-preview .ue1c-open-article {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ue-accent);
+    cursor: pointer;
+    text-decoration: underline;
+}
+.is-ozon-preview .ue1c-column-resize {
+    position: absolute;
+    z-index: 1;
+    inset: 0 0 0 auto;
+    width: 9px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: col-resize;
+    touch-action: none;
+}
+.is-ozon-preview .ue1c-column-resize:hover,
+.is-ozon-preview .ue1c-column-resize:focus-visible { border-right: 2px solid var(--ue-accent); }
+@media (max-width: 1050px) {
+    .is-ozon-preview .ue1c-drawer {
+        position: relative;
+        z-index: auto;
+        width: 100%;
+        height: auto;
+        max-height: 80dvh;
+        border: 1px solid var(--ue-line);
+        border-radius: 12px;
+        box-shadow: none;
+    }
+}
 .ozon-price-row.has-source-issue > span:first-child { color: var(--ue-muted); }
 .ozon-calculator-status { order: 0; grid-column: 1 / -1; color: var(--ue-negative, #b42318); font-size: 12px; }
 .ozon-calculator-status[hidden] { display: none; }
@@ -12,6 +50,24 @@
 .is-ozon-preview .ozon-margin-value > span { display: flex; align-items: center; gap: 5px; width: 100%; color: inherit; font: inherit; white-space: nowrap; }
 .ozon-margin-value small { display: flex; align-items: center; gap: 4px; max-width: 100%; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .is-ozon-preview .ozon-roi-field { display: flex; align-items: center; gap: 5px; }
+.ozon-target-price-button {
+    display: block;
+    max-width: 100%;
+    margin-top: 7px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ozon-target-price-button:not(:disabled) { color: var(--ue-accent); cursor: pointer; text-decoration: underline; }
+.ozon-target-price-button:focus-visible { outline: 2px solid var(--ue-accent); outline-offset: 2px; border-radius: 3px; }
 .is-ozon-preview .ozon-target-input { width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid var(--ue-line); border-radius: 6px; background: var(--ue-surface); color: inherit; font: inherit; }
 .is-ozon-preview .ozon-margin-value small .ozon-target-input { width: 70px; }
 .ozon-roi-field b, .ozon-margin-value > span b { font-size: 12px; }

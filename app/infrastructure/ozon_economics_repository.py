@@ -1,6 +1,9 @@
+from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+
+from sqlalchemy import select
 
 from app.core.constants import (
     OZON_ORDERS,
@@ -17,6 +20,7 @@ from app.dto.ozon_cabinet import OzonProductGoals
 from app.dto.ozon_economics import (
     OzonCoverage,
     OzonDataIssue,
+    OzonFulfillmentBalance,
     OzonProduct,
     OzonProducts,
     OzonProductsQuery,
@@ -37,7 +41,7 @@ from app.economics import ozon, ozon_commissions, ozon_margin
 from app.economics.wb.calculations import calculate_stock_coverage_days
 from app.infrastructure.async_advertising_repository import AsyncAdvertisingRepository
 from app.infrastructure.async_commissions_repository import AsyncCommissionsRepository
-from app.infrastructure.async_database import AsyncDatabase
+from app.infrastructure.async_database import AsyncDatabase, table_for
 from app.infrastructure.async_logistics_repository import AsyncLogisticsRepository
 from app.infrastructure.async_orders_repository import AsyncOrdersRepository
 from app.infrastructure.async_prices_repository import AsyncPricesRepository
@@ -45,6 +49,7 @@ from app.infrastructure.async_read_models import AsyncReadModels
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.inbound_read_repository import InboundReadRepository
+from app.infrastructure.orm import FulfillmentStockRecord
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
 from app.infrastructure.ozon_calendar_repository import OzonCalendarRepository
 from app.infrastructure.ozon_margin_repository import OzonMarginRepository
@@ -157,6 +162,24 @@ class OzonEconomicsRepository:
             return None
         return OzonNewProductCosts(logistics=logistics_source, storage=storage_source)
 
+    async def fulfillment_balances(
+        self, query: OzonProductsQuery
+    ) -> dict[tuple[str, str], tuple[OzonFulfillmentBalance, ...]]:
+        table = table_for(FulfillmentStockRecord)
+        statement = select(table.c.store_slug, table.c.article, table.c.fulfillment, table.c.quantity).where(
+            table.c.store_slug.in_(query.stores),
+            table.c.marketplace == Marketplace.OZON,
+            table.c.quantity > 0,
+        )
+        if query.article:
+            statement = statement.where(table.c.article == query.article)
+        balances: dict[tuple[str, str], list[OzonFulfillmentBalance]] = defaultdict(list)
+        async with self.database.transaction() as connection:
+            rows = await connection.execute(statement.order_by(table.c.fulfillment))
+            for store, article, name, quantity in rows:
+                balances[store, article].append(OzonFulfillmentBalance(name=name, quantity=quantity))
+        return {key: tuple(entries) for key, entries in balances.items()}
+
     async def products(self, query: OzonProductsQuery, last_complete_day: date, custom: bool) -> OzonProducts:
         today = datetime.now(TIME.moscow_timezone).date()
         advertising_week = drr.calculator_advertising_period(today)
@@ -253,9 +276,15 @@ class OzonEconomicsRepository:
         buyouts = {item.store_slug: item for item in await cabinet_repository.buyouts(query.stores, today)}
         product_goals = await cabinet_repository.product_goals(query.stores)
         newness = await OzonNewnessRepository(self.database).load(query.stores, today)
+        balances = await self.fulfillment_balances(query)
         products = tuple(
             product.model_copy(
                 update={
+                    "stock": product.stock.model_copy(
+                        update={
+                            "fulfillment_locations": balances.get((product.store_slug, product.article), ())
+                        }
+                    ),
                     "newness": (age := newness.get((product.store_slug, product.article), OzonNewness())),
                     "is_new": age.is_new,
                     "sales_days": age.observed_days,

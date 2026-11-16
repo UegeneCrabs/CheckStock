@@ -52,11 +52,13 @@
     });
     var userKey = String(config.userKey || 'anonymous');
     var storageNamespace = String(config.storageNamespace || 'checkstock.unit-economics-1c');
-    var commentsKey = storageNamespace + '.comments.' + userKey;
+    var comments = window.CheckStockProductComments.create(
+        config.ozonPreview ? 'OZON' : config.yandexEconomics ? 'YANDEX MARKET' : 'WB',
+        storageNamespace + '.comments.' + userKey,
+    );
     var columnsKey = storageNamespace + '.columns.' + userKey;
     var chartKey = storageNamespace + '.chart.' + userKey;
     var priceJobsKey = storageNamespace + '.price-jobs.' + userKey;
-    var comments = readJson(commentsKey, {});
     var pendingPriceJobs = readJson(priceJobsKey, []);
     var sentPriceNotifications = Object.create(null);
     if (!Array.isArray(pendingPriceJobs)) pendingPriceJobs = [];
@@ -254,6 +256,8 @@
               })
             : defaultColumnOrder.slice(),
         hidden: Array.isArray(savedColumns.hidden) ? savedColumns.hidden.slice() : [],
+        widths: config.ozonPreview && savedColumns.widths && typeof savedColumns.widths === 'object'
+            ? savedColumns.widths : {},
     };
     columnPreferences.order = ['product'].concat(
         columnPreferences.order.filter(function (key) {
@@ -357,23 +361,6 @@
         if (mod10 === 1 && mod100 !== 11) return 'товар';
         if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'товара';
         return 'товаров';
-    }
-    function commentText(productId) {
-        var saved = comments[productId];
-        if (typeof saved === 'string') return saved;
-        if (!saved || typeof saved !== 'object') return '';
-        return [saved.first, saved.second].filter(Boolean).join('\n');
-    }
-    function setCommentText(productId, value) {
-        var normalized = String(value || '')
-            .replace(/\r/g, '')
-            .trim();
-        if (!normalized) {
-            delete comments[productId];
-            return;
-        }
-        var lines = normalized.split('\n');
-        comments[productId] = { first: String(lines.shift() || '').trim(), second: lines.join('\n').trim() };
     }
     function calculateSppPercent(product) {
         var price = product.price || {};
@@ -483,12 +470,30 @@
     }
     function columnLabel(column) {
         var label = escapeHtml(column.label);
-        if (!column.help) return label;
-        return window.CheckStockUI.render('economics/shared/dashboard/column-label', {
+        if (column.help) label = window.CheckStockUI.render('economics/shared/dashboard/column-label', {
             label: label,
             help: column.help,
             help_2: column.help,
         });
+        if (config.ozonPreview) label += window.CheckStockUI.render('economics/shared/dashboard/column-resize', {
+            index: column.index,
+            label: column.label,
+        });
+        return label;
+    }
+    function updateOzonColumnWidths() {
+        var width = 0;
+        var columns = Array.from(nodes.colgroup.children);
+        visibleColumnGroups().flatMap(function (group) { return group.columns; }).forEach(function (column, index) {
+            var pixels = Math.max(56, Math.min(640, finite(columnPreferences.widths[column.index], column.width)));
+            columns[index].style.width = pixels + 'px';
+            width += pixels;
+        });
+        nodes.table.style.width = nodes.table.style.minWidth = width + 'px';
+    }
+    function resizeOzonColumn(index, width) {
+        columnPreferences.widths[index] = Math.max(56, Math.min(640, Math.round(width)));
+        updateOzonColumnWidths();
     }
     function renderTableHeader() {
         var groups = visibleColumnGroups();
@@ -504,6 +509,7 @@
                     .join('');
             })
             .join('');
+        if (config.ozonPreview) updateOzonColumnWidths();
         var top = '';
         var sub = '';
         groups.forEach(function (group) {
@@ -570,7 +576,7 @@
         renderColumnSettings();
         renderPage();
         if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
-            window.CheckStockTableFilter.refresh(nodes.table);
+            window.CheckStockTableFilter.refresh(nodes.table, { applyFilters: !config.ozonPreview });
         }
     }
     function renderColumnSettings() {
@@ -607,7 +613,7 @@
             product.article,
             product.barcode,
             product.store_name,
-            commentText(product.id),
+            comments.text(product),
             tag.goal_week,
             tag.goal_day,
             tag.status,
@@ -643,7 +649,7 @@
         var tag = tagData(product);
         var values = [
             [product.name, product.article, product.barcode, product.store_name].join(' · '),
-            commentText(product.id),
+            comments.text(product),
             product.current_economics && product.current_economics.margin,
             product.current_economics && product.current_economics.roi,
             product.economics_7d && product.economics_7d.turnover,
@@ -798,7 +804,9 @@
             content: mediaHtml(product, 'ue1c-product-thumb'),
             id: product.id,
             name: product.name,
-            content_2: copyValue('Арт.', product.article),
+            content_2: config.ozonPreview ? window.CheckStockUI.render('economics/shared/dashboard/open-article', {
+                id: product.id, article: product.article,
+            }) : copyValue('Арт.', product.article),
             content_3: copyValue('Баркод', product.barcode),
             store_name: product.store_name,
             rating: nullText(product.rating),
@@ -808,11 +816,11 @@
         cells.comments = window.CheckStockUI.render('economics/shared/dashboard/render-product-2', {
             id: product.id,
             content:
-                placeholderMode && config.yandexMetrics !== true && config.ozonPreview !== true
+                (placeholderMode && config.yandexMetrics !== true && config.ozonPreview !== true) || !comments.ready
                     ? ' placeholder="—" disabled'
                     : ' placeholder="Добавить комментарий…"',
             name: product.name,
-            id_2: commentText(product.id),
+            id_2: comments.text(product),
         });
         cells.newness = window.CheckStockUI.render('economics/shared/dashboard/render-product-5', {
             title: newnessTitle(product),
@@ -889,6 +897,9 @@
             content_3: nullable(product.stock.fbo, integer),
             content_4: nullable(product.stock.fulfillment, integer),
             stockTitle: stockTitle,
+            fulfillmentTitle: config.ozonPreview ? (stock.fulfillment_locations || []).map(function (balance) {
+                return balance.name + ' — ' + integer.format(balance.quantity) + ' шт.';
+            }).join('\n') || (stock.fulfillment === 0 ? 'На фулфилментах остатков нет' : 'Нет разбивки остатков по фулфилментам') : '',
             stockCoverage: '',
             content_5: coverageValue('Запас в днях · ' + stockTitle, stock.days, integer, stock.coverage),
         });
@@ -953,7 +964,7 @@
     }
     function applyTableFilters(filters) {
         state.tableFilters = filters || {};
-        resetPageAndRender();
+        resetPageAndRender(true);
     }
     function applyTableSort(columnIndex, direction) {
         state.sortColumn = Number(columnIndex);
@@ -1008,7 +1019,16 @@
                   .join('')
             : '';
     }
-    function renderPage() {
+    function showOzonResult(product) {
+        if (!product) {
+            if (state.selected) closeDetail();
+        } else if (state.selected !== product.id) {
+            openDetail(product);
+        } else {
+            setDetailTab('economics');
+        }
+    }
+    function renderPage(selectFirstOzonResult) {
         if (state.productsLoading) {
             renderTotals([]);
             nodes.rows.innerHTML = '';
@@ -1017,6 +1037,7 @@
             return;
         }
         var filtered = filteredProducts();
+        if (selectFirstOzonResult && config.ozonPreview) showOzonResult(filtered[0]);
         renderTotals(filtered);
         state.page = Math.min(
             Math.max(1, state.page),
@@ -1110,12 +1131,20 @@
             nodes.productsError.hidden = true;
             renderPage();
         }
+        var commentsLoad = comments.load(productsController.signal).then(function (migrationFailed) {
+            if (migrationFailed && !silent && requestId === productsRequestId)
+                showToast('Не удалось перенести прежние комментарии из браузера', 'error');
+        }).catch(function (error) {
+            if (error.name !== 'AbortError' && !silent && requestId === productsRequestId)
+                showToast('Не удалось загрузить общие комментарии', 'error');
+        });
         try {
             var response = await window.fetch(productsRequestUrl(), {
                 headers: { Accept: 'application/json', 'X-Requested-With': 'fetch' },
                 signal: productsController.signal,
             });
             var result = await response.json();
+            await commentsLoad;
             if (requestId !== productsRequestId) return false;
             if (!response.ok || !result.ok)
                 throw new Error(result.error || 'Не удалось загрузить данные ' + marketplaceLabel);
@@ -1144,7 +1173,8 @@
                 nodes.tableWrap.scrollTop = scrollTop;
                 nodes.tableWrap.scrollLeft = scrollLeft;
             }
-            if (options.refreshDetail) await refreshSelectedDetail();
+            if (options.refreshDetail || (config.ozonPreview && filteredProducts()[0]?.id === state.selected))
+                await refreshSelectedDetail();
             loaded = true;
             return true;
         } catch (error) {
@@ -1161,15 +1191,19 @@
                 state.productsRefreshing = false;
                 if (!silent) {
                     setProductsLoading(false);
-                    renderPage();
+                    renderPage(loaded);
                 }
-                if (loaded) openTargetCalculator();
+                if (loaded) {
+                    openTargetCalculator();
+                    if (silent && config.ozonPreview && !productsById[state.selected])
+                        renderPage(true);
+                }
             }
         }
     }
-    function resetPageAndRender() {
+    function resetPageAndRender(selectFirstOzonResult) {
         state.page = 1;
-        renderPage();
+        renderPage(selectFirstOzonResult);
     }
     function showToast(message, kind) {
         window.clearTimeout(toastTimer);
@@ -2905,6 +2939,11 @@
             escapeHtml(product.store_name) + ' · ' + copyValue('Арт.', product.article, 'Артикул');
         root.classList.add('is-detail-loading');
         nodes.detailLoading.hidden = false;
+        if (config.ozonPreview) {
+            nodes.detailLoading.querySelector('i').hidden = false;
+            nodes.detailLoading.querySelector('span').textContent = 'Загружаем расчёты и график…';
+            setDetailTab('economics');
+        }
         var commissionsLoad = ensureSubjectCommissions();
         try {
             if (!product._detailLoaded) {
@@ -2917,6 +2956,11 @@
             }
         } catch (error) {
             if (state.selected !== product.id || detailRequestId !== requestId) return;
+            if (config.ozonPreview) {
+                nodes.detailLoading.querySelector('i').hidden = true;
+                nodes.detailLoading.querySelector('span').textContent = error.message || 'Не удалось загрузить калькулятор';
+                return;
+            }
             root.classList.remove('is-detail-loading');
             nodes.detailLoading.hidden = true;
             closeDetail();
@@ -3389,11 +3433,47 @@
     }
     nodes.search.addEventListener('input', function () {
         state.query = nodes.search.value;
-        resetPageAndRender();
+        resetPageAndRender(true);
     });
+    if (config.ozonPreview) {
+        var narrowOzonLayout = window.matchMedia('(max-width: 1050px)');
+        root.insertBefore(nodes.detail, nodes.tableWrap.closest('.ue1c-table-card'));
+        nodes.detailClose.hidden = true;
+        nodes.search.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' || !nodes.search.value.trim()) return;
+            event.preventDefault();
+            resetPageAndRender(true);
+            if (state.selected && narrowOzonLayout.matches) nodes.detail.scrollIntoView({ block: 'nearest' });
+        });
+        nodes.tableHead.addEventListener('pointerdown', function (event) {
+            var handle = event.target.closest('[data-column-resize]');
+            if (!handle || event.button !== 0) return;
+            var index = handle.dataset.columnResize;
+            var start = event.clientX;
+            var width = handle.closest('th').getBoundingClientRect().width;
+            event.preventDefault();
+            handle.setPointerCapture(event.pointerId);
+            function resize(move) {
+                if (move.pointerId === event.pointerId) resizeOzonColumn(index, width + move.clientX - start);
+            }
+            handle.addEventListener('pointermove', resize);
+            handle.addEventListener('lostpointercapture', function () {
+                handle.removeEventListener('pointermove', resize);
+                writeJson(columnsKey, columnPreferences);
+            }, { once: true });
+        });
+        nodes.tableHead.addEventListener('keydown', function (event) {
+            var handle = event.target.closest('[data-column-resize]');
+            if (!handle || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+            event.preventDefault();
+            var width = handle.closest('th').getBoundingClientRect().width;
+            resizeOzonColumn(handle.dataset.columnResize, width + (event.key === 'ArrowLeft' ? -10 : 10));
+            writeJson(columnsKey, columnPreferences);
+        });
+    }
     nodes.store.addEventListener('change', function () {
         state.store = nodes.store.value;
-        resetPageAndRender();
+        resetPageAndRender(true);
     });
     nodes.columnsToggle.addEventListener('click', function () {
         var opening = nodes.columnPanel.hidden;
@@ -3471,7 +3551,7 @@
             Array.prototype.forEach.call(root.querySelectorAll('[data-state-filter]'), function (item) {
                 item.classList.toggle('is-active', item === button);
             });
-            resetPageAndRender();
+            resetPageAndRender(true);
         });
     });
     nodes.pageSize.addEventListener('change', function () {
@@ -3491,9 +3571,10 @@
         }
         state.page = 1;
         state.tableFilters = {};
+        if (config.ozonPreview) nodes.table._tfFilters = state.tableFilters;
         renderTableHeader();
         if (window.CheckStockTableFilter && typeof window.CheckStockTableFilter.refresh === 'function') {
-            window.CheckStockTableFilter.refresh(nodes.table);
+            window.CheckStockTableFilter.refresh(nodes.table, { applyFilters: !config.ozonPreview });
         }
         loadProducts();
     }
@@ -3573,8 +3654,10 @@
             return;
         }
         var opener = event.target.closest('[data-product-open]');
-        if (opener && productsById[opener.dataset.productOpen])
+        if (opener && productsById[opener.dataset.productOpen]) {
             openDetail(productsById[opener.dataset.productOpen]);
+            if (config.ozonPreview && narrowOzonLayout.matches) nodes.detail.scrollIntoView({ block: 'nearest' });
+        }
     });
     nodes.gluedProducts.addEventListener('click', function (event) {
         var copy = event.target.closest('[data-copy-value]');
@@ -3597,14 +3680,26 @@
         event.preventDefault();
         field.blur();
     });
-    nodes.rows.addEventListener('focusout', function (event) {
+    nodes.rows.addEventListener('input', function (event) {
         var field = event.target.closest('[data-comment-id]');
-        if (!field) return;
-        setCommentText(field.dataset.commentId, field.value);
-        writeJson(commentsKey, comments);
-        field.value = commentText(field.dataset.commentId);
-        showToast('Комментарий сохранён');
-        if (state.query || state.tableFilters[1] || state.sortColumn === 1) renderPage();
+        var product = field && productsById[field.dataset.commentId];
+        if (product) comments.edit(product, field.value);
+    });
+    nodes.rows.addEventListener('focusout', async function (event) {
+        var field = event.target.closest('[data-comment-id]');
+        var product = field && productsById[field.dataset.commentId];
+        if (!product || field.disabled) return;
+        try {
+            var text = await comments.save(product, field.value);
+            var current = nodes.rows.querySelector('[data-comment-id="' + CSS.escape(product.id) + '"]');
+            if (current && document.activeElement !== current) current.value = comments.text(product);
+            if (text === null) return;
+            showToast('Комментарий сохранён');
+            if ((state.query || state.tableFilters[1] || state.sortColumn === 1) &&
+                !nodes.rows.contains(document.activeElement)) renderPage();
+        } catch {
+            showToast('Не удалось сохранить комментарий. Повторите попытку.', 'error');
+        }
     });
     nodes.detailClose.addEventListener('click', closeDetail);
     nodes.overlay.addEventListener('click', closeDetail);
@@ -3754,10 +3849,11 @@
     document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape') return;
         if (nodes.confirmModal.classList.contains('is-open')) closePriceConfirmation();
-        else if (state.selected) closeDetail();
+        else if (state.selected && !config.ozonPreview) closeDetail();
     });
     function refreshProductsIfStale(force) {
         if (document.hidden || state.productsRefreshing) return;
+        if (document.activeElement?.matches('[data-comment-id]')) return;
         if (config.yandexMetrics === true && (state.selected ||
             (document.activeElement && root.contains(document.activeElement) &&
              /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)))) return;

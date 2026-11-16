@@ -39,6 +39,7 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
+| Общие комментарии к товарам в юнит-экономике | `app/web/routers/product_comments.py`, `app/infrastructure/product_comments_repository.py`, `static/economics/shared/product-comments.js`, [хранение и перенос](unit-economics-comments.md) |
 | Календарь параметров WB/Ozon/ЯМ и дневные корректировки Ozon | `app/web/routers/{economics_calendar,ozon_calendar}.py`, `app/application/ozon_calendar.py`, `app/infrastructure/ozon_calendar_repository.py`, `static/economics/{shared,ozon}/calendar.js`, [контракт](daily-economics-calendar.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
 | Отчёт WB «Рейтинг товаров» | `app/economics/wb/rating_report.py`, `app/web/routers/rating_report.py`, `app/application/wb_product_rating.py`, [полнота данных](f05-economics-completeness.md) |
