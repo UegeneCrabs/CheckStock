@@ -1,8 +1,14 @@
 from app.agents.ozon_catalog import TITLES as OZON_TITLES
 from app.agents.ozon_reports import SPECS as OZON_SPECS
+from app.core.constants import AGENT_YANDEX_PRICE_HISTORY
 
 # Fields describe the main response fields, not an exhaustive schema for every view.
 DOCS = {
+    AGENT_YANDEX_PRICE_HISTORY: (
+        "Яндекс Маркет — история цен по дням",
+        "Сохранённые дневные снимки экономики: цена продавца, покупателя с СПП и с Яндекс Пэй. Это не средние за день и не обязательно цены на конец дня.",
+        "article:Артикул:str|name:Название товара:str|null|day:Дата снимка:date|captured_at:Время сохранения снимка, не время наблюдения каждой цены:datetime|null|seller_price:Цена продавца, ₽:number|null|buyer_price:Цена покупателя с СПП, ₽:number|null|pay_price:Цена с Яндекс Пэй, ₽:number|null|seller_price_origin:Источник цены продавца:str|null|buyer_price_origin:Источник цены покупателя:str|null|pay_price_origin:Источник цены с Яндекс Пэй:str|null",
+    ),
     "rating-comparison": (
         "Рейтинг склейки WB — сравнение периодов",
         "Последний сохранённый рейтинг склейки WB в выбранном и предыдущем равном периоде, изменение в пунктах. Индивидуальный рейтинг без склейки в БД отсутствует. Итоги считаются по всей отфильтрованной выборке до пагинации, по карточкам, не по уникальным склейкам.",

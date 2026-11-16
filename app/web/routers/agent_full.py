@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+from dataclasses import asdict
 from datetime import date
 from typing import Annotated, Literal
 from urllib.parse import urlencode
@@ -20,7 +21,8 @@ from app.agents.extended_reports import EXTRA_SPECS
 from app.agents.marketplaces import supports
 from app.agents.ozon_reports import SPECS as OZON_SPECS
 from app.agents.rating_reports import SPECS as RATING_SPECS
-from app.core.constants import AGENT_WB_RATING
+from app.agents.wb_margin_diagnostics import margin_diagnostics
+from app.core.constants import AGENT_WB_RATING, AGENT_YANDEX_PRICE_HISTORY
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
 from app.core.stores import STORES
@@ -159,6 +161,12 @@ SPECS = {
         "date_from date_to article manager",
         "Read latest prices, or recorded price snapshots for explicit dates. Never changes prices.",
     ),
+    AGENT_YANDEX_PRICE_HISTORY: (
+        S.UNIT_ECONOMICS_WB,
+        True,
+        "date_from date_to article manager",
+        "Yandex Market daily saved economic snapshots: seller, buyer with SPP and Yandex Pay prices with origins. captured_at is when the snapshot was saved, not when each price was observed; prices may be older or estimated. Not daily averages or guaranteed end-of-day observations. Missing days and values are unknown, not zero.",
+    ),
     "costs": (
         S.UNIT_ECONOMICS_WB,
         True,
@@ -169,7 +177,7 @@ SPECS = {
         S.REPORT_UNIT_PROFIT,
         True,
         "date_from date_to article manager",
-        "Юниточная прибыль: website report source for ТО (orders_amount), orders, cancellations and margin. Orders are not confirmed sales. Missing margin does not imply missing orders.",
+        "Юниточная прибыль: website report source for ТО (orders_amount), orders, cancellations and margin. WB margin_diagnostics explains unknown inputs by day when available. Unknown is not a confirmed loading error or zero. Orders are not confirmed sales.",
     ),
     "target-prices": (
         S.REPORT_TARGET_PRICE,
@@ -187,6 +195,7 @@ PERIOD_REPORTS.update(
     {"spp-hourly", "spp-daily", "ozon-advertising-breakdown", "ozon-profit-details", "ozon-sales"}
 )
 PERIOD_REPORTS.update(RATING_SPECS)
+PERIOD_REPORTS.add(AGENT_YANDEX_PRICE_HISTORY)
 ECONOMIC = {
     name
     for name, spec in SPECS.items()
@@ -416,7 +425,7 @@ async def capabilities(user: Employee):
         ),
         "unavailable": [
             "Для Ozon: standard-costs, spp-hourly, spp-daily, supplies; акции и связанные товары без постоянного источника",
-            "Для Яндекс Маркета: advertising-campaigns, supplies, profit-summary, product-analysis; история цен",
+            "Для Яндекс Маркета: advertising-campaigns, supplies, profit-summary, product-analysis",
         ],
         "notes": [
             "Права не означают наличие загруженных данных. Проверяйте data-status.",
@@ -837,13 +846,17 @@ async def execute(name, request, user, query, *, paginate=True):
         rows = reports.filtered(rows, query)
         rows = await run_in_threadpool(reports.economic_filter, rows, user, query.store, query.manager)
         if name == "profit":
+            for row in rows:
+                row["margin_diagnostics"] = [
+                    asdict(item) for item in margin_diagnostics(row.get("missing_parameters"))
+                ]
             rows = reports.select(
                 rows,
                 "store_slug store_name article name subject manager "
                 "orders_count orders_amount cancel_count cancel_amount net_orders_count net_orders_amount "
                 "buyout_count buyout_amount buyout_percent buyout_period_from buyout_period_to "
                 "buyout_updated_at funnel_updated_at funnel_period_from funnel_period_to "
-                "advertising_spend impressions clicks ctr cpc drr margin margin_complete margin_missing_days roi",
+                "advertising_spend impressions clicks ctr cpc drr margin margin_complete margin_missing_days roi margin_diagnostics",
             )
             for row in rows:
                 row["report_margin"] = row["margin"]
