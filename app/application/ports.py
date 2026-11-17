@@ -607,3 +607,7 @@ class AgentOzonProductsReader(Protocol):
 
 class AgentRatingReader(Protocol):
     async def read(self, query: RatingRequest) -> RatingSources: ...
+
+
+class YandexDailyPriceCloser(Protocol):
+    def close(self, today: date) -> int: ...

@@ -622,8 +622,46 @@ def _initialize_application() -> None:
         handle.close()
 
 
+def _yandex_price_jobs() -> tuple[BackgroundJob, ...]:
+    from app.jobs.manual import _storefront_now
+    from app.yandex.storefront_schedule import next_run_at
+
+    def next_hour_delay() -> float:
+        now = datetime.now(MOSCOW_TIMEZONE)
+        return (next_run_at(now) - now).total_seconds()
+
+    def align_hourly_run(planned: datetime, now: datetime) -> datetime:
+        nearest = next_run_at(now)
+        if planned <= now:
+            return planned
+        from app.repositories import yandex_storefront
+
+        if pause := yandex_storefront.cooldown(now):
+            deadline = datetime.fromisoformat(pause["retry_after"])
+            return next_run_at(deadline - timedelta(microseconds=1))
+        return nearest
+
+    return (
+        BackgroundJob(
+            JOBS.yandex_storefront_prices.name,
+            _storefront_now,
+            next_hour_delay,
+            startup_delay_seconds=next_hour_delay(),
+            align_scheduled_run=align_hourly_run,
+            is_enabled=lambda: _job_enabled(JOBS.yandex_storefront_prices.name),
+        ),
+        BackgroundJob(
+            JOBS.yandex_daily_prices.name,
+            ApplicationContainer().yandex_daily_price_closer.close,
+            _moscow_daily_delay(0, 5),
+            is_enabled=lambda: _job_enabled(JOBS.yandex_daily_prices.name),
+        ),
+    )
+
+
 def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
+    jobs += _yandex_price_jobs()
     jobs += (database_backup.job(),)
     if settings.google_stock_test_enabled:
         jobs += (google_stock_test.job(),)

@@ -19,13 +19,12 @@
     let requestNumber = 0;
     let sortBy = 'turnover';
     let sortOrder = 'desc';
-    const storageKey = 'checkstock:spp-report:period';
+    const storageKey = config.storageKey || 'checkstock:spp-report:period';
+    const apiBase = config.apiBase || '/api/unit-economics-1c/reports/spp';
+    if (config.showBrand === false) byId('spp-brand-label').hidden = true;
     const dateFrom = byId('spp-date-from');
     const dateTo = byId('spp-date-to');
-    const tolerance = byId('spp-tolerance');
-    const toleranceValue = byId('spp-tolerance-value');
-    tolerance.value = '0';
-    toleranceValue.value = '0';
+    byId('spp-direction-all').checked = true;
 
     const { displayDate, isoDate } = window.CheckStockReportDaily;
 
@@ -40,17 +39,6 @@
 
     [dateFrom, dateTo].forEach(window.CheckStockReportDaily.bindDatePicker);
 
-    function updateTolerance() {
-        toleranceValue.value = tolerance.value;
-    }
-    tolerance.addEventListener('input', updateTolerance);
-    toleranceValue.addEventListener('input', () => {
-        const value = Number(toleranceValue.value);
-        if (toleranceValue.value !== '' && Number.isFinite(value) && value >= 0) {
-            tolerance.value = String(Math.min(value, 100));
-        }
-    });
-    updateTolerance();
     function rememberPeriod() {
         const from = isoDate(dateFrom.value);
         const to = isoDate(dateTo.value);
@@ -391,7 +379,7 @@
             chart.textContent = 'Загрузка графика…';
             const params = new URLSearchParams({ store: product.store_slug, article: product.article, period: value });
             try {
-                const response = await fetch(`/api/unit-economics-1c/reports/spp/history?${params}`);
+                const response = await fetch(`${apiBase}/history?${params}`);
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить историю СПП');
                 cache.set(value, data.days);
@@ -417,7 +405,7 @@
             hourlyChart.textContent = 'Загрузка почасового графика…';
             const params = new URLSearchParams({ store: product.store_slug, article: product.article, day });
             try {
-                const response = await fetch(`/api/unit-economics-1c/reports/spp/hourly-history?${params}`);
+                const response = await fetch(`${apiBase}/hourly-history?${params}`);
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить почасовую историю');
                 if (!detailRow.isConnected || sequence !== hourlyRequestId) return;
@@ -469,17 +457,16 @@
 
         const summary = data.summary;
         const comparable = summary.comparable;
-        const badPercent = comparable ? Math.round(summary.problem / comparable * 100) : null;
-        const goodPercent = summary.health_percent;
-        byId('spp-problem-percent').textContent = badPercent === null ? '—' : `${badPercent}%`;
-        byId('spp-healthy-percent').textContent = goodPercent === null ? '—' : `${goodPercent}%`;
-        byId('spp-problem-count').textContent = `${summary.problem} из ${comparable}`;
-        byId('spp-healthy-count').textContent = `${summary.healthy} из ${comparable}`;
-        byId('spp-bar-bad').style.width = `${badPercent || 0}%`;
-        byId('spp-bar-good').style.width = `${goodPercent || 0}%`;
-        byId('spp-overall').textContent = goodPercent === null ? 'Нет данных' : `${goodPercent}%`;
+        for (const direction of ['increase', 'decrease', 'unchanged']) {
+            const count = summary[direction];
+            const percent = comparable ? count / comparable * 100 : null;
+            byId(`spp-${direction}-percent`).textContent = percent === null ? '—' : `${Math.round(percent)}%`;
+            byId(`spp-${direction}-count`).textContent = `${count} из ${comparable}`;
+            byId(`spp-bar-${direction}`).style.width = `${percent || 0}%`;
+        }
+        byId('spp-comparable').textContent = String(comparable);
         byId('spp-missing').textContent = summary.no_data ? `Без сравнения: ${summary.no_data} товаров` : '';
-        byId('spp-period-note').textContent = `Сравнение: ${displayDate(data.period.previous_from)} — ${displayDate(data.period.previous_to)}. Торговый оборот за ${displayDate(data.period.date_from)} — ${displayDate(data.period.date_to)}. Допустимое снижение: ${number.format(Number(toleranceValue.value))} п. п.`;
+        byId('spp-period-note').textContent = `Сравнение: ${displayDate(data.period.previous_from)} — ${displayDate(data.period.previous_to)}. Торговый оборот за ${displayDate(data.period.date_from)} — ${displayDate(data.period.date_to)}.`;
         const warnings = [];
         if (data.period.excluded_days.length) {
             warnings.push(`Неполные дни не учитываются при расчёте за выбранный период: ${data.period.excluded_days.map(displayDate).join(', ')}.`);
@@ -504,8 +491,8 @@
             cell(row, product.previous_spp === null ? '—' : `${number.format(product.previous_spp)}%`);
             const status = cell(row, '');
             const badge = document.createElement('span');
-            badge.className = `spp-status spp-status--${product.status}`;
-            badge.textContent = { problem: 'Требует внимания', healthy: 'Без проблем', no_data: 'Нет данных' }[product.status];
+            badge.className = `spp-status spp-status--${product.direction}`;
+            badge.textContent = { increase: 'Рост СПП', decrease: 'Снижение СПП', unchanged: 'Без изменений', no_data: 'Нет данных' }[product.direction];
             status.append(badge);
             tbody.append(row);
             addHistory(row, product);
@@ -536,7 +523,7 @@
         params.set('sort_order', sortOrder);
         byId('spp-message').textContent = 'Загрузка…';
         try {
-            const response = await fetch(`/api/unit-economics-1c/reports/spp?${params}`);
+            const response = await fetch(`${apiBase}?${params}`);
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить отчёт');
             if (sequence === requestNumber) {
@@ -558,13 +545,15 @@
         dateFrom.value = displayDate(config.dateFrom);
         dateTo.value = displayDate(config.dateTo);
         sessionStorage.removeItem(storageKey);
-        tolerance.value = '0';
-        toleranceValue.value = '0';
+        byId('spp-direction-all').checked = true;
         currentPage = 1;
         load();
     });
     root.querySelectorAll('[data-spp-filter] select').forEach((select) => {
         select.addEventListener('change', () => { currentPage = 1; load(); });
+    });
+    form.querySelectorAll('input[name="direction"]').forEach((input) => {
+        input.addEventListener('change', () => { currentPage = 1; load(); });
     });
     root.querySelectorAll('[data-spp-sort]').forEach((button) => {
         button.addEventListener('click', () => {

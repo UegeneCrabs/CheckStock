@@ -1,11 +1,13 @@
-# Run from repository root with: docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d --build yandex-parser
+# Run from repository root with: docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml run --rm --build yandex-parser
 services:
   yandex-parser:
     build:
       context: ..
       dockerfile: deploy/yandex-parser/Dockerfile
     init: true
-    restart: unless-stopped
+    profiles: ["manual-yandex-parser"]
+    restart: "no"
+    command: ["python", "-m", "scripts.parsers.parse_yandex_storefront_prices", "--force"]
     shm_size: 1gb
     security_opt:
       - seccomp=./yandex-parser/seccomp_profile.json

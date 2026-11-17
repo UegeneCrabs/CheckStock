@@ -1973,9 +1973,18 @@ class JobCatalog:
     yandex_storefront_prices: SyncJobMetadata = SyncJobMetadata(
         name="yandex_storefront_prices_sync",
         title="Цены витрины Яндекс Маркета",
-        description="Отдельный браузерный сборщик: цены покупателя без Пэй для актуального ассортимента в БД.",
-        schedule="Ежедневно 08:00–19:00 каждый час и 01:00 · МСК",
+        description="Цены покупателя без Пэй и почасовая история СПП актуального ассортимента.",
+        schedule="Каждый час круглосуточно · МСК",
         scope=JobScope.STORE_MARKETPLACES,
+        marketplaces=(Marketplace.YANDEX_MARKET,),
+        manual_run=True,
+    )
+    yandex_daily_prices: SyncJobMetadata = SyncJobMetadata(
+        name="yandex_daily_prices_close_00_msk",
+        title="Дневные цены витрины Яндекс Маркета",
+        description="Закрывает завершённые дни истории цен и СПП, удаляет сохранённые почасовые записи.",
+        schedule="Ежедневно в 00:05 · МСК",
+        scope=JobScope.GLOBAL,
         marketplaces=(Marketplace.YANDEX_MARKET,),
         manual_run=True,
     )
@@ -2576,6 +2585,7 @@ JOB_SCHEDULE_RULES: Final = (
     *(JobScheduleRule(name=job.name, kind=ScheduleKind.EXTERNAL) for job in JOBS.google_weeks),
     JobScheduleRule(name=JOBS.ozon_advertising.name, kind=ScheduleKind.DAILY, hours=(4,)),
     JobScheduleRule(name=JOBS.wb_hourly_prices.name, interval_setting="wb_hourly_prices_interval_seconds"),
+    JobScheduleRule(name=JOBS.yandex_daily_prices.name, kind=ScheduleKind.DAILY, hours=(0,), minute=5),
     JobScheduleRule(name=JOBS.wb_daily_prices.name, kind=ScheduleKind.DAILY, hours=(0,), minute=5),
     JobScheduleRule(name=JOBS.wb_customer_transit.name, seconds=14_400),
     JobScheduleRule(
@@ -2632,9 +2642,7 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(name=JOBS.yandex_buyout.name, yandex_source=YandexSyncSource.BUYOUT),
     JobScheduleRule(name=JOBS.yandex_orders_previous_day_close.name, kind=ScheduleKind.DAILY, hours=(0,)),
     JobScheduleRule(name=JOBS.yandex_product_novelty.name, seconds=86_400),
-    JobScheduleRule(
-        name=JOBS.yandex_storefront_prices.name, kind=ScheduleKind.DAILY, hours=(1, *range(8, 20))
-    ),
+    JobScheduleRule(name=JOBS.yandex_storefront_prices.name, kind=ScheduleKind.DAILY, hours=tuple(range(24))),
     JobScheduleRule(
         name=JOBS.yandex_category_commissions.name, kind=ScheduleKind.WEEKLY, hours=(4,), weekdays=(0,)
     ),
@@ -2791,3 +2799,6 @@ class AgentWbRatingConfig:
 
 
 AGENT_WB_RATING: Final = AgentWbRatingConfig()
+
+
+YANDEX_PRICE_HISTORY_LOCK: Final = 2026111601

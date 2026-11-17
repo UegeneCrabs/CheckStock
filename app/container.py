@@ -36,6 +36,7 @@ from app.application.supply_arrival_stock import SupplyArrivalStockService
 from app.application.wb_product_rating import WbProductRatingService
 from app.application.wb_standard_costs import WbStandardCostsService
 from app.application.yandex_analytics import YandexAnalyticsService
+from app.application.yandex_price_history import YandexPriceHistoryService
 from app.config import settings
 from app.core.constants import (
     OZON_PRICES,
@@ -99,6 +100,7 @@ from app.infrastructure.wb_hourly_price_repository import catalog_items as wb_ca
 from app.infrastructure.wb_product_rating_repository import SqlAlchemyWbRatingWriter
 from app.infrastructure.wb_standard_costs_repository import SqlAlchemyWbStandardCostsUnitOfWork
 from app.infrastructure.yandex_analytics_repository import YandexAnalyticsRepository
+from app.infrastructure.yandex_price_history_repository import YandexDailyPriceRepository
 from app.integrations.google_test_orders import LEGACY_ORDER_SOURCES, ozon_account
 from app.integrations.google_week_client import GoogleWeekClient
 from app.jobs.async_locks import hold
@@ -205,6 +207,9 @@ class ApplicationContainer:
             wallet_discount=wb_api.get_default_wallet_discount_percent,
             wallet_price=calculate_wallet_price,
             writer=SqlAlchemyHourlyPriceWriter(self._database_path),
+        )
+        self.yandex_daily_price_closer = YandexPriceHistoryService(
+            YandexDailyPriceRepository(self._database_path)
         )
         self.wb_daily_price_closer = SqlAlchemyDailyPriceCloser(self._database_path)
         self.wb_product_rating = wb_product_rating_service(self._database_path)

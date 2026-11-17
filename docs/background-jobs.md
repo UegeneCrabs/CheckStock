@@ -558,3 +558,8 @@ Docker в текущем окружении недоступен; проверк
 | `yandex_ephemerides_stock_snapshot` | Понедельник после 00:05 МСК, три повтора: локальные FBS/FBY/ФФ и свежие подтверждённые возвраты. Первая запись immutable, пропущенный понедельник не восстанавливается текущими остатками |
 
 Метаданные находятся в JOBS и JOB_SCHEDULE_RULES, исполнение — app/jobs/yandex_analytics.py. Настройки включения/магазинов и ручной запуск используют общую панель интеграций. `CHECKSTOCK_YANDEX_ANALYTICS_FUNNEL_INTERVAL_SECONDS`, `CHECKSTOCK_YANDEX_ANALYTICS_TRANSIT_INTERVAL_SECONDS`, `CHECKSTOCK_YANDEX_ANALYTICS_STARTUP_DELAY_SECONDS` и `CHECKSTOCK_YANDEX_ANALYTICS_FUNNEL_HISTORY_REFRESH_SECONDS` задают интервалы. Магазины обрабатываются конкурентно с изоляцией ошибок. До первого подтверждённого источника данные неизвестны; NO_DATA и DONE не доказывают полный календарный день. Реальные права API и подписка определяют доступность отдельного источника.
+
+## История СПП Яндекс Маркета
+
+[Отчёт СПП ЯМ](yandex-spp-report.md): общая страница WB/ЯМ, отдельные таблицы
+часов и дней, почасовой сбор в scheduler и закрытие в 00:05 МСК.

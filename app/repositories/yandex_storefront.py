@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from app.core.domain import MOSCOW_TIMEZONE
+from app.dto.yandex_price_history import YandexPriceObservation
+from app.infrastructure.yandex_price_history_repository import YandexPriceHistoryWriter, lock_history
 from app.repositories import yandex_assortment
 from app.repositories.core import WRITE_LOCK, get_connection
 from app.yandex.price_calculation import discount_percent, discounted_price, paired_at, positive
@@ -114,6 +116,7 @@ def record(target: dict, result: dict) -> None:
     pay = positive(result.get("pay_price")) if trusted else None
     basis = target.get("_price_basis", {})
     with WRITE_LOCK, get_connection() as connection:
+        lock_history(connection)
         previous = connection.execute(
             "SELECT * FROM yandex_storefront_prices WHERE store_slug=? AND article=?",
             (target["store_slug"], target["article"]),
@@ -164,6 +167,20 @@ def record(target: dict, result: dict) -> None:
                     "UPDATE yandex_storefront_prices SET pay_discount_percent=?, pay_discount_checked_at=? WHERE store_slug=? AND article=?",
                     (percent, timestamp, target["store_slug"], target["article"]),
                 )
+        if buyer is not None:
+            YandexPriceHistoryWriter(connection).save(
+                YandexPriceObservation(
+                    store_slug=target["store_slug"],
+                    article=target["article"],
+                    observed_at=datetime.fromisoformat(timestamp),
+                    business_id=str(target["business_id"]) if target.get("business_id") is not None else None,
+                    market_sku=str(target["market_sku"]) if target.get("market_sku") is not None else None,
+                    card_id=str(target["card_id"]) if target.get("card_id") is not None else None,
+                    seller_price=seller if paired else None,
+                    customer_price_with_spp=buyer,
+                    spp_percent=discount_percent(seller, buyer) if paired else None,
+                )
+            )
         connection.commit()
 
 
