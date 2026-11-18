@@ -2281,6 +2281,31 @@ class CredentialMarketplace(StrEnum):
     YANDEX = "yandex"
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UiAuthConstants:
+    prefix: str = "/api/auth"
+    login_path: str = "/api/auth/login"
+    session_path: str = "/api/auth/session"
+    logout_path: str = "/api/auth/logout"
+    secure_cookie: str = "__Host-paketa_ui_session"
+    local_cookie: str = "paketa_ui_session"
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        return self.login_path, self.session_path, self.logout_path
+
+
+UI_AUTH: Final = UiAuthConstants()
+
+
+class UiAuthError(StrEnum):
+    AUTH_REQUIRED = "auth_required"
+    INVALID_CREDENTIALS = "invalid_credentials"
+    INVALID_LOGIN_INPUT = "invalid_login_input"
+    INVALID_ORIGIN = "invalid_origin"
+    NOT_FOUND = "not_found"
+
+
 class WebErrorCode(StrEnum):
     SETTINGS_CONFLICT = "settings_conflict"
     FORBIDDEN = "forbidden"
