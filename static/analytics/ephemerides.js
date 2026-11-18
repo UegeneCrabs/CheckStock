@@ -96,6 +96,7 @@
             add('code','Код ABC-D','product',65,'text');
             add('today-turnover','ТО сегодня, ₽','product',110,'number',{key:'fact',period:'dayTurnover'});
             add('fbs','Сток FBS','stock',65);add('fbo','Сток '+config.labels.fbo,'stock',65);add('fromCustomer','В пути от клиента','stock',75);add('ff','На ФФ','stock',65);add('stock','Общий сток','stock',75);
+            if(config.marketplace==='WB') add('inboundFbo','В пути на склады FBO','stock',92);
             add('rating','Рейтинг','control',65);add('competitor','Конкуренты','control',180,'comment',{week:data.current.start,kind:'competitor'});
             for(const period of ['previous','current']) {
                 [['spp','СПП','percent',55],['impressions','Показы','number',70],['ctr','CTR','percent',55],['roi','ROI','percent',65],['drr','ДРР','percent',55],['wallet',config.labels.wallet+', ₽','number',80],['price',config.marketplace==='WB'?'Цена поставщика, ₽':'Цена продавца, ₽','number',80],['goal','Цель недели, шт','number',65],['fact','Факт недели, шт','number',65]].forEach(([key,label,type,width=115])=>add(period+'-'+key,label,period,width,type,{key,period}));
@@ -115,9 +116,6 @@
         if(c.type==='photo') return row.image?'Есть фото':'Нет фото';
         return c.period?row[c.period]?.[c.key]??null:row[c.key]??null;
     }
-    function incomplete(row,c) {
-        return A.metricQuality(row,(c.period?c.period+'.':'')+c.key).partial;
-    }
     function productHtml(row,index) {
         const image=/^https?:\/\//i.test(row.image||'')?`<img src="${escape(row.image)}" alt="" loading="lazy">`:`<span class="e-photo e-muted">${escape(market)}</span>`;
         return `<button class="e-product" data-product="${index}">${separate&&!config.history?'':image}<span><strong>${escape(row.name)}</strong><small data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул">${escape(market)} ${escape(row.article)} ⧉</small><small>${escape(row.barcode)}${config.history?' · '+escape(row.project):''}</small></span></button>`;
@@ -128,7 +126,6 @@
         if(c.type==='comment') return commentHtml(row,c);
         if(c.type==='photo') return /^https?:\/\//i.test(row.image||'')?`<img class="e-photo" src="${escape(row.image)}" alt="" loading="lazy">`:'—';
         if(c.type==='text') return `<span class="e-text" ${c.key==='article'?`data-copy-article="${escape(row.article)}" tabindex="0" title="Навести или нажать, чтобы скопировать артикул"`:''}>${escape(val||'—')}</span>`;
-        const partial=incomplete(row,c);
         let title='';
         if(c.period==='dayTurnover') title=`Сумма заказов за сегодня (${data.today}, Москва), без вычета отмен. По умолчанию товары ранжируются по этому показателю.`;
         if(c.period&&c.key==='turnover') title='Цель недели, шт × Цена поставщика, ₽. Если цель или цена неизвестны, ТО не рассчитан.';
@@ -136,12 +133,17 @@
         if(c.key==='fromCustomer') title=`Снимок понедельника ${row.stockWeek}: ${row.transitUpdated||'ещё не сохранён'}. Показатель всего артикула ${market}.`;
         if(['fbs','fbo','ff','stock'].includes(c.key)) title=`Сток зафиксирован на неделю с ${row.stockWeek}: ${row.stockUpdated||'снимок понедельника ещё не сохранён'}`;
         if(c.key==='ff') title+=`. Сумма остатков по всем фулфилментам ${market} этого товара в магазине.${val==null?' В снимке нет данных ФФ.':''}`;
-        if(c.period&&c.key==='fact') title=row[c.period].factNet?`Завершённая неделя: заказы − отмены. Источник — сохранённые заказы ${market}.`:`Заказы текущей недели ${market}, с понедельника по сегодня.`;
+        if(c.key==='inboundFbo') title='Текущие поставки WB по сохранённому снимку, включая остаток частично принятых поставок.';
+        if(c.period&&c.period!=='dayTurnover'&&c.key==='fact') title=row[c.period].factNet?`Завершённая неделя: заказы − отмены. Источник — сохранённые заказы ${market}.`:
+            config.marketplace==='WB'?'Заказы текущей недели за завершённые дни по Москве.':`Заказы текущей недели ${market}, с понедельника по сегодня.`;
         const field=(c.period&&c.period!=='dayTurnover'?c.period+'.':'')+c.key;
         const help=A.metricHelp(row,field,config,val==null);
         if(help) title+=(title?'. ':'')+help;
         const status=A.qualityLabel(A.metricQuality(row,field));
-        return `<span title="${escape(title)}" class="${val==null?'e-muted':c.key==='roi'?val<0?'e-negative':'e-positive':''}">${number(val,c.type==='percent')}</span>${status?`<small class="e-muted" style="display:block;white-space:normal;line-height:1.2">${escape(status)}</small>`:''}`;
+        const goal=config.marketplace==='WB'&&c.key==='fact'&&['previous','current'].includes(c.period)?row[c.period]?.goal:null;
+        let tone=val==null?'e-muted':c.key==='roi'?val<0?'e-negative':'e-positive':'';
+        if(val!=null&&goal>0) tone=val<goal?'e-negative':val*5>=goal*6?'e-over-goal':'e-positive';
+        return `<span title="${escape(title)}" class="${tone}">${number(val,c.type==='percent')}</span>${status?`<small class="e-muted" style="display:block;white-space:normal;line-height:1.2">${escape(status)}</small>`:''}`;
     }
     function externalRows() {
         const q=query.toLocaleLowerCase('ru').trim();
@@ -211,7 +213,7 @@
         $('drawer-title').textContent=row.name;
         let html=`<p>${escape(row.project)} · ${escape(market)} ${escape(row.article)}</p><p class="e-muted">${escape(row.manager)} · ${escape(row.category)}</p>`;
         if(!config.history) {
-            html+=`<table><thead><tr><th>Показатель</th><th>${escape(weekLabel(data.previous))}</th><th>${escape(weekLabel(data.current))}</th></tr></thead><tbody>${[['fact','Заказы, шт'],['turnover','ТО по цели, ₽'],['roi','ROI, %'],['drr','ДРР, %'],['goal','Цель, шт'],['price','Цена, ₽']].map(([key,label])=>`<tr><td>${label}</td><td>${number(row.previous[key])}</td><td>${number(row.current[key])}</td></tr>`).join('')}</tbody></table><p>FBS ${number(row.fbs)} · FBO ${number(row.fbo)} · От клиента ${number(row.fromCustomer)} · На ФФ ${number(row.ff)} · Общий сток ${number(row.stock)}</p>`;
+            html+=`<table><thead><tr><th>Показатель</th><th>${escape(weekLabel(data.previous))}</th><th>${escape(weekLabel(data.current))}</th></tr></thead><tbody>${[['fact','Заказы, шт'],['turnover','ТО по цели, ₽'],['roi','ROI, %'],['drr','ДРР, %'],['goal','Цель, шт'],['price','Цена, ₽']].map(([key,label])=>`<tr><td>${label}</td><td>${number(row.previous[key])}</td><td>${number(row.current[key])}</td></tr>`).join('')}</tbody></table><p>FBS ${number(row.fbs)} · FBO ${number(row.fbo)} · От клиента ${number(row.fromCustomer)} · На ФФ ${number(row.ff)} · Общий сток ${number(row.stock)}${config.marketplace==='WB'?' · В пути на склады FBO '+number(row.inboundFbo):''}</p>`;
         }
         const start=config.history?data.weeks[0].start:data.current.start;
         Object.entries(kinds).forEach(([kind,label])=>{html+=`<h3>${escape(label)} · ${escape(start)}</h3>${commentHtml(row,{week:start,kind,readOnly:config.history&&kind==='decision'})}`;});

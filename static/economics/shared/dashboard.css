@@ -876,12 +876,12 @@ body:has(.content--unit-1c) {
 .ue1c-page.has-detail .ue1c-redesign-table {
     min-width: 2020px;
 }
-.ue1c-page.has-detail .ue1c-redesign-table col[data-column-group='comments'],
-.ue1c-page.has-detail .ue1c-redesign-table col[data-column-group='tag'],
-.ue1c-page.has-detail .ue1c-redesign-table th[data-column-group='comments'],
-.ue1c-page.has-detail .ue1c-redesign-table th[data-column-group='tag'],
-.ue1c-page.has-detail .ue1c-redesign-table td.ue1c-col-comments,
-.ue1c-page.has-detail .ue1c-redesign-table td.ue1c-col-tag {
+.ue1c-page.has-detail:not(.is-ozon-preview) .ue1c-redesign-table col[data-column-group='comments'],
+.ue1c-page.has-detail:not(.is-ozon-preview) .ue1c-redesign-table col[data-column-group='tag'],
+.ue1c-page.has-detail:not(.is-ozon-preview) .ue1c-redesign-table th[data-column-group='comments'],
+.ue1c-page.has-detail:not(.is-ozon-preview) .ue1c-redesign-table th[data-column-group='tag'],
+.ue1c-page.has-detail:not(.is-ozon-preview) .ue1c-redesign-table td.ue1c-col-comments,
+.ue1c-page.has-detail:not(.is-ozon-preview) .ue1c-redesign-table td.ue1c-col-tag {
     display: none;
 }
 .ue1c-overlay {

@@ -1,8 +1,8 @@
 """Compact store summaries from the website report, before product pagination."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
-from typing import Annotated
+from typing import Annotated, NamedTuple
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -17,6 +17,7 @@ from app.core.stores import STORES
 from app.dto.agent_query import ReportQuery
 from app.dto.agent_summary import SummaryQuery
 from app.dto.identity import SectionName
+from app.repositories.economics_coverage import wb_days
 from app.web.routers.agent_analytics import Employee
 from app.web.routers.unit_economics import (
     _unit_economics_1c_unit_profit_report_data,
@@ -27,11 +28,20 @@ router = APIRouter()
 logger = tagged_logger(__name__, "web", "agent_profit_summary")
 
 
-async def order_coverage(store, start, end):
+class WbOrderCoverage(NamedTuple):
+    all_days_loaded: bool
+    articles: set[str]
+
+
+async def order_coverage(store: str, start: date, end: date) -> WbOrderCoverage:
+    store_coverage = await run_in_threadpool(wb_days, (store,), start.isoformat(), end.isoformat())
+    loaded_days = store_coverage[store]["orders"]
+    if len(loaded_days) == (end - start).days + 1:
+        return WbOrderCoverage(all_days_loaded=True, articles=set())
     raw = await run_in_threadpool(
         db.get_unit_economics_1c_funnel_daily_order_rows, (store,), str(start), str(end)
     )
-    covered = covered_articles(raw, start, end, ("orders_amount",))
+    covered = covered_articles(raw, start, end, ("orders_amount",), loaded_days=loaded_days)
     # The website also accepts a saved aggregate for this exact period.
     aggregates = await run_in_threadpool(db.get_unit_economics_1c_funnel_product_metrics, (store,))
     for row in aggregates:
@@ -41,13 +51,16 @@ async def order_coverage(store, start, end):
                 covered.add(article)
             else:
                 covered.discard(article)
-    return covered
+    return WbOrderCoverage(all_days_loaded=False, articles=covered)
 
 
-def summarize(data, covered):
+def summarize(data, coverage: WbOrderCoverage):
     rows = data["rows"]
     known = [
-        r for r in rows if str(r.get("article")) in covered and number(r.get("orders_amount")) is not None
+        r
+        for r in rows
+        if (coverage.all_days_loaded or str(r.get("article")) in coverage.articles)
+        and number(r.get("orders_amount")) is not None
     ]
     eligible = [r for r in known if r["orders_amount"] > 0]
     calculated = [
@@ -55,7 +68,7 @@ def summarize(data, covered):
     ]
     unknown_orders = len(rows) - len(known)
     incomplete = len(eligible) - len(calculated)
-    orders_complete = bool(rows) and not unknown_orders
+    orders_complete = (bool(rows) or coverage.all_days_loaded) and not unknown_orders
     complete = orders_complete and not incomplete
     totals = _unit_profit_report_totals(eligible)
     # A zero is justified by an observed sum, or a fully known empty selection.
@@ -80,7 +93,9 @@ def summarize(data, covered):
         "margin_included_products": len(calculated),
         "margin_excluded_products": unknown_orders + incomplete,
         "incomplete_margin_products": incomplete,
-        "orders_amount": round(sum(r["orders_amount"] for r in known), 2) if known else None,
+        "orders_amount": round(sum(r["orders_amount"] for r in known), 2)
+        if known or orders_complete
+        else None,
         "website_margin": data["totals"].get("margin")
         if orders_complete and data["totals"].get("margin_complete") is True
         else None,
@@ -154,11 +169,11 @@ async def profit_summary(request: Request, user: Employee, query: Annotated[Summ
                 params["manager"] = query.manager
             scoped = Request({**request.scope, "query_string": urlencode(params).encode()})
             try:
+                coverage = await order_coverage(store, start, end)
                 data = await _unit_economics_1c_unit_profit_report_data(scoped)
                 if isinstance(data, JSONResponse):
                     item[label] = {"available": False, "status_code": data.status_code}
                 else:
-                    coverage = await order_coverage(store, start, end)
                     item[label] = {"available": True, **summarize(data, coverage)}
             except Exception:
                 logger.exception("agent_profit_summary_failed store=%s period=%s", store, label)

@@ -39,12 +39,20 @@ window.OzonCalculatorUI = (() => {
     function paintTarget(root, session) {
         const quote = session.target;
         const row = root.querySelector('[data-ozon-result="target"]');
+        const input = root.querySelector('[data-ozon-price-input="green_price"]');
         if (row) {
-            row.querySelector('strong').textContent = quote?.price == null ? '—' : targetFormat.format(quote.price);
+            const button = row.querySelector('button');
+            button.textContent = quote?.price == null ? '—' : targetFormat.format(quote.price);
+            button.disabled = quote?.price == null || session.targetPending || !input;
+            if (button.disabled) button.removeAttribute('aria-label');
+            else button.setAttribute('aria-label', 'Подставить целевую цену ' + button.textContent + ' и пересчитать');
+            button.onclick = button.disabled ? null : () => {
+                input.value = display(quote.price);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            };
             row.title = quote?.message || 'Загружаем целевую цену…';
             row.setAttribute('aria-busy', String(Boolean(session.targetPending)));
         }
-        const input = root.querySelector('[data-ozon-price-input="green_price"]');
         if (!input) return;
         const available = quote?.price != null && !session.targetPending && !session.pricePending &&
             input.value !== '' && input.checkValidity() && Number.isFinite(Number(input.value));
@@ -204,9 +212,12 @@ window.OzonCalculatorUI = (() => {
             };
             session.pricesPending = event => {
                 if (event.detail.productId !== session.productId) return;
-                if (event.detail.edited && session.priceTarget) {
+                if (event.detail.edited) {
                     session.priceTarget = null;
-                    targetFields.forEach(key => delete session.draft[key]);
+                    targetFields.forEach(key => {
+                        delete session.draft[key];
+                        session.invalid.delete(key);
+                    });
                 }
                 window.clearTimeout(session.timer);
                 if (session.controller) session.controller.abort();
@@ -489,7 +500,10 @@ window.OzonCalculatorUI = (() => {
             row.dataset.ozonResult = 'target';
             const title = document.createElement('span');
             title.textContent = 'Целевая цена';
-            row.append(title, document.createElement('strong'));
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'ozon-target-price-button';
+            row.append(title, button);
             node.append(row);
         }
         paintTarget(root, session);

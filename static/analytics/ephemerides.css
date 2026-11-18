@@ -46,6 +46,7 @@
 .ephemerides .e-comment-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.5}
 .ephemerides .e-text{overflow-wrap:anywhere}
 .ephemerides .e-number{text-align:right;font-variant-numeric:tabular-nums}.ephemerides .e-negative{color:#be5c6e}.ephemerides .e-positive{color:#338b7c}.ephemerides .e-muted{color:#979caa}
+.ephemerides .e-over-goal{color:#a6510a}
 .ephemerides .e-comment{position:relative}.ephemerides .e-comment textarea{width:100%;min-height:53px;height:58px;box-sizing:border-box;resize:vertical;border:1px solid #e8eaf1;background:#fcfcff;border-radius:6px;padding:7px 22px 7px 7px;font:11px/1.5 inherit;color:#404656;display:block}.ephemerides .e-comment textarea:focus{outline:2px solid #aa96d0;background:white}.ephemerides .e-comment textarea[readonly]{background:#f7f8fb}.ephemerides .e-comment button{position:absolute;right:4px;top:3px;border:0;background:transparent;color:#a1a3af;cursor:pointer}.ephemerides .e-comment small{display:block;color:#9095a2;font-size:9px;white-space:normal;line-height:1.3;margin-top:3px}.ephemerides .e-comment small.error{color:#b54254}
 .ephemerides.e-dense #e-table tbody td{height:53px;padding:5px 8px}.ephemerides.e-dense .e-comment textarea{height:38px;min-height:38px}.ephemerides.e-dense .e-product img{height:36px;width:27px}
 .ephemerides #e-kind-wrap{font-size:11px;white-space:nowrap}.ephemerides #e-kind{display:block;max-width:180px;border:1px solid #e2e5ee;border-radius:5px;padding:5px;font:inherit;background:white}

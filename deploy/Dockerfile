@@ -1,3 +1,11 @@
+FROM node:24-bookworm-slim AS frontend
+
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run lint && npm run build
+
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -19,6 +27,7 @@ RUN python -m pip install --upgrade pip \
 COPY app ./app
 COPY scripts ./scripts
 COPY static ./static
+COPY --from=frontend /build/dist ./static/checkstock-ui
 COPY templates ./templates
 
 RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/data/backups/database /app/data/logs /app/secrets /app/finance-credentials /app/agent-credentials \

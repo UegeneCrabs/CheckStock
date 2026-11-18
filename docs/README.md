@@ -4,6 +4,9 @@
 
 ## Устройство проекта и эксплуатация
 
+- [React-оболочка: локальный запуск и проверка](../frontend/README.md)
+- [Скилл переноса интерфейса на React и разработки REST API](../.agents/skills/checkstock-react-migration/SKILL.md)
+
 - [Обязательные правила разработки Ozon для всех чатов CheckStock](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon)
 - [Правила размещения, оформления и запуска тестов](../.agents/skills/checkstock-testing/SKILL.md)
 - [Архитектура и структура](architecture.md)
@@ -78,6 +81,7 @@
 - [Нулевые и неизвестные остатки Ozon в экономике](f05-economics-completeness.md#ozon)
 - [Дневной календарь параметров WB, Ozon и ЯМ](daily-economics-calendar.md)
 - [Юнит-экономика Яндекс Маркета](unit-economics-yandex.md)
+- [Общие комментарии в юнит-экономике WB, Яндекс Маркета и Ozon](unit-economics-comments.md)
 - [Настройки калькулятора Яндекс Маркета](yandex-calculator-settings.md)
 - [Категории и комиссии Яндекс Маркета](yandex-category-commissions.md)
 - [Доступы к кабинетам Яндекс Маркета](yandex-access.md)

@@ -8,6 +8,15 @@ class OrmBase(DeclarativeBase):
     pass
 
 
+class ProductCommentRecord(OrmBase):
+    __tablename__ = "unit_economics_product_comments"
+
+    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class StockMutationRequestRecord(OrmBase):
     """Request identity is independent of source fingerprints and preview tokens."""
 

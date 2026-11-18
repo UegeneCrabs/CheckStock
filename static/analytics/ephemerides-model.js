@@ -14,7 +14,7 @@
     }
     function summaryValue(rows, period, key) {
         const value = row => period ? row[period]?.[key] : row[key];
-        if (['goal','turnover','fbs','fbo','ff'].includes(key)) return sum(rows.map(value));
+        if (['goal','turnover','fbs','fbo','ff','inboundFbo'].includes(key)) return sum(rows.map(value));
         if (key === 'stock') return sum([summaryValue(rows,null,'fbs'),summaryValue(rows,null,'fbo'),summaryValue(rows,null,'ff'),summaryValue(rows,null,'fromCustomer')]);
         if (['fact','impressions','fromCustomer'].includes(key)) return sum(unique(rows).map(group => shared(group,value)));
         return null;

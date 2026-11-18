@@ -81,10 +81,16 @@ class InboundSupply(DtoModel):
     def direction(self) -> str:
         return self.warehouse or self.destination_cluster or self.destination_cluster_id
 
+    @property
+    def _closed_for_stock(self) -> bool:
+        return self.stage in TERMINAL_STAGES or (
+            not self.unavailable and self.status == FBO_STOCK.ozon_reports_confirmation
+        )
+
     @computed_field
     @property
     def archived(self) -> bool:
-        if self.stage in TERMINAL_STAGES:
+        if self._closed_for_stock:
             return True
         stamp = self.supply_date
         if stamp is None:
@@ -137,14 +143,14 @@ class InboundSupply(DtoModel):
     def remaining_quantity(self) -> int | None:
         if self.unavailable or not self.listed_status:
             return None
-        if not self.composition_confirmed and self.stage not in TERMINAL_STAGES:
+        if not self.composition_confirmed and not self._closed_for_stock:
             return None
         return sum(self.remaining_for(item) or 0 for item in self.items)
 
     def remaining_for(self, item: InboundItem) -> int | None:
         if self.unavailable or not self.listed_status:
             return None
-        if self.stage in TERMINAL_STAGES:
+        if self._closed_for_stock:
             return 0
         return max(item.quantity - (item.accepted_quantity or 0), 0)
 

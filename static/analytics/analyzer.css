@@ -61,6 +61,9 @@
 .analyzer .column-panel details {border-bottom:1px solid var(--line);padding:6px 0}
 .analyzer .column-panel summary {cursor:pointer;font-size:12px;font-weight:600}
 .analyzer .column-choices {padding-left:16px}
+.analyzer .column-choice {display:flex;align-items:center;justify-content:space-between;gap:8px}
+.analyzer .column-choice button {padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--accent);font-size:11px;cursor:pointer}
+.analyzer .column-choice button:disabled {color:var(--quiet);cursor:default}
 .analyzer .color-filters {display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px}
 .analyzer .color-filters select {max-width:240px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:6px;font:inherit}
 .analyzer .color-filters label {display:flex;align-items:center;gap:6px}

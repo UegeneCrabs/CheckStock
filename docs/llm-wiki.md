@@ -8,8 +8,11 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## С чего начинать поиск
 
+React-оболочка на TypeScript и Vite находится в `frontend/`. Она использует [сессию FastAPI](authentication.md#сессия-react) и открывает заглушки из общего меню. [Локальный запуск](../frontend/README.md) и [настройка поддомена](releases.md#поддомен-react).
+
 | Задача | Сначала открыть |
 |---|---|
+| Перенос интерфейса на React | [Скилл переноса](../.agents/skills/checkstock-react-migration/SKILL.md), `frontend/`, текущая страница в `templates/`, `static/` и `app/web/routers/` |
 | Правила разработки Ozon перед изменением кода | [Единый источник правил в скилле](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon) |
 | Сборка приложения и список подключённых роутеров | `app/main.py`, `app/web/routers/__init__.py` |
 | URL, права и обработка запроса | `app/web/routers/`, `app/web/middleware.py`, `app/web/dependencies.py` |
@@ -39,10 +42,12 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 | Загрузка и нормализация заказов | `app/orders/sync.py`, `app/orders/normalizers/`, [устройство модуля](architecture.md#заказы-маркетплейсов), [контракт FBS](f09-fbs-export.md) |
 | Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
+| Общие комментарии к товарам в юнит-экономике | `app/web/routers/product_comments.py`, `app/infrastructure/product_comments_repository.py`, `static/economics/shared/product-comments.js`, [хранение и перенос](unit-economics-comments.md) |
 | Календарь параметров WB/Ozon/ЯМ и дневные корректировки Ozon | `app/web/routers/{economics_calendar,ozon_calendar}.py`, `app/application/ozon_calendar.py`, `app/infrastructure/ozon_calendar_repository.py`, `static/economics/{shared,ozon}/calendar.js`, [контракт](daily-economics-calendar.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
 | Отчёт WB «Рейтинг товаров» | `app/economics/wb/rating_report.py`, `app/web/routers/rating_report.py`, `app/application/wb_product_rating.py`, [полнота данных](f05-economics-completeness.md) |
 | API рейтинга склейки WB: сравнение и история | `app/agents/rating_reports.py`, `app/application/agent_rating.py`, `app/dto/agent_rating.py`, `app/infrastructure/agent_rating_repository.py`, [методы и ограничения](agent-wb-rating.md) |
+| API дневных цен Яндекс Маркета | `app/agents/yandex_price_history.py`, `app/agents/yandex_reports.py`, `app/repositories/yandex_economics.py`, [источники и ограничения](agent-yandex-reports.md) |
 | Расходы без ИУ WB | `app/application/wb_standard_costs.py`, `app/infrastructure/wb_standard_costs_repository.py`, `app/economics/wb/catalogue.py`, `app/dto/wb_standard_costs.py`, `app/economics/wb/standard_sources.py`, `app/economics/wb/standard_costs.py`, `app/economics/wb/standard_sync.py`, `app/wb/standard_costs.py`, `app/wb/standard_costs_sources.py`, `app/economics/wb/standard_logistics.py`, `app/economics/wb/standard_storage.py`, `app/web/routers/wb_standard_costs.py`, [контракт](wb-standard-costs.md) |
 | Коэффициент D по часам для каждого кабинета WB | `app/analytics/analyzer.py`, `app/dto/unit_economics_1c.py`, `static/economics/wb/cabinet-settings.js`, [значения, время и сохранение](wb-cabinet-settings.md) |
 | Асинхронные заказы Ozon | `app/economics/ozon_turnover.py`, `app/orders/ozon_async.py`, `app/ozon/async_api.py`, `app/infrastructure/async_*`, `app/jobs/async_*`, [контракт](background-jobs.md#асинхронные-заказы-ozon) |

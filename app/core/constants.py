@@ -53,6 +53,7 @@ class FboStockErrorCode(StrEnum):
 class FboStockConfig:
     wb_active: frozenset[str] = frozenset({"2", "3", "4", "6"})
     ozon_data_filling: str = "DATA_FILLING"
+    ozon_reports_confirmation: str = "REPORTS_CONFIRMATION_AWAITING"
     ozon_active: frozenset[str] = frozenset(
         {
             ozon_data_filling,
@@ -60,7 +61,7 @@ class FboStockConfig:
             "ACCEPTED_AT_SUPPLY_WAREHOUSE",
             "IN_TRANSIT",
             "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
-            "REPORTS_CONFIRMATION_AWAITING",
+            ozon_reports_confirmation,
             "REPORT_REJECTED",
             "OVERDUE",
         }
@@ -119,7 +120,12 @@ class OzonInboundConfig:
     acceptance_act: str = "ACCEPTANCE"
     act_minimum_spacing_seconds: float = 2
     act_states: frozenset[str] = frozenset(
-        {"ACCEPTANCE_AT_STORAGE_WAREHOUSE", "REPORTS_CONFIRMATION_AWAITING", "REPORT_REJECTED", "COMPLETED"}
+        {
+            "ACCEPTANCE_AT_STORAGE_WAREHOUSE",
+            FBO_STOCK.ozon_reports_confirmation,
+            "REPORT_REJECTED",
+            "COMPLETED",
+        }
     )
 
 
@@ -2284,6 +2290,31 @@ class CredentialMarketplace(StrEnum):
     YANDEX = "yandex"
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UiAuthConstants:
+    prefix: str = "/api/auth"
+    login_path: str = "/api/auth/login"
+    session_path: str = "/api/auth/session"
+    logout_path: str = "/api/auth/logout"
+    secure_cookie: str = "__Host-paketa_ui_session"
+    local_cookie: str = "paketa_ui_session"
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        return self.login_path, self.session_path, self.logout_path
+
+
+UI_AUTH: Final = UiAuthConstants()
+
+
+class UiAuthError(StrEnum):
+    AUTH_REQUIRED = "auth_required"
+    INVALID_CREDENTIALS = "invalid_credentials"
+    INVALID_LOGIN_INPUT = "invalid_login_input"
+    INVALID_ORIGIN = "invalid_origin"
+    NOT_FOUND = "not_found"
+
+
 class WebErrorCode(StrEnum):
     SETTINGS_CONFLICT = "settings_conflict"
     FORBIDDEN = "forbidden"
@@ -2457,6 +2488,9 @@ class WebConstants:
     client_id_max_length: int = 1_024
     client_id_suffix_length: int = 4
     target_max_length: int = 100
+    product_comment_max_length: int = 480
+    product_comment_article_max_length: int = 500
+    product_comment_import_limit: int = 100
     history_retention_days: int = 30
     history_default_limit: int = 50
     history_max_limit: int = 200
@@ -2800,5 +2834,6 @@ class AgentWbRatingConfig:
 
 AGENT_WB_RATING: Final = AgentWbRatingConfig()
 
+AGENT_YANDEX_PRICE_HISTORY: Final = "yandex-price-history"
 
 YANDEX_PRICE_HISTORY_LOCK: Final = 2026111601

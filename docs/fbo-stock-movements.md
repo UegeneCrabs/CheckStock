@@ -44,12 +44,16 @@
 | Площадка | В пути остаётся непринятая часть | Закрытие пути |
 | --- | --- | --- |
 | WB | `2`, `3`, `4`, `6`: запланировано, отгрузка разрешена, идёт приёмка, отгружено на воротах | `5` — принято, независимо от готовности к продаже и расхождений |
-| Ozon | `DATA_FILLING`, `READY_TO_SUPPLY`, `ACCEPTED_AT_SUPPLY_WAREHOUSE`, `IN_TRANSIT`, `ACCEPTANCE_AT_STORAGE_WAREHOUSE`, `REPORTS_CONFIRMATION_AWAITING`, `REPORT_REJECTED`, `OVERDUE` | `COMPLETED`, `REJECTED_AT_SUPPLY_WAREHOUSE`, `CANCELLED` |
+| Ozon | `DATA_FILLING`, `READY_TO_SUPPLY`, `ACCEPTED_AT_SUPPLY_WAREHOUSE`, `IN_TRANSIT`, `ACCEPTANCE_AT_STORAGE_WAREHOUSE`, `REPORT_REJECTED`, `OVERDUE` | `REPORTS_CONFIRMATION_AWAITING` и `COMPLETED` — принято в складском учёте; `REJECTED_AT_SUPPLY_WAREHOUSE`, `CANCELLED` — возврат |
 | Яндекс Маркет | `CREATED`, `VALIDATED`, `PUBLISHED`, `ACCEPTED_BY_WAREHOUSE_SYSTEM`, `NEED_PREPARATION`, `REGISTERED_IN_ELECTRONIC_QUEUE`, `ARRIVED_TO_SERVICE`, `ARRIVED_TO_XDOC_SERVICE`, `SHIPPED_TO_SERVICE`, `WAREHOUSE_HANDLING`, `WAREHOUSE_SIGNED_ACT` | `FINISHED`, `CANCELLED` |
 
 Первое списание происходит после ручного проведения. По каждому артикулу из списанного
 количества вычитается фактически принятое. Например, при приёмке 55 из 100 в пути остаётся
 45 штук. Завершение обнуляет путь, остатки маркетплейса загружаются отдельными отчётами.
+Ozon закрывает путь уже при «Согласовании актов»: проведённая поставка уходит
+в историю, даже если акт ещё недоступен. Статус Ozon и фактическое количество из
+акта сохраняются. Если Ozon переводит поставку в «Спор по актам», на основании
+последней подтверждённой приёмки в путь возвращается непринятая часть.
 Кнопки ручной приёмки и возврата приёмки FBO удалены; сервер также запрещает эти действия.
 Приёмка перемещений между ФФ сохраняется.
 

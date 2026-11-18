@@ -26,6 +26,7 @@
     col('AC', 'Рейтинг', 'rating', 'performance', 65, 'rating');
     col('AD', 'Цели на новую неделю', 'goals', 'goals', 110, 'goal');
     ['AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK'].forEach((letter, idx) => col(letter, '', 'day' + idx, 'week', 65, 'day', {idx}));
+    col('', 'Сегодня', 'day7', 'week', 70, 'day', {idx: 7, wbOnly: true});
     col('AL', 'СПП', 'spp', 'plan', 55, 'percent');
     col('AM', 'Цена WB<br>с кошельком', 'wallet', 'plan', 80, 'money');
     col('AN', 'Цена<br>поставщика', 'price', 'plan', 80, 'money');
@@ -54,7 +55,7 @@
     const numeric = c => !['product', 'text', 'person', 'project', 'name', 'photo', 'code', 'goal', 'spacer', 'note'].includes(c.type);
     function value(row, column) {
         if (column.metric) return row[column.metric]?.[column.idx] ?? null;
-        if (column.type === 'day') return row.week[column.idx];
+        if (column.type === 'day') return (row.dailyOrders || row.week)[column.idx] ?? null;
         if (column.type === 'note') return (row.notes[column.idx] || []).map(note => note.note).join('\n');
         if (column.type === 'product') return [row.name, row.article, row.barcode].join(' · ');
         if (column.type === 'goal') return [row.goal ?? '—', row.dayGoal ?? '—'].join(' / ');
@@ -89,17 +90,24 @@
         return known.length ? known.reduce((a, b) => a + b, 0) : null;
     }
     function ratio(a, b) { return a != null && b > 0 ? a / b * 100 : null; }
-    function displayColumns(visibleGroups, separate = false, productWidth = 160, hiddenColumns = new Set()) {
+    function displayColumns(visibleGroups, separate = false, productWidth = 160, hiddenColumns = new Set(), pinnedColumns = new Set(), isWb = false) {
         const order = Object.keys(groups);
         const enabled = fields.filter(column => (column.group === 'product' || visibleGroups.has(column.group))
+            && (!column.wbOnly || isWb)
             && (column.key === 'name' || !hiddenColumns.has(columnId(column))));
         enabled.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group)
             || (a.key === 'difference' && b.key === 'deviation' ? 1 : a.key === 'deviation' && b.key === 'difference' ? -1 : a.index - b.index));
         const primary = separate ? enabled.find(column => column.key === 'name') : {...combined, width: productWidth};
         const code = enabled.find(column => column.key === 'code');
-        return [{...primary, frozenLeft: 0}, ...(code ? [{...code, frozenLeft: primary.width}] : []),
-            ...enabled.filter(column => !['name', 'code'].includes(column.key)
-                && (separate || !['barcode', 'article', 'image'].includes(column.key)))];
+        const rest = enabled.filter(column => !['name', 'code'].includes(column.key)
+            && (separate || !['barcode', 'article', 'image'].includes(column.key)));
+        const frozen = [primary, ...(code ? [code] : []), ...rest.filter(column => pinnedColumns.has(columnId(column)))];
+        let left = 0;
+        return [...frozen.map(column => {
+            const frozenLeft = left;
+            left += column.width;
+            return {...column, frozenLeft};
+        }), ...rest.filter(column => !pinnedColumns.has(columnId(column)))];
     }
     const storeKey = row => row.store_slug || row.project || '';
     function cardGroups(rows) {

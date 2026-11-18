@@ -180,11 +180,17 @@ class OzonAdvertisingMetrics(DtoModel):
     drr_basis: OzonDrrMetrics | None = None
 
 
+class OzonFulfillmentBalance(DtoModel):
+    name: str
+    quantity: int
+
+
 class OzonStockMetrics(DtoModel):
     total: int | None
     fbs: int | None
     fbo: int | None
     fulfillment: int | None
+    fulfillment_locations: tuple[OzonFulfillmentBalance, ...] = ()
     inbound: int | None
     inbound_partial: bool
     inbound_state: InboundAvailability

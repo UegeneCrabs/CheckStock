@@ -1,6 +1,7 @@
 """Pure decisions over complete server-side snapshots; unknown is never zero."""
 
 import math
+from collections.abc import Collection
 from datetime import timedelta
 
 from pydantic import JsonValue
@@ -20,8 +21,9 @@ def manager_key(value):
     return tuple(sorted(str(value or "").casefold().replace("ё", "е").split()))
 
 
-def covered_articles(rows, start, end, fields):
+def covered_articles(rows, start, end, fields, *, loaded_days: Collection[str] = ()):
     days = {(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)}
+    days.difference_update(loaded_days)
     observed = {}
     for row in rows:
         if all(number(row.get(f)) is not None for f in fields):

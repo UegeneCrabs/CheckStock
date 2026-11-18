@@ -7,6 +7,8 @@
     M.configure(config);
     M.localize(root, config);
     const market = config.labels.marketplace;
+    const isWb = config.marketplace === 'WB';
+    const availableFields = M.fields.filter(column => !column.wbOnly || isWb);
     const $ = id => root.querySelector('#' + id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
     const num = (value, digits = 0) => value == null ? '—' : Number(value).toLocaleString('ru-RU', {maximumFractionDigits: digits});
@@ -28,6 +30,7 @@
     const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: M.fields.find(column => column.key === 'fact').index, direction: -1, page: 1, pageSize: 20};
     const visibleGroups = new Set(Object.keys(M.groups));
     const hiddenColumns = new Set();
+    const pinnedColumns = new Set();
     state.color = 'all';
     state.colorColumn = M.fields.find(column => column.key === 'difference').index;
     let summaryCollapsed = false;
@@ -43,12 +46,13 @@
                 saved.groups.forEach(group => { if (M.groups[group]) visibleGroups.add(group); });
             }
             (saved.hiddenColumns || []).forEach(id => hiddenColumns.add(id));
+            if (isWb && Array.isArray(saved.pinnedColumns)) saved.pinnedColumns.forEach(id => pinnedColumns.add(id));
             if (!saved.hiddenColumns) visibleGroups.add('team');
         }
     } catch { /* Preferences are optional. */ }
     visibleGroups.add('product');
     function savePreferences() {
-        try { localStorage.setItem(preferenceKey, JSON.stringify({dense: $('dense').checked, exact: $('sheet-order').checked, summaryCollapsed, groups: [...visibleGroups], hiddenColumns: [...hiddenColumns]})); } catch { /* Storage may be disabled. */ }
+        try { localStorage.setItem(preferenceKey, JSON.stringify({dense: $('dense').checked, exact: $('sheet-order').checked, summaryCollapsed, groups: [...visibleGroups], hiddenColumns: [...hiddenColumns], pinnedColumns: [...pinnedColumns]})); } catch { /* Storage may be disabled. */ }
     }
     function toast(text) {
         $('toast').textContent = text;
@@ -57,7 +61,13 @@
         toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3500);
     }
     function label(column) {
-        if (column.type === 'day' || column.type === 'note') return weekdays[column.idx] + '<br>' + shortDate(payload.week[column.idx]);
+        if (column.type === 'day') {
+            const day = (payload.order_days || payload.week)[column.idx];
+            if (!day) return column.label;
+            const weekday = new Date(day + 'T12:00:00Z').getUTCDay();
+            return (column.wbOnly ? 'Сегодня' : weekdays[(weekday + 6) % 7]) + '<br>' + shortDate(day);
+        }
+        if (column.type === 'note') return weekdays[column.idx] + '<br>' + shortDate(payload.week[column.idx]);
         if (column.metric) return (column.metric === 'carts' && config.marketplace === 'YANDEX MARKET' ? 'Корзины · дата отчёта' : column.metric === 'carts' && config.marketplace === 'OZON' ? 'Корзины · 03:00–03:00 МСК' : column.label) + '<br>' + shortDate(payload.traffic_days[column.idx]);
         if (['spend', 'yesterdayDrr'].includes(column.key)) return column.label.replace('вчера', shortDate(addDays(payload.anchor, -1)));
         return column.label;
@@ -67,7 +77,7 @@
         if (config.marketplace !== 'WB' && column.metric === 'carts') return config.marketplace === 'OZON' ? M.cartInterval(payload.traffic_days[column.idx]) + '. ' + config.labels.cartsHelp : config.labels.cartsHelp || (config.marketplace === 'YANDEX MARKET' ? 'Дата отчёта Маркета; границы суток не подтверждены. Данные могут быть предварительными и запаздывать; отсутствие строки не подтверждает ноль.' : 'Добавления в корзину по сохранённому отчёту площадки. Период и полнота источника определяют доступность значения.');
         if (config.marketplace !== 'WB' && column.key === 'currentRoi') return 'Текущий ROI из сохранённых цен, расходов и настроек юнит-экономики ' + market + '.';
         if (config.marketplace !== 'WB' && ['drr','yesterdayDrr'].includes(column.key)) return 'Реклама / (валовая сумма заказов × датированный выкуп) × 100%. Только совпадающие известные даты; отмены не вычитаются.';
-        if (column.metric === 'impressions' || column.metric === 'ctr' || column.key === 'totalCtr') return `Показы и CTR рекламных кампаний ${market}. CTR = клики / показы × 100%.`;
+        if (column.metric === 'impressions' || column.metric === 'ctr' || column.key === 'totalCtr') return `Показы и CTR рекламных кампаний ${market}. CTR = клики / показы × 100%. Нужны положительные показы и известное число кликов.`;
         if (column.metric === 'carts') return 'Все добавления товара в корзину за день, включая органические. Показатель карточки WB общий для её размеров; в итогах учитывается один раз.';
         if (column.key === 'stock') return `Последний сохранённый остаток: ${config.labels.fbo} + FBS. Если часть источников отсутствует, показана известная часть.`;
         if (column.key === 'currentRoi') return 'Текущий ROI из юнит-экономики WB: тот же расчёт за сегодня, с актуальными сохранёнными ценами, расходами и настройками.';
@@ -118,7 +128,11 @@
         if (column.type === 'text') return esc(value) || '—';
         if (column.type === 'goal') return `<div title="${esc(M.metricHelp(row, 'goal', config, row.goal == null))}" class="goal">${num(row.goal)}<span>/</span>${num(row.dayGoal, 1)} шт</div><span class="stock-status">${esc([row.stockStatus, row.stockEnds].filter(Boolean).join(' · '))}</span>`;
         if (column.type === 'note') return `<button class="cell-note ${value ? '' : 'empty'}" data-note="${esc(row.id)}" data-day="${column.idx}" aria-label="Записи ${weekdays[column.idx]}: ${esc(row.name)}"><span class="note-content">${esc(value || (config.canEdit ? '+ Добавить запись' : 'Нет записей'))}</span></button>`;
-        if (value == null) return `<span class="empty-value" title="${esc(help)}">—</span>${marker}`;
+        if (value == null) {
+            const missingCtr = isWb && (column.metric === 'ctr' || column.key === 'totalCtr');
+            const hint = missingCtr ? title(column) : help;
+            return `<span class="empty-value" title="${esc(hint)}">—</span>${marker}`;
+        }
         if (column.type === 'stock') return `<strong title="${esc(help)}">${num(value)}</strong>${marker}<span class="cell-sub" title="${esc('Сток / среднесуточные заказы за ' + shortDate(payload.stockPreviousFrom) + '–' + shortDate(payload.stockPreviousTo) + '. ' + M.metricHelp(row, 'stockDays', config, row.stockDays == null))}">${row.stockDays != null ? '≈ ' + num(row.stockDays, 1) + ' дней запаса' + (row.stockPartial === true ? ' · известная часть' : '') : row.stockOrdersComplete && row.stockDailyOrders === 0 ? 'Нет заказов за прошлую неделю' : 'Запас дней: нет данных'}</span>`;
         if (column.type === 'rating') return `<span class="rating">★</span> <strong>${num(value, 1)}</strong>`;
         if (column.type === 'day') return `<span title="${esc(help)}">${orderBadge(value, row.dayGoal)}</span>${marker}`;
@@ -126,7 +140,7 @@
         return `<span title="${esc(help)}" class="cell-main ${column.type === 'roi' ? value < 0 ? 'negative' : value > 0 ? 'positive' : '' : ''}">${format(value, column)}</span>${marker}`;
     }
     function buildColumns() {
-        columns = M.displayColumns(visibleGroups, $('sheet-order').checked, 160, hiddenColumns);
+        columns = M.displayColumns(visibleGroups, $('sheet-order').checked, 160, hiddenColumns, pinnedColumns, isWb);
         const active = new Set(columns.map(column => column.index));
         Object.keys(state.filters).forEach(index => { if (!active.has(Number(index))) delete state.filters[index]; });
         if (!active.has(state.colorColumn)) state.color = $('color-filter').value = 'all';
@@ -145,7 +159,9 @@
         });
         const groupHeaders = groups.map(group => {
             const pinned = group.frozenLeft != null;
-            return `<th colspan="${group.columns.length}" data-section="${group.key}" class="tone-${group.key} ${pinned ? 'frozen' : ''}" ${pinned ? `style="left:${group.frozenLeft}px"` : ''}>${pinned ? group.columns[0].key === 'code' ? 'Код' : 'Товар' : M.groups[group.key]}</th>`;
+            const key = group.columns[0].key;
+            const name = pinned && key === 'code' ? 'Код' : isWb && group.key === 'week' ? 'Заказы · 7 завершённых дней и сегодня' : M.groups[group.key];
+            return `<th colspan="${group.columns.length}" data-section="${group.key}" class="tone-${group.key} ${pinned ? 'frozen' : ''}" ${pinned ? `style="left:${group.frozenLeft}px"` : ''}>${esc(name)}</th>`;
         }).join('');
         $('thead').innerHTML = `<tr class="group">${groupHeaders}</tr><tr class="heads">${columns.map(column => `<th ${columnAttributes(column)} ${column.type === 'spacer' ? '' : `data-filter-column="${column.index}" ${M.numeric(column) ? 'data-filter-type="number"' : ''}`} title="${esc(title(column))}">${label(column)}</th>`).join('')}</tr><tr class="totals"></tr>`;
         root.querySelectorAll('[data-jump]').forEach(button => { button.hidden = jumpColumnIndex(button) < 0; });
@@ -335,9 +351,35 @@
     });
     function renderColumnSettings() {
         const expanded = new Set([...$('groups-list').querySelectorAll('details[open]')].map(item => item.dataset.section));
-        $('groups-list').innerHTML = Object.entries(M.groups).map(([key, name]) => `<details data-section="${key}" ${expanded.has(key) ? 'open' : ''}><summary>${esc(name)}</summary><label><input type="checkbox" data-group="${key}" ${visibleGroups.has(key) ? 'checked' : ''} ${key === 'product' ? 'disabled' : ''}>Показать блок</label><div class="column-choices">${M.fields.filter(column => column.group === key && column.type !== 'spacer' && ($('sheet-order').checked || !['barcode', 'article', 'image'].includes(column.key))).map(column => `<label><input type="checkbox" data-column="${M.columnId(column)}" ${!hiddenColumns.has(M.columnId(column)) || column.key === 'name' ? 'checked' : ''} ${column.key === 'name' || !visibleGroups.has(key) ? 'disabled' : ''}>${esc(column.key === 'name' && !$('sheet-order').checked ? 'Карточка товара' : payload ? label(column).replace(/<br>/g, ' ') : column.label.replace(/<br>/g, ' ') || column.key)}</label>`).join('')}</div></details>`).join('');
+        $('groups-list').innerHTML = Object.entries(M.groups).map(([key, name]) => {
+            const shown = visibleGroups.has(key);
+            const choices = availableFields.filter(column => column.group === key && column.type !== 'spacer' &&
+                ($('sheet-order').checked || !['barcode', 'article', 'image'].includes(column.key)));
+            const controls = choices.map(column => {
+                const id = M.columnId(column);
+                const visible = !hiddenColumns.has(id) || column.key === 'name';
+                const fixed = ['name', 'code'].includes(column.key);
+                const pinned = pinnedColumns.has(id);
+                const caption = column.key === 'name' && !$('sheet-order').checked ? 'Карточка товара' :
+                    (payload ? label(column) : column.label).replace(/<br>/g, ' ') || column.key;
+                const pin = isWb && !fixed ? `<button type="button" data-pin="${esc(id)}" aria-pressed="${pinned}" aria-label="${pinned ? 'Открепить' : 'Закрепить'}: ${esc(caption)}" ${!shown || !visible ? 'disabled' : ''}>${pinned ? 'Открепить' : 'Закрепить'}</button>` : '';
+                return `<div class="column-choice"><label><input type="checkbox" data-column="${esc(id)}" ${visible ? 'checked' : ''} ${column.key === 'name' || !shown ? 'disabled' : ''}>${esc(caption)}</label>${pin}</div>`;
+            }).join('');
+            const groupName = isWb && key === 'week' ? 'Заказы по дням' : name;
+            return `<details data-section="${key}" ${expanded.has(key) ? 'open' : ''}><summary>${esc(groupName)}</summary><label><input type="checkbox" data-group="${key}" ${shown ? 'checked' : ''} ${key === 'product' ? 'disabled' : ''}>Показать блок</label><div class="column-choices">${controls}</div></details>`;
+        }).join('');
     }
     renderColumnSettings();
+    $('groups-list').onclick = event => {
+        const button = event.target.closest('[data-pin]');
+        if (!button || button.disabled) return;
+        const id = button.dataset.pin;
+        if (pinnedColumns.has(id)) pinnedColumns.delete(id);
+        else pinnedColumns.add(id);
+        if (payload) { buildColumns(); renderPage(); }
+        else { renderColumnSettings(); savePreferences(); }
+        $('groups-list').querySelector('[data-pin="' + CSS.escape(id) + '"]')?.focus();
+    };
     $('groups-list').onchange = event => {
         const input = event.target;
         if (input.dataset.group && input.dataset.group !== 'product') input.checked ? visibleGroups.add(input.dataset.group) : visibleGroups.delete(input.dataset.group);
@@ -412,7 +454,7 @@
     });
     $('export').onclick = () => {
         if (!payload || loading) return;
-        const exported = M.fields.filter(column => column.type !== 'spacer');
+        const exported = availableFields.filter(column => column.type !== 'spacer');
         const lines = M.qualityCsv(M.tableRows(rows, state), exported,
             (row, column) => column.type === 'photo' ? row.image : M.value(row, column),
             column => label(column).replace(/<br>/g, ' '), undefined, config.qualityExport);

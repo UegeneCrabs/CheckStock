@@ -81,6 +81,10 @@ class Sources:
             )
             for key, values in current.items():
                 self.orders[key].update(values)
+            for key, values in daily_index(
+                repository.daily_metrics(stores, stock_start, today.isoformat())
+            ).items():
+                self.rnp[key].update(values)
             coverage = wb_days(stores, stock_start, today.isoformat())
             for store in stores:
                 self.coverage[store]["orders"].update(coverage[store]["orders"])
@@ -115,6 +119,7 @@ def load(
     today = today or now.date()
     week = week - timedelta(days=week.weekday())
     days = [(week + timedelta(days=i)).isoformat() for i in range(7)]
+    order_days = [(today - timedelta(days=i)).isoformat() for i in range(7, -1, -1)]
     anchor = min(today, week + timedelta(days=6))
     traffic_days = [(anchor - timedelta(days=i)).isoformat() for i in range(3, -1, -1)]
     previous = [(week - timedelta(days=i)).isoformat() for i in range(7, 0, -1)]
@@ -171,17 +176,30 @@ def load(
                     return product_rnp.get(day, {}).get("traffic_orders")
                 return None
 
-            def ad_value(day, field, product_ads=product_ads, source=source, product_rnp=product_rnp):
+            def ad_spend(day, product_ads=product_ads, source=source, product_rnp=product_rnp):
                 if day > today.isoformat():
                     return None
-                row = product_ads.get(day)
-                if row is not None and row.get(field) is not None:
-                    return row[field]
-                if day in source["advertising"]:
-                    return 0
-                return product_rnp.get(day, {}).get(
-                    {"impressions": "ad_impressions", "clicks": "ad_clicks", "spend": "ad_spend"}[field]
-                )
+                amount = product_ads.get(day, {}).get("spend")
+                if amount is not None:
+                    return amount
+                saved = product_rnp.get(day, {}).get("ad_spend")
+                if saved is not None:
+                    return saved
+                return 0 if day in source["advertising"] else None
+
+            def traffic(day, product_ads=product_ads, product_rnp=product_rnp, source=source):
+                primary = product_ads.get(day, {})
+                impressions = primary.get("impressions")
+                legacy = product_rnp.get(day, {})
+                saved_impressions = legacy.get("ad_impressions")
+                if (impressions or 0) > 0:
+                    return impressions, primary.get("clicks")
+                if saved_impressions is not None:
+                    return saved_impressions, legacy.get("ad_clicks")
+                if impressions is not None:
+                    return impressions, primary.get("clicks")
+                zero = 0 if day in source["advertising"] else None
+                return zero, zero
 
             product_snapshots = snapshots[key]
             if today.isoformat() in period and today.isoformat() not in product_snapshots:
@@ -204,9 +222,9 @@ def load(
                     day,
                     product_snapshots.get(day),
                     product_orders.get(day, {}),
-                    ad_value(day, "spend"),
+                    ad_spend(day),
                     orders_known=day in source["orders"] or day in product_orders,
-                    ads_known=ad_value(day, "spend") is not None,
+                    ads_known=ad_spend(day) is not None,
                     ignore_deferred_cost_warnings=True,
                 )
                 for day in period
@@ -217,13 +235,13 @@ def load(
                 selected_days,
                 product_snapshots=product_snapshots,
                 product_orders=product_orders,
-                ad_value=ad_value,
+                ad_spend=ad_spend,
                 order_value=order_value,
             ):
                 # Same expected-buyout denominator as WB economics, on matching days only.
                 pairs = []
                 for day in selected_days:
-                    spend, amount = ad_value(day, "spend"), order_value(day, "orders_amount")
+                    spend, amount = ad_spend(day), order_value(day, "orders_amount")
                     buyout = history.snapshot_buyout_percent(product_snapshots.get(day))
                     if buyout is None:
                         buyout = product_orders.get(day, {}).get("buyout_percent")
@@ -245,7 +263,8 @@ def load(
             previous_count = total(count for count, _ in previous_pairs)
             previous_amount = total(amount for _, amount in previous_pairs)
             previous_price = round(previous_amount / previous_count, 2) if previous_count else None
-            ad_pairs = [(ad_value(day, "impressions"), ad_value(day, "clicks")) for day in period]
+            traffic_by_day = {day: traffic(day) for day in dict.fromkeys([*period, *traffic_days])}
+            ad_pairs = [traffic_by_day[day] for day in period]
             ad_pairs = [
                 (impressions, clicks)
                 for impressions, clicks in ad_pairs
@@ -307,11 +326,11 @@ def load(
                 "currentRoi": current.get("roi"),
                 "drr": ratio(spend, bought_amount) if bought_amount else 0.0 if spend == 0 else None,
                 "previousPrice": previous_price,
-                "impressions": [ad_value(day, "impressions") for day in traffic_days],
-                "clicks": [ad_value(day, "clicks") for day in traffic_days],
-                "ctr": [ratio(ad_value(day, "clicks"), ad_value(day, "impressions")) for day in traffic_days],
+                "impressions": [traffic_by_day[day][0] for day in traffic_days],
+                "clicks": [traffic_by_day[day][1] for day in traffic_days],
+                "ctr": [ratio(traffic_by_day[day][1], traffic_by_day[day][0]) for day in traffic_days],
                 "carts": [cart_value(day, today, product_orders, product_rnp) for day in traffic_days],
-                "spend": ad_value(yesterday, "spend"),
+                "spend": ad_spend(yesterday),
                 "yesterdayDrr": ratio(yesterday_spend, yesterday_amount)
                 if yesterday_amount
                 else 0.0
@@ -320,6 +339,7 @@ def load(
                 "totalCtr": ratio(clicks, impressions),
                 "rating": reputations.get(metric_key, {}).get("rating"),
                 "week": [order_value(day, "orders_count") for day in days],
+                "dailyOrders": [order_value(day, "orders_count") for day in order_days],
                 "goal": goal,
                 "dayGoal": day_goal,
                 "spp": ratio(retail - customer, retail) if retail and customer is not None else None,
@@ -346,7 +366,7 @@ def load(
                 },
                 "coverage": {
                     "orders": sum(order_value(day, "orders_count") is not None for day in period),
-                    "advertising": sum(ad_value(day, "spend") is not None for day in period),
+                    "advertising": sum(ad_spend(day) is not None for day in period),
                     "expected": len(period),
                     "drr": drr_days,
                     "roiComplete": economics.get("complete", False),
@@ -374,6 +394,7 @@ def load(
         "ok": True,
         "rows": rows,
         "week": days,
+        "order_days": order_days,
         "traffic_days": traffic_days,
         "today": today.isoformat(),
         "anchor": anchor.isoformat(),
