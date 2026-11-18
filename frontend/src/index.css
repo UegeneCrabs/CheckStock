@@ -1,0 +1,29 @@
+.ui-placeholder {
+  padding: var(--space-md, 20px);
+}
+
+.ui-placeholder h1 {
+  margin-bottom: 0.5rem;
+}
+
+.app-header .ui-marketplace-badge {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 4px 7px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  font-size: 0.75rem;
+}
+
+.app-header .nav-utility button.nav-item {
+  cursor: pointer;
+}
+
+.app-header .nav-utility button.nav-item:hover {
+  color: #fff;
+}
+
+.app-header .nav-utility button.nav-item:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}

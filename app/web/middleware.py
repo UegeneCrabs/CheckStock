@@ -1,4 +1,5 @@
 import time
+from urllib.parse import urlsplit
 
 from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
@@ -7,8 +8,10 @@ from pydantic import ValidationError
 
 from app.access import auth
 from app.config import settings
+from app.core.constants import UI_AUTH, HTTPMethod, HTTPStatus, UiAuthError
 from app.core.logging_config import new_request_id, request_id_context, tagged_logger
 from app.dto.identity import SessionToken
+from app.dto.ui import UiSessionError
 
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/logout"}
 QUIET_PATH_PREFIXES = ("/static/",)
@@ -18,6 +21,24 @@ logger = tagged_logger(__name__, "web", "middleware")
 async def authentication_middleware(request: Request, call_next):
 
     path = request.url.path
+
+    if path == UI_AUTH.prefix or path.startswith(f"{UI_AUTH.prefix}/"):
+        origin = settings.ui_origin
+        if (
+            path not in UI_AUTH.paths
+            or origin is None
+            or request.headers.getlist("host") != [urlsplit(origin).netloc]
+        ):
+            error = UiSessionError(detail=UiAuthError.NOT_FOUND)
+            response = JSONResponse(error.model_dump(mode="json"), status_code=HTTPStatus.NOT_FOUND)
+        elif request.method == HTTPMethod.POST and request.headers.getlist("origin") != [origin]:
+            error = UiSessionError(detail=UiAuthError.INVALID_ORIGIN)
+            response = JSONResponse(error.model_dump(mode="json"), status_code=HTTPStatus.FORBIDDEN)
+        else:
+            request.state.user = None
+            response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     from app.web.routers.agent_mcp import PUBLIC_PATHS as MCP_PUBLIC_PATHS
 

@@ -1,4 +1,4 @@
-from app.core.constants import UiAlertCode
+from app.core.constants import UiAlertCode, UiAuthError
 from app.dto.common import DtoModel
 
 
@@ -6,6 +6,16 @@ class UiUser(DtoModel):
     id: int
     full_name: str
     is_active: bool
+
+
+class UiSession(DtoModel):
+    id: int
+    full_name: str
+    first_store_slug: str | None
+
+
+class UiSessionError(DtoModel):
+    detail: UiAuthError
 
 
 class UiStore(DtoModel):

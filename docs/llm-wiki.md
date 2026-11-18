@@ -8,8 +8,11 @@ CheckStock — FastAPI-приложение для каталогов, оста�
 
 ## С чего начинать поиск
 
+React-оболочка на TypeScript и Vite находится в `frontend/`. Она использует [сессию FastAPI](authentication.md#сессия-react) и открывает заглушки из общего меню. [Локальный запуск](../frontend/README.md) и [настройка поддомена](releases.md#поддомен-react).
+
 | Задача | Сначала открыть |
 |---|---|
+| Перенос интерфейса на React | [Скилл переноса](../.agents/skills/checkstock-react-migration/SKILL.md), `frontend/`, текущая страница в `templates/`, `static/` и `app/web/routers/` |
 | Правила разработки Ozon перед изменением кода | [Единый источник правил в скилле](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon) |
 | Сборка приложения и список подключённых роутеров | `app/main.py`, `app/web/routers/__init__.py` |
 | URL, права и обработка запроса | `app/web/routers/`, `app/web/middleware.py`, `app/web/dependencies.py` |

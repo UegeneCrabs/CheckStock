@@ -4,6 +4,9 @@
 
 ## Устройство проекта и эксплуатация
 
+- [React-оболочка: локальный запуск и проверка](../frontend/README.md)
+- [Скилл переноса интерфейса на React и разработки REST API](../.agents/skills/checkstock-react-migration/SKILL.md)
+
 - [Обязательные правила разработки Ozon для всех чатов CheckStock](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon)
 - [Правила размещения, оформления и запуска тестов](../.agents/skills/checkstock-testing/SKILL.md)
 - [Архитектура и структура](architecture.md)

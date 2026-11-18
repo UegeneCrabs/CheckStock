@@ -1,14 +1,16 @@
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MIN_PBKDF2_ITERATIONS = 100_000
 MAX_PBKDF2_ITERATIONS = 5_000_000
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
+LOCAL_UI_ORIGIN = "http://localhost:5189"
 MCP_DEFAULT_REDIRECT_URIS = (
     "https://claude.ai/api/mcp/auth_callback https://chatgpt.com/connector_platform_oauth_redirect"
 )
@@ -272,6 +274,7 @@ class Settings(BaseModel):
     wb_storefront_browser_no_sandbox: bool = False
     session_ttl_days: int = Field(ge=1)
     session_cookie_secure: bool
+    ui_origin: str | None = None
     pbkdf2_iterations: int = Field(ge=MIN_PBKDF2_ITERATIONS, le=MAX_PBKDF2_ITERATIONS)
     warehouse_display_limit: int = Field(ge=1)
     operation_history_limit: int = Field(ge=1)
@@ -292,6 +295,23 @@ class Settings(BaseModel):
     rnp_report_download_timeout_seconds: int = Field(ge=1)
     rnp_report_poll_attempts: int = Field(ge=1)
     rnp_report_poll_interval_seconds: int = Field(ge=0)
+
+    @field_validator("ui_origin")
+    @classmethod
+    def validate_ui_origin(cls, value: str | None) -> str | None:
+        if value is None or value == LOCAL_UI_ORIGIN:
+            return value
+        origin = urlsplit(value)
+        if (
+            origin.scheme != "https"
+            or not origin.hostname
+            or origin.username is not None
+            or origin.netloc != origin.netloc.lower()
+            or value != f"https://{origin.netloc}"
+            or any(character.isspace() for character in value)
+        ):
+            raise ValueError("CHECKSTOCK_UI_ORIGIN must be an HTTPS origin without a path")
+        return value
 
     @model_validator(mode="after")
     def validate_runtime_settings(self) -> "Settings":
@@ -448,6 +468,7 @@ class Settings(BaseModel):
             wb_storefront_browser_no_sandbox=_env_bool("CHECKSTOCK_WB_BROWSER_NO_SANDBOX", False),
             session_ttl_days=_env_int("CHECKSTOCK_SESSION_TTL_DAYS", 14, minimum=1),
             session_cookie_secure=_env_bool("CHECKSTOCK_SESSION_COOKIE_SECURE", False),
+            ui_origin=os.getenv("CHECKSTOCK_UI_ORIGIN", "").strip() or None,
             pbkdf2_iterations=_env_int(
                 "CHECKSTOCK_PBKDF2_ITERATIONS",
                 200_000,
