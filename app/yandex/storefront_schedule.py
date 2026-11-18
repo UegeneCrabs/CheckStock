@@ -1,10 +1,11 @@
-"""Daily storefront checks at 01:00 and hourly 08:00–19:00, Moscow time."""
-
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from app.core.constants import JOB_SCHEDULE_RULES, JOBS
+
 TIMEZONE = ZoneInfo("Europe/Moscow")
-RUN_HOURS = (1, *range(8, 20))
+
+RUN_HOURS = next(rule.hours for rule in JOB_SCHEDULE_RULES if rule.name == JOBS.yandex_storefront_prices.name)
 
 
 def next_run_at(after: datetime | None = None) -> datetime:

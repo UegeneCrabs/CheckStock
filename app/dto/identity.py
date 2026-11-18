@@ -39,6 +39,7 @@ class SectionName(StrEnum):
     UNIT_ECONOMICS_OZON = "unit_economics_ozon"
     UNIT_ECONOMICS_YANDEX = "unit_economics_yandex"
     REPORT_UNIT_PROFIT = "report_unit_profit"
+    REPORT_SPP_YANDEX = "report_spp_yandex"
     REPORT_SPP = "report_spp"
     REPORT_RATING = "report_rating"
     REPORT_TARGET_PRICE = "report_target_price"

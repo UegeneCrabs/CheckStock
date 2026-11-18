@@ -1,5 +1,9 @@
 # Выгрузка цен витрины Яндекс Маркета
 
+Автоматический обход теперь выполняет общий scheduler каждый час круглосуточно.
+История и порядок перехода: [Отчёт СПП ЯМ](yandex-spp-report.md). Старый контейнер
+`yandex-parser --loop` необходимо остановить до включения нового scheduler.
+
 Сборщик `scripts/parsers/parse_yandex_storefront_prices.py` выбирает товары из БД
 по тем же условиям, что и юнитка: остаток FBS/FBO/ФФ, количество в пути на FBO
 (включая утверждённые заявки) либо ненулевой ТО за последние семь завершённых дней.
@@ -51,9 +55,11 @@
 .\.venv\Scripts\python.exe .\scripts\parsers\parse_yandex_storefront_prices.py --force
 ```
 
-Нужен установленный Google Chrome. На рабочем ПК сборщик запускается только
-явной ручной командой. Автоматический обход выполняет серверный контейнер,
-описанный ниже; для него не нужны работающий ПК или запущенный PyCharm.
+Нужен установленный Google Chrome. Разовый обход запускается ручной командой.
+Общий scheduler (в том числе запущенный через `run.py` на рабочем ПК) выполняет
+автоматический обход, если задача включена в настройках. Чтобы локально работать
+только вручную, оставьте её выключенной. Серверный scheduler не требует работающего
+ПК или запущенного PyCharm.
 
 Старая задача Windows `CheckStock-YandexStorefront-Hourly` запускала
 `.venv\Scripts\pythonw.exe` с `--loop` при входе пользователя независимо от
@@ -167,16 +173,16 @@ headless-вариант при проверке получал HTTP 403.
 
 ## Linux-сервер с существующим Docker Compose
 
-Серверный контейнер запускает сборщик с `--loop`: включённые магазины проверяются
-ежедневно в **01:00** и каждый час с **08:00 до 19:00 включительно**, по
-**Europe/Moscow (UTC+3)**: 13 запусков в сутки, включая выходные. Время привязано
-к началу часа и не зависит от часового пояса сервера или предыдущей проверки.
-После запуска/перезапуска процесс ждёт ближайшего времени по расписанию;
-немедленный обход доступен через `--force`. Пропущенные запуски не накапливаются.
-Параллельные обходы блокируются общей блокировкой БД и блокировкой профиля.
-Настройка магазина «Цены витрины Яндекс Маркета» на странице интеграций управляет
-участием в автоматическом обходе. Разовый запуск проверяет весь список независимо
-от этих выключателей.
+Общий scheduler запускает сборщик каждый час круглосуточно, в начале часа по
+**Europe/Moscow (UTC+3)**. Новый запуск не создаёт параллельный обход; пропущенные
+наблюдения не восстанавливаются задним числом. Задача сохраняет своё расписание
+и результат в общем журнале фоновых загрузок. Настройка «Цены витрины Яндекс
+Маркета» и выключатели магазинов управляют автоматическим обходом. Ручная кнопка
+использует тот же сборщик и выбранные магазины.
+
+Перед переходом остановите прежний `yandex-parser --loop` и отключите старую
+задачу Windows. Теперь сервис `yandex-parser` оставлен только для разового запуска
+с профилем `manual-yandex-parser`, без автоматического перезапуска.
 
 На сервере должны быть этот код, ключи магазинов в `secrets/yandex_tokens.json`, ключ
 2Captcha в `secrets/captcha.json` и доступ контейнерного пользователя UID 10001 на
@@ -185,18 +191,18 @@ headless-вариант при проверке получал HTTP 403.
 
 ```bash
 # Обновить приложение, чтобы оно показывало новые поля, и запустить сборщик
-docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d --build app yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d --build app scheduler
 # Проверить журнал
-docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml logs --tail=100 -f yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml logs --tail=100 -f scheduler
 ```
 
-Для полного обхода сразу после установки остановите автоматический контейнер,
+Для полного обхода сразу после установки остановите scheduler,
 выполните разовый запуск и затем верните расписание:
 
 ```bash
-docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml stop yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml stop scheduler
 docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml run --rm --no-deps yandex-parser xvfb-run -a python -u scripts/parsers/parse_yandex_storefront_prices.py --force
-docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d yandex-parser
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.yandex-parser.yml up -d scheduler
 ```
 
 Проверьте итоговый отчёт: `selected`, `checked`, `statuses` и `skipped`.
@@ -215,9 +221,9 @@ sandbox и профилем seccomp Playwright; перезапускается �
 При обновлении проверяйте запуск браузера в обоих контейнерах и доступ к общему
 профилю и ключам до включения автоматического обхода.
 
-Веб-приложение не запускает второй браузер через `app/jobs/background.py`: автоматический
-обход выполняет отдельный процесс/контейнер. Статус и следующий запуск записываются
-в существующий журнал фоновых загрузок сайта.
+Веб-приложение не создаёт автоматический цикл. Обход зарегистрирован в
+`app/jobs/background.py` и выполняется процессом `app.jobs.worker`. Статус и следующий
+запуск записываются в существующий журнал фоновых загрузок сайта.
 
 ## Повтор карточки и диагностика неполного обхода
 

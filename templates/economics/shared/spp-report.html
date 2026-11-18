@@ -1,5 +1,5 @@
 <link rel="stylesheet" href="/static/common/wb-report.css?v=1" />
-<link rel="stylesheet" href="/static/economics/wb/spp-report.css?v=20" />
+<link rel="stylesheet" href="/static/economics/shared/spp-report.css?v=21" />
 <section class="spp-report" id="spp-report" aria-label="Отчёт по СПП">
     <header class="spp-report__heading">
         <h1>Отчёт по СПП</h1>
@@ -13,25 +13,33 @@
             </div>
             <div class="spp-filters__grid">
                 <div class="spp-filter" data-spp-filter><label for="spp-store-search">Магазин</label><select name="store" id="spp-store"><option value="">Все</option></select></div>
-                <div class="spp-filter" data-spp-filter><label for="spp-brand-search">Бренд</label><select name="brand" id="spp-brand"><option value="">Все</option></select></div>
+                <div class="spp-filter" data-spp-filter id="spp-brand-label"><label for="spp-brand-search">Бренд</label><select name="brand" id="spp-brand"><option value="">Все</option></select></div>
                 <div class="spp-filter" data-spp-filter id="spp-manager-label"><label for="spp-manager-search">Менеджер</label><select name="manager" id="spp-manager"><option value="">Все</option></select></div>
                 <div class="spp-filter" data-spp-filter><label for="spp-subject-search">Предмет товара</label><select name="subject" id="spp-subject"><option value="">Все</option></select></div>
                 <div class="spp-filter" data-spp-filter><label for="spp-article-search">Артикул</label><select name="article" id="spp-article"><option value="">Все</option></select></div>
                 <label>Поиск по слову<input type="search" name="search" id="spp-search" placeholder="Введите слово" /></label>
             </div>
-            <div class="spp-tolerance"><div class="spp-tolerance__heading"><label for="spp-tolerance-value">Допустимое снижение СПП</label><div class="spp-tolerance__value"><input type="number" name="tolerance" id="spp-tolerance-value" min="0" step="any" value="0" required autocomplete="off" /><span>п. п.</span></div></div><input type="range" id="spp-tolerance" min="0" max="100" step="0.5" value="0" autocomplete="off" aria-label="Допустимое снижение СПП, от 0 до 100 п. п." /><div class="spp-tolerance__scale"><span>Строгое сравнение</span><span>100 п. п. на ползунке</span></div><p>Можно ввести значение больше 100 п. п. Товар требует внимания, если СПП снизился больше выбранного порога.</p></div>
+            <fieldset class="spp-direction">
+                <legend>Изменение СПП</legend>
+                <div class="spp-direction__options">
+                    <label><input type="radio" name="direction" id="spp-direction-all" value="all" checked /><span>Все</span></label>
+                    <label><input type="radio" name="direction" value="increase" /><span>Рост СПП</span></label>
+                    <label><input type="radio" name="direction" value="decrease" /><span>Снижение СПП</span></label>
+                </div>
+            </fieldset>
             <div class="spp-filters__actions"><button type="submit" class="spp-button">Сформировать отчёт</button><button type="button" class="spp-button spp-button--reset" id="spp-reset">Сбросить фильтры</button></div>
         </form>
         <section class="spp-card spp-health" aria-labelledby="spp-health-title">
-            <h2 id="spp-health-title">Здоровье по СПП</h2>
-            <div class="spp-health__cards">
-                <div class="spp-health__metric spp-health__metric--bad"><strong>Проблемные товары</strong><b id="spp-problem-percent">—</b><span id="spp-problem-count">Нет данных</span></div>
-                <div class="spp-health__metric spp-health__metric--good"><strong>Без проблем</strong><b id="spp-healthy-percent">—</b><span id="spp-healthy-count">Нет данных</span></div>
+            <h2 id="spp-health-title">Изменение СПП</h2>
+            <div class="spp-health__cards spp-change-cards">
+                <div class="spp-health__metric spp-health__metric--good"><strong>Рост СПП</strong><b id="spp-increase-percent">—</b><span id="spp-increase-count">Нет данных</span></div>
+                <div class="spp-health__metric spp-health__metric--bad"><strong>Снижение СПП</strong><b id="spp-decrease-percent">—</b><span id="spp-decrease-count">Нет данных</span></div>
+                <div class="spp-health__metric spp-health__metric--unchanged"><strong>Без изменений</strong><b id="spp-unchanged-percent">—</b><span id="spp-unchanged-count">Нет данных</span></div>
             </div>
-            <div class="spp-health__bar" id="spp-health-bar" aria-label="Доля товаров с проблемами и без проблем">
-                <span class="spp-health__bar-bad" id="spp-bar-bad"></span><span class="spp-health__bar-good" id="spp-bar-good"></span>
+            <div class="spp-health__bar" id="spp-health-bar" aria-label="Доли товаров с ростом, снижением СПП и без изменений">
+                <span class="spp-health__bar-good" id="spp-bar-increase"></span><span class="spp-health__bar-bad" id="spp-bar-decrease"></span><span class="spp-health__bar-unchanged" id="spp-bar-unchanged"></span>
             </div>
-            <p class="spp-health__overall">Общее здоровье: <strong id="spp-overall">—</strong></p>
+            <p class="spp-change-total">Товаров со сравнением: <strong id="spp-comparable">—</strong></p>
             <p class="spp-health__missing" id="spp-missing"></p>
         </section>
     </div>
@@ -59,4 +67,4 @@
 <script type="application/json" id="spp-config">$spp_report_config</script>
 <script src="/static/common/report-select.js?v=1"></script>
 <script src="/static/common/report-daily.js?v=1"></script>
-<script src="/static/economics/wb/spp-report.js?v=22"></script>
+<script src="/static/economics/shared/spp-report.js?v=23"></script>

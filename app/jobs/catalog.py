@@ -204,15 +204,8 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
             "store_marketplaces",
             ("YANDEX MARKET",),
         ),
-        SyncJobDefinition(
-            "yandex_storefront_prices_sync",
-            "Цены витрины Яндекс Маркета",
-            "Отдельный браузерный сборщик: цены покупателя без Пэй для актуального ассортимента в БД.",
-            "Ежедневно 08:00–19:00 каждый час и 01:00 · МСК",
-            True,
-            "store_marketplaces",
-            ("YANDEX MARKET",),
-        ),
+        from_metadata(JOBS.yandex_storefront_prices, True),
+        from_metadata(JOBS.yandex_daily_prices, True),
         SyncJobDefinition(
             YANDEX_CATEGORY_COMMISSIONS_JOB,
             "Категории и комиссии Яндекс Маркета",

@@ -1468,3 +1468,38 @@ class RnpMetricSyncStateRecord(OrmBase):
     last_success_at: Mapped[str | None] = mapped_column(String)
     rows_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class YandexHourlyPriceRecord(OrmBase):
+    __tablename__ = "yandex_hourly_prices"
+    __table_args__ = (Index("idx_yandex_hourly_prices_store_time", "store_slug", "observed_at"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_hour: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_at: Mapped[str] = mapped_column(String, nullable=False)
+    business_id: Mapped[str | None] = mapped_column(String)
+    market_sku: Mapped[str | None] = mapped_column(String)
+    card_id: Mapped[str | None] = mapped_column(String)
+    seller_price: Mapped[float | None] = mapped_column(Float)
+    customer_price_with_spp: Mapped[float] = mapped_column(Float, nullable=False)
+    spp_percent: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_updated_at: Mapped[str | None] = mapped_column(String)
+    orders_turnover_rub: Mapped[float | None] = mapped_column(Float)
+
+
+class YandexDailyPriceRecord(OrmBase):
+    __tablename__ = "yandex_daily_prices"
+    __table_args__ = (Index("idx_yandex_daily_prices_store_time", "store_slug", "observed_at"),)
+
+    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
+    article: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_day: Mapped[str] = mapped_column(String, primary_key=True)
+    observed_at: Mapped[str] = mapped_column(String, nullable=False)
+    business_id: Mapped[str | None] = mapped_column(String)
+    market_sku: Mapped[str | None] = mapped_column(String)
+    card_id: Mapped[str | None] = mapped_column(String)
+    seller_price: Mapped[float | None] = mapped_column(Float)
+    customer_price_with_spp: Mapped[float] = mapped_column(Float, nullable=False)
+    spp_percent: Mapped[float | None] = mapped_column(Float)
+    orders_turnover_updated_at: Mapped[str | None] = mapped_column(String)

@@ -72,7 +72,11 @@ def callback_for(name: str) -> Callable[[], object]:
     """These loaders return per-store errors; keep them visible in the common run log."""
     jobs = {
         job.name: job
-        for job in (*background._jobs(asyncio.Event()), *background._unit_economics_1c_price_jobs())
+        for job in (
+            *background._jobs(asyncio.Event()),
+            *background._unit_economics_1c_price_jobs(),
+            *background._yandex_price_jobs(),
+        )
         if isinstance(job, BackgroundJob)
     }
     overrides = {

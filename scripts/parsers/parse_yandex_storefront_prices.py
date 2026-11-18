@@ -643,7 +643,9 @@ def arguments(argv=None):
         action="store_true",
         help="Совместимость: разовый запуск всегда проверяет все выбранные товары",
     )
-    parser.add_argument("--loop", action="store_true", help="Ежедневно в 01:00 и 08:00–19:00 каждый час, МСК")
+    parser.add_argument(
+        "--loop", action="store_true", help="Каждый час круглосуточно, МСК (не запускать вместе с scheduler)"
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
         "--store",
