@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -8,6 +8,8 @@ from app.access.authentication import is_active_user
 from app.access.resources import store_marketplace_pairs
 from app.core.constants import WEB, WebErrorCode
 from app.core.domain import MARKETPLACES, MOSCOW_TIMEZONE
+from app.dto.stock_pages import StockHistoryPeriod
+from app.ff_import.export import build_filtered_history_xlsx
 from app.stock import cost_report as stock_cost_report
 from app.stock import cost_report_export as stock_cost_report_export
 from app.web.access import accessible_store_slugs
@@ -82,6 +84,36 @@ async def stock_cost_report_xlsx(
     )
     try:
         content, filename = await run_in_threadpool(stock_cost_report_export.build_xlsx, report, view)
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=_download_headers(filename),
+    )
+
+
+@router.get("/stock/cost-report/movements.xlsx")
+async def stock_movements_xlsx(
+    request: Request,
+    date_from: str = "",
+    date_to: str = "",
+    store: str = "",
+    marketplace: str = "",
+) -> Response:
+    scope = stock_scope(request, store, marketplace)
+    start, end = _period(date_from, date_to)
+    try:
+        period = StockHistoryPeriod(
+            start=datetime.combine(start, time.min, tzinfo=MOSCOW_TIMEZONE).astimezone(UTC),
+            end_exclusive=datetime.combine(
+                end + timedelta(days=1), time.min, tzinfo=MOSCOW_TIMEZONE
+            ).astimezone(UTC),
+        )
+    except OverflowError as error:
+        raise HTTPException(status_code=400, detail=WebErrorCode.INVALID_PERIOD) from error
+    try:
+        content, filename = await run_in_threadpool(build_filtered_history_xlsx, scope, period)
     except RuntimeError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
     return Response(

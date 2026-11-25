@@ -133,7 +133,13 @@
     async function costs(context, url) {
         const data = await ui.request('/stock/cost-report/data' + url.search);
         const selected = views.some(([key]) => key === url.searchParams.get('view')) ? url.searchParams.get('view') : 'summary';
-        const query = { date_from: data.date_from, date_to: data.date_to, store: url.searchParams.get('store') || '', marketplace: url.searchParams.get('marketplace') || '', view: selected };
+        const movementFilters = {
+            date_from: data.date_from,
+            date_to: data.date_to,
+            store: url.searchParams.get('store') || '',
+            marketplace: url.searchParams.get('marketplace') || '',
+        };
+        const query = { ...movementFilters, view: selected };
         const costMetric = value => `<span class="cost-metric"><strong>${money(value.cost)}</strong><small>${n(value.units)} ед.</small></span>`;
         let detail;
         if (selected === 'summary') {
@@ -146,7 +152,7 @@
             const select = op => selected === 'deliveries' ? ['delivery', 'manual_add'].includes(op.kind) : selected === 'transfers' ? op.kind.startsWith('transfer') : selected === 'fbs_transfers' ? op.kind === 'fbs_transfer' : op.kind === 'shipment' || op.kind.startsWith('fbo_');
             detail = costTable(['Когда', 'Магазин', 'Маркетплейс', 'Операция', 'Маршрут', 'Количество', 'ЗЦ', 'Примечание'], data.operations.filter(select).map(op => `<tr><td>${e(ui.date(op.created_at))}</td><td>${e(name(context, op.store_slug))}</td><td>${e(op.from_marketplace && op.to_marketplace && op.from_marketplace !== op.to_marketplace ? op.from_marketplace + ' → ' + op.to_marketplace : op.to_marketplace || op.from_marketplace || '—')}</td><td>${e(operations[op.kind] || op.kind)}</td><td>${e(op.from_fulfillment || '—')} → ${e(op.to_fulfillment || '—')}</td><td data-filter-value="${op.units}"><strong>${n(op.units)} ед.</strong><small>${n(op.positions)} поз.</small></td><td>${money(op.purchase_cost)}</td><td>${e(op.note || '—')}</td></tr>`), 'cost-operation-table');
         }
-        return { title: 'CheckStock — Движение и ЗЦ', section: 'stock_cost_report', contentClass: 'content--stock-cost-report', values: { date_from: e(data.date_from), date_to: e(data.date_to), store_options: storeOptions(context, query.store), marketplace_options: option('', 'Все площадки', query.marketplace) + markets(context).map(mp => option(mp, mp, query.marketplace)).join(''), current_week_url: link(url.pathname, { ...query, date_from: data.current_from, date_to: data.current_to }), previous_week_url: link(url.pathname, { ...query, date_from: data.previous_from, date_to: data.previous_to }), export_url: link('/stock/cost-report.xlsx', query), export_hidden: '', tabs: views.map(([key, label]) => `<a class="${selected === key ? 'is-active' : ''}" href="${link(url.pathname, { ...query, view: key })}">${label}</a>`).join(''), detail } };
+        return { title: 'CheckStock — Движение и ЗЦ', section: 'stock_cost_report', contentClass: 'content--stock-cost-report', values: { date_from: e(data.date_from), date_to: e(data.date_to), store_options: storeOptions(context, query.store), marketplace_options: option('', 'Все площадки', query.marketplace) + markets(context).map(mp => option(mp, mp, query.marketplace)).join(''), current_week_url: link(url.pathname, { ...query, date_from: data.current_from, date_to: data.current_to }), previous_week_url: link(url.pathname, { ...query, date_from: data.previous_from, date_to: data.previous_to }), export_url: link('/stock/cost-report.xlsx', query), export_hidden: '', movements_url: link('/stock/cost-report/movements.xlsx', movementFilters), tabs: views.map(([key, label]) => `<a class="${selected === key ? 'is-active' : ''}" href="${link(url.pathname, { ...query, view: key })}">${label}</a>`).join(''), detail } };
     }
 
     async function supplies(context) {

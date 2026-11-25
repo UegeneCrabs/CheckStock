@@ -2,6 +2,8 @@ import io
 
 from app import db
 from app.core.formatting import format_dt
+from app.core.stores import STORES
+from app.dto.stock_pages import StockHistoryPeriod, StockPageQuery
 
 
 def _safe_filename(value: str) -> str:
@@ -96,7 +98,32 @@ def _cell_label(fulfillment: str | None, marketplace: str | None) -> str:
     return " / ".join(part for part in (fulfillment, marketplace) if part)
 
 
-def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict]) -> tuple[bytes, str]:
+def build_filtered_history_xlsx(scope: StockPageQuery, period: StockHistoryPeriod) -> tuple[bytes, str]:
+    operations: list[dict] = []
+    stores = (scope.store,) if scope.store else scope.stores
+    for store_slug in stores:
+        marketplaces = tuple(
+            target.marketplace for target in scope.targets if target.store_slug == store_slug
+        )
+        if not marketplaces or (scope.marketplace and scope.marketplace not in marketplaces):
+            continue
+        operations.extend(
+            db.get_operations_with_items(
+                store_slug,
+                limit=None,
+                marketplaces=marketplaces,
+                period=period,
+                marketplace=scope.marketplace,
+            )
+        )
+    operations.sort(key=lambda operation: operation["id"], reverse=True)
+    store_name = STORES[scope.store].name if scope.store else "Все магазины"
+    return build_history_xlsx(scope.store or "all", store_name, operations, include_store=not scope.store)
+
+
+def build_history_xlsx(
+    store_slug: str, store_name: str, operations: list[dict], *, include_store: bool = False
+) -> tuple[bytes, str]:
 
     try:
         import openpyxl
@@ -108,6 +135,8 @@ def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict])
         ) from e
 
     wb = openpyxl.Workbook()
+    extra_titles = ["Магазин"] if include_store else []
+    extra_widths = [20] if include_store else []
 
     def _head(ws, titles: list[str], widths: list[int]) -> None:
         ws.append(titles)
@@ -133,8 +162,9 @@ def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict])
             "Название файла/таблицы",
             "Примечание",
             "Сотрудник",
+            *extra_titles,
         ],
-        [20, 20, 30, 30, 10, 10, 16, 32, 34, 24],
+        [20, 20, 30, 30, 10, 10, 16, 32, 34, 24, *extra_widths],
     )
 
     lines = wb.create_sheet("Позиции")
@@ -151,8 +181,9 @@ def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict])
             "КОЛИЧЕСТВО",
             "Примечание",
             "Сотрудник",
+            *extra_titles,
         ],
-        [20, 20, 30, 30, 20, 16, 46, 13, 34, 24],
+        [20, 20, 30, 30, 20, 16, 46, 13, 34, 24, *extra_widths],
     )
 
     for op in operations:
@@ -161,6 +192,7 @@ def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict])
         src = _cell_label(op["from_fulfillment"], op["from_marketplace"])
         dst = _cell_label(op["to_fulfillment"], op["to_marketplace"])
         note = _operation_field(op, "note")
+        store_cells = [STORES[op["store_slug"]].name] if include_store else []
 
         summary.append(
             [
@@ -174,6 +206,7 @@ def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict])
                 op["source_name"] or op["sheet_url"] or "",
                 note,
                 op["user_name"],
+                *store_cells,
             ]
         )
 
@@ -190,6 +223,7 @@ def build_history_xlsx(store_slug: str, store_name: str, operations: list[dict])
                     item.get("quantity", 0),
                     note,
                     op["user_name"],
+                    *store_cells,
                 ]
             )
 

@@ -1,4 +1,5 @@
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Literal
 
 from app.dto.common import DtoModel
@@ -88,6 +89,12 @@ class StockPageQuery(DtoModel):
     store: str = ""
     marketplace: str = ""
     can_edit: bool = False
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StockHistoryPeriod:
+    start: datetime
+    end_exclusive: datetime
 
 
 class CatalogProduct(DtoModel):

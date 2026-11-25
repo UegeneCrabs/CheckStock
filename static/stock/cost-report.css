@@ -10,6 +10,8 @@
 .cost-report-actions {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .cost-report-hero,

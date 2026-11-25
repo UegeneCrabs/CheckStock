@@ -1,3 +1,4 @@
+from app.dto.stock_pages import StockHistoryPeriod
 from app.infrastructure.database import DatabaseConnection, repository_connection
 from app.repositories.core import get_connection
 
@@ -202,11 +203,17 @@ def get_store_operations(
     *,
     offset: int = 0,
     marketplaces: tuple[str, ...] | None = None,
+    period: StockHistoryPeriod | None = None,
+    marketplace: str = "",
 ) -> list[dict]:
 
-    conn = get_connection()
-
     where, params = _operation_where(store_slug, kinds, marketplaces)
+    if period is not None:
+        where += " AND o.created_at >= ? AND o.created_at < ?"
+        params.extend((period.start.isoformat(), period.end_exclusive.isoformat()))
+    if marketplace:
+        where += " AND (o.from_marketplace = ? OR o.to_marketplace = ?)"
+        params.extend((marketplace, marketplace))
     selection = f"SELECT o.* FROM stock_operations o WHERE {where} ORDER BY o.id DESC"
     if limit is not None:
         selection += " LIMIT ? OFFSET ?"
@@ -223,6 +230,7 @@ def get_store_operations(
           LEFT JOIN item_totals items ON items.operation_id = o.id
          ORDER BY o.id DESC
     """
+    conn = get_connection()
     try:
         rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
@@ -236,9 +244,13 @@ def get_operations_with_items(
     limit: int | None = 500,
     *,
     marketplaces: tuple[str, ...] | None = None,
+    period: StockHistoryPeriod | None = None,
+    marketplace: str = "",
 ) -> list[dict]:
 
-    operations = get_store_operations(store_slug, kinds, limit, marketplaces=marketplaces)
+    operations = get_store_operations(
+        store_slug, kinds, limit, marketplaces=marketplaces, period=period, marketplace=marketplace
+    )
     if not operations:
         return []
 
