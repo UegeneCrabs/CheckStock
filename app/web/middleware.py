@@ -81,8 +81,6 @@ async def authentication_middleware(request: Request, call_next):
     response = await call_next(request)
     if path.startswith(
         (
-            "/finance-reports/",
-            "/api/finance-reports/",
             "/analytics/",
             "/api/analytics/",
             "/sales/unit-economics-1c",
@@ -139,10 +137,6 @@ async def request_logging_middleware(request: Request, call_next):
                 request.client.host if request.client else "-",
             )
         response.headers["X-Request-ID"] = request_id
-        if request.url.path.startswith(
-            ("/finance-reports/", "/api/finance-reports/", "/api/admin/integrations/yandex-finance")
-        ):
-            response.headers["Cache-Control"] = "private, no-store"
         return response
     finally:
         request_id_context.reset(token)

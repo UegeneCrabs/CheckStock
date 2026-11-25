@@ -2,7 +2,7 @@
   "_type": "Project",
   "_id": "checkstock-project-1",
   "name": "CheckStock — склады, остатки и поставки",
-  "documentation": "Локальная SQLite, сверено 27.10.2026. 29 таблиц, 232 поля и 6 внешних ключей. Русские названия; исходные идентификаторы в скобках. Синие связи FK объявлены в БД. Оранжевые Лог. — сопоставления приложения, не ограничения БД. Сплошность линии сохраняет смысл identifying/non-identifying в StarUML. Полное DDL: stock-schema.sql.",
+  "documentation": "Локальная SQLite, сверено 27.10.2026. 28 таблиц, 228 полей и 5 внешних ключей. Русские названия; исходные идентификаторы в скобках. Синие связи FK объявлены в БД. Оранжевые Лог. — сопоставления приложения, не ограничения БД. Сплошность линии сохраняет смысл identifying/non-identifying в StarUML. Полное DDL: stock-schema.sql.",
   "ownedElements": [
     {
       "_type": "ERDDataModel",
@@ -10,8 +10,8 @@
       "_parent": {
         "$ref": "checkstock-project-1"
       },
-      "name": "Складская модель — 29 таблиц",
-      "documentation": "Шесть диаграмм используют общие сущности, без копий модели. Внешние зависимости: каталог stock_items, catalog_barcodes, catalog_article_aliases; users; activity_log; закупочные цены unit_economics_1c_source_values. Эти таблицы не входят в 29 выбранных. JSON-поля не развёрнуты в вымышленные физические таблицы.",
+      "name": "Складская модель — 28 таблиц",
+      "documentation": "Шесть диаграмм используют общие сущности, без копий модели. Внешние зависимости: каталог stock_items, catalog_barcodes, catalog_article_aliases; users; activity_log; закупочные цены unit_economics_1c_source_values. Эти таблицы не входят в 28 выбранных. JSON-поля не развёрнуты в вымышленные физические таблицы.",
       "ownedElements": [
         {
           "_type": "ERDDiagram",
@@ -19,7 +19,7 @@
           "_parent": {
             "$ref": "checkstock-model-2"
           },
-          "name": "00 — Все 29 таблиц",
+          "name": "00 — Все 28 таблиц",
           "defaultDiagram": true,
           "documentation": "Все поля раскрыты. Синий FK — ограничение БД; оранжевая Лог. — сопоставление приложения. Логическая кратность не является ограничением SQL. Другие разделы содержат представления тех же сущностей.",
           "ownedViews": [
@@ -1449,95 +1449,6 @@
             },
             {
               "_type": "ERDRelationshipView",
-              "_id": "checkstock-edge-view-676",
-              "_parent": {
-                "$ref": "checkstock-diagram-330"
-              },
-              "model": {
-                "$ref": "checkstock-relationship-279"
-              },
-              "font": "Arial;12;0",
-              "lineColor": "#1D4ED8",
-              "fontColor": "#1D4ED8",
-              "tail": {
-                "$ref": "checkstock-entity-view-613"
-              },
-              "head": {
-                "$ref": "checkstock-entity-view-584"
-              },
-              "lineStyle": 0,
-              "points": "3797:1235.0;3705:1235.0;3705:646.0;3797:646.0",
-              "subViews": [
-                {
-                  "_type": "EdgeLabelView",
-                  "_id": "checkstock-edge-label-677",
-                  "_parent": {
-                    "$ref": "checkstock-edge-view-676"
-                  },
-                  "hostEdge": {
-                    "$ref": "checkstock-edge-view-676"
-                  },
-                  "font": "Arial;12;0",
-                  "fontColor": "#1D4ED8",
-                  "edgePosition": 1,
-                  "alpha": 1.5707963267948966,
-                  "distance": 14,
-                  "text": "FK: operation_id → id",
-                  "visible": true,
-                  "width": 147,
-                  "height": 16
-                },
-                {
-                  "_type": "EdgeLabelView",
-                  "_id": "checkstock-edge-label-678",
-                  "_parent": {
-                    "$ref": "checkstock-edge-view-676"
-                  },
-                  "hostEdge": {
-                    "$ref": "checkstock-edge-view-676"
-                  },
-                  "font": "Arial;12;0",
-                  "fontColor": "#1D4ED8",
-                  "edgePosition": 2,
-                  "alpha": 1.5707963267948966,
-                  "distance": 14,
-                  "text": "",
-                  "visible": false,
-                  "width": 0,
-                  "height": 16
-                },
-                {
-                  "_type": "EdgeLabelView",
-                  "_id": "checkstock-edge-label-679",
-                  "_parent": {
-                    "$ref": "checkstock-edge-view-676"
-                  },
-                  "hostEdge": {
-                    "$ref": "checkstock-edge-view-676"
-                  },
-                  "font": "Arial;12;0",
-                  "fontColor": "#1D4ED8",
-                  "edgePosition": 0,
-                  "alpha": 1.5707963267948966,
-                  "distance": 14,
-                  "text": "",
-                  "visible": false,
-                  "width": 0,
-                  "height": 16
-                }
-              ],
-              "nameLabel": {
-                "$ref": "checkstock-edge-label-677"
-              },
-              "tailNameLabel": {
-                "$ref": "checkstock-edge-label-678"
-              },
-              "headNameLabel": {
-                "$ref": "checkstock-edge-label-679"
-              }
-            },
-            {
-              "_type": "ERDRelationshipView",
               "_id": "checkstock-edge-view-672",
               "_parent": {
                 "$ref": "checkstock-diagram-330"
@@ -1987,7 +1898,7 @@
               "_parent": {
                 "$ref": "checkstock-diagram-330"
               },
-              "text": "00 — Все 29 таблиц\n29 таблиц в общей модели · 232 поля · 6 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
+              "text": "00 — Все 28 таблиц\n28 таблиц в общей модели · 228 полей · 5 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
               "font": "Arial;16;0",
               "fontColor": "#334155",
               "left": 60,
@@ -6764,129 +6675,6 @@
             },
             {
               "_type": "ERDEntityView",
-              "_id": "checkstock-entity-view-613",
-              "_parent": {
-                "$ref": "checkstock-diagram-330"
-              },
-              "model": {
-                "$ref": "checkstock-entity-229"
-              },
-              "font": "Arial;13;0",
-              "lineColor": "#334155",
-              "fontColor": "#0F172A",
-              "fillColor": "#FBE7E8",
-              "left": 3797,
-              "top": 1178,
-              "width": 560,
-              "height": 114,
-              "suppressColumns": false,
-              "subViews": [
-                {
-                  "_type": "LabelView",
-                  "_id": "checkstock-entity-title-614",
-                  "_parent": {
-                    "$ref": "checkstock-entity-view-613"
-                  },
-                  "font": "Arial;13;1",
-                  "parentStyle": true,
-                  "left": 3797,
-                  "top": 1183,
-                  "width": 560,
-                  "height": 17,
-                  "text": "Отметки операций для отчёта (stock_operation_report_flags)"
-                },
-                {
-                  "_type": "ERDColumnCompartmentView",
-                  "_id": "checkstock-columns-view-615",
-                  "_parent": {
-                    "$ref": "checkstock-entity-view-613"
-                  },
-                  "model": {
-                    "$ref": "checkstock-entity-229"
-                  },
-                  "font": "Arial;13;0",
-                  "parentStyle": true,
-                  "left": 3797,
-                  "top": 1205,
-                  "width": 560,
-                  "height": 87,
-                  "subViews": [
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-616",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-615"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-230"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 3802,
-                      "top": 1210,
-                      "width": 550,
-                      "height": 16
-                    },
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-617",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-615"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-231"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 3802,
-                      "top": 1228,
-                      "width": 550,
-                      "height": 16
-                    },
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-618",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-615"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-232"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 3802,
-                      "top": 1246,
-                      "width": 550,
-                      "height": 16
-                    },
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-619",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-615"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-233"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 3802,
-                      "top": 1264,
-                      "width": 550,
-                      "height": 16
-                    }
-                  ]
-                }
-              ],
-              "nameLabel": {
-                "$ref": "checkstock-entity-title-614"
-              },
-              "columnCompartment": {
-                "$ref": "checkstock-columns-view-615"
-              }
-            },
-            {
-              "_type": "ERDEntityView",
               "_id": "checkstock-entity-view-620",
               "_parent": {
                 "$ref": "checkstock-diagram-330"
@@ -7690,7 +7478,7 @@
               "_parent": {
                 "$ref": "checkstock-diagram-744"
               },
-              "text": "01 — Справочники\n29 таблиц в общей модели · 232 поля · 6 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
+              "text": "01 — Справочники\n28 таблиц в общей модели · 228 полей · 5 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
               "font": "Arial;16;0",
               "fontColor": "#334155",
               "left": 60,
@@ -8918,7 +8706,7 @@
               "_parent": {
                 "$ref": "checkstock-diagram-798"
               },
-              "text": "02 — Остатки и дневная история\n29 таблиц в общей модели · 232 поля · 6 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
+              "text": "02 — Остатки и дневная история\n28 таблиц в общей модели · 228 полей · 5 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
               "font": "Arial;16;0",
               "fontColor": "#334155",
               "left": 60,
@@ -10689,7 +10477,7 @@
               "_parent": {
                 "$ref": "checkstock-diagram-891"
               },
-              "text": "03 — Перемещения и приёмки\n29 таблиц в общей модели · 232 поля · 6 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
+              "text": "03 — Перемещения и приёмки\n28 таблиц в общей модели · 228 полей · 5 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
               "font": "Arial;16;0",
               "fontColor": "#334155",
               "left": 60,
@@ -12650,7 +12438,7 @@
               "_parent": {
                 "$ref": "checkstock-diagram-995"
               },
-              "text": "04 — Поставки и импорт\n29 таблиц в общей модели · 232 поля · 6 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
+              "text": "04 — Поставки и импорт\n28 таблиц в общей модели · 228 полей · 5 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
               "font": "Arial;16;0",
               "fontColor": "#334155",
               "left": 60,
@@ -15029,101 +14817,12 @@
               }
             },
             {
-              "_type": "ERDRelationshipView",
-              "_id": "checkstock-edge-view-1248",
-              "_parent": {
-                "$ref": "checkstock-diagram-1149"
-              },
-              "model": {
-                "$ref": "checkstock-relationship-279"
-              },
-              "font": "Arial;12;0",
-              "lineColor": "#1D4ED8",
-              "fontColor": "#1D4ED8",
-              "tail": {
-                "$ref": "checkstock-entity-view-1181"
-              },
-              "head": {
-                "$ref": "checkstock-entity-view-1152"
-              },
-              "lineStyle": 0,
-              "points": "180:1235.0;158:1235.0;158:646.0;180:646.0",
-              "subViews": [
-                {
-                  "_type": "EdgeLabelView",
-                  "_id": "checkstock-edge-label-1249",
-                  "_parent": {
-                    "$ref": "checkstock-edge-view-1248"
-                  },
-                  "hostEdge": {
-                    "$ref": "checkstock-edge-view-1248"
-                  },
-                  "font": "Arial;12;0",
-                  "fontColor": "#1D4ED8",
-                  "edgePosition": 1,
-                  "alpha": 1.5707963267948966,
-                  "distance": 14,
-                  "text": "FK: operation_id → id",
-                  "visible": true,
-                  "width": 147,
-                  "height": 16
-                },
-                {
-                  "_type": "EdgeLabelView",
-                  "_id": "checkstock-edge-label-1250",
-                  "_parent": {
-                    "$ref": "checkstock-edge-view-1248"
-                  },
-                  "hostEdge": {
-                    "$ref": "checkstock-edge-view-1248"
-                  },
-                  "font": "Arial;12;0",
-                  "fontColor": "#1D4ED8",
-                  "edgePosition": 2,
-                  "alpha": 1.5707963267948966,
-                  "distance": 14,
-                  "text": "",
-                  "visible": false,
-                  "width": 0,
-                  "height": 16
-                },
-                {
-                  "_type": "EdgeLabelView",
-                  "_id": "checkstock-edge-label-1251",
-                  "_parent": {
-                    "$ref": "checkstock-edge-view-1248"
-                  },
-                  "hostEdge": {
-                    "$ref": "checkstock-edge-view-1248"
-                  },
-                  "font": "Arial;12;0",
-                  "fontColor": "#1D4ED8",
-                  "edgePosition": 0,
-                  "alpha": 1.5707963267948966,
-                  "distance": 14,
-                  "text": "",
-                  "visible": false,
-                  "width": 0,
-                  "height": 16
-                }
-              ],
-              "nameLabel": {
-                "$ref": "checkstock-edge-label-1249"
-              },
-              "tailNameLabel": {
-                "$ref": "checkstock-edge-label-1250"
-              },
-              "headNameLabel": {
-                "$ref": "checkstock-edge-label-1251"
-              }
-            },
-            {
               "_type": "UMLTextView",
               "_id": "checkstock-text-view-1150",
               "_parent": {
                 "$ref": "checkstock-diagram-1149"
               },
-              "text": "05 — Операции и контроль\n29 таблиц в общей модели · 232 поля · 6 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
+              "text": "05 — Операции и контроль\n28 таблиц в общей модели · 228 полей · 5 FK\nСиний: FK в БД. Оранжевый: логическая связь приложения.\nТехнические имена в скобках. Масштаб: меню View → Zoom.",
               "font": "Arial;16;0",
               "fontColor": "#334155",
               "left": 60,
@@ -15631,129 +15330,6 @@
               },
               "columnCompartment": {
                 "$ref": "checkstock-columns-view-1172"
-              }
-            },
-            {
-              "_type": "ERDEntityView",
-              "_id": "checkstock-entity-view-1181",
-              "_parent": {
-                "$ref": "checkstock-diagram-1149"
-              },
-              "model": {
-                "$ref": "checkstock-entity-229"
-              },
-              "font": "Arial;13;0",
-              "lineColor": "#334155",
-              "fontColor": "#0F172A",
-              "fillColor": "#FBE7E8",
-              "left": 180,
-              "top": 1178,
-              "width": 560,
-              "height": 114,
-              "suppressColumns": false,
-              "subViews": [
-                {
-                  "_type": "LabelView",
-                  "_id": "checkstock-entity-title-1182",
-                  "_parent": {
-                    "$ref": "checkstock-entity-view-1181"
-                  },
-                  "font": "Arial;13;1",
-                  "parentStyle": true,
-                  "left": 180,
-                  "top": 1183,
-                  "width": 560,
-                  "height": 17,
-                  "text": "Отметки операций для отчёта (stock_operation_report_flags)"
-                },
-                {
-                  "_type": "ERDColumnCompartmentView",
-                  "_id": "checkstock-columns-view-1183",
-                  "_parent": {
-                    "$ref": "checkstock-entity-view-1181"
-                  },
-                  "model": {
-                    "$ref": "checkstock-entity-229"
-                  },
-                  "font": "Arial;13;0",
-                  "parentStyle": true,
-                  "left": 180,
-                  "top": 1205,
-                  "width": 560,
-                  "height": 87,
-                  "subViews": [
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-1184",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-1183"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-230"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 185,
-                      "top": 1210,
-                      "width": 550,
-                      "height": 16
-                    },
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-1185",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-1183"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-231"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 185,
-                      "top": 1228,
-                      "width": 550,
-                      "height": 16
-                    },
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-1186",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-1183"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-232"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 185,
-                      "top": 1246,
-                      "width": 550,
-                      "height": 16
-                    },
-                    {
-                      "_type": "ERDColumnView",
-                      "_id": "checkstock-column-view-1187",
-                      "_parent": {
-                        "$ref": "checkstock-columns-view-1183"
-                      },
-                      "model": {
-                        "$ref": "checkstock-column-233"
-                      },
-                      "font": "Arial;13;0",
-                      "parentStyle": true,
-                      "left": 185,
-                      "top": 1264,
-                      "width": 550,
-                      "height": 16
-                    }
-                  ]
-                }
-              ],
-              "nameLabel": {
-                "$ref": "checkstock-entity-title-1182"
-              },
-              "columnCompartment": {
-                "$ref": "checkstock-columns-view-1183"
               }
             },
             {
@@ -20777,116 +20353,6 @@
                 "_id": "checkstock-end-323",
                 "_parent": {
                   "$ref": "checkstock-relationship-321"
-                },
-                "reference": {
-                  "$ref": "checkstock-entity-204"
-                },
-                "cardinality": "1",
-                "name": ""
-              }
-            }
-          ]
-        },
-        {
-          "_type": "ERDEntity",
-          "_id": "checkstock-entity-229",
-          "_parent": {
-            "$ref": "checkstock-model-2"
-          },
-          "name": "Отметки операций для отчёта (stock_operation_report_flags)",
-          "documentation": "Классификация операции как перемещения на FBS и автор изменения.\n\nИмя в БД: stock_operation_report_flags\nПервичный ключ: operation_id\n\n\n\nОпределение SQLite:\nCREATE TABLE stock_operation_report_flags (\n\toperation_id INTEGER NOT NULL, \n\tis_fbs_transfer INTEGER DEFAULT '0' NOT NULL, \n\tupdated_by INTEGER, \n\tupdated_at VARCHAR NOT NULL, \n\tPRIMARY KEY (operation_id), \n\tFOREIGN KEY(operation_id) REFERENCES stock_operations (id) ON DELETE CASCADE\n);",
-          "columns": [
-            {
-              "_type": "ERDColumn",
-              "_id": "checkstock-column-230",
-              "_parent": {
-                "$ref": "checkstock-entity-229"
-              },
-              "name": "Идентификатор операции (operation_id)",
-              "type": "INTEGER",
-              "length": "",
-              "primaryKey": true,
-              "foreignKey": true,
-              "nullable": false,
-              "unique": false,
-              "documentation": "Идентификатор операции\nПоле SQLite: stock_operation_report_flags.operation_id\nТип: INTEGER\nПорядок в PK: 1\nЯвный NOT NULL: True\nDEFAULT: не задан",
-              "referenceTo": {
-                "$ref": "checkstock-column-205"
-              }
-            },
-            {
-              "_type": "ERDColumn",
-              "_id": "checkstock-column-231",
-              "_parent": {
-                "$ref": "checkstock-entity-229"
-              },
-              "name": "Перемещение на FBS (is_fbs_transfer)",
-              "type": "INTEGER",
-              "length": "",
-              "primaryKey": false,
-              "foreignKey": false,
-              "nullable": false,
-              "unique": false,
-              "documentation": "Перемещение на FBS\nПоле SQLite: stock_operation_report_flags.is_fbs_transfer\nТип: INTEGER\nПорядок в PK: 0\nЯвный NOT NULL: True\nDEFAULT: '0'"
-            },
-            {
-              "_type": "ERDColumn",
-              "_id": "checkstock-column-232",
-              "_parent": {
-                "$ref": "checkstock-entity-229"
-              },
-              "name": "Автор изменения (updated_by)",
-              "type": "INTEGER",
-              "length": "",
-              "primaryKey": false,
-              "foreignKey": false,
-              "nullable": true,
-              "unique": false,
-              "documentation": "Автор изменения\nПоле SQLite: stock_operation_report_flags.updated_by\nТип: INTEGER\nПорядок в PK: 0\nЯвный NOT NULL: False\nDEFAULT: не задан"
-            },
-            {
-              "_type": "ERDColumn",
-              "_id": "checkstock-column-233",
-              "_parent": {
-                "$ref": "checkstock-entity-229"
-              },
-              "name": "Время обновления (updated_at)",
-              "type": "VARCHAR",
-              "length": "",
-              "primaryKey": false,
-              "foreignKey": false,
-              "nullable": false,
-              "unique": false,
-              "documentation": "Время обновления\nПоле SQLite: stock_operation_report_flags.updated_at\nТип: VARCHAR\nПорядок в PK: 0\nЯвный NOT NULL: True\nDEFAULT: не задан"
-            }
-          ],
-          "ownedElements": [
-            {
-              "_type": "ERDRelationship",
-              "_id": "checkstock-relationship-279",
-              "_parent": {
-                "$ref": "checkstock-entity-229"
-              },
-              "name": "FK: operation_id → id",
-              "documentation": "Внешний ключ SQLite: stock_operation_report_flags.operation_id → stock_operations.id. ON DELETE CASCADE; ON UPDATE NO ACTION.",
-              "identifying": true,
-              "end1": {
-                "_type": "ERDRelationshipEnd",
-                "_id": "checkstock-end-280",
-                "_parent": {
-                  "$ref": "checkstock-relationship-279"
-                },
-                "reference": {
-                  "$ref": "checkstock-entity-229"
-                },
-                "cardinality": "0..1",
-                "name": ""
-              },
-              "end2": {
-                "_type": "ERDRelationshipEnd",
-                "_id": "checkstock-end-281",
-                "_parent": {
-                  "$ref": "checkstock-relationship-279"
                 },
                 "reference": {
                   "$ref": "checkstock-entity-204"

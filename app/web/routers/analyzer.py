@@ -64,6 +64,10 @@ class NoteRequest(NoteText):
     day: date
 
 
+class NoteUpdate(NoteText):
+    previous_note: str = Field(min_length=1, max_length=4000)
+
+
 def validate_note(text: str) -> str:
     text = text.strip()
     if not text:
@@ -86,10 +90,10 @@ async def analyzer_note(request: Request, payload: NoteRequest):
     if payload.store not in stores:
         raise HTTPException(403, "Нет доступа к кабинету")
     text = validate_note(payload.note)
-    if payload.day != datetime.now(MOSCOW_TIMEZONE).date():
-        raise HTTPException(422, "Добавлять и изменять комментарии можно только за сегодня")
 
     def save():
+        if payload.day != datetime.now(MOSCOW_TIMEZONE).date():
+            raise HTTPException(422, "Добавлять и изменять комментарии можно только за сегодня")
         require_product(payload.store, payload.article, request.state.user)
         return repository.add_note(
             payload.store, payload.article, payload.day.isoformat(), text, coerce_user(request.state.user)
@@ -99,7 +103,7 @@ async def analyzer_note(request: Request, payload: NoteRequest):
 
 
 @router.put("/api/analytics/analyzer/notes/{note_id}")
-async def analyzer_note_update(request: Request, note_id: int, payload: NoteText):
+async def analyzer_note_update(request: Request, note_id: int, payload: NoteUpdate):
     stores = authorize(request, write=True)
     text = validate_note(payload.note)
 
@@ -111,7 +115,9 @@ async def analyzer_note_update(request: Request, note_id: int, payload: NoteText
         if original["action_date"] != datetime.now(MOSCOW_TIMEZONE).date().isoformat():
             raise HTTPException(422, "Изменять комментарии можно только за сегодня")
         try:
-            return repository.update_note(original, text, coerce_user(request.state.user))
+            return repository.update_note(
+                original, text, payload.previous_note, coerce_user(request.state.user)
+            )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 

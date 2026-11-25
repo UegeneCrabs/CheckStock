@@ -340,14 +340,6 @@ package "Данные запросов маркетплейсов" #F4F9FF {
   }
 
   package "Кэш запросов Ozon" #FFF0E4 {
-    entity "ozon_advertising_snapshots\nСнимки рекламы Ozon" as ozon_advertising_snapshots {
-      store_slug : character
-      period_from : character
-      period_to : character
-      payload_json : text
-      synced_at : character
-    }
-
     entity "ozon_order_days\nДни с загруженными заказами Ozon" as ozon_order_days {
       store_slug : character
       scheme : character
@@ -786,18 +778,6 @@ package "Внутренние таблицы" #FAF8FF {
       updated_at : character
     }
 
-    entity "economics_daily_events\nИстория изменений дневной экономики" as economics_daily_events {
-      id : character
-      marketplace : character
-      store_slug : character
-      article : character
-      day : character
-      revision : integer
-      payload_json : text
-      created_at : character
-      actor : character
-    }
-
     entity "economics_source_days\nДни с загруженными источниками экономики" as economics_source_days {
       marketplace : character
       store_slug : character
@@ -914,17 +894,6 @@ package "Внутренние таблицы" #FAF8FF {
       last_success_at : character
       rows_received : integer
       error : text
-    }
-
-    entity "rnp_strategies\nСтратегии анализатора RNP" as rnp_strategies {
-      store_slug : character
-      marketplace : character
-      article : character
-      strategy : text
-      date_from : character
-      date_to : character
-      updated_by : character
-      updated_at : character
     }
 
     entity "unit_economics_1c_cabinet_settings\nНастройки кабинетов для экономики WB" as unit_economics_1c_cabinet_settings {
@@ -1047,14 +1016,6 @@ package "Внутренние таблицы" #FAF8FF {
       source_sheet_title : character
       source_row : integer
       synced_at : character
-    }
-
-    entity "wb_decision_actions\nДействия по решениям для товаров WB" as wb_decision_actions {
-      fingerprint : character
-      status : character
-      user_id : integer
-      user_name : character
-      updated_at : character
     }
 
     entity "yandex_economics_audit\nИстория изменений экономики Яндекса" as yandex_economics_audit {

@@ -92,12 +92,6 @@ def _enrich_item(
     return item
 
 
-def _operation_label(operation: dict) -> str:
-    if operation.get("kind") == "shipment" and operation.get("is_fbs_transfer"):
-        return "Перемещение на FBS"
-    return db.OPERATION_LABELS.get(str(operation.get("kind") or ""), str(operation.get("kind") or ""))
-
-
 def _route_label(fulfillment: str | None, marketplace: str | None, fallback: str) -> str:
     parts = [str(value) for value in (fulfillment, marketplace) if value]
     return " / ".join(parts) or fallback
@@ -110,7 +104,8 @@ def _enrich_operation(
 ) -> dict:
     operation = dict(raw)
     store_slug = str(operation.get("store_slug") or "")
-    operation["is_fbs_transfer"] = bool(int(operation.get("is_fbs_transfer") or 0))
+    kind = str(operation.get("kind") or "")
+    operation["is_fbs_transfer"] = kind == "fbs_transfer"
     operation["items"] = [
         _enrich_item(item, store_slug, by_article, by_barcode) for item in operation.get("items", [])
     ]
@@ -123,7 +118,7 @@ def _enrich_operation(
     operation["missing_units"] = sum(
         abs(int(item["quantity"])) for item in operation["items"] if item["purchase_cost"] is None
     )
-    operation["label"] = _operation_label(operation)
+    operation["label"] = db.OPERATION_LABELS.get(kind, kind)
     operation["from_label"] = _route_label(
         operation.get("from_fulfillment"),
         operation.get("from_marketplace"),
@@ -192,8 +187,7 @@ def _build_reconciliation(
 
     inbound: dict[tuple[str, str, str], dict] = {}
     for operation in operations:
-        is_legacy_fbs_transfer = operation.get("kind") == "shipment" and operation.get("is_fbs_transfer")
-        if operation.get("kind") != "fbs_transfer" and not is_legacy_fbs_transfer:
+        if operation.get("kind") != "fbs_transfer":
             continue
         store_slug = str(operation.get("store_slug") or "")
         marketplace = str(operation.get("from_marketplace") or "")
@@ -361,10 +355,8 @@ def build_report(
                 _add_items(summary_by_key[key]["moved_in"], operation["items"])
         elif kind in {"shipment", "fbo_dispatch"}:
             key = (operation["store_slug"], operation.get("from_marketplace"))
-            if key not in summary_by_key:
-                continue
-            target = "moved_in" if operation.get("is_fbs_transfer") else "shipped"
-            _add_items(summary_by_key[key][target], operation["items"])
+            if key in summary_by_key:
+                _add_items(summary_by_key[key]["shipped"], operation["items"])
         elif kind == "fbo_cancel":
             key = (operation["store_slug"], operation.get("to_marketplace"))
             if key in summary_by_key:

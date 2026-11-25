@@ -1,4 +1,4 @@
-from app.repositories.core import WRITE_LOCK, get_connection
+from app.repositories.core import get_connection
 
 
 def get_operations_with_items_for_period(
@@ -14,11 +14,8 @@ def get_operations_with_items_for_period(
     try:
         operation_rows = connection.execute(
             f"""
-            SELECT operation.*,
-                   COALESCE(flags.is_fbs_transfer, 0) AS is_fbs_transfer
+            SELECT operation.*
               FROM stock_operations operation
-              LEFT JOIN stock_operation_report_flags flags
-                ON flags.operation_id=operation.id
              WHERE operation.store_slug IN ({placeholders})
                AND operation.kind IN
                    ('delivery', 'manual_add', 'transfer', 'transfer_dispatch',
@@ -164,36 +161,3 @@ def get_fbs_stock_snapshots(
 
     coverage = {(str(row["store_slug"]), str(row["marketplace"]), str(row["day"])) for row in coverage_rows}
     return [dict(row) for row in rows], coverage
-
-
-def set_operation_fbs_transfer(
-    operation_id: int,
-    is_fbs_transfer: bool,
-    updated_by: int | None,
-    updated_at: str,
-) -> bool:
-    with WRITE_LOCK:
-        connection = get_connection()
-        try:
-            operation = connection.execute(
-                "SELECT id FROM stock_operations WHERE id=? AND kind='shipment'",
-                (operation_id,),
-            ).fetchone()
-            if operation is None:
-                return False
-            connection.execute(
-                """
-                INSERT INTO stock_operation_report_flags
-                    (operation_id, is_fbs_transfer, updated_by, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(operation_id) DO UPDATE SET
-                    is_fbs_transfer=excluded.is_fbs_transfer,
-                    updated_by=excluded.updated_by,
-                    updated_at=excluded.updated_at
-                """,
-                (operation_id, 1 if is_fbs_transfer else 0, updated_by, updated_at),
-            )
-            connection.commit()
-            return True
-        finally:
-            connection.close()

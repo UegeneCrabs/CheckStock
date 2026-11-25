@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from time import sleep
 
 from fastapi import FastAPI
@@ -11,9 +11,10 @@ from app import db
 from app.access import auth
 from app.config import settings
 from app.container import ApplicationContainer
-from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE, JOBS
+from app.core.constants import EPHEMERIDES_STOCK_SCHEDULE, JOBS, SCHEDULER
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.logging_config import tagged_logger
+from app.dto.identity import ExpiredSessionsCommand
 from app.dto.system import SyncFailure, SyncGroupReport, TokenRefreshResult
 from app.dto.wb_hourly_prices import WbHourlyCollection
 from app.economics.sources import ozon as ozon_source_sync
@@ -37,7 +38,6 @@ from app.jobs import (
     wb_transit,
     yandex_analytics,
 )
-from app.jobs import finance as finance_sync
 from app.jobs import locks as sync_locks
 from app.jobs import settings as sync_settings
 from app.jobs.scheduling import BackgroundJob, ScheduledJob
@@ -339,6 +339,22 @@ def _wb_daily_price_close_job() -> BackgroundJob:
     )
 
 
+def _delete_expired_sessions() -> None:
+    ApplicationContainer().identity.delete_expired_sessions(ExpiredSessionsCommand(now=datetime.now(UTC)))
+
+
+def _session_cleanup_job() -> BackgroundJob:
+    name = JOBS.session_cleanup.name
+    hour = SCHEDULER.session_cleanup_hour_msk
+    return BackgroundJob(
+        name,
+        _delete_expired_sessions,
+        _moscow_daily_delay(hour),
+        startup_delay_seconds=_seconds_until_next_moscow_run(hour),
+        is_enabled=lambda: _job_enabled(name),
+    )
+
+
 def _wb_stock_history_jobs(catalog_ready: asyncio.Event) -> tuple[BackgroundJob, ...]:
     return (
         BackgroundJob(
@@ -424,13 +440,6 @@ def _jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
             startup_delay_seconds=180,
             ready_event=catalog_ready,
             is_enabled=lambda: settings.background_sync_enabled and _job_enabled(wb_transit.JOB),
-        ),
-        BackgroundJob(
-            finance_sync.JOB,
-            finance_sync.daily,
-            _moscow_daily_delay(5),
-            startup_delay_seconds=_seconds_until_next_moscow_run(5),
-            is_enabled=lambda: settings.background_sync_enabled and _job_enabled(finance_sync.JOB),
         ),
         BackgroundJob(
             wb_ephemerides.JOB,
@@ -662,7 +671,7 @@ def _yandex_price_jobs() -> tuple[BackgroundJob, ...]:
 def scheduled_jobs(catalog_ready: asyncio.Event) -> tuple[ScheduledJob, ...]:
     jobs = _jobs(catalog_ready) if settings.background_sync_enabled else ()
     jobs += _yandex_price_jobs()
-    jobs += (database_backup.job(),)
+    jobs += (database_backup.job(), _session_cleanup_job())
     if settings.google_stock_test_enabled:
         jobs += (google_stock_test.job(),)
     if not settings.background_sync_enabled and settings.funnel_orders_sync_enabled:

@@ -95,7 +95,6 @@ from app.repositories.stock_cost_report import (
     get_fbs_stock_snapshots,
     get_operations_with_items_for_period,
     get_purchase_price_rows,
-    set_operation_fbs_transfer,
 )
 from app.repositories.stock_history import (
     get_daily_stock_history,
@@ -359,7 +358,6 @@ __all__ = (
     "search_catalog",
     "seed_defaults",
     "set_trash_checked",
-    "set_operation_fbs_transfer",
     "set_user_active",
     "set_manual_supply_ready",
     "source_fingerprint",

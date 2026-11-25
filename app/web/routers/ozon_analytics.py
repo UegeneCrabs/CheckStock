@@ -26,7 +26,6 @@ from app.dto.ozon_analytics import (
     OzonAnalyticsHistory,
     OzonAnalyticsNoteCreate,
     OzonAnalyticsNoteResponse,
-    OzonAnalyticsNoteRevisionsResponse,
     OzonAnalyticsNoteUpdate,
     OzonAnalyticsRequestError,
     OzonAnalyticsSales,
@@ -151,20 +150,6 @@ async def edit_note(
             ozon_analytics_service(resources.database).update_note(
                 authorize(request), note_id, payload, author(request)
             )
-        )
-    )
-
-
-@router.get(
-    OZON_ANALYTICS.api + "/analyzer/notes/{note_id}/revisions",
-    response_model=OzonAnalyticsNoteRevisionsResponse,
-)
-async def note_revisions(
-    request: Request, resources: AsyncResourcesDependency, note_id: Annotated[int, Path(gt=0)]
-) -> OzonAnalyticsNoteRevisionsResponse:
-    return OzonAnalyticsNoteRevisionsResponse(
-        revisions=await invoke(
-            ozon_analytics_service(resources.database).note_revisions(authorize(request), note_id)
         )
     )
 

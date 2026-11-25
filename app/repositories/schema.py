@@ -8,7 +8,6 @@ from app.infrastructure import daily_economics_orm as daily_economics_orm
 from app.infrastructure import economics_coverage_orm as economics_coverage_orm
 from app.infrastructure import ephemerides_orm as ephemerides_orm
 from app.infrastructure import fbo_stock_orm as fbo_stock_orm
-from app.infrastructure import finance_orm as finance_orm
 from app.infrastructure import google_week_orm as google_week_orm
 from app.infrastructure import ozon_advertising_orm as ozon_advertising_orm
 from app.infrastructure import ozon_analytics_orm as ozon_analytics_orm
@@ -27,6 +26,8 @@ from app.infrastructure import yandex_economics_orm as yandex_economics_orm
 from app.infrastructure.database import Database, DatabaseConnection, database_for_path
 from app.infrastructure.orm import FulfillmentRecord, OrmBase, StockItemRecord
 from app.repositories import core, yandex_assortment
+from app.repositories.analyzer_notes_migration import migrate_analyzer_daily_notes
+from app.repositories.retired_reports_migration import retire_report_tables
 from app.repositories.seed_data import FULFILLMENTS, STOCK_ITEMS
 from app.repositories.stock_sheet_export import MARKETPLACES
 
@@ -36,6 +37,8 @@ def init_db() -> None:
     from app.repositories.identity_migration import retire_access_control
 
     retire_access_control(database)
+    migrate_analyzer_daily_notes(database)
+    retire_report_tables(database)
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)

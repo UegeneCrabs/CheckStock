@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from types import TracebackType
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import bindparam, delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.ports import IdentityRepository
@@ -153,7 +153,19 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         self._session.execute(delete(SessionRecord).where(SessionRecord.user_id == command.root))
 
     def delete_expired_sessions(self, command: ExpiredSessionsCommand) -> None:
-        self._session.execute(delete(SessionRecord).where(SessionRecord.expires_at < command.now.isoformat()))
+        expired: list[dict[str, str]] = []
+        for expires_at in self._session.scalars(select(SessionRecord.expires_at).distinct()):
+            try:
+                deadline = _as_datetime(expires_at)
+            except ValueError:
+                continue
+            if deadline.utcoffset() is not None and deadline < command.now:
+                expired.append({"deadline": expires_at})
+        if expired:
+            self._session.connection().execute(
+                delete(SessionRecord).where(SessionRecord.expires_at == bindparam("deadline")),
+                expired,
+            )
 
     def add_activity(self, command: ActivityCommand) -> None:
         self._session.add(

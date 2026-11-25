@@ -29,7 +29,6 @@ from app.dto.ozon_analytics import (
     OzonAnalyticsHistory,
     OzonAnalyticsNote,
     OzonAnalyticsNoteCreate,
-    OzonAnalyticsNoteRevision,
     OzonAnalyticsNoteUpdate,
     OzonAnalyticsReference,
     OzonAnalyticsRequestError,
@@ -235,12 +234,6 @@ class OzonAnalyticsService:
                 HTTPStatus.UNPROCESSABLE_ENTITY, OzonAnalyticsReason.CURRENT_DAY_ONLY
             )
         return await self.repository.update_note(original, change, author, now)
-
-    async def note_revisions(
-        self, stores: tuple[str, ...], note_id: int
-    ) -> tuple[OzonAnalyticsNoteRevision, ...]:
-        await self.require_note(stores, note_id)
-        return await self.repository.note_revisions(note_id)
 
     async def check_comment(self, stores: tuple[str, ...], key: OzonAnalyticsCommentKey) -> None:
         self._week(OzonAnalyticsWeekQuery(week=key.week))

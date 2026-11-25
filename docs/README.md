@@ -21,6 +21,7 @@
 - [DTO заказов Ozon: проверка данных и совместимость](background-jobs.md#контракты-данных-заказов-ozon)
 - [Группы констант: неизменяемые датаклассы и Enum](background-jobs.md#константы-и-перечисления-заказов-ozon)
 - [Миграция SQLite в PostgreSQL](postgresql-migration.md)
+- [Миграции удалённых отчётов и журналов](retired-report-tables.md)
 - [Выпуск версии и развёртывание на сервере](releases.md)
 - [Ежедневные резервные копии БД в Google Диск](database-backups.md)
 - [Локальный просмотр логов: Grafana, Loki и Alloy](local-observability.md)
@@ -32,7 +33,7 @@
 
 ## Остатки, поставки и Google Таблицы
 
-- [Складская схема StarUML: 29 таблиц с русскими названиями и полями](stock-schema.mdj) — открыть через File → Open; [структура SQLite без данных](stock-schema.sql).
+- [Складская схема StarUML: 28 таблиц с русскими названиями и полями](stock-schema.mdj) — открыть через File → Open; [структура SQLite без данных](stock-schema.sql).
 - [Атомарность складских операций и повторы запросов](f03-stock-transactions.md)
 - [Поставки на склады маркетплейсов](inbound-supplies.md)
 - [Поставки FBO: выбор одного ФФ, проверка остатков и ручное проведение](fbo-stock-movements.md)
@@ -56,7 +57,7 @@
 - [Редактирование полей калькулятора Ozon, общий ДРР, подбор цены по прибыли и ROI, подсказки](ozon-calculator.md)
 - [Акции товара Ozon: даты, диаграмма Ганта, общие проценты бустинга, локальные цены, маржа и ROI](ozon-promotions.md)
 - [Ручное вступление в акции Ozon: контракт и журнал](ozon-promotions.md#ручное-вступление), [реализованный план](ozon-promotion-entry-plan.md)
-- [Маржа Ozon за сегодня и период: формула и дневные параметры](ozon-margin.md), [коррекция исторических налогов](ozon-margin.md#исправление-исторических-налогов)
+- [Маржа Ozon за сегодня и период: формула и дневные параметры](ozon-margin.md)
 - [Отчёты Ozon: юниточная прибыль, целевая цена и настройка ROI](ozon-reports.md)
 - [Связанные артикулы Ozon под калькулятором: модели, переходы и кэш](ozon-calculator.md#контракт-и-модули)
 
@@ -72,14 +73,13 @@
 - [Анализатор ПРО WB: текущий ROI, сток, цвета и колонки](wb-analyzer.md)
 - [Эфемериды WB и история недельных комментариев](ephemerides.md)
 
-- [Финансовый отчёт Яндекс Маркета: работа, проверки и эксплуатация](yandex-finance.md)
-- [Техническое задание на финансовый отчёт Яндекс Маркета](yandex-finance-spec.md)
+- [Внешний финансовый отчёт Яндекс Маркета](yandex-finance.md)
 - [Полнота расчёта экономики WB и Яндекс Маркета](f05-economics-completeness.md)
 - [Отчёт WB «Рейтинг товаров»: план и контракт](wb-product-rating-report-plan.md)
 - [Производительность чтения юнит-экономики и отчётов](economics-performance.md)
 - [Полнота расчёта экономики WB, Ozon и Яндекс Маркета](f05-economics-completeness.md)
 - [Нулевые и неизвестные остатки Ozon в экономике](f05-economics-completeness.md#ozon)
-- [Дневной календарь параметров WB, Ozon и ЯМ](daily-economics-calendar.md)
+- [Дневные снимки экономики WB, Ozon и ЯМ](daily-economics-calendar.md)
 - [Юнит-экономика Яндекс Маркета](unit-economics-yandex.md)
 - [Общие комментарии в юнит-экономике WB, Яндекс Маркета и Ozon](unit-economics-comments.md)
 - [Настройки калькулятора Яндекс Маркета](yandex-calculator-settings.md)

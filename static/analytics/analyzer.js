@@ -25,6 +25,7 @@
     const monday = day => addDays(day, -((new Date(day + 'T12:00:00Z').getUTCDay() + 6) % 7));
     let payload = null, rows = [], columns = [], loadedWeek = null, requestedWeek = monday(config.today);
     let pending = null, loading = false, selected = null, editingNoteId = null, noteSaving = false, toastTimer;
+    let drawerDay = null, editorDay = null, editingPreviousNote = null;
     let coefficientRetryAfter = 0;
     const noteDrafts = new Map();
     const state = {query: '', project: '', manager: '', segment: 'all', filters: {}, sort: M.fields.find(column => column.key === 'fact').index, direction: -1, page: 1, pageSize: 20};
@@ -59,6 +60,9 @@
         $('toast').hidden = false;
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3500);
+    }
+    function canWriteNotes(day) {
+        return config.canEdit && day === payload.today && payload.week.includes(day);
     }
     function label(column) {
         if (column.type === 'day') {
@@ -127,7 +131,11 @@
         if (column.type === 'code') return value ? `<span class="code ${value.toUpperCase() === 'NEW' ? 'new' : ''}">${esc(value)}</span>` : '—';
         if (column.type === 'text') return esc(value) || '—';
         if (column.type === 'goal') return `<div title="${esc(M.metricHelp(row, 'goal', config, row.goal == null))}" class="goal">${num(row.goal)}<span>/</span>${num(row.dayGoal, 1)} шт</div><span class="stock-status">${esc([row.stockStatus, row.stockEnds].filter(Boolean).join(' · '))}</span>`;
-        if (column.type === 'note') return `<button class="cell-note ${value ? '' : 'empty'}" data-note="${esc(row.id)}" data-day="${column.idx}" aria-label="Записи ${weekdays[column.idx]}: ${esc(row.name)}"><span class="note-content">${esc(value || (config.canEdit ? '+ Добавить запись' : 'Нет записей'))}</span></button>`;
+        if (column.type === 'note') {
+            if (!value && !canWriteNotes(payload.week[column.idx])) return '';
+            const label = value ? 'Записи' : 'Добавить запись';
+            return `<button class="cell-note ${value ? '' : 'empty'}" data-note="${esc(row.id)}" data-day="${column.idx}" aria-label="${label} ${weekdays[column.idx]}: ${esc(row.name)}"><span class="note-content">${esc(value || '+ Добавить запись')}</span></button>`;
+        }
         if (value == null) {
             const missingCtr = isWb && (column.metric === 'ctr' || column.key === 'totalCtr');
             const hint = missingCtr ? title(column) : help;
@@ -229,7 +237,6 @@
             if (!response.ok || !body.ok) throw new Error(body.detail || body.error || 'Не удалось загрузить данные');
             if (controller !== pending) return;
             const selectedId = refresh && selected ? selected.id : null;
-            if (selectedId) rememberDraft();
             payload = body;
             config.today = body.today;
             rows = body.rows;
@@ -243,7 +250,7 @@
             $('load-status').hidden = true;
             loading = false;
             buildColumns();
-            if (selectedId) openDrawer(selectedId);
+            if (selectedId) openDrawer(selectedId, drawerDay);
         } catch (error) {
             if (error.name === 'AbortError') return;
             $('load-status').textContent = `${error.message}. ${payload ? 'На экране осталась ранее загруженная неделя. ' : ''}`;
@@ -268,11 +275,15 @@
         selected = null;
         $('tbody').querySelectorAll('.selected').forEach(row => row.classList.remove('selected'));
     }
-    function openDrawer(id, day) {
+    function openDrawer(id, day = null) {
         const row = rows.find(item => item.id === id);
         if (!row || loading) return;
         rememberDraft();
         selected = row;
+        drawerDay = day;
+        const editable = canWriteNotes(day === null ? payload.today : payload.week[day]);
+        editorDay = editable ? payload.today : null;
+        const weekEnd = payload.week[6] < payload.today ? payload.week[6] : payload.today;
         const barsMax = Math.max(1, ...row.week.filter(value => value != null));
         $('drawer-body').innerHTML = `<div class="drawer-product">${photo(row)}<div><h2>${esc(row.name)}</h2><p>${esc(row.project)} · ${esc(row.article)}<br>${esc(row.barcode)}</p></div></div>
             <details class="product-metrics"><summary>Показатели и заказы за неделю</summary>
@@ -281,18 +292,20 @@
             ${!row.coverage.roiComplete ? `<details class="coverage-details"><summary>Каких данных не хватает для ROI</summary>${row.coverage.roiMessages.map(message => `<p>${esc(message)}</p>`).join('') || '<p>Недостаточно исходных данных.</p>'}</details>` : ''}
             <h3>Заказы по дням</h3><div class="days-bars">${row.week.map((value, idx) => `<div class="bar ${payload.week[idx] === payload.today ? 'current' : ''}" style="height:${value == null ? 3 : Math.max(3, value / barsMax * 80)}px"><b>${num(value)}</b><small>${weekdays[idx]}</small></div>`).join('')}</div>
             </details>
-            <h3>Комментарии · ${shortDate(payload.week[0])}–${shortDate(payload.today)}</h3>
+            <h3>Комментарии · ${shortDate(payload.week[0])}–${shortDate(weekEnd)}</h3>
             <div id="note-history" class="note-history"></div>
-            ${config.canEdit ? `<div class="note-editor-heading"><label for="note-input" id="note-editor-label">Комментарий на сегодня · ${shortDate(payload.today)}</label><button type="button" class="note-edit" id="new-note">Новая запись</button></div><textarea id="note-input" maxlength="4000" placeholder="Что сделали, что проверить, план действий"></textarea>` : '<p>Доступ только для просмотра записей.</p>'}
+            ${editable ? `<div class="note-editor-heading"><label for="note-input" id="note-editor-label">Комментарий на сегодня · ${shortDate(payload.today)}</label><button type="button" class="note-edit" id="new-note">Новая запись</button></div><textarea id="note-input" maxlength="4000" placeholder="Что сделали, что проверить, план действий"></textarea>` : ''}
             <details class="source-details"><summary>Сохранённые данные</summary>${Object.entries({stock: 'Каталог', prices: 'Цена', reference: 'Цели и справочник', orders: 'Заказы', advertising: 'Реклама'}).map(([key, name]) => `<p>${name}: ${dateTime(row.updated[key])}</p>`).join('')}<p>ТО факт за ${shortDate(payload.turnover_day)}: ${money(row.fact)}. Коэф D = ${num(row.coeff, 2)} на ${num(payload.coefficient_hour)}:00 МСК.</p></details>`;
-        $('save-note').hidden = !config.canEdit;
+        $('save-note').hidden = !editable;
         $('save-note').disabled = noteSaving;
         $('drawer').hidden = false;
         $('drawer-body').scrollTop = 0;
         renderNotes();
-        if (config.canEdit) {
-            const draft = noteDrafts.get(row.id), latest = (row.noteHistory || []).filter(note => note.can_edit).at(-1);
-            setNoteEditor(draft?.id ?? (draft ? null : latest?.id), draft?.text ?? latest?.note ?? '');
+        if (editable) {
+            const draft = noteDrafts.get(row.id);
+            const latest = (row.noteHistory || []).filter(note => note.action_date === payload.today && note.can_edit).at(-1);
+            if (draft?.day === payload.today) setNoteEditor(draft.id, draft.text, draft.previousNote);
+            else setNoteEditor(latest?.id, latest?.note ?? '');
             $('note-input').disabled = noteSaving;
             $('new-note').disabled = noteSaving;
             $('note-input').oninput = rememberDraft;
@@ -302,16 +315,19 @@
         if (day != null) $('note-history').querySelector(`[data-date="${payload.week[day]}"]`)?.scrollIntoView({block: 'nearest'});
     }
     function rememberDraft() {
-        if (selected && $('note-input')) noteDrafts.set(selected.id, {id: editingNoteId, text: $('note-input').value});
+        if (selected && $('note-input')) {
+            noteDrafts.set(selected.id, {day: editorDay, id: editingNoteId, text: $('note-input').value, previousNote: editingPreviousNote});
+        }
     }
-    function setNoteEditor(id, text) {
+    function setNoteEditor(id, text, previousNote = text) {
         editingNoteId = id ?? null;
+        editingPreviousNote = id == null ? null : previousNote;
         if (!$('note-input')) return;
         $('note-input').value = text;
         $('note-editor-label').textContent = (editingNoteId != null ? 'Изменить комментарий' : 'Новый комментарий') + ' · ' + shortDate(payload.today);
     }
     function renderNotes() {
-        $('note-history').innerHTML = (selected.noteHistory || []).map(note => `<article data-date="${esc(note.action_date)}"><div class="note-heading"><strong>${shortDate(note.action_date)}.${note.action_date.slice(0, 4)}</strong>${config.canEdit && note.can_edit ? `<button class="note-edit" data-edit-note="${note.id}">Изменить</button>` : ''}</div><p>${esc(note.note)}</p><small>${esc(note.user_name)} · ${esc(dateTime(note.created_at))}</small>${note.updated_at ? `<small>Изменено: ${esc(note.updated_by)} · ${esc(dateTime(note.updated_at))}</small>` : ''}${config.marketplace !== 'WB' && note.revisions?.length ? `<details><summary>История изменений</summary>${note.revisions.map(revision => `<p>${esc(revision.previous_note)} → ${esc(revision.note)}</p><small>${esc(revision.user_name)} · ${esc(dateTime(revision.edited_at))}</small>`).join('')}</details>` : ''}</article>`).join('') || '<p class="muted">С начала выбранной недели записей пока нет.</p>';
+        $('note-history').innerHTML = (selected.noteHistory || []).map(note => `<article data-date="${esc(note.action_date)}"><div class="note-heading"><strong>${shortDate(note.action_date)}.${note.action_date.slice(0, 4)}</strong>${!$('save-note').hidden && canWriteNotes(note.action_date) && note.can_edit ? `<button class="note-edit" data-edit-note="${note.id}">Изменить</button>` : ''}</div><p>${esc(note.note)}</p><small>${esc(note.user_name)} · ${esc(dateTime(note.created_at))}</small>${note.updated_at ? `<small>Изменено: ${esc(note.updated_by)} · ${esc(dateTime(note.updated_at))}</small>` : ''}</article>`).join('') || '<p class="muted">С начала выбранной недели записей пока нет.</p>';
         $('note-history').querySelectorAll('[data-edit-note]').forEach(button => button.onclick = () => {
             if (noteSaving) return;
             const note = selected.noteHistory.find(note => note.id === Number(button.dataset.editNote));
@@ -320,24 +336,27 @@
         });
     }
     $('save-note').addEventListener('click', async () => {
-        const note = $('note-input')?.value.trim();
-        if (noteSaving) return;
-        if (!selected || !note) { toast('Введите текст записи'); return; }
-        const row = selected, noteId = editingNoteId, textArea = $('note-input');
+        const textArea = $('note-input');
+        if (noteSaving || !selected || !textArea || !canWriteNotes(editorDay)) return;
+        const note = textArea.value.trim();
+        if (!note) { toast('Введите текст записи'); return; }
+        const row = selected, noteId = editingNoteId, day = payload.today;
         noteSaving = true;
         $('save-note').disabled = true;
         textArea.disabled = true;
         $('new-note').disabled = true;
         try {
-            const previousNote = row.noteHistory?.find(item => item.id === noteId)?.note;
-            const response = await fetch(config.apiBase + '/analyzer/notes' + (noteId != null ? '/' + noteId : ''), {method: noteId != null ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(noteId != null ? {note, ...(config.marketplace !== 'WB' ? {previous_note: previousNote} : {})} : {store: row.store_slug, article: row.article, day: payload.today, note})});
+            const response = await fetch(config.apiBase + '/analyzer/notes' + (noteId != null ? '/' + noteId : ''), {method: noteId != null ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(noteId != null ? {note, previous_note: editingPreviousNote} : {store: row.store_slug, article: row.article, day, note})});
             const body = await response.json();
             if (!response.ok || !body.ok) throw new Error(typeof body.detail === 'string' ? M.reasonMessage(body.detail) : 'Не удалось сохранить запись');
             row.noteHistory = [...(row.noteHistory || []).filter(item => item.id !== body.note.id), body.note].sort((a, b) => a.action_date.localeCompare(b.action_date) || a.created_at.localeCompare(b.created_at) || a.id - b.id);
-            const day = payload.week.indexOf(body.note.action_date);
-            if (day >= 0) row.notes[day] = row.noteHistory.filter(note => note.action_date === body.note.action_date);
-            noteDrafts.set(row.id, {id: body.note.id, text: body.note.note});
-            if (selected === row) { renderNotes(); setNoteEditor(body.note.id, body.note.note); }
+            const dayIndex = payload.week.indexOf(body.note.action_date);
+            if (dayIndex >= 0) row.notes[dayIndex] = row.noteHistory.filter(note => note.action_date === body.note.action_date);
+            noteDrafts.set(row.id, {day, id: body.note.id, text: body.note.note, previousNote: body.note.note});
+            if (selected === row) {
+                renderNotes();
+                if ($('note-input')) setNoteEditor(body.note.id, body.note.note);
+            }
             renderPage();
             toast('Запись сохранена');
         } catch (error) { toast(error.message); }

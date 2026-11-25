@@ -75,7 +75,6 @@ window.OzonEconomicsUI = (() => {
             contentClass: 'content--unit-1c', alertMarketplace: 'OZON',
         };
         if (!context.economics_preview) return { ...page, values: {}, template: '<section class="panel"><h1>Раздел Ozon в разработке</h1></section>' };
-        if (url.searchParams.get('calendar') === '1') return window.OzonCalendar.page(context, page);
         const periodQuery = new URLSearchParams();
         url.searchParams.forEach((value, key) => {
             if (['period_days', 'date_from', 'date_to'].includes(key)) periodQuery.append(key, value);
@@ -94,7 +93,7 @@ window.OzonEconomicsUI = (() => {
         };
         return { ...page, values: {
             unit_1c_config: JSON.stringify(config).replace(/</g, '\\u003c'), marketplace_name: 'Ozon',
-            marketplace_label: 'Ozon', calendar_link: '<a class="ue1c-ghost-button" id="ue1c-calendar-link" href="/sales/unit-economics-1c/ozon?calendar=1">Параметры по дням</a>', loading_description: 'Загружаем товары, отзывы и остатки из базы данных.', unit_1c_notice: '',
+            marketplace_label: 'Ozon', loading_description: 'Загружаем товары, отзывы и остатки из базы данных.', unit_1c_notice: '',
         } };
     });
     return { product, marginLabels };

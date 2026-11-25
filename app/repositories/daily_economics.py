@@ -1,15 +1,14 @@
 """Versioned daily observations and manual overlays, committed as one transaction.
 
-The first source observation is immutable. Every refresh preserves its received
-payload in the event log; manual overlays survive refreshes. Reads never capture.
+The first source observation is immutable, and manual overlays survive refreshes.
+Reads never capture.
 """
 
 import hashlib
 import json
-import uuid
 from datetime import UTC, datetime
 
-from app.economics.daily_calculation import calculate, validate_change
+from app.economics.daily_calculation import calculate
 from app.repositories.core import WRITE_LOCK, get_connection
 
 
@@ -126,26 +125,10 @@ def _legacy(conn, key):
     return from_yandex(row, day_input=True) if row else None
 
 
-def get(key, *, events=False):
+def get(key):
     with get_connection() as conn:
         row = _select(conn, key)
         data = _decode(row) if row else _legacy(conn, key)
-        if data and events:
-            rows = conn.execute(
-                "SELECT * FROM economics_daily_events WHERE marketplace=? AND store_slug=? AND article=? AND day=? ORDER BY revision",
-                key,
-            ).fetchall()
-            data["events"] = []
-            for row in rows:
-                event = json.loads(row["payload_json"])
-                # Full source responses remain in the journal. Avoid transferring
-                # dozens of copies when opening a single value's history.
-                event.pop("original", None)
-                if "source" in event:
-                    event["source"] = {k: v for k, v in event["source"].items() if k != "raw"}
-                data["events"].append(
-                    {"at": row["created_at"], "actor": row["actor"], "revision": row["revision"], **event}
-                )
         if data:
             data["source_times"] = source_times(key[0], data["source"])
     return data
@@ -301,7 +284,7 @@ def first_day(marketplace, store, articles):
     return min(dates) if dates else None
 
 
-def _write(conn, key, payload, revision, event, actor):
+def _write(conn, key, payload, revision):
     timestamp = now()
     if revision:
         result = conn.execute(
@@ -314,11 +297,7 @@ def _write(conn, key, payload, revision, event, actor):
             (*key, 1, encode(payload), timestamp),
         )
     if result.rowcount != 1:
-        raise Conflict("Данные уже изменены. Откройте ячейку заново и проверьте расчёт.")
-    conn.execute(
-        "INSERT INTO economics_daily_events (id,marketplace,store_slug,article,day,revision,payload_json,created_at,actor) VALUES (?,?,?,?,?,?,?,?,?)",
-        (uuid.uuid4().hex, *key, revision + 1, encode(event), timestamp, actor),
-    )
+        raise Conflict("Дневной снимок изменился во время обновления.")
 
 
 def capture(key, source):
@@ -335,43 +314,12 @@ def capture(key, source):
                 if old and comparable(old["source"]) == comparable(source):
                     return False
                 payload = resolved(key[0], source, (old or {}).get("overrides"), (old or {}).get("original"))
-                event = {
-                    "kind": "source",
-                    "source": source,
-                    "before": (old or {}).get("values"),
-                    "after": payload["values"],
-                }
-                _write(conn, key, payload, (old or {}).get("revision", 0), event, "Синхронизация")
+                _write(conn, key, payload, (old or {}).get("revision", 0))
                 conn.commit()
             return True
         except Conflict:
             if attempt == 2:
                 raise
-
-
-def proposal(key, data, field, value, undo=False):
-    if not data:
-        raise ValueError(
-            "Снимок за этот день отсутствует. Нельзя создавать историю из сегодняшних параметров."
-        )
-    validate_change(key[0], field, value if not undo else ("usn" if field == "tax_system" else 0))
-    overlays = dict(data["overrides"])
-    if undo:
-        if field not in overlays:
-            raise ValueError("Для этой ячейки нет действующей корректировки.")
-        overlays.pop(field)
-    else:
-        overlays[field] = value
-    updated = resolved(key[0], data["source"], overlays, data["original"])
-    preview = {
-        "before": data["values"].get(field),
-        "after": updated["values"].get(field),
-        "before_result": data["result"],
-        "after_result": updated["result"],
-        "token": data["token"],
-    }
-    preview["preview_token"] = digest([key, field, value, undo, preview])
-    return preview, updated
 
 
 def refresh_metrics(key, changes, raw):
@@ -394,51 +342,12 @@ def refresh_metrics(key, changes, raw):
                     "raw": {**old["source"]["raw"], "daily_metrics": raw},
                 }
                 payload = resolved(key[0], source, old["overrides"], old["original"])
-                _write(
-                    conn,
-                    key,
-                    payload,
-                    old["revision"],
-                    {"kind": "source", "source": source, "before": old["values"], "after": payload["values"]},
-                    "Синхронизация дневных метрик",
-                )
+                _write(conn, key, payload, old["revision"])
                 conn.commit()
             return True
         except Conflict:
             if attempt == 2:
                 raise
-
-
-def correct(key, *, token, preview_token, field, value, reason, actor, undo=False):
-    if len(reason.strip()) < 3 or len(reason) > 2000:
-        raise ValueError("Укажите причину (от 3 до 2000 символов).")
-    with WRITE_LOCK, get_connection() as conn:
-        row = _select(conn, key)
-        old = _decode(row) if row else _legacy(conn, key)
-        if not old or old["token"] != token:
-            raise Conflict("Данные уже изменены. Откройте ячейку заново.")
-        preview, payload = proposal(key, old, field, value, undo)
-        if preview_token != preview["preview_token"]:
-            raise Conflict("Предварительный расчёт изменился. Выполните проверку ещё раз.")
-        _write(
-            conn,
-            key,
-            payload,
-            old["revision"],
-            {
-                "kind": "undo" if undo else "correction",
-                "field": field,
-                "reason": reason.strip(),
-                "before": preview["before"],
-                "after": preview["after"],
-                "before_result": preview["before_result"],
-                "after_result": preview["after_result"],
-                "original": old["original"] if not row else None,
-            },
-            actor,
-        )
-        conn.commit()
-    return get(key)
 
 
 def wb_report_row(row):

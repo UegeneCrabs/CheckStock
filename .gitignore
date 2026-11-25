@@ -22,6 +22,7 @@ data/*.sqlite-shm
 data/*.sqlite-journal
 data/*.tmp
 data/*.dump
+data/export-errors/
 data/exports/
 data/scheduler-heartbeat.json
 data/.scheduler-heartbeat.json.*.tmp

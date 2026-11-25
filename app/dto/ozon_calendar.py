@@ -9,7 +9,6 @@ from app.core.constants import (
     OZON_CALENDAR,
     OZON_SCENARIO,
     TIME,
-    OzonCalendarEventKind,
     OzonCalendarField,
     WebErrorCode,
 )
@@ -175,16 +174,6 @@ class OzonCalendarObservation(DtoModel):
     snapshot: OzonMarginSnapshot
 
 
-class OzonCalendarEvent(DtoModel):
-    at: datetime
-    actor: str
-    kind: OzonCalendarEventKind
-    field: OzonCalendarField | None = None
-    before: Decimal | OzonCalendarValues | None = None
-    after: Decimal | OzonCalendarValues | None = None
-    reason: str = ""
-
-
 class OzonCalendarCell(DtoModel):
     token: str
     values: OzonCalendarValues
@@ -192,7 +181,6 @@ class OzonCalendarCell(DtoModel):
     original: OzonCalendarObservation
     source: OzonCalendarObservation
     overrides: dict[OzonCalendarField, Decimal]
-    events: tuple[OzonCalendarEvent, ...]
     version: int
 
 
@@ -208,7 +196,6 @@ class OzonCalendarEvidence(DtoModel):
     key: OzonCalendarKey
     journal: OzonCalendarJournal
     calculation: OzonMarginDay
-    events: tuple[OzonCalendarEvent, ...] = ()
 
 
 class OzonCalendarDay(DtoModel):
@@ -229,17 +216,6 @@ class OzonCalendarSources:
     turnover: OzonTurnoverData
     advertising: tuple[AdvertisingSourceStatus, ...]
     credentials_present: bool
-
-
-class OzonCalendarSave(DtoModel):
-    key: OzonCalendarKey
-    expected: OzonCalendarJournal
-    journal: OzonCalendarJournal
-    event: OzonCalendarEvent
-
-
-class OzonCalendarConflict(Exception):
-    pass
 
 
 class OzonCalendarContext(DtoModel):

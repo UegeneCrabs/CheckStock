@@ -290,15 +290,6 @@ body:has(.content--unit-1c) {
     border-color: #aeb9cb;
     background: var(--ue-surface-2);
 }
-#ue1c-calendar-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none;
-}
-#ue1c-calendar-link[data-marketplace="Ozon"] {
-    display: none;
-}
 .ue1c-segments {
     height: 42px;
     padding: 3px;
@@ -2324,9 +2315,6 @@ body:has(.content--unit-1c) {
     }
     .ue1c-period-range {
         grid-column: span 2;
-    }
-    #ue1c-calendar-link {
-        justify-self: start;
     }
 }
 

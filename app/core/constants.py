@@ -254,6 +254,26 @@ class DatabaseDialect(StrEnum):
     POSTGRESQL = "postgresql"
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RetiredReportStorageConfig:
+    advisory_lock: str = "retired_report_tables"
+    drop_order: tuple[str, ...] = (
+        "finance_yandex_operations",
+        "finance_yandex_heads",
+        "finance_yandex_attempts",
+        "finance_yandex_snapshots",
+        "finance_yandex_connections",
+        "finance_yandex_report_tickets",
+        "finance_yandex_unallocated",
+        "finance_yandex_costs",
+        "stock_operation_report_flags",
+        "economics_daily_events",
+    )
+
+
+RETIRED_REPORT_STORAGE: Final = RetiredReportStorageConfig()
+
+
 class SortDirection(StrEnum):
     ASC = "ASC"
     DESC = "DESC"
@@ -890,22 +910,14 @@ class OzonCalendarField(StrEnum):
     BUYOUT = "buyout_percent"
 
 
-class OzonCalendarEventKind(StrEnum):
-    SOURCE = "source"
-    CORRECTION = "correction"
-    UNDO = "undo"
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonCalendarConfig:
     records_table: str = "economics_daily"
-    events_table: str = "economics_daily_events"
     page_sizes: tuple[int, ...] = (20, 50, 100)
     default_page_size: int = 50
     article_max_length: int = 500
     reason_min_length: int = 3
     reason_max_length: int = 2000
-    source_actor: str = "ozon_margin_daily_sync"
     signed_fields: tuple[OzonCalendarField, ...] = (OzonCalendarField.LOGISTICS, OzonCalendarField.STORAGE)
 
 
@@ -1409,6 +1421,7 @@ class SchedulerConfig:
     heartbeat_clock_skew_seconds: int = 5
     heartbeat_filename: str = "scheduler-heartbeat.json"
     job_run_retention_days: int = 30
+    session_cleanup_hour_msk: int = 3
     initialization_retry_seconds: int = 1
     max_error_length: int = 12_000
     legacy_store_error_boundary: str = r"(?:^|; )([\w-]+): "
@@ -1677,6 +1690,15 @@ class JobCatalog:
         marketplaces=(),
         manual_run=True,
     )
+    session_cleanup: SyncJobMetadata = SyncJobMetadata(
+        name="session_cleanup",
+        title="Очистка просроченных сессий",
+        description="Удаляет записи сессий CheckStock с истёкшим сроком действия.",
+        schedule=SCHEDULE_TEXTS.daily_msk_template.format(hour=SCHEDULER.session_cleanup_hour_msk),
+        scope=JobScope.GLOBAL,
+        marketplaces=(),
+        manual_run=False,
+    )
     google_stock_test: SyncJobMetadata = SyncJobMetadata(
         name="google_stock_test_export",
         title="Выгрузка в Google Таблицу — тест",
@@ -1742,15 +1764,6 @@ class JobCatalog:
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.WB,),
         manual_run=False,
-    )
-    yandex_finance: SyncJobMetadata = SyncJobMetadata(
-        name="yandex_finance_sync",
-        title="Финансовые отчёты Яндекс Маркета",
-        description="Обновляет отдельный финансовый реестр за 90 завершённых дней. Требует настроенных финансовых подключений.",
-        schedule="Ежедневно в 05:00 МСК",
-        scope=JobScope.STORE_MARKETPLACES,
-        marketplaces=(Marketplace.YANDEX_MARKET,),
-        manual_run=True,
     )
     catalog: SyncJobMetadata = SyncJobMetadata(
         name="catalog_sync",
@@ -2615,6 +2628,9 @@ JOB_SCHEDULE_RULES: Final = (
     JobScheduleRule(
         name=JOBS.database_backup.name, kind=ScheduleKind.DAILY, hours=(DATABASE_BACKUP.hour_msk,)
     ),
+    JobScheduleRule(
+        name=JOBS.session_cleanup.name, kind=ScheduleKind.DAILY, hours=(SCHEDULER.session_cleanup_hour_msk,)
+    ),
     JobScheduleRule(name=JOBS.wb_standard_costs.name),
     *(JobScheduleRule(name=job.name, kind=ScheduleKind.EXTERNAL) for job in JOBS.google_weeks),
     JobScheduleRule(name=JOBS.ozon_advertising.name, kind=ScheduleKind.DAILY, hours=(4,)),
@@ -2629,7 +2645,6 @@ JOB_SCHEDULE_RULES: Final = (
         minute=EPHEMERIDES_STOCK_SCHEDULE.minute,
         weekdays=(EPHEMERIDES_STOCK_SCHEDULE.weekday,),
     ),
-    JobScheduleRule(name=JOBS.yandex_finance.name, kind=ScheduleKind.DAILY, hours=(5,)),
     JobScheduleRule(name=JOBS.catalog.name, kind=ScheduleKind.DAILY, hour_setting="catalog_sync_hour"),
     JobScheduleRule(name=JOBS.stock.name, interval_setting="auto_sync_interval_seconds"),
     JobScheduleRule(

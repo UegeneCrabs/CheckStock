@@ -1,5 +1,4 @@
 import json
-import uuid
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from types import TracebackType
@@ -23,7 +22,6 @@ from app.dto.yandex_analytics import (
     FunnelDay,
     NoteChange,
     NoteCreate,
-    NoteRevision,
     Prices,
     Product,
     Reference,
@@ -55,53 +53,19 @@ resolve_legacy_day: Callable[..., Any] = resolve_day
 
 def note_from_connection(connection: DatabaseConnection, note_id: int) -> DayNote | None:
     row = connection.execute(
-        "SELECT * FROM rnp_action_log WHERE id=? AND marketplace=?", (note_id, YANDEX_ANALYTICS.marketplace)
+        "SELECT * FROM analyzer_daily_notes WHERE id=? AND marketplace=?",
+        (note_id, YANDEX_ANALYTICS.marketplace),
     ).fetchone()
-    if row is None:
-        return None
-    revisions = tuple(
-        NoteRevision.model_validate(dict(item))
-        for item in connection.execute(
-            "SELECT * FROM rnp_action_revisions WHERE action_id=? ORDER BY edited_at,id", (note_id,)
-        )
-    )
-    return DayNote.model_validate(
-        {
-            **dict(row),
-            "revisions": revisions,
-            "updated_at": revisions[-1].edited_at if revisions else None,
-            "updated_by": revisions[-1].user_name if revisions else None,
-        }
-    )
+    return DayNote.model_validate(dict(row)) if row is not None else None
 
 
 def store_notes(connection: DatabaseConnection, store: str, start: date, end: date) -> tuple[DayNote, ...]:
     parameters = (store, YANDEX_ANALYTICS.marketplace, start.isoformat(), end.isoformat())
     notes = connection.execute(
-        "SELECT * FROM rnp_action_log WHERE store_slug=? AND marketplace=? AND action_date>=? AND action_date<=? ORDER BY action_date,created_at,id",
+        "SELECT * FROM analyzer_daily_notes WHERE store_slug=? AND marketplace=? AND action_date>=? AND action_date<=? ORDER BY action_date,created_at,id",
         parameters,
     ).fetchall()
-    revisions: dict[int, list[NoteRevision]] = {}
-    for row in connection.execute(
-        "SELECT r.* FROM rnp_action_revisions r JOIN rnp_action_log a ON a.id=r.action_id WHERE a.store_slug=? AND a.marketplace=? AND a.action_date>=? AND a.action_date<=? ORDER BY r.edited_at,r.id",
-        parameters,
-    ):
-        revision = NoteRevision.model_validate(dict(row))
-        revisions.setdefault(revision.action_id, []).append(revision)
-    result: list[DayNote] = []
-    for row in notes:
-        history = tuple(revisions.get(int(str(row["id"])), ()))
-        result.append(
-            DayNote.model_validate(
-                {
-                    **dict(row),
-                    "revisions": history,
-                    "updated_at": history[-1].edited_at if history else None,
-                    "updated_by": history[-1].user_name if history else None,
-                }
-            )
-        )
-    return tuple(result)
+    return tuple(DayNote.model_validate(dict(row)) for row in notes)
 
 
 class YandexAnalyticsUnitOfWork:
@@ -133,7 +97,7 @@ class YandexAnalyticsUnitOfWork:
 
     def add_note(self, change: NoteCreate, user: User, now: datetime) -> DayNote:
         row = self.db.execute(
-            "INSERT INTO rnp_action_log (store_slug,marketplace,article,action_date,note,user_id,user_name,created_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
+            "INSERT INTO analyzer_daily_notes (store_slug,marketplace,article,action_date,note,user_id,user_name,created_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
             (
                 change.store,
                 YANDEX_ANALYTICS.marketplace,
@@ -156,33 +120,21 @@ class YandexAnalyticsUnitOfWork:
         from app.application.yandex_analytics import AnalyticsConflict
 
         changed = self.db.execute(
-            "UPDATE rnp_action_log SET note=? WHERE id=? AND marketplace=? AND note=? AND action_date=?",
+            "UPDATE analyzer_daily_notes SET note=?,updated_at=?,updated_by=? "
+            "WHERE id=? AND marketplace=? AND note=? AND action_date=? RETURNING *",
             (
                 change.note,
+                now.isoformat(),
+                user.full_name,
                 original.id,
                 YANDEX_ANALYTICS.marketplace,
                 change.previous_note,
                 original.action_date,
             ),
-        )
-        if changed.rowcount != 1:
+        ).fetchone()
+        if changed is None:
             raise AnalyticsConflict("note_conflict")
-        self.db.execute(
-            "INSERT INTO rnp_action_revisions (id,action_id,previous_note,note,user_id,user_name,edited_at) VALUES (?,?,?,?,?,?,?)",
-            (
-                uuid.uuid4().hex,
-                original.id,
-                original.note,
-                change.note,
-                user.id,
-                user.full_name,
-                now.isoformat(),
-            ),
-        )
-        result = self.note(original.id)
-        if result is None:
-            raise RuntimeError("note_update_failed")
-        return result
+        return DayNote.model_validate(dict(changed))
 
     def save_comment(self, change: CommentChange, user: User, now: datetime) -> Comment:
         from app.application.yandex_analytics import AnalyticsConflict

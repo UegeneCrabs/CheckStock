@@ -65,10 +65,6 @@ services:
       CHECKSTOCK_SUPPLY_ARRIVALS_SYNC_INTERVAL_SECONDS: ${CHECKSTOCK_SUPPLY_ARRIVALS_SYNC_INTERVAL_SECONDS:-900}
       CHECKSTOCK_DISABLE_BACKGROUND_SYNC: ${CHECKSTOCK_DISABLE_BACKGROUND_SYNC:-0}
       CHECKSTOCK_ECONOMICS_PREVIEW_USER_ID: ${CHECKSTOCK_ECONOMICS_PREVIEW_USER_ID:-0}
-      CHECKSTOCK_YANDEX_FINANCE_ENABLED: ${CHECKSTOCK_YANDEX_FINANCE_ENABLED:-0}
-      CHECKSTOCK_YANDEX_FINANCE_SECRETS_PATH: /app/finance-credentials
-      CHECKSTOCK_YANDEX_FINANCE_RAW_RETENTION_DAYS: ${CHECKSTOCK_YANDEX_FINANCE_RAW_RETENTION_DAYS:-365}
-      CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS: ${CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS:-0}
       CHECKSTOCK_FTP_EXPORT_ENABLED: ${CHECKSTOCK_FTP_EXPORT_ENABLED:-1}
       CHECKSTOCK_FTP_EXPORT_START_HOUR: ${CHECKSTOCK_FTP_EXPORT_START_HOUR:-3}
       CHECKSTOCK_FTP_EXPORT_START_MINUTE: ${CHECKSTOCK_FTP_EXPORT_START_MINUTE:-15}
@@ -128,7 +124,6 @@ services:
     volumes: &app-volumes
       - ../secrets:/app/secrets:ro
       - agent-credentials:/app/agent-credentials
-      - yandex-finance-credentials:/app/finance-credentials
       - yandex-parser-data:/app/data/yandex-storefront
       - wb-storefront-data:/app/data/wb-storefront
       - database-backups:/app/data/backups/database
@@ -184,6 +179,5 @@ volumes:
   wb-storefront-data:
   yandex-parser-data:
   postgres-data:
-  yandex-finance-credentials:
   database-backups:
   checkstock-logs:

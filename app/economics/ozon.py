@@ -9,7 +9,7 @@ from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
 from app.dto.inbound_supplies import InboundSnapshot
 from app.dto.ozon_stock import OzonStockEvidence
-from app.economics import ozon_advertising, ozon_turnover
+from app.economics import ozon_turnover
 from app.economics.wb import calculations as wb_calculations
 from app.exports import stock_sheet_inbound
 from app.ozon import reputation as ozon_reputation
@@ -36,9 +36,6 @@ def load_products(
     source_values = unit_economics_repository.get_ozon_source_values(store_slugs)
     turnover, turnover_errors = (
         ozon_turnover.load(store_slugs, period_from, period_to) if include_legacy_metrics else ({}, {})
-    )
-    advertising, advertising_errors = (
-        ozon_advertising.load(store_slugs, period_from, period_to) if include_legacy_metrics else ({}, {})
     )
     stock_period_to = datetime.now(MOSCOW_TIMEZONE).date()
     stock_period_days = 21
@@ -76,11 +73,6 @@ def load_products(
         )
         stock_source = health.get(slug, {}).get("stocks") or {}
         source_error = (health.get(slug, {}).get("unit_economics_1c_source") or {}).get("error")
-        ad_source_error = (
-            (health.get(slug, {}).get(ozon_advertising.SCOPE) or {}).get("error")
-            if include_legacy_metrics
-            else None
-        )
         for item in catalog:
             sku = str(item["article"])
             if article and sku != article:
@@ -111,12 +103,6 @@ def load_products(
                 else None
             )
             stock_orders = order_counts.get((slug, sku), 0) if slug not in order_count_errors else None
-            ad_available = slug not in advertising_errors
-            ad_metrics = advertising.get((slug, sku)) or {}
-            ad_spend = round(float(ad_metrics.get("spend") or 0), 2) if ad_available else None
-            ad_click_spend = float(ad_metrics.get("click_spend") or 0)
-            ad_impressions = int(ad_metrics.get("impressions") or 0)
-            ad_clicks = int(ad_metrics.get("clicks") or 0)
             product_turnover = turnover.get((slug, sku), 0.0) if slug not in turnover_errors else None
             inbound_qty = inbound.quantities.get(sku)
             inbound_partial = inbound_qty is None
@@ -148,10 +134,6 @@ def load_products(
                 errors.append(turnover_errors[slug])
             if order_count_errors.get(slug) and order_count_errors[slug] not in errors:
                 errors.append(order_count_errors[slug])
-            if ad_source_error:
-                errors.append("Реклама Ozon: " + str(ad_source_error))
-            elif advertising_errors.get(slug):
-                errors.append(advertising_errors[slug])
             products.append(
                 {
                     "id": f"ozon:{slug}:{sku}",
@@ -192,29 +174,17 @@ def load_products(
                         "period_to": period_to.isoformat(),
                     },
                     "advertising": {
-                        "drr": wb_calculations.calculate_drr_percent(ad_spend, product_turnover)
-                        if ad_available and product_turnover is not None
-                        else None,
-                        "spend": ad_spend,
-                        "ctr": wb_calculations.money(ad_clicks / ad_impressions * 100)
-                        if ad_available and ad_impressions
-                        else 0.0
-                        if ad_available
-                        else None,
-                        "cpc": wb_calculations.money(ad_click_spend / ad_clicks)
-                        if ad_available and ad_clicks
-                        else 0.0
-                        if ad_available
-                        else None,
-                        "impressions": ad_impressions if ad_available else None,
-                        "clicks": ad_clicks if ad_available else None,
+                        "drr": None,
+                        "spend": None,
+                        "ctr": None,
+                        "cpc": None,
+                        "impressions": None,
+                        "clicks": None,
                         "orders_amount": product_turnover,
                         "period_from": period_from.isoformat(),
                         "period_to": period_to.isoformat(),
-                        "coverage": turnover_coverage if ad_available else None,
-                        "drr_coverage": turnover_coverage
-                        if ad_available and product_turnover is not None
-                        else None,
+                        "coverage": None,
+                        "drr_coverage": None,
                     },
                     "stock": {
                         "total": total_stock,

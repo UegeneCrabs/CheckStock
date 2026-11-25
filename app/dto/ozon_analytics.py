@@ -123,17 +123,6 @@ class OzonAnalyticsNote(OzonAnalyticsModel):
     can_edit: bool = False
     updated_at: datetime | None = None
     updated_by: str | None = None
-    revisions: tuple["OzonAnalyticsNoteRevision", ...] = ()
-
-
-class OzonAnalyticsNoteRevision(OzonAnalyticsModel):
-    id: str
-    action_id: int
-    previous_note: str
-    note: str
-    user_id: int | None = None
-    user_name: str
-    edited_at: datetime
 
 
 class OzonAnalyticsComment(OzonAnalyticsModel):
@@ -578,11 +567,6 @@ class OzonAnalyticsSales(OzonAnalyticsModel):
 class OzonAnalyticsNoteResponse(OzonAnalyticsModel):
     ok: bool = True
     note: OzonAnalyticsNote
-
-
-class OzonAnalyticsNoteRevisionsResponse(OzonAnalyticsModel):
-    ok: bool = True
-    revisions: tuple[OzonAnalyticsNoteRevision, ...]
 
 
 class OzonAnalyticsCommentResponse(OzonAnalyticsModel):

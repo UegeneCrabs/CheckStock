@@ -83,14 +83,8 @@ def result(day: OzonMarginDay) -> OzonCalendarResult:
     )
 
 
-def source_values(snapshot: OzonMarginSnapshot) -> OzonCalendarValues:
-    return OzonCalendarValues.model_validate(
-        {**snapshot.inputs.model_dump(), "buyout_percent": snapshot.buyout_percent}
-    )
-
-
 def token(evidence: OzonCalendarEvidence) -> str:
-    return sha256(evidence.model_copy(update={"events": ()}).model_dump_json().encode()).hexdigest()
+    return sha256(evidence.model_dump_json().encode()).hexdigest()
 
 
 def changed(journal: OzonCalendarJournal, change: OzonCalendarCorrection) -> OzonCalendarJournal:

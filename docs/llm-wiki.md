@@ -16,12 +16,13 @@ React-оболочка на TypeScript и Vite находится в `frontend/`
 | Правила разработки Ozon перед изменением кода | [Единый источник правил в скилле](../.agents/skills/checkstock-task-guide/SKILL.md#обязательные-правила-разработки-ozon) |
 | Сборка приложения и список подключённых роутеров | `app/main.py`, `app/web/routers/__init__.py` |
 | URL, права и обработка запроса | `app/web/routers/`, `app/web/middleware.py`, `app/web/dependencies.py` |
-| Пользователи, сессии и удаление прежней матрицы доступа | `app/access/authentication.py`, `app/access/resources.py`, `app/repositories/identity_migration.py`, [контракт и миграция](authentication.md) |
+| Пользователи, сессии, ежедневная очистка и прежняя матрица доступа | `app/application/identity.py`, `app/jobs/background.py`, `app/repositories/identity_migration.py`, [контракт и миграция](authentication.md) |
 | Прикладной сценарий складского изменения | `app/application/`, `app/infrastructure/stock_repository.py`, [контракт транзакций](f03-stock-transactions.md) |
 | Поставки FBO: один ФФ, обработка, нехватка и ручное проведение | `app/application/fbo_stock.py`, `app/infrastructure/fbo_stock_repository.py`, `static/stock/transit.js`, [контракт](fbo-stock-movements.md) |
 | Расписание поставок и отметка «Поставлена на сток» | `app/application/supply_arrival_stock.py`, `app/infrastructure/supply_arrival_stock_repository.py`, `static/stock/supply-arrivals.js`, [хранение, ID и API](supply-arrivals.md#отметка-поставлена-на-сток) |
 | SQL, снимки и старые read-модели | `app/repositories/`, `app/db.py` |
 | Схема и подключение БД | `app/repositories/schema.py`, `app/infrastructure/database.py`, `app/config.py` |
+| Удаление встроенного отчёта Яндекса, складских пометок и старых журналов | `app/repositories/retired_reports_migration.py`, `app/repositories/analyzer_notes_migration.py`, [список таблиц и порядок миграций](retired-report-tables.md) |
 | Загрузка маркетплейса | `app/wb/`, `app/ozon/`, `app/yandex/`, `app/jobs/` |
 | Цены Ozon, комиссия за продажу FBO и дневная история | `app/economics/ozon_prices.py`, `app/ozon/async_prices.py`, `app/infrastructure/async_prices_repository.py`, `app/infrastructure/async_commissions_repository.py`, [контракт](ozon-prices.md) |
 | Связанные цены калькулятора Ozon, СПП, кошелёк и комиссия | `app/economics/ozon_price_calculator.py`, `app/dto/ozon_price_calculator.py`, `static/economics/ozon/prices.js`, [формулы и источники себестоимости](ozon-prices.md#связь-цен-калькулятора) |
@@ -30,7 +31,6 @@ React-оболочка на TypeScript и Vite находится в `frontend/`
 | График Ozon за 7/14/30 дней и сравнение с прошлой неделей | `app/application/ozon_history.py`, `app/infrastructure/ozon_history_repository.py`, `static/economics/ozon/history.js`, [источники и пропуски](ozon-history.md) |
 | Редактирование расходов, выкупа, рекламы и налогов Ozon; общий ДРР, подбор цены по прибыли и ROI, подсказки | `app/economics/ozon_calculator.py`, `app/economics/ozon_roi_calculator.py`, `app/dto/ozon_calculator.py`, `static/economics/ozon/calculator.js`, `static/economics/ozon/calculator-help{,-content}.js`, [локальные сценарии и подсказки](ozon-calculator.md) |
 | Маржа Ozon за сегодня и диапазон | `app/economics/ozon_margin.py`, `app/ozon/margin_normalizer.py`, `app/infrastructure/ozon_margin_repository.py`, `app/jobs/ozon_margin.py`, [формула и история](ozon-margin.md) |
-| Исправление исторических налогов Ozon | `app/application/ozon_tax_history.py`, `app/infrastructure/ozon_tax_history_repository.py`, `scripts/ops/repair_ozon_tax_history.py`, [источники и журнал](ozon-margin.md#исправление-исторических-налогов) |
 | Отчёты Ozon: юниточная прибыль, целевая цена, ROI кабинета и товара | `app/application/ozon_reports.py`, `app/economics/{ozon_reports,ozon_target_prices}.py`, `app/infrastructure/ozon_reports_repository.py`, `app/web/routers/ozon_reports.py`, `static/economics/ozon/reports.js`, [расчёты, источники и HTTP-контракты](ozon-reports.md) |
 | Лимиты Seller/Performance API Ozon, Retry-After, квоты организаций и продолжение отчётов | `app/application/ozon_limits.py`, `app/ozon/rate_normalizer.py`, `app/infrastructure/ozon_limits_repository.py`, `app/ozon/performance_limits.py`, [контроль запросов и резервов](ozon-api-limits.md) |
 | Недельный запуск хранения Ozon FBO | `app/jobs/ozon_storage_schedule.py`, `app/jobs/ozon.py`, [расписание и снимки](ozon-storage.md#задача-и-калькулятор) |
@@ -43,7 +43,7 @@ React-оболочка на TypeScript и Vite находится в `frontend/`
 | Скорость таблиц, графиков и отчётов WB и Яндекс Маркета | `app/yandex/economics.py`, `app/web/routers/unit_economics.py`, [область оптимизаций](economics-performance.md) |
 | Юнит-экономика и цены | `app/economics/`, `app/yandex/economics*.py`, `app/web/routers/unit_economics.py` |
 | Общие комментарии к товарам в юнит-экономике | `app/web/routers/product_comments.py`, `app/infrastructure/product_comments_repository.py`, `static/economics/shared/product-comments.js`, [хранение и перенос](unit-economics-comments.md) |
-| Календарь параметров WB/Ozon/ЯМ и дневные корректировки Ozon | `app/web/routers/{economics_calendar,ozon_calendar}.py`, `app/application/ozon_calendar.py`, `app/infrastructure/ozon_calendar_repository.py`, `static/economics/{shared,ozon}/calendar.js`, [контракт](daily-economics-calendar.md) |
+| Дневные снимки экономики WB/Ozon/ЯМ | `app/repositories/daily_economics.py`, `app/infrastructure/{daily_economics_orm,ozon_calendar_repository}.py`, [хранение и потребители](daily-economics-calendar.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, [контракт](ephemerides.md) |
 | Отчёт WB «Рейтинг товаров» | `app/economics/wb/rating_report.py`, `app/web/routers/rating_report.py`, `app/application/wb_product_rating.py`, [полнота данных](f05-economics-completeness.md) |
 | API рейтинга склейки WB: сравнение и история | `app/agents/rating_reports.py`, `app/application/agent_rating.py`, `app/dto/agent_rating.py`, `app/infrastructure/agent_rating_repository.py`, [методы и ограничения](agent-wb-rating.md) |
@@ -67,7 +67,7 @@ React-оболочка на TypeScript и Vite находится в `frontend/`
 | Анализатор ПРО WB | `app/analytics/analyzer.py`, `static/analytics/analyzer-model.js`, [контракт](wb-analyzer.md) |
 | Расписание поставок FBO/FBW/FBY | `app/jobs/inbound_schedule.py`, `INBOUND_SCHEDULE`, [поставки](inbound-supplies.md) |
 | Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, `app/jobs/wb_ephemerides.py`, [контракт](ephemerides.md) |
-| Финансовый отчёт Яндекс Маркета | `app/application/finance.py`, `app/finance/`, `app/infrastructure/finance_*`, [финансовый учёт](yandex-finance.md), [ТЗ](yandex-finance-spec.md) |
+| Внешний финансовый отчёт Яндекс Маркета | `app/access/sections.py`, пункт «Финансовые отчёты → Яндекс» в обеих шапках, [инструкция](yandex-finance.md) |
 | Новинки Ozon, порог 21 день | `app/ozon/newness.py`, `app/infrastructure/ozon_newness_repository.py`, [источники и контракт](ozon-newness.md) |
 | Веб-интерфейс | `templates/`, `static/`, соответствующий файл в `app/web/routers/` |
 | Интерфейс Ozon и общие страницы без Python-разметки | `app/web/client_page.py`, `app/dto/{integrations,ui,stock_pages,ozon_economics,google_export}.py`, `app/infrastructure/async_read_models.py`, `static/common/client-page.js`, [контракты и границы переноса](ozon-web-contracts.md) |

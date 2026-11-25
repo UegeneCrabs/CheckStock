@@ -307,16 +307,3 @@ class StockArticleDetail(DtoModel):
     marketplace: str
     warehouses: tuple[ArticleWarehouse, ...]
     transit: tuple[ArticleTransit, ...]
-
-
-class StockClassificationCommand(DtoModel):
-    operation_id: int
-    is_fbs_transfer: bool
-    user_id: int
-    updated_at: str
-
-
-class StockClassificationResult(DtoModel):
-    ok: bool = True
-    operation_id: int
-    is_fbs_transfer: bool

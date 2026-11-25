@@ -30,8 +30,8 @@ COPY static ./static
 COPY --from=frontend /build/dist ./static/checkstock-ui
 COPY templates ./templates
 
-RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/data/backups/database /app/data/logs /app/secrets /app/finance-credentials /app/agent-credentials \
-    && chmod 700 /app/finance-credentials /app/agent-credentials && chown -R checkstock:checkstock /app
+RUN mkdir -p /app/data/yandex-storefront /app/data/wb-storefront /app/data/backups/database /app/data/logs /app/secrets /app/agent-credentials \
+    && chmod 700 /app/agent-credentials && chown -R checkstock:checkstock /app
 
 USER checkstock
 

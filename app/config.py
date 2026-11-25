@@ -227,10 +227,6 @@ class Settings(BaseModel):
     log_file: Path | None = None
     slow_request_threshold_ms: int = Field(ge=1)
     background_sync_enabled: bool
-    yandex_finance_enabled: bool = False
-    yandex_finance_secrets_path: Path | None = None
-    yandex_finance_raw_retention_days: int = Field(default=365, ge=90)
-    yandex_finance_reconcile_months: int = Field(default=0, ge=0, le=12)
     economics_preview_enabled: bool = False
     funnel_orders_sync_enabled: bool
     unit_economics_1c_price_sync_enabled: bool
@@ -363,18 +359,6 @@ class Settings(BaseModel):
             log_file=Path(log_file) if (log_file := os.getenv("CHECKSTOCK_LOG_FILE", "").strip()) else None,
             slow_request_threshold_ms=_env_int("CHECKSTOCK_SLOW_REQUEST_THRESHOLD_MS", 1_000, minimum=1),
             background_sync_enabled=not _env_bool("CHECKSTOCK_DISABLE_BACKGROUND_SYNC", False),
-            yandex_finance_enabled=_env_bool("CHECKSTOCK_YANDEX_FINANCE_ENABLED", False),
-            yandex_finance_secrets_path=(
-                Path(os.environ["CHECKSTOCK_YANDEX_FINANCE_SECRETS_PATH"])
-                if os.getenv("CHECKSTOCK_YANDEX_FINANCE_SECRETS_PATH")
-                else None
-            ),
-            yandex_finance_raw_retention_days=_env_int(
-                "CHECKSTOCK_YANDEX_FINANCE_RAW_RETENTION_DAYS", 365, minimum=90
-            ),
-            yandex_finance_reconcile_months=_env_int(
-                "CHECKSTOCK_YANDEX_FINANCE_RECONCILE_MONTHS", 0, maximum=12
-            ),
             economics_preview_enabled=(
                 _env_bool("CHECKSTOCK_ECONOMICS_PREVIEW_ENABLED", False)
                 if "CHECKSTOCK_ECONOMICS_PREVIEW_ENABLED" in os.environ

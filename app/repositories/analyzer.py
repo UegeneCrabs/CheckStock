@@ -1,8 +1,8 @@
 """Saved WB funnel details and dated work notes for the analyzer."""
 
-import uuid
 from datetime import UTC, datetime
 
+from app.core.domain import MOSCOW_TIMEZONE
 from app.repositories.core import WRITE_LOCK, get_connection
 
 
@@ -27,35 +27,22 @@ def notes(stores: tuple[str, ...], start: str, end: str) -> list[dict]:
         return []
     marks = ",".join("?" for _ in stores)
     with get_connection() as conn:
-        result = [
+        return [
             dict(row)
             for row in conn.execute(
-                "SELECT id,store_slug,article,action_date,note,user_name,created_at FROM rnp_action_log "
+                "SELECT id,store_slug,article,action_date,note,user_name,created_at,updated_at,updated_by "
+                "FROM analyzer_daily_notes "
                 f"WHERE marketplace='WB' AND store_slug IN ({marks}) AND action_date>=? AND action_date<=? "
                 "ORDER BY action_date,created_at,id",
                 (*stores, start, end),
             )
         ]
-        by_id = {row["id"]: row for row in result}
-        for row in result:
-            row.update(revisions=[], updated_at=None, updated_by=None)
-        revisions = conn.execute(
-            "SELECT r.* FROM rnp_action_revisions r JOIN rnp_action_log a ON a.id=r.action_id "
-            f"WHERE a.marketplace='WB' AND a.store_slug IN ({marks}) "
-            "AND a.action_date>=? AND a.action_date<=? ORDER BY r.edited_at,r.id",
-            (*stores, start, end),
-        )
-        for revision in revisions:
-            row = by_id[revision["action_id"]]
-            row["revisions"].append(dict(revision))
-            row["updated_at"], row["updated_by"] = revision["edited_at"], revision["user_name"]
-    return result
 
 
 def get_note(note_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id,store_slug,article,action_date,note,user_name,created_at FROM rnp_action_log "
+            "SELECT id,store_slug,article,action_date,note,user_name,created_at FROM analyzer_daily_notes "
             "WHERE id=? AND marketplace='WB'",
             (note_id,),
         ).fetchone()
@@ -66,7 +53,7 @@ def add_note(store: str, article: str, day: str, note: str, user) -> dict:
     created = datetime.now(UTC).isoformat()
     with get_connection() as conn:
         result = conn.execute(
-            "INSERT INTO rnp_action_log "
+            "INSERT INTO analyzer_daily_notes "
             "(store_slug,marketplace,article,action_date,note,user_id,user_name,created_at) "
             "VALUES (?,'WB',?,?,?,?,?,?) RETURNING id",
             (store, article, day, note, user.id, user.full_name, created),
@@ -83,27 +70,26 @@ def add_note(store: str, article: str, day: str, note: str, user) -> dict:
         "created_at": created,
         "updated_at": None,
         "updated_by": None,
-        "revisions": [],
     }
 
 
-def update_note(original: dict, note: str, user) -> dict:
-    edited = datetime.now(UTC).isoformat()
+def update_note(original: dict, note: str, previous_note: str, user) -> dict:
     with WRITE_LOCK, get_connection() as conn:
+        edited = datetime.now(UTC)
         result = conn.execute(
-            "UPDATE rnp_action_log SET note=? WHERE id=? AND marketplace='WB' AND note=? AND action_date=?",
-            (note, original["id"], original["note"], original["action_date"]),
-        )
-        if result.rowcount != 1:
+            "UPDATE analyzer_daily_notes SET note=?,updated_at=?,updated_by=? "
+            "WHERE id=? AND marketplace='WB' AND note=? AND action_date=? "
+            "RETURNING id,store_slug,article,action_date,note,user_name,created_at,updated_at,updated_by",
+            (
+                note,
+                edited.isoformat(),
+                user.full_name,
+                original["id"],
+                previous_note,
+                edited.astimezone(MOSCOW_TIMEZONE).date().isoformat(),
+            ),
+        ).fetchone()
+        if result is None:
             raise ValueError("Запись уже изменена. Обновите карточку и повторите правку.")
-        conn.execute(
-            "INSERT INTO rnp_action_revisions (id,action_id,previous_note,note,user_id,user_name,edited_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (uuid.uuid4().hex, original["id"], original["note"], note, user.id, user.full_name, edited),
-        )
         conn.commit()
-    return next(
-        row
-        for row in notes((original["store_slug"],), original["action_date"], original["action_date"])
-        if row["id"] == original["id"]
-    )
+    return dict(result)

@@ -1,20 +1,16 @@
 from datetime import date
-from uuid import uuid4
 
-from sqlalchemy import Table, func, insert, select
+from sqlalchemy import Table, func, select
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.constants import OZON_CALENDAR, OZON_MARGIN, Marketplace, OzonCalendarEventKind
+from app.core.constants import OZON_CALENDAR, OZON_MARGIN, Marketplace
 from app.dto.ozon_advertising import AdvertisingPeriod
 from app.dto.ozon_calendar import (
-    OzonCalendarConflict,
-    OzonCalendarEvent,
     OzonCalendarJournal,
     OzonCalendarKey,
     OzonCalendarProduct,
     OzonCalendarProductSource,
-    OzonCalendarSave,
     OzonCalendarSources,
 )
 from app.dto.ozon_economics import OzonProductsQuery
@@ -31,10 +27,6 @@ from app.ozon import tokens
 
 def records_table() -> Table:
     return OrmBase.metadata.tables[OZON_CALENDAR.records_table]
-
-
-def events_table() -> Table:
-    return OrmBase.metadata.tables[OZON_CALENDAR.events_table]
 
 
 def identity(table: Table, key: OzonCalendarKey) -> tuple[ColumnElement[bool], ...]:
@@ -141,16 +133,6 @@ class OzonCalendarRepository:
             ),
         )
 
-    async def events(self, key: OzonCalendarKey) -> tuple[OzonCalendarEvent, ...]:
-        table = events_table()
-        async with self.database.transaction() as connection:
-            return tuple(
-                OzonCalendarEvent.model_validate_json(payload)
-                for payload in await connection.scalars(
-                    select(table.c.payload_json).where(*identity(table, key)).order_by(table.c.revision)
-                )
-            )
-
     async def apply(self, snapshots: tuple[OzonMarginSnapshot, ...]) -> tuple[OzonMarginSnapshot, ...]:
         if not snapshots:
             return snapshots
@@ -178,43 +160,6 @@ class OzonCalendarRepository:
         )
 
     @staticmethod
-    async def write(
-        connection: AsyncConnection,
-        key: OzonCalendarKey,
-        journal: OzonCalendarJournal,
-        event: OzonCalendarEvent,
-    ) -> None:
-        keys = {
-            "marketplace": Marketplace.OZON,
-            "store_slug": key.store,
-            "article": key.article,
-            "day": key.day.isoformat(),
-        }
-        await connection.execute(
-            upsert(
-                connection,
-                records_table(),
-                {
-                    **keys,
-                    "revision": journal.revision,
-                    "payload_json": journal.model_dump_json(),
-                    "updated_at": event.at.isoformat(),
-                },
-                tuple(keys),
-            )
-        )
-        await connection.execute(
-            insert(events_table()).values(
-                **keys,
-                id=str(uuid4()),
-                revision=journal.revision,
-                payload_json=event.model_dump_json(),
-                created_at=event.at.isoformat(),
-                actor=event.actor,
-            )
-        )
-
-    @staticmethod
     async def observe(connection: AsyncConnection, snapshot: OzonMarginSnapshot) -> None:
         key = OzonCalendarKey(store=snapshot.store_slug, article=snapshot.article, day=snapshot.day)
         table = records_table()
@@ -227,37 +172,22 @@ class OzonCalendarRepository:
             if previous
             else OzonCalendarJournal(original=snapshot, source=snapshot, revision=1)
         )
-        await OzonCalendarRepository.write(
-            connection,
-            key,
-            journal,
-            OzonCalendarEvent(
-                at=snapshot.observed_at,
-                actor=OZON_CALENDAR.source_actor,
-                kind=OzonCalendarEventKind.SOURCE,
-                before=ozon_calendar.source_values(previous.source) if previous else None,
-                after=ozon_calendar.source_values(snapshot),
-            ),
+        keys = {
+            "marketplace": Marketplace.OZON,
+            "store_slug": key.store,
+            "article": key.article,
+            "day": key.day.isoformat(),
+        }
+        await connection.execute(
+            upsert(
+                connection,
+                table,
+                {
+                    **keys,
+                    "revision": journal.revision,
+                    "payload_json": journal.model_dump_json(),
+                    "updated_at": snapshot.observed_at.isoformat(),
+                },
+                tuple(keys),
+            )
         )
-
-    async def save(self, command: OzonCalendarSave) -> None:
-        table = table_for(OzonMarginDailyRecord)
-        records = records_table()
-        async with self.database.transaction(write=True) as connection:
-            payload = await connection.scalar(
-                select(table.c.payload)
-                .where(
-                    table.c.store_slug == command.key.store,
-                    table.c.article == command.key.article,
-                    table.c.day == command.key.day.isoformat(),
-                )
-                .with_for_update()
-            )
-            if payload is None or OzonMarginSnapshot.model_validate_json(payload) != command.expected.source:
-                raise OzonCalendarConflict()
-            revision = await connection.scalar(
-                select(records.c.revision).where(*identity(records, command.key)).with_for_update()
-            )
-            if (revision or 0) != command.expected.revision:
-                raise OzonCalendarConflict()
-            await self.write(connection, command.key, command.journal, command.event)

@@ -1,5 +1,3 @@
-"""Feature switch for the Ozon dashboard and daily economics calendar."""
-
 from fastapi import HTTPException
 
 from app.config import settings
@@ -31,12 +29,3 @@ def can_preview(user: User | None) -> bool:
 def require_preview(user: User | None) -> None:
     if not can_preview(user):
         raise HTTPException(404, "Страница не найдена")
-
-
-def calendar_link(user: User | None, *, yandex: bool = False) -> str:
-    if not can_preview(user):
-        return ""
-    path = "/sales/unit-economics-1c" + ("/yandex-market" if yandex else "")
-    return (
-        f'<a class="ue1c-ghost-button" id="ue1c-calendar-link" href="{path}?calendar=1">Параметры по дням</a>'
-    )

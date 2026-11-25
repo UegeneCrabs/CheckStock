@@ -296,15 +296,6 @@ CREATE TABLE stock_operation_items (
             quantity INTEGER NOT NULL
         , purchase_price FLOAT, purchase_price_recorded INTEGER NOT NULL DEFAULT 0);
 
-CREATE TABLE stock_operation_report_flags (
-	operation_id INTEGER NOT NULL,
-	is_fbs_transfer INTEGER DEFAULT '0' NOT NULL,
-	updated_by INTEGER,
-	updated_at VARCHAR NOT NULL,
-	PRIMARY KEY (operation_id),
-	FOREIGN KEY(operation_id) REFERENCES stock_operations (id) ON DELETE CASCADE
-);
-
 CREATE TABLE stock_audit_randomizations (
 	id INTEGER NOT NULL,
 	batch_key VARCHAR(32) NOT NULL,

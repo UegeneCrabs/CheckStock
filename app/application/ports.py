@@ -35,7 +35,6 @@ from app.dto.ozon_analytics import (
     OzonAnalyticsFunnelRun,
     OzonAnalyticsNote,
     OzonAnalyticsNoteCreate,
-    OzonAnalyticsNoteRevision,
     OzonAnalyticsNoteUpdate,
     OzonAnalyticsReference,
     OzonAnalyticsReservation,
@@ -46,7 +45,6 @@ from app.dto.ozon_analytics import (
     OzonAnalyticsStockSnapshot,
     OzonAnalyticsTransit,
 )
-from app.dto.ozon_calendar import OzonCalendarEvent, OzonCalendarKey, OzonCalendarSave, OzonCalendarSources
 from app.dto.ozon_economics import OzonCoverage, OzonProducts, OzonProductsQuery
 from app.dto.ozon_limits import (
     OzonRateFeedback,
@@ -64,7 +62,6 @@ from app.dto.ozon_reports import (
     OzonTargetRecord,
     OzonTargetSave,
 )
-from app.dto.ozon_tax_history import OzonTaxHistoryCommand, OzonTaxHistoryData, OzonTaxHistoryPlan
 from app.dto.yandex_analytics import (
     Comment,
     CommentChange,
@@ -434,17 +431,6 @@ class OzonLimitStore(Protocol):
     async def resolve_report(self, identity: PerformanceIdentity, request_key: str) -> None: ...
 
 
-class OzonCalendarStore(Protocol):
-    async def days(self, store: str, day: date, article: str = "") -> OzonCalendarSources: ...
-    async def events(self, key: OzonCalendarKey) -> tuple[OzonCalendarEvent, ...]: ...
-    async def save(self, command: OzonCalendarSave) -> None: ...
-
-
-class OzonTaxHistoryStore(Protocol):
-    async def load(self, command: OzonTaxHistoryCommand) -> OzonTaxHistoryData: ...
-    async def save(self, plan: OzonTaxHistoryPlan) -> None: ...
-
-
 class OzonReportsStore(Protocol):
     async def catalog(self, stores: tuple[str, ...]) -> tuple[OzonReportCatalogItem, ...]: ...
     async def has_product(self, store: str, article: str) -> bool: ...
@@ -549,7 +535,6 @@ class OzonAnalyticsStore(OzonTransitSnapshotStore, Protocol):
         author: OzonAnalyticsAuthor,
         now: datetime,
     ) -> OzonAnalyticsNote: ...
-    async def note_revisions(self, note_id: int) -> tuple[OzonAnalyticsNoteRevision, ...]: ...
     async def comments(
         self, stores: tuple[str, ...], start: date, end: date
     ) -> tuple[OzonAnalyticsComment, ...]: ...

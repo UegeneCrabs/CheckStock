@@ -9,7 +9,6 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app import db
-from app.access import economics_preview
 from app.access.authentication import is_active_user
 from app.access.resources import accessible_stores, has_store_marketplace
 from app.core.domain import MOSCOW_TIMEZONE
@@ -108,10 +107,6 @@ def _unit_economics_period(request: Request, last_complete_day: date):
 
 @router.get("/sales/unit-economics-1c", response_class=HTMLResponse)
 async def sales_unit_economics_1c(request: Request):
-    if request.query_params.get("calendar") == "1":
-        from app.web.routers.economics_calendar import page
-
-        return page(request)
     accessible_store_slugs = accessible_stores(request.state.user, "WB")
     data_request = request.query_params.get("data") == "1"
     request_today = datetime.now(MOSCOW_TIMEZONE).date()
@@ -210,7 +205,6 @@ async def sales_unit_economics_1c(request: Request):
         "economics/shared/dashboard.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
         marketplace_name="Wildberries",
-        calendar_link=economics_preview.calendar_link(request.state.user),
         marketplace_label="WB",
         loading_description="Таблица появится сразу после подготовки расчётов.",
         unit_1c_notice="",
@@ -1541,10 +1535,6 @@ async def yandex_buyout_settings_save(
 
 @router.get("/sales/unit-economics-1c/yandex-market", response_class=HTMLResponse)
 async def sales_unit_economics_1c_yandex(request: Request):
-    if request.query_params.get("calendar") == "1":
-        from app.web.routers.economics_calendar import page
-
-        return page(request)
     store_slugs = accessible_stores(request.state.user, unit_economics_yandex.MARKETPLACE)
     today = datetime.now(MOSCOW_TIMEZONE).date()
     last_complete_day = today - timedelta(days=1)
@@ -1612,7 +1602,6 @@ async def sales_unit_economics_1c_yandex(request: Request):
         "economics/shared/dashboard.html",
         unit_1c_config=json.dumps(unit_config, ensure_ascii=False).replace("</", "<\\/"),
         marketplace_name="Яндекс Маркет",
-        calendar_link=economics_preview.calendar_link(request.state.user, yandex=True),
         marketplace_label="Яндекс Маркета",
         loading_description="Загружаем товары из каталога.",
         unit_1c_notice="",

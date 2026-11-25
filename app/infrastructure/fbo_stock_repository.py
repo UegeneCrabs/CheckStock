@@ -8,7 +8,14 @@ from pydantic import TypeAdapter
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.core.constants import FBO_STOCK, INBOUND_SCHEDULE, FboStockErrorCode, FboStockState
+from app.core.constants import (
+    FBO_STOCK,
+    INBOUND_SCHEDULE,
+    FboStockErrorCode,
+    FboStockState,
+    JobStatus,
+    Marketplace,
+)
 from app.dto.fbo_stock import (
     FboActor,
     FboAllocation,
@@ -129,7 +136,12 @@ class FboStockUnitOfWork:
         snapshot = (
             (
                 await self.connection.execute(
-                    select(SNAPSHOTS.c.payload_json, SNAPSHOTS.c.last_success, SNAPSHOTS.c.status).where(
+                    select(
+                        SNAPSHOTS.c.payload_json,
+                        SNAPSHOTS.c.last_success,
+                        SNAPSHOTS.c.last_finished,
+                        SNAPSHOTS.c.status,
+                    ).where(
                         SNAPSHOTS.c.store_slug == target.store_slug,
                         SNAPSHOTS.c.marketplace == target.marketplace,
                     )
@@ -145,8 +157,12 @@ class FboStockUnitOfWork:
                 observed = observed.replace(tzinfo=UTC)
             confirmed = (
                 snapshot["status"] in FBO_STOCK.snapshot_confirmed
-                and (datetime.now(UTC) - observed).total_seconds() <= INBOUND_SCHEDULE.stale_after_seconds
-            )
+                or (
+                    target.marketplace == Marketplace.OZON
+                    and snapshot["status"] == JobStatus.RUNNING
+                    and snapshot["last_finished"] == snapshot["last_success"]
+                )
+            ) and (datetime.now(UTC) - observed).total_seconds() <= INBOUND_SCHEDULE.stale_after_seconds
         movements = await self.connection.scalars(
             select(MOVEMENTS.c.payload_json)
             .where(

@@ -164,8 +164,7 @@ def render_page(
     header = fill_template(
         "layout/header.html",
         finance_hidden=hidden(visible[SectionName.FINANCE_YANDEX]),
-        finance_active="active" if active == "finance_yandex" else "",
-        finance_expanded="false",
+        finance_url=section_path(user, SectionName.FINANCE_YANDEX),
         marketplace_header_class=" marketplace-" + marketplace[0] if marketplace else "",
         marketplace_badge=marketplace_badge,
         analytics_hidden=hidden(any(visible[item] for item in ANALYTICS_SECTIONS)),

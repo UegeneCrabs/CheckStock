@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import Field, NonNegativeInt, PositiveInt, RootModel, SecretStr
+from pydantic import AwareDatetime, Field, NonNegativeInt, PositiveInt, RootModel, SecretStr
 
 from app.dto.common import DtoModel
 
@@ -151,7 +151,7 @@ class UserCountQuery(DtoModel):
 
 
 class ExpiredSessionsCommand(DtoModel):
-    now: datetime
+    now: AwareDatetime
 
 
 class ActivityCommand(DtoModel):

@@ -474,23 +474,6 @@ class StockOperationItemRecord(OrmBase):
     )
 
 
-class StockOperationReportFlagRecord(OrmBase):
-    __tablename__ = "stock_operation_report_flags"
-
-    operation_id: Mapped[int] = mapped_column(
-        ForeignKey("stock_operations.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    is_fbs_transfer: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default="0",
-    )
-    updated_by: Mapped[int | None] = mapped_column(Integer)
-    updated_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
 class ManualSupplyRecord(OrmBase):
     __tablename__ = "manual_supplies"
     __table_args__ = (Index("idx_manual_supplies_delivery_at", "delivery_at", "id"),)
@@ -988,16 +971,6 @@ class OzonProductReputationRecord(OrmBase):
     synced_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class OzonAdvertisingSnapshotRecord(OrmBase):
-    __tablename__ = "ozon_advertising_snapshots"
-
-    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
-    period_from: Mapped[str] = mapped_column(String, primary_key=True)
-    period_to: Mapped[str] = mapped_column(String, primary_key=True)
-    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
-    synced_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
 class UnitEconomics1CWBCommissionRecord(OrmBase):
     __tablename__ = "unit_economics_1c_wb_commissions"
 
@@ -1158,22 +1131,11 @@ class UnitEconomics1CAdvertisingSyncStateRecord(OrmBase):
     error: Mapped[str | None] = mapped_column(Text)
 
 
-class RnpStrategyRecord(OrmBase):
-    __tablename__ = "rnp_strategies"
-
-    store_slug: Mapped[str] = mapped_column(String, primary_key=True)
-    marketplace: Mapped[str] = mapped_column(String, primary_key=True)
-    article: Mapped[str] = mapped_column(String, primary_key=True)
-    strategy: Mapped[str] = mapped_column(Text, nullable=False)
-    date_from: Mapped[str] = mapped_column(String, nullable=False)
-    date_to: Mapped[str] = mapped_column(String, nullable=False)
-    updated_by: Mapped[str] = mapped_column(String, nullable=False)
-    updated_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
-class RnpActionRecord(OrmBase):
-    __tablename__ = "rnp_action_log"
-    __table_args__ = (Index("idx_rnp_action_lookup", "store_slug", "marketplace", "article", "action_date"),)
+class AnalyzerDailyNoteRecord(OrmBase):
+    __tablename__ = "analyzer_daily_notes"
+    __table_args__ = (
+        Index("idx_analyzer_daily_note_lookup", "store_slug", "marketplace", "article", "action_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     store_slug: Mapped[str] = mapped_column(String, nullable=False)
@@ -1184,21 +1146,8 @@ class RnpActionRecord(OrmBase):
     user_id: Mapped[int | None] = mapped_column(Integer)
     user_name: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
-class RnpActionRevisionRecord(OrmBase):
-    """Immutable prior text and editor for an in-place work-note correction."""
-
-    __tablename__ = "rnp_action_revisions"
-    __table_args__ = (Index("idx_rnp_action_revision_note", "action_id", "edited_at"),)
-
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    action_id: Mapped[int] = mapped_column(ForeignKey("rnp_action_log.id"), nullable=False)
-    previous_note: Mapped[str] = mapped_column(Text, nullable=False)
-    note: Mapped[str] = mapped_column(Text, nullable=False)
-    user_id: Mapped[int | None] = mapped_column(Integer)
-    user_name: Mapped[str] = mapped_column(String, nullable=False)
-    edited_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str | None] = mapped_column(String)
+    updated_by: Mapped[str | None] = mapped_column(String)
 
 
 class DecisionMetricRecord(OrmBase):
@@ -1244,16 +1193,6 @@ class DecisionSyncStateRecord(OrmBase):
     records: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error: Mapped[str | None] = mapped_column(Text)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-
-
-class DecisionActionRecord(OrmBase):
-    __tablename__ = "wb_decision_actions"
-
-    fingerprint: Mapped[str] = mapped_column(String, primary_key=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="new", server_default="new")
-    user_id: Mapped[int | None] = mapped_column(Integer)
-    user_name: Mapped[str | None] = mapped_column(String)
-    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class RnpDailyMetricRecord(OrmBase):

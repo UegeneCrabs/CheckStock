@@ -77,16 +77,6 @@ class NoteChange(AnalyticsModel):
         return value
 
 
-class NoteRevision(AnalyticsModel):
-    id: str
-    action_id: int
-    previous_note: str
-    note: str
-    user_id: int
-    user_name: str
-    edited_at: str
-
-
 class DayNote(AnalyticsModel):
     id: int
     store_slug: str
@@ -97,7 +87,6 @@ class DayNote(AnalyticsModel):
     created_at: str
     updated_at: str | None = None
     updated_by: str | None = None
-    revisions: tuple[NoteRevision, ...] = ()
     can_edit: bool = False
 
 

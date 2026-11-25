@@ -56,7 +56,6 @@ from app.dto.ozon_analytics import (
     OzonAnalyticsIssue,
     OzonAnalyticsNote,
     OzonAnalyticsNoteCreate,
-    OzonAnalyticsNoteRevision,
     OzonAnalyticsNoteUpdate,
     OzonAnalyticsPrice,
     OzonAnalyticsReference,
@@ -77,10 +76,9 @@ from app.infrastructure.async_prices_repository import stored_price_values
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.economics_coverage_orm import economics_source_days, ozon_order_days
 from app.infrastructure.orm import (
+    AnalyzerDailyNoteRecord,
     FulfillmentStockRecord,
     MarketplaceStockRecord,
-    RnpActionRecord,
-    RnpActionRevisionRecord,
     SalesOrderLineRecord,
     StockItemRecord,
     UnitEconomics1CSourceValueRecord,
@@ -426,7 +424,7 @@ class OzonAnalyticsRepository:
     async def notes(
         self, stores: tuple[str, ...], start: date, end: date, today: date
     ) -> tuple[OzonAnalyticsNote, ...]:
-        table = table_for(RnpActionRecord)
+        table = table_for(AnalyzerDailyNoteRecord)
         async with self.database.transaction() as connection:
             rows = await connection.execute(
                 select(*(column for column in table.c if column.name != "marketplace"))
@@ -437,34 +435,15 @@ class OzonAnalyticsRepository:
                 )
                 .order_by(table.c.created_at, table.c.id)
             )
-            notes = tuple(OzonAnalyticsNote.model_validate(row) for row in rows.mappings())
-            revisions = table_for(RnpActionRevisionRecord)
-            history = tuple(
-                OzonAnalyticsNoteRevision.model_validate(row)
-                for row in (
-                    await connection.execute(
-                        select(revisions)
-                        .where(revisions.c.action_id.in_(tuple(item.id for item in notes)))
-                        .order_by(revisions.c.edited_at, revisions.c.id)
-                    )
-                ).mappings()
-            )
             return tuple(
-                value.model_copy(
-                    update={
-                        "can_edit": value.action_date == today,
-                        "revisions": (
-                            entries := tuple(item for item in history if item.action_id == value.id)
-                        ),
-                        "updated_at": entries[-1].edited_at if entries else None,
-                        "updated_by": entries[-1].user_name if entries else None,
-                    }
+                OzonAnalyticsNote.model_validate(row).model_copy(
+                    update={"can_edit": row["action_date"] == today.isoformat()}
                 )
-                for value in notes
+                for row in rows.mappings()
             )
 
     async def note(self, note_id: int) -> OzonAnalyticsNote | None:
-        table = table_for(RnpActionRecord)
+        table = table_for(AnalyzerDailyNoteRecord)
         async with self.database.transaction() as connection:
             row = (
                 (
@@ -477,22 +456,12 @@ class OzonAnalyticsRepository:
                 .mappings()
                 .first()
             )
-        if row is None:
-            return None
-        value = OzonAnalyticsNote.model_validate(row)
-        revisions = await self.note_revisions(note_id)
-        return value.model_copy(
-            update={
-                "revisions": revisions,
-                "updated_at": revisions[-1].edited_at if revisions else None,
-                "updated_by": revisions[-1].user_name if revisions else None,
-            }
-        )
+        return OzonAnalyticsNote.model_validate(row) if row is not None else None
 
     async def create_note(
         self, payload: OzonAnalyticsNoteCreate, author: OzonAnalyticsAuthor, now: datetime
     ) -> OzonAnalyticsNote:
-        table = table_for(RnpActionRecord)
+        table = table_for(AnalyzerDailyNoteRecord)
         async with self.database.transaction(write=True) as connection:
             await self._require_product(connection, payload.store, payload.article)
             if payload.day != self.clock().astimezone(TIME.moscow_timezone).date():
@@ -534,16 +503,7 @@ class OzonAnalyticsRepository:
         author: OzonAnalyticsAuthor,
         now: datetime,
     ) -> OzonAnalyticsNote:
-        table = table_for(RnpActionRecord)
-        revision = OzonAnalyticsNoteRevision(
-            id=uuid4().hex,
-            action_id=original.id,
-            previous_note=change.previous_note,
-            note=change.note,
-            user_id=author.id,
-            user_name=author.name,
-            edited_at=now,
-        )
+        table = table_for(AnalyzerDailyNoteRecord)
         async with self.database.transaction(write=True) as connection:
             await self._require_product(connection, original.store_slug, original.article)
             if original.action_date != self.clock().astimezone(TIME.moscow_timezone).date():
@@ -557,37 +517,19 @@ class OzonAnalyticsRepository:
                     table.c.marketplace == Marketplace.OZON,
                     table.c.note == change.previous_note,
                 )
-                .values(note=change.note)
+                .values(note=change.note, updated_at=now.isoformat(), updated_by=author.name)
                 .returning(table.c.id)
             )
             if value is None:
                 raise OzonAnalyticsConflict()
-            await connection.execute(
-                insert(table_for(RnpActionRevisionRecord)).values(**revision.model_dump(mode="json"))
-            )
         return original.model_copy(
             update={
                 "note": change.note,
                 "can_edit": True,
-                "revisions": original.revisions + (revision,),
                 "updated_at": now,
                 "updated_by": author.name,
             }
         )
-
-    async def note_revisions(self, note_id: int) -> tuple[OzonAnalyticsNoteRevision, ...]:
-        table = table_for(RnpActionRevisionRecord)
-        async with self.database.transaction() as connection:
-            return tuple(
-                OzonAnalyticsNoteRevision.model_validate(row)
-                for row in (
-                    await connection.execute(
-                        select(table)
-                        .where(table.c.action_id == note_id)
-                        .order_by(table.c.edited_at, table.c.id)
-                    )
-                ).mappings()
-            )
 
     async def comments(
         self, stores: tuple[str, ...], start: date, end: date
