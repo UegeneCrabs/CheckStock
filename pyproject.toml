@@ -111,7 +111,6 @@ files = [
     "app/infrastructure/inbound_read_repository.py",
     "app/infrastructure/integration_repository.py",
     "app/infrastructure/ozon_economics_repository.py",
-    "app/infrastructure/stock_classification_repository.py",
     "app/infrastructure/stock_page_repository.py",
     "app/stock/schemes.py",
     "app/web/client_page.py",

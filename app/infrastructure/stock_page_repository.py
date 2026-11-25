@@ -90,7 +90,7 @@ def _yandex_article_stock(store: str, article: str) -> dict[str, tuple[ArticleYa
         )
         if previous := by_scheme.get(scheme):
             stock = ArticleYandexWarehouseStock(
-                scheme=scheme,
+                scheme=stock.scheme,
                 on_hand=stock.on_hand + previous.on_hand,
                 available_for_order=_sum_if_known(stock.available_for_order, previous.available_for_order),
                 reserved=_sum_if_known(stock.reserved, previous.reserved),

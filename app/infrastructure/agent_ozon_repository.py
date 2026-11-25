@@ -230,15 +230,6 @@ class AgentOzonRepository:
                 "updated_at": note.updated_at.isoformat() if note.updated_at else None,
             }
             if query.include_history:
-                value["history"] = json_value(
-                    [
-                        {
-                            "text": entry.note,
-                            "previous_text": entry.previous_note,
-                            "updated_at": entry.edited_at,
-                        }
-                        for entry in note.revisions
-                    ]
-                )
+                value["history"] = []
             rows.append(value)
         return AgentOzonRows(rows=rows, context={"history_included": query.include_history})
