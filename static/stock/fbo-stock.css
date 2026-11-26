@@ -1,3 +1,7 @@
+.stock-operation-card.stock-transit-panel.is-collapsed {
+    min-height: 0;
+}
+
 .stock-transit-head {
     flex-wrap: wrap;
 }

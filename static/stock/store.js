@@ -158,10 +158,24 @@ window.stockTable = (function () {
         if (ff) url += '&ff=' + encodeURIComponent(ff);
         xlsxLink.setAttribute('href', url);
     }
+
+    function syncWarehouseAddress() {
+        var url = new URL(window.location.href);
+        var ff = currentFf();
+        if (ff) url.searchParams.set('ff', ff);
+        else url.searchParams.delete('ff');
+        window.history.replaceState(window.history.state, '', url);
+    }
+
+    if (whSelect) {
+        whSelect.value = new URLSearchParams(window.location.search).get('ff') || '';
+        if (whSelect.selectedIndex < 0) whSelect.value = '';
+    }
     syncXlsxLink();
 
     if (whSelect)
         whSelect.addEventListener('change', function () {
+            syncWarehouseAddress();
             syncXlsxLink();
             refresh();
         });
@@ -170,8 +184,10 @@ window.stockTable = (function () {
         document.querySelectorAll('.mp-tab[data-mp]').forEach(function (tab) {
             tab.addEventListener('click', function () {
                 if (tab.classList.contains('active')) return;
-                window.location =
-                    '/stock/' + storeSlug + '?mp=' + encodeURIComponent(tab.getAttribute('data-mp'));
+                var params = new URLSearchParams({ mp: tab.getAttribute('data-mp') });
+                var ff = currentFf();
+                if (ff) params.set('ff', ff);
+                window.location.assign('/stock/' + storeSlug + '?' + params);
             });
         });
 
@@ -181,6 +197,7 @@ window.stockTable = (function () {
             var ready = placeholder.getAttribute('data-ready') === '1';
             placeholder.classList.toggle('is-hidden', ready);
             layout.classList.toggle('is-hidden', !ready);
+            if (ready && currentFf()) refresh();
         }
     })();
 
