@@ -34,3 +34,14 @@ Table(
     Column("products_json", Text, nullable=False),
     Column("captured_at", String, nullable=False),
 )
+
+Table(
+    "ephemerides_weekly_goals",
+    OrmBase.metadata,
+    Column("store_slug", String, primary_key=True),
+    Column("week", String, primary_key=True),
+    Column("article", String, primary_key=True),
+    Column("quantity", Integer),
+    Column("applied_quantity", Integer),
+    Column("version", Integer, nullable=False),
+)

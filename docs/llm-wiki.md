@@ -66,7 +66,7 @@ React-оболочка на TypeScript и Vite находится в `frontend/`
 | Реклама Ozon каждые 30 минут, пропуски, кэш отчётов, привязка SKU и лимиты | `app/economics/ozon_advertising_breakdown.py`, `app/economics/ozon_advertising_articles.py`, `app/ozon/async_performance.py`, `app/infrastructure/async_advertising_repository.py`, [контракт и ограничения](ozon-performance-api.md) |
 | Анализатор ПРО WB | `app/analytics/analyzer.py`, `static/analytics/analyzer-model.js`, [контракт](wb-analyzer.md) |
 | Расписание поставок FBO/FBW/FBY | `app/jobs/inbound_schedule.py`, `INBOUND_SCHEDULE`, [поставки](inbound-supplies.md) |
-| Эфемериды и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, `app/jobs/wb_ephemerides.py`, [контракт](ephemerides.md) |
+| Эфемериды, ручные цели и недельные комментарии WB | `app/analytics/ephemerides.py`, `app/infrastructure/ephemerides_goal_repository.py`, `app/repositories/ephemerides.py`, `app/jobs/wb_transit.py`, `app/jobs/wb_ephemerides.py`, [контракт](ephemerides.md) |
 | Внешний финансовый отчёт Яндекс Маркета | `app/access/sections.py`, пункт «Финансовые отчёты → Яндекс» в обеих шапках, [инструкция](yandex-finance.md) |
 | Новинки Ozon, порог 21 день | `app/ozon/newness.py`, `app/infrastructure/ozon_newness_repository.py`, [источники и контракт](ozon-newness.md) |
 | Веб-интерфейс | `templates/`, `static/`, соответствующий файл в `app/web/routers/` |

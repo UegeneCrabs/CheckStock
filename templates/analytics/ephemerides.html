@@ -1,5 +1,5 @@
 <link rel="stylesheet" href="/static/analytics/analyzer.css?v=20261023">
-<link rel="stylesheet" href="/static/analytics/ephemerides.css?v=20261116-wb-closed-days">
+<link rel="stylesheet" href="/static/analytics/ephemerides.css?v=20261125-wb-trend-goals">
 <section class="analyzer ephemerides" id="ephemerides"><div class="analyzer-main">
  <section class="toolbar" aria-label="Эфемериды WB">
   <div class="report-search"><div class="heading-left"><h1 id="e-title">Эфемериды</h1><span class="demo">WB</span><div class="e-save-status"><span id="e-save" role="status"></span><button class="button" id="e-retry" hidden>Повторить сохранение</button></div></div>
@@ -9,7 +9,7 @@
    </div>
   </div>
   <div class="e-store-summary" id="e-summary-panel">
-   <div class="store-summary-wrap" id="e-summary-wrap"><table class="store-summary" aria-label="Товарооборот по магазинам"><thead><tr><th><button class="e-summary-toggle" id="e-summary-toggle" type="button" aria-expanded="true" aria-controls="e-summary" aria-label="Свернуть до общего итога" title="Свернуть до общего итога"><span>Магазин</span><span id="e-summary-arrow" aria-hidden="true">▴</span></button></th><th>ТО цель<br>на день, ₽</th><th>ТО факт<br>на данный момент, ₽</th><th>Прогнозируемый ТО<br>на день, ₽</th><th>Разница, ₽</th><th>Отклонение, %</th></tr></thead><tbody id="e-summary"></tbody></table></div>
+   <div class="store-summary-wrap" id="e-summary-wrap"><table class="store-summary" aria-label="Товарооборот по магазинам"><thead><tr><th><button class="e-summary-toggle" id="e-summary-toggle" type="button" aria-expanded="true" aria-controls="e-summary" aria-label="Свернуть до общего итога" title="Свернуть до общего итога"><span>Магазин</span><span id="e-summary-arrow" aria-hidden="true">▴</span></button></th><th>ТО цель<br><span id="e-summary-plan-period">на день</span>, ₽</th><th>ТО факт<br><span id="e-summary-fact-period">на данный момент</span>, ₽</th><th>Прогнозируемый ТО<br><span id="e-summary-forecast-period">на день</span>, ₽</th><th>Разница, ₽</th><th>Отклонение, %</th></tr></thead><tbody id="e-summary"></tbody></table></div>
   </div>
  </section>
  <div class="e-status-line" id="e-load" role="status">Загрузка данных…</div>
@@ -17,7 +17,7 @@
   <div class="table-top"><div class="table-navigation"><strong class="table-title">Товары <span id="e-count">0</span></strong><div class="jumps" id="e-jumps"></div></div>
    <div class="table-actions"><label id="e-kind-wrap" hidden>Тип записи <select id="e-kind"><option value="decision">Решения</option><option value="competitor">Конкуренты</option><option value="next">На следующую неделю</option></select></label>
     <div class="period"><button id="e-prev-week" aria-label="Предыдущая неделя">‹</button><label class="period-text"><small id="e-week-label">Выбранная неделя</small><input type="date" id="e-week" min="2000-01-03" aria-label="Дата выбранной недели"></label><button id="e-next-week" aria-label="Следующая неделя">›</button></div>
-    <div class="e-page-actions"><a class="button" id="e-other-page" href="/analytics/ephemerides/comments">↶ История комментариев</a><button class="button" id="e-export">↓ Экспорт</button></div>
+    <div class="e-page-actions"><button class="button primary" id="e-apply-goals" type="button" title="Применить сохранённые значения «Новая цель» за выбранную неделю" hidden disabled>Обновить цели</button><span id="e-goal-apply-status" role="status"></span><a class="button" id="e-other-page" href="/analytics/ephemerides/comments">↶ История комментариев</a><button class="button" id="e-export">↓ Экспорт</button></div>
     <div class="columns-wrap"><button class="button" id="e-columns" aria-expanded="false">▥ Колонки</button><div class="column-panel" id="e-column-panel" hidden><strong>Вид таблицы</strong><label><input type="checkbox" id="e-separate">Отдельные столбцы товара</label><label><input type="checkbox" id="e-dense">Компактные строки</label><hr><div id="e-groups"></div><button class="button" id="e-columns-done">Готово</button></div></div>
    </div>
   </div>
@@ -32,5 +32,5 @@
 </section>
 <script type="application/json" id="ephemerides-config">$ephemerides_config</script>
 <script src="/static/analytics/analyzer-model.js?v=20261113-export-log" defer></script>
-<script src="/static/analytics/ephemerides-model.js?v=20261116-wb-closed-days" defer></script>
-<script src="/static/analytics/ephemerides.js?v=20261116-wb-closed-days" defer></script>
+<script src="/static/analytics/ephemerides-model.js?v=20261125-wb-trend-goals" defer></script>
+<script src="/static/analytics/ephemerides.js?v=20261125-wb-trend-goals" defer></script>

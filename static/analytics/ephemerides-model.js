@@ -12,26 +12,37 @@
         const values = new Set(rows.map(value).filter(v => v != null));
         return values.size === 1 ? [...values][0] : null;
     }
-    function summaryValue(rows, period, key) {
+    function trendChange(values) {
+        const first=values?.[0], last=values?.at(-1);
+        return first!=null&&last!=null?last-first:null;
+    }
+    function summaryValue(rows, period, key, marketplace) {
         const value = row => period ? row[period]?.[key] : row[key];
-        if (['goal','turnover','fbs','fbo','ff','inboundFbo'].includes(key)) return sum(rows.map(value));
-        if (key === 'stock') return sum([summaryValue(rows,null,'fbs'),summaryValue(rows,null,'fbo'),summaryValue(rows,null,'ff'),summaryValue(rows,null,'fromCustomer')]);
+        if (['goal','newGoal','turnover','fbs','fbo','ff','inboundFbo'].includes(key)) return sum(rows.map(value));
+        if (key === 'stock') {
+            if (marketplace === 'WB') return sum(rows.map(value));
+            return sum(['fbs','fbo','ff','fromCustomer'].map(component => summaryValue(rows,null,component)));
+        }
+        if (key === 'salesTrend') {
+            const cards=unique(rows);
+            return [0,1,2].map(index=>sum(cards.map(group=>shared(group,row=>value(row)?.[index]))));
+        }
         if (['fact','impressions','fromCustomer'].includes(key)) return sum(unique(rows).map(group => shared(group,value)));
         return null;
     }
-    function summaryDetails(rows, period, key) {
+    function summaryDetails(rows, period, key, marketplace) {
         const A = scope.CheckStockAnalyzer;
         const field = period ? period + '.' + key : key;
         const weights = {ctr:['clicks','impressions'], drr:['spend','boughtAmount'], roi:['profit','purchase']}[key];
         if (period && weights) {
             return A.weightedSummary(rows, field, row => row[period]?.weights?.[weights[0]], row => row[period]?.weights?.[weights[1]]);
         }
-        const value = summaryValue(rows, period, key);
+        const value = summaryValue(rows, period, key, marketplace);
         const quality = A.mergeQuality(rows.map(row => A.metricQuality(row, field)));
-        if (value != null && rows.some(row => (period ? row[period]?.[key] : row[key]) == null)) quality.partial = true;
+        if (key !== 'newGoal' && value != null && rows.some(row => (period ? row[period]?.[key] : row[key]) == null)) quality.partial = true;
         return {...quality, value};
     }
-    const summary = (rows, period, key) => summaryDetails(rows, period, key).value;
+    const summary = (rows, period, key, marketplace) => summaryDetails(rows, period, key, marketplace).value;
     function monday(iso) { const d=new Date(iso+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7); return d.toISOString().slice(0,10); }
     function shift(iso, days) { const d=new Date(iso+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); }
     const moscowDateFormat = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -53,12 +64,17 @@
     // One state per logical field, shared by table and drawer. A response to an
     // older request must never erase text typed while that request was running.
     class Drafts {
-        constructor(send, notify=()=>{}) { this.send=send; this.notify=notify; this.items=new Map(); }
+        constructor(send, notify=()=>{}, {
+            read=(row,week,kind)=>row.comments?.[week+':'+kind],
+            write=(item,record)=>{item.row.comments[item.week+':'+item.kind]=record;},
+        }={}) {
+            this.send=send; this.notify=notify; this.read=read; this.write=write; this.items=new Map();
+        }
         key(row, week, kind) { return JSON.stringify([row.store_slug,row.article,week,kind]); }
         get(row, week, kind) {
             const key=this.key(row,week,kind);
             if (!this.items.has(key)) {
-                const saved=row.comments?.[week+':'+kind];
+                const saved=this.read(row,week,kind);
                 this.items.set(key,{key,row,week,kind,text:saved?.text || '',saved:saved?.text || '',version:saved?.version || 0,meta:saved,dirty:false,error:null,pending:null,timer:null});
             }
             return this.items.get(key);
@@ -74,8 +90,10 @@
             item.pending=(async()=>{
                 try {
                     const saved=await this.send({store:item.row.store_slug,article:item.row.article,week:item.week,kind:item.kind,text,version:item.version});
-                    item.saved=saved.text; item.version=saved.version; item.meta=saved; item.dirty=item.text!==item.saved;
-                    item.row.comments[item.week+':'+item.kind]=saved;
+                    item.saved=saved.text; item.version=saved.version; item.meta=saved;
+                    if(item.text===text) item.text=item.saved;
+                    item.dirty=item.text!==item.saved;
+                    this.write(item,saved);
                 } catch(error) { item.error=error; item.dirty=true; }
             })();
             this.notify(item);
@@ -88,9 +106,9 @@
         resolve(item, latest, keepDraft) {
             item.version=latest?.version || 0; item.saved=latest?.text || ''; item.meta=latest;
             if (!keepDraft) item.text=item.saved;
-            item.row.comments[item.week+':'+item.kind]=latest;
+            this.write(item,latest);
             item.dirty=item.text!==item.saved; item.error=null; this.notify(item);
         }
     }
-    scope.EphemeridesModel={sum,ratio,unique,shared,summary,summaryDetails,monday,shift,moscowToday,canEditComment,weeklyCommentColumns,commentPresentation,Drafts};
+    scope.EphemeridesModel={sum,ratio,unique,shared,trendChange,summary,summaryDetails,monday,shift,moscowToday,canEditComment,weeklyCommentColumns,commentPresentation,Drafts};
 })(typeof window==='undefined'?globalThis:window);

@@ -1,14 +1,39 @@
 """Two calendar weeks of saved WB data. No collection or writes on GET."""
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from app import db
 from app.analytics import analyzer
+from app.core.constants import WEB
 from app.core.domain import MOSCOW_TIMEZONE
 from app.core.stores import STORES
+from app.dto.ephemerides_goal import WeeklyGoalState
 from app.exports import stock_sheet_inbound
 from app.repositories import ephemerides as repository
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WeeklyTurnover:
+    fact: float | None
+    forecast: float | None
+    known_days: int
+
+
+def _weekly_turnover(
+    amounts: tuple[float | None, ...], *, ongoing: bool, today_forecast: float | None
+) -> WeeklyTurnover:
+    known = [amount for amount in amounts if amount is not None]
+    fact = round(sum(known), 2) if known else None
+    forecast = None
+    if known and len(known) == len(amounts):
+        if not ongoing:
+            forecast = fact
+        elif today_forecast is not None:
+            forecast = round((sum(known[:-1]) + today_forecast) * WEB.week_days / len(known), 2)
+    return WeeklyTurnover(fact=fact, forecast=forecast, known_days=len(known))
 
 
 def monday(day):
@@ -74,11 +99,22 @@ def history(stores, week, user):
     return {"ok": True, "rows": rows, "weeks": weeks}
 
 
-def load(stores, week, user, *, today=None):
+def load(
+    stores,
+    week,
+    user,
+    *,
+    today=None,
+    manual_goals: Mapping[tuple[str, str, date], WeeklyGoalState] | None = None,
+):
     today = today or datetime.now(MOSCOW_TIMEZONE).date()
     week = monday(week)
     previous = week - timedelta(days=7)
     end = min(today, week + timedelta(days=6))
+    trend_end = min(today - timedelta(days=1), week + timedelta(days=6))
+    trend_days = tuple((trend_end - timedelta(days=offset)).isoformat() for offset in range(2, -1, -1))
+    saved_goals = manual_goals or {}
+    summary_days = tuple((week + timedelta(days=i)).isoformat() for i in range((end - week).days + 1))
     # Reuse the analyzer's established ROI/DRR/coverage rules, without its daily notes.
     sources = analyzer.Sources(stores, previous, today, last_week=week, include_reference=True)
     comparisons = [
@@ -123,7 +159,7 @@ def load(stores, week, user, *, today=None):
         row["transitUpdated"] = frozen.get("captured_at")
         row["stockWeek"] = week.isoformat()
         row["inboundFbo"] = inbound[key[0]].get(key[1])
-        stock = [row["fbs"], row["fbo"], row["ff"], row["fromCustomer"]]
+        stock = (row["fbs"], row["fbo"])
         row["stock"] = analyzer.total(stock)
         row["stockPartial"] = any(value is None for value in stock)
         for idx, name in enumerate(("previous", "current")):
@@ -147,6 +183,9 @@ def load(stores, week, user, *, today=None):
                 else None
             )
             retail, customer = price.get("retail_price"), price.get("customer_price_with_spp")
+            saved_goal = saved_goals.get((*key, start))
+            if saved_goal is not None and saved_goal.applied_quantity is not None:
+                goal = saved_goal.applied_quantity
             metrics = weekly_metrics[idx].get(nm_key)
             completed = start + timedelta(days=6) < today
             fact_days = {day for day in days if day < today.isoformat()}
@@ -188,10 +227,41 @@ def load(stores, week, user, *, today=None):
                     "orders": len(known_days),
                 },
             }
+        saved_goal = saved_goals.get((*key, week))
+        row["current"]["newGoal"] = saved_goal.quantity if saved_goal is not None else None
+        row["newGoalVersion"] = saved_goal.version if saved_goal is not None else 0
         current = source_rows[1].get(row["id"], {})
         row["rating"] = current.get("rating")
         row["dayTurnover"] = {
             key: current.get(key) for key in ("plan", "fact", "forecast", "difference", "deviation")
+        }
+        order_rows = sources.orders.get(nm_key, {})
+        covered_days = coverage[key[0]]["orders"]
+        row["current"]["salesTrend"] = [
+            order_rows[day].get("net_orders_count")
+            if day in order_rows
+            else 0
+            if day in covered_days
+            else None
+            for day in trend_days
+        ]
+        turnover = _weekly_turnover(
+            tuple(
+                order_rows[day].get("orders_amount")
+                if day in order_rows
+                else 0
+                if day in covered_days
+                else None
+                for day in summary_days
+            ),
+            ongoing=end == today,
+            today_forecast=current.get("forecast"),
+        )
+        row["weekTurnover"] = {
+            "plan": row["current"]["turnover"],
+            "fact": turnover.fact,
+            "forecast": turnover.forecast,
+            "coverage": {"orders": turnover.known_days, "expected": len(summary_days)},
         }
     rows.sort(key=lambda row: analyzer.turnover_sort_key(row, row["dayTurnover"]["fact"]))
     weeks = [week_info(week - timedelta(weeks=i)) for i in range(6)]
@@ -204,5 +274,6 @@ def load(stores, week, user, *, today=None):
         "weeks": weeks,
         "today": today.isoformat(),
         "through": end.isoformat(),
+        "trendDays": trend_days,
         "loaded_at": comparisons[1]["loaded_at"],
     }

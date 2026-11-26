@@ -42,6 +42,7 @@ def init_db() -> None:
     _preserve_legacy_wb_funnel_daily_orders(database)
     target_table_was_rebuilt = _prepare_stock_sheet_export_target_migration(database)
     OrmBase.metadata.create_all(database.engine)
+    _migrate_ephemerides_applied_goals(database)
     _migrate_marketplace_warehouse_quantities(database)
     _migrate_wb_hourly_spp_percent(database)
     _migrate_wb_hourly_turnover(database)
@@ -91,6 +92,22 @@ def init_db() -> None:
         connection.commit()
 
     _sync_yandex_assortment(database)
+
+
+def _migrate_ephemerides_applied_goals(database: Database) -> None:
+    with core.WRITE_LOCK, database.connect() as connection:
+        table = "ephemerides_weekly_goals"
+        if "applied_quantity" in connection.column_names(table):
+            return
+        if connection.dialect_name == DatabaseDialect.SQLITE:
+            connection.execute("BEGIN IMMEDIATE")
+            if "applied_quantity" not in connection.column_names(table):
+                connection.execute("ALTER TABLE ephemerides_weekly_goals ADD COLUMN applied_quantity INTEGER")
+        else:
+            connection.execute(
+                "ALTER TABLE ephemerides_weekly_goals ADD COLUMN IF NOT EXISTS applied_quantity INTEGER"
+            )
+        connection.commit()
 
 
 def _migrate_marketplace_warehouse_quantities(database: Database) -> None:

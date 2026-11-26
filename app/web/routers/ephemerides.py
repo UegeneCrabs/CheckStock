@@ -1,19 +1,29 @@
 """Scoped ephemerides pages and weekly comments."""
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from app.access.authentication import is_active_user
 from app.access.resources import accessible_stores
 from app.analytics import ephemerides
+from app.container import ephemerides_goal_repository
 from app.core.domain import MOSCOW_TIMEZONE
+from app.dto.ephemerides_goal import (
+    WEEKLY_GOAL_MAX,
+    WeeklyGoal,
+    WeeklyGoalChange,
+    WeeklyGoalResponse,
+    WeeklyGoalsApplied,
+    WeeklyGoalsApply,
+)
 from app.dto.identity import coerce_user
+from app.infrastructure.ephemerides_goal_repository import WeeklyGoalConflict
 from app.repositories import ephemerides as repository
 from app.web.routers.analyzer import require_product
 from app.web.templating import fill_template, render_page
@@ -47,6 +57,7 @@ async def page(request: Request):
                 "canEdit": is_active_user(request.state.user),
                 "today": datetime.now(MOSCOW_TIMEZONE).date().isoformat(),
                 "history": request.url.path.endswith("/comments"),
+                "weeklyGoalMax": WEEKLY_GOAL_MAX,
             }
         ).replace("</", "<\\/"),
     )
@@ -62,7 +73,13 @@ async def page(request: Request):
 @router.get("/api/analytics/ephemerides")
 async def data(request: Request, week: date | None = None):
     stores = authorize(request)
-    return await run_in_threadpool(ephemerides.load, stores, checked_week(week), request.state.user)
+    start = checked_week(week)
+
+    def load():
+        goals = ephemerides_goal_repository().for_weeks(stores, start, start - timedelta(weeks=1))
+        return ephemerides.load(stores, start, request.state.user, manual_goals=goals)
+
+    return await run_in_threadpool(load)
 
 
 @router.get("/api/analytics/ephemerides/comments")
@@ -83,14 +100,49 @@ class CommentChange(CommentKey):
     version: int = Field(ge=0, le=2147483646)
 
 
-def check_key(payload, stores, user):
-    if payload.store not in stores:
-        raise HTTPException(404, "Товар не найден или недоступен")
-    start = checked_week(payload.week)
-    if start != payload.week:
+def checked_week_key(week: date) -> date:
+    start = checked_week(week)
+    if start != week:
         raise HTTPException(422, "Ключ недели должен указывать на понедельник")
-    require_product(payload.store, payload.article, user)
+    return start
+
+
+def check_product_week(store, article, week, stores, user):
+    if store not in stores:
+        raise HTTPException(404, "Товар не найден или недоступен")
+    start = checked_week_key(week)
+    require_product(store, article, user)
+    return start
+
+
+def check_key(payload, stores, user):
+    start = check_product_week(payload.store, payload.article, payload.week, stores, user)
     return payload.store, payload.article, start.isoformat(), payload.kind
+
+
+@router.put("/api/analytics/ephemerides/goals", response_model=WeeklyGoalResponse)
+async def save_goal(request: Request, payload: WeeklyGoalChange) -> WeeklyGoalResponse | JSONResponse:
+    stores = authorize(request, write=True)
+
+    def update() -> WeeklyGoal:
+        check_product_week(payload.store, payload.article, payload.week, stores, request.state.user)
+        return ephemerides_goal_repository().save(payload)
+
+    try:
+        goal = await run_in_threadpool(update)
+    except WeeklyGoalConflict as error:
+        return JSONResponse(
+            status_code=409, content={"detail": str(error), "goal": error.latest.model_dump(mode="json")}
+        )
+    return WeeklyGoalResponse(goal=goal)
+
+
+@router.post("/api/analytics/ephemerides/goals/apply")
+async def apply_goals(request: Request, payload: WeeklyGoalsApply) -> WeeklyGoalsApplied:
+    stores = authorize(request, write=True)
+    week = checked_week_key(payload.week)
+    changed = await run_in_threadpool(lambda: ephemerides_goal_repository().apply(stores, week))
+    return WeeklyGoalsApplied(changed=changed)
 
 
 @router.put("/api/analytics/ephemerides/comments")

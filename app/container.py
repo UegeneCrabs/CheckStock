@@ -68,6 +68,7 @@ from app.infrastructure.async_read_models import AsyncReadModels
 from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.database import database_for_path
+from app.infrastructure.ephemerides_goal_repository import WeeklyGoalRepository
 from app.infrastructure.fbo_stock_repository import FboStockRepository
 from app.infrastructure.google_stock_test_repository import GoogleStockTestRepository
 from app.infrastructure.google_test_order_catalog import order_catalog
@@ -165,6 +166,10 @@ def _wb_seller_prices(store_slug: str, nm_ids: tuple[str, ...]) -> tuple[WbSelle
 
 def wb_product_rating_service(database_path: Callable[[], Path] | None = None) -> WbProductRatingService:
     return WbProductRatingService(SqlAlchemyWbRatingWriter(database_path or (lambda: core.DB_PATH)))
+
+
+def ephemerides_goal_repository() -> WeeklyGoalRepository:
+    return WeeklyGoalRepository(database_for_path(core.DB_PATH))
 
 
 class ApplicationContainer:
