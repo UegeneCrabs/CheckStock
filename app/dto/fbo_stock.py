@@ -32,6 +32,18 @@ class FboShortage(DtoModel):
     missing: int
 
 
+class FboAcceptanceItem(DtoModel):
+    key: str
+    unaccepted_quantity: int | None = Field(default=None, ge=0)
+
+
+class FboAcceptance(DtoModel):
+    completed: bool
+    items: tuple[FboAcceptanceItem, ...]
+    shortage_quantity: int = Field(ge=0)
+    has_shortage: bool
+
+
 class FboMovement(DtoModel):
     supply: InboundSupply
     state: FboStockState = FboStockState.PENDING
@@ -48,6 +60,7 @@ class FboMovement(DtoModel):
     can_post: bool = False
     can_select_fulfillment: bool = False
     processed: bool = False
+    wb_acceptance: FboAcceptance | None = None
 
     remaining_quantity: int = Field(default=0, ge=0)
 

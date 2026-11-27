@@ -1,7 +1,16 @@
 from collections import defaultdict
 
 from app.core.constants import FBO_STOCK, FboStockIssue, FboStockState, Marketplace
-from app.dto.fbo_stock import FboAllocation, FboBalance, FboEvidence, FboMovement, FboShortage, FboTarget
+from app.dto.fbo_stock import (
+    FboAcceptance,
+    FboAcceptanceItem,
+    FboAllocation,
+    FboBalance,
+    FboEvidence,
+    FboMovement,
+    FboShortage,
+    FboTarget,
+)
 from app.dto.inbound_supplies import InboundSupply
 
 
@@ -145,6 +154,37 @@ def requested_quantities(supply: InboundSupply, allocations: tuple[FboAllocation
     return expected
 
 
+def wb_acceptance(supply: InboundSupply) -> FboAcceptance:
+    requested: dict[str, int] = defaultdict(int)
+    accepted: dict[str, int] = defaultdict(int)
+    unknown: set[str] = set()
+    for index, item in enumerate(supply.items):
+        key = item.article or item.sku or item.barcode or str(index)
+        requested[key] += item.quantity
+        if item.accepted_quantity is None:
+            unknown.add(key)
+        else:
+            accepted[key] += item.accepted_quantity
+    confirmed = supply.composition_confirmed and not supply.unavailable
+    items = tuple(
+        FboAcceptanceItem(
+            key=key,
+            unaccepted_quantity=max(quantity - accepted[key], 0)
+            if confirmed and key not in unknown
+            else None,
+        )
+        for key, quantity in requested.items()
+    )
+    completed = supply.status == FBO_STOCK.wb_accepted
+    shortage_quantity = sum(item.unaccepted_quantity or 0 for item in items)
+    return FboAcceptance(
+        completed=completed,
+        items=items,
+        shortage_quantity=shortage_quantity,
+        has_shortage=completed and shortage_quantity > 0,
+    )
+
+
 def movement_availability(target: FboTarget, movement: FboMovement, evidence: FboEvidence) -> FboMovement:
     sources = {row.fulfillment for row in movement.allocations}
     fulfillment = movement.fulfillment or (next(iter(sources)) if len(sources) == 1 else "")
@@ -183,5 +223,6 @@ def movement_availability(target: FboTarget, movement: FboMovement, evidence: Fb
             "can_post": can_post,
             "can_select_fulfillment": can_select_fulfillment(target, current),
             "processed": bool(fulfillment or current.allocations),
+            "wb_acceptance": wb_acceptance(current.supply) if target.marketplace == Marketplace.WB else None,
         }
     )

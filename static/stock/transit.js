@@ -589,7 +589,7 @@
             var key = item.article || item.sku || item.barcode || String(index);
             var row = rows.get(key);
             if (!row) {
-                row = { article: item.article, name: item.name, barcodes: new Set(), quantity: 0,
+                row = { key: key, article: item.article, name: item.name, barcodes: new Set(), quantity: 0,
                     accepted: 0, allocations: [] };
                 rows.set(key, row);
             }
@@ -602,7 +602,7 @@
         movement.allocations.forEach(function (part) {
             var row = rows.get(part.article);
             if (!row) {
-                row = { article: part.article, name: part.name, barcodes: new Set(), quantity: 0,
+                row = { key: part.article, article: part.article, name: part.name, barcodes: new Set(), quantity: 0,
                     accepted: null, allocations: [] };
                 if (part.barcode) row.barcodes.add(part.barcode);
                 rows.set(part.article, row);
@@ -625,6 +625,15 @@
         if (movement.state === 'historical') body.appendChild(el('p', 'inbound-card-note',
             'Историческая поставка: завершена до включения автоматического учёта. Повторного списания нет.'));
         body.appendChild(renderFulfillment(movement));
+        var acceptance = movement.wb_acceptance;
+        if (acceptance && acceptance.has_shortage) {
+            var alert = el('div', 'stock-fbo-alert');
+            alert.setAttribute('role', 'alert');
+            alert.appendChild(el('strong', '', 'Расхождение приёмки WB'));
+            alert.appendChild(el('p', '', 'Приёмка завершена. По товарным строкам WB не принято: ' +
+                numberFormat.format(acceptance.shortage_quantity) + ' шт.'));
+            body.appendChild(alert);
+        }
         var scroll = el('div', 'inbound-table-scroll stock-fbo-table-scroll');
         scroll.tabIndex = 0;
         scroll.setAttribute('role', 'region');
@@ -635,7 +644,10 @@
         table.addEventListener('tablefilterchange', function () { supplyTableFilters.set(tableKey, table._tfFilters); });
         var head = el('thead');
         var headers = el('tr');
-        ['Артикул', 'Баркод', 'Название', 'Списание по ФФ', 'В поставке', 'Принято', 'В пути', 'Не хватает, шт.'].forEach(function (label, index) {
+        var columns = ['Артикул', 'Баркод', 'Название', 'Списание по ФФ', 'В поставке', 'Принято'];
+        if (marketplace() === 'WB') columns.push('Не принято WB');
+        columns.push('В пути', 'Не хватает на ФФ, шт.');
+        columns.forEach(function (label, index) {
             var th = el('th', index >= 4 ? 'inbound-num' : '', label);
             th.scope = 'col';
             th.setAttribute('data-filter-column', String(index));
@@ -646,11 +658,16 @@
         table.appendChild(head);
         var tbody = el('tbody');
         var shortages = new Map((movement.shortages || []).map(function (item) { return [item.article, item]; }));
+        var unaccepted = new Map((acceptance ? acceptance.items : []).map(function (item) {
+            return [item.key, item.unaccepted_quantity];
+        }));
         rows.forEach(function (item) {
             var shortage = shortages.get(item.article);
             var checked = movement.stock_checked;
             var missing = checked ? (shortage ? shortage.missing : 0) : null;
-            var row = el('tr', missing > 0 ? 'stock-fbo-row--shortage' : '');
+            var notAccepted = unaccepted.get(item.key);
+            var acceptanceShortage = acceptance && acceptance.has_shortage && notAccepted > 0;
+            var row = el('tr', missing > 0 || acceptanceShortage ? 'stock-fbo-row--shortage' : '');
             row.appendChild(el('td', 'stock-fbo-code', item.article || '—'));
             row.appendChild(el('td', 'stock-fbo-code', Array.from(item.barcodes).join(', ') || '—'));
             row.appendChild(el('td', 'stock-fbo-name', item.name || '—'));
@@ -667,6 +684,14 @@
             row.appendChild(sources);
             row.appendChild(el('td', 'inbound-num', numberFormat.format(item.quantity)));
             row.appendChild(el('td', 'inbound-num', item.accepted == null ? '—' : numberFormat.format(item.accepted)));
+            if (marketplace() === 'WB') {
+                var unacceptedCell = el('td', 'inbound-num stock-fbo-shortage',
+                    notAccepted == null ? '—' : numberFormat.format(notAccepted));
+                unacceptedCell.title = notAccepted == null ? 'Количество принятого WB неизвестно.' :
+                    'Количество в поставке за вычетом принятого WB.' +
+                    (acceptance.completed ? '' : ' Приёмка ещё не завершена.');
+                row.appendChild(unacceptedCell);
+            }
             row.appendChild(el('td', 'inbound-num stock-fbo-in-transit',
                 numberFormat.format(remaining)));
             var availability = el('td', 'inbound-num stock-fbo-shortage', missing == null ? '—' : numberFormat.format(missing));
@@ -680,7 +705,7 @@
         if (!rows.length) {
             var empty = el('tr', 'empty-row');
             var cell = el('td', '', 'Состав поставки пока не получен');
-            cell.colSpan = 8;
+            cell.colSpan = columns.length;
             empty.appendChild(cell);
             tbody.appendChild(empty);
         }
@@ -722,7 +747,8 @@
         if (movement.fulfillment) state.appendChild(el('small', '', 'ФФ: ' + movement.fulfillment));
         else if (movement.allocations.length) state.appendChild(el('small', '', 'ФФ: ' +
             Array.from(new Set(movement.allocations.map(function (row) { return row.fulfillment; }))).join(', ')));
-        if (movement.issue) state.appendChild(el('small', 'stock-fbo-needs-action', 'Требует внимания'));
+        var acceptanceShortage = movement.wb_acceptance && movement.wb_acceptance.has_shortage;
+        if (movement.issue || acceptanceShortage) state.appendChild(el('small', 'stock-fbo-needs-action', 'Требует внимания'));
         else if (movement.state === 'historical') state.appendChild(el('small', '', 'Историческая поставка'));
         else state.appendChild(el('small', '', movement.posted_at ? 'Проведена' : 'Ещё не проведена'));
         head.appendChild(state);
@@ -732,6 +758,8 @@
         summary.appendChild(el('small', '', 'Списано с ФФ: ' + numberFormat.format(allocated)));
         summary.appendChild(el('span', 'stock-fbo-in-transit',
             'В пути: ' + numberFormat.format(movement.remaining_quantity || 0)));
+        if (acceptanceShortage) summary.appendChild(el('small', 'stock-fbo-needs-action',
+            'Не принято WB: ' + numberFormat.format(movement.wb_acceptance.shortage_quantity)));
         head.appendChild(summary);
         var toggle = el('span', 'stock-fbo-toggle');
         toggle.appendChild(el('span', 'stock-fbo-show', 'Показать товары'));
@@ -908,7 +936,8 @@
         var onlyShortages = currentKind === 'fbo_shipment' && shortageFilter.checked;
         supplies = supplies.filter(function (movement) {
             var supply = movement.supply;
-            return (!onlyShortages || (movement.shortages || []).some(function (item) { return item.missing > 0; })) &&
+            return (!onlyShortages || (movement.shortages || []).some(function (item) { return item.missing > 0; }) ||
+                movement.wb_acceptance && movement.wb_acceptance.has_shortage) &&
                 matchesFilters(supplyDate(supply),
                 [supply.number, supply.supply_id, supply.order_id], supply.direction, 'supply:' + supply.status);
         });

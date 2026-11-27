@@ -340,6 +340,7 @@
 }
 
 .stock-fbo-alert p { margin: 8px 0; }
+.stock-fbo-alert + .stock-fbo-table-scroll { margin-top: 14px; }
 .stock-fbo-alert button { margin-top: 10px; width: auto; min-width: 120px; }
 .stock-fbo-link { display: flex; gap: 8px; align-items: baseline; margin-top: 8px; }
 
