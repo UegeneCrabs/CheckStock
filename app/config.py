@@ -203,6 +203,12 @@ class Settings(BaseModel):
 
     base_dir: Path
     database_path: Path
+    ozon_advertising_daily_path: Path | None = None
+    ozon_advertising_articles_today_only: bool = False
+    ozon_advertising_tokens_path: Path | None = None
+    ozon_products_cache_seconds: int = Field(
+        default_factory=lambda: _env_int("CHECKSTOCK_OZON_PRODUCTS_CACHE_SECONDS", 1800), ge=0
+    )
     database_url: str | None = None
     database_timeout_seconds: int = Field(ge=1)
     database_busy_timeout_ms: int = Field(ge=1)
@@ -329,6 +335,15 @@ class Settings(BaseModel):
         return cls(
             base_dir=base_dir,
             database_path=database_path,
+            ozon_advertising_articles_today_only=_env_bool(
+                "CHECKSTOCK_OZON_ADVERTISING_ARTICLES_TODAY_ONLY", False
+            ),
+            ozon_advertising_tokens_path=base_dir / ad_keys
+            if (ad_keys := os.getenv("CHECKSTOCK_OZON_ADVERTISING_TOKENS_PATH", "").strip())
+            else None,
+            ozon_advertising_daily_path=base_dir / sidecar
+            if (sidecar := os.getenv("CHECKSTOCK_OZON_ADVERTISING_DAILY_PATH", "").strip())
+            else database_path.parent / "ozon-advertising-daily.sqlite",
             database_url=database_url,
             database_timeout_seconds=_env_int("CHECKSTOCK_DB_TIMEOUT_SECONDS", 30, minimum=1),
             database_busy_timeout_ms=_env_int("CHECKSTOCK_DB_BUSY_TIMEOUT_MS", 30_000, minimum=1),

@@ -1,9 +1,12 @@
 import asyncio
-from datetime import UTC, datetime, time
+from contextlib import AsyncExitStack
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 from pydantic import ValidationError
 
+from app.application.ozon_advertising_article_sync import ArticleDailyImport
+from app.config import settings
 from app.core.constants import (
     OZON_ADVERTISING,
     TIME,
@@ -29,6 +32,7 @@ from app.dto.ozon_advertising import (
 )
 from app.economics.ozon_advertising_articles import AdvertisingArticleResolver
 from app.infrastructure.async_resources import AsyncResources
+from app.infrastructure.ozon_article_daily_repository import ArticleDailyRepository, open_article_repository
 from app.jobs import async_locks
 from app.ozon import tokens
 from app.ozon.advertising_normalizer import (
@@ -237,49 +241,85 @@ async def source_snapshot(
 def safe_error(error: Exception) -> str:
     if isinstance(error, PerformanceApiFailure):
         return str(error)
+    if isinstance(error, ValueError) and error.args == (AdvertisingError.REPORT_INCOMPLETE,):
+        return AdvertisingError.REPORT_INCOMPLETE
     if isinstance(error, (ValueError, ValidationError)):
         return AdvertisingError.INVALID_RESPONSE
     return AdvertisingError.SYNC_FAILED
 
 
 async def sync_store(
-    store: str, resources: AsyncResources, period: AdvertisingPeriod, *, intraday: bool = False
+    store: str,
+    resources: AsyncResources,
+    period: AdvertisingPeriod | None,
+    *,
+    intraday: bool = False,
+    daily: ArticleDailyRepository | None = None,
 ) -> bool:
     async with async_locks.hold(OZON_ADVERTISING.lock_prefix + store, resources.database):
-        yesterday = completed_period().end
-        if period.end > yesterday:
-            raise ValueError(AdvertisingError.INVALID_PERIOD)
         now = datetime.now(TIME.moscow_timezone)
         today = AdvertisingPeriod(start=now.date(), end=now.date())
         slot = refresh_slot(now)
-        statuses = await resources.advertising.overlapping(
-            (store,), AdvertisingPeriod(start=period.start, end=today.end if intraday else period.end)
-        )
-        imports = import_plan(period, statuses, yesterday)
-        if intraday:
-            imports = tuple(
-                item
-                for item in imports
-                if item.period.end != yesterday
-                or now.time() >= time(OZON_ADVERTISING.run_hour_msk, OZON_ADVERTISING.run_minute_msk)
+        batch = None
+        imports: tuple[AdvertisingImport, ...] = ()
+        extra: tuple[AdvertisingImport, ...] = ()
+        statuses: tuple[AdvertisingSourceStatus, ...] = ()
+        success = True
+        if settings.ozon_advertising_articles_today_only:
+            if daily is None or (period is not None and period != today):
+                raise ValueError(AdvertisingError.INVALID_PERIOD)
+            if not tokens.has_performance_credentials(store):
+                return True
+            pending_sources = await daily.pending_today(store, today.start, datetime.fromisoformat(slot))
+            batch = ArticleDailyImport(
+                daily,
+                resources.advertising,
+                store,
+                today.start,
+                {source: set() for source in pending_sources},
             )
-            imports = (
-                tuple(
-                    AdvertisingImport(source=source, period=today)
-                    for source in OZON_ADVERTISING.intraday_sources
-                    if not any(
-                        status.source == source
-                        and status.period == today
-                        and status.state == AdvertisingState.READY
-                        and status.snapshot
-                        and status.snapshot.refresh_slot == slot
-                        for status in statuses
-                    )
+            extra = batch.extra_imports(())
+        else:
+            completed = completed_period(now)
+            period = period or completed
+            yesterday = completed.end
+            if period.end > yesterday:
+                raise ValueError(AdvertisingError.INVALID_PERIOD)
+            close_time = time(OZON_ADVERTISING.run_hour_msk, OZON_ADVERTISING.run_minute_msk)
+            if daily is not None and intraday and tokens.has_performance_credentials(store):
+                close_through = yesterday if now.time() >= close_time else yesterday - timedelta(days=1)
+                pending = await daily.pending_history(store, today.start, close_through)
+                batch = ArticleDailyImport(daily, resources.advertising, store, today.start, pending)
+            statuses = await resources.advertising.overlapping(
+                (store,), AdvertisingPeriod(start=period.start, end=today.end if intraday else period.end)
+            )
+            imports = import_plan(period, statuses, yesterday)
+            if intraday:
+                imports = tuple(
+                    item for item in imports if item.period.end != yesterday or now.time() >= close_time
                 )
-                + imports
-            )
-        if not imports:
-            return True
+                imports = (
+                    tuple(
+                        AdvertisingImport(source=source, period=today)
+                        for source in OZON_ADVERTISING.intraday_sources
+                        if not any(
+                            status.source == source
+                            and status.period == today
+                            and status.state == AdvertisingState.READY
+                            and status.snapshot
+                            and status.snapshot.refresh_slot == slot
+                            for status in statuses
+                        )
+                    )
+                    + imports
+                )
+            if batch is not None:
+                statuses += await batch.older_statuses(period.start)
+                imports = batch.unfinished_imports(imports)
+                success = await batch.restore(statuses, imports, slot)
+                extra = batch.extra_imports(imports)
+        if not (imports or extra):
+            return success
         try:
             client_id, secret = tokens.get_performance_credentials(store)
         except tokens.OzonCredentialsNotFoundError:
@@ -293,7 +333,7 @@ async def sync_store(
                         attempted_at=datetime.now(UTC),
                     )
                 )
-            return True
+            return success
         client = AsyncPerformanceClient(
             resources.http,
             resources.advertising,
@@ -309,8 +349,7 @@ async def sync_store(
             if tokens.has_credentials(store)
             else None,
         )
-        success = True
-        for item in imports:
+        for item in (*imports, *extra):
             client.refresh_slot = slot if item.period == today else None
             previous = next(
                 (
@@ -340,21 +379,34 @@ async def sync_store(
                         )
                     )
                 previous_slot = client.refresh_slot
-                await resources.advertising.fail(
-                    AdvertisingSourceStatus(
-                        store_slug=store,
-                        source=item.source,
-                        period=item.period,
-                        state=AdvertisingState.MISSING,
-                        refresh_slot=client.refresh_slot,
-                        attempted_at=datetime.now(UTC),
+                if item not in extra:
+                    await resources.advertising.fail(
+                        AdvertisingSourceStatus(
+                            store_slug=store,
+                            source=item.source,
+                            period=item.period,
+                            state=AdvertisingState.MISSING,
+                            refresh_slot=client.refresh_slot,
+                            attempted_at=datetime.now(UTC),
+                        )
                     )
-                )
                 snapshot = await source_snapshot(client, store, item.source, item.period)
                 snapshot = snapshot.model_copy(
-                    update={"finalized": item.period.end < today.start, "refresh_slot": client.refresh_slot}
+                    update={
+                        "finalized": item.period.end < today.start,
+                        "refresh_slot": client.refresh_slot,
+                        "synced_at": now.astimezone(UTC)
+                        if settings.ozon_advertising_articles_today_only
+                        else snapshot.synced_at,
+                    }
                 )
-                await resources.advertising.save(await resolver.attach(snapshot))
+                snapshot = await resolver.attach(snapshot)
+                if batch is not None and not await batch.save(
+                    snapshot, batch.needed(item.source, item.period)
+                ):
+                    raise ValueError(AdvertisingError.REPORT_INCOMPLETE)
+                if item not in extra:
+                    await resources.advertising.save(snapshot)
                 logger.info(
                     "ozon_advertising_source_loaded store=%s source=%s rows=%s",
                     store,
@@ -371,17 +423,33 @@ async def sync_store(
                 if not optional_missing:
                     success = False
                 code = safe_error(error)
-                await resources.advertising.fail(
-                    AdvertisingSourceStatus(
-                        store_slug=store,
-                        source=item.source,
-                        period=item.period,
-                        state=AdvertisingState.MISSING if optional_missing else AdvertisingState.ERROR,
-                        refresh_slot=previous_slot,
-                        attempted_at=datetime.now(UTC),
-                        error=None if optional_missing else code,
+                if item not in extra:
+                    await resources.advertising.fail(
+                        AdvertisingSourceStatus(
+                            store_slug=store,
+                            source=item.source,
+                            period=item.period,
+                            state=AdvertisingState.MISSING if optional_missing else AdvertisingState.ERROR,
+                            refresh_slot=previous_slot,
+                            attempted_at=datetime.now(UTC),
+                            error=None if optional_missing else code,
+                        )
                     )
-                )
+                if batch is not None:
+                    for day in batch.needed(item.source, item.period):
+                        await batch.repository.record(
+                            store,
+                            item.source,
+                            day,
+                            datetime.now(UTC),
+                            error=(
+                                AdvertisingError.HISTORICAL_CAMPAIGN_ABSENT
+                                if day < today.start
+                                else AdvertisingError.CAMPAIGN_NOT_FOUND
+                            )
+                            if optional_missing
+                            else code,
+                        )
                 if optional_missing:
                     logger.info(
                         "ozon_advertising_campaign_absent store=%s source=%s", store, item.source.value
@@ -408,19 +476,34 @@ async def sync_all(
     period: AdvertisingPeriod | None = None,
 ) -> AdvertisingSyncResult:
     targets = tuple(dict.fromkeys(STORES if stores is None else stores))
-    window = period or completed_period()
     results: dict[str, bool] = {}
+
+    daily: ArticleDailyRepository | None = None
 
     async def run(store: str) -> None:
         try:
-            results[store] = await sync_store(store, resources, window, intraday=period is None)
+            results[store] = await sync_store(store, resources, period, intraday=period is None, daily=daily)
         except Exception as error:
             results[store] = False
             logger.warning("ozon_advertising_store_failed store=%s code=%s", store, safe_error(error))
 
-    async with asyncio.TaskGroup() as group:
-        for store in targets:
-            group.create_task(run(store))
+    async with AsyncExitStack() as stack:
+        if (
+            settings.ozon_advertising_articles_today_only
+            and settings.ozon_advertising_tokens_path is not None
+        ):
+            stack.enter_context(tokens.read_tokens_from(settings.ozon_advertising_tokens_path))
+        if (
+            targets
+            and (period is None or settings.ozon_advertising_articles_today_only)
+            and settings.ozon_advertising_daily_path is not None
+        ):
+            daily = await stack.enter_async_context(
+                open_article_repository(settings.ozon_advertising_daily_path)
+            )
+        async with asyncio.TaskGroup() as group:
+            for store in targets:
+                group.create_task(run(store))
     failed = tuple(store for store in targets if not results[store])
     return AdvertisingSyncResult(
         stores=targets, failed_stores=failed, error=AdvertisingError.STORES_FAILED if failed else None

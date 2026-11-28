@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 from decimal import DecimalException
 from typing import Annotated
@@ -5,13 +6,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
 
 from app.access.economics_preview import require_preview
 from app.access.resources import accessible_stores
 from app.application.ozon_logistics import with_new_product_volume
 from app.application.ozon_promotion_entry import OzonPromotionEntryService
+from app.config import settings
 from app.container import (
     ozon_cabinet_service,
     ozon_history_service,
@@ -33,7 +35,13 @@ from app.dto.ozon_calculator import (
     OzonCalculatorValues,
 )
 from app.dto.ozon_commissions import OzonCommissionCalculation, OzonCommissionRequest
-from app.dto.ozon_economics import OzonProduct, OzonProductDetail, OzonProducts, OzonReportRequest
+from app.dto.ozon_economics import (
+    OzonProduct,
+    OzonProductDetail,
+    OzonProducts,
+    OzonProductsQuery,
+    OzonReportRequest,
+)
 from app.dto.ozon_history import OzonHistory, OzonHistoryQuery
 from app.dto.ozon_logistics import LogisticsCalculation, LogisticsScenario
 from app.dto.ozon_logistics_volume import LogisticsTariffOptions
@@ -335,20 +343,61 @@ async def logistics_tariffs(request: Request) -> LogisticsTariffOptions:
     return tariff_options(LOGISTICS_TARIFFS, datetime.now(TIME.moscow_timezone).date())
 
 
-@router.get("/api/unit-economics-1c/ozon")
+def _accepts_gzip(request: Request) -> bool:
+    qualities: dict[str, float] = {}
+    for line in request.headers.getlist("accept-encoding"):
+        for item in line.lower().split(","):
+            coding, separator, parameter = item.strip().partition(";")
+            coding = coding.strip()
+            if coding not in ("gzip", "identity", "*"):
+                continue
+            quality = 1.0
+            if separator:
+                match = re.fullmatch(r"q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?)", parameter.strip())
+                quality = float(match[1]) if match else 0.0
+            qualities[coding] = quality
+    gzip_quality = qualities.get("gzip", qualities.get("*", 0.0))
+    if gzip_quality > 0 and gzip_quality >= qualities.get("identity", 0.0):
+        return True
+    if qualities.get("identity", qualities.get("*", 1.0)) == 0:
+        raise HTTPException(406, headers={"Vary": "Accept-Encoding"})
+    return False
+
+
+@router.get("/api/unit-economics-1c/ozon", response_model=OzonProducts | OzonProductDetail)
 async def products(
     request: Request, query: Annotated[OzonReportRequest, Query()], resources: AsyncResourcesDependency
-) -> OzonProducts | OzonProductDetail:
+) -> OzonProducts | OzonProductDetail | Response:
     require_preview(request.state.user)
     stores = accessible_stores(request.state.user, Marketplace.OZON)
     if (query.store and query.store not in stores) or (query.article and not query.store):
         raise HTTPException(403, WebErrorCode.FORBIDDEN)
-    result = await OzonEconomicsRepository(resources.database).products(
-        query.query(stores),
-        datetime.now(TIME.moscow_timezone).date() - timedelta(days=1),
-        bool(query.date_from),
-    )
-    await run_in_threadpool(_journal_product_issues, result.products)
+    report_query = query.query(stores)
+
+    async def load(selection: OzonProductsQuery) -> OzonProducts:
+        last_complete_day = (
+            datetime.now(TIME.moscow_timezone).date() - timedelta(days=1)
+            if query.date_to
+            else selection.period_to
+        )
+        repository = OzonEconomicsRepository(
+            resources.database, article_daily_path=settings.ozon_advertising_daily_path
+        )
+        report = await repository.products(selection, last_complete_day, bool(query.date_from))
+        await run_in_threadpool(_journal_product_issues, report.products)
+        return report
+
+    if query == OzonReportRequest():
+        compressed = _accepts_gzip(request)
+        entry = await resources.ozon_products_cache.get(report_query, load, accepts_gzip=compressed)
+        headers = {"Vary": "Accept-Encoding"}
+        if compressed:
+            headers["Content-Encoding"] = "gzip"
+        return Response(
+            entry.gzip_body if compressed else entry.body, media_type=JSONResponse.media_type, headers=headers
+        )
+
+    result = await load(report_query)
     if query.article:
         if not result.products:
             raise HTTPException(404, WebErrorCode.NOT_FOUND)
@@ -381,7 +430,7 @@ def _journal_product_issues(products: tuple[OzonProduct, ...]) -> None:
 @router.get("/sales/unit-economics-1c/ozon", response_model=None)
 async def page(
     request: Request, resources: AsyncResourcesDependency
-) -> HTMLResponse | OzonProducts | OzonProductDetail:
+) -> Response | OzonProducts | OzonProductDetail:
     if request.query_params.get("data") == "1":
         try:
             query = OzonReportRequest.model_validate(

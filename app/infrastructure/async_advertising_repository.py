@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import JSON, bindparam, case, cast, delete, func, insert, select, tuple_
+from sqlalchemy.sql.elements import BindParameter
 
-from app.core.constants import AdvertisingState
+from app.core.constants import OZON_ADVERTISING, AdvertisingSource, AdvertisingState, DatabaseDialect
 from app.dto.ozon_advertising import (
     AdvertisingPeriod,
     AdvertisingSnapshot,
@@ -12,6 +13,7 @@ from app.dto.ozon_advertising import (
     PerformanceRequestEvent,
     SavedPerformanceReport,
 )
+from app.dto.ozon_advertising import AdvertisingReportVersion as ReportVersion
 from app.dto.ozon_limits import PendingPerformanceReport
 from app.infrastructure.async_database import AsyncDatabase, table_for, upsert
 from app.infrastructure.ozon_advertising_orm import (
@@ -212,17 +214,45 @@ class AsyncAdvertisingRepository:
             )
 
     async def overlapping(
-        self, stores: tuple[str, ...], period: AdvertisingPeriod
+        self,
+        stores: tuple[str, ...],
+        period: AdvertisingPeriod,
+        *,
+        covered: tuple[ReportVersion, ...] = (),
+        source: AdvertisingSource | None = None,
     ) -> tuple[AdvertisingSourceStatus, ...]:
         table = table_for(OzonAdvertisingSourceRecord)
-        async with self.database.transaction() as connection:
-            rows = await connection.execute(
-                select(table.c.payload).where(
-                    table.c.store_slug.in_(stores),
-                    table.c.period_from <= period.end.isoformat(),
-                    table.c.period_to >= period.start.isoformat(),
-                )
+        statement = select(table.c.payload).where(
+            table.c.store_slug.in_(stores),
+            table.c.period_from <= period.end.isoformat(),
+            table.c.period_to >= period.start.isoformat(),
+        )
+        if source is not None:
+            statement = statement.where(table.c.source == source.value)
+        if covered:
+            if self.database.dialect == DatabaseDialect.SQLITE:
+                state = func.json_extract(table.c.payload, "$.state")
+                version = func.json_extract(table.c.payload, "$.snapshot.synced_at")
+                attempt = func.json_extract(table.c.payload, "$.attempted_at")
+            else:
+                payload = cast(table.c.payload, JSON)
+                state = payload["state"].as_string()
+                version = payload["snapshot"]["synced_at"].as_string()
+                attempt = payload["attempted_at"].as_string()
+            keys = [item.legacy_signature() for item in covered]
+            pk = (table.c.store_slug, table.c.source, table.c.period_from, table.c.period_to)
+            signature = tuple_(*pk, func.coalesce(version, ""), func.coalesce(attempt, ""))
+            inline = len(keys) > OZON_ADVERTISING.max_bound_report_versions
+            signatures: BindParameter[list[tuple[str, ...]]] = bindparam(
+                "accepted_versions", keys, expanding=True, literal_execute=inline
             )
+            windows: BindParameter[list[tuple[str, ...]]] = bindparam(
+                "accepted_windows", [key[:4] for key in keys], expanding=True, literal_execute=inline
+            )
+            keep = (func.coalesce(state, "") != AdvertisingState.READY) | signature.not_in(signatures)
+            statement = statement.where(case((tuple_(*pk).in_(windows), keep), else_=True))
+        async with self.database.transaction() as connection:
+            rows = await connection.execute(statement)
             return tuple(AdvertisingSourceStatus.model_validate_json(row.payload) for row in rows)
 
     async def record_report(self, store: str, key: str, uuid: str, *, pending: bool) -> None:

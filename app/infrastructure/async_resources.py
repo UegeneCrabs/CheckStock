@@ -1,10 +1,12 @@
 import asyncio
 from collections.abc import Callable, Coroutine
+from functools import partial
 from types import TracebackType
 from typing import Self
 
 import httpx
 
+from app.application.ozon_products_cache import OzonProductsCache
 from app.application.ozon_promotions import OzonPromotionsCache
 from app.config import settings
 from app.core.constants import (
@@ -44,6 +46,9 @@ class AsyncResources:
         self.http = AsyncHttp(self.client, limits=self.ozon_limits)
         self.ozon_categories = AsyncCategoryReader(self.http)
         self.ozon_related = AsyncRelatedReader(self.http)
+        self.ozon_products_cache = OzonProductsCache(
+            settings.ozon_products_cache_seconds, partial(self.spawn, name="ozon-products-cache-refresh")
+        )
         self.ozon_promotions_cache = OzonPromotionsCache()
         self.jobs = AsyncJobRepository(self.database)
         self.catalog = AsyncCatalogRepository(self.database)
@@ -98,6 +103,7 @@ class AsyncResources:
         self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
     ) -> None:
         self.closing = True
+        self.ozon_products_cache.close()
         shutdown = asyncio.create_task(self._shutdown(cancel=exc_type is not None))
         try:
             await asyncio.shield(shutdown)

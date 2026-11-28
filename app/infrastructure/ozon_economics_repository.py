@@ -2,6 +2,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -50,6 +51,7 @@ from app.infrastructure.async_storage_repository import AsyncStorageRepository
 from app.infrastructure.async_turnover_repository import AsyncTurnoverRepository
 from app.infrastructure.inbound_read_repository import InboundReadRepository
 from app.infrastructure.orm import FulfillmentStockRecord
+from app.infrastructure.ozon_article_reports import ArticleReports, read_article_reports
 from app.infrastructure.ozon_cabinet_repository import OzonCabinetRepository
 from app.infrastructure.ozon_calendar_repository import OzonCalendarRepository
 from app.infrastructure.ozon_margin_repository import OzonMarginRepository
@@ -131,8 +133,9 @@ def base_products(
 
 
 class OzonEconomicsRepository:
-    def __init__(self, database: AsyncDatabase):
+    def __init__(self, database: AsyncDatabase, *, article_daily_path: Path | None = None):
         self.database = database
+        self.article_daily_path = article_daily_path
 
     async def new_product_costs(
         self, product: OzonProduct, today: date, storage: tuple[StorageSnapshot, ...]
@@ -207,10 +210,18 @@ class OzonEconomicsRepository:
             )
         )
         period = AdvertisingPeriod(start=query.period_from, end=query.period_to)
-        statuses = await AsyncAdvertisingRepository(self.database).overlapping(
-            query.stores,
-            AdvertisingPeriod(start=min(query.period_from, advertising_week.start), end=expanded.period_to),
+        reading_period = AdvertisingPeriod(
+            start=min(query.period_from, advertising_week.start), end=expanded.period_to
         )
+        daily_reports = ArticleReports()
+        if self.article_daily_path:
+            daily_reports = await read_article_reports(
+                self.article_daily_path, query.stores, reading_period, query.article
+            )
+        legacy = await AsyncAdvertisingRepository(self.database).overlapping(
+            query.stores, reading_period, covered=daily_reports.covered
+        )
+        statuses = (*legacy, *daily_reports.statuses)
         by_store = {
             store: source_days(period, tuple(status for status in statuses if status.store_slug == store))
             for store in query.stores

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Self
@@ -152,6 +153,7 @@ class SelectedOrdersReport(PerformanceResponse):
 
 
 class AllProductsOrderExpense(PerformanceResponse):
+    vendor_code: str | None = None
     day: ReportDay = Field(alias="date")
     advertised_sku: str = Field(alias="adv_sku", min_length=1)
     purchased_sku: str = Field(alias="sku", min_length=1)
@@ -185,6 +187,25 @@ class AdvertisingPeriod(DtoModel):
         if self.end < self.start:
             raise ValueError(AdvertisingError.INVALID_PERIOD)
         return self
+
+
+@dataclass(frozen=True, slots=True)
+class AdvertisingReportVersion:
+    store: str
+    source: AdvertisingSource
+    period: AdvertisingPeriod
+    synced_at: datetime
+
+    def legacy_signature(self) -> tuple[str, str, str, str, str, str]:
+        stamp = self.synced_at.isoformat().replace("+00:00", "Z")
+        return (
+            self.store,
+            self.source.value,
+            self.period.start.isoformat(),
+            self.period.end.isoformat(),
+            stamp,
+            stamp,
+        )
 
 
 class PerformanceReportRequest(DtoModel):

@@ -1,5 +1,9 @@
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
+from pathlib import Path
 
 from app.config import settings
 from app.core.logging_config import tagged_logger
@@ -8,6 +12,20 @@ from app.dto.orders import OzonCredentials
 logger = tagged_logger(__name__, "ozon", "tokens")
 
 TOKENS_PATH = settings.ozon_tokens_path
+_read_path: ContextVar[Path | None] = ContextVar("ozon_tokens_read_path", default=None)
+
+
+@contextmanager
+def read_tokens_from(path: Path) -> Iterator[None]:
+    token = _read_path.set(path)
+    try:
+        yield
+    finally:
+        _read_path.reset(token)
+
+
+def _path() -> Path:
+    return _read_path.get() or TOKENS_PATH
 
 
 class OzonCredentialsNotFoundError(Exception):
@@ -15,39 +33,40 @@ class OzonCredentialsNotFoundError(Exception):
 
 
 @lru_cache(maxsize=8)
-def _load_tokens_cached(signature: tuple[int, int] | None) -> dict:
+def _load_tokens_cached(path: Path, signature: tuple[int, int] | None) -> dict[str, dict[str, object]]:
 
-    if signature is None or not TOKENS_PATH.exists():
+    if signature is None or not path.exists():
         return {}
     try:
-        with open(TOKENS_PATH, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except ValueError as e:
-        if TOKENS_PATH.stat().st_size == 0:
-            logger.warning("Файл доступов Ozon пуст: %s — считаем, что ключей нет", TOKENS_PATH)
+        if path.stat().st_size == 0:
+            logger.warning("Файл доступов Ozon пуст: %s — считаем, что ключей нет", path)
         else:
-            logger.error("Файл доступов Ozon испорчен (%s): %s — считаем, что ключей нет", TOKENS_PATH, e)
+            logger.error("Файл доступов Ozon испорчен (%s): %s — считаем, что ключей нет", path, e)
         return {}
     except OSError as e:
-        logger.error("Файл доступов Ozon не прочитан (%s): %s", TOKENS_PATH, e)
+        logger.error("Файл доступов Ozon не прочитан (%s): %s", path, e)
         return {}
 
     if not isinstance(data, dict):
-        logger.error("Файл доступов Ozon должен содержать объект {магазин: {...}}: %s", TOKENS_PATH)
+        logger.error("Файл доступов Ozon должен содержать объект {магазин: {...}}: %s", path)
         return {}
-    return data
+    return {store: entry if isinstance(entry, dict) else {} for store, entry in data.items()}
 
 
-def _tokens_signature() -> tuple[int, int] | None:
+def _tokens_signature(path: Path) -> tuple[int, int] | None:
     try:
-        stat = TOKENS_PATH.stat()
+        stat = path.stat()
     except OSError:
         return None
     return stat.st_mtime_ns, stat.st_size
 
 
-def _load_tokens() -> dict:
-    return _load_tokens_cached(_tokens_signature())
+def _load_tokens() -> dict[str, dict[str, object]]:
+    path = _path()
+    return _load_tokens_cached(path, _tokens_signature(path))
 
 
 def reload_tokens() -> None:
@@ -68,7 +87,7 @@ def get_credentials(store_slug: str) -> tuple[str, str]:
 
     if not client_id or not api_key:
         raise OzonCredentialsNotFoundError(
-            f"Нет доступов Ozon для магазина '{store_slug}'. Добавьте client_id и api_key в {TOKENS_PATH}"
+            f"Нет доступов Ozon для магазина '{store_slug}'. Добавьте client_id и api_key в {_path()}"
         )
     return client_id, api_key
 

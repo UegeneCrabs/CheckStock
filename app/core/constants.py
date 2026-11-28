@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta, timezone
 from decimal import Decimal
 from enum import IntEnum, StrEnum
@@ -1289,7 +1289,14 @@ class AdvertisingAllocation(StrEnum):
     UNALLOCATED = "unallocated"
 
 
+class AdvertisingDailyLoadState(StrEnum):
+    READY = "ready"
+    REVIEW = "needs_review"
+    ERROR = "error"
+
+
 class AdvertisingError(StrEnum):
+    PREVIOUS_ARTICLE_MISSING = "previous_article_missing"
     INVALID_AMOUNT = "invalid_advertising_amount"
     INVALID_COUNTER = "invalid_advertising_counter"
     INVALID_DATE = "invalid_advertising_date"
@@ -1312,6 +1319,7 @@ class AdvertisingError(StrEnum):
     REPORT_INCOMPLETE = "campaign_report_incomplete"
     CAMPAIGN_LIMIT = "campaign_limit_exceeded"
     REPORT_MISSING_EXPENSES = "campaign_report_missing_expenses"
+    HISTORICAL_CAMPAIGN_ABSENT = "historical_campaign_absent"
     UNKNOWN_CPO_SOURCE = "unknown_cpo_order_source"
     DATE_OUTSIDE_PERIOD = "advertising_date_outside_period"
     ALLOCATION_PRECISION = "advertising_allocation_precision"
@@ -1322,6 +1330,7 @@ class AdvertisingError(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OzonAdvertisingConfig:
+    max_bound_report_versions: int = 64
     missing_campaign_message: str = "кампания не найдена"
     optional_campaign_sources: frozenset[tuple[str, AdvertisingSource]] = frozenset(
         (("toyka", AdvertisingSource.ALL_PRODUCTS),)
@@ -1946,8 +1955,8 @@ class JobCatalog:
     )
     ozon_advertising_breakdown: SyncJobMetadata = SyncJobMetadata(
         name="ozon_advertising_breakdown_sync",
-        title="Реклама Ozon по дням",
-        description="Каждые 30 минут обновляет сегодняшние CPC/CPO и догружает ошибки последних семи дней. Завершённые дни сохраняет однократно.",
+        title="Реклама Ozon по дням и артикулам",
+        description="Обновляет рекламу за сегодня. По артикулам сохраняет оплату за клики и оплату за заказ по всем товарам. При первом запуске загружает семь завершённых дней.",
         schedule="Каждые 30 мин.; вчерашний день закрывается после 04:30 МСК",
         scope=JobScope.STORE_MARKETPLACES,
         marketplaces=(Marketplace.OZON,),
@@ -2146,6 +2155,15 @@ class JobCatalog:
         marketplaces=(),
         manual_run=True,
     )
+
+    def ozon_advertising_metadata(self, *, articles_today_only: bool) -> SyncJobMetadata:
+        if articles_today_only:
+            return replace(
+                self.ozon_advertising_breakdown,
+                description="Сохраняет расходы по артикулам за текущий московский день: оплата за клики и оплата за заказ по всем товарам.",
+                schedule="Каждые 30 минут за сегодня (МСК)",
+            )
+        return self.ozon_advertising_breakdown
 
 
 JOBS: Final = JobCatalog()
@@ -2497,6 +2515,7 @@ GOOGLE_MARKETPLACE_DEFAULTS: Final[tuple[GoogleMarketplaceDefaults, ...]] = (
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class WebConstants:
+    ozon_products_gzip_level: int = 6
     api_key_max_length: int = 16_384
     client_id_max_length: int = 1_024
     client_id_suffix_length: int = 4

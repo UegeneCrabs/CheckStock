@@ -158,7 +158,10 @@ def job_definitions() -> tuple[SyncJobDefinition, ...]:
         from_metadata(JOBS.ozon_analytics_sources, base),
         from_metadata(JOBS.ozon_ephemerides_stock, base),
         from_metadata(JOBS.ozon_prices_close, base),
-        from_metadata(JOBS.ozon_advertising_breakdown, base),
+        from_metadata(
+            JOBS.ozon_advertising_metadata(articles_today_only=settings.ozon_advertising_articles_today_only),
+            base,
+        ),
         SyncJobDefinition(
             "yandex_advertising_sync",
             "Реклама Яндекс Маркета",
